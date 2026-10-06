@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { prReviews } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -75,8 +75,7 @@ const telemetryFake = (options: { readonly failOperations: boolean }): PrReviewT
 				service: "api",
 				environment: "production",
 				commitSha: "ccc",
-				firstSeenAt: DEPLOYED_AT,
-				spanCount: 10,
+				firstSeen: DateTime.makeUnsafe(DEPLOYED_AT),
 			},
 		]),
 	operationsIn: () =>

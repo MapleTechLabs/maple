@@ -8,13 +8,14 @@ import {
 	PrReviewTelemetry,
 	PrReviewTelemetryReference,
 } from "@maple/domain/http"
+import { DateTime, Duration } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	comparedOperations,
 	missingAfterDeploy,
 	operationRegressed,
 	pickDeploy,
-	POST_MERGE_EXACT_WAIT_MS,
+	POST_MERGE_EXACT_WAIT,
 	renderPostMergeComment,
 } from "./post-merge"
 import {
@@ -208,17 +209,30 @@ describe("rendering", () => {
 })
 
 describe("post-merge", () => {
+	const at = (iso: string) => DateTime.makeUnsafe(iso)
+	const merged = at("2026-10-07T10:00:00Z")
+	const exactWaitOver = DateTime.addDuration(merged, POST_MERGE_EXACT_WAIT)
 	const versions = [
-		{ service: "api", environment: "production", commitSha: "bbb", firstSeenAt: 2_000 },
-		{ service: "api", environment: "production", commitSha: "AAA", firstSeenAt: 3_000 },
+		{
+			service: "api",
+			environment: "production",
+			commitSha: "bbb",
+			firstSeen: at("2026-10-07T10:10:00Z"),
+		},
+		{
+			service: "api",
+			environment: "production",
+			commitSha: "AAA",
+			firstSeen: at("2026-10-07T10:20:00Z"),
+		},
 	]
 
 	const pick = (mergeCommitSha: string | null, overrides: Partial<Parameters<typeof pickDeploy>[0]> = {}) =>
 		pickDeploy({
 			versions,
 			mergeCommitSha,
-			mergedAtMs: 1_000,
-			nowMs: 1_000 + POST_MERGE_EXACT_WAIT_MS,
+			mergedAt: merged,
+			now: exactWaitOver,
 			commitTimes: new Map(),
 			exactOnly: false,
 			...overrides,
@@ -227,16 +241,28 @@ describe("post-merge", () => {
 	it("prefers the merge commit's own version, else the first one after the merge", () => {
 		assert.deepStrictEqual(pick("aaa"), { deploy: versions[1], exact: true })
 		assert.deepStrictEqual(pick("ccc"), { deploy: versions[0], exact: false })
-		assert.isUndefined(pick(null, { mergedAtMs: 5_000, nowMs: 5_000 + POST_MERGE_EXACT_WAIT_MS }))
+		const later = at("2026-10-07T11:00:00Z")
+		assert.isUndefined(
+			pick(null, { mergedAt: later, now: DateTime.addDuration(later, POST_MERGE_EXACT_WAIT) }),
+		)
+	})
+
+	it("ignores a version of the merge commit first seen before the merge", () => {
+		assert.deepStrictEqual(pick("aaa", { mergedAt: at("2026-10-07T10:30:00Z") }), undefined)
 	})
 
 	it("waits for the merge commit before a later version stands in", () => {
-		assert.isUndefined(pick("ccc", { nowMs: 1_000 + POST_MERGE_EXACT_WAIT_MS - 1 }))
-		assert.deepStrictEqual(pick("aaa", { nowMs: 1_500 }), { deploy: versions[1], exact: true })
+		assert.isUndefined(
+			pick("ccc", { now: DateTime.subtractDuration(exactWaitOver, Duration.seconds(1)) }),
+		)
+		assert.deepStrictEqual(pick("aaa", { now: at("2026-10-07T10:25:00Z") }), {
+			deploy: versions[1],
+			exact: true,
+		})
 	})
 
 	it("never stands in a version whose commit predates the merge, nor any when only the exact one will do", () => {
-		assert.deepStrictEqual(pick("ccc", { commitTimes: new Map([["bbb", 500]]) }), {
+		assert.deepStrictEqual(pick("ccc", { commitTimes: new Map([["bbb", at("2026-10-07T09:00:00Z")]]) }), {
 			deploy: versions[1],
 			exact: false,
 		})
@@ -267,7 +293,7 @@ describe("post-merge", () => {
 					service: "api",
 					environment: "production",
 					commitSha: "abcdef123",
-					firstSeenAt: 0,
+					firstSeen: DateTime.makeUnsafe(0),
 					exact: true,
 				},
 				windowMinutes: 60,

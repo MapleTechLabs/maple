@@ -18,10 +18,9 @@ import {
 } from "@maple/domain/http"
 import { prReviews } from "@maple/db"
 import { and, asc, eq, lte } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
@@ -30,18 +29,20 @@ import {
 	comparedOperations,
 	missingAfterDeploy,
 	pickDeploy,
-	POST_MERGE_GIVE_UP_MS,
-	POST_MERGE_RETRY_MS,
-	POST_MERGE_WINDOW_MINUTES,
+	elapsed,
+	POST_MERGE_GIVE_UP,
+	POST_MERGE_RETRY,
+	POST_MERGE_WINDOW,
 	postMergeServices,
 	renderPostMergeComment,
 } from "./telemetry/post-merge"
 
 /** Rows one tick looks at; each costs a handful of warehouse reads. */
 const TICK_LIMIT = 10
-const WINDOW_MS = POST_MERGE_WINDOW_MINUTES * 60_000
 /** How long a tick holds a row it is examining; longer than one examination takes. */
-const CLAIM_MS = 10 * 60_000
+const CLAIM = Duration.minutes(10)
+/** After the window closes, time for the minutely rollups to land before it is read. */
+const ROLLUP_LAG = Duration.minutes(5)
 
 export interface PostMergeTickResult {
 	readonly examined: number
@@ -59,6 +60,8 @@ export interface PrReviewPostMergeServiceApi {
 type Outcome = "reported" | "waiting" | "gave_up" | "skipped"
 
 const decodeTelemetry = Schema.decodeUnknownOption(PrReviewTelemetry)
+const encodePostMerge = Schema.encodeEffect(PrReviewPostMerge)
+const toDate = DateTime.toDateUtc
 
 export class PrReviewPostMergeService extends Context.Service<
 	PrReviewPostMergeService,
@@ -75,26 +78,26 @@ export class PrReviewPostMergeService extends Context.Service<
 			id: PrReviewId,
 			status: PrReviewPostMergeStatus,
 			values: Partial<typeof prReviews.$inferInsert>,
-			nowMs: number,
+			now: DateTime.Utc,
 		) =>
 			database.execute((db) =>
 				db
 					.update(prReviews)
-					.set({ postMergeStatus: status, updatedAt: msToDate(nowMs), ...values })
+					.set({ postMergeStatus: status, updatedAt: toDate(now), ...values })
 					.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, id))),
 			)
 
-		const later = (orgId: OrgId, id: PrReviewId, atMs: number, nowMs: number) =>
-			settle(orgId, id, "waiting", { postMergeAfter: msToDate(atMs) }, nowMs)
+		const later = (orgId: OrgId, id: PrReviewId, at: DateTime.Utc, now: DateTime.Utc) =>
+			settle(orgId, id, "waiting", { postMergeAfter: toDate(at) }, now)
 
 		const examine = Effect.fn("PrReviewPostMerge.examine")(function* (
 			row: typeof prReviews.$inferSelect,
-			nowMs: number,
+			now: DateTime.Utc,
 			/** The lease this examination holds; it reports only while the row still carries it. */
-			leaseUntilMs: number,
+			leaseUntil: DateTime.Utc,
 		) {
 			const orgId = row.orgId
-			const mergedAtMs = dateToMs(row.mergedAt) ?? nowMs
+			const mergedAt = row.mergedAt === null ? now : DateTime.fromDateUnsafe(row.mergedAt)
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": row.id })
 			const facts = Option.getOrUndefined(decodeTelemetry(row.telemetryJson))
 			const services = facts === undefined ? [] : postMergeServices(facts)
@@ -103,10 +106,10 @@ export class PrReviewPostMergeService extends Context.Service<
 			const breaksOnly =
 				facts !== undefined && services.length === 0 && openContractBreaks(facts).length > 0
 			if (facts === undefined || (services.length === 0 && !breaksOnly)) {
-				yield* settle(orgId, row.id, "no_traffic", { postMergeAfter: null }, nowMs)
+				yield* settle(orgId, row.id, "no_traffic", { postMergeAfter: null }, now)
 				return "gave_up" satisfies Outcome
 			}
-			const versions = yield* telemetry.deploymentsSince(orgId, services, mergedAtMs, nowMs)
+			const versions = yield* telemetry.deploymentsSince(orgId, services, mergedAt, now)
 			const commitTimes = yield* telemetry.commitTimes(
 				orgId,
 				row.repositoryId,
@@ -115,23 +118,26 @@ export class PrReviewPostMergeService extends Context.Service<
 			const picked = pickDeploy({
 				versions,
 				mergeCommitSha: row.mergeCommitSha,
-				mergedAtMs,
-				nowMs,
+				mergedAt,
+				now,
 				commitTimes,
 				exactOnly: breaksOnly,
 			})
 			if (picked === undefined) {
-				if (nowMs - mergedAtMs > POST_MERGE_GIVE_UP_MS) {
-					yield* settle(orgId, row.id, "no_deploy", { postMergeAfter: null }, nowMs)
+				if (elapsed(mergedAt, now, POST_MERGE_GIVE_UP)) {
+					yield* settle(orgId, row.id, "no_deploy", { postMergeAfter: null }, now)
 					return "gave_up" satisfies Outcome
 				}
-				yield* later(orgId, row.id, nowMs + POST_MERGE_RETRY_MS, nowMs)
+				yield* later(orgId, row.id, DateTime.addDuration(now, POST_MERGE_RETRY), now)
 				return "waiting" satisfies Outcome
 			}
-			const deployAt = picked.deploy.firstSeenAt
-			// A full hour of traffic after the deploy, plus a few minutes for the rollups to land.
-			if (nowMs < deployAt + WINDOW_MS + 5 * 60_000) {
-				yield* later(orgId, row.id, deployAt + WINDOW_MS + 5 * 60_000, nowMs)
+			const deployAt = picked.deploy.firstSeen
+			const windowStart = DateTime.subtractDuration(deployAt, POST_MERGE_WINDOW)
+			const windowEnd = DateTime.addDuration(deployAt, POST_MERGE_WINDOW)
+			// A full window of traffic after the deploy, and its rollups landed.
+			const readable = DateTime.addDuration(windowEnd, ROLLUP_LAG)
+			if (DateTime.isLessThan(now, readable)) {
+				yield* later(orgId, row.id, readable, now)
 				return "waiting" satisfies Outcome
 			}
 
@@ -142,14 +148,14 @@ export class PrReviewPostMergeService extends Context.Service<
 				[
 					spanNames.length === 0
 						? Effect.succeed([])
-						: telemetry.operationsIn(orgId, services, spanNames, deployAt - WINDOW_MS, deployAt),
+						: telemetry.operationsIn(orgId, services, spanNames, windowStart, deployAt),
 					spanNames.length === 0
 						? Effect.succeed([])
-						: telemetry.operationsIn(orgId, services, spanNames, deployAt, deployAt + WINDOW_MS),
-					telemetry.issueCountsIn(orgId, linked, deployAt - WINDOW_MS, deployAt),
-					telemetry.issueCountsIn(orgId, linked, deployAt, deployAt + WINDOW_MS),
+						: telemetry.operationsIn(orgId, services, spanNames, deployAt, windowEnd),
+					telemetry.issueCountsIn(orgId, linked, windowStart, deployAt),
+					telemetry.issueCountsIn(orgId, linked, deployAt, windowEnd),
 					telemetry.issuesFirstSeenSince(orgId, services, deployAt),
-					telemetry.attributeKeysIn(orgId, deployAt, deployAt + WINDOW_MS),
+					telemetry.attributeKeysIn(orgId, deployAt, windowEnd),
 				],
 				{ concurrency: 3 },
 			)
@@ -157,9 +163,9 @@ export class PrReviewPostMergeService extends Context.Service<
 				orgId,
 				fresh.map((issue) => issue.fingerprintHash),
 				deployAt,
-				deployAt + WINDOW_MS,
+				windowEnd,
 			)
-			const hours = POST_MERGE_WINDOW_MINUTES / 60
+			const hours = Duration.toHours(POST_MERGE_WINDOW)
 			const compared = compareOperations(facts, before, after)
 			const newIssues = fresh
 				// Fresh issues from before this deploy's hour belong to an earlier one.
@@ -196,10 +202,10 @@ export class PrReviewPostMergeService extends Context.Service<
 					service: picked.deploy.service,
 					environment: picked.deploy.environment,
 					commitSha: picked.deploy.commitSha,
-					firstSeenAt: deployAt,
+					firstSeen: deployAt,
 					exact: picked.exact,
 				},
-				windowMinutes: POST_MERGE_WINDOW_MINUTES,
+				windowMinutes: Duration.toMinutes(POST_MERGE_WINDOW),
 				operations: compared,
 				newIssues,
 				linkedIssues,
@@ -210,20 +216,21 @@ export class PrReviewPostMergeService extends Context.Service<
 			// Stored before the post, and only while this examination still holds its lease: one that
 			// outlived it lost the row to a later tick, which reports instead. A refused post still
 			// leaves the look on the review.
+			const stored = yield* encodePostMerge(report)
 			const won = yield* database.execute((db) =>
 				db
 					.update(prReviews)
 					.set({
 						postMergeStatus: "reported",
 						postMergeAfter: null,
-						postMergeJson: report,
-						updatedAt: msToDate(nowMs),
+						postMergeJson: stored,
+						updatedAt: toDate(now),
 					})
 					.where(
 						and(
 							eq(prReviews.id, row.id),
 							eq(prReviews.postMergeStatus, "waiting"),
-							eq(prReviews.postMergeAfter, msToDate(leaseUntilMs)),
+							eq(prReviews.postMergeAfter, toDate(leaseUntil)),
 						),
 					)
 					.returning({ id: prReviews.id }),
@@ -266,7 +273,7 @@ export class PrReviewPostMergeService extends Context.Service<
 
 		const runTick: PrReviewPostMergeServiceApi["runTick"] = () =>
 			Effect.gen(function* () {
-				const nowMs = yield* Clock.currentTimeMillis
+				const now = yield* DateTime.now
 				const due = yield* database.execute((db) =>
 					db
 						.select()
@@ -274,7 +281,7 @@ export class PrReviewPostMergeService extends Context.Service<
 						.where(
 							and(
 								eq(prReviews.postMergeStatus, "waiting"),
-								lte(prReviews.postMergeAfter, msToDate(nowMs)),
+								lte(prReviews.postMergeAfter, toDate(now)),
 							),
 						)
 						.orderBy(asc(prReviews.postMergeAfter))
@@ -284,30 +291,31 @@ export class PrReviewPostMergeService extends Context.Service<
 					due,
 					(row) =>
 						Effect.gen(function* () {
-							const leaseUntilMs = nowMs + CLAIM_MS
+							const leaseUntil = DateTime.addDuration(now, CLAIM)
 							// Claimed first: an overlapping tick that read the same row finds it leased and
 							// skips it, so the follow-up is posted once.
 							const claimed = yield* database.execute((db) =>
 								db
 									.update(prReviews)
-									.set({ postMergeAfter: msToDate(leaseUntilMs) })
+									.set({ postMergeAfter: toDate(leaseUntil) })
 									.where(
 										and(
 											eq(prReviews.id, row.id),
 											eq(prReviews.postMergeStatus, "waiting"),
-											lte(prReviews.postMergeAfter, msToDate(nowMs)),
+											lte(prReviews.postMergeAfter, toDate(now)),
 										),
 									)
 									.returning({ id: prReviews.id }),
 							)
 							if (claimed.length === 0) return "skipped" as const
-							return yield* examine(row, nowMs, leaseUntilMs)
+							return yield* examine(row, now, leaseUntil)
 						}).pipe(
 							Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
 							Effect.catchCause((cause) => {
-								const mergedAtMs = dateToMs(row.mergedAt) ?? nowMs
+								const mergedAt =
+									row.mergedAt === null ? now : DateTime.fromDateUnsafe(row.mergedAt)
 								// A read that keeps failing is given up with the rest, never read as clean.
-								const giveUp = nowMs - mergedAtMs > POST_MERGE_GIVE_UP_MS
+								const giveUp = elapsed(mergedAt, now, POST_MERGE_GIVE_UP)
 								return Effect.logWarning(
 									"[PrReviewPostMerge] could not examine a merged review",
 								).pipe(
@@ -323,9 +331,14 @@ export class PrReviewPostMergeService extends Context.Service<
 													row.id,
 													"failed",
 													{ postMergeAfter: null },
-													nowMs,
+													now,
 												)
-											: later(row.orgId, row.id, nowMs + POST_MERGE_RETRY_MS, nowMs)
+											: later(
+													row.orgId,
+													row.id,
+													DateTime.addDuration(now, POST_MERGE_RETRY),
+													now,
+												)
 										).pipe(Effect.ignore),
 									),
 									Effect.as("failed" as const),

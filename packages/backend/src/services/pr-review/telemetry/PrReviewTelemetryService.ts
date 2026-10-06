@@ -14,9 +14,9 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import { alertRules, dashboards, errorIssues, vcsCommits } from "@maple/db"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH } from "@maple/query-engine"
 import { and, desc, eq, gte, inArray, isNull, notInArray } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs } from "@maple/backend/platform/time"
@@ -29,12 +29,16 @@ import {
 	DEFAULT_BYTES_PER_LOG_RECORD,
 	type TelemetryCatalog,
 } from "./analyze"
+import type { Deployment, WindowStats } from "./post-merge"
 import { type ReferenceSource, textsOf } from "./references"
 
 /** The week a change is weighed against: long enough to include a weekly job, short enough to be today. */
 export const TELEMETRY_WINDOW_DAYS = 7
-const DAY_MS = 86_400_000
-const HOUR_MS = 3_600_000
+/** How recently an issue must have occurred to count as open for the review. */
+const OPEN_ISSUE_WINDOW = Duration.days(14)
+
+/** A deployed version's first-seen time, decoded where the warehouse string enters. */
+const decodeFirstSeen = Schema.decodeUnknownEffect(Schema.DateTimeUtcFromString)
 
 /** Issues no longer anyone's problem. */
 const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
@@ -49,22 +53,6 @@ export class PrReviewTelemetryReadError extends Schema.TaggedError<PrReviewTelem
 	},
 ) {}
 
-export interface OperationWindowStats {
-	readonly service: string
-	readonly spanName: string
-	readonly count: number
-	readonly errorCount: number
-	readonly p95Ms: number
-}
-
-export interface DeploymentVersion {
-	readonly service: string
-	readonly environment: string
-	readonly commitSha: string
-	readonly firstSeenAt: number
-	readonly spanCount: number
-}
-
 export interface PrReviewTelemetryServiceApi {
 	/** The pull request's diff read against the last week of production. */
 	readonly analyze: (
@@ -72,47 +60,47 @@ export interface PrReviewTelemetryServiceApi {
 		files: ReadonlyArray<PullRequestFile>,
 	) => Effect.Effect<PrReviewTelemetry | undefined>
 	/**
-	 * Versions of these services that first reported after `sinceMs`, oldest first; with no services,
+	 * Versions of these services that first reported since `since`, oldest first; with no services,
 	 * every service of the organization.
 	 */
 	readonly deploymentsSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
-		sinceMs: number,
-		nowMs: number,
-	) => Effect.Effect<ReadonlyArray<DeploymentVersion>, PrReviewTelemetryReadError>
+		since: DateTime.Utc,
+		now: DateTime.Utc,
+	) => Effect.Effect<ReadonlyArray<Deployment>, PrReviewTelemetryReadError>
 	/** When each known commit of a repository was made, for telling an older deploy from a newer one. */
 	readonly commitTimes: (
 		orgId: OrgId,
 		repositoryId: VcsRepositoryId,
 		shas: ReadonlyArray<string>,
-	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
+	) => Effect.Effect<ReadonlyMap<string, DateTime.Utc>, PrReviewTelemetryReadError>
 	/** Per-operation traffic in one window, minute-exact. */
 	readonly operationsIn: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
 		spanNames: ReadonlyArray<string>,
-		startMs: number,
-		endMs: number,
-	) => Effect.Effect<ReadonlyArray<OperationWindowStats>, PrReviewTelemetryReadError>
+		start: DateTime.Utc,
+		end: DateTime.Utc,
+	) => Effect.Effect<ReadonlyArray<WindowStats>, PrReviewTelemetryReadError>
 	/** Occurrences per fingerprint in one window. */
 	readonly issueCountsIn: (
 		orgId: OrgId,
 		fingerprintHashes: ReadonlyArray<string>,
-		startMs: number,
-		endMs: number,
+		start: DateTime.Utc,
+		end: DateTime.Utc,
 	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
 	/** Error issues first seen in these services since a moment. */
 	readonly issuesFirstSeenSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
-		sinceMs: number,
+		since: DateTime.Utc,
 	) => Effect.Effect<ReadonlyArray<CatalogIssue>, PrReviewTelemetryReadError>
 	/** Attribute keys set at least once in a window. */
 	readonly attributeKeysIn: (
 		orgId: OrgId,
-		startMs: number,
-		endMs: number,
+		start: DateTime.Utc,
+		end: DateTime.Utc,
 	) => Effect.Effect<ReadonlySet<string>, PrReviewTelemetryReadError>
 }
 
@@ -152,14 +140,21 @@ export class PrReviewTelemetryService extends Context.Service<
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
 
-		const window = (startMs: number, endMs: number) => ({
-			startTime: formatWarehouseDateTime(startMs),
-			endTime: formatWarehouseDateTime(endMs),
+		// effect-orm formats `DateTime.Utc` bounds itself, floored for second-precision columns.
+		const window = (start: DateTime.Utc, end: DateTime.Utc) => ({
+			startTime: start,
+			endTime: end,
 		})
 
-		const catalogFor = Effect.fn("PrReviewTelemetry.catalog")(function* (orgId: OrgId, nowMs: number) {
+		const catalogFor = Effect.fn("PrReviewTelemetry.catalog")(function* (
+			orgId: OrgId,
+			now: DateTime.Utc,
+		) {
 			const tenant = systemTenant(orgId)
-			const params = { orgId, ...window(nowMs - TELEMETRY_WINDOW_DAYS * DAY_MS, nowMs) }
+			const params = {
+				orgId,
+				...window(DateTime.subtractDuration(now, Duration.days(TELEMETRY_WINDOW_DAYS)), now),
+			}
 			const [operations, spanKeys, resourceKeys, metrics, usage] = yield* Effect.all(
 				[
 					warehouse
@@ -275,7 +270,10 @@ export class PrReviewTelemetryService extends Context.Service<
 			]
 		})
 
-		const openIssues = Effect.fn("PrReviewTelemetry.openIssues")(function* (orgId: OrgId, nowMs: number) {
+		const openIssues = Effect.fn("PrReviewTelemetry.openIssues")(function* (
+			orgId: OrgId,
+			now: DateTime.Utc,
+		) {
 			const rows = yield* database.execute((db) =>
 				db
 					.select({
@@ -296,7 +294,10 @@ export class PrReviewTelemetryService extends Context.Service<
 							eq(errorIssues.kind, "error"),
 							isNull(errorIssues.archivedAt),
 							notInArray(errorIssues.workflowState, [...CLOSED_STATES]),
-							gte(errorIssues.lastSeenAt, new Date(nowMs - 14 * DAY_MS)),
+							gte(
+								errorIssues.lastSeenAt,
+								DateTime.toDateUtc(DateTime.subtractDuration(now, OPEN_ISSUE_WINDOW)),
+							),
 						),
 					)
 					.orderBy(desc(errorIssues.lastSeenAt))
@@ -307,12 +308,12 @@ export class PrReviewTelemetryService extends Context.Service<
 
 		const analyze: PrReviewTelemetryServiceApi["analyze"] = (orgId, files) =>
 			Effect.gen(function* () {
-				const nowMs = yield* Clock.currentTimeMillis
+				const now = yield* DateTime.now
 				const [catalog, sources, issues] = yield* Effect.all(
 					[
-						catalogFor(orgId, nowMs),
+						catalogFor(orgId, now),
 						referenceSources(orgId).pipe(orEmpty([], "alerts and dashboards", orgId)),
-						openIssues(orgId, nowMs).pipe(orEmpty([], "open issues", orgId)),
+						openIssues(orgId, now).pipe(orEmpty([], "open issues", orgId)),
 					],
 					{ concurrency: "unbounded" },
 				)
@@ -343,41 +344,43 @@ export class PrReviewTelemetryService extends Context.Service<
 		const deploymentsSince: PrReviewTelemetryServiceApi["deploymentsSince"] = (
 			orgId,
 			services,
-			sinceMs,
-			nowMs,
+			since,
+			now,
 		) =>
 			Effect.forEach(
 				services.length === 0 ? [undefined] : services,
 				(serviceName) =>
-					warehouse
-						.compiledQuery(
-							systemTenant(orgId),
-							CH.compile(
-								CH.serviceDeploymentsQuery({ serviceName, minutePrecision: true, limit: 50 }),
-								{ orgId, ...window(sinceMs - HOUR_MS, nowMs) },
-								{ rowSchema: CH.serviceDeploymentsRowSchema },
-							),
-							{ profile: "aggregation", context: "prReviewDeployments" },
-						)
-						.pipe(orFail("deployments")),
+					warehouse.compiledQuery(
+						systemTenant(orgId),
+						CH.compile(
+							CH.serviceDeploymentsQuery({ serviceName, minutePrecision: true, limit: 50 }),
+							{ orgId, ...window(DateTime.subtractDuration(since, Duration.hours(1)), now) },
+							{ rowSchema: CH.serviceDeploymentsRowSchema },
+						),
+						{ profile: "aggregation", context: "prReviewDeployments" },
+					),
 				{ concurrency: 4 },
 			).pipe(
-				Effect.map((perService) =>
-					perService
-						.flat()
-						.map((row): DeploymentVersion => ({
-							service: row.serviceName,
-							environment: row.environment,
-							commitSha: row.commitSha,
-							firstSeenAt: Date.parse(`${row.firstSeen.replace(" ", "T")}Z`),
-							spanCount: row.spanCount,
-						}))
-						.filter(
-							(version) =>
-								Number.isFinite(version.firstSeenAt) && version.firstSeenAt >= sinceMs,
-						)
-						.sort((a, b) => a.firstSeenAt - b.firstSeenAt),
+				// Each version's first-seen time decoded at the warehouse boundary: a malformed one fails
+				// the read, which the tick retries, rather than dropping the deploy.
+				Effect.flatMap((perService) =>
+					Effect.forEach(perService.flat(), (row) =>
+						decodeFirstSeen(row.firstSeen).pipe(
+							Effect.map((firstSeen): Deployment => ({
+								service: row.serviceName,
+								environment: row.environment,
+								commitSha: row.commitSha,
+								firstSeen,
+							})),
+						),
+					),
 				),
+				Effect.map((versions) =>
+					versions
+						.filter((version) => DateTime.isGreaterThanOrEqualTo(version.firstSeen, since))
+						.sort((a, b) => DateTime.Order(a.firstSeen, b.firstSeen)),
+				),
+				orFail("deployments"),
 				Effect.withSpan("PrReviewTelemetryService.deploymentsSince"),
 			)
 
@@ -385,15 +388,15 @@ export class PrReviewTelemetryService extends Context.Service<
 			orgId,
 			services,
 			spanNames,
-			startMs,
-			endMs,
+			start,
+			end,
 		) =>
 			warehouse
 				.compiledQuery(
 					systemTenant(orgId),
 					CH.compile(
 						CH.operationTrafficMinutelyQuery({ serviceNames: services, spanNames, limit: 200 }),
-						{ orgId, ...window(startMs, endMs) },
+						{ orgId, ...window(start, end) },
 					),
 					{ profile: "aggregation", context: "prReviewOperationWindow" },
 				)
@@ -413,8 +416,8 @@ export class PrReviewTelemetryService extends Context.Service<
 		const issueCountsIn: PrReviewTelemetryServiceApi["issueCountsIn"] = (
 			orgId,
 			fingerprintHashes,
-			startMs,
-			endMs,
+			start,
+			end,
 		) =>
 			fingerprintHashes.length === 0
 				? Effect.succeed(new Map())
@@ -423,7 +426,7 @@ export class PrReviewTelemetryService extends Context.Service<
 							systemTenant(orgId),
 							CH.compile(
 								CH.errorIssuesQuery({ fingerprintHashes, limit: fingerprintHashes.length }),
-								{ orgId, ...window(startMs, endMs) },
+								{ orgId, ...window(start, end) },
 							),
 							{ profile: "aggregation", context: "prReviewIssueCounts" },
 						)
@@ -438,7 +441,7 @@ export class PrReviewTelemetryService extends Context.Service<
 		const issuesFirstSeenSince: PrReviewTelemetryServiceApi["issuesFirstSeenSince"] = (
 			orgId,
 			services,
-			sinceMs,
+			since,
 		) =>
 			services.length === 0
 				? Effect.succeed([])
@@ -462,7 +465,7 @@ export class PrReviewTelemetryService extends Context.Service<
 										eq(errorIssues.orgId, orgId),
 										eq(errorIssues.kind, "error"),
 										inArray(errorIssues.serviceName, [...services]),
-										gte(errorIssues.firstSeenAt, new Date(sinceMs)),
+										gte(errorIssues.firstSeenAt, DateTime.toDateUtc(since)),
 									),
 								)
 								.orderBy(desc(errorIssues.occurrenceCount))
@@ -473,14 +476,14 @@ export class PrReviewTelemetryService extends Context.Service<
 							orFail("new issues"),
 						)
 
-		const attributeKeysIn: PrReviewTelemetryServiceApi["attributeKeysIn"] = (orgId, startMs, endMs) =>
+		const attributeKeysIn: PrReviewTelemetryServiceApi["attributeKeysIn"] = (orgId, start, end) =>
 			Effect.all(
 				(["span", "resource"] as const).map((scope) =>
 					warehouse.compiledQuery(
 						systemTenant(orgId),
 						CH.compile(CH.attributeKeysQuery({ scope, limit: 2_000 }), {
 							orgId,
-							...window(startMs, endMs),
+							...window(start, end),
 						}),
 						{ profile: "aggregation", context: "prReviewAttributeKeysWindow" },
 					),
@@ -520,7 +523,7 @@ export class PrReviewTelemetryService extends Context.Service<
 											(row) =>
 												[
 													row.sha.toLowerCase(),
-													dateToMs(row.committedAt) ?? 0,
+													DateTime.fromDateUnsafe(row.committedAt),
 												] as const,
 										),
 									),

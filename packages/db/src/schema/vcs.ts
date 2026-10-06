@@ -238,7 +238,8 @@ export const prReviews = pgTable(
 		postMergeStatus: text("post_merge_status").$type<PrReviewPostMergeStatus>(),
 		/** When the post-merge tick next looks at this row. */
 		postMergeAfter: timestamp("post_merge_after", { withTimezone: true, mode: "date" }),
-		postMergeJson: jsonb("post_merge_json").$type<PrReviewPostMerge>(),
+		/** Stored encoded: the look's timestamps are epoch milliseconds in the JSON. */
+		postMergeJson: jsonb("post_merge_json").$type<(typeof PrReviewPostMerge)["Encoded"]>(),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},

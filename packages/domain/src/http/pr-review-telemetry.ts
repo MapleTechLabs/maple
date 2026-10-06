@@ -138,7 +138,8 @@ export class PrReviewPostMerge extends Schema.Class<PrReviewPostMerge>("PrReview
 		service: Schema.String,
 		environment: Schema.String,
 		commitSha: Schema.String,
-		firstSeenAt: Schema.Number,
+		/** Stored and sent as epoch milliseconds. */
+		firstSeen: Schema.DateTimeUtcFromMillis,
 		/** False when the merge commit itself never reported and the first later version stands in. */
 		exact: Schema.Boolean,
 	}),

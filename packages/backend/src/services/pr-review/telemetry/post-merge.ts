@@ -9,19 +9,20 @@ import {
 	PrReviewPostMergeOperation,
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
+import { DateTime, Duration } from "effect"
 import { formatCount } from "./analyze"
 import { escapeCell } from "./render"
 
 /** The two windows compared around the deploy. */
-export const POST_MERGE_WINDOW_MINUTES = 60
+export const POST_MERGE_WINDOW = Duration.minutes(60)
 /** How long after the merge a deploy is waited for before the look is given up. */
-export const POST_MERGE_GIVE_UP_MS = 48 * 3_600_000
+export const POST_MERGE_GIVE_UP = Duration.hours(48)
 /** How long after the merge the first look happens; most pipelines deploy within it. */
-export const POST_MERGE_FIRST_LOOK_MS = 15 * 60_000
+export const POST_MERGE_FIRST_LOOK = Duration.minutes(15)
 /** How often a row with no deploy yet is looked at again. */
-export const POST_MERGE_RETRY_MS = 30 * 60_000
+export const POST_MERGE_RETRY = Duration.minutes(30)
 /** How long the merge commit's own version is waited for before a later version stands in. */
-export const POST_MERGE_EXACT_WAIT_MS = 2 * 3_600_000
+export const POST_MERGE_EXACT_WAIT = Duration.hours(2)
 
 /** Below this many calls in the hour after, a change in rate is noise. */
 const MIN_CALLS = 20
@@ -31,16 +32,30 @@ const P95_MIN_DELTA_MS = 100
 /** The operations compared: the busiest the review saw. */
 export const MAX_COMPARED_OPERATIONS = 10
 
+/** One version of a service, as the warehouse first saw it report. */
 export interface Deployment {
 	readonly service: string
 	readonly environment: string
 	readonly commitSha: string
-	readonly firstSeenAt: number
+	readonly firstSeen: DateTime.Utc
 }
+
+/** One operation's traffic in one window. */
+export interface WindowStats {
+	readonly service: string
+	readonly spanName: string
+	readonly count: number
+	readonly errorCount: number
+	readonly p95Ms: number
+}
+
+/** Whether `at` is at least `duration` after `since`. */
+export const elapsed = (since: DateTime.Utc, at: DateTime.Utc, duration: Duration.Duration): boolean =>
+	DateTime.isGreaterThanOrEqualTo(at, DateTime.addDuration(since, duration))
 
 /**
  * The deploy that shipped the merge: the version whose commit is the merge commit. When that commit
- * has not reported within {@link POST_MERGE_EXACT_WAIT_MS} (a pipeline that deploys a later commit),
+ * has not reported within {@link POST_MERGE_EXACT_WAIT} (a pipeline that deploys a later commit),
  * the first version reported after the merge stands in, skipping any whose commit is known to be
  * older than the merge, since that one cannot carry it. `exactOnly` waits for the merge commit
  * alone, for a look that has no touched service to narrow the versions by.
@@ -48,36 +63,27 @@ export interface Deployment {
 export const pickDeploy = (input: {
 	readonly versions: ReadonlyArray<Deployment>
 	readonly mergeCommitSha: string | null
-	readonly mergedAtMs: number
-	readonly nowMs: number
+	readonly mergedAt: DateTime.Utc
+	readonly now: DateTime.Utc
 	/** Commit times by lower-cased SHA, where the repository's commits are known. */
-	readonly commitTimes: ReadonlyMap<string, number>
+	readonly commitTimes: ReadonlyMap<string, DateTime.Utc>
 	readonly exactOnly: boolean
 }): { readonly deploy: Deployment; readonly exact: boolean } | undefined => {
 	const merge = input.mergeCommitSha?.toLowerCase()
 	// A version first seen before the merge is a revert or an earlier landing, not this one.
-	const exact = input.versions.find(
-		(version) => version.firstSeenAt >= input.mergedAtMs && version.commitSha.toLowerCase() === merge,
+	const afterMerge = input.versions.filter((version) =>
+		DateTime.isGreaterThanOrEqualTo(version.firstSeen, input.mergedAt),
 	)
+	const exact = afterMerge.find((version) => version.commitSha.toLowerCase() === merge)
 	if (exact !== undefined) return { deploy: exact, exact: true }
-	if (input.exactOnly || input.nowMs - input.mergedAtMs < POST_MERGE_EXACT_WAIT_MS) return undefined
-	const first = input.versions
-		.filter((version) => version.firstSeenAt >= input.mergedAtMs)
-		.filter(
-			(version) =>
-				(input.commitTimes.get(version.commitSha.toLowerCase()) ?? input.mergedAtMs) >=
-				input.mergedAtMs,
-		)
-		.sort((a, b) => a.firstSeenAt - b.firstSeenAt)[0]
+	if (input.exactOnly || !elapsed(input.mergedAt, input.now, POST_MERGE_EXACT_WAIT)) return undefined
+	const first = afterMerge
+		.filter((version) => {
+			const committed = input.commitTimes.get(version.commitSha.toLowerCase())
+			return committed === undefined || DateTime.isGreaterThanOrEqualTo(committed, input.mergedAt)
+		})
+		.sort((a, b) => DateTime.Order(a.firstSeen, b.firstSeen))[0]
 	return first === undefined ? undefined : { deploy: first, exact: false }
-}
-
-export interface WindowStats {
-	readonly service: string
-	readonly spanName: string
-	readonly count: number
-	readonly errorCount: number
-	readonly p95Ms: number
 }
 
 const rate = (stats: WindowStats | undefined) =>
@@ -108,7 +114,7 @@ export const compareOperations = (
 ): ReadonlyArray<PrReviewPostMergeOperation> => {
 	const beforeBy = new Map(before.map((row) => [key(row.service, row.spanName), row] as const))
 	const afterBy = new Map(after.map((row) => [key(row.service, row.spanName), row] as const))
-	const hours = POST_MERGE_WINDOW_MINUTES / 60
+	const hours = Duration.toHours(POST_MERGE_WINDOW)
 	return comparedOperations(telemetry).map((operation) => {
 		const was = beforeBy.get(key(operation.service, operation.spanName))
 		const now = afterBy.get(key(operation.service, operation.spanName))
@@ -166,7 +172,7 @@ const pct = (value: number) => `${(value * 100).toFixed(1)}%`
 /** The follow-up comment on the merged pull request. */
 export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPostMerge): string => {
 	const { deploy } = postMerge
-	const when = new Date(deploy.firstSeenAt).toISOString().slice(0, 16).replace("T", " ")
+	const when = DateTime.formatIso(deploy.firstSeen).slice(0, 16).replace("T", " ")
 	const lines = [
 		postMergeMarker(reviewId),
 		"## Maple: after this shipped",

@@ -7,6 +7,7 @@ import {
 	type PrReviewPostMerge,
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
+import { DateTime } from "effect"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -369,7 +370,7 @@ function PostMergeSection({ postMerge }: { postMerge: PrReviewPostMerge }) {
 				{regressed ? "Something changed after this deployed" : "Shipped clean"} ·{" "}
 				{postMerge.deploy.service}{" "}
 				<TruncatedId value={postMerge.deploy.commitSha} kind="sha" className="text-xs" />{" "}
-				{formatRelativeFrom(postMerge.deploy.firstSeenAt)}
+				{formatRelativeFrom(DateTime.toEpochMillis(postMerge.deploy.firstSeen))}
 			</p>
 			<BulletList
 				items={[

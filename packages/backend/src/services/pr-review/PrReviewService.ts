@@ -60,7 +60,7 @@ import {
 	type PrReviewRow,
 } from "@maple/db"
 import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
-import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -79,7 +79,7 @@ import {
 } from "./feedback"
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
-import { POST_MERGE_FIRST_LOOK_MS } from "./telemetry/post-merge"
+import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	fixedContractBreaks,
@@ -1746,7 +1746,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.set({
 								mergeCommitSha: merge.mergeCommitSha,
 								postMergeStatus: "waiting",
-								postMergeAfter: msToDate(merge.mergedAtMs + POST_MERGE_FIRST_LOOK_MS),
+								postMergeAfter: msToDate(
+									merge.mergedAtMs + Duration.toMillis(POST_MERGE_FIRST_LOOK),
+								),
 								updatedAt: msToDate(nowMs),
 							})
 							.where(and(eq(prReviews.id, row.id), isNull(prReviews.postMergeStatus))),
