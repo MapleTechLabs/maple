@@ -8,7 +8,7 @@
  * `bun run dev:signin`), renders at 2x, and writes webp via `cwebp`.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, Effect, FileSystem, Layer, Option, Schema } from "effect"
+import { Console, DateTime, Effect, FileSystem, Layer, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -26,7 +26,7 @@ class CaptureError extends Schema.TaggedError<CaptureError>()("@maple/landing/Ca
 	shot: Schema.optional(Schema.String),
 }) {}
 
-const SeedState = Schema.Struct({ anchor: Schema.String, orgId: Schema.NullOr(Schema.String) })
+const SeedState = Schema.Struct({ anchor: Schema.DateTimeUtcFromString, orgId: Schema.NullOr(Schema.String) })
 
 const pw = <A>(message: string, run: () => Promise<A>, shot?: string) =>
 	Effect.tryPromise({
@@ -197,7 +197,7 @@ const command = Command.make(
 					}),
 			),
 		)
-		const anchor = Date.parse(state.anchor)
+		const anchor = DateTime.toEpochMillis(state.anchor)
 		const wanted = Option.map(flags.only, (only) => new Set(only.split(",").map((id) => id.trim())))
 		const shots = SHOTS.filter((shot) =>
 			Option.match(wanted, { onNone: () => true, onSome: (ids) => ids.has(shot.id) }),
@@ -210,7 +210,7 @@ const command = Command.make(
 		}
 
 		yield* Console.log(
-			`capturing ${shots.length} shot(s) at anchor ${state.anchor} (org ${state.orgId ?? "unknown"})`,
+			`capturing ${shots.length} shot(s) at anchor ${DateTime.formatIso(state.anchor)} (org ${state.orgId ?? "unknown"})`,
 		)
 		const ticket = yield* mintTicket(flags.email)
 		const browser = yield* Effect.acquireRelease(
@@ -229,7 +229,7 @@ const command = Command.make(
 		)
 		const signIn = yield* pw("open sign-in", () => context.newPage())
 		yield* pw("sign in", async () => {
-			await signIn.goto(`${flags.web}/sign-in?__clerk_ticket=${ticket}`)
+			await signIn.goto(`${flags.web}/sign-in?__clerk_ticket=${encodeURIComponent(ticket)}`)
 			await signIn.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
 			await signIn.close()
 		})

@@ -8,7 +8,7 @@
  * written to `seed-demo/.last-seed.json`; screenshots pin their time ranges to it.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, Effect, FileSystem, Layer, Option, Schema } from "effect"
+import { Console, DateTime, Effect, FileSystem, Layer, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -27,9 +27,11 @@ class SeedPreflightError extends Schema.TaggedError<SeedPreflightError>()("@mapl
 }) {}
 
 const SeedState = Schema.Struct({
-	anchor: Schema.String,
-	start: Schema.String,
-	followedThrough: Schema.optionalKey(Schema.String),
+	anchor: Schema.DateTimeUtcFromString,
+	start: Schema.DateTimeUtcFromString,
+	incidentAt: Schema.optionalKey(Schema.DateTimeUtcFromString),
+	seed: Schema.optionalKey(Schema.Number),
+	followedThrough: Schema.optionalKey(Schema.DateTimeUtcFromString),
 })
 
 class SeedIngestError extends Schema.TaggedError<SeedIngestError>()("@maple/seed-demo/IngestError", {
@@ -216,11 +218,14 @@ const seed = Command.make(
 			: Option.none()
 		const target: Target = { endpoint: flags.endpoint.replace(/\/$/, ""), key: flags.key }
 		const anchor = Option.match(previous, {
-			onSome: (state) => Date.parse(state.anchor),
+			onSome: (state) => DateTime.toEpochMillis(state.anchor),
 			onNone: () =>
 				flags.anchor === "now"
 					? Math.floor(Date.now() / (5 * MINUTE)) * 5 * MINUTE
-					: Date.parse(flags.anchor),
+					: Option.match(Schema.decodeUnknownOption(Schema.DateTimeUtcFromString)(flags.anchor), {
+							onSome: DateTime.toEpochMillis,
+							onNone: () => Number.NaN,
+						}),
 		})
 		const hours = Option.isSome(previous) ? 0 : flags.hours
 		if (Number.isNaN(anchor)) {
@@ -242,16 +247,28 @@ const seed = Command.make(
 			yield* checkWarehouse()
 		}
 
+		// A resumed run reuses the saved seed and incident, so pods and the incident line up.
+		const seed = Option.match(previous, {
+			onSome: (state) => state.seed ?? flags.seed,
+			onNone: () => flags.seed,
+		})
+		const incidentBeforeAnchorMs = Option.match(previous, {
+			onSome: (state) =>
+				state.incidentAt === undefined
+					? flags.incidentMinutes * MINUTE
+					: anchor - DateTime.toEpochMillis(state.incidentAt),
+			onNone: () => flags.incidentMinutes * MINUTE,
+		})
 		const world = new World({
 			anchor,
 			// A resumed run keeps the original window, so pods, versions and the incident line up.
 			windowMs: Option.match(previous, {
-				onSome: (state) => anchor - Date.parse(state.start),
+				onSome: (state) => anchor - DateTime.toEpochMillis(state.start),
 				onNone: () => hours * HOUR,
 			}),
-			incidentBeforeAnchorMs: flags.incidentMinutes * MINUTE,
+			incidentBeforeAnchorMs,
 			peakTracesPerMinute: flags.rate,
-			seed: flags.seed,
+			seed,
 		})
 		yield* Console.log(
 			`\nseeding ${clock(world.start)} → ${clock(anchor)} (${hours}h), incident at ${clock(world.incidentAt)}` +
@@ -260,8 +277,7 @@ const seed = Command.make(
 
 		const totals = { traces: 0, errors: 0, spans: 0, logs: 0 }
 		// Seeded per window, so a follow run never replays the backfill's trace ids.
-		const rngFor = (from: number) =>
-			new Rng(Math.imul(flags.seed, 0x9e3779b1) ^ Math.floor(from / MINUTE))
+		const rngFor = (from: number) => new Rng(Math.imul(seed, 0x9e3779b1) ^ Math.floor(from / MINUTE))
 		const sendWindow = (from: number, to: number) =>
 			Effect.gen(function* () {
 				const out = generateWindow(world, rngFor(from), from, to)
@@ -300,14 +316,14 @@ const seed = Command.make(
 						incidentAt: new Date(world.incidentAt).toISOString(),
 						followedThrough: new Date(followedThrough).toISOString(),
 						orgId: Option.getOrNull(orgId),
-						seed: flags.seed,
+						seed,
 					},
 					null,
 					"\t",
 				)}\n`,
 			)
 		let cursor = Option.match(previous, {
-			onSome: (state) => Date.parse(state.followedThrough ?? state.anchor),
+			onSome: (state) => DateTime.toEpochMillis(state.followedThrough ?? state.anchor),
 			onNone: () => anchor,
 		})
 		yield* writeState(cursor)

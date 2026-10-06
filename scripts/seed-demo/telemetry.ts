@@ -85,7 +85,15 @@ export class World {
 		const naming = new Rng(options.seed ^ 0x5eed)
 		for (const service of SERVICES) {
 			const deploys = DEPLOYS.filter((deploy) => deploy.service === service.name)
-				.map((deploy) => ({ version: deploy.version, at: options.anchor - deploy.beforeAnchorMs }))
+				.map((deploy) => ({
+					version: deploy.version,
+					// The bad deploy follows --incident-minutes, so rollout, gauges and errors agree.
+					at:
+						options.anchor -
+						(deploy.service === INCIDENT.service && deploy.version === INCIDENT.version
+							? options.incidentBeforeAnchorMs
+							: deploy.beforeAnchorMs),
+				}))
 				.sort((a, b) => a.at - b.at)
 			const rollout = (version: string, at: number): Rollout => {
 				const sha = naming.hex(20)
