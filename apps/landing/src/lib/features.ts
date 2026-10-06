@@ -312,8 +312,8 @@ export const features: Feature[] = [
 			constant: "ConnectionTimeout · payment-svc",
 			plate: {
 				src: "/screenshots/surface-errors.webp",
-				width: 2560,
-				height: 1320,
+				width: 2880,
+				height: 1620,
 				alt: "Errors grouped by type with counts, affected services and last-seen times",
 			},
 			facts: [
