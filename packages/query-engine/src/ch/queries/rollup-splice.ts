@@ -22,9 +22,9 @@
 // The expressions are SQL strings rather than DSL nodes because they embed
 // param placeholders that `compile()` substitutes later.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { paramPlaceholder } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /**
  * One tier boundary of a splice. `unit` names the bucket size; the rest are

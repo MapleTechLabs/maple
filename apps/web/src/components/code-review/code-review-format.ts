@@ -5,6 +5,7 @@ import type {
 	PrReviewSeverity,
 	PrReviewSkipReason,
 } from "@maple/domain/http"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 export const CATEGORY_LABELS = {
 	correctness: "Correctness",
@@ -22,12 +23,12 @@ export const SEVERITY_LABELS = {
 	info: "Note",
 } satisfies Record<PrReviewSeverity, string>
 
-/** Text tones for a severity, from the shared severity tokens. */
-export const SEVERITY_TONES = {
-	critical: "text-[var(--severity-error)]",
-	warn: "text-[var(--severity-warn)]",
-	info: "text-muted-foreground",
-} satisfies Record<PrReviewSeverity, string>
+/** Severity onto the shared tone scale; notes stay muted. */
+export const SEVERITY_TONE = {
+	critical: "crit",
+	warn: "warn",
+	info: "neutral",
+} satisfies Record<PrReviewSeverity, Tone>
 
 export const FINDING_STATUS_LABELS = {
 	open: "Open",
@@ -63,33 +64,9 @@ export function formatSpan(seconds: number | null): string {
 	return `${(seconds / 86_400).toFixed(1)}d`
 }
 
-export interface Delta {
-	/** Signed fraction, e.g. -0.6 for "60% fewer". */
-	readonly change: number
-	/** Whether the move is the good direction for this number. */
-	readonly good: boolean
-}
-
-/**
- * Change against the previous window. Null with nothing to compare against: a jump from zero is
- * not a percentage anyone can read.
- */
-export function deltaOf(
-	current: number | null,
-	previous: number | null,
-	higherIsBetter: boolean,
-): Delta | null {
-	if (current === null || previous === null || previous === 0) return null
-	const change = (current - previous) / previous
-	if (!Number.isFinite(change)) return null
-	return { change, good: change === 0 || change > 0 === higherIsBetter }
-}
-
-export const formatDelta = (delta: Delta) =>
-	`${delta.change > 0 ? "+" : ""}${Math.round(delta.change * 100)}%`
-
 export interface ReviewOutcome {
 	readonly label: string
+	/** Text class; a clean review paints the ok hue (TONE_TEXT.ok is plain foreground). */
 	readonly tone: string
 	readonly kind: "queued" | "running" | "failed" | "skipped" | "issues" | "clean" | "neutral"
 }
@@ -99,17 +76,17 @@ export const outcomeOf = (review: Pick<CodeReviewListItem, "status" | "verdict">
 		case "queued":
 			return { label: "Queued", tone: "text-muted-foreground", kind: "queued" }
 		case "running":
-			return { label: "Reviewing", tone: "text-info-foreground", kind: "running" }
+			return { label: "Reviewing", tone: TONE_TEXT.info, kind: "running" }
 		case "failed":
-			return { label: "Failed", tone: "text-destructive-foreground", kind: "failed" }
+			return { label: "Failed", tone: TONE_TEXT.crit, kind: "failed" }
 		case "skipped":
 			return { label: "Skipped", tone: "text-muted-foreground", kind: "skipped" }
 		case "completed":
 			return review.verdict === "issues"
-				? { label: "Issues found", tone: "text-warning-foreground", kind: "issues" }
+				? { label: "Issues found", tone: TONE_TEXT.warn, kind: "issues" }
 				: review.verdict === "not_applicable"
 					? { label: "Nothing to review", tone: "text-muted-foreground", kind: "neutral" }
-					: { label: "Clean", tone: "text-success-foreground", kind: "clean" }
+					: { label: "Clean", tone: "text-severity-info", kind: "clean" }
 	}
 }
 

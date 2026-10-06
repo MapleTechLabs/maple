@@ -1,4 +1,4 @@
-import type { BaseScorerOptions, Score } from "vitest-evals"
+import type { BaseScorerOptions, Score } from "vitest-evals/legacy"
 
 // Tool-selection + argument matching is handled by vitest-evals' built-in
 // `ToolCallScorer` (compares the task's returned `toolCalls` against the data

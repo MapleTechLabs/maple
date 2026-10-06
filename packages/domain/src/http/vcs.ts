@@ -321,7 +321,8 @@ export const PullRequestReviewPublication = Schema.Struct({
 	checkName: Schema.String,
 	title: Schema.String,
 	summary: Schema.String,
-	conclusion: Schema.Literals(["success", "neutral"]),
+	/** `failure` only for a repository that asked to block on a broken telemetry contract. */
+	conclusion: Schema.Literals(["success", "neutral", "failure"]),
 	annotations: Schema.Array(PullRequestCheckAnnotation),
 	/**
 	 * The one summary comment the review keeps on the pull request. `marker` is a hidden line the

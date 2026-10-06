@@ -6,11 +6,11 @@ import type { HostDetailSummaryResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
 import { PlatformLabel } from "./platform-label"
-import { HeroChip, PageHero } from "./primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "./primitives/stat-rail"
+import { HeroChip, PageHero } from "@/components/common/page-hero"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { severityLevel } from "./format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 interface HostDetailHeaderProps {
 	summary: HostDetailSummaryResponse["data"]
@@ -59,9 +59,11 @@ export function HostDetailHeader({ summary, hostName, onWidenRange }: HostDetail
 				</HeroChip>
 			)}
 			{summary.cloudRegion && <HeroChip>region {summary.cloudRegion}</HeroChip>}
-			<span className="text-[11px] text-muted-foreground/80">
-				last reported {formatRelativeTime(summary.lastSeen)}
-			</span>
+			<RelativeTime
+				value={summary.lastSeen}
+				prefix="last reported"
+				className="text-[11px] text-muted-foreground/80"
+			/>
 		</>
 	)
 

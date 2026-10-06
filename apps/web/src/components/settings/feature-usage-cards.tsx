@@ -1,16 +1,17 @@
+import { Badge } from "@maple/ui/components/ui/badge"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatCurrency } from "@maple/domain/format"
 import {
-	featureUnit,
 	FEATURE_COLORS,
 	formatRateLabel,
 	SPEND_FEATURES,
 	type FeatureSpend,
 	type SpendModel,
 } from "@/lib/billing/spend"
-import { formatCount, formatUsage } from "@/lib/billing/usage"
+import { formatFeatureUsage } from "./format-feature-usage"
 
 /**
  * One card per billable signal: how much was ingested, how much of it was
@@ -19,9 +20,6 @@ import { formatCount, formatUsage } from "@/lib/billing/usage"
  * These sit above the spend chart on purpose — they are the five things the
  * customer is billed for, and the chart is only their sum over time.
  */
-
-const formatVolume = (featureId: string, value: number) =>
-	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 
 export function FeatureUsageCardsSkeleton() {
 	return (
@@ -82,13 +80,16 @@ function FeatureCard({
 					<span className="line-clamp-2 text-sm leading-[18px]">{feature.label}</span>
 				</div>
 				{overageCap === null ? (
-					<span className="shrink-0 border border-border/60 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+					<Badge variant="meta" size="xs" mono className="rounded-none px-1.5">
 						NO CAP
-					</span>
+					</Badge>
 				) : (
-					<span
+					<Badge
+						variant="meta"
+						size="xs"
+						mono
 						className={cn(
-							"shrink-0 border px-1.5 py-0.5 font-mono text-[10px] leading-none",
+							"rounded-none px-1.5",
 							nativeCapReached
 								? "border-severity-error/50 text-severity-error"
 								: "border-primary/40 text-primary",
@@ -98,8 +99,8 @@ function FeatureCard({
 							? "CAP REACHED"
 							: overageCap === 0
 								? "NO OVERAGE"
-								: `+${formatVolume(feature.featureId, overageCap)} CAP`}
-					</span>
+								: `+${formatFeatureUsage(feature.featureId, overageCap)} CAP`}
+					</Badge>
 				)}
 			</div>
 
@@ -108,7 +109,7 @@ function FeatureCard({
 			    knocks the meters out of alignment. */}
 			<div className="mt-2 flex h-11 flex-col justify-start">
 				<span className="font-mono text-xl leading-6 tabular-nums">
-					{formatVolume(feature.featureId, feature.used)}
+					{formatFeatureUsage(feature.featureId, feature.used)}
 				</span>
 				<span className="truncate text-[11px] leading-4 text-muted-foreground">
 					{feature.unlimited
@@ -119,14 +120,18 @@ function FeatureCard({
 								feature.ratePerUnit === null
 								? "not on your plan"
 								: "no allotment"
-							: `of ${formatVolume(feature.featureId, included)} included`}
+							: `of ${formatFeatureUsage(feature.featureId, included)} included`}
 				</span>
 			</div>
 
-			<div className="mt-2 flex h-1 w-full shrink-0 gap-px bg-muted">
-				<div style={{ width: `${includedFraction}%`, background: color }} />
-				{hasOverage && <div className="flex-1 bg-primary" />}
-			</div>
+			<SegmentedBar
+				className="mt-2 h-1 w-full shrink-0 rounded-none bg-muted"
+				total={100}
+				segments={[
+					{ key: "included", value: includedFraction, color },
+					{ key: "overage", value: hasOverage ? 100 - includedFraction : 0, className: "bg-primary" },
+				]}
+			/>
 
 			<div className="mt-auto flex items-baseline justify-between gap-2 pt-4 text-[11px]">
 				<span className="text-muted-foreground">

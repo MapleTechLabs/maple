@@ -1,4 +1,7 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ResultView } from "@/components/common/result-view"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
 
@@ -8,10 +11,9 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
 import { CloudflareIcon } from "@/components/icons"
-import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { HeroChip, PageHero } from "@/components/common/page-hero"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { CloudflareBreakdownPanel } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
 import {
@@ -38,7 +40,7 @@ import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 } from "@/components/infra/cloudflare/filters"
-import { errorRateTone } from "@/components/infra/cloudflare/constants"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	cloudflareZoneDetailResultAtom,
@@ -231,143 +233,149 @@ function ZoneDetailContent({
 		.onSuccess((r) => r.zones.find((zone) => zone.serviceName === serviceName) ?? null)
 		.orElse(() => null)
 
-	return Result.builder(detailResult)
-		.onInitial(() => (
-			<div className="space-y-6">
-				<StatRailLoading />
-				<Skeleton className="h-28 w-full" />
-				<div className="grid gap-4 lg:grid-cols-2">
-					<Skeleton className="h-56 w-full" />
-					<Skeleton className="h-56 w-full" />
+	return (
+		<ResultView
+			result={detailResult}
+			loading={
+				<div className="space-y-6">
+					<StatRailLoading />
+					<Skeleton className="h-28 w-full" />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<Skeleton className="h-56 w-full" />
+						<Skeleton className="h-56 w-full" />
+					</div>
 				</div>
-			</div>
-		))
-		.onError((err) => <QueryErrorState error={err} />)
-		.onSuccess((detail, result) => {
-			if (detail.statusBuckets.length === 0 && !result.waiting) {
-				if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
+			}
+		>
+			{(detail, { waiting }) => {
+				if (detail.statusBuckets.length === 0 && !waiting) {
+					if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
+						return (
+							<CloudflareIngestEmpty phase={phase}>
+								{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
+							</CloudflareIngestEmpty>
+						)
+					}
 					return (
-						<CloudflareIngestEmpty phase={phase}>
-							{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
-						</CloudflareIngestEmpty>
+						<Empty className="py-16">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<CloudflareIcon size={16} />
+								</EmptyMedia>
+								<EmptyTitle>No traffic for this zone in the selected window</EmptyTitle>
+								<EmptyDescription>
+									Widen the time range, clear the filters, or check the zone list for where
+									traffic is landing.
+								</EmptyDescription>
+							</EmptyHeader>
+							<EmptyActions>
+								<Button variant="outline" size="sm" render={<Link to="/infra/cloudflare" />}>
+									Back to zones
+								</Button>
+								<DocsLink page="cloudflare" />
+							</EmptyActions>
+						</Empty>
 					)
 				}
-				return (
-					<Empty className="py-16">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<CloudflareIcon size={16} />
-							</EmptyMedia>
-							<EmptyTitle>No traffic for this zone in the selected window</EmptyTitle>
-							<EmptyDescription>
-								Widen the time range, clear the filters, or check the zone list for where
-								traffic is landing.
-							</EmptyDescription>
-						</EmptyHeader>
-						<EmptyActions>
-							<Button variant="outline" size="sm" render={<Link to="/infra/cloudflare" />}>
-								Back to zones
-							</Button>
-							<DocsLink page="cloudflare" />
-						</EmptyActions>
-					</Empty>
+
+				const requests = detail.statusBuckets.reduce((acc, b) => acc + b.requests, 0)
+				const errors5xx = detail.statusBuckets.reduce(
+					(acc, b) => acc + (b.statusClass === "5xx" ? b.requests : 0),
+					0,
 				)
-			}
+				const errorRate = requests > 0 ? errors5xx / requests : 0
 
-			const requests = detail.statusBuckets.reduce((acc, b) => acc + b.requests, 0)
-			const errors5xx = detail.statusBuckets.reduce(
-				(acc, b) => acc + (b.statusClass === "5xx" ? b.requests : 0),
-				0,
-			)
-			const errorRate = requests > 0 ? errors5xx / requests : 0
-
-			return (
-				<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
-					<StatRail>
-						<StatRailItem eyebrow="Edge requests" value={formatNumber(requests)} compact />
-						<StatRailItem
-							eyebrow="5xx error rate"
-							value={formatPercent(errorRate)}
-							tone={errorRateTone(errorRate)}
-							compact
-						/>
-						<StatRailItem
-							eyebrow="Bandwidth"
-							value={zoneRow ? formatBytes(zoneRow.bytes) : "—"}
-							compact
-						/>
-						<StatRailItem
-							eyebrow="Visits"
-							value={zoneRow ? formatNumber(zoneRow.visits) : "—"}
-							compact
-						/>
-					</StatRail>
-					<CloudflareEdgeShareBand cacheBuckets={detail.cacheBuckets} />
-					<div className="grid gap-4 lg:grid-cols-2">
-						<CloudflareZoneStatusChart
-							buckets={detail.statusBuckets}
+				return (
+					<div
+						className={cn("space-y-6", refreshingClass(waiting))}
+						aria-busy={waiting || undefined}
+					>
+						<StatRail>
+							<StatRailItem eyebrow="Edge requests" value={formatNumber(requests)} compact />
+							<StatRailItem
+								eyebrow="5xx error rate"
+								value={formatPercent(errorRate)}
+								tone={errorRateLevel(errorRate)}
+								compact
+							/>
+							<StatRailItem
+								eyebrow="Bandwidth"
+								value={zoneRow ? formatBytes(zoneRow.bytes) : "—"}
+								compact
+							/>
+							<StatRailItem
+								eyebrow="Visits"
+								value={zoneRow ? formatNumber(zoneRow.visits) : "—"}
+								compact
+							/>
+						</StatRail>
+						<CloudflareEdgeShareBand cacheBuckets={detail.cacheBuckets} />
+						<div className="grid gap-4 lg:grid-cols-2">
+							<CloudflareZoneStatusChart
+								buckets={detail.statusBuckets}
+								syncId="cf-zone-detail"
+								scope={
+									<PanelScope
+										filters={filters}
+										ignoredFilters={detail.ignoredFilters}
+										reason="This chart is grouped by status class"
+									/>
+								}
+							/>
+							<CloudflareZoneCacheChart
+								buckets={detail.cacheBuckets}
+								syncId="cf-zone-detail"
+								scope={
+									<PanelScope
+										filters={filters}
+										ignoredFilters={detail.ignoredFilters}
+										reason="This chart is grouped by cache status"
+									/>
+								}
+							/>
+						</div>
+						<CloudflareZoneLatencyChart
+							buckets={detail.latencyBuckets}
 							syncId="cf-zone-detail"
 							scope={
 								<PanelScope
 									filters={filters}
-									ignoredFilters={detail.ignoredFilters}
-									reason="This chart is grouped by status class"
+									ignoredFilters={detail.latencyIgnoredFilters}
+									reason="Cloudflare reports latency percentiles for the whole zone"
 								/>
 							}
 						/>
-						<CloudflareZoneCacheChart
-							buckets={detail.cacheBuckets}
+						<CloudflareBreakdownPanel
+							serviceName={serviceName}
+							zoneName={zoneName}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={bucketSeconds}
+							filters={filters}
+							onToggleFilter={onToggleFilter}
 							syncId="cf-zone-detail"
-							scope={
-								<PanelScope
-									filters={filters}
-									ignoredFilters={detail.ignoredFilters}
-									reason="This chart is grouped by cache status"
-								/>
-							}
+						/>
+						{/* Extended sections load independently and hide themselves when their
+					    dataset is absent for this zone (plan/config-dependent). */}
+						<CloudflareZoneSecuritySection
+							serviceName={serviceName}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={bucketSeconds}
+							filters={filters}
+							syncId="cf-zone-detail"
+						/>
+						<CloudflareZoneDnsSection
+							serviceName={serviceName}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={bucketSeconds}
+							filters={filters}
+							syncId="cf-zone-detail"
 						/>
 					</div>
-					<CloudflareZoneLatencyChart
-						buckets={detail.latencyBuckets}
-						syncId="cf-zone-detail"
-						scope={
-							<PanelScope
-								filters={filters}
-								ignoredFilters={detail.latencyIgnoredFilters}
-								reason="Cloudflare reports latency percentiles for the whole zone"
-							/>
-						}
-					/>
-					<CloudflareBreakdownPanel
-						serviceName={serviceName}
-						zoneName={zoneName}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={bucketSeconds}
-						filters={filters}
-						onToggleFilter={onToggleFilter}
-						syncId="cf-zone-detail"
-					/>
-					{/* Extended sections load independently and hide themselves when their
-					    dataset is absent for this zone (plan/config-dependent). */}
-					<CloudflareZoneSecuritySection
-						serviceName={serviceName}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={bucketSeconds}
-						filters={filters}
-						syncId="cf-zone-detail"
-					/>
-					<CloudflareZoneDnsSection
-						serviceName={serviceName}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={bucketSeconds}
-						filters={filters}
-						syncId="cf-zone-detail"
-					/>
-				</div>
-			)
-		})
-		.render()
+				)
+			}}
+		</ResultView>
+	)
 }

@@ -1,5 +1,6 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
@@ -15,19 +16,19 @@ export const CONFIDENCE_RANK: Record<Confidence, number> = { high: 0, medium: 1,
  * into `chat/` for a colour — and the card itself now reaches the other way for
  * the action detail panel, which would have closed the loop.
  */
+const TONE: Record<Confidence, Tone> = { high: "ok", medium: "warn", low: "neutral" } satisfies Record<
+	Confidence,
+	Tone
+>
+
+/** `ok` value text is plain foreground; a confidence word wants the ok hue itself. */
 export const CONFIDENCE_TONE: Record<string, string> = {
-	high: "text-success",
-	medium: "text-severity-warn",
-	low: "text-muted-foreground",
+	high: "text-severity-info",
+	medium: TONE_TEXT[TONE.medium],
+	low: TONE_TEXT[TONE.low],
 } satisfies Record<string, string>
 
 const FILLED: Record<Confidence, number> = { high: 3, medium: 2, low: 1 } satisfies Record<Confidence, number>
-
-const BAR_TONE: Record<Confidence, string> = {
-	high: "bg-success",
-	medium: "bg-severity-warn",
-	low: "bg-muted-foreground",
-} satisfies Record<Confidence, string>
 
 /** Ascending bars, so the shape reads before the word does. */
 const BAR_HEIGHT = ["h-1.5", "h-2", "h-2.5"] as const
@@ -64,7 +65,7 @@ export function ConfidenceMeter({
 						className={cn(
 							"w-[3px] rounded-[1px]",
 							height,
-							index < filled ? BAR_TONE[confidence] : "bg-border",
+							index < filled ? TONE_FILL[TONE[confidence]] : "bg-border",
 						)}
 					/>
 				))}

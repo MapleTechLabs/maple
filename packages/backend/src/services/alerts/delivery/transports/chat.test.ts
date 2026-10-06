@@ -3,6 +3,7 @@ import { ChatOutboundError, chatConnectorId, type ChatAlertBlock, type ChatBlock
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { chatDeliveryFailure } from "../../ChatAlertPoster"
 import type { DispatchContext } from "../context"
 import { dispatchDelivery } from "../dispatch"
@@ -180,14 +181,17 @@ describe("chat through dispatchDelivery", () => {
 			throw new Error("a chat destination made an HTTP request of its own")
 		}
 		return Effect.gen(function* () {
-			const result = yield* dispatchDelivery(context, "{}", fetchFn, 5_000, LINK, CHAT, {
+			const result = yield* dispatchDelivery(context, "{}", 5_000, LINK, CHAT, {
 				sendEmail: () => Effect.die("the chat transport sent an email"),
 				postChatAlert: (post) =>
 					Effect.sync(() => {
 						posts.push(post)
 						return { connectorName: "Test Chat", messageId: "message-1" }
 					}),
-			})
+			}).pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+			)
 			assert.strictEqual(result.providerMessage, "Delivered to Test Chat #incidents")
 			assert.strictEqual(posts[0]?.workspaceId, WORKSPACE)
 			assert.include(cardOf(posts[0]?.blocks ?? []).title, "Checkout error rate")

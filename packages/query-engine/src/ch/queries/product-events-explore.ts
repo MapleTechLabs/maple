@@ -4,12 +4,12 @@
 // side of the same table, and it keeps the `/analytics` session filters by
 // reusing `replaysWhere` so the two agree on what a filtered population is.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, inSubquery } from "@maple-dev/effect-clickhouse"
-import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param, from, inSubquery } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays } from "../tables"
+import { ProductEvents, SessionReplays, orgIdParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
 import { soleValue } from "./query-helpers"
@@ -136,7 +136,7 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 
 function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
 		$.Timestamp.lte(param.dateTimeString("endTime")),
 		inListOpt($.EventName, opts.eventNames),

@@ -20,7 +20,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { OrgId } from "@maple/domain/primitives"
 import {
 	Context,
@@ -170,7 +170,7 @@ const ports = (
 	supportsIdentity: false,
 	resolveWorkspace: () => Effect.succeed(Option.some({ orgId: ORG })),
 	forgetWorkspace: () => Effect.void,
-	chatSession: () => stub,
+	chatSession: () => chatSessionClientFromStub(stub),
 	appBaseUrl: "https://app.maple.dev",
 	chartImageUrl: () => null,
 	announceUnlinked: Effect.succeed(false),

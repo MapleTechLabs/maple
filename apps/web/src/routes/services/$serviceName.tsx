@@ -5,7 +5,7 @@ import { Option, Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
@@ -455,9 +455,9 @@ function OverviewTab({
 
 	if (Result.isFailure(overviewResult)) {
 		return (
-			<QueryErrorState
+			<ErrorState
 				error={overviewResult.cause}
-				titleOverride="Failed to load service overview"
+				title="Failed to load service overview"
 				onRetry={refreshOverview}
 			/>
 		)

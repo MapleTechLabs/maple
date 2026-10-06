@@ -4,7 +4,7 @@ import { env as workerEnv } from "../test/stubs/cloudflare-workers"
 import { buildLayer, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
-	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics"]],
+	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics", "prReviewPostMerge"]],
 	["*/15 * * * *", ["digest", "googleAnalytics"]],
 	["0 * * * *", ["serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
@@ -29,6 +29,7 @@ describe("alerting Effect root", () => {
 				fixVerification: tick("fixVerification"),
 				googleAnalytics: tick("googleAnalytics"),
 				planetScale: tick("planetScale"),
+				prReviewPostMerge: tick("prReviewPostMerge"),
 				railwayMetrics: tick("railwayMetrics"),
 				serviceMapRollup: tick("serviceMapRollup"),
 			} satisfies ScheduledTickPrograms
@@ -60,6 +61,7 @@ describe("alerting Effect root", () => {
 				fixVerification: record("fixVerification"),
 				googleAnalytics: record("googleAnalytics"),
 				planetScale: record("planetScale"),
+				prReviewPostMerge: record("prReviewPostMerge"),
 				railwayMetrics: record("railwayMetrics"),
 				serviceMapRollup: record("serviceMapRollup"),
 			} satisfies ScheduledTickPrograms
@@ -87,6 +89,7 @@ describe("alerting Effect root", () => {
 			fixVerification: tick("fixVerification"),
 			googleAnalytics: tick("googleAnalytics"),
 			planetScale: tick("planetScale"),
+			prReviewPostMerge: tick("prReviewPostMerge"),
 			railwayMetrics: tick("railwayMetrics"),
 			serviceMapRollup: tick("serviceMapRollup"),
 		} satisfies ScheduledTickPrograms

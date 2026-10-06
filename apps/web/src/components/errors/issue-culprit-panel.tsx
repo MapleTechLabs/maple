@@ -1,3 +1,4 @@
+import { IssueField } from "./issue-field"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { cn } from "@maple/ui/lib/utils"
@@ -38,7 +39,7 @@ export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
 					</p>
 				)}
 
-				<Field label="Culprit">
+				<IssueField label="Culprit">
 					{issue.topFrame ? (
 						<Mono value={issue.topFrame} copyLabel="Top frame" />
 					) : (
@@ -46,25 +47,14 @@ export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
 							No stack frame was attributed to this fingerprint.
 						</span>
 					)}
-				</Field>
+				</IssueField>
 
 				{issue.fingerprintHash ? (
-					<Field label="Fingerprint">
+					<IssueField label="Fingerprint">
 						<Mono value={issue.fingerprintHash} copyLabel="Fingerprint" />
-					</Field>
+					</IssueField>
 				) : null}
 			</div>
-		</div>
-	)
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-	return (
-		<div className="flex min-w-0 flex-col gap-1.5 border-t pt-3.5 first:border-t-0 first:pt-0">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
-			{children}
 		</div>
 	)
 }

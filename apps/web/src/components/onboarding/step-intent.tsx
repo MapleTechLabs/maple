@@ -1,8 +1,7 @@
 import { Button } from "@maple/ui/components/ui/button"
-import { cn } from "@maple/ui/lib/utils"
+import { OptionCard } from "@/components/common/option-card"
 import { ArrowLeftIcon } from "@/components/icons"
 import { ONBOARDING_INTENT_IDS, ONBOARDING_INTENTS, type OnboardingIntent } from "@/lib/onboarding-intent"
-import { DrawnCheck } from "./drawn-check"
 import { PixelGlyph, type PixelGlyphName } from "./pixel-glyph"
 
 const INTENT_GLYPH = {
@@ -42,38 +41,22 @@ export function StepIntent({
 						const selected = value.includes(intent)
 						const option = ONBOARDING_INTENTS[intent]
 						return (
-							<label key={intent} className="group relative cursor-pointer">
-								<input
-									type="checkbox"
-									className="peer sr-only"
-									checked={selected}
-									aria-label={option.label}
-									onChange={() =>
-										onChange(
-											selected
-												? value.filter((item) => item !== intent)
-												: [...value, intent],
-										)
-									}
-								/>
-								<div
-									className={cn(
-										"flex h-full items-start gap-3 rounded-xl border p-4 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+							<OptionCard
+								key={intent}
+								type="checkbox"
+								checked={selected}
+								onChange={() =>
+									onChange(
 										selected
-											? "border-primary bg-primary/5"
-											: "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]",
-									)}
-								>
-									<PixelGlyph name={INTENT_GLYPH[intent]} selected={selected} />
-									<div className="min-w-0 flex-1 pt-px">
-										<span className="block text-sm font-semibold">{option.label}</span>
-										<span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-											{option.title}
-										</span>
-									</div>
-									<DrawnCheck checked={selected} className="mt-0.5" />
-								</div>
-							</label>
+											? value.filter((item) => item !== intent)
+											: [...value, intent],
+									)
+								}
+								label={option.label}
+								title={option.label}
+								description={option.title}
+								media={<PixelGlyph name={INTENT_GLYPH[intent]} selected={selected} />}
+							/>
 						)
 					})}
 				</fieldset>

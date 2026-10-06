@@ -1504,6 +1504,40 @@ SELECT
           AND logs.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
+-- builder:pr-review:operationTrafficHourlyQuery:allServices  [e60e4684]
+SELECT
+          service_operations_hourly.ServiceName AS serviceName,
+          service_operations_hourly.SpanName AS spanName,
+          sum(service_operations_hourly.SpanCount) AS spanCount,
+          sum(service_operations_hourly.ErrorCount) AS errorCount,
+          if(sum(SpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles), 2) / 1000000, 0) AS p95DurationMs
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= '2026-01-01 10:30:00'
+          AND service_operations_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY serviceName, spanName
+        ORDER BY spanCount DESC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:pr-review:operationTrafficMinutelyQuery:servicesAndSpans  [2b39e446]
+SELECT
+          service_operations_minutely.ServiceName AS serviceName,
+          service_operations_minutely.SpanName AS spanName,
+          sum(service_operations_minutely.SpanCount) AS spanCount,
+          sum(service_operations_minutely.ErrorCount) AS errorCount,
+          if(sum(SpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles), 2) / 1000000, 0) AS p95DurationMs
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.Minute >= '2026-01-01 10:30:00'
+          AND service_operations_minutely.Minute < '2026-01-03 14:15:00'
+          AND service_operations_minutely.ServiceName IN ('api')
+          AND service_operations_minutely.SpanName IN ('POST /checkout')
+        GROUP BY serviceName, spanName
+        ORDER BY spanCount DESC
+        LIMIT 500
+        FORMAT JSON
+
 -- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
 SELECT
           arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey,

@@ -33,7 +33,7 @@ const integrationLink = { to: "/integrations", search: { integration: "planetsca
  */
 export function PlanetScaleMetricsNotice() {
 	return (
-		<Alert variant="warning">
+		<Alert variant="warn">
 			<AlertWarningIcon />
 			<AlertTitle>Branch metrics aren't being collected</AlertTitle>
 			<AlertDescription>
@@ -53,7 +53,7 @@ export function PlanetScaleMetricsNotice() {
 /** Shown when the OAuth grant has been revoked — every PlanetScale read is dead until it's renewed. */
 export function PlanetScaleRevokedNotice() {
 	return (
-		<Alert variant="error">
+		<Alert variant="crit">
 			<CircleWarningIcon />
 			<AlertTitle>PlanetScale authorization revoked</AlertTitle>
 			<AlertDescription>
@@ -84,7 +84,7 @@ export function PlanetScaleInventoryNotice({
 }) {
 	const failing = lastInventoryError !== null
 	return (
-		<Alert variant="warning">
+		<Alert variant="warn">
 			<AlertWarningIcon />
 			<AlertTitle>
 				{failing ? "Inventory refresh is failing" : "Inventory hasn't refreshed recently"}

@@ -16,9 +16,9 @@ import {
 	CodeReviewSearchFields,
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-search"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ResultView } from "@/components/common/result-view"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewSearchFields)
@@ -56,37 +56,34 @@ function CodeReviewAnalyticsPage() {
 			search={search}
 			toolbar={<CodeReviewFilters search={search} window={window} onChange={onChange} />}
 		>
-			{Result.builder(result)
-				.onInitial(() => <CodeReviewAnalyticsSkeleton />)
-				.onError((error) => (
-					<QueryErrorState
-						error={error}
-						titleOverride="Failed to load review analytics"
-						onRetry={refresh}
+			<ResultView
+				result={result}
+				loading={<CodeReviewAnalyticsSkeleton />}
+				errorTitle="Failed to load review analytics"
+				onRetry={refresh}
+				isEmpty={(analytics) => analytics.current.reviews === 0 && analytics.current.findings === 0}
+				empty={
+					<NothingInWindow
+						title="No reviews in this window"
+						description={
+							filtered
+								? "Nothing matches these filters. Widen the window or clear the filters."
+								: "Turn on reviews for a repository in Settings, then open a pull request against it."
+						}
+						onClear={
+							filtered ? () => onChange({ repo: undefined, author: undefined }) : undefined
+						}
 					/>
-				))
-				.onSuccess((analytics) =>
-					analytics.current.reviews === 0 && analytics.current.findings === 0 ? (
-						<NothingInWindow
-							title="No reviews in this window"
-							description={
-								filtered
-									? "Nothing matches these filters. Widen the window or clear the filters."
-									: "Turn on reviews for a repository in Settings, then open a pull request against it."
-							}
-							onClear={
-								filtered ? () => onChange({ repo: undefined, author: undefined }) : undefined
-							}
-						/>
-					) : (
-						<CodeReviewAnalyticsView
-							analytics={analytics}
-							search={search}
-							windowLabel={search.startTime ? "period" : preset}
-						/>
-					),
-				)
-				.render()}
+				}
+			>
+				{(analytics) => (
+					<CodeReviewAnalyticsView
+						analytics={analytics}
+						search={search}
+						windowLabel={search.startTime ? "period" : preset}
+					/>
+				)}
+			</ResultView>
 		</CodeReviewLayout>
 	)
 }

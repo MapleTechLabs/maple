@@ -4,7 +4,7 @@ import type { BillingInvoice } from "@maple/domain/http"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { billingInvoicesAtom } from "@/lib/services/atoms/billing-atoms"
 import { formatCurrency } from "@maple/domain/format"
@@ -14,12 +14,12 @@ import { formatCurrency } from "@maple/domain/format"
 function statusBadge(status: string) {
 	switch (status.toLowerCase()) {
 		case "paid":
-			return { label: "Paid", variant: "success" as const }
+			return { label: "Paid", variant: "ok" as const }
 		case "open":
-			return { label: "Due", variant: "warning" as const }
+			return { label: "Due", variant: "warn" as const }
 		case "uncollectible":
 		case "past_due":
-			return { label: "Past due", variant: "error" as const }
+			return { label: "Past due", variant: "crit" as const }
 		case "draft":
 			return { label: "Draft", variant: "secondary" as const }
 		case "void":
@@ -70,16 +70,18 @@ function InvoiceRow({ invoice }: { invoice: BillingInvoice }) {
 
 function InvoicesSkeleton() {
 	return (
-		<div className="divide-y divide-border/60">
-			{Array.from({ length: 3 }).map((_, i) => (
-				<div key={i} className="flex items-center gap-4 py-2.5">
+		<SkeletonList
+			rows={3}
+			className="gap-0 divide-y divide-border/60"
+			renderRow={() => (
+				<div className="flex items-center gap-4 py-2.5">
 					<Skeleton className="h-3.5 w-24" />
 					<Skeleton className="h-3.5 w-20 flex-1" />
 					<Skeleton className="h-4 w-10" />
 					<Skeleton className="h-3.5 w-14" />
 				</div>
-			))}
-		</div>
+			)}
+		/>
 	)
 }
 

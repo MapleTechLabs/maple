@@ -4,20 +4,21 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
 import type { PodInfraMetric } from "@/api/warehouse/infra"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { podDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -71,25 +72,17 @@ function PodDetailPage() {
 		.orElse(() => null)
 
 	const rightPanel = summary ? (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<FolderIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-1">
-				<DetailRail.MetaRow label="k8s.pod.name" value={summary.podName} />
-				<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
-				<DetailRail.MetaRow label="k8s.node.name" value={summary.nodeName} />
-				<DetailRail.MetaRow label="k8s.pod.uid" value={summary.podUid} />
-				<DetailRail.MetaRow label="k8s.pod.qos_class" value={summary.qosClass} />
-				<DetailRail.MetaRow label="k8s.deployment.name" value={summary.deploymentName} />
-				<DetailRail.MetaRow label="k8s.statefulset.name" value={summary.statefulsetName} />
-				<DetailRail.MetaRow label="k8s.daemonset.name" value={summary.daemonsetName} />
-				<DetailRail.MetaRow label="k8s.pod.start_time" value={summary.podStartTime} />
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={FolderIcon}>
+			<DetailRail.MetaRow label="k8s.pod.name" value={summary.podName} />
+			<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
+			<DetailRail.MetaRow label="k8s.node.name" value={summary.nodeName} />
+			<DetailRail.MetaRow label="k8s.pod.uid" value={summary.podUid} />
+			<DetailRail.MetaRow label="k8s.pod.qos_class" value={summary.qosClass} />
+			<DetailRail.MetaRow label="k8s.deployment.name" value={summary.deploymentName} />
+			<DetailRail.MetaRow label="k8s.statefulset.name" value={summary.statefulsetName} />
+			<DetailRail.MetaRow label="k8s.daemonset.name" value={summary.daemonsetName} />
+			<DetailRail.MetaRow label="k8s.pod.start_time" value={summary.podStartTime} />
+		</ResourceAttributesCard>
 	) : null
 
 	return (
@@ -124,9 +117,9 @@ function PodDetailPage() {
 				{Result.isInitial(summaryResult) ? (
 					<Skeleton className="h-24 w-full rounded-md" />
 				) : Result.isFailure(summaryResult) ? (
-					<QueryErrorState
+					<ErrorState
 						error={summaryResult.cause}
-						titleOverride="Failed to load pod metrics"
+						title="Failed to load pod metrics"
 						onRetry={refreshSummary}
 					/>
 				) : summary ? (
@@ -155,9 +148,7 @@ function PodDetailPage() {
 						/>
 					</StatRail>
 				) : (
-					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-						No metrics arrived for this pod in the selected window.
-					</div>
+					<NoMetricsMessage noun="pod" />
 				)}
 
 				<div className="space-y-3">

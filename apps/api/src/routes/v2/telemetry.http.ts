@@ -42,6 +42,7 @@ import {
 	QueryEngineExecuteRequest,
 	formatWarehouseDateTime,
 	formatWarehouseDateTimeMs,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
 import {
@@ -114,8 +115,8 @@ const parseWindow = (
 		// ordering is the only thing left to check. Testing all three together used
 		// to report an unparseable `start_time` as "end_time must be later than
 		// start_time", blaming the wrong parameter.
-		const startMs = Date.parse(start)
-		const endMs = Date.parse(end)
+		const startMs = parseWarehouseDateTime(start)
+		const endMs = parseWarehouseDateTime(end)
 		if (endMs <= startMs) {
 			return yield* Effect.fail(
 				V2TimeRangeInvalid.make("end_time must be later than start_time.", {
@@ -144,12 +145,12 @@ const parseWindow = (
 const chToIso = (value: string): Timestamp => {
 	const normalized = value.includes("T") ? value : value.replace(" ", "T")
 	const zoned = /[zZ]|[+-]\d\d:?\d\d$/.test(normalized) ? normalized : `${normalized}Z`
-	const ms = Date.parse(zoned)
+	const ms = parseWarehouseDateTime(zoned)
 	return timestamp(Number.isNaN(ms) ? value : new Date(ms).toISOString())
 }
 
 const partitionWindow = (value: string) => {
-	const ms = Date.parse(value.includes("T") ? value : `${value.replace(" ", "T")}Z`)
+	const ms = parseWarehouseDateTime(value)
 	return {
 		startTime: formatWarehouseDateTimeMs(ms - PARTITION_HINT_RADIUS_MS),
 		endTime: formatWarehouseDateTimeMs(ms + PARTITION_HINT_RADIUS_MS),
@@ -173,7 +174,7 @@ type LogKey = readonly [timestamp: string, recordIdentity: string]
 const compactTimestamp = (value: string) => {
 	const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(value)
 	if (match === null) return value
-	const epochSeconds = Date.parse(`${match[1]}T${match[2]}Z`) / 1000
+	const epochSeconds = parseWarehouseDateTime(`${match[1]} ${match[2]}`) / 1000
 	return Number.isSafeInteger(epochSeconds) ? `~${epochSeconds.toString(36)}${match[3] ?? ""}` : value
 }
 const expandTimestamp = (value: string) => {
@@ -208,7 +209,7 @@ const parseLogKey = (value: string) =>
 	Option.match(
 		Option.flatMap(decodeLogKeyParts(value), ([rawTimestamp, rawIdentity]) => {
 			const logTimestamp = expandTimestamp(rawTimestamp)
-			if (Number.isNaN(Date.parse(logTimestamp.replace(" ", "T") + "Z"))) return Option.none()
+			if (Number.isNaN(parseWarehouseDateTime(logTimestamp))) return Option.none()
 			return expandHexId(rawIdentity).pipe(
 				Option.filter((hex) => /^[0-9A-F]{32}$/i.test(hex)),
 				Option.map((hex) => [logTimestamp, hex.toUpperCase()] as const),
@@ -396,7 +397,8 @@ const validateTimeseriesBucket = (
 	requestedBucketSeconds: number | undefined,
 ) => {
 	const bucketSeconds =
-		requestedBucketSeconds ?? computeBucketSeconds(Date.parse(startTime), Date.parse(endTime))
+		requestedBucketSeconds ??
+		computeBucketSeconds(parseWarehouseDateTime(startTime), parseWarehouseDateTime(endTime))
 	return Math.floor(rangeSeconds / bucketSeconds) + 1 > MAX_TIMESERIES_BUCKETS
 		? Effect.fail(
 				V2TelemetryBucketCountTooLarge.make(
@@ -618,9 +620,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
 					const truncated = rows.length > CH.SPAN_HIERARCHY_MAX_SPANS
 					const spans = rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS).map(toSpan)
-					const startMs = Math.min(...spans.map((span) => Date.parse(span.start_time)))
+					const startMs = Math.min(...spans.map((span) => parseWarehouseDateTime(span.start_time)))
 					const endMs = Math.max(
-						...spans.map((span) => Date.parse(span.start_time) + span.duration_ms),
+						...spans.map((span) => parseWarehouseDateTime(span.start_time) + span.duration_ms),
 					)
 					return {
 						id: params.trace_id,
@@ -1175,10 +1177,14 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							precision: "second",
 							rangeLabel: "Service queries",
 						})
-						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {
-							deploymentEnvironment: query.deployment_environment,
-							serviceNamespace: query.service_namespace,
-						})
+						const baselines = yield* loadBaselines(
+							tenant,
+							parseWarehouseDateTime(query.start_time),
+							{
+								deploymentEnvironment: query.deployment_environment,
+								serviceNamespace: query.service_namespace,
+							},
+						)
 						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 							execute(tenant, window, baselines, {
 								deploymentEnvironment: query.deployment_environment,
@@ -1199,7 +1205,11 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							precision: "second",
 							rangeLabel: "Service queries",
 						})
-						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {})
+						const baselines = yield* loadBaselines(
+							tenant,
+							parseWarehouseDateTime(query.start_time),
+							{},
+						)
 						const rows = yield* execute(tenant, window, baselines, {
 							serviceName: params.name,
 							limit: 1,
@@ -1272,7 +1282,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 						const summary = Effect.gen(function* () {
 							const baselines = yield* loadBaselines(
 								tenant,
-								Date.parse(query.start_time),
+								parseWarehouseDateTime(query.start_time),
 								environmentFilter,
 							)
 							const rows = yield* execute(tenant, window, baselines, {

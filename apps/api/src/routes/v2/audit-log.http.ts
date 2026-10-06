@@ -19,6 +19,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import type { AuditLogListFilters } from "@maple/backend/services/audit/AuditLogService"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const adminOnly = () => V2InsufficientPermissions.make("Only org admins can read the audit log")
 
@@ -221,8 +222,12 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 								: undefined),
 							...(query.changed !== undefined ? { changedField: query.changed } : undefined),
 							...(query.request_id !== undefined ? { requestId: query.request_id } : undefined),
-							...(query.since !== undefined ? { sinceMs: Date.parse(query.since) } : undefined),
-							...(query.until !== undefined ? { untilMs: Date.parse(query.until) } : undefined),
+							...(query.since !== undefined
+								? { sinceMs: timestampMs(query.since) }
+								: undefined),
+							...(query.until !== undefined
+								? { untilMs: timestampMs(query.until) }
+								: undefined),
 							limit,
 							offset,
 						})

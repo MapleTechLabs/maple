@@ -12,6 +12,7 @@ import {
 	formatWarehouseDateTime,
 	snapAlertWindowEndMs,
 	warehouseDateTime64,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
@@ -91,6 +92,7 @@ import {
 	Schema,
 	Context,
 } from "effect"
+import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
 import { upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
 import {
@@ -406,6 +408,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
+			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
@@ -417,6 +420,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				encryptionKey,
 				appBaseUrl: env.MAPLE_APP_BASE_URL,
 				runtime,
+				httpClient,
 				email,
 				postChatAlert: chatAlertPoster.post,
 			})
@@ -1172,8 +1176,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 
 				const windowMs = normalized.windowMinutes * 60_000
-				const requestedStartMs = Date.parse(request.startTime)
-				const requestedEndMs = Date.parse(request.endTime)
+				const requestedStartMs = parseWarehouseDateTime(request.startTime)
+				const requestedEndMs = parseWarehouseDateTime(request.endTime)
 				if (
 					!Number.isFinite(requestedStartMs) ||
 					!Number.isFinite(requestedEndMs) ||
@@ -1253,7 +1257,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
 								})
 								for (const obs of observations) {
-									record(groupKey, Date.parse(obs.bucket), {
+									record(groupKey, parseWarehouseDateTime(obs.bucket), {
 										value: obs.value,
 										sampleCount: obs.sampleCount,
 										hasData: obs.sampleCount > 0,
@@ -1277,7 +1281,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// ungrouped series' name.
 					for (const obs of observations) {
 						if (HashSet.has(excludeSet, obs.groupKey)) continue
-						record(toStorageGroupKey(plan, obs.groupKey), Date.parse(obs.bucket), {
+						record(toStorageGroupKey(plan, obs.groupKey), parseWarehouseDateTime(obs.bucket), {
 							value: obs.value,
 							sampleCount: obs.sampleCount,
 							hasData: obs.sampleCount > 0,

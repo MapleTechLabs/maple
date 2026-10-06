@@ -1,9 +1,12 @@
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as React from "react"
 import { Link } from "@tanstack/react-router"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain"
 
+import { countLabel } from "@maple/ui/lib/format"
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@maple/ui/components/ui/resizable"
@@ -15,15 +18,17 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@maple/ui/components/ui/sheet"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
-import { getHttpInfo } from "@maple/ui/lib/http"
+import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { shortId } from "@maple/ui/lib/ids"
 
 import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
@@ -253,36 +258,36 @@ function TracePeekBody({
 	return Result.builder(result)
 		.onInitial(() => (
 			<>
-				<SheetHeader className="gap-1.5 pr-14">
-					<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-						Trace
-					</span>
-					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
-					<SheetDescription className="sr-only">Loading trace details</SheetDescription>
-				</SheetHeader>
+				<SheetDetailHeader
+					kind="Trace"
+					title={shortId(target.traceId, "trace")}
+					description="Loading trace details"
+				/>
 				<div className="flex-1 space-y-3 overflow-hidden p-4">
 					<Skeleton className="h-1.5 w-full rounded-full" />
-					<div className="rounded-md border">
-						{Array.from({ length: 6 }).map((_, i) => (
-							<div key={i} className="flex items-center gap-2 border-b p-3 last:border-0">
+					<SkeletonList
+						rows={6}
+						className="gap-0 rounded-md border"
+						renderRow={() => (
+							<div className="flex items-center gap-2 border-b p-3 last:border-0">
 								<Skeleton className="size-4" />
 								<Skeleton className="h-4 w-20" />
 								<Skeleton className="h-4 flex-1" />
 								<Skeleton className="h-2 w-32" />
 							</div>
-						))}
-					</div>
+						)}
+					/>
 				</div>
 			</>
 		))
 		.onError((error) => (
 			<>
-				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{target.traceId.slice(0, 8)}</SheetTitle>
-					<SheetDescription className="sr-only">Failed to load trace</SheetDescription>
-				</SheetHeader>
+				<SheetDetailHeader
+					title={shortId(target.traceId, "trace")}
+					description="Failed to load trace"
+				/>
 				<div className="flex-1 overflow-auto p-4">
-					<QueryErrorState error={error} titleOverride="Failed to load trace details" />
+					<ErrorState error={error} title="Failed to load trace details" />
 				</div>
 			</>
 		))
@@ -333,11 +338,11 @@ function TracePeekLoaded({
 		return (
 			<>
 				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{traceId.slice(0, 8)}</SheetTitle>
+					<SheetTitle className="font-mono text-[15px]">{shortId(traceId, "trace")}</SheetTitle>
 					<SheetDescription>
 						{data.spans.length === 0
 							? "This trace could not be found. It may have expired or not been ingested yet."
-							: `Found ${data.spans.length} span${data.spans.length !== 1 ? "s" : ""}, but the root span is missing.`}
+							: `Found ${countLabel(data.spans.length, "span")}, but the root span is missing.`}
 					</SheetDescription>
 				</SheetHeader>
 				<div className="flex flex-1 flex-col items-center justify-center p-8">
@@ -353,34 +358,38 @@ function TracePeekLoaded({
 		const httpStatus =
 			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
 		const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
-		return typeof code === "number" && code >= 500
+		return typeof code === "number" && httpStatusTone(code) === "crit"
 	})
 
 	return (
-		<div className={`flex min-h-0 flex-1 flex-col transition-opacity ${waiting ? "opacity-50" : ""}`}>
-			<SheetHeader className="gap-1.5 pr-14">
-				<span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-					Trace
-				</span>
-				<SheetTitle className="min-w-0 text-[15px] leading-tight">
+		<div
+			className={cn("flex min-h-0 flex-1 flex-col", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
+		>
+			<SheetDetailHeader
+				kind="Trace"
+				mono={false}
+				title={
 					<HttpSpanLabel
 						spanName={rootSpan.spanName}
 						spanAttributes={rootSpan.spanAttributes}
 						spanKind={rootSpan.spanKind}
 						className="gap-3"
 					/>
-				</SheetTitle>
-				<SheetDescription className="sr-only">Spans and timing for trace {traceId}</SheetDescription>
-				<div className="flex flex-wrap items-center gap-2">
-					<TraceIdBadge traceId={traceId} size="sm" className="max-w-[260px]" />
-					<TraceLogsLink
-						traceId={traceId}
-						traceStartTime={traceStartTime}
-						totalDurationMs={data.totalDurationMs}
-					/>
-					<TraceReplayLink traceId={traceId} />
-				</div>
-			</SheetHeader>
+				}
+				description={`Spans and timing for trace ${traceId}`}
+				meta={
+					<>
+						<TraceIdBadge traceId={traceId} size="sm" className="max-w-[260px]" />
+						<TraceLogsLink
+							traceId={traceId}
+							traceStartTime={traceStartTime}
+							totalDurationMs={data.totalDurationMs}
+						/>
+						<TraceReplayLink traceId={traceId} />
+					</>
+				}
+			/>
 
 			<div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
 				<TraceAnatomyStrip

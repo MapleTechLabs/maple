@@ -1,12 +1,11 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { ERROR_INCIDENT_AUTO_RESOLVE_MINUTES, type ErrorIncidentDocument } from "@maple/domain/http"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { DocsLink } from "@/components/common/docs-link"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { RelativeTime } from "@/components/common/relative-time"
 
 interface IssueIncidentsTableProps {
 	incidents: ReadonlyArray<ErrorIncidentDocument>
@@ -27,8 +26,6 @@ const STATUS_EXPLANATION = {
 } satisfies Record<ErrorIncidentDocument["status"], string>
 
 export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
-	const { effectiveTimezone } = useTimezonePreference()
-
 	if (incidents.length === 0) {
 		return (
 			<Empty>
@@ -63,7 +60,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 									aria-hidden
 									className={cn(
 										"block h-full w-[3px]",
-										isOpen ? "bg-destructive" : "bg-border/60",
+										isOpen ? "bg-severity-error" : "bg-border/60",
 									)}
 								/>
 							</TableCell>
@@ -74,20 +71,11 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 											<span className="inline-flex cursor-default items-center gap-2" />
 										}
 									>
-										<span className="relative inline-flex size-1.5">
-											{isOpen ? (
-												<>
-													<span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
-													<span className="relative inline-flex size-full rounded-full bg-destructive" />
-												</>
-											) : (
-												<span className="relative inline-flex size-full rounded-full bg-muted-foreground/60" />
-											)}
-										</span>
+										{isOpen ? <StatusDot tone="crit" /> : <StatusDot tone="neutral" />}
 										<span
 											className={cn(
 												"text-xs font-medium uppercase tracking-wide",
-												isOpen ? "text-destructive" : "text-muted-foreground",
+												isOpen ? "text-severity-error" : "text-muted-foreground",
 											)}
 										>
 											{incident.status}
@@ -101,23 +89,11 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 							<TableCell className="text-muted-foreground">
 								{REASON_LABEL[incident.reason]}
 							</TableCell>
-							<TableCell
-								className="tabular-nums text-muted-foreground"
-								title={formatTimestampInTimezone(incident.firstTriggeredAt, {
-									timeZone: effectiveTimezone,
-									withYear: true,
-								})}
-							>
-								{formatRelativeTime(incident.firstTriggeredAt)}
+							<TableCell className="tabular-nums text-muted-foreground">
+								<RelativeTime value={incident.firstTriggeredAt} tooltip="title" />
 							</TableCell>
-							<TableCell
-								className="tabular-nums"
-								title={formatTimestampInTimezone(incident.lastTriggeredAt, {
-									timeZone: effectiveTimezone,
-									withYear: true,
-								})}
-							>
-								{formatRelativeTime(incident.lastTriggeredAt)}
+							<TableCell className="tabular-nums">
+								<RelativeTime value={incident.lastTriggeredAt} tooltip="title" />
 							</TableCell>
 							<TableCell className="text-right font-mono tabular-nums">
 								{incident.occurrenceCount.toLocaleString()}

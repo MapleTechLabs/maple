@@ -1,4 +1,3 @@
-import { formatRelativeFrom, formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -9,7 +8,10 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@maple/ui/compone
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 
 // A full 40-hex git SHA. Telemetry `vcs.ref.head.revision` is unguarded OTel
 // data, so a value may be a short SHA, a tag, or arbitrary text — those never
@@ -217,7 +219,7 @@ function CommitPlain({ sha, compact = false }: { sha: string; compact?: boolean 
 	return (
 		<div className={cn("flex flex-col gap-1", compact ? "p-2.5" : "p-3.5")}>
 			<span className="font-mono text-foreground">
-				{sha.length > 16 ? `${sha.slice(0, 16)}…` : sha}
+				{shortId(sha, "generic", { length: 16, ellipsis: true })}
 			</span>
 			<span className="text-muted-foreground">Deployment reference — not a resolvable git commit.</span>
 		</div>
@@ -274,9 +276,7 @@ function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailRespon
 				</div>
 				<div className="flex items-center justify-between gap-2 text-muted-foreground">
 					<CopyableSha sha={commit.sha} />
-					<span title={formatExact(commit.committedAt)} className="cursor-default">
-						{formatRelativeFrom(commit.committedAt)}
-					</span>
+					<RelativeTime value={commit.committedAt} tooltip="title" className="cursor-default" />
 				</div>
 			</div>
 			<a
@@ -333,7 +333,7 @@ function CommitListRow({ sha }: { sha: string }) {
 				<span className="size-5 shrink-0 rounded-full bg-muted" />
 				<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
 					<span className="truncate font-mono text-[11px]">
-						{sha.length > 18 ? `${sha.slice(0, 18)}…` : sha}
+						{shortId(sha, "generic", { length: 18, ellipsis: true })}
 					</span>
 					<span className="text-[10px]">Deployment reference</span>
 				</div>
@@ -373,13 +373,13 @@ function CommitListRowLink({ commit }: { commit: VcsCommitDetailResponse }) {
 				</a>
 				<span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
 					<span className="min-w-0 truncate">{author}</span>
-					<span className="shrink-0 font-mono">{commit.sha.slice(0, 7)}</span>
-					<span
-						title={formatExact(commit.committedAt)}
+					<TruncatedId value={commit.sha} kind="sha" className="shrink-0" />
+					<RelativeTime
+						value={commit.committedAt}
+						variant="short"
+						tooltip="title"
 						className="ml-auto shrink-0 tabular-nums text-muted-foreground/80"
-					>
-						{formatRelativeShortFrom(commit.committedAt)}
-					</span>
+					/>
 				</span>
 			</div>
 		</div>
@@ -403,7 +403,7 @@ function CommitListRowFallback({ sha, note }: { sha: string; note: string }) {
 		<div className="flex items-center gap-2.5 px-2.5 py-2 text-muted-foreground">
 			<span className="size-5 shrink-0 rounded-full bg-muted" />
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
-				<span className="truncate font-mono text-[11px]">{sha.slice(0, 12)}</span>
+				<span className="truncate font-mono text-[11px]">{shortId(sha)}</span>
 				<span className="text-[10px]">{note}</span>
 			</div>
 		</div>
@@ -459,10 +459,10 @@ function CopyableSha({ sha }: { sha: string }) {
 			aria-label="Copy commit SHA"
 			className="group inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80 transition-colors hover:bg-muted/70"
 		>
-			{sha.slice(0, 7)}
+			{shortId(sha, "sha")}
 			<CopyIndicator
 				status={status}
-				size={11}
+				iconSize={11}
 				className="text-muted-foreground transition-colors group-hover:text-foreground/80"
 			/>
 		</button>
@@ -610,11 +610,4 @@ function describeError(error: unknown): {
 		}
 	}
 	return { title: "Couldn't load commit", detail: "Try again in a moment." }
-}
-
-// Absolute timestamp for the title tooltip on a relative age — e.g.
-// "Jun 27, 2026, 3:42 PM". The relative label stays the at-a-glance value; the
-// exact time is one hover away.
-function formatExact(epochMs: number): string {
-	return new Date(epochMs).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 }

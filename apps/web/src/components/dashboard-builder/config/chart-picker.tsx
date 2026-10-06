@@ -8,6 +8,8 @@ import {
 	DialogTitle,
 	DialogDescription,
 } from "@maple/ui/components/ui/dialog"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartPreview } from "@/components/dashboard-builder/widgets/chart-preview"
 import type {
@@ -111,7 +113,9 @@ function PickerSection({
 	return (
 		<div className="flex flex-col gap-3">
 			{showHeading && (
-				<h3 className="text-[10px] font-semibold text-dim uppercase tracking-wider">{title}</h3>
+				<Eyebrow as="h3" className="text-dim">
+					{title}
+				</Eyebrow>
 			)}
 			<div className="grid grid-cols-3 gap-3">{children}</div>
 		</div>
@@ -170,22 +174,26 @@ export function WidgetPicker({ open, onOpenChange, onSelect }: WidgetPickerProps
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="flex gap-0 border-b border-border">
-					{TABS.map((tab) => (
-						<button
-							key={tab.id}
-							type="button"
-							onClick={() => setActiveTab(tab.id)}
-							className={`px-4 py-2.5 text-xs font-medium transition-all ${
-								activeTab === tab.id
-									? "text-foreground border-b-2 border-primary"
-									: "text-muted-foreground hover:text-foreground"
-							}`}
-						>
-							{tab.label}
-						</button>
-					))}
-				</div>
+				<Tabs
+					value={activeTab}
+					onValueChange={(value) => {
+						const next = TABS.find((tab) => tab.id === value)
+						if (next) setActiveTab(next.id)
+					}}
+					className="gap-0 border-b border-border"
+				>
+					<TabsList variant="underline" className="gap-x-0 py-0">
+						{TABS.map((tab) => (
+							<TabsTrigger
+								key={tab.id}
+								value={tab.id}
+								className="h-auto grow-0 px-4 py-2.5 text-xs sm:h-auto sm:text-xs"
+							>
+								{tab.label}
+							</TabsTrigger>
+						))}
+					</TabsList>
+				</Tabs>
 
 				<div className="flex flex-col gap-5 max-h-[60vh] overflow-y-auto py-5 px-4">
 					{isVisible("charts") && (

@@ -1,4 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -7,11 +9,11 @@ import { Button } from "@maple/ui/components/ui/button"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DockerIcon, MagnifierIcon } from "@/components/icons"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { PageHero } from "@/components/common/page-hero"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { HostsViewTabs } from "@/components/infra/hosts-view-tabs"
 import { ContainerTable, ContainerTableLoading } from "@/components/infra/container-table"
 import {
@@ -263,7 +265,7 @@ function ContainersPage() {
 
 								{Result.builder(containersResult)
 									.onInitial(() => <ContainerTableLoading />)
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((response, result) => {
 										const containers = response.data
 										const total = response.totalCount
@@ -283,11 +285,10 @@ function ContainersPage() {
 
 										return (
 											<div
-												className={`space-y-4 transition-opacity ${
-													result.waiting ? "opacity-60" : ""
-												}`}
+												className={cn("space-y-4", refreshingClass(result.waiting))}
+												aria-busy={result.waiting || undefined}
 											>
-												<ListToolbar
+												<SearchToolbar
 													value={searchText}
 													onChange={(value) =>
 														patchSearch({ q: value || undefined })

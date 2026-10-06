@@ -1,4 +1,4 @@
-import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useCallback, useState } from "react"
 import { getRouteApi } from "@tanstack/react-router"
 
@@ -13,6 +13,7 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+import { ResultView } from "@/components/common/result-view"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
@@ -20,10 +21,6 @@ import { parseLogSearch } from "@/lib/logs/log-search-query"
 import { LogSearchInput } from "./log-search-input"
 
 const routeApi = getRouteApi("/logs/")
-
-function LoadingState() {
-	return <FilterSidebarLoading sectionCount={3} />
-}
 
 export function LogsFilterSidebar() {
 	const navigate = routeApi.useNavigate()
@@ -103,73 +100,77 @@ export function LogsFilterSidebar() {
 		!!search.search ||
 		!!search.traceId
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <LoadingState />)
-		.onError((error) => <FilterSidebarError error={error} onRetry={refreshFacets} />)
-		.onSuccess((facetsResponse, result) => {
-			const facets = facetsResponse.data
-			const hasFacets =
-				(facets.services?.length ?? 0) > 0 ||
-				(facets.severities?.length ?? 0) > 0 ||
-				(facets.deploymentEnvs?.length ?? 0) > 0 ||
-				(facets.namespaces?.length ?? 0) > 0
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={3} />}
+			error={(error) => <FilterSidebarError error={error} onRetry={refreshFacets} />}
+		>
+			{(facetsResponse, { waiting }) => {
+				const facets = facetsResponse.data
+				const hasFacets =
+					(facets.services?.length ?? 0) > 0 ||
+					(facets.severities?.length ?? 0) > 0 ||
+					(facets.deploymentEnvs?.length ?? 0) > 0 ||
+					(facets.namespaces?.length ?? 0) > 0
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
-					<FilterSidebarBody>
-						<LogSearchInput value={searchText} onChange={handleSearchChange} />
+				return (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
+						<FilterSidebarBody>
+							<LogSearchInput value={searchText} onChange={handleSearchChange} />
 
-						<FilterSection
-							title="Severity"
-							options={facets.severities ?? []}
-							selected={search.severities ?? []}
-							onChange={(val) => updateFilter("severities", val)}
-							excluded={search.excludedSeverities ?? []}
-							onExcludedChange={(val) => updateFilter("excludedSeverities", val)}
-							colorMap={SEVERITY_COLORS}
-						/>
-
-						<FilterSection
-							title="Environment"
-							options={facets.deploymentEnvs ?? []}
-							selected={search.deploymentEnvs ?? []}
-							onChange={(val) => updateFilter("deploymentEnvs", val)}
-							excluded={search.excludedDeploymentEnvs ?? []}
-							onExcludedChange={(val) => updateFilter("excludedDeploymentEnvs", val)}
-						/>
-
-						{pinnedNamespace !== null ? (
-							<PinnedNamespaceNotice namespace={pinnedNamespace} />
-						) : (
-							<SearchableFilterSection
-								title="Namespace"
-								options={facets.namespaces ?? []}
-								selected={search.namespaces ?? []}
-								onChange={(val) => updateFilter("namespaces", val)}
-								excluded={search.excludedNamespaces ?? []}
-								onExcludedChange={(val) => updateFilter("excludedNamespaces", val)}
+							<FilterSection
+								title="Severity"
+								options={facets.severities ?? []}
+								selected={search.severities ?? []}
+								onChange={(val) => updateFilter("severities", val)}
+								excluded={search.excludedSeverities ?? []}
+								onExcludedChange={(val) => updateFilter("excludedSeverities", val)}
+								colorMap={SEVERITY_COLORS}
 							/>
-						)}
 
-						<SearchableFilterSection
-							title="Service"
-							options={facets.services ?? []}
-							selected={search.services ?? []}
-							onChange={(val) => updateFilter("services", val)}
-							excluded={search.excludedServices ?? []}
-							onExcludedChange={(val) => updateFilter("excludedServices", val)}
-							colorMap={serviceColorMap(facets.services ?? [])}
-						/>
+							<FilterSection
+								title="Environment"
+								options={facets.deploymentEnvs ?? []}
+								selected={search.deploymentEnvs ?? []}
+								onChange={(val) => updateFilter("deploymentEnvs", val)}
+								excluded={search.excludedDeploymentEnvs ?? []}
+								onExcludedChange={(val) => updateFilter("excludedDeploymentEnvs", val)}
+							/>
 
-						{!hasFacets && (
-							<p className="text-sm text-muted-foreground py-4">
-								No logs found in the selected time range
-							</p>
-						)}
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+							{pinnedNamespace !== null ? (
+								<PinnedNamespaceNotice namespace={pinnedNamespace} />
+							) : (
+								<SearchableFilterSection
+									title="Namespace"
+									options={facets.namespaces ?? []}
+									selected={search.namespaces ?? []}
+									onChange={(val) => updateFilter("namespaces", val)}
+									excluded={search.excludedNamespaces ?? []}
+									onExcludedChange={(val) => updateFilter("excludedNamespaces", val)}
+								/>
+							)}
+
+							<SearchableFilterSection
+								title="Service"
+								options={facets.services ?? []}
+								selected={search.services ?? []}
+								onChange={(val) => updateFilter("services", val)}
+								excluded={search.excludedServices ?? []}
+								onExcludedChange={(val) => updateFilter("excludedServices", val)}
+								colorMap={serviceColorMap(facets.services ?? [])}
+							/>
+
+							{!hasFacets && (
+								<p className="text-sm text-muted-foreground py-4">
+									No logs found in the selected time range
+								</p>
+							)}
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }

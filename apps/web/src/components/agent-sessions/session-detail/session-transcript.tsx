@@ -1,12 +1,17 @@
 import { memo, useDeferredValue, useEffect, useMemo, useRef, type ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { formatBytes, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import {
 	BranchForkIcon,
@@ -23,6 +28,7 @@ import {
 	UserIcon,
 	type IconComponent,
 } from "@/components/icons"
+import { FailedBadge } from "./session-waterfall"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -43,7 +49,6 @@ import {
 import { formatClockInTimezone } from "@/lib/timezone-format"
 import { ClampedText, firstLine } from "./clamped-text"
 import { disclosed, MessageBody, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"
-import { Pill } from "./pill"
 import { ToolIo, ToolIoSummary } from "./tool-io"
 
 /**
@@ -211,11 +216,11 @@ export function SessionTranscript({
 
 	if (rows.length === 0) {
 		return (
-			<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
+			<EmptyMessage>
 				{query.trim() === ""
 					? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
 					: "No blocks match this filter."}
-			</p>
+			</EmptyMessage>
 		)
 	}
 
@@ -432,7 +437,7 @@ function TurnChapter({
 				<span className="shrink-0 font-medium text-muted-foreground text-xs group-hover/turn:text-foreground">
 					{turnOrdinal(turn)}
 				</span>
-				{turn.failed && <Pill tone="error">Failed</Pill>}
+				{turn.failed && <FailedBadge />}
 				{collapsed && (
 					<>
 						{/* The label is the first prose line of a captured message, not a
@@ -680,7 +685,9 @@ function AssistantBlock({
 					<Avatar
 						icon={row.failed ? CircleWarningIcon : PixelSparkleIcon}
 						className={
-							row.failed ? "bg-destructive/15 text-destructive" : "bg-chart-2/15 text-chart-2"
+							row.failed
+								? "bg-severity-error/15 text-severity-error"
+								: "bg-chart-2/15 text-chart-2"
 						}
 					/>
 				)
@@ -701,10 +708,10 @@ function AssistantBlock({
 					className="flex min-w-0 grow cursor-pointer items-center gap-2 text-left"
 				>
 					{(!continued || row.failed) && <span className={SPEAKER}>Assistant</span>}
-					{row.failed && <Pill tone="error">Failed</Pill>}
+					{row.failed && <FailedBadge />}
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					{row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-destructive">
+						<span className="shrink-0 font-mono text-[11px] text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -743,7 +750,7 @@ function AssistantBlock({
 									rendering={!errorRaw && error.isJson ? "json" : "text"}
 									mono
 									clampLines={14}
-									toneClass="text-[13px] text-destructive/90"
+									toneClass="text-[13px] text-severity-error/90"
 									expanded={disclosed(openRows, `${row.key}:error-text`, false)}
 									onToggleExpanded={() => onToggleRow(`${row.key}:error-text`)}
 								/>
@@ -891,7 +898,7 @@ function ToolBlock({
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "tool" }> }) {
 	const payloadsKey = `${row.key}:payloads`
 	const open = disclosed(openRows, payloadsKey, showPayloads)
-	const tone = row.failed ? "text-destructive" : "text-chart-4"
+	const tone = row.failed ? "text-severity-error" : "text-chart-4"
 
 	return (
 		<Row depth={row.depth} className="pt-1.5">
@@ -899,7 +906,7 @@ function ToolBlock({
 				className={cn(
 					"flex min-w-0 flex-col overflow-hidden rounded-lg border",
 					row.failed
-						? "border-destructive/40 bg-destructive/5"
+						? "border-severity-error/40 bg-severity-error/5"
 						: open
 							? "border-border bg-card"
 							: "border-transparent bg-muted/30 hover:bg-muted/50",
@@ -925,7 +932,7 @@ function ToolBlock({
 						<span className={cn(META, "shrink-0")}>{formatDuration(row.span.durationMs)}</span>
 					)}
 					{row.failed && row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-destructive">
+						<span className="shrink-0 font-mono text-[11px] text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -994,9 +1001,7 @@ function PayloadSection({
 	return (
 		<div className={cn("flex flex-col gap-2 px-3 pt-2.5 pb-3", bordered && "border-border/60 border-t")}>
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="font-medium font-mono text-[10px] text-muted-foreground uppercase tracking-[0.1em]">
-					{label}
-				</span>
+				<Eyebrow variant="mono">{label}</Eyebrow>
 				<span className="font-mono text-[10px] text-muted-foreground">
 					{[
 						meta,
@@ -1009,9 +1014,9 @@ function PayloadSection({
 				{/* Emitter truncation, not the view's clamping — there is no "show
 				    full" that can recover what was never recorded. */}
 				{payload.truncatedByEmitter && (
-					<Pill tone="warn" className="rounded-sm font-mono normal-case tracking-normal">
+					<Badge size="xs" mono className={TONE_SOFT.warn}>
 						truncated by the emitter
-					</Pill>
+					</Badge>
 				)}
 				{/* Copies what is displayed: the pretty-printed JSON, or the raw text.
 				    The switch only appears where the two differ. */}
@@ -1086,7 +1091,7 @@ function LaneOpen({
 						? row.parentAgentName !== undefined
 							? `subagent of ${row.parentAgentName}`
 							: "subagent"
-						: `agent · trace ${row.span.traceId.slice(0, 8)}`}{" "}
+						: `agent · trace ${shortId(row.span.traceId, "trace")}`}{" "}
 					· {row.spanCount} spans · {formatDuration(row.span.durationMs)}
 				</span>
 			</div>
@@ -1253,7 +1258,7 @@ function StructureRow({
 	const Glyph: IconComponent =
 		category === "tool" ? GearIcon : category === "agent" ? FaceRobotIcon : PixelSparkleIcon
 	const tone = row.failed
-		? "text-destructive"
+		? "text-severity-error"
 		: category === "tool"
 			? "text-chart-4"
 			: category === "agent"
@@ -1420,7 +1425,7 @@ function structureMeta(span: AiSessionSpan, category: string): { shown: string; 
 	if (category === "tool") {
 		return { shown: `${span.serviceName} · payloads not captured`, onHover: "" }
 	}
-	if (category === "agent") return { shown: `trace ${span.traceId.slice(0, 8)}`, onHover: "" }
+	if (category === "agent") return { shown: `trace ${shortId(span.traceId, "trace")}`, onHover: "" }
 	// The model already leads the label; the rest of the call's facts follow, so
 	// the parts are taken as parts rather than sliced back out of a joined line.
 	// What the call cost is the turn header's, the same as on a captured call,

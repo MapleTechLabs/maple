@@ -1,27 +1,24 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useMemo } from "react"
 
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { planetscaleQueryInsightsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 /** Bordered like the query rows, so an explanation keeps the section's rhythm. */
 function InsightsNotice({ children, className }: { children: React.ReactNode; className?: string }) {
 	return (
-		<div
-			className={cn(
-				"rounded-md border border-dashed border-border bg-card/50 px-3 py-4 text-center text-xs text-muted-foreground",
-				className,
-			)}
-		>
+		<EmptyMessage dashed className={cn("bg-card/50 px-3 py-4 text-xs", className)}>
 			{children}
-		</div>
+		</EmptyMessage>
 	)
 }
 
@@ -66,20 +63,16 @@ export function PlanetScaleTopQueries({
 	if (Result.isInitial(result)) {
 		// Row-shaped, so the section doesn't resize when the rows arrive.
 		return (
-			<div className={cn("space-y-1.5", className)}>
-				{[0, 1, 2].map((i) => (
-					<Skeleton key={i} className="h-[52px] w-full rounded-md" />
-				))}
-			</div>
+			<SkeletonList rows={3} rowClassName="h-[52px] rounded-md" className={cn("gap-1.5", className)} />
 		)
 	}
 	if (Result.isFailure(result)) {
 		return (
-			<QueryErrorState
+			<ErrorState
 				error={result.cause}
-				titleOverride="PlanetScale Query Insights are unavailable"
+				title="PlanetScale Query Insights are unavailable"
 				className={cn(
-					"flex flex-col gap-1 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-3 text-xs",
+					"flex flex-col gap-1 rounded-md border border-severity-error/20 bg-severity-error/5 px-3 py-3 text-xs",
 					className,
 				)}
 			/>
@@ -114,11 +107,9 @@ export function PlanetScaleTopQueries({
 						<span
 							className={cn(
 								"shrink-0 font-mono text-[10px] tabular-nums",
-								row.errorRate > 0.05
-									? "text-severity-error"
-									: row.errorRate > 0.01
-										? "text-severity-warn"
-										: "text-muted-foreground",
+								errorRateLevel(row.errorRate) === "neutral"
+									? "text-muted-foreground"
+									: errorRateClass(row.errorRate),
 							)}
 						>
 							{(row.errorRate * 100).toFixed(1)}%
@@ -137,9 +128,12 @@ export function PlanetScaleTopQueries({
 						</span>
 						{row.statementType ? <span className="uppercase">{row.statementType}</span> : null}
 						{row.lastRunAt !== null ? (
-							<span className="ml-auto font-mono tabular-nums text-muted-foreground/70">
-								last run {formatRelativeTime(new Date(row.lastRunAt).toISOString())}
-							</span>
+							<RelativeTime
+								value={new Date(row.lastRunAt)}
+								prefix="last run"
+								mono
+								className="ml-auto text-muted-foreground/70"
+							/>
 						) : null}
 					</div>
 				</div>

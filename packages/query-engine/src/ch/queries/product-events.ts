@@ -10,7 +10,7 @@
 // The page-view queries themselves live in `web-analytics.ts` and read the
 // same table (`useProductEvents`); this module owns everything funnel-shaped.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	param,
 	from,
@@ -19,13 +19,18 @@ import {
 	unionAll,
 	inSubquery,
 	compileFnCall,
-} from "@maple-dev/effect-clickhouse"
-import type { CHQuery, ColumnAccessor, ColumnDefs, JoinedColumnAccessor } from "@maple-dev/effect-clickhouse"
+} from "@maple-dev/effect-orm/clickhouse"
+import type {
+	CHQuery,
+	ColumnAccessor,
+	ColumnDefs,
+	JoinedColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
 import { Schema } from "effect"
-import { ProductEvents, IdentityLinks, SessionReplays } from "../tables"
+import { ProductEvents, IdentityLinks, SessionReplays, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export type { ProductEventsFilters } from "./web-analytics"
 
@@ -36,7 +41,7 @@ export type { ProductEventsFilters } from "./web-analytics"
 
 // toUInt8(cond) — a condition as a projectable 0/1 column.
 export function flag(cond: CH.Condition): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("toUInt8", T.uint8.schema, cond)
+	return CH.compileTypedFnCall("toUInt8", T.uint8.schema, cond)
 }
 
 // toUInt64(toUnixTimestamp64Milli(ts)) — `windowFunnel` accepts Date, DateTime
@@ -51,7 +56,7 @@ export function epochMs(ts: CH.Expr<string>): CH.Expr<number> {
 // argMinIf(value, orderBy, cond) — the `value` on the earliest row matching
 // `cond`. Returns one of its inputs unchanged, so it decodes as that input does.
 export function argMinIf<T>(value: CH.Expr<T>, orderBy: CH.Expr<unknown>, cond: CH.Condition): CH.Expr<T> {
-	return CH.compileTypedFnCall<T>("argMinIf", CH.schemaOf<T>(value), value, orderBy, cond)
+	return CH.compileTypedFnCall("argMinIf", CH.schemaOf<T>(value), value, orderBy, cond)
 }
 
 // Every UNION ALL branch below is built from a different table, and the shape
@@ -247,7 +252,7 @@ export function identityLinksByVisitor() {
 			UserId: $.UserId,
 			FirstSeen: CH.min_($.FirstSeen),
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId"))])
+		.where(($) => [$.OrgId.eq(orgIdParam)])
 		.groupBy("VisitorId", "UserId")
 
 	return fromQuery(firstSeenPerPair, "pair_links")
@@ -402,7 +407,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 					Value: CH.max_(sessionDimensionColumn($, sessionDimension)),
 				}))
 				.where(($) => [
-					$.OrgId.eq(param.string("orgId")),
+					$.OrgId.eq(orgIdParam),
 					$.StartTime.gte(param.dateTimeString("startTime")),
 					$.StartTime.lte(param.dateTimeString("endTime")),
 				])
@@ -450,7 +455,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				undefined,
 			)
 			return [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTimeString("startTime")),
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 				anyStep,
@@ -499,7 +504,7 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			return [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.StartTime.gte(param.dateTimeString("startTime")),
 				$.StartTime.lte(param.dateTimeString("endTime")),
 				sessionDimensionColumn($, step.dimension).eq(step.value),
@@ -529,7 +534,7 @@ function levelsQuery(plan: FunnelPlan) {
 	const source = plan.sessionStep
 		? hasEventStep
 			? fromUnion(
-					unionAll<FunnelEventRow>(sessionEntryBranch(plan, plan.sessionStep), eventsBranch(plan)),
+					unionAll(sessionEntryBranch(plan, plan.sessionStep), eventsBranch(plan)),
 					"funnel_events",
 				)
 			: fromQuery(sessionEntryBranch(plan, plan.sessionStep), "funnel_events")
@@ -677,7 +682,7 @@ export function productEventNamesQuery(
 			persons: CH.uniq(CH.if_($.UserId.neq(""), $.UserId, $.VisitorId)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			CH.when(filters.host, (v: string) => $.Host.eq(v)),
@@ -743,7 +748,7 @@ export function productEventsForTraceQuery(
 			attributes: $.Attributes,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.TraceId.eq(param.string("traceId")),
@@ -784,7 +789,7 @@ export function productEventTraceSamplesQuery(
 			visitorId: $.VisitorId,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.EventName.eq(param.string("eventName")),
@@ -825,7 +830,7 @@ function personEventsBranch(plan: FunnelPlan) {
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			return [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTimeString("startTime")),
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 				key.neq(""),

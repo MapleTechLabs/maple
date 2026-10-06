@@ -21,6 +21,7 @@ import {
 	summariseSubscriptions,
 } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import {
 	BillingApiGroup,
 	BillingConflictError,
@@ -199,6 +200,28 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 		assert.deepStrictEqual(JSON.parse(body ?? "{}").billing_controls, {
 			spend_limits: [{ feature_id: "logs", enabled: true, limit_type: "absolute", overage_limit: 250 }],
 		})
+	})
+})
+
+describe("AutumnClient.updateCustomerName", () => {
+	it("renames the customer through customers.update", async () => {
+		let request: { readonly url: string; readonly body: string } | undefined
+		const fetch = (async (input, init) => {
+			request = { url: String(input), body: await new Response(init?.body).text() }
+			return new Response(JSON.stringify({ id: ORG }), { status: 200 })
+		}) as typeof globalThis.fetch
+
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const autumn = yield* AutumnClient
+				return yield* autumn
+					.updateCustomerName(ORG, "Acme Inc")
+					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
+			}).pipe(Effect.provide(autumnClientLayer)),
+		)
+
+		assert.strictEqual(request?.url, "https://api.useautumn.com/v1/customers.update")
+		assert.deepStrictEqual(JSON.parse(request?.body ?? "{}"), { customer_id: ORG, name: "Acme Inc" })
 	})
 })
 
@@ -565,7 +588,10 @@ describe("billing writes over HTTP", () => {
 
 	const die = () => Effect.die(new Error("not reachable once the admin gate rejects"))
 
-	const makeHarness = (roles: ReadonlyArray<string>) => {
+	const makeHarness = (
+		roles: ReadonlyArray<string>,
+		overrides: { readonly autumn?: object; readonly organizations?: object } = {},
+	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
 			Layer.provide(HttpBillingLive),
 			Layer.provide(V1ErrorBoundaryLive),
@@ -583,9 +609,13 @@ describe("billing writes over HTTP", () => {
 			Layer.provideMerge(Layer.succeed(ProductEventsService, { track: die, trackMany: die })),
 			Layer.provideMerge(Layer.succeed(StripeClient, { request: die })),
 			Layer.provideMerge(
+				Layer.succeed(OrganizationService, { retrieve: die, ...overrides.organizations } as never),
+			),
+			Layer.provideMerge(
 				Layer.succeed(AutumnClient, {
 					attach: die,
 					openCustomerPortal: die,
+					...overrides.autumn,
 				} as never),
 			),
 		)
@@ -626,6 +656,141 @@ describe("billing writes over HTTP", () => {
 			})
 			assert.strictEqual(response.status, 403)
 			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingForbiddenError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("names the Autumn customer after the org before opening the portal", async () => {
+		const calls: Array<string> = []
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: (_orgId: string, name: string) =>
+					Effect.sync(() => {
+						calls.push(`name:${name}`)
+						return { statusCode: 200, response: { id: ORG } }
+					}),
+				openCustomerPortal: () =>
+					Effect.sync(() => {
+						calls.push("portal")
+						return { statusCode: 200, response: { url: "https://billing.stripe.test/session" } }
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(calls, ["name:Acme Inc", "portal"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("still opens the portal when naming the customer fails", async () => {
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: () =>
+					Effect.succeed({ statusCode: 503, response: { message: "autumn down" } }),
+				openCustomerPortal: () =>
+					Effect.succeed({
+						statusCode: 200,
+						response: { url: "https://billing.stripe.test/session" },
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("creates the customer already named when it does not exist yet", async () => {
+		const calls: Array<string> = []
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: () =>
+					Effect.sync(() => {
+						calls.push("update")
+						return { statusCode: 404, response: { message: "customer not found" } }
+					}),
+				getOrCreateCustomer: (
+					_orgId: string,
+					options: { readonly customerData?: { readonly name?: string | null } },
+				) =>
+					Effect.sync(() => {
+						calls.push(`create:${options.customerData?.name}`)
+						return { statusCode: 200, response: { id: ORG } }
+					}),
+				openCustomerPortal: () =>
+					Effect.sync(() => {
+						calls.push("portal")
+						return { statusCode: 200, response: { url: "https://billing.stripe.test/session" } }
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(calls, ["update", "create:Acme Inc", "portal"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("opens the portal without waiting on a stalled rename", { timeout: 10_000 }, async () => {
+		const harness = makeHarness(["org:admin"], {
+			organizations: { retrieve: () => Effect.never },
+			autumn: {
+				openCustomerPortal: () =>
+					Effect.succeed({
+						statusCode: 200,
+						response: { url: "https://billing.stripe.test/session" },
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
 		} finally {
 			await harness.dispose()
 		}

@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo, useState } from "react"
 
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
@@ -8,10 +9,10 @@ import { HostTable, type HostRow } from "@/components/infra/host-table"
 import {
 	FINDINGS_LIST_CLASS,
 	FindingRow,
-	SectionHeading,
 	SourceLink,
 	SourceRowBody,
 } from "@/components/infra/overview/infra-overview"
+import { SectionHeading } from "@/components/common/section-heading"
 import {
 	type SourceId,
 	type SourceSummary,
@@ -23,8 +24,8 @@ import {
 	summarizeRailway,
 } from "@/components/infra/overview/summaries"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar } from "@/components/infra/primitives/list-toolbar"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { SearchToolbar } from "@/components/common/search-toolbar"
+import { PageHero } from "@/components/common/page-hero"
 import {
 	RailwayServiceTable,
 	RailwaySummaryBand,
@@ -170,7 +171,7 @@ const RANK = { crit: 0, warn: 1, stale: 2 } as const
 function Frame({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<section className="space-y-6 border-b pb-16" data-lab-frame={label}>
-			<div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+			<Eyebrow as="div">{label}</Eyebrow>
 			{children}
 		</section>
 	)
@@ -236,7 +237,7 @@ export function InfraLab() {
 						onScopeChange={setHostScope}
 						className={FLEET_BAND_BOXED}
 					/>
-					<ListToolbar
+					<SearchToolbar
 						value={hostQuery}
 						onChange={setHostQuery}
 						placeholder="Search hosts…"
@@ -258,7 +259,7 @@ export function InfraLab() {
 						onScopeChange={setRailwayScope}
 						className={FLEET_BAND_BOXED}
 					/>
-					<ListToolbar
+					<SearchToolbar
 						value=""
 						onChange={() => undefined}
 						placeholder="Search services…"

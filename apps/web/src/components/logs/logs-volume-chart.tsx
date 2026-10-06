@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { barY, defineChart, rect, stack } from "@tanstack/charts"
@@ -563,7 +564,7 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 
 			if (totalCount === 0) {
 				return (
-					<div className={`transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+					<div className={refreshingClass(result.waiting)} aria-busy={result.waiting || undefined}>
 						{header}
 						<EmptyVolumeStrip
 							startTime={effectiveStartTime}
@@ -575,7 +576,7 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 			}
 
 			return (
-				<div className={`transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+				<div className={refreshingClass(result.waiting)} aria-busy={result.waiting || undefined}>
 					{header}
 					<LogsVolumePlot
 						chartData={chartData}

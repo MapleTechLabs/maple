@@ -18,7 +18,7 @@ import {
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
 import {
 	chatActionControlId,
@@ -317,7 +317,7 @@ const host = (
 				}),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
-			chatSession: () => stub,
+			chatSession: () => (stub === undefined ? undefined : chatSessionClientFromStub(stub)),
 			appBaseUrl: "https://app.maple.dev",
 			chartImageUrl: (orgId, ref) => {
 				charts.push({ orgId, ref })

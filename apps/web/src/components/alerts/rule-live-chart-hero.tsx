@@ -8,7 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { AlertRulePreviewResponse } from "@maple/domain/http"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
-import { CheckIcon, EyeIcon, FireIcon, LoaderIcon } from "@/components/icons"
+import { CheckIcon, EyeIcon, FireIcon } from "@/components/icons"
 import { breachStatsFromPreview, formatBreachDuration, type BreachStats } from "@/lib/alerts/breach-stats"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
@@ -85,7 +85,7 @@ export function RuleLiveChartHero({
 
 	return (
 		<Card className="overflow-hidden">
-			<div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
+			<div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<Badge variant="outline" className="font-mono text-xs">
 						{signalLabels[form.signalType]}
@@ -115,9 +115,15 @@ export function RuleLiveChartHero({
 						presetValue={timeRange.presetValue}
 						onChange={onTimeRangeChange}
 					/>
-					<Button variant="outline" size="sm" onClick={onTestRule} disabled={testing}>
-						{testing ? <LoaderIcon size={14} className="animate-spin" /> : <EyeIcon size={14} />}
-						Test rule
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={onTestRule}
+						loading={testing}
+						title="Evaluate the rule once against current data. Nothing is sent."
+					>
+						<EyeIcon size={14} />
+						Dry run
 					</Button>
 				</div>
 			</div>
@@ -153,14 +159,14 @@ function BreachPill({ stats }: { stats: BreachStats }) {
 	if (stats.bucketCount === 0) return null
 	if (stats.breachCount === 0) {
 		return (
-			<span className="hidden items-center gap-1 text-xs text-success-foreground sm:inline-flex">
+			<span className="hidden items-center gap-1 text-xs text-severity-info sm:inline-flex">
 				<CheckIcon size={12} />
 				No breaches in this window
 			</span>
 		)
 	}
 	return (
-		<span className="hidden items-center gap-1 text-xs text-destructive sm:inline-flex">
+		<span className="hidden items-center gap-1 text-xs text-severity-error sm:inline-flex">
 			<FireIcon size={12} />
 			Would have fired{" "}
 			<span className="font-mono font-semibold tabular-nums">{stats.breachCount}×</span>
@@ -194,7 +200,7 @@ function PreviewBadge({
 			<span
 				className={cn(
 					"font-mono text-sm font-semibold tabular-nums",
-					status === "breached" ? "text-destructive" : "text-success",
+					status === "breached" ? "text-severity-error" : "text-severity-info",
 				)}
 			>
 				{formatSignalValue(signalType, value)}

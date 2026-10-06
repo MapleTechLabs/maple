@@ -11,9 +11,9 @@
 // Renames whose keys are only ever surfaced (never keyed on) live in the
 // recommendation dictionary in `../recommendations.ts` instead.
 
-import type { Expr } from "@maple-dev/effect-clickhouse/expr"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import type { Expr } from "@maple-dev/effect-orm/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compile } from "@maple-dev/effect-orm/sql"
 
 /**
  * The shape every caller shares: a query builder's `$.ResourceAttributes` /

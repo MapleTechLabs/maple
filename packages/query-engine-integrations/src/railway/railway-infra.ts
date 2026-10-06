@@ -5,9 +5,9 @@
 // (environment, service) pair. Replicas are summed per timestamp before bucketing.
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, fromQuery, param } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
 
 export const RAILWAY_CPU_USAGE = "railway.cpu.usage"
 export const RAILWAY_CPU_LIMIT = "railway.cpu.limit"
@@ -61,7 +61,7 @@ export function railwayServicesSQL() {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...RAILWAY_METRIC_NAMES),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
@@ -143,7 +143,7 @@ export function railwayServiceTimeseriesSQL() {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...RAILWAY_METRIC_NAMES),
 			$.ResourceAttributes.get("railway.environment.id").eq(param.string("environmentId")),
 			$.ResourceAttributes.get("railway.service.id").eq(param.string("serviceId")),

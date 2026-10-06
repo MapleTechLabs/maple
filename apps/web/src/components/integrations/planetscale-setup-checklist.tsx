@@ -1,7 +1,8 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import type { ReactNode } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
-import { CircleCheckIcon, CircleWarningIcon, LoaderIcon } from "@/components/icons"
+import { CircleCheckIcon, CircleWarningIcon } from "@/components/icons"
 import type { SetupStep, SetupStepId } from "./planetscale-setup-steps"
 
 /**
@@ -82,11 +83,7 @@ function StepMarker({ step, number }: { step: SetupStep; number: number }) {
 	}
 	if (step.state === "current") {
 		return step.waitingOnMaple ? (
-			<LoaderIcon
-				size={14}
-				className="mt-0.5 shrink-0 animate-spin text-muted-foreground"
-				aria-hidden
-			/>
+			<Spinner size={14} className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden />
 		) : (
 			<span
 				aria-hidden

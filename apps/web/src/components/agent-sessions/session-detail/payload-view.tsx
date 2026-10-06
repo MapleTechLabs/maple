@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { cn } from "@maple/ui/lib/utils"
 
 import { tryParseJson } from "@/components/attributes"
@@ -57,51 +58,31 @@ export function ViewSwitch({
 	className?: string
 }) {
 	return (
-		<span
-			role="group"
+		<ToggleGroup
 			aria-label="Body view"
-			className={cn(
-				"flex shrink-0 items-center self-center overflow-hidden rounded-sm border border-border",
-				className,
-			)}
+			variant="outline"
+			size="xs"
+			value={[raw ? "raw" : "rendered"]}
+			onValueChange={(next) => {
+				// Clicking the pressed segment empties the group; the view stays put.
+				if (next.length > 0) onRawChange(next[0] === "raw")
+			}}
+			className={cn("shrink-0 self-center", className)}
 		>
-			<ViewSegment active={!raw} onSelect={() => onRawChange(false)}>
+			<ToggleGroupItem value="rendered" className={SEGMENT_CLASS} onClick={stopPropagation}>
 				{rendered}
-			</ViewSegment>
-			<ViewSegment active={raw} onSelect={() => onRawChange(true)}>
+			</ToggleGroupItem>
+			<ToggleGroupItem value="raw" className={SEGMENT_CLASS} onClick={stopPropagation}>
 				raw
-			</ViewSegment>
-		</span>
+			</ToggleGroupItem>
+		</ToggleGroup>
 	)
 }
 
-/** One segment of the two-state switch. */
-function ViewSegment({
-	active,
-	onSelect,
-	children,
-}: {
-	active: boolean
-	onSelect: () => void
-	children: string
-}) {
-	return (
-		<button
-			type="button"
-			aria-pressed={active}
-			onClick={(event) => {
-				event.stopPropagation()
-				onSelect()
-			}}
-			className={cn(
-				"cursor-pointer px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.08em]",
-				active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
-	)
-}
+const SEGMENT_CLASS = "font-mono text-[10px] uppercase tracking-[0.08em] sm:text-[10px]"
+
+// The switch sits inside clickable rows; a segment click must not toggle the row.
+const stopPropagation = (event: { stopPropagation: () => void }) => event.stopPropagation()
 
 /**
  * Whether a keyed disclosure is open, given the default its section opens with.

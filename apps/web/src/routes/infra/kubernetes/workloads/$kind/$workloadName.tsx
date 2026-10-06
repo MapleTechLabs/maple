@@ -1,24 +1,27 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
 import type { WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { GridIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { WorkloadDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -105,20 +108,12 @@ function WorkloadDetailPage() {
 		.orElse(() => null)
 
 	const rightPanel = summary ? (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<GridIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-1">
-				<DetailRail.MetaRow label="kind" value={KIND_LABEL[params.kind]} />
-				<DetailRail.MetaRow label={`k8s.${params.kind}.name`} value={summary.workloadName} />
-				<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
-				<DetailRail.MetaRow label="pods" value={String(summary.podCount)} />
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={GridIcon}>
+			<DetailRail.MetaRow label="kind" value={KIND_LABEL[params.kind]} />
+			<DetailRail.MetaRow label={`k8s.${params.kind}.name`} value={summary.workloadName} />
+			<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
+			<DetailRail.MetaRow label="pods" value={String(summary.podCount)} />
+		</ResourceAttributesCard>
 	) : null
 
 	return (
@@ -155,9 +150,9 @@ function WorkloadDetailPage() {
 				{Result.isInitial(summaryResult) ? (
 					<Skeleton className="h-24 w-full rounded-md" />
 				) : Result.isFailure(summaryResult) ? (
-					<QueryErrorState
+					<ErrorState
 						error={summaryResult.cause}
-						titleOverride="Failed to load workload metrics"
+						title="Failed to load workload metrics"
 						onRetry={refreshSummary}
 					/>
 				) : summary ? (
@@ -184,9 +179,7 @@ function WorkloadDetailPage() {
 						/>
 					</StatRail>
 				) : (
-					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-						No metrics arrived for this workload in the selected window.
-					</div>
+					<NoMetricsMessage noun="workload" />
 				)}
 
 				<div className="space-y-3">
@@ -221,13 +214,13 @@ function WorkloadDetailPage() {
 				</div>
 
 				<div className="space-y-3">
-					<h3 className="text-sm font-medium">Pods</h3>
+					<SectionHeading as="h3" title="Pods" />
 					{Result.builder(podsResult)
 						.onInitial(() => <Skeleton className="h-28 w-full rounded-md" />)
 						.onError((error) => (
-							<QueryErrorState
+							<ErrorState
 								error={error}
-								titleOverride="Failed to load workload pods"
+								title="Failed to load workload pods"
 								onRetry={refreshPods}
 							/>
 						))
@@ -235,9 +228,9 @@ function WorkloadDetailPage() {
 							const pods = r.data
 							if (pods.length === 0) {
 								return (
-									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<EmptyMessage dashed className="py-12">
 										No pods reporting for this workload in the selected window.
-									</div>
+									</EmptyMessage>
 								)
 							}
 							return (

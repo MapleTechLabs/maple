@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	anomalyErrorSpikeBaselineQuery,
 	anomalyErrorSpikeCurrentQuery,
@@ -10,9 +10,10 @@ import {
 	anomalyTraceSignalTimeseriesQuery,
 	matchedHoursOfDay,
 } from "./anomaly"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-08 00:00:00",
 }

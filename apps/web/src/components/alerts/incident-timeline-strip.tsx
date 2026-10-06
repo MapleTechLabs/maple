@@ -71,10 +71,10 @@ export function IncidentTimelineStrip({
 								compact ? "h-2" : "h-3",
 								hit
 									? held
-										? "bg-[repeating-linear-gradient(135deg,var(--destructive)_0_2px,transparent_2px_5px)] bg-warning/30"
+										? "bg-[repeating-linear-gradient(135deg,var(--color-severity-error)_0_2px,transparent_2px_5px)] bg-severity-warn/30"
 										: hit.status === "open"
-											? "bg-destructive"
-											: "bg-destructive/50"
+											? "bg-severity-error"
+											: "bg-severity-error/50"
 									: "bg-chart-apdex/60",
 							)}
 						/>

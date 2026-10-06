@@ -1,5 +1,8 @@
 import type { ReactNode } from "react"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { shortId } from "@maple/ui/lib/ids"
 import {
 	ClockIcon,
 	CircleWarningIcon,
@@ -9,7 +12,6 @@ import {
 	MobileIcon,
 	PulseIcon,
 } from "@maple/ui/components/icons"
-import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 import type { SessionReplaysListOutput } from "@maple/query-engine/ch"
 import { useLocalSessions, useLocalSessionFacets } from "../hooks/use-local-sessions"
@@ -17,7 +19,8 @@ import { useRange } from "../hooks/use-range"
 import { useTimeWindow } from "../hooks/use-time-window"
 import { hrefFor, useQueryParams } from "../lib/router"
 import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, WIDEST_RANGE } from "../lib/time"
-import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay-format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import {
 	FilterSection,
 	SearchableFilterSection,
@@ -154,18 +157,12 @@ export function SessionsListView() {
 							/>
 						))}
 					</div>
-					{hasNextPage ? (
-						<div className="flex justify-center pt-4">
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => fetchNextPage()}
-								disabled={isFetchingNextPage}
-							>
-								{isFetchingNextPage ? <Spinner className="size-4" /> : "Load more"}
-							</Button>
-						</div>
-					) : null}
+					<ListFooter
+						hasMore={hasNextPage}
+						loading={isFetchingNextPage}
+						onLoadMore={() => fetchNextPage()}
+						className="pb-0"
+					/>
 				</div>
 			)}
 		</PageShell>
@@ -192,9 +189,10 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-2">
 					<span className="max-w-[16rem] truncate text-sm font-medium">{label}</span>
-					<StatusDot active={isActive} />
+					<StatusDot tone={isActive ? "ok" : "neutral"} title={isActive ? "active" : "ended"} />
 					<span className="font-mono text-xs text-muted-foreground">
-						{session.sessionId.slice(0, 8)} · {formatSessionDuration(session.durationMs)}
+						{shortId(session.sessionId, "session", { length: 8 })} ·{" "}
+						{formatSessionDuration(session.durationMs)}
 					</span>
 				</div>
 				<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
@@ -220,15 +218,15 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 					title="page views"
 				/>
 				{session.traceCount > 0 && (
-					<span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 font-medium tabular-nums text-primary">
+					<Badge pill className="bg-primary/10 tabular-nums text-primary">
 						{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
-					</span>
+					</Badge>
 				)}
 				{session.errorCount > 0 && (
-					<span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 font-medium tabular-nums text-destructive">
+					<Badge pill className="bg-severity-error/10 tabular-nums text-severity-error">
 						<CircleWarningIcon className="size-3" />
 						{session.errorCount}
-					</span>
+					</Badge>
 				)}
 			</div>
 
@@ -245,16 +243,6 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 				</span>
 			</div>
 		</a>
-	)
-}
-
-function StatusDot({ active }: { active: boolean }) {
-	if (!active) return <span className="size-1.5 rounded-full bg-muted-foreground/40" title="ended" />
-	return (
-		<span className="relative flex size-1.5" title="active">
-			<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-			<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-		</span>
 	)
 }
 

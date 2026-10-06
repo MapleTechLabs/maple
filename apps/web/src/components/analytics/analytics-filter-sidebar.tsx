@@ -19,6 +19,7 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+import { ResultView } from "@/components/common/result-view"
 import {
 	FILTER_SECTION_LABEL as FILTER_SECTION_LABEL_TEXT,
 	hasActiveFilters,
@@ -69,24 +70,28 @@ export function AnalyticsFilterSidebar({
 	onFilterChange,
 	onClearFilters,
 }: AnalyticsFilterSidebarProps) {
-	return Result.builder(breakdownsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={6} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((breakdowns, result) => (
-			<AnalyticsFilterSidebarView
-				breakdowns={breakdowns}
-				// Decorative beside the breakdowns: a slow or failed events query
-				// drops the Event section rather than blanking the whole sidebar.
-				events={Result.builder(eventsResult)
-					.onSuccess((rows) => rows.data)
-					.orElse(() => [])}
-				waiting={result.waiting}
-				filters={filters}
-				onFilterChange={onFilterChange}
-				onClearFilters={onClearFilters}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={breakdownsResult}
+			loading={<FilterSidebarLoading sectionCount={6} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(breakdowns, result) => (
+				<AnalyticsFilterSidebarView
+					breakdowns={breakdowns}
+					// Decorative beside the breakdowns: a slow or failed events query
+					// drops the Event section rather than blanking the whole sidebar.
+					events={Result.builder(eventsResult)
+						.onSuccess((rows) => rows.data)
+						.orElse(() => [])}
+					waiting={result.waiting}
+					filters={filters}
+					onFilterChange={onFilterChange}
+					onClearFilters={onClearFilters}
+				/>
+			)}
+		</ResultView>
+	)
 }
 
 function AnalyticsFilterSidebarView({

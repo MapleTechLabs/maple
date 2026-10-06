@@ -1,5 +1,6 @@
 import type { RendererComponentProps } from "./types"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatNumber } from "@maple/ui/lib/format"
 
 interface MetricsListProps {
@@ -26,7 +27,7 @@ export function MetricsList({ props }: RendererComponentProps<MetricsListProps>)
 				<div className="flex flex-wrap gap-2">
 					{summary.map((s) => (
 						<div key={s.metricType} className="flex items-center gap-1 text-[11px]">
-							<Badge variant="secondary" className="text-[10px]">
+							<Badge variant="secondary" size="xs">
 								{s.metricType}
 							</Badge>
 							<span className="text-muted-foreground">
@@ -37,37 +38,34 @@ export function MetricsList({ props }: RendererComponentProps<MetricsListProps>)
 				</div>
 			)}
 			<div className="max-h-[300px] overflow-y-auto">
-				<table className="w-full text-[11px]">
-					<thead>
-						<tr className="border-b border-border/40 text-left text-muted-foreground">
-							<th className="pb-1 pr-2 font-medium">Name</th>
-							<th className="pb-1 pr-2 font-medium">Type</th>
-							<th className="pb-1 pr-2 font-medium">Service</th>
-							<th className="pb-1 pr-2 font-medium">Unit</th>
-							<th className="pb-1 font-medium text-right">Data Points</th>
-						</tr>
-					</thead>
-					<tbody>
+				<Table size="xs" scroll={false}>
+					<TableHeader>
+						<TableRow>
+							<TableHead>Name</TableHead>
+							<TableHead>Type</TableHead>
+							<TableHead>Service</TableHead>
+							<TableHead>Unit</TableHead>
+							<TableHead className="pr-0 text-right">Data Points</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{metrics.map((m) => (
-							<tr
-								key={`${m.metricName}-${m.metricType}`}
-								className="border-b border-border/20 last:border-0"
-							>
-								<td className="max-w-[180px] truncate py-1 pr-2 font-mono">{m.metricName}</td>
-								<td className="py-1 pr-2">
-									<Badge variant="secondary" className="text-[10px]">
+							<TableRow key={`${m.metricName}-${m.metricType}`}>
+								<TableCell className="max-w-[180px] truncate py-1 font-mono">{m.metricName}</TableCell>
+								<TableCell className="py-1">
+									<Badge variant="secondary" size="xs">
 										{m.metricType}
 									</Badge>
-								</td>
-								<td className="py-1 pr-2 text-muted-foreground">{m.serviceName}</td>
-								<td className="py-1 pr-2 text-muted-foreground">{m.metricUnit || "-"}</td>
-								<td className="py-1 text-right font-mono text-muted-foreground">
+								</TableCell>
+								<TableCell className="py-1 text-muted-foreground">{m.serviceName}</TableCell>
+								<TableCell className="py-1 text-muted-foreground">{m.metricUnit || "-"}</TableCell>
+								<TableCell className="py-1 pr-0 text-right font-mono text-muted-foreground">
 									{formatNumber(m.dataPointCount)}
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 		</div>
 	)

@@ -1,3 +1,5 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 export function AnomalyLiveIndicator({
@@ -19,21 +21,11 @@ export function AnomalyLiveIndicator({
 			className={cn(
 				"inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
 				live
-					? "border-success/30 bg-success/10 text-success"
+					? cn(TONE_BORDER.ok, TONE_SOFT.ok)
 					: "border-border/70 text-muted-foreground hover:text-foreground",
 			)}
 		>
-			<span className="relative inline-flex size-1.5">
-				{live ? (
-					<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
-				) : null}
-				<span
-					className={cn(
-						"relative inline-flex size-full rounded-full",
-						live ? "bg-success" : "bg-muted-foreground/50",
-					)}
-				/>
-			</span>
+			<StatusDot tone={live ? "ok" : "neutral"} />
 			{live ? "Live" : "Paused"}
 		</button>
 	)

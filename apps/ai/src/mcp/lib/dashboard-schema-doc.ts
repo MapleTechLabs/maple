@@ -43,9 +43,6 @@ export const DASHBOARD_SCHEMA_SECTIONS = [
 
 export type DashboardSchemaSection = (typeof DASHBOARD_SCHEMA_SECTIONS)[number]
 
-export const isDashboardSchemaSection = (value: string): value is DashboardSchemaSection =>
-	DASHBOARD_SCHEMA_SECTIONS.some((section) => section === value)
-
 const json = (value: unknown): string => "```json\n" + JSON.stringify(value, null, 2) + "\n```"
 
 const mcpPanels = (): ReadonlyArray<WidgetTypeMeta> => PANEL_TYPES.filter((meta) => meta.mcpExposed)

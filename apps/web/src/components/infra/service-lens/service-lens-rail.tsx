@@ -1,6 +1,8 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Link } from "@tanstack/react-router"
 
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -44,14 +46,17 @@ export function ServiceLensRail({
 	activeService,
 	unlinkedCount,
 	loading,
-	waiting,
+	waiting = false,
 	timeSearch,
 }: ServiceLensRailProps) {
 	return (
-		<div className={cn("flex h-full flex-col gap-0.5 p-3", waiting && "opacity-60")}>
-			<div className="px-2 pb-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+		<div
+			className={cn("flex h-full flex-col gap-0.5 p-3", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
+		>
+			<Eyebrow as="div" className="px-2 pb-2.5">
 				Services on this cluster
-			</div>
+			</Eyebrow>
 
 			{loading ? (
 				<RailLoading />
@@ -116,7 +121,7 @@ function RailRow({
 				active ? "bg-accent" : "hover:bg-accent/50",
 			)}
 		>
-			<ServiceDot serviceName={service.serviceName} className="size-1.5" />
+			<ServiceDot serviceName={service.serviceName} size="sm" />
 			<span
 				className={cn(
 					"min-w-0 flex-1 truncate font-mono text-[12px]",
@@ -137,11 +142,5 @@ function RailRow({
 }
 
 function RailLoading() {
-	return (
-		<div className="space-y-1.5 px-2 pt-1">
-			{Array.from({ length: 6 }, (_, i) => (
-				<Skeleton key={i} className="h-[22px] w-full" />
-			))}
-		</div>
-	)
+	return <SkeletonList rows={6} rowClassName="h-[22px]" className="gap-1.5 px-2 pt-1" />
 }

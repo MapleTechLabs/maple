@@ -368,9 +368,9 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 									>
 										<span className="flex items-center gap-1 font-semibold text-foreground">
 											{isLast ? (
-												<CircleCheckIcon size={12} className="text-success" />
+												<CircleCheckIcon size={12} className="text-severity-info" />
 											) : (
-												<ArrowRightIcon size={12} className="text-success" />
+												<ArrowRightIcon size={12} className="text-severity-info" />
 											)}
 											{fmtPct(step.ofPrev)}
 										</span>
@@ -413,11 +413,14 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 					</div>
 					{/* The split between who went on and who left, as one bar. */}
 					<div className="mb-1.5 flex h-1.5 gap-px overflow-hidden rounded-sm">
-						<div className="bg-success" style={{ width: `${(hovered.ofPrev ?? 0) * 100}%` }} />
+						<div
+							className="bg-severity-info"
+							style={{ width: `${(hovered.ofPrev ?? 0) * 100}%` }}
+						/>
 						<div className="flex-1 bg-destructive/70" />
 					</div>
 					<Row
-						icon={<ArrowRightIcon size={12} className="text-success" />}
+						icon={<ArrowRightIcon size={12} className="text-severity-info" />}
 						label="converted"
 						value={fmtValue(hovered.value, unit)}
 						share={fmtPct(hovered.ofPrev ?? 0)}

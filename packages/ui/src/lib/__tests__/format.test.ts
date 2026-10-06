@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
 	bucketIntervalLabel,
+	countLabel,
 	formatBucketLabel,
 	formatBytes,
 	formatBytesPerSecond,
@@ -11,12 +12,15 @@ import {
 	formatLoad,
 	formatNumber,
 	formatPercent,
+	formatRate,
+	formatRatePerHour,
 	formatStorageBytes,
 	formatUptime,
 	formatValueByUnit,
 	inferBucketSeconds,
 	inferRangeMs,
 	parseBucketMs,
+	pluralize,
 } from "../format"
 
 // This file is the contract for the consolidation: every helper below replaced
@@ -162,5 +166,33 @@ describe("bucket helpers normalize warehouse timestamps", () => {
 		expect(bucketIntervalLabel(86_400)).toBe("/d")
 		expect(bucketIntervalLabel(7)).toBe("")
 		expect(bucketIntervalLabel(undefined)).toBe("")
+	})
+})
+
+describe("pluralize / countLabel", () => {
+	it("picks the noun form from the count", () => {
+		expect(pluralize(1, "host")).toBe("host")
+		expect(pluralize(0, "host")).toBe("hosts")
+		expect(pluralize(2, "query", "queries")).toBe("queries")
+		expect(countLabel(1200, "span")).toBe("1,200 spans")
+	})
+})
+
+describe("formatRatePerHour", () => {
+	it("switches to the unit a reader can picture", () => {
+		expect(formatRatePerHour(12.4)).toBe("12× an hour")
+		expect(formatRatePerHour(2.34)).toBe("2.3× an hour")
+		expect(formatRatePerHour(0.5)).toBe("12× a day")
+		expect(formatRatePerHour(0.01)).toBe("1.7× a week")
+	})
+})
+
+describe("formatRate", () => {
+	it("reads at the precision a rate is compared at", () => {
+		expect(formatRate(0)).toBe("0")
+		expect(formatRate(0.0123)).toBe("0.012")
+		expect(formatRate(12.3456)).toBe("12.3")
+		expect(formatRate(123.4)).toBe("123")
+		expect(formatRate(1234)).toBe("1.2K")
 	})
 })

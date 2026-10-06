@@ -11,6 +11,7 @@
  * the shape rules (which node kinds appear) be unit-tested without mounting a
  * canvas.
  */
+import type { Tone } from "@maple/ui/lib/tone"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -77,8 +78,6 @@ const HEADING_OFFSET = 20
  * Node model
  * -----------------------------------------------------------------------------------------------*/
 
-export type FlowTone = "muted" | "primary" | "success" | "info" | "warning" | "destructive"
-
 /** Which glyph the node renders. Kind is carried by the icon, the tile and the fill — never colour alone. */
 export type FlowGlyph = "issue" | "check" | "incident" | "investigation" | "verdict"
 
@@ -90,7 +89,7 @@ export interface SpineNodeData {
 	readonly titleHint?: string
 	/** The small status word under the title, when the row has one. */
 	readonly status?: string
-	readonly statusTone?: FlowTone
+	readonly statusTone?: Tone
 	readonly detail?: string
 	/** A second muted line, used by the investigation node's "you are here". */
 	readonly note?: string
@@ -294,7 +293,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 				eyebrow: isAlert ? "CHECK" : "ISSUE",
 				title: originTitle(investigation) ?? issueId ?? "—",
 				status: snapshot.status.toUpperCase(),
-				statusTone: "destructive",
+				statusTone: "crit",
 				...(occurrences != null && Number.isFinite(occurrences)
 					? { detail: `· ${formatNumber(occurrences)} events` }
 					: undefined),
@@ -324,7 +323,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 						// is decoded. It belongs in the tooltip, not on a 146px node.
 						titleHint: subject.incident_id,
 						status: snapshot.status.toUpperCase(),
-						statusTone: "destructive",
+						statusTone: "crit",
 						// No clock time beside the status any more — the footer states
 						// the same instant relatively, and carrying both put "10:12 AM"
 						// and "6h ago" two lines apart saying one thing twice.

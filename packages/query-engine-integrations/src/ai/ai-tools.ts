@@ -65,14 +65,21 @@
 // (structured-output pseudo-tools emitted by several SDKs) and are NOT filtered
 // out: they are calls, and dropping them would move every percentile.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
-import { from, fromQuery, inSubquery, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { compile } from "@maple-dev/effect-orm/sql"
+import {
+	from,
+	fromQuery,
+	inSubquery,
+	param,
+	unionAll,
+	type CHUnionQuery,
+} from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import { Array as Arr, Schema } from "effect"
-import type { CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
-import { AiTraceIndex, TraceDetailSpans } from "@maple/query-engine/ch/tables"
+import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { AiTraceIndex, TraceDetailSpans, orgIdParam } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
@@ -129,10 +136,14 @@ const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `
  */
 export type AiToolsWindow = "current" | "previous"
 
-const startParam = (window: AiToolsWindow) =>
-	param.dateTimeString(window === "current" ? "startTime" : "prevStartTime")
-const endParam = (window: AiToolsWindow) =>
-	param.dateTimeString(window === "current" ? "endTime" : "prevEndTime")
+/** The param names of each window, so a read's params name only its own pair. */
+const windowParams = {
+	current: { start: "startTime", end: "endTime" },
+	previous: { start: "prevStartTime", end: "prevEndTime" },
+} as const
+
+const startParam = <W extends AiToolsWindow>(window: W) => param.dateTimeString(windowParams[window].start)
+const endParam = <W extends AiToolsWindow>(window: W) => param.dateTimeString(windowParams[window].end)
 
 /** Series a bucketed read returns before the rest collapse into
  *  {@link AI_TOOLS_OTHER_SERIES_KEY}. */
@@ -148,7 +159,7 @@ export const AI_TOOLS_BREAKDOWN_LIMIT = AI_TOOLS_BREAKDOWN_MAX
  * would name as its parent. Left-joined, so a tool span whose parent is a
  * workflow node (or whose parent was never exported) still produces a row.
  */
-const parentModels = (window: AiToolsWindow) =>
+const parentModels = <W extends AiToolsWindow>(window: W) =>
 	from(AiTraceIndex)
 		.select(($) => ({
 			TraceId: $.TraceId,
@@ -158,7 +169,7 @@ const parentModels = (window: AiToolsWindow) =>
 			parentModel: CH.anyIf($.Model, $.Model.neq("")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(startParam(window)),
 			$.Timestamp.lte(endParam(window)),
 			// The join key is `(TraceId, ParentSpanId)`, so rows with no model are
@@ -195,7 +206,7 @@ const parentModels = (window: AiToolsWindow) =>
  * Sessions tile counts that list's population. A trace holding a tool call
  * always passes it, so no tool call is lost to the join.
  */
-const traceFacts = (window: AiToolsWindow) =>
+const traceFacts = <W extends AiToolsWindow>(window: W) =>
 	from(AiTraceIndex)
 		.select(($) => ({
 			TraceId: $.TraceId,
@@ -211,7 +222,7 @@ const traceFacts = (window: AiToolsWindow) =>
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(startParam(window)),
 			$.Timestamp.lte(endParam(window)),
 		])
@@ -258,7 +269,7 @@ interface ToolCallColumns {
 
 /** The index rows of the window with their trace's facts beside them — the half
  *  of {@link toolCalls} both its shapes share. */
-const toolCallIndex = (window: AiToolsWindow) =>
+const toolCallIndex = <W extends AiToolsWindow>(window: W) =>
 	from(AiTraceIndex).innerJoinQuery(traceFacts(window), "trace", (call, trace) =>
 		call.TraceId.eq(trace.TraceId),
 	)
@@ -290,9 +301,9 @@ const seriesParentModelNeeded = (opts: AiToolsFilterOpts): boolean =>
  * derived column of the same name, and an aggregate over the shadowed name
  * becomes a cyclic alias rather than the aggregate the author meant.
  */
-const toolCalls = (
+const toolCalls = <W extends AiToolsWindow>(
 	opts: AiToolsFilterOpts,
-	window: AiToolsWindow = "current",
+	window: W,
 	withParentModel: boolean = parentModelNeeded(opts),
 ) => {
 	const columns = ($: ToolCallSource, model: CH.Expr<string>) => ({
@@ -312,7 +323,7 @@ const toolCalls = (
 		durationNs: $.Duration,
 	})
 	const filters = ($: ToolCallSource, model: CH.Expr<string>) => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(startParam(window)),
 		$.Timestamp.lte(endParam(window)),
 		// The whole population, and the only predicate that is not a filter:
@@ -517,7 +528,7 @@ export function aiToolsTotalsQuery(
 	opts: AiToolsFilterOpts = {},
 	periods: ReadonlyArray<AiToolsPeriod> = AI_TOOLS_TOTALS_PERIODS,
 ): CHUnionQuery<AiToolsTotalsOutput> {
-	const branch = (window: AiToolsWindow, period: AiToolsPeriod) =>
+	const branch = <W extends AiToolsWindow>(window: W, period: AiToolsPeriod) =>
 		fromQuery(toolCalls(opts, window), `tool_calls_${period}`).select(($) => ({
 			period: CH.lit(period),
 			...measures($),
@@ -548,7 +559,11 @@ export function aiToolsTotalsQuery(
 	const branches = AI_TOOLS_TOTALS_PERIODS.filter((period) => periods.includes(period)).map((period) =>
 		period === "window" ? allSessions : branch(period, period),
 	)
-	return unionAll(...branches).format("JSON")
+	const [first, ...rest] = branches
+	if (first === undefined) {
+		throw new QueryBuilderDefect({ message: "aiToolsTotalsQuery needs at least one period" })
+	}
+	return unionAll(first, ...rest).format("JSON")
 }
 
 export interface AiToolsBreakdownsOutput {
@@ -591,7 +606,7 @@ export const aiToolsBreakdownsRowSchema: CompiledQueryRowSchema<AiToolsBreakdown
  * empty-window guard: a key is in the result because a row produced it.
  */
 export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
-	return fromQuery(toolCalls({ ...opts, tool: undefined }), "tool_breakdown")
+	return fromQuery(toolCalls({ ...opts, tool: undefined }, "current"), "tool_breakdown")
 		.select(($) => ({
 			key: $.toolName,
 			...measures($),
@@ -736,7 +751,10 @@ export const aiToolErrorsRowSchema: CompiledQueryRowSchema<AiToolErrorsOutput> =
 export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
 	// Column names differ from the aliases below (`callErrorType`, `failureMessage`):
 	// an aggregate aliased to its own input's name would read itself.
-	const numbered = fromQuery(toolCalls({ ...opts, failingOnly: undefined }), "tool_calls").select(($) => ({
+	const numbered = fromQuery(
+		toolCalls({ ...opts, failingOnly: undefined }, "current"),
+		"tool_calls",
+	).select(($) => ({
 		ts: $.ts,
 		bucket: isoBucket($.ts),
 		sessionKey: $.sessionKey,
@@ -1015,7 +1033,7 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			cutAttributeBytes: cutAttributeBytes(aiSpanAttributes($.SpanAttributes)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("sliceStart")),
 			$.Timestamp.lte(param.dateTimeString("sliceEnd")),
 			CH.inExprList(
@@ -1123,7 +1141,7 @@ export function aiToolDescriptionQuery() {
 	return from(AiTraceIndex)
 		.select(($) => ({ description: CH.argMax($.ToolDescription, $.Timestamp) }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.IsToolCall.eq(1),

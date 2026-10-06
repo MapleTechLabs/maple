@@ -8,9 +8,11 @@ import {
 	type CodeReviewFinding,
 } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Button } from "@maple/ui/components/ui/button"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -18,7 +20,7 @@ import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
-	SEVERITY_TONES,
+	SEVERITY_TONE,
 } from "@/components/code-review/code-review-format"
 import {
 	CodeReviewFilters,
@@ -31,9 +33,9 @@ import {
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-search"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ResultView } from "@/components/common/result-view"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewIssuesSearchFields)
@@ -120,72 +122,59 @@ function CodeReviewIssuesPage() {
 					onChange={(state) => onChange({ state })}
 				/>
 			</div>
-			{Result.builder(result)
-				.onInitial(() => (
-					<div className="space-y-2">
-						{Array.from({ length: 6 }, (_, i) => (
-							<Skeleton key={i} className="h-16 w-full" />
-						))}
+			<ResultView
+				result={result}
+				loading={<SkeletonList rows={6} rowClassName="h-16" gap="2" />}
+				errorTitle="Failed to load issues"
+				onRetry={refresh}
+				isEmpty={(response) => response.findings.length === 0}
+				empty={
+					<NothingInWindow
+						title="No issues in this window"
+						description={
+							filtered
+								? "Nothing matches these filters."
+								: "Issues the reviewer posts on pull requests are listed here."
+						}
+						onClear={
+							filtered
+								? () =>
+										onChange({
+											repo: undefined,
+											author: undefined,
+											severity: undefined,
+											category: undefined,
+											state: undefined,
+										})
+								: undefined
+						}
+					/>
+				}
+			>
+				{(response) => (
+					<div className="flex flex-col gap-3">
+						<ul className="divide-y overflow-hidden rounded-xl border bg-card">
+							{response.findings.map((finding) => (
+								<FindingRow
+									key={finding.id}
+									finding={finding}
+									onOpen={() => onChange({ review: finding.reviewId })}
+								/>
+							))}
+						</ul>
+						{response.nextCursor !== null ? (
+							<ListFooter
+								shown={response.findings.length}
+								noun="issues"
+								hasMore={limit < MAX_ROWS}
+								capped={limit >= MAX_ROWS}
+								loading={result.waiting}
+								onLoadMore={() => setLimit((current) => Math.min(current + PAGE, MAX_ROWS))}
+							/>
+						) : null}
 					</div>
-				))
-				.onError((error) => (
-					<QueryErrorState error={error} titleOverride="Failed to load issues" onRetry={refresh} />
-				))
-				.onSuccess((response) =>
-					response.findings.length === 0 ? (
-						<NothingInWindow
-							title="No issues in this window"
-							description={
-								filtered
-									? "Nothing matches these filters."
-									: "Issues the reviewer posts on pull requests are listed here."
-							}
-							onClear={
-								filtered
-									? () =>
-											onChange({
-												repo: undefined,
-												author: undefined,
-												severity: undefined,
-												category: undefined,
-												state: undefined,
-											})
-									: undefined
-							}
-						/>
-					) : (
-						<div className="flex flex-col gap-3">
-							<ul className="divide-y overflow-hidden rounded-xl border bg-card">
-								{response.findings.map((finding) => (
-									<FindingRow
-										key={finding.id}
-										finding={finding}
-										onOpen={() => onChange({ review: finding.reviewId })}
-									/>
-								))}
-							</ul>
-							{response.nextCursor !== null ? (
-								limit < MAX_ROWS ? (
-									<Button
-										variant="outline"
-										size="sm"
-										className="self-center"
-										onClick={() =>
-											setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
-										}
-									>
-										Load more
-									</Button>
-								) : (
-									<p className="text-center text-xs text-muted-foreground">
-										Showing the latest {MAX_ROWS}. Narrow the window to see older issues.
-									</p>
-								)
-							) : null}
-						</div>
-					),
-				)
-				.render()}
+				)}
+			</ResultView>
 			<ReviewDetailSheet
 				reviewId={search.review}
 				onClose={() => onChange({ review: undefined })}
@@ -242,7 +231,7 @@ function FindingRow({ finding, onOpen }: { finding: CodeReviewFinding; onOpen: (
 				<span
 					className={cn(
 						"w-16 shrink-0 pt-0.5 text-xs font-medium",
-						SEVERITY_TONES[finding.severity],
+						TONE_TEXT[SEVERITY_TONE[finding.severity]],
 					)}
 				>
 					{SEVERITY_LABELS[finding.severity]}

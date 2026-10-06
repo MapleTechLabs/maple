@@ -102,8 +102,9 @@ export function StepTeam({
 							type="submit"
 							variant="outline"
 							disabled={!actions || pending !== null || !name.trim() || !dirtyName}
+							loading={pending === "rename"}
 						>
-							{pending === "rename" ? "Saving…" : "Save name"}
+							Save name
 						</Button>
 					</div>
 				</form>
@@ -141,8 +142,9 @@ export function StepTeam({
 							type="submit"
 							variant="outline"
 							disabled={!actions || pending !== null || !email.trim() || emailAlreadyInvited}
+							loading={pending === "invite"}
 						>
-							{pending === "invite" ? "Sending…" : "Send invitation"}
+							Send invitation
 						</Button>
 					</div>
 					<p id="onboarding-invite-help" className="text-xs leading-relaxed text-muted-foreground">

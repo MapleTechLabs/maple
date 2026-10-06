@@ -5,12 +5,12 @@
 
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, type CHQuery } from "@maple-dev/effect-clickhouse"
-import { table } from "@maple-dev/effect-clickhouse"
-import { MetricsSum, MetricsGauge, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import { table } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsSum, MetricsGauge, MetricCatalog, SpanMetricsCallsHourly, orgIdParam } from "../tables"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
@@ -102,7 +102,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.MetricName.eq(param.string("metricName")),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -224,7 +224,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			Value: CH.argMaxMerge($.LastValue),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
 			$.Hour.gte(previousBucket),
 			$.Hour.lte(endBucket),
@@ -244,14 +244,17 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		)
 
 	const hourlyValues = table("hourly_values", {
-		Hour: T.dateTimeString,
-		ServiceName: T.string,
-		MetricName: T.string,
-		SpanKind: T.string,
-		AttrFingerprint: T.uint64,
-		ResourceFingerprint: T.uint64,
-		StartTimeUnix: T.dateTime64String,
-		Value: T.float64,
+		external: true,
+		columns: {
+			Hour: T.dateTimeString,
+			ServiceName: T.string,
+			MetricName: T.string,
+			SpanKind: T.string,
+			AttrFingerprint: T.uint64,
+			ResourceFingerprint: T.uint64,
+			StartTimeUnix: T.dateTime64String,
+			Value: T.float64,
+		},
 	})
 
 	const deltasQuery = from(hourlyValues)
@@ -279,10 +282,13 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		.where(($) => [$.Hour.gte(bucket)])
 
 	const deltas = table("with_deltas", {
-		Hour: T.dateTimeString,
-		ServiceName: T.string,
-		SpanKind: T.string,
-		delta: T.float64,
+		external: true,
+		columns: {
+			Hour: T.dateTimeString,
+			ServiceName: T.string,
+			SpanKind: T.string,
+			delta: T.float64,
+		},
 	})
 
 	const q = from(deltas)
@@ -389,7 +395,7 @@ export function metricsTimeseriesRateQuery(
 			opts.metricNames && opts.metricNames.length > 0
 				? $.MetricName.in_(...opts.metricNames)
 				: $.MetricName.eq(param.string("metricName")),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(
 				CH.intervalSub(
 					param.dateTimeString("startTime"),
@@ -409,11 +415,14 @@ export function metricsTimeseriesRateQuery(
 
 	// Outer query: aggregate deltas into rate/increase per bucket
 	const cteTable = table("with_deltas", {
-		TimeUnix: T.dateTime64String,
-		ServiceName: T.string,
-		Attributes: T.map(T.string, T.string),
-		resourceAttributeValue: T.string,
-		delta: T.float64,
+		external: true,
+		columns: {
+			TimeUnix: T.dateTime64String,
+			ServiceName: T.string,
+			Attributes: T.map(T.string, T.string),
+			resourceAttributeValue: T.string,
+			delta: T.float64,
+		},
 	})
 
 	const q = from(cteTable)
@@ -496,7 +505,7 @@ export function metricsSparklinesQuery(opts: MetricsSparklinesOpts) {
 		})
 		.where(($) => [
 			$.MetricName.in_(...opts.metricNames),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
@@ -565,7 +574,7 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 		})
 		.where(($) => [
 			$.MetricName.eq(param.string("metricName")),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			// Drop datapoints missing the label so an empty bucket doesn't dominate.
@@ -622,7 +631,7 @@ export function listMetricsQuery(opts: ListMetricsOpts) {
 			isMonotonic: CH.any_($.IsMonotonic),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Floor the start bound to the hour so the oldest catalog bucket
 			// (Hour is already hour-truncated) isn't dropped for mid-hour ranges.
 			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTimeString("startTime")), 3600)),
@@ -658,7 +667,7 @@ export function metricsSummaryQuery(opts?: MetricsSummaryOpts) {
 			dataPointCount: CH.sum($.DataPointCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTimeString("startTime")), 3600)),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			CH.when(opts?.serviceName, (v: string) => $.ServiceName.eq(v)),

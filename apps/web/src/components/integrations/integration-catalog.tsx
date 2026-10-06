@@ -1,4 +1,6 @@
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -18,6 +20,7 @@ import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
+import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { docsUrl } from "@/lib/docs"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -263,7 +266,7 @@ export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
 
 interface CardStatus {
 	readonly label: string
-	readonly variant: "success" | "warning" | "error" | "outline"
+	readonly variant: "ok" | "warn" | "crit" | "outline"
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
@@ -316,15 +319,15 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const railway: CardStatus | null = Result.builder(railwayResult)
 		.onSuccess((status): CardStatus => {
 			if (!status.connected) return NOT_CONNECTED
-			if (status.authFailed) return { label: "Token rejected", variant: "error" }
-			return { label: plural(status.environments.length, "environment"), variant: "success" }
+			if (status.authFailed) return { label: "Token rejected", variant: "crit" }
+			return { label: countLabel(status.environments.length, "environment"), variant: "ok" }
 		})
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
 		.onSuccess((status): CardStatus =>
-			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+			status.connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -338,8 +341,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 				const enabled = targets.filter((target) => target.enabled).length
 				const noun = targetType === "planetscale" ? "org" : "target"
 				return {
-					label: `${targets.length} ${noun}${targets.length === 1 ? "" : "s"} · ${enabled} enabled`,
-					variant: failing ? "warning" : "success",
+					label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
+					variant: failing ? "warn" : "ok",
 				}
 			})
 			.onInitial(() => null)
@@ -353,7 +356,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			const failing = status.scrape_target?.last_scrape_error != null
 			return {
 				label: status.organization ?? "Connected",
-				variant: failing ? "warning" : "success",
+				variant: failing ? "warn" : "ok",
 			}
 		})
 		.onInitial(() => null)
@@ -361,7 +364,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 
 	const hazel: CardStatus | null = Result.builder(hazelResult)
 		.onSuccess((status): CardStatus =>
-			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+			status.connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -370,15 +373,15 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onSuccess((status): CardStatus => {
 			// Deactivated on GitHub's side (uninstalled / suspended) — the install row is
 			// kept, so flag it for attention rather than showing a bare "Not connected".
-			if (status.state === "disconnected") return { label: "Deactivated", variant: "warning" }
-			if (status.state === "suspended") return { label: "Suspended", variant: "warning" }
+			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
+			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
 			if (!status.connected) return NOT_CONNECTED
 			// Count only active repos; provider-removed ones are shown in the card
 			// with a re-enable/delete affordance, not as live synced repos.
 			const count = status.repositories.filter((r) => r.status === "active").length
 			return {
-				label: count > 0 ? `${count} repo${count === 1 ? "" : "s"}` : "Connected",
-				variant: "success",
+				label: count > 0 ? countLabel(count, "repo") : "Connected",
+				variant: "ok",
 			}
 		})
 		.onInitial(() => null)
@@ -417,7 +420,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 							workspaces.length === 1
 								? (workspaces[0]?.name ?? "Connected")
 								: `${workspaces.length} workspaces`,
-						variant: "success",
+						variant: "ok",
 					}
 				})
 				.onInitial((): CardStatus | null => null)
@@ -531,8 +534,6 @@ const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
 const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
 const UNAVAILABLE: UnavailableOverview = { kind: "unavailable" }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
-
 const syncedLabel = (ms: number | null | undefined, verb = "synced"): string | null =>
 	ms == null ? null : `${verb} ${formatRelativeTime(new Date(ms).toISOString())}`
 
@@ -588,14 +589,14 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const issue = status.authFailed
 				? "Token rejected"
 				: failing > 0
-					? `${plural(failing, "environment")} failing`
+					? `${countLabel(failing, "environment")} failing`
 					: null
 			return {
 				kind: "connected",
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context: status.workspaceNames,
-				stat: `${plural(status.environments.length, "environment")} polled`,
+				stat: `${countLabel(status.environments.length, "environment")} polled`,
 				lastSyncLabel: syncedLabel(status.lastSyncedAt),
 				issue,
 			}
@@ -613,12 +614,12 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const issue = !status.analyticsCapable
 				? "Update access"
 				: erroringZones > 0
-					? `${plural(erroringZones, "zone")} erroring`
+					? `${countLabel(erroringZones, "zone")} erroring`
 					: workersFailing
 						? "Workers sync failing"
 						: null
 			const statParts =
-				zones.length > 0 ? [`${enabledZones} of ${plural(zones.length, "zone")} streaming`] : []
+				zones.length > 0 ? [`${enabledZones} of ${countLabel(zones.length, "zone")} streaming`] : []
 			if (status.workers?.enabled) statParts.push("Workers")
 			return {
 				kind: "connected",
@@ -649,13 +650,13 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					kind: "connected",
 					health: failing > 0 ? "attention" : "healthy",
 					stateLabel: failing > 0 ? "Needs attention" : "Healthy",
-					context: plural(targets.length, `scrape ${noun}`),
+					context: countLabel(targets.length, `scrape ${noun}`),
 					stat: `${enabled} of ${targets.length} enabled`,
 					lastSyncLabel: syncedLabel(
 						maxMs(targets.map((t) => (t.last_scrape_at ? Date.parse(t.last_scrape_at) : null))),
 						"scraped",
 					),
-					issue: failing > 0 ? `${plural(failing, noun)} failing` : null,
+					issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
 				}
 			})
 			.onInitial(() => null)
@@ -686,7 +687,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				context: status.organization,
 				stat:
 					planetscaleDbCount != null && planetscaleDbCount > 0
-						? `${plural(planetscaleDbCount, "database")} tracked`
+						? `${countLabel(planetscaleDbCount, "database")} tracked`
 						: status.scrape_target?.enabled
 							? "Metrics scraping on"
 							: null,
@@ -749,16 +750,16 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const failing = active.filter((r) => r.lastSyncError != null).length
 			const issue =
 				failing > 0
-					? `${plural(failing, "repo")} failing`
+					? `${countLabel(failing, "repo")} failing`
 					: removed > 0
-						? `${plural(removed, "repo")} removed`
+						? `${countLabel(removed, "repo")} removed`
 						: null
 			return {
 				kind: "connected",
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context: status.accountLogin ? `@${status.accountLogin} · GitHub App` : "GitHub App",
-				stat: active.length > 0 ? `${plural(active.length, "repo")} synced` : null,
+				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
 				lastSyncLabel: syncedLabel(maxMs(active.map((r) => r.lastSyncedAt))),
 				issue,
 			}
@@ -815,7 +816,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 						context:
 							workspaces.length === 1
 								? (workspaces[0]?.name ?? null)
-								: plural(workspaces.length, "workspace"),
+								: countLabel(workspaces.length, "workspace"),
 						stat: "Alerts & agent ready",
 						// No sync loop — the bot is push-per-message.
 						lastSyncLabel: null,
@@ -855,32 +856,23 @@ export function IntegrationsSummary() {
 	const attention = connected.filter((value) => value.health === "attention").length
 	return (
 		<div className="flex items-center gap-2">
-			<span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-0.5 text-xs text-muted-foreground">
-				<span className="size-1.5 rounded-full bg-success" aria-hidden />
+			<Badge variant="meta" pill className="gap-1.5 px-2.5 font-normal">
+				<StatusDot tone="ok" />
 				{connected.length} connected
-			</span>
+			</Badge>
 			{attention > 0 && (
-				<span className="inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning/10 px-2.5 py-0.5 text-xs text-warning-foreground">
-					<span className="size-1.5 rounded-full bg-warning" aria-hidden />
+				<Badge variant="warn" pill className="gap-1.5 px-2.5 font-normal">
+					<StatusDot tone="warn" />
 					{attention} need attention
-				</span>
+				</Badge>
 			)}
 		</div>
 	)
 }
 
 function HealthDot({ health }: { health: "healthy" | "attention" | "unavailable" }) {
-	return (
-		<span
-			aria-hidden
-			className={cn(
-				"size-1.5 shrink-0 rounded-full",
-				health === "healthy" && "bg-success",
-				health === "attention" && "bg-warning",
-				health === "unavailable" && "bg-muted-foreground",
-			)}
-		/>
-	)
+	if (health === "unavailable") return <StatusDot tone="neutral" />
+	return <StatusDot tone={health === "healthy" ? "ok" : "warn"} />
 }
 
 function ConnectedRow({
@@ -928,7 +920,7 @@ function ConnectedRow({
 					</span>
 				)}
 				{connected?.issue && (
-					<Badge variant="warning" size="sm" className="hidden sm:inline-flex">
+					<Badge variant="warn" size="sm" className="hidden sm:inline-flex">
 						{connected.issue}
 					</Badge>
 				)}
@@ -996,14 +988,6 @@ function SkeletonRow() {
 	)
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-	return (
-		<span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-			{children}
-		</span>
-	)
-}
-
 export function NewBadge() {
 	return (
 		<Badge variant="info" size="sm">
@@ -1041,7 +1025,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 		<div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none">
 			{(connected.length > 0 || loading.length > 0) && (
 				<section className="flex flex-col gap-2">
-					<SectionLabel>Connected</SectionLabel>
+					<Eyebrow variant="label">Connected</Eyebrow>
 					<div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
 						{connected.map(({ entry, overview }) => (
 							<ConnectedRow
@@ -1059,7 +1043,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 			)}
 			{shelves.map((shelf) => (
 				<section key={shelf.id} className="flex flex-col gap-2">
-					<SectionLabel>{shelf.label}</SectionLabel>
+					<Eyebrow variant="label">{shelf.label}</Eyebrow>
 					<div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
 						{shelf.entries.map(({ entry, overview }) => (
 							<AvailableCard

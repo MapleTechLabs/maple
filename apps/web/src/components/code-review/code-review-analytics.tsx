@@ -1,25 +1,23 @@
 import { useMemo, useState, type ReactNode } from "react"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 import { Link } from "@tanstack/react-router"
 import type { CodeReviewAnalytics, CodeReviewTotals, PrReviewSeverity } from "@maple/domain/http"
 import { QueryBuilderBarChart } from "@maple/ui/components/charts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { cn } from "@maple/ui/lib/utils"
+import { Delta, relativeChange } from "@maple/ui/components/ui/delta"
+import { Meter } from "@maple/ui/components/ui/meter"
+import { Panel, PanelBody, PanelHeader } from "@maple/ui/components/ui/panel"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 
-import { ArrowRightIcon, ArrowTrendDownIcon, ArrowTrendUpIcon, GithubIcon } from "@/components/icons"
+import { ArrowRightIcon, GithubIcon } from "@/components/icons"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 
 import { AuthorLabel } from "./author-avatar"
 import type { CodeReviewSearch } from "./code-review-search"
-import {
-	CATEGORY_LABELS,
-	bucketIso,
-	deltaOf,
-	formatCount,
-	formatDelta,
-	formatSpan,
-	type Delta,
-} from "./code-review-format"
+import { CATEGORY_LABELS, bucketIso, formatCount, formatSpan } from "./code-review-format"
 
 type VolumeMetric = "pullRequests" | "reviews"
 type SeverityFilter = "all" | PrReviewSeverity
@@ -85,6 +83,12 @@ export function CodeReviewAnalyticsSkeleton() {
 
 /* ---------------------------------------------------------------------------------------------- */
 
+/** Change against the previous window; nothing when there is no baseline to compare with. */
+function changeOf(current: number | null, previous: number | null, invert = false) {
+	const ratio = current === null || previous === null ? null : relativeChange(current, previous)
+	return ratio === null ? undefined : <Delta ratio={ratio} invert={invert} />
+}
+
 function HeadlineStrip({
 	current,
 	previous,
@@ -94,123 +98,73 @@ function HeadlineStrip({
 	previous: CodeReviewTotals
 	windowLabel: string
 }) {
+	const versus = `vs previous ${windowLabel}`
 	return (
-		<div className="grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 xl:grid-cols-4">
-			<Headline
-				label="Pull requests reviewed"
+		<StatRail>
+			<StatRailItem
+				compact
+				eyebrow="Pull requests reviewed"
 				value={formatCount(current.pullRequests)}
-				delta={deltaOf(current.pullRequests, previous.pullRequests, true)}
-				windowLabel={windowLabel}
+				delta={changeOf(current.pullRequests, previous.pullRequests)}
+				subline={versus}
 			/>
-			<Headline
-				label="Total reviews"
+			<StatRailItem
+				compact
+				eyebrow="Total reviews"
 				value={formatCount(current.reviews)}
-				delta={deltaOf(current.reviews, previous.reviews, true)}
-				windowLabel={windowLabel}
+				delta={changeOf(current.reviews, previous.reviews)}
+				subline={versus}
 			/>
-			<Headline
-				label="Avg time to merge"
-				value={formatSpan(current.avgMergeSeconds)}
-				delta={deltaOf(current.avgMergeSeconds, previous.avgMergeSeconds, false)}
-				windowLabel={windowLabel}
-				hint="From a pull request's first review to its merge"
-			/>
-			<Headline
-				label="Issues caught"
+			<div title="From a pull request's first review to its merge">
+				<StatRailItem
+					compact
+					eyebrow="Avg time to merge"
+					value={formatSpan(current.avgMergeSeconds)}
+					delta={changeOf(current.avgMergeSeconds, previous.avgMergeSeconds, true)}
+					subline={versus}
+				/>
+			</div>
+			<StatRailItem
+				compact
+				eyebrow="Issues caught"
 				value={formatCount(current.findings)}
-				suffix={
+				subline={
 					current.repositoriesWithFindings > 0
 						? `in ${current.repositoriesWithFindings} ${current.repositoriesWithFindings === 1 ? "repo" : "repos"}`
 						: undefined
 				}
-				windowLabel={windowLabel}
 			/>
-		</div>
-	)
-}
-
-function Headline({
-	label,
-	value,
-	suffix,
-	delta,
-	windowLabel,
-	hint,
-}: {
-	label: string
-	value: string
-	suffix?: string
-	delta?: Delta | null
-	windowLabel: string
-	hint?: string
-}) {
-	return (
-		<div className="flex min-w-0 flex-col gap-2 bg-card px-5 py-4" title={hint}>
-			<span className="text-sm text-muted-foreground">{label}</span>
-			<span className="flex items-baseline gap-2.5">
-				<span className="text-3xl font-semibold tracking-[-0.02em] tabular-nums">{value}</span>
-				{suffix ? <span className="text-base text-muted-foreground">{suffix}</span> : null}
-				{delta ? <DeltaBadge delta={delta} /> : null}
-			</span>
-			<span className="h-4 text-xs text-muted-foreground/70">
-				{delta ? `vs previous ${windowLabel}` : null}
-			</span>
-		</div>
-	)
-}
-
-/** Colour follows improvement, the arrow follows the number, so colour never carries it alone. */
-function DeltaBadge({ delta }: { delta: Delta }) {
-	const Icon = delta.change >= 0 ? ArrowTrendUpIcon : ArrowTrendDownIcon
-	return (
-		<span
-			className={cn(
-				"inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium tabular-nums",
-				delta.change === 0
-					? "bg-muted text-muted-foreground"
-					: delta.good
-						? "bg-[var(--severity-info)]/12 text-[var(--severity-info)]"
-						: "bg-[var(--severity-error)]/12 text-[var(--severity-error)]",
-			)}
-		>
-			<Icon size={12} aria-hidden />
-			{formatDelta(delta)}
-		</span>
+		</StatRail>
 	)
 }
 
 /* ---------------------------------------------------------------------------------------------- */
 
-function Card({
+function AnalyticsPanel({
 	title,
 	control,
 	children,
 	footer,
-	className,
 }: {
 	title: string
 	control?: ReactNode
 	children: ReactNode
 	footer?: ReactNode
-	className?: string
 }) {
 	return (
-		<section className={cn("flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card", className)}>
-			<header className="flex h-14 items-center justify-between gap-3 border-b px-5">
-				<h2 className="text-sm font-medium">{title}</h2>
-				{control}
-			</header>
-			<div className="flex-1 px-5 py-4">{children}</div>
-			{footer ? <footer className="border-t px-5 py-4">{footer}</footer> : null}
-		</section>
+		<Panel>
+			<PanelHeader title={title} action={control} />
+			<PanelBody className="px-4 py-4">{children}</PanelBody>
+			{footer ? <footer className="border-t px-4 py-4">{footer}</footer> : null}
+		</Panel>
 	)
 }
 
 function ChartFrame({ empty, children }: { empty: boolean; children: ReactNode }) {
 	return empty ? (
-		<div className="flex h-56 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+		<EmptyMessage dashed className="flex h-56 items-center justify-center">
 			Nothing in this window
-		</div>
+		</EmptyMessage>
 	) : (
 		<div className="h-56 w-full">{children}</div>
 	)
@@ -229,7 +183,7 @@ function VolumeCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 		.slice(0, 5)
 
 	return (
-		<Card
+		<AnalyticsPanel
 			title="Pull requests reviewed"
 			control={
 				<Select
@@ -262,7 +216,7 @@ function VolumeCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 			<ChartFrame empty={analytics.current.reviews === 0}>
 				<QueryBuilderBarChart data={rows} legend="hidden" className="h-full w-full" />
 			</ChartFrame>
-		</Card>
+		</AnalyticsPanel>
 	)
 }
 
@@ -288,7 +242,7 @@ function IssuesCard({ analytics, search }: { analytics: CodeReviewAnalytics; sea
 		.slice(0, 5)
 
 	return (
-		<Card
+		<AnalyticsPanel
 			title="Issues caught"
 			control={
 				<Select
@@ -335,7 +289,7 @@ function IssuesCard({ analytics, search }: { analytics: CodeReviewAnalytics; sea
 			<ChartFrame empty={analytics.current.findings === 0}>
 				<QueryBuilderBarChart data={rows} stacked legend="hidden" className="h-full w-full" />
 			</ChartFrame>
-		</Card>
+		</AnalyticsPanel>
 	)
 }
 
@@ -378,8 +332,7 @@ function BarList({
 	emptyLabel: string
 }) {
 	const max = Math.max(...rows.map((row) => row.value), 1)
-	if (rows.length === 0)
-		return <p className="py-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+	if (rows.length === 0) return <EmptyMessage>{emptyLabel}</EmptyMessage>
 	return (
 		<ul className="flex flex-col gap-2.5">
 			{rows.map((row) => (
@@ -388,12 +341,12 @@ function BarList({
 						<span className="truncate">{row.label}</span>
 						<span className="tabular-nums text-muted-foreground">{formatCount(row.value)}</span>
 					</span>
-					<span className="h-1.5 overflow-hidden rounded-full bg-muted">
-						<span
-							className={cn("block h-full rounded-full", row.tone ?? "bg-primary")}
-							style={{ width: `${(row.value / max) * 100}%` }}
-						/>
-					</span>
+					<Meter
+						value={row.value}
+						max={max}
+						className="h-1.5 bg-muted"
+						fillClassName={row.tone ?? "bg-primary"}
+					/>
 				</li>
 			))}
 		</ul>
@@ -402,7 +355,7 @@ function BarList({
 
 function CategoriesCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 	return (
-		<Card title="Issues by category">
+		<AnalyticsPanel title="Issues by category">
 			<BarList
 				emptyLabel="No issues in this window"
 				rows={analytics.categories.map((row) => ({
@@ -411,13 +364,13 @@ function CategoriesCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 					value: row.findings,
 				}))}
 			/>
-		</Card>
+		</AnalyticsPanel>
 	)
 }
 
 function OutcomesCard({ current, analytics }: { current: CodeReviewTotals; analytics: CodeReviewAnalytics }) {
 	return (
-		<Card title="Review outcomes">
+		<AnalyticsPanel title="Review outcomes">
 			<BarList
 				emptyLabel="No reviews in this window"
 				rows={[
@@ -425,25 +378,25 @@ function OutcomesCard({ current, analytics }: { current: CodeReviewTotals; analy
 						key: "issues",
 						label: "Issues found",
 						value: analytics.verdicts.issues,
-						tone: "bg-[var(--severity-warn)]",
+						tone: TONE_FILL.warn,
 					},
 					{
 						key: "clean",
 						label: "Clean",
 						value: analytics.verdicts.clean,
-						tone: "bg-[var(--severity-info)]",
+						tone: TONE_FILL.ok,
 					},
 					{
 						key: "not_applicable",
 						label: "Nothing to review",
 						value: analytics.verdicts.notApplicable,
-						tone: "bg-muted-foreground/50",
+						tone: TONE_FILL.neutral,
 					},
 					{
 						key: "failed",
 						label: "Failed",
 						value: current.failedReviews,
-						tone: "bg-[var(--severity-error)]",
+						tone: TONE_FILL.crit,
 					},
 					{
 						key: "skipped",
@@ -453,42 +406,42 @@ function OutcomesCard({ current, analytics }: { current: CodeReviewTotals; analy
 					},
 				].filter((row) => row.value > 0)}
 			/>
-		</Card>
+		</AnalyticsPanel>
 	)
 }
 
 function AuthorsCard({ analytics }: { analytics: CodeReviewAnalytics }) {
 	return (
-		<Card title="Top authors">
+		<AnalyticsPanel title="Top authors">
 			{analytics.authors.length === 0 ? (
-				<p className="py-6 text-center text-sm text-muted-foreground">No authors in this window</p>
+				<EmptyMessage>No authors in this window</EmptyMessage>
 			) : (
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="text-xs text-muted-foreground">
-							<th className="pb-2 text-left font-normal">Author</th>
-							<th className="pb-2 text-right font-normal">PRs</th>
-							<th className="pb-2 text-right font-normal">Issues</th>
-						</tr>
-					</thead>
-					<tbody>
+				<Table size="sm" variant="bare">
+					<TableHeader>
+						<TableRow>
+							<TableHead className="pl-0 font-normal">Author</TableHead>
+							<TableHead className="text-right font-normal">PRs</TableHead>
+							<TableHead className="pr-0 text-right font-normal">Issues</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{analytics.authors.map((row) => (
-							<tr key={row.author}>
-								<td className="max-w-0 py-1.5 pr-3">
+							<TableRow key={row.author}>
+								<TableCell className="max-w-0 pl-0 text-sm">
 									<AuthorLabel login={row.author} className="max-w-full" />
-								</td>
-								<td className="py-1.5 text-right tabular-nums">
+								</TableCell>
+								<TableCell className="text-right text-sm tabular-nums">
 									{formatCount(row.pullRequests)}
-								</td>
-								<td className="py-1.5 text-right tabular-nums text-muted-foreground">
+								</TableCell>
+								<TableCell className="pr-0 text-right text-sm tabular-nums text-muted-foreground">
 									{formatCount(row.findings)}
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			)}
-		</Card>
+		</AnalyticsPanel>
 	)
 }
 
@@ -536,13 +489,18 @@ function SecondaryStats({ current }: { current: CodeReviewTotals }) {
 		},
 	]
 	return (
-		<dl className="grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4 xl:grid-cols-7">
+		<StatRail className="xl:grid-cols-7">
 			{stats.map((stat) => (
-				<div key={stat.label} className="flex flex-col gap-1 bg-card px-4 py-3" title={stat.hint}>
-					<dt className="text-xs text-muted-foreground">{stat.label}</dt>
-					<dd className="text-lg font-medium tabular-nums">{stat.value}</dd>
+				<div key={stat.label} title={stat.hint}>
+					<StatRailItem
+						compact
+						eyebrow={stat.label}
+						value={stat.value}
+						className="px-4 py-3"
+						valueClassName="text-lg"
+					/>
 				</div>
 			))}
-		</dl>
+		</StatRail>
 	)
 }

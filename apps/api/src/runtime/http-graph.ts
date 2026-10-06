@@ -11,6 +11,7 @@ import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/v1/billing-public.http"
+import { HttpEmailPublicLive } from "@/routes/v1/email-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
@@ -115,6 +116,7 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthLive),
 	Layer.provide(HttpBillingPublicLive),
 	Layer.provide(HttpCodeReviewLive),
+	Layer.provide(HttpEmailPublicLive),
 	Layer.provide(HttpErrorsLive),
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpOrgClickHouseSettingsLive),

@@ -10,7 +10,6 @@ import {
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
-	derived,
 	githubAppSourceEnv,
 	googleAnalyticsOAuthEnv,
 	ingestKeyCryptoEnv,
@@ -41,10 +40,6 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		ingestKeyCryptoEnv,
 		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		appUrlsEnv(domains),
-		// Canonical origin for self-published URLs (MCP `server.json`), never forwarded headers.
-		domains.api
-			? derived("MAPLE_API_BASE_URL", `https://${domains.api}`)
-			: plainWithDefault("MAPLE_API_BASE_URL", "https://api.maple.dev"),
 		plainWithDefault("QE_BUCKET_CACHE_ENABLED", "true"),
 		plainWithDefault("QE_BUCKET_CACHE_TTL_SECONDS", "86400"),
 		plainWithDefault("QE_BUCKET_CACHE_FLUX_SECONDS", "60"),

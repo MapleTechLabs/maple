@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -95,7 +96,7 @@ interface MetricPoint {
 export function PlanetScaleChart({
 	buckets,
 	metric,
-	waiting,
+	waiting = false,
 	scope,
 	markers,
 	emptyMessage,
@@ -234,7 +235,7 @@ export function PlanetScaleChart({
 			title={METRIC_LABELS[metric]}
 			legend={null}
 			scope={scope}
-			className={cn("transition-opacity", waiting && "opacity-60", className)}
+			className={cn(refreshingClass(waiting), className)}
 		>
 			{!hasValues ? (
 				<ChartCardMessage>{emptyMessage ?? CHART_EMPTY_MESSAGE}</ChartCardMessage>

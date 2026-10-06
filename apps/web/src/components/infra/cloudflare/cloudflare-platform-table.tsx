@@ -4,13 +4,14 @@
 // accounts without either dataset — most orgs never see it.
 
 import { Result } from "@/lib/effect-atom"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { CloudflareDurableObjectRow, CloudflareQueueRow } from "@/api/warehouse/cloudflare-infra"
 import { cloudflarePlatformResourcesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { errorRateClass } from "./constants"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
@@ -167,7 +168,7 @@ export function CloudflarePlatformSection({ startTime, endTime }: { startTime: s
 			if (data.queues.length === 0 && data.durableObjects.length === 0) return null
 			return (
 				<section className="space-y-3">
-					<h2 className="text-sm font-medium text-foreground">Platform</h2>
+					<SectionHeading title="Platform" />
 					<div className="space-y-4">
 						{data.queues.length > 0 && <QueueTable queues={data.queues} waiting={r.waiting} />}
 						{data.durableObjects.length > 0 && (

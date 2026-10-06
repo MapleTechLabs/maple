@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -6,8 +7,8 @@ import { SERVICE_MAP_3D_TOPOLOGY } from "./fixture"
 import type { Node3D } from "@/components/service-map/three/types"
 import { resolveMachineBadge } from "@/components/service-map/three/factory-badge"
 import { ServiceMap3DViewport } from "@/components/service-map/three/viewport"
+import { formatErrorRate } from "@maple/ui/lib/format"
 import {
-	formatError,
 	formatLatency,
 	formatRate,
 	health,
@@ -28,12 +29,7 @@ import {
 const topology = SERVICE_MAP_3D_TOPOLOGY
 const nodesById = new Map(topology.nodes.map((node) => [node.id, node]))
 function HealthDot({ node }: { node: Node3D }) {
-	return (
-		<span
-			className="inline-block size-1.5 shrink-0 rounded-full"
-			style={{ backgroundColor: HEALTH_COLOR[health(node.errorRate)] }}
-		/>
-	)
+	return <StatusDot tone="custom" style={{ backgroundColor: HEALTH_COLOR[health(node.errorRate)] }} />
 }
 
 function ServiceInventory({
@@ -77,12 +73,12 @@ function ServiceInventory({
 					<div
 						className="mt-4 inline-flex items-center gap-1.5 text-xs capitalize"
 						style={{
-							color: `var(--severity-${health(selected.errorRate) === "healthy" ? "info" : health(selected.errorRate) === "elevated" ? "warn" : "error"})`,
+							color: `var(--color-severity-${health(selected.errorRate) === "healthy" ? "info" : health(selected.errorRate) === "elevated" ? "warn" : "error"})`,
 						}}
 					>
 						{health(selected.errorRate)}
 						<span className="text-muted-foreground">
-							· {formatError(selected.errorRate)} errors
+							· {formatErrorRate(selected.errorRate)} errors
 						</span>
 					</div>
 				</div>
@@ -187,7 +183,7 @@ function ServiceInventory({
 							</span>
 						</span>
 						<span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-							{formatError(node.errorRate)}
+							{formatErrorRate(node.errorRate)}
 						</span>
 					</button>
 				))}
@@ -226,7 +222,7 @@ export function ServiceMap3DLab() {
 								</p>
 							</div>
 							<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-								<span className="size-1.5 rounded-full bg-muted-foreground" />
+								<StatusDot tone="custom" className="bg-muted-foreground" />
 								Sample topology
 								<span className="ml-2 border-l pl-3">
 									{topology.nodes.length} nodes · {topology.edges.length} connections

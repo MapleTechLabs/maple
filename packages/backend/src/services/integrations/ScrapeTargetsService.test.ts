@@ -49,6 +49,7 @@ const makeConfig = () =>
 const makeLayer = (testDb: TestDb) => {
 	const oauthLive = PlanetScaleOAuthService.layer
 	return Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.effect(PlanetScaleDiscoveryService, PlanetScaleDiscoveryService.make).pipe(
@@ -355,7 +356,7 @@ describe("ScrapeTargetsService", () => {
 
 	it.effect("manual probes update the target but record no check rows", () => {
 		const testDb = createTestDb(trackedDbs)
-		globalThis.fetch = (async () => new Response("up 1\n", { status: 200 })) as typeof fetch
+		const fetchStub = (async () => new Response("up 1\n", { status: 200 })) as typeof fetch
 		return Effect.gen(function* () {
 			const service = yield* ScrapeTargetsService
 			const orgId = asOrgId("org_1")
@@ -369,7 +370,9 @@ describe("ScrapeTargetsService", () => {
 			)
 
 			yield* TestClock.setTime(1750000000000)
-			const probed = yield* service.probe(orgId, target.id)
+			const probed = yield* service
+				.probe(orgId, target.id)
+				.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
 			assert.isTrue(probed.success)
 			assert.isNotNull(probed.lastScrapeAt)
 
@@ -392,17 +395,41 @@ describe("ScrapeTargetsService", () => {
 				}),
 			)
 
-			globalThis.fetch = (async () => {
+			const fetchStub = (async () => {
 				throw new Error("socket exploded")
 			}) as typeof fetch
 
-			const probed = yield* service.probe(orgId, target.id)
+			const probed = yield* service
+				.probe(orgId, target.id)
+				.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
 			assert.isFalse(probed.success)
 			assert.strictEqual(probed.lastScrapeError, "socket exploded")
 			assert.notInclude(probed.lastScrapeError ?? "", "ScrapeTargetsService.ts")
 
 			const checks = yield* service.listChecks(orgId, target.id, {})
 			assert.lengthOf(checks, 0)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("manual probes fail a 200 that carries no Prometheus metrics", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			globalThis.fetch = (async () =>
+				new Response("<html>login</html>", { status: 200 })) as typeof fetch
+			const probed = yield* service.probe(orgId, target.id)
+			assert.isFalse(probed.success)
+			assert.strictEqual(probed.lastScrapeError, "Response contained no Prometheus metrics")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

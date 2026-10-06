@@ -5,11 +5,16 @@ import { Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ErrorSection } from "@maple/ui/components/error-section"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { ChevronDownIcon, ChevronRightIcon, CircleWarningIcon, ExternalLinkIcon } from "@/components/icons"
 import {
@@ -42,7 +47,6 @@ import {
 } from "@maple/agent-sessions"
 import { ClampedText, type ClampLines, firstLine } from "./clamped-text"
 import { toggled, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"
-import { Pill } from "./pill"
 import { ToolIo } from "./tool-io"
 
 /**
@@ -51,7 +55,8 @@ import { ToolIo } from "./tool-io"
  * body through `header`.
  */
 
-export type SpanDetailTab = "details" | "messages" | "tools" | "logs"
+const SPAN_DETAIL_TABS = ["details", "messages", "tools", "logs"] as const
+export type SpanDetailTab = (typeof SPAN_DETAIL_TABS)[number]
 
 /** The overlay is a reading surface, not a peek, so a payload gets twice the
  *  transcript's twelve lines before it asks to be expanded. */
@@ -92,28 +97,26 @@ export function SpanExpansion({
 					: "details")
 
 	const tabs = (
-		<div className="flex items-center gap-1">
-			<TabButton active={active === "details"} onClick={() => onTabChange("details")}>
-				Details
-			</TabButton>
-			<TabButton
-				active={active === "messages"}
-				onClick={() => onTabChange("messages")}
-				count={messages.length}
-			>
+		<ToggleGroup
+			aria-label="Span detail"
+			size="xs"
+			value={[active]}
+			onValueChange={(next) => {
+				const picked = SPAN_DETAIL_TABS.find((tab) => tab === next[0])
+				if (picked) onTabChange(picked)
+			}}
+		>
+			<ToggleGroupItem value="details">Details</ToggleGroupItem>
+			<ToggleGroupItem value="messages">
 				Messages
-			</TabButton>
-			<TabButton
-				active={active === "tools"}
-				onClick={() => onTabChange("tools")}
-				count={toolCalls.length}
-			>
+				<TabCount count={messages.length} />
+			</ToggleGroupItem>
+			<ToggleGroupItem value="tools">
 				Tool calls
-			</TabButton>
-			<TabButton active={active === "logs"} onClick={() => onTabChange("logs")}>
-				Logs
-			</TabButton>
-		</div>
+				<TabCount count={toolCalls.length} />
+			</ToggleGroupItem>
+			<ToggleGroupItem value="logs">Logs</ToggleGroupItem>
+		</ToggleGroup>
 	)
 
 	return (
@@ -142,36 +145,9 @@ export function SpanExpansion({
 	)
 }
 
-function TabButton({
-	active,
-	onClick,
-	count,
-	children,
-}: {
-	active: boolean
-	onClick: () => void
-	count?: number
-	children: string
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-pressed={active}
-			className={cn(
-				"flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs",
-				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-				active
-					? "bg-muted font-medium text-foreground"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-			{count !== undefined && count > 0 && (
-				<span className="font-mono text-[10px] text-muted-foreground tabular-nums">{count}</span>
-			)}
-		</button>
-	)
+function TabCount({ count }: { count: number }) {
+	if (count === 0) return null
+	return <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{count}</span>
 }
 
 function CopySpanJsonButton({ span }: { span: AiSessionSpan }) {
@@ -254,7 +230,7 @@ function MetaStrip({ span }: { span: AiSessionSpan }) {
 				</CopyableValue>
 				<span aria-hidden>·</span>
 				<CopyableValue value={span.traceId} label="Trace ID">
-					trace {span.traceId.slice(0, 8)}…{span.traceId.slice(-4)}
+					trace {shortId(span.traceId, "trace")}…{span.traceId.slice(-4)}
 				</CopyableValue>
 			</span>
 		</div>
@@ -320,9 +296,9 @@ function SystemMessageRow({ message }: { message: SpanMessage }) {
 				) : (
 					<ChevronRightIcon size={11} className="shrink-0 text-muted-foreground" />
 				)}
-				<span className="shrink-0 font-medium font-mono text-[10px] text-muted-foreground uppercase tracking-widest">
+				<Eyebrow variant="mono" className="shrink-0">
 					{message.role}
-				</span>
+				</Eyebrow>
 				{!open && (
 					<span className="min-w-0 truncate text-muted-foreground text-xs">{firstLine(text)}</span>
 				)}
@@ -365,14 +341,9 @@ function MessageBlock({ message, span }: { message: SpanMessage; span: AiSession
 	return (
 		<div className="flex min-w-0 flex-col gap-1.5">
 			<div className="flex items-center gap-2.5">
-				<span
-					className={cn(
-						"shrink-0 font-medium font-mono text-[10px] uppercase tracking-widest",
-						roleColor(message.role),
-					)}
-				>
+				<Eyebrow variant="mono" className={cn("shrink-0", roleColor(message.role))}>
 					{message.role}
-				</span>
+				</Eyebrow>
 				{/* Output messages are what this call produced, so the call's own
 				    response facts belong on them and on nothing else. */}
 				{message.origin === "output" && (
@@ -421,9 +392,9 @@ function TextPart({ text, raw }: { text: string; raw: boolean }) {
 function ReasoningPart({ part }: { part: Extract<SpanMessagePart, { kind: "reasoning" }> }) {
 	return (
 		<div className="min-w-0 border-chart-5/50 border-l-2 pl-2.5">
-			<span className="font-medium font-mono text-[10px] text-chart-5 uppercase tracking-widest">
+			<Eyebrow variant="mono" className="text-chart-5">
 				Reasoning
-			</span>
+			</Eyebrow>
 			{part.redacted || part.text === undefined ? (
 				<p className="text-muted-foreground text-xs italic">
 					{part.redacted
@@ -698,28 +669,28 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 	const responseStatus = span.genAi.responseStatus
 
 	return (
-		<div className="flex flex-col gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2.5">
+		<div className="flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5">
 			<div className="flex flex-wrap items-center gap-2">
-				<CircleWarningIcon size={13} className="shrink-0 text-destructive" />
-				<span className="font-medium text-[13px] text-destructive">This call failed</span>
+				<CircleWarningIcon size={13} className="shrink-0 text-severity-error" />
+				<span className="font-medium text-[13px] text-severity-error">This call failed</span>
 				{span.statusCode === "Error" && (
-					<Pill tone="error" className="font-mono normal-case tracking-normal">
+					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						span status Error
-					</Pill>
+					</Badge>
 				)}
 				{errorType !== undefined && errorType !== "" && (
-					<Pill tone="error" className="font-mono normal-case tracking-normal">
+					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						error.type {errorType}
-					</Pill>
+					</Badge>
 				)}
 				{/* Only where it is the evidence: with a status or an error type above,
 				    restating the response status would just be noise beside them. */}
 				{span.statusCode !== "Error" &&
 					(errorType === undefined || errorType === "") &&
 					responseStatus !== undefined && (
-						<Pill tone="error" className="font-mono normal-case tracking-normal">
+						<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 							response.status {responseStatus}
-						</Pill>
+						</Badge>
 					)}
 			</div>
 			<p className="text-muted-foreground text-xs leading-relaxed">

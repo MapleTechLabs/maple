@@ -4,7 +4,7 @@ import { XmarkIcon } from "../icons"
 
 import { Button } from "../ui/button"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
-import { FlamegraphTooltipContent } from "./flamegraph-tooltip"
+import { SpanTooltipContent } from "./span-tooltip"
 import { FlamegraphMinimap } from "./flamegraph-minimap"
 import { spanStartMs as spanStartMsOf } from "../../lib/span-tree"
 import { cn } from "../../lib/utils"
@@ -263,7 +263,7 @@ export function Flamegraph({
 									)}
 								</TooltipTrigger>
 								<TooltipContent side="top" className="max-w-sm">
-									<FlamegraphTooltipContent
+									<SpanTooltipContent
 										span={bar.span}
 										totalDurationMs={totalDurationMs}
 										traceStartTime={traceStartTime}

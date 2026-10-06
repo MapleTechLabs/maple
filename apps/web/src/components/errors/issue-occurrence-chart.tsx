@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { barY, defineChart } from "@tanstack/charts"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -170,14 +171,15 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 
 	if (sorted.length === 0) {
 		return (
-			<div
+			<EmptyMessage
+				dashed
 				className={cn(
-					"flex h-44 w-full items-center justify-center rounded-md border border-dashed border-border/50 text-xs text-muted-foreground",
+					"flex h-44 w-full items-center justify-center border-border/50 py-0 text-xs",
 					className,
 				)}
 			>
 				No activity in this window
-			</div>
+			</EmptyMessage>
 		)
 	}
 

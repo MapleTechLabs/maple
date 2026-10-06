@@ -1,18 +1,25 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option, Schema } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { Link } from "@tanstack/react-router"
 import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { countLabel } from "@maple/ui/lib/format"
 
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { ErrorState } from "@/components/common/error-state"
-import { ExternalLinkIcon, LoaderIcon, RailwayIcon } from "@/components/icons"
+import { RelativeTime } from "@/components/common/relative-time"
+import { ExternalLinkIcon, RailwayIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage } from "@/lib/error-toast"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
@@ -26,6 +33,7 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 
 const TOKENS_URL = "https://railway.com/account/tokens"
 
@@ -57,15 +65,13 @@ function connectedToast(status: RailwayIntegrationStatus, mode: "connect" | "rot
 			status.environments.length === 0
 				? "This token can't see any projects yet."
 				: failed > 0
-					? `${plural(synced, "environment")} synced, ${failed} failed. The rows below say why.`
+					? `${countLabel(synced, "environment")} synced, ${failed} failed. The rows below say why.`
 					: queued === 0
-						? `Pulled the last hour of metrics for ${plural(synced, "environment")}.`
-						: `${plural(synced, "environment")} synced, ${queued} more within 5 minutes.`,
+						? `Pulled the last hour of metrics for ${countLabel(synced, "environment")}.`
+						: `${countLabel(synced, "environment")} synced, ${queued} more within 5 minutes.`,
 		type: "success" as const,
 	}
 }
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 function RailwayTokenForm({
 	mode,
@@ -80,7 +86,6 @@ function RailwayTokenForm({
 		mode: "promiseExit",
 	})
 	const [token, setToken] = useState("")
-	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
 	// Decoding builds the class instance v1 payloads need (a plain object is never sent) and
@@ -88,16 +93,13 @@ function RailwayTokenForm({
 	const request = decodeConnectRequest({ token: token.trim() })
 	const tokenInvalid = token.trim().length > 0 && Option.isNone(request)
 
-	async function handleSubmit(event: React.FormEvent) {
-		event.preventDefault()
+	const [submit, submitting] = useAsyncAction(async () => {
 		if (Option.isNone(request)) return
-		setSubmitting(true)
 		setError(null)
 		const result = await connect({
 			payload: request.value,
 			reactivityKeys: ["railwayIntegrationStatus"],
 		})
-		setSubmitting(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add(connectedToast(result.value, mode))
 			setToken("")
@@ -106,6 +108,11 @@ function RailwayTokenForm({
 		}
 		// Railway's rejection reason is the actionable part; keep it on screen.
 		setError(errorMessage(result, "Failed to connect Railway."))
+	})
+
+	function handleSubmit(event: React.FormEvent) {
+		event.preventDefault()
+		if (Option.isSome(request)) void submit()
 	}
 
 	return (
@@ -126,13 +133,9 @@ function RailwayTokenForm({
 						Cancel
 					</Button>
 				) : null}
-				<Button type="submit" disabled={Option.isNone(request) || submitting}>
-					{submitting ? (
-						<LoaderIcon size={14} className="animate-spin" />
-					) : (
-						<RailwayIcon size={14} />
-					)}
-					{submitting ? "Connecting…" : mode === "rotate" ? "Update token" : "Connect Railway"}
+				<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
+					<RailwayIcon size={14} />
+					{mode === "rotate" ? "Update token" : "Connect Railway"}
 				</Button>
 			</div>
 			{submitting ? (
@@ -161,17 +164,25 @@ export function RailwayIntegrationCard() {
 	const sync = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwaySync"), {
 		mode: "promiseExit",
 	})
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
-	const [syncBusy, setSyncBusy] = useState(false)
+	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["railwayIntegrationStatus"] }),
+		{ success: "Railway disconnected", error: "Failed to disconnect Railway" },
+	)
+	const [handleSync, syncBusy] = useAsyncAction(async () => {
+		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
+		if (Exit.isFailure(result)) {
+			// Non-admins are refused; the reason says so instead of a bare failure.
+			toastManager.add({
+				title: "Failed to sync Railway",
+				description: errorMessage(result, "Try again in a moment."),
+				type: "error",
+			})
+		}
+	})
 	const [rotating, setRotating] = useState(false)
 
-	const status = Result.builder(statusResult)
-		.onSuccess((s) => s)
-		.orElse(() =>
-			Result.isFailure(statusResult)
-				? Option.getOrNull(Option.map(statusResult.previousSuccess, (previous) => previous.value))
-				: null,
-		)
+	// Keep the last loaded status if a refetch fails.
+	const status = Option.getOrNull(AsyncResult.value(statusResult))
 
 	const queued = status?.connected && !status.authFailed ? unsyncedEnvironments(status) : 0
 	// Poll while environments are still waiting on their first sync so the rows land on their own.
@@ -188,31 +199,6 @@ export function RailwayIntegrationCard() {
 				onRetry={refreshStatus}
 			/>
 		)
-	}
-
-	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({ reactivityKeys: ["railwayIntegrationStatus"] })
-		setDisconnectBusy(false)
-		toastManager.add(
-			Exit.isSuccess(result)
-				? { title: "Railway disconnected", type: "success" }
-				: { title: "Failed to disconnect Railway", type: "error" },
-		)
-	}
-
-	async function handleSync() {
-		setSyncBusy(true)
-		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
-		setSyncBusy(false)
-		if (Exit.isFailure(result)) {
-			// Non-admins are refused; the reason says so instead of a bare failure.
-			toastManager.add({
-				title: "Failed to sync Railway",
-				description: errorMessage(result, "Try again in a moment."),
-				type: "error",
-			})
-		}
 	}
 
 	if (status === null || !status.connected) {
@@ -262,29 +248,34 @@ export function RailwayIntegrationCard() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-				<IntegrationIconPlate
-					icon={RailwayIcon}
-					accent={RAILWAY_ACCENT}
-					iconClassName="text-foreground"
-				/>
-				<div className="flex flex-1 flex-col gap-2">
+			<Item variant="card" className="items-start gap-4 p-4">
+				<ItemMedia>
+					<IntegrationIconPlate
+						icon={RailwayIcon}
+						accent={RAILWAY_ACCENT}
+						iconClassName="text-foreground"
+					/>
+				</ItemMedia>
+				<ItemContent className="gap-2">
 					<div className="flex flex-wrap items-center gap-2">
 						<h3 className="text-sm font-semibold">Railway</h3>
 						{status.authFailed ? (
-							<Badge variant="error">Token rejected</Badge>
+							<Badge variant="crit">Token rejected</Badge>
 						) : failing > 0 ? (
-							<Badge variant="warning">Needs attention</Badge>
+							<Badge variant="warn">Needs attention</Badge>
 						) : (
-							<Badge variant="success">Connected</Badge>
+							<Badge variant="ok">Connected</Badge>
 						)}
 					</div>
 					<p className="text-xs text-muted-foreground">
 						{status.workspaceNames ? `${status.workspaceNames} · ` : ""}
-						{plural(status.environments.length, "environment")}
-						{status.lastSyncedAt !== null
-							? ` · synced ${formatRelativeTime(new Date(status.lastSyncedAt).toISOString())}`
-							: ""}
+						{countLabel(status.environments.length, "environment")}
+						{status.lastSyncedAt !== null ? (
+							<>
+								{" · "}
+								<RelativeTime value={status.lastSyncedAt} prefix="synced" />
+							</>
+						) : null}
 						{queued > 0 ? ` · ${queued} waiting for their first sync` : ""}
 					</p>
 					{status.authFailed ? (
@@ -304,8 +295,12 @@ export function RailwayIntegrationCard() {
 					) : (
 						<div className="flex flex-wrap gap-2">
 							<Button size="sm" render={<Link to="/infra/railway">View metrics</Link>} />
-							<Button size="sm" variant="outline" onClick={handleSync} disabled={syncBusy}>
-								{syncBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+							<Button
+								size="sm"
+								variant="outline"
+								onClick={() => void handleSync()}
+								loading={syncBusy}
+							>
 								Sync now
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => setRotating(true)}>
@@ -315,33 +310,30 @@ export function RailwayIntegrationCard() {
 								size="sm"
 								variant="outline"
 								onClick={handleDisconnect}
-								disabled={disconnectBusy}
+								loading={disconnectBusy}
 							>
-								{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
 								Disconnect
 							</Button>
 						</div>
 					)}
-				</div>
-			</div>
+				</ItemContent>
+			</Item>
 
-			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-					<span>Environment</span>
-					<span className="w-20 text-right">Services</span>
-					<span className="w-32 text-right">Last sync</span>
-				</div>
+			<DataTable.Root ariaLabel="Railway environments">
+				<DataTable.Head>
+					<ColumnHead label="Environment" width="w-0 min-w-48 flex-1" />
+					<ColumnHead label="Services" width="w-20" align="right" />
+					<ColumnHead label="Last sync" width="w-32" align="right" />
+				</DataTable.Head>
 				{status.environments.length === 0 ? (
-					<p className="px-4 py-6 text-center text-xs text-muted-foreground">
-						This token can't see any projects yet.
-					</p>
+					<DataTable.Empty>This token can't see any projects yet.</DataTable.Empty>
 				) : (
 					status.environments.map((environment) => (
 						<div
 							key={environment.environmentId}
-							className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border/60 px-4 py-2.5 text-sm last:border-b-0"
+							className="flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0"
 						>
-							<span className="flex min-w-0 flex-col">
+							<span className="flex w-0 min-w-48 flex-1 flex-col">
 								<span className="truncate">
 									{environment.projectName}
 									<span className="text-muted-foreground">
@@ -350,22 +342,22 @@ export function RailwayIntegrationCard() {
 									</span>
 								</span>
 								{environment.lastError !== null ? (
-									<span className="truncate text-xs text-severity-error">
+									<TruncatedText className="text-xs text-severity-error">
 										{environment.lastError}
-									</span>
+									</TruncatedText>
 								) : null}
 							</span>
-							<span className="w-20 text-right tabular-nums text-muted-foreground">
+							<span className="w-20 shrink-0 text-right tabular-nums text-muted-foreground">
 								{environment.serviceCount}
 							</span>
-							<span className="w-32 text-right text-xs text-muted-foreground">
+							<span className="w-32 shrink-0 text-right text-xs text-muted-foreground">
 								{environment.lastSyncedAt !== null ? (
-									formatRelativeTime(new Date(environment.lastSyncedAt).toISOString())
+									<RelativeTime value={environment.lastSyncedAt} tooltip="title" />
 								) : environment.lastError !== null ? (
 									"Failed"
 								) : (
 									<span className="inline-flex items-center gap-1">
-										<LoaderIcon size={12} className="animate-spin" />
+										<Spinner size={12} />
 										Syncing
 									</span>
 								)}
@@ -373,7 +365,7 @@ export function RailwayIntegrationCard() {
 						</div>
 					))
 				)}
-			</div>
+			</DataTable.Root>
 		</div>
 	)
 }

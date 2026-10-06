@@ -3,10 +3,7 @@
 // two can't drift. Warehouse-coupled helpers (partition windows) stay in the
 // web app: this package doesn't depend on @maple/query-engine.
 
-import { Option, Schema } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-
-const decodeUrl = Schema.decodeUnknownOption(Schema.URLFromString)
 
 /** The two columns that together say what a session is doing. */
 export interface SessionLiveness {
@@ -69,43 +66,16 @@ export function sessionDurationMs(session: SessionLiveness): number | null {
 
 export { formatSessionDuration } from "@maple/domain/format"
 
-/** Playhead clock `m:ss`. Clamps non-finite/negative input to 0. */
+/**
+ * Playhead clock `m:ss`. Clamps non-finite/negative input to 0. Unlike
+ * `formatCountdown` it floors elapsed seconds and never rolls into hours.
+ */
 export function formatClock(ms: number): string {
 	if (!Number.isFinite(ms) || ms < 0) ms = 0
 	const totalSeconds = Math.floor(ms / 1000)
 	const minutes = Math.floor(totalSeconds / 60)
 	const seconds = totalSeconds % 60
 	return `${minutes}:${seconds.toString().padStart(2, "0")}`
-}
-
-/** Host + path for compact URL display; returns the raw input if unparseable. */
-export function hostFromUrl(url: string): string {
-	const parsed = decodeUrl(url)
-	if (Option.isNone(parsed)) return url
-	const { host, pathname } = parsed.value
-	return `${host}${pathname === "/" ? "" : pathname}`
-}
-
-const AVATAR_GRADIENTS: readonly [string, ...string[]] = [
-	"from-rose-500/80 to-orange-400/80",
-	"from-violet-500/80 to-fuchsia-400/80",
-	"from-sky-500/80 to-cyan-400/80",
-	"from-emerald-500/80 to-teal-400/80",
-	"from-amber-500/80 to-yellow-400/80",
-	"from-indigo-500/80 to-blue-400/80",
-]
-
-/** Deterministic avatar gradient for a session, keyed by a stable seed. */
-export function gradientFor(seed: string): string {
-	let hash = 0
-	for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
-	return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length] ?? AVATAR_GRADIENTS[0]
-}
-
-/** `true` for handheld device-type strings as reported by the browser SDK. */
-export function isMobileDevice(deviceType: string): boolean {
-	const d = deviceType.toLowerCase()
-	return d === "mobile" || d === "tablet" || d === "phone"
 }
 
 // Relative-time formatting lives in `./time-format` — import `formatRelativeFrom`

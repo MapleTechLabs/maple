@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react"
 import { relativeToAbsolute } from "@/lib/time-utils"
+import { Kbd } from "@maple/ui/components/ui/kbd"
 import { cn } from "@maple/ui/lib/utils"
 
 interface ShorthandInputProps {
@@ -50,14 +51,7 @@ export function ShorthandInput({ onApply }: ShorthandInputProps) {
 					spellCheck={false}
 					autoComplete="off"
 				/>
-				<kbd
-					className={cn(
-						"hidden h-5 select-none items-center rounded border border-border/70 bg-muted/40 px-1.5 font-mono text-[10px] text-muted-foreground transition-opacity",
-						value.length > 0 && "flex",
-					)}
-				>
-					↵
-				</kbd>
+				<Kbd className={cn(value.length === 0 && "hidden")}>↵</Kbd>
 			</div>
 			<p
 				className={cn(

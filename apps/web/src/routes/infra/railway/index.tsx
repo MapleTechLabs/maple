@@ -1,11 +1,11 @@
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ResultView } from "@/components/common/result-view"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 
-import { EmptyActions } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { IntegrationNotConnected } from "@/components/infra/primitives/integration-not-connected"
+import { ErrorState } from "@/components/common/error-state"
 import { RailwayIcon } from "@/components/icons"
 import {
 	RailwayIntegrationCard,
@@ -13,10 +13,10 @@ import {
 	unsyncedEnvironments,
 } from "@/components/integrations/railway-integration-card"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { PageHero } from "@/components/infra/primitives/page-hero"
-import { DataTable } from "@/components/infra/primitives/data-table"
+import { PageHero } from "@/components/common/page-hero"
+import { DataTable } from "@/components/common/data-table"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import {
 	RailwayServiceTable,
 	RailwayServiceTableLoading,
@@ -102,12 +102,11 @@ function RailwayPage() {
 									title="Railway"
 									description="CPU, memory, network and disk for every Railway service, polled from Railway's metrics API."
 								/>
-								{Result.builder(statusResult)
-									.onInitial(() => (
-										<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />
-									))
-									.onError((error) => <QueryErrorState error={error} />)
-									.onSuccess((status) =>
+								<ResultView
+									result={statusResult}
+									loading={<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />}
+								>
+									{(status) =>
 										status.connected ? (
 											<RailwayServices
 												startTime={startTime}
@@ -122,9 +121,9 @@ function RailwayPage() {
 											/>
 										) : (
 											<RailwayIntegrationCard />
-										),
-									)
-									.render()}
+										)
+									}
+								</ResultView>
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
@@ -174,34 +173,22 @@ function RailwayServices({
 		)
 	}
 	if (Result.isFailure(servicesResult) && services.length === 0) {
-		return <QueryErrorState error={servicesResult.cause} />
+		return <ErrorState error={servicesResult.cause} />
 	}
 	if (services.length === 0) {
 		return (
-			<Empty className="py-16">
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<RailwayIcon size={16} />
-					</EmptyMedia>
-					<EmptyTitle>
-						{syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range"}
-					</EmptyTitle>
-					<EmptyDescription>
-						{syncing
-							? "Some environments haven't finished their first sync. This page updates on its own as they land."
-							: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors."}
-					</EmptyDescription>
-				</EmptyHeader>
-				<EmptyActions>
-					<Button
-						variant="outline"
-						size="sm"
-						render={<Link to="/integrations" search={{ integration: "railway" }} />}
-					>
-						Check the connection
-					</Button>
-				</EmptyActions>
-			</Empty>
+			<IntegrationNotConnected
+				icon={<RailwayIcon size={16} />}
+				title={syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range"}
+				description={
+					syncing
+						? "Some environments haven't finished their first sync. This page updates on its own as they land."
+						: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors."
+				}
+				integration="railway"
+				actionLabel="Check the connection"
+				actionVariant="outline"
+			/>
 		)
 	}
 
@@ -213,14 +200,17 @@ function RailwayServices({
 	)
 
 	return (
-		<div className={cn("space-y-4 transition-opacity", servicesResult.waiting && "opacity-60")}>
+		<div
+			className={cn("space-y-4", refreshingClass(servicesResult.waiting))}
+			aria-busy={servicesResult.waiting || undefined}
+		>
 			<RailwaySummaryBand
 				services={services}
 				activeScope={scope}
 				onScopeChange={onScopeChange}
 				className={FLEET_BAND_BOXED}
 			/>
-			<ListToolbar
+			<SearchToolbar
 				value={query}
 				onChange={onQueryChange}
 				placeholder="Search services…"

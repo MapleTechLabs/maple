@@ -34,7 +34,7 @@
  * for the route graph.
  */
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Option, Schema } from "effect"
+import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,
 	ChatTurnTenant,
@@ -50,7 +50,8 @@ import {
 	type ChatTurnTenantEncoded,
 	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
-import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
+import type { ChatSessionRpc } from "@maple/domain/chat-session-stub"
+import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
@@ -82,23 +83,40 @@ interface SessionRow extends Record<string, SqlStorageValue> {
 	readonly running_resumes: number | null
 }
 
-/** Rows the DO writes. `payload` is the encoded `ChatEvent` minus its `seq`, which is the key. */
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS events (
-	seq INTEGER PRIMARY KEY AUTOINCREMENT,
-	created_at INTEGER NOT NULL,
-	payload TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS session (
-	id INTEGER PRIMARY KEY CHECK (id = 1),
-	running INTEGER NOT NULL DEFAULT 0,
-	running_since INTEGER,
-	running_message_id TEXT,
-	running_input TEXT,
-	running_resumes INTEGER
-);
-INSERT OR IGNORE INTO session (id, running) VALUES (1, 0);
-`
+/**
+ * The schema's migration files, relative to the repo root where alchemy runs. Alchemy embeds them
+ * in the bundle at deploy; each activation applies the pending ones before the first call.
+ */
+export const CHAT_SESSION_MIGRATIONS = "apps/ai/migrations/chat-session"
+
+/** Columns added after the first live objects were created, with their declared types. */
+const LATE_SESSION_COLUMNS = {
+	running_since: "INTEGER",
+	running_message_id: "TEXT",
+	running_input: "TEXT",
+	running_resumes: "INTEGER",
+} as const
+
+interface ColumnRow extends Record<string, SqlStorageValue> {
+	readonly name: string
+}
+
+/**
+ * Bring a `session` table that predates the migration files up to the baseline's shape, which
+ * `CREATE TABLE IF NOT EXISTS` alone cannot do. A fresh object has no table, so nothing runs.
+ */
+export const addMissingSessionColumns = (sql: SqlStorage): void => {
+	const present = new Set(
+		sql
+			.exec<ColumnRow>("SELECT name FROM pragma_table_info('session')")
+			.toArray()
+			.map((row) => row.name),
+	)
+	if (present.size === 0) return
+	for (const [column, type] of Object.entries(LATE_SESSION_COLUMNS)) {
+		if (!present.has(column)) sql.exec(`ALTER TABLE session ADD COLUMN ${column} ${type}`)
+	}
+}
 
 /**
  * How long a subscription sits silent before the connection is recycled. Cloudflare caps a request
@@ -266,21 +284,8 @@ export class ChatSession {
 		private readonly applier: ProposalApplier = applyThroughWorker,
 		private readonly runner: TurnRunner = runThroughWorker,
 	) {
+		// The schema is the activation's to apply (`makeChatSessionActivation`), before this runs.
 		this.sql = ctx.storage.sql
-		this.sql.exec(SCHEMA)
-		// Sessions created before the watchdog columns existed (local dev only — the class has
-		// never been deployed) would otherwise fail every read against `session`.
-		for (const column of [
-			"running_since INTEGER",
-			"running_message_id TEXT",
-			"running_input TEXT",
-			"running_resumes INTEGER",
-		]) {
-			// A failure means the column is already present.
-			Effect.runSync(
-				Effect.ignore(Effect.try(() => this.sql.exec(`ALTER TABLE session ADD COLUMN ${column}`))),
-			)
-		}
 	}
 
 	/** Highest assigned seq, i.e. the cursor a client that has read everything holds. */
@@ -796,16 +801,6 @@ export class ChatSession {
 	}
 }
 
-/** The stub's surface with each method's Promise lifted to the Effect alchemy runs per RPC call. */
-type EffectRpc<Stub> = {
-	readonly [K in keyof Stub]: Stub[K] extends (...args: infer Args) => Promise<infer Result>
-		? (...args: Args) => Effect.Effect<Result>
-		: never
-}
-
-/** The RPC surface plus the heartbeat alarm, which alchemy's bridge dispatches as the object's `alarm`. */
-type ChatSessionObjectApi = EffectRpc<ChatSessionStub> & { readonly alarm: () => Effect.Effect<void> }
-
 /**
  * The session's methods, one Effect each. alchemy runs the Effect per RPC call and hands its value
  * back as-is — a `ReadableStream` included, which Workers RPC carries by reference — so
@@ -825,53 +820,74 @@ export const chatSessionRpc = (session: ChatSession) =>
 		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
 		abort: () => Effect.sync(() => session.abort()),
 		alarm: () => Effect.sync(() => session.alarm()),
-	}) satisfies ChatSessionObjectApi
+	}) satisfies ChatSessionRpc
 
 /**
- * One activation, in alchemy's two phases: the outer Effect resolves the state and env (it also
- * runs at plan time, against a mock state, so it must not touch storage), the inner one builds the
- * session inside the object's `blockConcurrencyWhile` — the schema statements have run before the
- * first call reaches it, hibernation wakes included.
+ * The activation's own namespace. Alchemy hands it over as `DurableObjectScope`, typed without the
+ * class's shape because a class cannot yield its own tag inside its activation; the name says which
+ * class it is.
  */
-export const activateChatSession = Effect.map(
-	Effect.all([Cloudflare.DurableObjectState, Cloudflare.WorkerEnvironment, WorkersAiGateway]),
-	([state, env, workersAi]) =>
-		Effect.sync(() =>
-			chatSessionRpc(
-				new ChatSession(state.raw, env, applyThroughWorker, (input) =>
-					runThroughWorker({ ...input, workersAi }),
-				),
-			),
-		),
+const isChatSessionNamespace = (
+	scope: Cloudflare.DurableObject,
+): scope is Cloudflare.DurableObject<ChatSessionObject> => scope.name === "ChatSession"
+
+/** The part of alchemy's `SqlMigrations` the activation uses; a test applies the files itself. */
+export interface ChatSessionSchema<E, R> {
+	readonly apply: () => Effect.Effect<void, E, R>
+}
+
+/**
+ * One activation, in alchemy's two phases: the outer Effect resolves the state, env, namespace and
+ * migration files (it also runs at plan time, against a mock state, so it must not touch storage),
+ * the inner one migrates and builds the session inside the object's `blockConcurrencyWhile`, so the
+ * schema is current before the first call reaches it, hibernation wakes included. The turn and
+ * apply graphs reach other sessions through the namespace (`ChatSessions`).
+ */
+export const makeChatSessionActivation = <SE, SR, R>(
+	migrations: Effect.Effect<ChatSessionSchema<SE, SR>, never, R>,
+) =>
+	Effect.map(
+		Effect.all([
+			Cloudflare.DurableObjectState,
+			Cloudflare.WorkerEnvironment,
+			WorkersAiGateway,
+			Effect.serviceOption(Cloudflare.DurableObjectScope),
+			migrations,
+		]),
+		([state, env, workersAi, scope, schema]) => {
+			// Always there in the isolate; absent only where a test builds the activation by hand.
+			const chatSessions: ChatSessionNamespace | undefined = Option.getOrUndefined(
+				Option.filter(scope, isChatSessionNamespace),
+			)
+			return Effect.gen(function* () {
+				yield* Effect.sync(() => addMissingSessionColumns(state.raw.storage.sql))
+				// An object whose schema cannot be brought current cannot serve a single call.
+				yield* schema.apply().pipe(Effect.orDie)
+				return chatSessionRpc(
+					new ChatSession(
+						state.raw,
+						env,
+						(input) => applyThroughWorker({ ...input, chatSessions }),
+						(input) => runThroughWorker({ ...input, workersAi, chatSessions }),
+					),
+				)
+			})
+		},
+	)
+
+export const activateChatSession = makeChatSessionActivation(
+	Cloudflare.SqlMigrations(CHAT_SESSION_MIGRATIONS),
 )
-
-/**
- * The Durable Object: one per `"<orgId>:<tabId>"`, SQLite-backed, hosted by this Worker and bound
- * as `ChatSession` — the name `chatSessionStub` reads off `env` on both sides.
- *
- * `transferredFrom` names apps/api, which hosted this class until the agent surfaces moved here.
- * Alchemy turns that into a data-preserving `transferred_classes` migration, so live transcripts
- * follow the class rather than being stranded in a namespace nothing binds any more. Without it
- * the api's own deploy fails with `DurableObjectTransferRequired`, because dropping a locally
- * hosted class while keeping a cross-script reference to it is exactly the shape that silently
- * destroys a namespace, and alchemy refuses it before any upload.
- *
- * It is inert once every stage has transferred — a fresh stage creates the class outright — so it
- * stays here rather than being cleaned up later and breaking whichever stage lagged behind.
- *
- * The props-carrying class form is what makes room for that: the single-argument overload takes an
- * implementation and no props, so the implementation moves to `ChatSessionLive` below.
- */
-export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionObjectApi>()(
-	"ChatSession",
-	{ transferredFrom: "api" },
-) {}
 
 /** The activation, as the layer the host Worker provides. */
 // The activation's requirements are named rather than inferred: `.make` discharges
-// `DurableObjectServices` (both of these) through its own `Exclude`, while inference
-// would widen them into the layer's requirements and surface them all the way up in
-// `alchemy.run.ts`.
+// `DurableObjectServices` (all but the gateway) through its own `Exclude`, while inference would widen
+// them into the layer's requirements and surface them all the way up in `alchemy.run.ts`.
 export const ChatSessionLive = ChatSessionObject.make<
-	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment | WorkersAiGateway
+	| Cloudflare.DurableObjectState
+	| Cloudflare.WorkerEnvironment
+	| Cloudflare.Worker
+	| WorkersAiGateway
+	| FileSystem.FileSystem
+	| Path.Path
 >(activateChatSession)

@@ -26,6 +26,7 @@ import { Route as ServiceMapRouteImport } from './routes/service-map'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as AgentSessionsIndexRouteImport } from './routes/agent-sessions/index'
 import { Route as AgentSessionsSessionIdRouteImport } from './routes/agent-sessions/$sessionId'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
@@ -196,6 +197,11 @@ const SignInRoute = SignInRouteImport.update({
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentSessionsIndexRoute = AgentSessionsIndexRouteImport.update({
@@ -660,6 +666,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
@@ -764,6 +771,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
@@ -870,6 +878,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/agent-sessions/$sessionId': typeof AgentSessionsSessionIdRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
@@ -977,6 +986,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/unsubscribe'
     | '/agent-sessions/$sessionId'
     | '/alerts/$ruleId'
     | '/alerts/create'
@@ -1081,6 +1091,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/unsubscribe'
     | '/agent-sessions/$sessionId'
     | '/alerts/$ruleId'
     | '/alerts/create'
@@ -1186,6 +1197,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/unsubscribe'
     | '/agent-sessions/$sessionId'
     | '/alerts/$ruleId'
     | '/alerts/create'
@@ -1292,6 +1304,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
   AgentSessionsSessionIdRoute: typeof AgentSessionsSessionIdRoute
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
@@ -1473,6 +1486,13 @@ declare module '@tanstack/react-router' {
       path: '/sign-up'
       fullPath: '/sign-up'
       preLoaderRoute: typeof SignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agent-sessions/': {
@@ -2160,6 +2180,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
   AgentSessionsSessionIdRoute: AgentSessionsSessionIdRoute,
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,

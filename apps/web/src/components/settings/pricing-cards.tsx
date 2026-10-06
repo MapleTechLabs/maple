@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -27,9 +28,9 @@ import {
 } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import {
 	Dialog,
 	DialogContent,
@@ -52,6 +53,7 @@ import {
 	GlobePointerIcon,
 } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
 
 const FEATURE_ICONS: Record<string, IconComponent> = {
 	logs: FileIcon,
@@ -255,7 +257,7 @@ export function PricingCards() {
 	}
 
 	if (!Result.isSuccess(plansResult)) {
-		return <p className="text-muted-foreground text-sm">Unable to load pricing plans.</p>
+		return <ErrorState error={plansResult.cause} title="Unable to load pricing plans" variant="row" />
 	}
 
 	const plans = plansResult.value.plans
@@ -375,14 +377,13 @@ export function PricingCards() {
 
 					{confirmDialog && (
 						<div className="space-y-2 px-6 text-xs">
-							{confirmDialog.lines.map((line, i) => (
-								<div key={i} className="flex justify-between">
-									<span className="text-muted-foreground">{line.description}</span>
-									<span className="tabular-nums">
+							<KeyValueList className="tabular-nums">
+								{confirmDialog.lines.map((line, i) => (
+									<KeyValue key={i} label={line.description}>
 										{formatCurrency(line.amount, confirmDialog.currency)}
-									</span>
-								</div>
-							))}
+									</KeyValue>
+								))}
+							</KeyValueList>
 							<Separator />
 							<div className="flex justify-between font-medium">
 								<span>Due today</span>
@@ -409,8 +410,8 @@ export function PricingCards() {
 						>
 							Cancel
 						</Button>
-						<Button onClick={handleConfirmAttach} disabled={isAttaching}>
-							{isAttaching ? <Spinner className="size-3.5" /> : "Confirm"}
+						<Button onClick={handleConfirmAttach} loading={isAttaching} disabled={isAttaching}>
+							Confirm
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -465,27 +466,19 @@ export function PlanCards({
 					>
 						<CardHeader>
 							<div className="flex items-center justify-between gap-2">
-								<CardTitle
-									className={cn(
-										"text-[10px] font-medium uppercase tracking-[0.14em]",
-										isUpgrade ? "text-primary" : "text-muted-foreground",
-									)}
-								>
+								<CardTitle className={cn(eyebrowVariants(), isUpgrade && "text-primary")}>
 									{plan.name}
 								</CardTitle>
 								{isActive && isTrialing && daysRemaining != null ? (
-									<Badge variant="secondary" className="text-[10px] font-medium">
+									<Badge variant="secondary" size="xs">
 										Trial · {daysRemaining}d left
 									</Badge>
 								) : isActive ? (
-									<Badge variant="secondary" className="text-[10px] font-medium">
+									<Badge variant="secondary" size="xs">
 										Current
 									</Badge>
 								) : isUpgrade ? (
-									<Badge
-										variant="secondary"
-										className="text-[10px] font-medium text-primary"
-									>
+									<Badge variant="secondary" size="xs" className="text-primary">
 										Recommended
 									</Badge>
 								) : null}
@@ -495,9 +488,9 @@ export function PlanCards({
 									{price}
 								</span>
 								{interval && (
-									<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
+									<Eyebrow variant="label" className="ml-1">
 										{interval}
-									</span>
+									</Eyebrow>
 								)}
 							</div>
 							<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -508,9 +501,9 @@ export function PlanCards({
 						<CardContent className="flex flex-col gap-5 flex-1">
 							{features.length > 0 && (
 								<div>
-									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+									<Eyebrow className="mb-3" as="div">
 										Data included
-									</div>
+									</Eyebrow>
 									<div className="space-y-2.5">
 										{features.map((feature) => {
 											const Icon = FEATURE_ICONS[feature.featureId]
@@ -543,9 +536,9 @@ export function PlanCards({
 							<Separator className="bg-border/60" />
 
 							<div>
-								<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+								<Eyebrow className="mb-3" as="div">
 									Platform features
-								</div>
+								</Eyebrow>
 								<div className="space-y-2.5">
 									{planFeatures.map((feature) => {
 										const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
@@ -573,19 +566,16 @@ export function PlanCards({
 						<CardFooter className="mt-auto flex-col gap-2 items-stretch">
 							<Button
 								variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
-								disabled={btn.disabled || loadingPlanId === plan.id}
+								loading={loadingPlanId === plan.id}
+								disabled={btn.disabled}
 								className="w-full font-medium"
 								onClick={() => onCheckout(plan.id)}
 							>
-								{loadingPlanId === plan.id ? (
-									<Spinner className="size-4" />
-								) : trialAvailable && !btn.disabled ? (
-									`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-								) : isActive && isTrialing ? (
-									"Trialing"
-								) : (
-									btn.label
-								)}
+								{trialAvailable && !btn.disabled
+									? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+									: isActive && isTrialing
+										? "Trialing"
+										: btn.label}
 							</Button>
 							{trialAvailable && !btn.disabled && (
 								<p className="text-[11px] text-muted-foreground text-center tabular-nums">
@@ -600,7 +590,7 @@ export function PlanCards({
 			<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
 				<CardHeader>
 					<div className="flex items-center justify-between gap-2">
-						<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+						<CardTitle className={eyebrowVariants({ className: "text-primary" })}>
 							Enterprise
 						</CardTitle>
 					</div>
@@ -614,9 +604,9 @@ export function PlanCards({
 
 				<CardContent className="flex flex-col gap-5 flex-1">
 					<div>
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+						<Eyebrow className="mb-3" as="div">
 							Data included
-						</div>
+						</Eyebrow>
 						<div className="space-y-2.5">
 							{ENTERPRISE_DATA_FEATURES.map((feature) => {
 								const Icon = FEATURE_ICONS[feature.featureId]
@@ -641,9 +631,9 @@ export function PlanCards({
 					<Separator className="bg-border/60" />
 
 					<div>
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+						<Eyebrow className="mb-3" as="div">
 							Platform features
-						</div>
+						</Eyebrow>
 						<div className="space-y-2.5">
 							{enterprisePlanFeatures.map((feature) => {
 								const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon

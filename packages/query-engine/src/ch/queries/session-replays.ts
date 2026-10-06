@@ -16,14 +16,14 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compileFnCallCond } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { inSubquery, param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compileFnCallCond } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_LIVE_WINDOW_SECONDS, type SessionTag } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
+import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans, orgIdParam } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
 import { sessionQualityExpr, sessionTagFacet, taggedSessionIds } from "./session-tags"
 import type { FacetOutput } from "./query-helpers"
@@ -43,27 +43,27 @@ function has<T>(array: CH.Expr<ReadonlyArray<T>>, element: CH.Expr<T>): CH.Condi
 
 // length(array) — element count.
 function arrayLength<T>(array: CH.Expr<ReadonlyArray<T>>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("length", T.uint64.schema, array)
+	return CH.compileTypedFnCall("length", T.uint64.schema, array)
 }
 
 // floor / log2 / pow — plain numeric functions the DSL doesn't export, needed
 // only by the duration histogram below. Declared here like argMax above.
 function floor_(value: CH.Expr<number>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("floor", T.float64.schema, value)
+	return CH.compileTypedFnCall("floor", T.float64.schema, value)
 }
 
 function log2(value: CH.Expr<number>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("log2", T.float64.schema, value)
+	return CH.compileTypedFnCall("log2", T.float64.schema, value)
 }
 
 function pow(base: number, exponent: CH.Expr<number>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("pow", T.float64.schema, CH.lit(base), exponent)
+	return CH.compileTypedFnCall("pow", T.float64.schema, CH.lit(base), exponent)
 }
 
 // greatest(value, floor) over a nullable numeric column — clamps and, since
 // callers pair it with a `> 0` predicate that already excludes NULLs, narrows.
 function greatestNonNull(value: CH.Expr<number | null>, floor: number): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("greatest", T.float64.schema, value, CH.lit(floor))
+	return CH.compileTypedFnCall("greatest", T.float64.schema, value, CH.lit(floor))
 }
 
 // assumeNotNull(x) — drops the Nullable wrapper for callers whose WHERE has
@@ -72,7 +72,7 @@ function assumeNotNull<T>(value: CH.Expr<T | null>): CH.Expr<T> {
 	// The `Nullable` wrapper goes away in SQL but the codec is left as-is: it
 	// already accepts every non-null the column can produce, and narrowing it
 	// would mean rebuilding a schema this function cannot see inside.
-	return CH.compileTypedFnCall<T>("assumeNotNull", CH.schemaOf<T>(value), value)
+	return CH.compileTypedFnCall("assumeNotNull", CH.schemaOf<T>(value), value)
 }
 
 // ifNotFinite(x, fallback) — quantile() over an empty set yields nan, and
@@ -96,7 +96,7 @@ function pageVisitSessions(pagePath: string) {
 	return from(ProductEvents)
 		.select(($) => ({ SessionId: $.SessionId }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.Kind.eq("navigation"),
@@ -115,7 +115,7 @@ function tagFilter(
 	return inSubquery(
 		$.SessionId,
 		taggedSessionIds(tags, ($$) => [
-			$$.OrgId.eq(param.string("orgId")),
+			$$.OrgId.eq(orgIdParam),
 			$$.StartTime.gte(param.dateTimeString("startTime")),
 			$$.StartTime.lte(param.dateTimeString("endTime")),
 		]),
@@ -312,7 +312,7 @@ export function sessionReplaysListQuery(
 			visitorIsNew: argMax($.VisitorIsNew, $.Version),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.StartTime.gte(param.dateTimeString("startTime")),
 			$.StartTime.lte(param.dateTimeString("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -588,7 +588,7 @@ export function sessionReplaysFacetsQuery(
 		$: ColumnAccessor<typeof SessionReplays.columns>,
 		exclude?: SessionFacetKey,
 	): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.StartTime.gte(param.dateTimeString("startTime")),
 		$.StartTime.lte(param.dateTimeString("endTime")),
 		exclude === "service" ? undefined : CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -640,7 +640,7 @@ export function sessionReplaysFacetsQuery(
 			facetType: CH.lit("page"),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			$.Kind.eq("navigation"),
@@ -765,7 +765,7 @@ export function sessionReplaysFacetsQuery(
 				facetType: CH.lit("error"),
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.StartTime.gte(param.dateTimeString("startTime")),
 				$.StartTime.lte(param.dateTimeString("endTime")),
 				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -868,7 +868,7 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 			lastActivityAt: $.LastActivityAt,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
 			CH.when(opts.startTime, (v: string) => $.StartTime.gte(v)),
 			CH.when(opts.endTime, (v: string) => $.StartTime.lte(v)),
@@ -939,7 +939,7 @@ export function sessionReplayChunkIndexQuery(opts: SessionReplayChunkIndexOpts =
 			isCheckpoint: $.IsCheckpoint,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
 			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
 			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
@@ -988,7 +988,7 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 			isCheckpoint: $.IsCheckpoint,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
 			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
 			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
@@ -1025,7 +1025,7 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 			durationMs: argMax($.DurationMs, $.Version),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.StartTime.gte(param.dateTimeString("startTime")),
 			$.StartTime.lte(param.dateTimeString("endTime")),
 			has($.TraceIds, CH.lit(opts.traceId)),
@@ -1105,7 +1105,7 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
 			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
 			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),

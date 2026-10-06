@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { compilePipeQuery, type CompiledQuery, type TenantScope } from "../ch"
-import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-clickhouse/sql"
+import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/sql"
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {

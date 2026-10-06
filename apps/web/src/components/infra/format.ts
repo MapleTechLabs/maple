@@ -1,4 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { Tone } from "@maple/ui/lib/tone"
 
 // Generic number/byte/percent formatting lives in `@maple/ui/lib/format`; only
 // infra-specific status policy stays here.
@@ -14,7 +15,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
  * desired replicas), and belongs beside these rather than instead of them.
  */
 export type HostStatus = "active" | "idle" | "ended"
-export type SeverityLevel = "ok" | "warn" | "crit"
+export type SeverityLevel = Extract<Tone, "ok" | "warn" | "crit">
 
 export function severityLevel(fraction: number): SeverityLevel {
 	if (!Number.isFinite(fraction)) return "ok"
@@ -35,3 +36,7 @@ export function deriveHostStatus(lastSeenIso: string, reference: number | string
 	if (age < SCRAPE_INTERVAL_MS * 10) return "idle"
 	return "ended"
 }
+
+/** Whole-number percent of a 0-1 fraction; table cells want "7%", not formatPercent's "7.2%". */
+export const formatWholePercent = (fraction: number) =>
+	Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : "—"

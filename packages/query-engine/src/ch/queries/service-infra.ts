@@ -25,14 +25,15 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
 import { Schema, Effect } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, ServicePlatformsHourly } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, ServicePlatformsHourly, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
+import type { OrgId } from "@maple/domain"
 
 export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
@@ -72,7 +73,7 @@ FORMAT JSON`
 
 export function serviceWorkloadsSQL(
 	opts: ServiceWorkloadsOpts,
-	params: { orgId: string; startTime: string; endTime: string },
+	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceWorkloadsOutput>, QueryBuilderError> {
 	if (opts.services.length === 0) {
 		// Reads no table at all (`WHERE 0`), so it cannot cross tenants; it stands
@@ -125,7 +126,7 @@ export function serviceWorkloadsSQL(
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			CH.inList($.ServiceName, opts.services),
@@ -172,7 +173,7 @@ export function serviceWorkloadsSQL(
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTimeString("startTime")),
 			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			CH.inList($.MetricName, [

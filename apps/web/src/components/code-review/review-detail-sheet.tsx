@@ -4,7 +4,11 @@ import {
 	type CodeReviewFinding,
 	type PrReviewFinding,
 	type PrReviewId,
+	type PrReviewPostMerge,
+	type PrReviewTelemetry,
 } from "@maple/domain/http"
+import { DateTime } from "effect"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -16,11 +20,14 @@ import {
 	SheetTitle,
 } from "@maple/ui/components/ui/sheet"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -30,7 +37,7 @@ import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
-	SEVERITY_TONES,
+	SEVERITY_TONE,
 	SKIP_LABELS,
 	formatCount,
 	formatSpan,
@@ -83,7 +90,7 @@ function ReviewDetailBody({
 		))
 		.onError((error) => (
 			<SheetPanel>
-				<QueryErrorState error={error} titleOverride="Failed to load the review" onRetry={refresh} />
+				<ErrorState error={error} title="Failed to load the review" onRetry={refresh} />
 			</SheetPanel>
 		))
 		.onSuccess((detail) => <ReviewDetailContent detail={detail} onSelect={onSelect} />)
@@ -122,7 +129,7 @@ function ReviewDetailContent({
 							<AuthorLabel login={review.authorLogin} className="align-middle" />
 						</>
 					) : null}{" "}
-					· head <span className="font-mono">{review.headSha.slice(0, 7)}</span>
+					· head <TruncatedId value={review.headSha} kind="sha" />
 				</SheetDescription>
 				<div className="flex flex-wrap gap-2 pt-1">
 					<LinkButton href={review.url}>Pull request</LinkButton>
@@ -134,8 +141,8 @@ function ReviewDetailContent({
 				</div>
 			</SheetHeader>
 			<SheetPanel className="flex flex-col gap-6">
-				<dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4">
-					<Stat label="Outcome" value={<span className={outcome.tone}>{outcome.label}</span>} />
+				<StatRail>
+					<Stat label="Outcome" value={outcome.label} tone={outcome.tone} />
 					<Stat
 						label="Confidence"
 						value={review.confidence === null ? "–" : `${review.confidence}/5`}
@@ -149,7 +156,7 @@ function ReviewDetailContent({
 						value={formatCount((detail.inputTokens ?? 0) + (detail.outputTokens ?? 0))}
 					/>
 					<Stat label="Reviewed" value={formatRelativeFrom(review.createdAt)} />
-				</dl>
+				</StatRail>
 
 				{review.status === "skipped" && review.skipReason !== null ? (
 					<p className="text-sm text-muted-foreground">
@@ -157,9 +164,9 @@ function ReviewDetailContent({
 					</p>
 				) : null}
 				{problem !== null ? (
-					<p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-						{problem}
-					</p>
+					<Alert variant="crit" size="sm">
+						<AlertDescription className="text-foreground">{problem}</AlertDescription>
+					</Alert>
 				) : null}
 
 				{report !== null ? (
@@ -194,6 +201,10 @@ function ReviewDetailContent({
 								</ul>
 							)}
 						</Section>
+						{report.telemetry !== undefined ? (
+							<ProductionSection telemetry={report.telemetry} />
+						) : null}
+						{detail.postMerge ? <PostMergeSection postMerge={detail.postMerge} /> : null}
 						{report.checked && report.checked.length > 0 ? (
 							<Section title="Checked and ruled out">
 								<BulletList items={report.checked} />
@@ -228,9 +239,11 @@ function ReviewDetailContent({
 												current ? "bg-muted" : "hover:bg-muted/60",
 											)}
 										>
-											<span className="font-mono text-xs text-muted-foreground">
-												{entry.headSha.slice(0, 7)}
-											</span>
+											<TruncatedId
+												value={entry.headSha}
+												kind="sha"
+												className="text-xs text-muted-foreground"
+											/>
 											<span className={cn("flex-1", entryOutcome.tone)}>
 												{entryOutcome.label}
 											</span>
@@ -262,7 +275,7 @@ function FindingCard({
 	return (
 		<li className="flex flex-col gap-2 rounded-lg border px-3.5 py-3">
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<span className={cn("font-medium", SEVERITY_TONES[finding.severity])}>
+				<span className={cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}>
 					{SEVERITY_LABELS[finding.severity]}
 				</span>
 				<span className="text-muted-foreground">{CATEGORY_LABELS[finding.category]}</span>
@@ -290,12 +303,93 @@ function FindingCard({
 const modelLabel = (model: string | null) =>
 	model === null ? "–" : (PR_REVIEW_MODELS.find((entry) => entry.id === model)?.label ?? model)
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+/** A dense StatRail tile: sheet-sized value that truncates instead of overflowing. */
+function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
 	return (
-		<div className="flex min-w-0 flex-col gap-0.5 bg-card px-3 py-2.5">
-			<dt className="text-xs text-muted-foreground">{label}</dt>
-			<dd className="truncate text-sm font-medium tabular-nums">{value}</dd>
-		</div>
+		<StatRailItem
+			compact
+			eyebrow={label}
+			value={value}
+			className="min-w-0 px-3 py-2.5"
+			valueClassName={cn("min-w-0 shrink truncate text-sm font-medium", tone)}
+		/>
+	)
+}
+
+/** What production said about the change when it was reviewed. */
+function ProductionSection({ telemetry }: { telemetry: PrReviewTelemetry }) {
+	const breaks = telemetry.contractBreaks
+	if (breaks.length === 0 && telemetry.linkedIssues.length === 0 && telemetry.hotFiles.length === 0)
+		return null
+	return (
+		<Section title="Production impact">
+			{breaks.length > 0 ? (
+				<ul className="flex flex-col gap-1.5 text-sm">
+					{breaks.map((item) => (
+						<li
+							key={`${item.kind}:${item.name}`}
+							className={item.dismissed ? "text-muted-foreground" : undefined}
+						>
+							<span className={cn("font-medium", item.dismissed ? undefined : TONE_TEXT.crit)}>
+								{item.dismissed ? "Still emitted elsewhere" : "Stops arriving"}
+							</span>{" "}
+							<code className="font-mono text-xs">{item.name}</code> ·{" "}
+							{item.references.map((ref) => `${ref.kind} “${ref.name}”`).join(", ")}
+						</li>
+					))}
+				</ul>
+			) : null}
+			{telemetry.linkedIssues.length > 0 ? (
+				<BulletList
+					items={telemetry.linkedIssues.map(
+						(issue) =>
+							`Open error in ${issue.path}: ${issue.title} (${formatCount(issue.occurrences)} occurrences)`,
+					)}
+				/>
+			) : null}
+			{telemetry.hotFiles.length > 0 ? (
+				<BulletList
+					items={telemetry.hotFiles
+						.slice(0, 5)
+						.map(
+							(file) =>
+								`${file.path}: ${formatCount(file.perDay)} calls/day (${file.operations[0]?.spanName ?? ""})`,
+						)}
+				/>
+			) : null}
+		</Section>
+	)
+}
+
+/** How the operations the change touched behaved the hour before and after it deployed. */
+function PostMergeSection({ postMerge }: { postMerge: PrReviewPostMerge }) {
+	const regressed = postMerge.verdict === "regressed"
+	return (
+		<Section title="After it shipped">
+			<p className={cn("text-sm", regressed ? TONE_TEXT.warn : "text-muted-foreground")}>
+				{regressed ? "Something changed after this deployed" : "Shipped clean"} ·{" "}
+				{postMerge.deploy.service}{" "}
+				<TruncatedId value={postMerge.deploy.commitSha} kind="sha" className="text-xs" />{" "}
+				{formatRelativeFrom(DateTime.toEpochMillis(postMerge.deploy.firstSeen))}
+			</p>
+			<BulletList
+				items={[
+					...postMerge.missing.map((name) => `${name} stopped arriving`),
+					...postMerge.newIssues.map(
+						(issue) => `New error: ${issue.title} (${issue.afterPerHour}/h)`,
+					),
+					...postMerge.linkedIssues.map(
+						(issue) => `${issue.title}: ${issue.beforePerHour}/h → ${issue.afterPerHour}/h`,
+					),
+					...postMerge.operations
+						.filter((operation) => operation.regressed)
+						.map(
+							(operation) =>
+								`${operation.spanName}: errors ${(operation.before.errorRate * 100).toFixed(1)}% → ${(operation.after.errorRate * 100).toFixed(1)}%, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
+						),
+				]}
+			/>
+		</Section>
 	)
 }
 

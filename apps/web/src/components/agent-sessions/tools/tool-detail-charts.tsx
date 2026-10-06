@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 
@@ -33,11 +34,13 @@ const PLOT_HEIGHT = 160
 // and a fresh array (or arrow) per render rebuilds the chart definition on every
 // parent render.
 const CALLS_SERIES = [{ key: "calls", label: "Calls", color: "var(--primary)" }] as const
-const ERROR_RATE_SERIES = [{ key: "errorRate", label: "Error rate", color: "var(--severity-error)" }] as const
+const ERROR_RATE_SERIES = [
+	{ key: "errorRate", label: "Error rate", color: "var(--color-severity-error)" },
+] as const
 const DURATION_SERIES = [
 	{ key: "p50", label: "P50", color: "var(--muted-foreground)" },
 	{ key: "p90", label: "P90", color: "var(--primary)" },
-	{ key: "p95", label: "P95", color: "var(--severity-error)" },
+	{ key: "p95", label: "P95", color: "var(--color-severity-error)" },
 ] as const
 const CALLS_PER_SESSION_SERIES = [
 	{ key: "callsPerSession", label: "Calls per session", color: "var(--chart-2)" },
@@ -95,7 +98,10 @@ export function ToolDetailCharts({
 	)
 
 	return (
-		<div className={cn("grid @min-[900px]/page:grid-cols-2", waiting && "opacity-60")}>
+		<div
+			className={cn("grid @min-[900px]/page:grid-cols-2", refreshingClass(waiting ?? false))}
+			aria-busy={waiting || undefined}
+		>
 			<Cell title="Tool calls" rows={rows} series={CALLS_SERIES} format={formatNumber} />
 			<Cell title="Error rate" rows={rows} series={ERROR_RATE_SERIES} format={formatErrorRate} />
 			<Cell title="Duration" rows={rows} series={DURATION_SERIES} format={formatDurationNs} />

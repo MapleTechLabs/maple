@@ -24,7 +24,7 @@ interface CapturedCalls {
 }
 
 const makeMockExecutor = (captured: CapturedCalls): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
-import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
-	fleetUtilizationTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
@@ -20,9 +19,10 @@ import {
 	workloadFacetsQuery,
 	infraPresenceQuery,
 } from "./infra"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 60,
@@ -529,7 +529,6 @@ describe("conditional aggregates are NaN-guarded", () => {
 	const queries: ReadonlyArray<[string, string]> = [
 		["listHostsQuery", compileUnsafe(listHostsQuery({}), baseParams).sql],
 		["hostDetailSummaryQuery", compileUnsafe(hostDetailSummaryQuery({ hostName: "h1" }), baseParams).sql],
-		["fleetUtilizationTimeseriesQuery", compileUnsafe(fleetUtilizationTimeseriesQuery(), baseParams).sql],
 		["listPodsQuery", compileUnsafe(listPodsQuery({}), baseParams).sql],
 		["listPodsSummaryQuery", compileUnsafe(listPodsSummaryQuery({}), baseParams).sql],
 		["podDetailSummaryQuery", compileUnsafe(podDetailSummaryQuery({ podName: "p1" }), baseParams).sql],

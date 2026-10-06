@@ -8,7 +8,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
@@ -58,6 +58,7 @@ import {
 	webAnalyticsTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
@@ -178,7 +179,22 @@ function WebAnalyticsPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
+							{/* View tabs share the header row with the range controls on wide
+							    screens, same as Hosts; the header stacks them on narrow ones. */}
+							<DashboardLayout.Header
+								titleContent={
+									<Tabs value={activeTab} onValueChange={onTabChange} className="min-w-0">
+										<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
+											<TabsTrigger value="overview" className="h-8 px-2 text-sm sm:h-8">
+												Overview
+											</TabsTrigger>
+											<TabsTrigger value="ai" className="h-8 px-2 text-sm sm:h-8">
+												AI traffic
+											</TabsTrigger>
+										</TabsList>
+									</Tabs>
+								}
+							>
 								<div className="flex flex-wrap items-center gap-2">
 									{/* Ahead of the range controls, because it is the one number
 									    on the page they do not govern: "right now" is its own
@@ -217,14 +233,6 @@ function WebAnalyticsPage() {
 									/>
 								</div>
 							</DashboardLayout.Header>
-							{/* A page-width tab bar, same as Alerts: a pill beside the time
-							    controls read as one more filter and was easy to miss. */}
-							<Tabs value={activeTab} onValueChange={onTabChange}>
-								<TabsList variant="underline">
-									<TabsTrigger value="overview">Overview</TabsTrigger>
-									<TabsTrigger value="ai">AI traffic</TabsTrigger>
-								</TabsList>
-							</Tabs>
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-6">
@@ -233,14 +241,21 @@ function WebAnalyticsPage() {
 								{chips.length > 0 ? (
 									<div className="flex flex-wrap items-center gap-1.5">
 										{chips.map((chip) => (
-											<button
+											<Badge
 												key={`${chip.key}:${chip.value}`}
-												type="button"
-												onClick={() => onFilterChange(chip.key, undefined)}
-												className="rounded-sm border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+												variant="meta"
+												size="xs"
+												mono
+												className="h-auto px-1.5 py-0.5 transition-colors hover:text-foreground"
+												render={
+													<button
+														type="button"
+														onClick={() => onFilterChange(chip.key, undefined)}
+													/>
+												}
 											>
 												{chip.label} ✕
-											</button>
+											</Badge>
 										))}
 										<button
 											type="button"
@@ -396,7 +411,7 @@ function AnalyticsContent({
 						<Skeleton className="h-56 w-full" />
 					</>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => <ErrorState error={error} />)
 				.onSuccess((summary) => {
 					const source: AnalyticsMetricSource = { summary, timeseries, pageviews }
 					// An explicit pick wins while it still holds; a filter change that
@@ -442,7 +457,7 @@ function AnalyticsContent({
 						<Skeleton className="h-72 w-full" />
 					</div>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => <ErrorState error={error} />)
 				.onSuccess((breakdowns, result) => {
 					const pages = Result.builder(pagesResult)
 						.onSuccess((rows) => rows.data)

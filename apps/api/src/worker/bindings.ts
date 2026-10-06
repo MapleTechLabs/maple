@@ -29,6 +29,7 @@ import {
 	WorkflowStartError,
 	type WorkflowStarter,
 } from "@maple/backend/platform/bindings"
+import { bindChatSessions, chatSessionsLayer } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
@@ -66,6 +67,8 @@ export const bindApiClients = Effect.gen(function* () {
 		}),
 		// `send_email`, prd only.
 		email: yield* bindEmailSender,
+		// maple-ai's chat Durable Object, cross-script.
+		chatSessions: yield* bindChatSessions,
 	}
 })
 
@@ -153,7 +156,7 @@ const workflowStarter = <Params>(handle: Cloudflare.WorkflowHandle<Params>): Wor
 /**
  * The ports the service graph depends on, over the clients the init bound,
  * plus the env-backed ports (`envPorts`: the env itself as `WorkerEnvironment`,
- * the `ConfigProvider`, chat sessions, the ai service binding) — the one place
+ * the `ConfigProvider`, the ai service binding) and the `ChatSessions` port: the one place
  * a graph in this Worker gets its env from. `env` carries the `MAPLE_DB`
  * binding — real in the isolate, empty at plan time, where nothing reads it.
  */
@@ -174,6 +177,7 @@ export const apiPorts = (
 		Layer.succeed(SchemaApplyWorkflow, workflowStarter(schemaApply)),
 		mapleDbConnectionLayer(env),
 		envPorts(env),
+		chatSessionsLayer(clients.chatSessions, env),
 	)
 
 export type ApiPortsLayer = ReturnType<typeof apiPorts>

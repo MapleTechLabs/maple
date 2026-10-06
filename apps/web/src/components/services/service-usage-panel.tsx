@@ -1,6 +1,6 @@
 import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { useMemo } from "react"
-import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -9,6 +9,8 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { SectionCard } from "./section-card"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Delta } from "@maple/ui/components/ui/delta"
 interface ServiceUsagePanelProps {
 	serviceName: string
 	effectiveStartTime: string
@@ -109,7 +111,7 @@ export function ServiceUsagePanel({
 					<span className="text-[10px] text-muted-foreground/60">all environments</span>
 				) : undefined
 			}
-			className={cn("transition-opacity", isWaiting && "opacity-60")}
+			className={refreshingClass(isWaiting)}
 		>
 			<div className="grid grid-cols-2 gap-px sm:grid-cols-4">
 				{stats.map((stat) => {
@@ -117,35 +119,22 @@ export function ServiceUsagePanel({
 					const prev = view.previousTotals?.[stat.key]
 					return (
 						<div key={stat.key} className="flex flex-col gap-0.5 px-4 py-3">
-							<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-								{stat.label}
-							</span>
+							<Eyebrow>{stat.label}</Eyebrow>
 							<span className="font-mono text-lg leading-tight tabular-nums text-foreground">
 								{stat.format(value)}
 							</span>
-							<DeltaChip current={value} previous={prev} />
+							{/* Neutral-toned: ingest volume moving isn't inherently good or bad. */}
+							<Delta
+								current={value}
+								previous={prev}
+								suffix="vs prev"
+								flatThreshold={0.005}
+								className="text-[10px] text-muted-foreground"
+							/>
 						</div>
 					)
 				})}
 			</div>
 		</SectionCard>
-	)
-}
-
-/** "+12%" vs the preceding window. Neutral-toned — ingest volume moving isn't
- *  inherently good or bad, so it informs without alarming. */
-function DeltaChip({ current, previous }: { current: number; previous: number | undefined }) {
-	if (previous === undefined || previous <= 0) {
-		return <span className="text-[10px] text-muted-foreground/50">&nbsp;</span>
-	}
-	const change = (current - previous) / previous
-	if (!Number.isFinite(change) || Math.abs(change) < 0.005) {
-		return <span className="text-[10px] text-muted-foreground/50">no change</span>
-	}
-	return (
-		<span className="text-[10px] tabular-nums text-muted-foreground">
-			{change > 0 ? "+" : ""}
-			{(change * 100).toFixed(0)}% vs prev
-		</span>
 	)
 }

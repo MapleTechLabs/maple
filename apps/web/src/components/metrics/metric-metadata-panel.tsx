@@ -1,7 +1,10 @@
-import { formatNumber } from "@maple/ui/lib/format"
+import { ErrorState } from "@/components/common/error-state"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { MetricTypeBadge } from "./metric-type-badge"
 import type { MetricCatalogSummary } from "./metric-detail"
 import { getMetricAttributeKeysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -28,17 +31,17 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 	)
 
 	return (
-		<div className="flex flex-col gap-4 rounded-md border bg-card p-3">
+		<Panel className="gap-4 p-3">
 			<div className="space-y-2">
 				<div className="flex flex-wrap items-center gap-2">
 					<MetricTypeBadge type={summary.metricType} />
 					{summary.unit && (
-						<Badge variant="outline" className="font-mono text-[10px]">
+						<Badge variant="outline" size="xs" mono>
 							{summary.unit}
 						</Badge>
 					)}
 					{summary.metricType === "sum" && (
-						<Badge variant="outline" className="text-[10px]">
+						<Badge variant="outline" size="xs">
 							{summary.isMonotonic ? "monotonic" : "non-monotonic"}
 						</Badge>
 					)}
@@ -48,40 +51,32 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 				)}
 			</div>
 
-			<dl className="space-y-2 text-xs">
-				<div className="flex items-center justify-between gap-2">
-					<dt className="text-muted-foreground">Datapoints in range</dt>
-					<dd className="font-mono">{formatNumber(summary.dataPointCount)}</dd>
-				</div>
-				<div className="flex items-center justify-between gap-2">
-					<dt className="text-muted-foreground">First seen</dt>
-					<dd className="font-mono">
-						{formatTimestampInTimezone(summary.firstSeen, {
-							timeZone: effectiveTimezone,
-							withYear: true,
-						})}
-					</dd>
-				</div>
-				<div className="flex items-center justify-between gap-2">
-					<dt className="text-muted-foreground">Last seen</dt>
-					<dd className="font-mono">
-						{formatTimestampInTimezone(summary.lastSeen, {
-							timeZone: effectiveTimezone,
-							withYear: true,
-						})}
-					</dd>
-				</div>
-			</dl>
+			<KeyValueList className="gap-2">
+				<KeyValue label="Datapoints in range" mono>
+					{formatNumber(summary.dataPointCount)}
+				</KeyValue>
+				<KeyValue label="First seen" mono>
+					{formatTimestampInTimezone(summary.firstSeen, {
+						timeZone: effectiveTimezone,
+						withYear: true,
+					})}
+				</KeyValue>
+				<KeyValue label="Last seen" mono>
+					{formatTimestampInTimezone(summary.lastSeen, {
+						timeZone: effectiveTimezone,
+						withYear: true,
+					})}
+				</KeyValue>
+			</KeyValueList>
 
 			{summary.services.length > 0 && (
 				<div className="space-y-1.5">
 					<p className="text-xs text-muted-foreground">
-						Emitted by {summary.services.length} service
-						{summary.services.length !== 1 ? "s" : ""}
+						Emitted by {countLabel(summary.services.length, "service")}
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{summary.services.map((service) => (
-							<Badge key={service} variant="outline" className="font-mono text-[10px]">
+							<Badge key={service} variant="outline" size="xs" mono>
 								{service}
 							</Badge>
 						))}
@@ -93,8 +88,13 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 				<p className="text-xs text-muted-foreground">Attributes</p>
 				{Result.builder(keysResult)
 					.onInitial(() => <Skeleton className="h-12 w-full" />)
-					.onError(() => (
-						<p className="text-xs text-muted-foreground">Failed to load attribute keys.</p>
+					.onError((error) => (
+						<ErrorState
+							error={error}
+							title="Failed to load attribute keys"
+							variant="inline"
+							className="py-1"
+						/>
 					))
 					.onSuccess((response) =>
 						response.data.length === 0 ? (
@@ -119,6 +119,6 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 					)
 					.render()}
 			</div>
-		</div>
+		</Panel>
 	)
 }

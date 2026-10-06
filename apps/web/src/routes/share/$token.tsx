@@ -50,6 +50,7 @@ import {
 } from "@/hooks/use-share-dashboard"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 const ShareSearch = Schema.StructWithRest(
 	Schema.Struct({
@@ -278,7 +279,7 @@ function ShareSkeleton() {
 			{[0, 1, 2, 3].map((index) => (
 				// The skeleton draws its own card because there is no visualization
 				// mounted yet to draw one — unlike the real tiles, which do.
-				<div key={index} className="h-64 animate-pulse rounded-lg border bg-muted/30" />
+				<Skeleton key={index} className="h-64 rounded-lg border" />
 			))}
 		</div>
 	)

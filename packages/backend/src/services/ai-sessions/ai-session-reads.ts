@@ -491,27 +491,33 @@ export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
 	// capped, and a session grouping into more turns than the cap
 	// must still report exact totals — those come from the ungrouped
 	// read, which no cap touches.
-	const params =
+	const base = { orgId: tenant.orgId, ...window }
+	const turnsSchema = { rowSchema: Integrations.aiSessionSummaryRowSchema }
+	const totalsSchema = { rowSchema: Integrations.aiSessionTotalsRowSchema }
+	// Compiled per branch: each query pairs with its own params.
+	const compiled =
 		traceId === undefined
-			? { orgId: tenant.orgId, sessionId: payload.sessionId, ...window }
-			: { orgId: tenant.orgId, traceId, ...window }
-	const turnsQuery =
-		traceId === undefined ? Integrations.aiSessionSummaryQuery() : Integrations.aiTraceSummaryQuery()
-	const totalsQuery =
-		traceId === undefined ? Integrations.aiSessionTotalsQuery() : Integrations.aiTraceTotalsQuery()
+			? {
+					turns: CH.compile(
+						Integrations.aiSessionSummaryQuery(),
+						{ ...base, sessionId: payload.sessionId },
+						turnsSchema,
+					),
+					totals: CH.compile(
+						Integrations.aiSessionTotalsQuery(),
+						{ ...base, sessionId: payload.sessionId },
+						totalsSchema,
+					),
+				}
+			: {
+					turns: CH.compile(Integrations.aiTraceSummaryQuery(), { ...base, traceId }, turnsSchema),
+					totals: CH.compile(Integrations.aiTraceTotalsQuery(), { ...base, traceId }, totalsSchema),
+				}
 	const kind = traceId === undefined ? "aiSession" : "aiTrace"
 	const [rows, totals] = yield* Effect.all(
 		[
-			warehouse.compiledQuery(
-				tenant,
-				CH.compile(turnsQuery, params, { rowSchema: Integrations.aiSessionSummaryRowSchema }),
-				{ context: `${kind}Summary` },
-			),
-			warehouse.compiledQuery(
-				tenant,
-				CH.compile(totalsQuery, params, { rowSchema: Integrations.aiSessionTotalsRowSchema }),
-				{ context: `${kind}Totals` },
-			),
+			warehouse.compiledQuery(tenant, compiled.turns, { context: `${kind}Summary` }),
+			warehouse.compiledQuery(tenant, compiled.totals, { context: `${kind}Totals` }),
 		],
 		{ concurrency: 2 },
 	)

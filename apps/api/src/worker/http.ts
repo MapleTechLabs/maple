@@ -6,7 +6,7 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import type { HttpEffect } from "alchemy/Http"
 import { Cause, Clock, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "@maple/backend/http/api-cors"
@@ -91,6 +91,7 @@ export const buildApp = (
 				Layer.provideMerge(ApiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
 				Layer.provideMerge(layerPg),
+				Layer.provideMerge(FetchHttpClient.layer),
 				Layer.provide(ports),
 			),
 			memoMap,

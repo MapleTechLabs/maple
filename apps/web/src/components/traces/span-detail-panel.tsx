@@ -5,12 +5,14 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { DocsLink } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
@@ -29,6 +31,7 @@ import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 interface SpanDetailPanelProps {
 	span: SpanNode
@@ -100,18 +103,7 @@ function SpanPositionBar({
 
 const LOG_LIMIT = 100
 
-const severityStyles: Record<string, string> = {
-	TRACE: "text-severity-trace",
-	DEBUG: "text-severity-debug",
-	INFO: "text-severity-info",
-	WARN: "text-severity-warn",
-	ERROR: "text-severity-error",
-	FATAL: "text-severity-fatal",
-} satisfies Record<string, string>
-
 function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onClick?: (log: Log) => void }) {
-	const severityStyle = severityStyles[log.severityText] ?? "text-severity-trace"
-
 	return (
 		<button
 			type="button"
@@ -120,9 +112,7 @@ function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onCl
 		>
 			<div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
 				<span>{formatTimestampInTimezone(log.timestamp, { timeZone })}</span>
-				<Badge variant="outline" className={cn("text-[10px] px-1 py-0", severityStyle)}>
-					{log.severityText}
-				</Badge>
+				<SeverityBadge severity={log.severityText} className="h-4 px-1" />
 			</div>
 			<p className="font-mono text-xs whitespace-pre-wrap break-all line-clamp-3">{log.body}</p>
 		</button>
@@ -157,28 +147,31 @@ export function SpanLogs({
 		<>
 			{Result.builder(logsResult)
 				.onInitial(() => (
-					<div className="space-y-2 p-2">
-						{Array.from({ length: 3 }).map((_, i) => (
-							<div key={i} className="space-y-1">
+					<SkeletonList
+						rows={3}
+						gap="2"
+						className="p-2"
+						renderRow={() => (
+							<div className="space-y-1">
 								<Skeleton className="h-3 w-24" />
 								<Skeleton className="h-4 w-full" />
 							</div>
-						))}
-					</div>
+						)}
+					/>
 				))
-				.onError(() => (
-					<div className="p-4 text-center text-sm text-destructive">Failed to load logs</div>
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load logs" variant="inline" className="px-4" />
 				))
 				.onSuccess((data) => {
 					const logs = data.data
 
 					if (logs.length === 0) {
 						return (
-							<div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
+							<EmptyMessage className="flex flex-col items-center gap-2">
 								No logs carry this span&apos;s trace context. Logs link here when your log
 								bridge runs inside the active span.
 								<DocsLink page="logs" />
-							</div>
+							</EmptyMessage>
 						)
 					}
 
@@ -266,7 +259,7 @@ export function SpanDetailPanel({
 						</div>
 					</CopyableValue>
 					<div className="flex items-center gap-1.5 mt-0.5">
-						<ServiceDot serviceName={span.serviceName} className="size-1.5" />
+						<ServiceDot serviceName={span.serviceName} size="sm" />
 						<CopyableValue value={span.serviceName}>
 							<span className="font-mono text-[10px]" style={{ color: serviceColor }}>
 								{span.serviceName}
@@ -295,14 +288,11 @@ export function SpanDetailPanel({
 							</CopyableValue>
 						</span>
 					</div>
-					<Badge variant="outline" className={cn("text-[10px] font-medium", statusStyle)}>
+					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
 					{cacheInfo?.result && (
-						<Badge
-							variant="outline"
-							className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
-						>
+						<Badge variant="outline" size="xs" className={cacheResultStyles[cacheInfo.result]}>
 							{cacheInfo.result === "hit" ? "HIT" : "MISS"}
 						</Badge>
 					)}
@@ -312,7 +302,7 @@ export function SpanDetailPanel({
 				{cacheInfo && (
 					<div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs shrink-0">
 						{cacheInfo.system && (
-							<Badge variant="outline" className="text-[10px] font-mono">
+							<Badge variant="outline" size="xs" mono>
 								{cacheInfo.system}
 							</Badge>
 						)}
@@ -338,10 +328,8 @@ export function SpanDetailPanel({
 							{platform.outcome && (
 								<Badge
 									variant="outline"
-									className={cn(
-										"text-[10px] font-medium ml-auto",
-										outcomeBadgeStyle(platform.outcome.bad),
-									)}
+									size="xs"
+									className={cn("ml-auto", outcomeBadgeStyle(platform.outcome.bad))}
 								>
 									{platform.outcome.value}
 								</Badge>
@@ -404,7 +392,7 @@ export function SpanDetailPanel({
 						<TabsTrigger value="logs">
 							<SquareTerminalIcon size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
-								<Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">
+								<Badge variant="secondary" size="xs" className="ml-1 px-1.5">
 									{logCountLabel}
 								</Badge>
 							)}

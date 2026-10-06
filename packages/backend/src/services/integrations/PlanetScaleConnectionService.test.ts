@@ -46,6 +46,7 @@ const makeLayer = (testDb: TestDb) => {
 		Layer.provide(oauthLive),
 	)
 	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive)),
 	)
 	return Layer.mergeAll(
@@ -67,7 +68,7 @@ const CALLBACK_URL = "https://api.example.com/api/integrations/planetscale/callb
  * Stub the PlanetScale OAuth token endpoint plus the management API: 2xx
  * everywhere except paths listed in `deny` (which get that status). Records
  * authorization headers per URL. Also assigned to globalThis.fetch so the
- * FetchHttpClient.Fetch reference default and safeFetch paths agree.
+ * FetchHttpClient.Fetch reference default agrees with it.
  */
 const stubPlanetScaleApi = (options?: {
 	readonly deny?: Record<string, number>
@@ -151,7 +152,7 @@ const stubPlanetScaleApi = (options?: {
 	}) as typeof fetch
 	// The services read fetch through the FetchHttpClient.Fetch reference (whose
 	// process-wide default caches the first globalThis.fetch it sees), so tests
-	// must inject it per-effect; safeFetch paths still read globalThis.fetch.
+	// must inject it per-effect.
 	globalThis.fetch = stub
 	return stub
 }

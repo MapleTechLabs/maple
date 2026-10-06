@@ -8,7 +8,6 @@ import {
 	SpanHierarchyResponse,
 	SpanDetailResponse,
 	ErrorsByTypeResponse,
-	ErrorsTimeseriesResponse,
 	ErrorsSparkResponse,
 	ErrorsSummaryResponse,
 	ErrorDetailTracesResponse,
@@ -52,7 +51,6 @@ import {
 	ListHostsResponse,
 	HostDetailSummaryResponse,
 	HostInfraTimeseriesResponse,
-	FleetUtilizationTimeseriesResponse,
 	ListPodsResponse,
 	PodsSummaryResponse,
 	PodDetailSummaryResponse,
@@ -113,6 +111,7 @@ import {
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 
 import {
@@ -382,8 +381,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				// a whole-minute multiple. Nearest-minute rounding keeps ~50 points.
 				const windowSeconds = Math.max(
 					0,
-					(Date.parse(`${payload.endTime.replace(" ", "T")}Z`) -
-						Date.parse(`${payload.startTime.replace(" ", "T")}Z`)) /
+					(parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)) /
 						1000,
 				)
 				const requestedBucketSeconds =
@@ -519,18 +517,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								affectedServicesCount: Number(row.affectedServicesCount),
 								firstSeen: String(row.firstSeen),
 								lastSeen: String(row.lastSeen),
-							})),
-						})
-					}),
-				)
-				.handle("errorsTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorsTimeseries, tenant, payload)
-						return new ErrorsTimeseriesResponse({
-							data: rows.map((row) => ({
-								bucket: String(row.bucket),
-								count: Number(row.count),
 							})),
 						})
 					}),
@@ -1413,20 +1399,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										load15: Number(row.load15) || 0,
 									}
 								: null,
-						})
-					}),
-				)
-				.handle("fleetUtilizationTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.fleetUtilizationTimeseries, tenant, payload)
-						return new FleetUtilizationTimeseriesResponse({
-							data: rows.map((row) => ({
-								bucket: String(row.bucket),
-								avgCpu: Number(row.avgCpu) || 0,
-								avgMemory: Number(row.avgMemory) || 0,
-								activeHosts: Number(row.activeHosts) || 0,
-							})),
 						})
 					}),
 				)

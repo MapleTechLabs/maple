@@ -1,8 +1,16 @@
 import type { ServiceLatencyBaseline } from "@/api/warehouse/services"
 import type { AnomalySignalType } from "@maple/domain/http"
+import type { Tone } from "@maple/ui/lib/tone"
 
 /** Health rollup for a single service. */
 export type ServiceHealth = "healthy" | "degraded" | "unhealthy"
+
+/** The one health-to-colour mapping: dots, tints and legends key off this. */
+export const HEALTH_TONE: Record<ServiceHealth, Tone> = {
+	healthy: "ok",
+	degraded: "warn",
+	unhealthy: "crit",
+} satisfies Record<ServiceHealth, Tone>
 
 export interface ServiceHealthCause {
 	severity: "warning" | "critical"

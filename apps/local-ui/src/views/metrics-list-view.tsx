@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
 import { METRIC_TYPE_COLORS, MetricTypeBadge } from "@maple/ui/components/metrics/metric-type-badge"
 import { cn } from "@maple/ui/lib/utils"
@@ -230,9 +231,9 @@ function MetricPreviewCard({
 			className="group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
 		>
 			<div className="flex w-full items-start justify-between gap-2">
-				<span className="min-w-0 truncate font-mono text-xs font-medium" title={entry.metricName}>
+				<TruncatedText mono className="text-xs font-medium">
 					{entry.metricName}
-				</span>
+				</TruncatedText>
 				<MetricTypeBadge type={entry.metricType} />
 			</div>
 

@@ -3,22 +3,12 @@ import { Link } from "@tanstack/react-router"
 
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -52,6 +42,8 @@ import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "@/atoms/dashbo
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { TagEditorDialog } from "@/components/dashboard-builder/tag-editor"
 import { DocsLink } from "@/components/common/docs-link"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
+import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
 import {
 	collectTags,
 	dashboardDomains,
@@ -71,6 +63,11 @@ const SORT_LABELS: Record<DashboardSortOption, string> = {
 } satisfies Record<DashboardSortOption, string>
 
 export type DashboardScope = "all" | "favorites"
+
+const SCOPE_OPTIONS: ReadonlyArray<SegmentedOption<DashboardScope>> = [
+	{ value: "all", label: "All" },
+	{ value: "favorites", label: "Favorites" },
+]
 
 /** The glyph stands for what the dashboard reads, so the lane carries meaning. */
 function dashboardGlyph(dashboard: Dashboard) {
@@ -161,7 +158,12 @@ function DashboardRow({
 				    breakdown and the tag chips both lived here and were cut — they
 				    made the row crowded without changing any decision. */}
 				<span title={reads.full} className="hidden w-40 shrink-0 flex-col items-end sm:flex">
-					<span className={cn("font-mono text-[11px]", empty ? "text-warning" : "text-foreground")}>
+					<span
+						className={cn(
+							"font-mono text-[11px]",
+							empty ? "text-severity-warn" : "text-foreground",
+						)}
+					>
 						{empty ? "no widgets" : widgetCountLabel(dashboard)}
 					</span>
 					<span className="text-muted-foreground truncate font-mono text-[10px]">
@@ -282,27 +284,6 @@ function DisabledReason({ children, reason }: { children: React.ReactNode; reaso
 
 const STORE_UNREACHABLE = "Unavailable while the dashboard store is unreachable"
 
-function SectionHeader({
-	title,
-	count,
-	note,
-	bordered,
-}: {
-	title: string
-	count: number
-	note?: string
-	bordered?: boolean
-}) {
-	return (
-		<div className={cn("flex items-center gap-2 pb-2", bordered && "mt-6 pt-2")}>
-			<h3 className="text-foreground text-[11px] font-medium tracking-wider uppercase">{title}</h3>
-			<span className="text-muted-foreground font-mono text-[11px]">{count}</span>
-			<span aria-hidden className="h-px grow bg-border" />
-			{note && <span className="text-muted-foreground text-[10px]">{note}</span>}
-		</div>
-	)
-}
-
 interface DashboardListProps {
 	dashboards: ReadonlyArray<Dashboard>
 	readOnly?: boolean
@@ -391,20 +372,14 @@ export function DashboardList({
 					placeholder="Search dashboards"
 					className="min-w-0 grow sm:max-w-70"
 				/>
-				<ToggleGroup
-					value={[scope]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next) onScopeChange(next as DashboardScope)
-					}}
-					variant="outline"
+				<SegmentedSelect<DashboardScope>
+					options={SCOPE_OPTIONS}
+					value={scope}
+					onChange={onScopeChange}
 					size="sm"
 					aria-label="Filter dashboards by favorite"
 					className="shrink-0"
-				>
-					<ToggleGroupItem value="all">All</ToggleGroupItem>
-					<ToggleGroupItem value="favorites">Favorites</ToggleGroupItem>
-				</ToggleGroup>
+				/>
 
 				<TagFilterMenu allTags={allTags} selected={tags} onChange={onTagsChange} />
 				<SortMenu sort={sort} onSortChange={onSortChange} />
@@ -478,7 +453,7 @@ export function DashboardList({
 				<>
 					{favorited.length > 0 && (
 						<>
-							<SectionHeader
+							<ListSectionHeader
 								title="Favorites"
 								count={favorited.length}
 								note="on this device only"
@@ -495,10 +470,10 @@ export function DashboardList({
 					)}
 					{others.length > 0 && (
 						<>
-							<SectionHeader
+							<ListSectionHeader
 								title="All dashboards"
 								count={others.length}
-								bordered={favorited.length > 0}
+								className={cn(favorited.length > 0 && "mt-6 pt-2")}
 							/>
 							{others.map((dashboard) => (
 								<DashboardRow
@@ -533,37 +508,25 @@ export function DashboardList({
 				}}
 			/>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingDelete !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingDelete(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<CircleWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This dashboard belongs to the whole org — deleting it removes it for everyone, not
-							just you. It can’t be undone. Export the JSON first if you might want it back.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (pendingDelete) onDelete(pendingDelete.id)
-								setPendingDelete(null)
-							}}
-						>
-							Delete for everyone
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				icon={<CircleWarningIcon className="text-destructive" />}
+				title={<>Delete “{pendingDelete?.name}”?</>}
+				description={
+					<>
+						This dashboard belongs to the whole org: deleting it removes it for everyone, not just
+						you. It can’t be undone. Export the JSON first if you might want it back.
+					</>
+				}
+				confirmLabel="Delete for everyone"
+				onConfirm={() => {
+					if (pendingDelete) onDelete(pendingDelete.id)
+					setPendingDelete(null)
+				}}
+			/>
 		</div>
 	)
 }

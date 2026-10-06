@@ -2,7 +2,9 @@ import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueVerificationDocument, WorkflowState } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { formatRatePerHour } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import { MagnifierCheckIcon } from "@/components/icons"
@@ -20,10 +22,10 @@ import { MagnifierCheckIcon } from "@/components/icons"
 const STATUS_TONE: Record<ErrorIssueVerificationDocument["status"], string> = {
 	waiting: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
 	running: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-	verified: "bg-success/10 text-success",
-	not_fixed: "bg-destructive/10 text-destructive",
-	inconclusive: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	abandoned: "bg-muted text-muted-foreground",
+	verified: TONE_SOFT.ok,
+	not_fixed: TONE_SOFT.crit,
+	inconclusive: TONE_SOFT.warn,
+	abandoned: TONE_SOFT.neutral,
 } satisfies Record<ErrorIssueVerificationDocument["status"], string>
 
 const STATUS_LABEL: Record<ErrorIssueVerificationDocument["status"], string> = {
@@ -35,28 +37,12 @@ const STATUS_LABEL: Record<ErrorIssueVerificationDocument["status"], string> = {
 	abandoned: "Stopped",
 } satisfies Record<ErrorIssueVerificationDocument["status"], string>
 
-/** A per-hour rate said the way a person would say it. */
-function formatRate(perHour: number): string {
-	if (perHour >= 1) {
-		const rounded = perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10
-		return `${rounded}× an hour`
-	}
-	const perDay = perHour * 24
-	if (perDay >= 1) {
-		const rounded = perDay >= 10 ? Math.round(perDay) : Math.round(perDay * 10) / 10
-		return `${rounded}× a day`
-	}
-	const perWeek = perHour * 24 * 7
-	const rounded = perWeek >= 10 ? Math.round(perWeek) : Math.round(perWeek * 10) / 10
-	return `${rounded}× a week`
-}
-
 function headline(verification: ErrorIssueVerificationDocument): string {
 	switch (verification.status) {
 		case "waiting": {
 			const rate =
 				verification.baselineRatePerHour > 0
-					? ` It was firing about ${formatRate(verification.baselineRatePerHour)} before the merge.`
+					? ` It was firing about ${formatRatePerHour(verification.baselineRatePerHour)} before the merge.`
 					: " It fires too rarely to judge quickly, so this takes a while."
 			// `formatRelativeShort` rather than `formatRelativeTime`: the latter supplies
 			// its own preposition ("in 6h"), which reads as "Waiting until in 6h" here,

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
+import { underlineTabClass } from "@/components/common/underline-link-tabs"
 import { BranchForkIcon, ChartBarIcon, CircleWarningIcon, GearIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -49,10 +50,9 @@ function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: Cod
 					search={tab === "settings" ? {} : carried}
 					aria-current={active === tab ? "page" : undefined}
 					className={cn(
-						"-mb-px flex h-9 items-center gap-[7px] border-b-2 px-3 text-sm transition-colors first:pl-0.5",
-						active === tab
-							? "border-primary font-medium text-foreground [&_svg]:text-primary"
-							: "border-transparent text-muted-foreground hover:text-foreground [&_svg]:text-muted-foreground",
+						underlineTabClass(active === tab),
+						"h-9 gap-[7px] px-3 first:pl-0.5",
+						active === tab ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
 					)}
 				>
 					<Icon size={14} aria-hidden />

@@ -14,6 +14,7 @@ import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -99,6 +100,8 @@ const credentialKey = (settings: RelaySettings): Effect.Effect<Buffer | null> =>
 
 export interface RelayHost {
 	readonly env: Record<string, unknown>
+	/** maple-ai's `ChatSession` namespace; absent, a mention has no agent to reach. */
+	readonly chatSessions?: ChatSessionNamespace | undefined
 	/** Whether this conversation has already been told that its workspace is not linked. */
 	readonly announceUnlinked: Effect.Effect<boolean>
 	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
@@ -198,14 +201,14 @@ const lookupWorkspace = (
 /** What a relayed event reads from the graph rather than the object: settings and the chat-session port. */
 interface RelayEnvironment {
 	readonly settings: RelaySettings
-	readonly chatSessions: ChatSessionsApi
+	readonly chatSessions: Option.Option<ChatSessionsApi>
 }
 
-const relayEnvironment: Effect.Effect<RelayEnvironment, never, ChatSessions> = Effect.gen(function* () {
+const relayEnvironment: Effect.Effect<RelayEnvironment> = Effect.gen(function* () {
 	return {
 		// Every setting recovers its own ConfigError (`optionalSetting`), so this cannot fail.
 		settings: yield* Effect.orDie(relaySettings),
-		chatSessions: yield* ChatSessions,
+		chatSessions: yield* Effect.serviceOption(ChatSessions),
 	}
 })
 
@@ -236,7 +239,8 @@ const ports = (
 				),
 			),
 		),
-	chatSession: (sessionId) => chatSessions.stub(sessionId),
+	chatSession: (sessionId) =>
+		Option.getOrUndefined(Option.map(chatSessions, (sessions) => sessions.session(sessionId))),
 	appBaseUrl: settings.appBaseUrl,
 	chartImageUrl: (orgId: OrgId, ref) =>
 		chatChartImageUrl({
@@ -283,17 +287,24 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 				),
 				(resolveWorkspace) => ports(host, environment, connector, resolveWorkspace),
 			)
-		}).pipe(inRuntime(host.env)),
+		}).pipe(inRuntime(host)),
 	)
 }
 
 /** This Worker's runtime for an event's or a settle's Effect, and the flush that exports its spans. */
 const inRuntime =
-	(env: Record<string, unknown>) =>
-	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient | ChatSessions>) =>
+	({ env, chatSessions }: Pick<RelayHost, "env" | "chatSessions">) =>
+	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
 		program.pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, envPorts(env), telemetry.layer)),
+			Effect.provide(
+				Layer.mergeAll(
+					FetchHttpClient.layer,
+					envPorts(env),
+					chatSessionsLayerIfBound(chatSessions, env),
+					telemetry.layer,
+				),
+			),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
 			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),
@@ -304,7 +315,7 @@ const inRuntime =
  * workspace read a new event gets. The conversation ports only a new message asks are inert.
  */
 export const settleInboundTurn = async (
-	host: Pick<RelayHost, "env" | "recordTurn">,
+	host: Pick<RelayHost, "env" | "chatSessions" | "recordTurn">,
 	stored: unknown,
 ): Promise<SettleOutcome> => {
 	const checkpoint = decodeRelayTurnCheckpoint(stored)
@@ -339,6 +350,6 @@ export const settleInboundTurn = async (
 				(resolveWorkspace) => ports(relayHost, environment, connector, resolveWorkspace),
 				(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
 			)
-		}).pipe(inRuntime(host.env)),
+		}).pipe(inRuntime(host)),
 	)
 }

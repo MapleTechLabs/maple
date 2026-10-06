@@ -1,5 +1,8 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import * as React from "react"
 import type { ActorDocument } from "@maple/domain/http"
+import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { ActorChip } from "./actor-chip"
@@ -45,7 +48,7 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 		<div
 			className={cn(
 				"flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-3 py-2.5",
-				danger && "border-destructive/40",
+				danger && "border-severity-error/40",
 				className,
 			)}
 		>
@@ -54,7 +57,6 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 					width={RING_SIZE}
 					height={RING_SIZE}
 					viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-					className={cn(danger && "animate-pulse")}
 					aria-hidden
 				>
 					<circle
@@ -85,26 +87,17 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 			    label into the holder. */}
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<div className="flex items-baseline justify-between gap-3">
-					<span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-						<span
-							className={cn(
-								"inline-block size-1.5 rounded-full",
-								expired
-									? "bg-muted-foreground"
-									: danger
-										? "bg-destructive animate-pulse"
-										: "bg-primary",
-							)}
-						/>
+					<Eyebrow className="flex items-center gap-2">
+						<StatusDot tone={expired ? "neutral" : danger ? "crit" : "live"} />
 						{expired ? "Lease expired" : "Active lease"}
-					</span>
+					</Eyebrow>
 					<span
 						className={cn(
 							"font-mono text-base font-semibold tabular-nums leading-none",
 							expired
 								? "text-muted-foreground"
 								: danger
-									? "text-destructive"
+									? "text-severity-error"
 									: "text-foreground",
 						)}
 					>
@@ -118,16 +111,4 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 			</div>
 		</div>
 	)
-}
-
-function formatCountdown(ms: number): string {
-	if (ms <= 0) return "0:00"
-	const totalSeconds = Math.ceil(ms / 1000)
-	const hours = Math.floor(totalSeconds / 3600)
-	const minutes = Math.floor((totalSeconds % 3600) / 60)
-	const seconds = totalSeconds % 60
-	if (hours > 0) {
-		return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
-	}
-	return `${minutes}:${String(seconds).padStart(2, "0")}`
 }

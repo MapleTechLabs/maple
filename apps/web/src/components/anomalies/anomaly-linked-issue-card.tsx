@@ -1,3 +1,6 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { META_CHIP_CLASS } from "./anomaly-format"
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { AnomalyIncidentDocument, ErrorIssueId } from "@maple/domain/http"
@@ -37,9 +40,9 @@ export function AnomalyLinkedIssueCard({
 								: "Escalate this anomaly by linking it to an existing error issue."}
 						</p>
 						{incident.fingerprintHash !== null ? (
-							<code className="inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+							<InlineCode className="inline-block px-1.5 py-0.5 text-[11px] text-muted-foreground">
 								fingerprint {incident.fingerprintHash}
-							</code>
+							</InlineCode>
 						) : null}
 					</div>
 					<Button size="sm" variant="outline" onClick={onOpenLinkDialog} disabled={busy}>
@@ -109,15 +112,12 @@ function LinkedIssueBody({
 										<code className="font-mono text-xs tabular-nums text-muted-foreground">
 											{shortIssueId(issue.id)}
 										</code>
-										<span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground">
-											<ServiceDot
-												serviceName={issue.serviceName}
-												className="size-1.5"
-											/>
+										<Badge variant="meta" pill size="sm" className={META_CHIP_CLASS}>
+											<ServiceDot serviceName={issue.serviceName} size="sm" />
 											<span className="max-w-[140px] truncate">
 												{issue.serviceName}
 											</span>
-										</span>
+										</Badge>
 									</div>
 									<p className="min-w-0 truncate font-medium text-foreground">
 										{issue.exceptionType || "Unknown error"}

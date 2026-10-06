@@ -16,7 +16,7 @@ export function UnnamedServiceHint() {
 	return (
 		<Tooltip>
 			<TooltipTrigger
-				render={<Badge variant="warning" size="sm" className="shrink-0 font-normal" />}
+				render={<Badge variant="warn" size="sm" className="shrink-0 font-normal" />}
 				onClick={(event) => event.stopPropagation()}
 			>
 				no service.name

@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import type { AuditActorType, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import {
 	encodePublicId,
@@ -6,7 +7,7 @@ import {
 	type V2AuditLogEntry,
 } from "@maple/domain/http/v2"
 import { Option } from "effect"
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { auditLogPageAtom } from "@/lib/services/atoms/audit-log-atoms"
@@ -16,11 +17,18 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { SegmentedSelect } from "@/components/common/segmented-select"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { trySync } from "@maple/ui/lib/try-sync"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { AlertWarningIcon, ArrowPathIcon, ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { RelativeTime } from "@/components/common/relative-time"
+import { ArrowPathIcon, ChevronRightIcon, HistoryIcon } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
 
 type ActorFilter = AuditActorType | "all"
 type OutcomeFilter = AuditOutcome | "all"
@@ -44,13 +52,13 @@ const sourceLabel = (source: AuditLogSource): string => source.replace("_", " ")
 
 const ACTOR_BADGES: Record<
 	AuditActorType,
-	{ label: string; variant: "secondary" | "success" | "info" | "outline" }
+	{ label: string; variant: "secondary" | "ok" | "info" | "outline" }
 > = {
 	user: { label: "User", variant: "secondary" },
-	api_key: { label: "API key", variant: "success" },
+	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
 	system: { label: "System", variant: "outline" },
-} satisfies Record<AuditActorType, { label: string; variant: "secondary" | "success" | "info" | "outline" }>
+} satisfies Record<AuditActorType, { label: string; variant: "secondary" | "ok" | "info" | "outline" }>
 
 // Shared column lanes so the header row and entry rows stay aligned. Resource and
 // source collapse when the card is narrow; time + actor + action always stay
@@ -67,7 +75,6 @@ const COL = {
 	// 52rem: the card's width at a 1440px window, the narrowest desktop that should still show it.
 	source: "hidden w-[104px] shrink-0 @min-[52rem]:block",
 }
-const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
 
 /**
  * Up to two initials from a display name, for the moment before the avatar
@@ -101,16 +108,6 @@ function actorDisplayName(entry: V2AuditLogEntry): string | null {
 	if (entry.actor_name !== null) return entry.actor_name
 	if (entry.actor_id !== null) return abbreviateId(entry.actor_id)
 	return null
-}
-
-function formatDateTime(value: string): string {
-	return new Date(value).toLocaleString(undefined, {
-		month: "short",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	})
 }
 
 function formatDateTimeFull(value: string): string {
@@ -258,28 +255,20 @@ export function AuditLogSection() {
 			</p>
 
 			<div className="flex flex-wrap items-center gap-3">
-				<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
-					{ACTOR_FILTERS.map((filter) => (
-						<FilterTab
-							key={filter.value}
-							active={actorFilter === filter.value}
-							onClick={() => handleFilterSelect(filter.value)}
-						>
-							{filter.label}
-						</FilterTab>
-					))}
-				</div>
-				<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
-					{OUTCOME_FILTERS.map((filter) => (
-						<FilterTab
-							key={filter.value}
-							active={outcomeFilter === filter.value}
-							onClick={() => handleOutcomeSelect(filter.value)}
-						>
-							{filter.label}
-						</FilterTab>
-					))}
-				</div>
+				<SegmentedSelect
+					size="sm"
+					aria-label="Actor type"
+					value={actorFilter}
+					onChange={handleFilterSelect}
+					options={ACTOR_FILTERS}
+				/>
+				<SegmentedSelect
+					size="sm"
+					aria-label="Outcome"
+					value={outcomeFilter}
+					onChange={handleOutcomeSelect}
+					options={OUTCOME_FILTERS}
+				/>
 				<div className="flex-1" />
 				<Button
 					variant="ghost"
@@ -301,26 +290,14 @@ export function AuditLogSection() {
 				)}
 			>
 				{view === null && Result.isFailure(pageResult) ? (
-					<Empty className="py-8">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<AlertWarningIcon size={16} />
-							</EmptyMedia>
-							<EmptyTitle>Couldn't load the audit log</EmptyTitle>
-							<EmptyDescription>
-								Something went wrong while loading audit log entries.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button variant="outline" size="sm" onClick={() => refreshPage()}>
-							Try again
-						</Button>
-					</Empty>
+					<ErrorState
+						error={pageResult.cause}
+						title="Couldn't load the audit log"
+						onRetry={() => refreshPage()}
+						className="border-0"
+					/>
 				) : view === null ? (
-					<div className="space-y-2 p-4">
-						<Skeleton className="h-[44px] w-full" />
-						<Skeleton className="h-[44px] w-full" />
-						<Skeleton className="h-[44px] w-full" />
-					</div>
+					<SkeletonList rows={3} rowClassName="h-[44px]" gap="2" className="p-4" />
 				) : view.entries.length === 0 && filtered ? (
 					<Empty className="py-8">
 						<EmptyHeader>
@@ -351,15 +328,23 @@ export function AuditLogSection() {
 				) : (
 					<div className="divide-border divide-y">
 						<div className="hidden items-center gap-3 px-4 py-2 @md:flex" aria-hidden="true">
-							<span className={cn(COL_HEADER, COL.time)}>
+							<Eyebrow variant="mono" className={COL.time}>
 								{/* Holds the chevron's lane so "Time" sits over the timestamps. */}
 								<span className="w-3 shrink-0" />
 								Time
-							</span>
-							<span className={cn(COL_HEADER, COL.actor)}>Actor</span>
-							<span className={cn(COL_HEADER, COL.action)}>Action</span>
-							<span className={cn(COL_HEADER, COL.resource)}>Resource</span>
-							<span className={cn(COL_HEADER, COL.source)}>Source</span>
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.actor}>
+								Actor
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.action}>
+								Action
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.resource}>
+								Resource
+							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.source}>
+								Source
+							</Eyebrow>
 						</div>
 						{view.entries.map((entry) => (
 							<AuditLogRow key={entry.id} entry={entry} />
@@ -369,56 +354,27 @@ export function AuditLogSection() {
 			</div>
 
 			{view !== null && view.hasMore && view.nextCursor !== null && (
-				<div className="flex items-center gap-3 text-sm text-muted-foreground">
-					<span>Showing {view.entries.length} entries — more available</span>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={waiting}
-						onClick={() => {
-							if (view.nextCursor === null) return
-							// Pin the window to the newest entry already on screen before
-							// the first Load more, so later offsets address a list that
-							// cannot grow underneath them.
-							if (until === undefined) {
-								const newest = view.entries[0]
-								if (newest !== undefined) setUntil(newest.occurred_at)
-							}
-							setCursor(view.nextCursor)
-						}}
-					>
-						{waiting ? "Loading…" : "Load more"}
-					</Button>
-				</div>
+				<ListFooter
+					shown={view.entries.length}
+					noun="entries"
+					hasMore
+					loading={waiting}
+					align="start"
+					className="justify-start p-0"
+					onLoadMore={() => {
+						if (view.nextCursor === null) return
+						// Pin the window to the newest entry already on screen before
+						// the first Load more, so later offsets address a list that
+						// cannot grow underneath them.
+						if (until === undefined) {
+							const newest = view.entries[0]
+							if (newest !== undefined) setUntil(newest.occurred_at)
+						}
+						setCursor(view.nextCursor)
+					}}
+				/>
 			)}
 		</div>
-	)
-}
-
-function FilterTab({
-	active,
-	onClick,
-	children,
-}: {
-	active: boolean
-	onClick: () => void
-	children: ReactNode
-}) {
-	return (
-		<button
-			type="button"
-			aria-pressed={active}
-			onClick={onClick}
-			className={cn(
-				"rounded px-2.5 py-1 font-mono text-[11px] leading-4 transition-colors",
-				"focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-1",
-				active
-					? "bg-accent text-foreground font-medium"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
 	)
 }
 
@@ -493,24 +449,22 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 							expanded && "rotate-90",
 						)}
 					/>
-					<span title={formatDateTime(entry.occurred_at)}>
-						{formatRelativeTime(entry.occurred_at)}
-					</span>
+					<RelativeTime value={entry.occurred_at} tooltip="title" />
 				</span>
 				<ActorCell entry={entry} />
 				<div className={cn(COL.action, "min-w-0")}>
 					<div className="flex min-w-0 items-center gap-1.5">
 						<ActionLabel action={entry.action} />
 						{denied && (
-							<Badge variant="error" size="sm" className="shrink-0">
+							<Badge variant="crit" size="sm" className="shrink-0">
 								Denied
 							</Badge>
 						)}
 					</div>
 					{denied && entry.denial_reason !== null && (
-						<p className="text-muted-foreground truncate text-[11px]" title={entry.denial_reason}>
+						<TruncatedText className="text-muted-foreground text-[11px]">
 							{entry.denial_reason}
-						</p>
+						</TruncatedText>
 					)}
 					{entry.changes !== null && entry.changes.fields.length > 0 && (
 						<p className="text-muted-foreground truncate font-mono text-[11px]">
@@ -551,20 +505,11 @@ function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
 				</Badge>
 			)}
 			{id !== null && (
-				<span className="text-muted-foreground truncate font-mono text-[11px]" title={id}>
+				<TruncatedText mono className="text-muted-foreground text-[11px]">
 					{id}
-				</span>
+				</TruncatedText>
 			)}
 		</div>
-	)
-}
-
-function DetailField({ label, children }: { label: string; children: ReactNode }) {
-	return (
-		<>
-			<dt className={cn(COL_HEADER, "pt-0.5")}>{label}</dt>
-			<dd className="min-w-0 text-xs">{children}</dd>
-		</>
 	)
 }
 
@@ -572,7 +517,9 @@ function DetailField({ label, children }: { label: string; children: ReactNode }
 function Identifier({ value, label }: { value: string; label: string }) {
 	return (
 		<span className="inline-flex max-w-full items-center gap-0.5">
-			<code className="truncate font-mono text-[11px]">{value}</code>
+			<InlineCode variant="plain" className="truncate text-[11px] text-foreground">
+				{value}
+			</InlineCode>
 			<CopyButton value={value} label={label} toast={false} iconSize={12} className="size-5" />
 		</span>
 	)
@@ -590,30 +537,28 @@ function ChangeValue({ value }: { value: unknown }) {
 
 function ChangesTable({ changes }: { changes: V2AuditChanges }) {
 	return (
-		<div className="overflow-x-auto">
-			<table className="w-full font-mono text-[11px]">
-				<thead>
-					<tr className={cn(COL_HEADER, "text-left")}>
-						<th className="w-[160px] pb-1 font-normal">Field</th>
-						<th className="pb-1 font-normal">Before</th>
-						<th className="pb-1 font-normal">After</th>
-					</tr>
-				</thead>
-				<tbody className="align-top">
-					{changes.fields.map((field) => (
-						<tr key={field} className="border-border/60 border-t">
-							<td className="text-muted-foreground py-1 pr-3">{field}</td>
-							<td className="py-1 pr-3">
-								<ChangeValue value={changes.before[field]} />
-							</td>
-							<td className="py-1">
-								<ChangeValue value={changes.after[field]} />
-							</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
-		</div>
+		<Table size="sm" className="font-mono">
+			<TableHeader>
+				<TableRow>
+					<TableHead className="w-[160px] font-normal">Field</TableHead>
+					<TableHead className="font-normal">Before</TableHead>
+					<TableHead className="font-normal">After</TableHead>
+				</TableRow>
+			</TableHeader>
+			<TableBody>
+				{changes.fields.map((field) => (
+					<TableRow key={field}>
+						<TableCell className="text-muted-foreground align-top">{field}</TableCell>
+						<TableCell className="align-top whitespace-normal">
+							<ChangeValue value={changes.before[field]} />
+						</TableCell>
+						<TableCell className="align-top whitespace-normal">
+							<ChangeValue value={changes.after[field]} />
+						</TableCell>
+					</TableRow>
+				))}
+			</TableBody>
+		</Table>
 	)
 }
 
@@ -621,12 +566,12 @@ function MetadataList({ metadata }: { metadata: Record<string, unknown> }) {
 	const keys = Object.keys(metadata)
 	if (keys.length === 0) return null
 	return (
-		<dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+		<KeyValueList layout="grid">
 			{keys.map((key) => {
 				const value = metadata[key]
 				const block = metadataBlock(value)
 				return (
-					<DetailField key={key} label={key}>
+					<KeyValue wrap key={key} label={key}>
 						{block !== null ? (
 							<pre className="bg-background/60 max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
 								{block}
@@ -636,10 +581,10 @@ function MetadataList({ metadata }: { metadata: Record<string, unknown> }) {
 								<ChangeValue value={value} />
 							</span>
 						)}
-					</DetailField>
+					</KeyValue>
 				)
 			})}
-		</dl>
+		</KeyValueList>
 	)
 }
 
@@ -650,14 +595,17 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 
 	return (
 		<div className="border-border/60 space-y-4 border-t px-4 py-3 @md:pl-[44px]">
-			<dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5 @3xl:grid-cols-[max-content_minmax(0,1fr)_max-content_minmax(0,1fr)] @3xl:gap-x-6">
-				<DetailField label="Occurred">
+			<KeyValueList
+				layout="grid"
+				className="@3xl:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_minmax(6rem,max-content)_minmax(0,1fr)] @3xl:gap-x-6"
+			>
+				<KeyValue wrap label="Occurred">
 					<span className="tabular-nums">{formatDateTimeFull(entry.occurred_at)}</span>
-				</DetailField>
-				<DetailField label="Recorded">
+				</KeyValue>
+				<KeyValue wrap label="Recorded">
 					<span className="tabular-nums">{formatDateTimeFull(entry.recorded_at)}</span>
-				</DetailField>
-				<DetailField label="Actor">
+				</KeyValue>
+				<KeyValue wrap label="Actor">
 					<span className="flex min-w-0 flex-wrap items-center gap-1.5">
 						<Badge variant={badge.variant} size="sm">
 							{badge.label}
@@ -665,8 +613,8 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 						{entry.actor_name !== null && <span>{entry.actor_name}</span>}
 						{entry.actor_id !== null && <Identifier value={entry.actor_id} label="Actor id" />}
 					</span>
-				</DetailField>
-				<DetailField label="Source">
+				</KeyValue>
+				<KeyValue wrap label="Source">
 					<span>{sourceLabel(entry.source)}</span>
 					{(entry.origin_ip !== null || entry.origin_country !== null) && (
 						<span className="text-muted-foreground">
@@ -675,16 +623,18 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 							{entry.origin_country !== null && ` (${entry.origin_country})`}
 						</span>
 					)}
-				</DetailField>
-				<DetailField label="Action">
+				</KeyValue>
+				<KeyValue wrap label="Action">
 					<span className="flex flex-wrap items-center gap-1.5">
-						<code className="font-mono text-[11px]">{entry.action}</code>
+						<InlineCode variant="plain" className="text-[11px] text-foreground">
+							{entry.action}
+						</InlineCode>
 						{entry.outcome === "denied" ? (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Denied
 							</Badge>
 						) : (
-							<Badge variant="success" size="sm">
+							<Badge variant="ok" size="sm">
 								Allowed
 							</Badge>
 						)}
@@ -692,8 +642,8 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 					{entry.denial_reason !== null && (
 						<p className="text-muted-foreground mt-0.5">{entry.denial_reason}</p>
 					)}
-				</DetailField>
-				<DetailField label="Resource">
+				</KeyValue>
+				<KeyValue wrap label="Resource">
 					{entry.resource_type === null && entry.resource_id === null ? (
 						<span className="text-muted-foreground/60">—</span>
 					) : (
@@ -708,37 +658,41 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 							)}
 						</span>
 					)}
-				</DetailField>
+				</KeyValue>
 				{entry.affected_user !== null && (
-					<DetailField label="Affected user">
+					<KeyValue wrap label="Affected user">
 						<Identifier value={entry.affected_user} label="Affected user id" />
-					</DetailField>
+					</KeyValue>
 				)}
 				{entry.request_id !== null && (
-					<DetailField label="Request">
+					<KeyValue wrap label="Request">
 						<Identifier value={entry.request_id} label="Request id" />
-					</DetailField>
+					</KeyValue>
 				)}
-				<DetailField label="Entry">
+				<KeyValue wrap label="Entry">
 					{/* The wire codec hands the client the raw id; show the `alog_…`
 					    form the API itself returns, so it can be quoted back to it. */}
 					<Identifier
 						value={encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id)}
 						label="Entry id"
 					/>
-				</DetailField>
-			</dl>
+				</KeyValue>
+			</KeyValueList>
 
 			{hasChanges && entry.changes !== null && (
 				<section className="space-y-1.5">
-					<h4 className={COL_HEADER}>Changes</h4>
+					<Eyebrow variant="mono" as="h4">
+						Changes
+					</Eyebrow>
 					<ChangesTable changes={entry.changes} />
 				</section>
 			)}
 
 			{hasMetadata && entry.metadata !== null && (
 				<section className="space-y-1.5">
-					<h4 className={COL_HEADER}>Details</h4>
+					<Eyebrow variant="mono" as="h4">
+						Details
+					</Eyebrow>
 					<MetadataList metadata={entry.metadata} />
 				</section>
 			)}

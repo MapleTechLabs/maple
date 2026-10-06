@@ -1,10 +1,12 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { MouseEvent } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
+import { RelativeTime } from "@/components/common/relative-time"
 import { SeverityBadge } from "@/components/errors/severity-badge"
 import { ConfidenceMeter } from "./confidence-meter"
 import {
@@ -69,9 +71,9 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 						{headline}
 					</Link>
 					{scope ? (
-						<span className="shrink-0 truncate text-xs text-muted-foreground" title={scope}>
+						<TruncatedText className="shrink-0 text-xs text-muted-foreground">
 							{scope}
-						</span>
+						</TruncatedText>
 					) : null}
 				</div>
 				<RowFinding finding={finding} />
@@ -85,13 +87,11 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 			<span className="w-24 shrink-0 max-lg:hidden">
 				<InvestigationStatusBadge status={investigation.status} />
 			</span>
-			<time
-				dateTime={investigation.updated_at}
-				title={new Date(toEpochMs(investigation.updated_at)).toLocaleString()}
+			<RelativeTime
+				value={investigation.updated_at}
+				tooltip="title"
 				className="w-13 shrink-0 text-right text-xs text-muted-foreground"
-			>
-				{formatRelativeTime(investigation.updated_at)}
-			</time>
+			/>
 		</li>
 	)
 }
@@ -101,12 +101,10 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 	if (finding.kind === "pending") {
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-				<span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+				<StatusDot tone="live" />
 				{/* The finding carries the running pass's last step when it has one, so
 				    the row is not free to print a fixed string over the top of it. */}
-				<span className="truncate" title={finding.text}>
-					{finding.text}
-				</span>
+				<TruncatedText>{finding.text}</TruncatedText>
 			</span>
 		)
 	}
@@ -117,16 +115,15 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 		<span
 			className={cn(
 				"flex min-w-0 items-center gap-1.5 text-xs",
-				finding.kind === "failure" && "text-destructive",
+				finding.kind === "failure" && "text-severity-error",
 				// Three tones, not two. Scanning the hub, a lead nothing confirmed
 				// must not look like a confirmed cause, and "we could not tell" must
 				// not look like "it broke".
 				finding.kind === "partial" && "text-severity-warn",
 				finding.kind !== "failure" && finding.kind !== "partial" && "text-muted-foreground",
 			)}
-			title={finding.text}
 		>
-			<span className="truncate">{finding.text}</span>
+			<TruncatedText>{finding.text}</TruncatedText>
 		</span>
 	)
 }

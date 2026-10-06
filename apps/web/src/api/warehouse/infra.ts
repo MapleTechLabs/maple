@@ -1,5 +1,4 @@
 import {
-	FleetUtilizationTimeseriesRequest,
 	HostDetailSummaryRequest,
 	HostInfraTimeseriesRequest,
 	InfraPresenceRequest,
@@ -22,7 +21,6 @@ import {
 	ContainerDetailSummaryRequest,
 	ContainerInfraTimeseriesRequest,
 	ContainerFacetsRequest,
-	type FleetUtilizationTimeseriesResponse,
 	type HostDetailSummaryResponse,
 	type HostInfraTimeseriesResponse,
 	type InfraPresenceResponse,
@@ -140,29 +138,6 @@ export interface HostInfraTimeseriesInput {
 	hostName: string
 	metric: HostInfraMetric
 	bucketSeconds?: number
-}
-
-export interface FleetUtilizationTimeseriesInput {
-	startTime: string
-	endTime: string
-	bucketSeconds?: number
-}
-
-export function fleetUtilizationTimeseries({ data }: { data: FleetUtilizationTimeseriesInput }) {
-	return runWarehouseQuery("fleetUtilizationTimeseries", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalAtomClient
-			const response: FleetUtilizationTimeseriesResponse =
-				yield* client.queryEngine.fleetUtilizationTimeseries({
-					payload: new FleetUtilizationTimeseriesRequest({
-						startTime: data.startTime,
-						endTime: data.endTime,
-						bucketSeconds: data.bucketSeconds,
-					}),
-				})
-			return response
-		}),
-	)
 }
 
 export function hostInfraTimeseries({ data }: { data: HostInfraTimeseriesInput }) {

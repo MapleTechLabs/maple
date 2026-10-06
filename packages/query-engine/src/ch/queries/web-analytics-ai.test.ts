@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	webAnalyticsAiCrawledPagesQuery,
 	webAnalyticsAiCrawlerFormatsQuery,
 	webAnalyticsAiCrawlersQuery,
 	webAnalyticsAiReferralsQuery,
 } from "./web-analytics-ai"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-09-19 00:00:00", endTime: "2026-09-26 00:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-09-19 00:00:00",
+	endTime: "2026-09-26 00:00:00",
+}
 
 const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
 

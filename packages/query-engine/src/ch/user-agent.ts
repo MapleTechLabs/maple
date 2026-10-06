@@ -18,7 +18,7 @@
 // latter. Reaching the non-executing crawlers needs `http.user_agent` off
 // Server spans, which is a different source and a different feature.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 
 /**
  * What a bot is *for*, which is the axis a site owner acts on: an AI training

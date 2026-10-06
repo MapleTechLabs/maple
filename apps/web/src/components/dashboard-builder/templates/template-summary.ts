@@ -1,3 +1,4 @@
+import { countLabel } from "@maple/ui/lib/format"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -26,8 +27,6 @@ export const CATEGORY_ORDER = [
 	"product",
 ] as const
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
-
 /**
  * "3 stats · 3 charts" from the template's preview metadata. Line, area and bar
  * all read as charts — the distinction matters to the renderer, not the reader.
@@ -41,15 +40,15 @@ export function compositionLabel(preview: V2DashboardTemplate["preview"]): strin
 		else counts.chart++
 	}
 	const parts: string[] = []
-	if (counts.stat > 0) parts.push(plural(counts.stat, "stat", "stats"))
-	if (counts.chart > 0) parts.push(plural(counts.chart, "chart", "charts"))
-	if (counts.table > 0) parts.push(plural(counts.table, "table", "tables"))
-	if (counts.list > 0) parts.push(plural(counts.list, "list", "lists"))
+	if (counts.stat > 0) parts.push(countLabel(counts.stat, "stat"))
+	if (counts.chart > 0) parts.push(countLabel(counts.chart, "chart"))
+	if (counts.table > 0) parts.push(countLabel(counts.table, "table"))
+	if (counts.list > 0) parts.push(countLabel(counts.list, "list"))
 	return parts.join(" · ")
 }
 
 export const widgetCountLabel = (template: V2DashboardTemplate): string =>
-	plural(template.preview.length, "widget", "widgets")
+	countLabel(template.preview.length, "widget")
 
 /** Where a gated template sends you to fix the gap. */
 export const setupDestination = (

@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as React from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
@@ -8,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { type Log } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "./log-detail-sheet"
 import { LogRowExpanded } from "./log-row-expanded"
@@ -20,13 +21,15 @@ import { formatCompactTimeInTimezone } from "@/lib/timezone-format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
+import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
-import { shortTraceId } from "@/lib/logs/log-search-query"
+import { shortId } from "@maple/ui/lib/ids"
 import { ChevronRightIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
 import { DocsLink } from "@/components/common/docs-link"
 import {
@@ -34,6 +37,8 @@ import {
 	canWidenTimeRange,
 	WIDEN_TIME_PRESET,
 } from "@/components/time-range-picker/search"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const ROW_HEIGHT = 36
 const ROW_HEIGHT_COMFORTABLE = 48
@@ -82,16 +87,18 @@ interface LogsTableProps {
 function LoadingState() {
 	return (
 		<div className="flex-1 min-h-0 flex flex-col">
-			<div className="rounded-md border overflow-hidden flex-1 min-h-0">
-				{Array.from({ length: 40 }).map((_, i) => (
-					<div key={i} className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
-						<Skeleton className="size-1.5 rounded-full shrink-0" />
+			<SkeletonList
+				rows={40}
+				className="min-h-0 flex-1 gap-0 overflow-hidden rounded-md border"
+				renderRow={() => (
+					<div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+						<Skeleton className="size-1.5 shrink-0 rounded-full" />
 						<Skeleton className="h-3 w-16 shrink-0" />
 						<Skeleton className="h-3 w-[72px] shrink-0" />
 						<Skeleton className="h-3 flex-1" />
 					</div>
-				))}
-			</div>
+				)}
+			/>
 		</div>
 	)
 }
@@ -205,7 +212,7 @@ const LogRow = React.memo(function LogRow({
 				{/* h-4 wrapper = the text line-box height, so the dot centers on the
 				    first line even when the row is top-aligned in wrap mode. */}
 				<span className="shrink-0 flex h-4 items-center" aria-hidden="true">
-					<span className="size-1.5 rounded-full" style={{ backgroundColor: severityColor }} />
+					<StatusDot tone="custom" style={{ backgroundColor: severityColor }} />
 				</span>
 				<span
 					className="shrink-0 w-12 text-[10px] uppercase tabular-nums font-semibold hidden md:inline-block"
@@ -296,12 +303,13 @@ function PinnedHeader({
 	trackStyle: React.CSSProperties
 }) {
 	return (
-		<div
+		<Eyebrow
+			as="div"
 			// `top-0` only: a `left-0` sticky header stays glued to the viewport
 			// while the rows scroll sideways underneath it, so the labels drift off
 			// the columns they name. It shares the rows' track width instead.
 			style={trackStyle}
-			className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground/70 select-none"
+			className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border select-none"
 		>
 			<span className="shrink-0 size-4" aria-hidden="true" />
 			<span className="shrink-0 size-1.5" aria-hidden="true" />
@@ -328,7 +336,7 @@ function PinnedHeader({
 					<span className="flex-1" aria-hidden="true" />
 				</>
 			)}
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -448,7 +456,7 @@ export function LogsTableView({
 	const virtualItems = virtualizer.getVirtualItems()
 
 	const scopeSuffix = [
-		traceId ? ` in trace ${shortTraceId(traceId)}` : "",
+		traceId ? ` in trace ${shortId(traceId, "trace")}` : "",
 		searchText ? ` matching “${searchText}”` : "",
 	].join("")
 
@@ -558,14 +566,13 @@ export function LogsTableView({
 		{ enabled: allData.length > 0 },
 	)
 
-	React.useEffect(() => {
-		const lastItem = virtualItems[virtualItems.length - 1]
-		if (!lastItem) return
-
-		if (lastItem.index >= allData.length - FETCH_THRESHOLD && hasNextPage && !isFetchingNextPage) {
-			fetchNextPage()
-		}
-	}, [virtualItems, allData.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+	useVirtualReachEnd(virtualizer, {
+		count: allData.length,
+		hasMore: hasNextPage,
+		loading: isFetchingNextPage,
+		onReachEnd: fetchNextPage,
+		threshold: FETCH_THRESHOLD,
+	})
 
 	if (allData.length === 0) {
 		return (
@@ -637,7 +644,10 @@ export function LogsTableView({
 
 	return (
 		<>
-			<div className={`flex-1 min-h-0 flex flex-col transition-opacity ${waiting ? "opacity-60" : ""}`}>
+			<div
+				className={cn("flex min-h-0 flex-1 flex-col", refreshingClass(waiting))}
+				aria-busy={waiting || undefined}
+			>
 				{!onLogClick && !embedded && <LogsTableToolbar />}
 				<div className="flex-1 min-h-0 relative">
 					<div
@@ -686,11 +696,14 @@ export function LogsTableView({
 					<div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-md bg-gradient-to-t from-background to-transparent" />
 				</div>
 
-				<div className="text-sm text-muted-foreground shrink-0 mt-1.5">
-					{isCapped
-						? `Showing first ${allData.length.toLocaleString()} logs${scopeSuffix} — narrow filters to continue`
-						: `Showing ${allData.length.toLocaleString()} logs${scopeSuffix}${!hasNextPage ? " (all loaded)" : ""}`}
-				</div>
+				<ListFooter
+					shown={allData.length}
+					noun={`logs${scopeSuffix}`}
+					capped={isCapped}
+					hasMore={hasNextPage}
+					align="start"
+					className="mt-1.5 shrink-0 p-0"
+				/>
 			</div>
 
 			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={handleSheetOpenChange} />
@@ -739,7 +752,7 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 
 	return Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((_response, result) => (
 			<LogsTableView
 				allData={allData}

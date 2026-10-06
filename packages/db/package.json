@@ -22,13 +22,13 @@
 		"db:backfill:dashboards-v3": "bun scripts/backfill-dashboard-datasource-v3.ts"
 	},
 	"dependencies": {
-		"@effect/sql-pg": "4.0.0",
-		"@effect/sql-pglite": "4.0.0",
+		"@effect/sql-pg": "4.0.1",
+		"@effect/sql-pglite": "4.0.1",
 		"@electric-sql/pglite": "^0.5.8",
 		"@maple/domain": "workspace:*",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
-		"pg": "^8.23.0",
+		"pg": "^8.23.1",
 		"postgres": "^3.4.9"
 	},
 	"devDependencies": {

@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -89,7 +90,7 @@ function TemplateTile({
 		<TileShell onClick={() => onPick(template)}>
 			<TileHead icon={<Icon size={18} />} title={template.title} subtitle={template.description} />
 			<div className="mt-auto flex items-center justify-between">
-				<code className="font-mono text-[11px] text-muted-foreground">{template.summary}</code>
+				<InlineCode className="text-[11px] text-muted-foreground">{template.summary}</InlineCode>
 				<ChevronRightIcon
 					size={14}
 					className="text-muted-foreground transition-transform group-hover:translate-x-0.5"

@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState, useEffect, type KeyboardEvent } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ChatTab } from "@/hooks/use-chat-tabs"
 import { cn } from "@maple/ui/lib/utils"
 import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -112,15 +115,15 @@ export function ChatSidebar({
 				</div>
 				<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
 					{groups.length === 0 ? (
-						<div className="px-2 py-6 text-center text-xs text-sidebar-foreground/60">
+						<EmptyMessage className="px-2 py-6 text-sidebar-foreground/60">
 							No conversations yet
-						</div>
+						</EmptyMessage>
 					) : (
 						groups.map((group) => (
 							<div key={group.label} className="mb-3">
-								<div className="px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+								<Eyebrow as="div" className="px-2 py-1 text-sidebar-foreground/60">
 									{group.label}
-								</div>
+								</Eyebrow>
 								<ul className="flex flex-col gap-0.5">
 									{group.tabs.map((tab) => (
 										<ChatSidebarRow
@@ -256,9 +259,9 @@ function ChatSidebarRow({
 						className="min-w-0 flex-1 bg-transparent text-sm outline-none ring-1 ring-ring/50 rounded-sm px-1 -mx-1"
 					/>
 				) : (
-					<span className="min-w-0 flex-1 truncate text-left" title={tab.title}>
+					<TruncatedText text={tab.title} className="flex-1 text-left">
 						{tab.title}
-					</span>
+					</TruncatedText>
 				)}
 				{!isRenaming && (
 					<DropdownMenu>

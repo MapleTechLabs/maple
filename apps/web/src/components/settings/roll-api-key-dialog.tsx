@@ -15,6 +15,7 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { useApiKeyMutationSync } from "@/hooks/use-api-keys"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { displayError } from "@/lib/error-messages"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { ApiKeySecretReveal } from "./api-key-secret-reveal"
@@ -27,7 +28,6 @@ interface RollApiKeyDialogProps {
 }
 
 export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollApiKeyDialogProps) {
-	const [isRolling, setIsRolling] = useState(false)
 	const [newSecret, setNewSecret] = useState<string | null>(null)
 
 	const { prepareForMutation, reconcileTxid } = useApiKeyMutationSync()
@@ -35,9 +35,8 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 		mode: "promiseExit",
 	})
 
-	async function handleRoll() {
+	const [handleRoll, isRolling] = useAsyncAction(async () => {
 		if (!apiKey) return
-		setIsRolling(true)
 		prepareForMutation()
 		const result = await rollMutation({ params: { id: apiKey.id } })
 		if (Exit.isSuccess(result)) {
@@ -48,8 +47,7 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 			const { title, message } = displayError(result)
 			toastManager.add({ title, description: message, type: "error" })
 		}
-		setIsRolling(false)
-	}
+	})
 
 	function handleClose(nextOpen: boolean) {
 		if (nextOpen) {
@@ -101,8 +99,8 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 							<Button variant="outline" onClick={() => handleClose(false)} disabled={isRolling}>
 								Cancel
 							</Button>
-							<Button variant="destructive" onClick={handleRoll} disabled={isRolling}>
-								{isRolling ? "Rolling..." : "Roll key"}
+							<Button variant="destructive" onClick={handleRoll} loading={isRolling}>
+								Roll key
 							</Button>
 						</DialogFooter>
 					</>

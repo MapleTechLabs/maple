@@ -1,6 +1,8 @@
-import { formatDuration } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { formatDuration, pluralize } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import * as React from "react"
+import { cn } from "@maple/ui/lib/utils"
 import { Result } from "@/lib/effect-atom"
 import { Link, linkOptions, useNavigate } from "@tanstack/react-router"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
@@ -16,16 +18,22 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Badge } from "@maple/ui/components/ui/badge"
+import { LoadingMoreRow, ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { shortId } from "@maple/ui/lib/ids"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { ServicePills } from "@/components/common/service-pills"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { type Trace } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
+import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { TracePeekSheet } from "@/components/traces/trace-peek-sheet"
@@ -98,38 +106,26 @@ function deepLinkSpanId(trace: Trace): string | undefined {
 const isPlainClick = (event: React.MouseEvent) =>
 	event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
 
-function truncateId(id: string, length = 8): string {
-	if (id.length <= length) return id
-	return id.slice(0, length)
-}
-
 function StatusBadge({ hasError }: { hasError: boolean }) {
-	if (hasError) {
-		return (
-			<Badge variant="secondary" className="bg-severity-error/15 text-severity-error">
-				Error
-			</Badge>
-		)
-	}
 	return (
-		<Badge variant="secondary" className="bg-severity-info/15 text-severity-info">
-			OK
+		<Badge variant="secondary" className={TONE_SOFT[hasError ? "crit" : "ok"]}>
+			{hasError ? "Error" : "OK"}
 		</Badge>
 	)
 }
 
+// 4xx/5xx follow the shared status tone; 3xx keeps its own blue so redirects stand apart from 2xx.
 function HttpStatusBadge({ statusCode }: { statusCode: number }) {
+	const tone = httpStatusTone(statusCode)
 	return (
 		<Badge
 			variant="secondary"
 			className={
-				statusCode >= 500
-					? "bg-severity-error/15 text-severity-error"
-					: statusCode >= 400
-						? "bg-severity-warn/15 text-severity-warn"
-						: statusCode >= 300
-							? "bg-chart-p50/15 text-chart-p50"
-							: "bg-severity-info/15 text-severity-info"
+				tone !== "neutral"
+					? TONE_SOFT[tone]
+					: statusCode >= 300
+						? "bg-chart-p50/15 text-chart-p50"
+						: TONE_SOFT.ok
 			}
 		>
 			{statusCode}
@@ -144,8 +140,6 @@ function HttpStatusBadge({ statusCode }: { statusCode: number }) {
 const TABLE_FEATURES = tableFeatures({ columnSizingFeature })
 
 const ROW_HEIGHT = 44
-
-const HEADER_CELL_CLASS = "h-10 px-2 text-left align-middle font-medium text-muted-foreground"
 
 /**
  * Column layout, shared by the real table, the loading skeleton and the empty state so the three
@@ -265,7 +259,7 @@ function TracesTableView({
 						{...traceLink(row.original)}
 						className="relative z-10 font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary"
 					>
-						{truncateId(row.original.traceId)}
+						{shortId(row.original.traceId, "trace")}
 					</Link>
 				),
 			},
@@ -324,7 +318,7 @@ function TracesTableView({
 									})}{" "}
 								</span>
 								<span className="text-muted-foreground/60">
-									({formatRelativeTime(row.original.startTime)})
+									(<RelativeTime value={row.original.startTime} tooltip="title" />)
 								</span>
 								<span className="@min-[480px]/page:hidden">
 									{" · "}
@@ -399,14 +393,13 @@ function TracesTableView({
 
 	const virtualItems = virtualizer.getVirtualItems()
 
-	React.useEffect(() => {
-		const lastItem = virtualItems[virtualItems.length - 1]
-		if (!lastItem) return
-
-		if (lastItem.index >= rows.length - FETCH_THRESHOLD && hasNextPage && !isFetchingNextPage) {
-			fetchNextPage()
-		}
-	}, [virtualItems, rows.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+	useVirtualReachEnd(virtualizer, {
+		count: rows.length,
+		hasMore: hasNextPage,
+		loading: isFetchingNextPage,
+		onReachEnd: fetchNextPage,
+		threshold: FETCH_THRESHOLD,
+	})
 
 	// Index-keyed nav ids — the list is append-only for a given query.
 	const rowIds = React.useMemo(() => allData.map((_, index) => String(index)), [allData])
@@ -446,7 +439,8 @@ function TracesTableView({
 
 	return (
 		<div
-			className={`flex-1 min-h-0 flex flex-col gap-4 transition-opacity ${waiting ? "opacity-50" : ""}`}
+			className={cn("flex min-h-0 flex-1 flex-col gap-4", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
 		>
 			<div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto rounded-md border">
 				{/*
@@ -455,12 +449,12 @@ function TracesTableView({
 				 * fixed layout pins the sized columns and hands the remainder to Root Span, which is the
 				 * only column that should flex.
 				 */}
-				<table className="w-full table-fixed caption-bottom text-sm" aria-label="Traces">
-					<thead className="[&_tr]:border-b sticky top-0 z-20 bg-background">
+				<Table scroll={false} className="table-fixed" aria-label="Traces">
+					<TableHeader sticky className="z-20">
 						{table.getHeaderGroups().map((headerGroup) => (
-							<tr key={headerGroup.id} className="border-b transition-colors hover:bg-muted/50">
+							<TableRow key={headerGroup.id} className="hover:bg-muted/50">
 								{headerGroup.headers.map((header) => (
-									<th
+									<TableHead
 										key={header.id}
 										aria-sort={
 											header.id === sortBy
@@ -469,7 +463,7 @@ function TracesTableView({
 													: "descending"
 												: undefined
 										}
-										className={`${HEADER_CELL_CLASS} ${columnClasses(header.id).responsive ?? ""}`}
+										className={cn("px-2", columnClasses(header.id).responsive)}
 										style={{
 											width: header.getSize() !== 150 ? header.getSize() : undefined,
 										}}
@@ -477,12 +471,12 @@ function TracesTableView({
 										{header.isPlaceholder
 											? null
 											: flexRender(header.column.columnDef.header, header.getContext())}
-									</th>
+									</TableHead>
 								))}
-							</tr>
+							</TableRow>
 						))}
-					</thead>
-					<tbody className="[&_tr:last-child]:border-0">
+					</TableHeader>
+					<TableBody>
 						{virtualItems.length > 0 && (
 							<tr style={{ height: virtualItems[0].start }} aria-hidden="true">
 								<td />
@@ -491,13 +485,13 @@ function TracesTableView({
 						{virtualItems.map((virtualRow) => {
 							const row = rows[virtualRow.index]
 							return (
-								<tr
+								<TableRow
 									key={row.id}
 									ref={virtualizer.measureElement}
 									data-index={virtualRow.index}
 									data-focused={virtualRow.index === focusedIndex || undefined}
 									data-active={row.original.spanId === activeRowSpanId || undefined}
-									className="relative border-b transition-colors hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+									className="hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 									tabIndex={0}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" || e.key === " ") {
@@ -509,15 +503,19 @@ function TracesTableView({
 									{row.getAllCells().map((cell) => {
 										const { responsive, cellClass } = columnClasses(cell.column.id)
 										return (
-											<td
+											<TableCell
 												key={cell.id}
-												className={`p-2 align-middle [&:has([role=checkbox])]:pr-0 ${responsive ?? ""} ${cellClass ?? ""}`}
+												className={cn(
+													"p-2 whitespace-normal leading-normal",
+													responsive,
+													cellClass,
+												)}
 											>
 												{flexRender(cell.column.columnDef.cell, cell.getContext())}
-											</td>
+											</TableCell>
 										)
 									})}
-								</tr>
+								</TableRow>
 							)
 						})}
 						{virtualItems.length > 0 && (
@@ -533,29 +531,31 @@ function TracesTableView({
 							</tr>
 						)}
 						{isFetchingNextPage && (
-							<tr className="border-b transition-colors">
-								<td
-									colSpan={TRACE_COLUMNS.length}
-									className="p-2 text-center text-sm text-muted-foreground"
-								>
-									Loading more traces…
+							<tr>
+								<td colSpan={TRACE_COLUMNS.length}>
+									<LoadingMoreRow label="Loading more traces…" />
 								</td>
 							</tr>
 						)}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 
-			<div className="text-sm text-muted-foreground shrink-0">
-				{isCapped
-					? `Showing first ${allData.length.toLocaleString()} traces — narrow filters to continue`
-					: `Showing ${allData.length.toLocaleString()} traces${!hasNextPage ? " (all loaded)" : ""}`}
-				{/* Hidden rows are never silently dropped — say how many and offer the way back. */}
+			<div className="flex shrink-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+				<ListFooter
+					shown={allData.length}
+					noun="traces"
+					capped={isCapped}
+					hasMore={hasNextPage}
+					align="start"
+					className="p-0"
+				/>
+				{/* Hidden rows are never silently dropped: say how many and offer the way back. */}
 				{hiddenCount > 0 && (
-					<>
+					<span>
 						{" · "}
-						{hiddenCount.toLocaleString()} single-span noise{" "}
-						{hiddenCount === 1 ? "trace" : "traces"} hidden{" "}
+						{hiddenCount.toLocaleString()} single-span noise {pluralize(hiddenCount, "trace")}{" "}
+						hidden{" "}
 						<button
 							type="button"
 							onClick={onShowNoise}
@@ -563,7 +563,7 @@ function TracesTableView({
 						>
 							show
 						</button>
-					</>
+					</span>
 				)}
 			</div>
 		</div>
@@ -693,7 +693,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 
 	const table = Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((_response, result) => (
 			<TracesTableView
 				allData={allData}

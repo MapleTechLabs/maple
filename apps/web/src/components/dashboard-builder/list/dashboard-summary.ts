@@ -2,14 +2,13 @@
 // decoded `Dashboard` the list already holds — no queries, no extra plumbing.
 // The `Dashboard`-shaped counterpart to templates/template-summary.ts.
 
+import { countLabel } from "@maple/ui/lib/format"
 import type { DashboardSortOption } from "@/atoms/dashboard-preferences-atoms"
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql } from "@maple/widgets/dashboard"
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
-
 export const widgetCountLabel = (dashboard: Dashboard): string =>
-	plural(dashboard.widgets.length, "widget", "widgets")
+	countLabel(dashboard.widgets.length, "widget")
 
 /**
  * Domain labels for the "reads from" lane, in the order they are shown. Keyed by
@@ -196,7 +195,7 @@ export function headerSummary(
 	if (dashboards.length === 0) return "No dashboards yet"
 
 	const widgets = dashboards.reduce((total, dashboard) => total + dashboard.widgets.length, 0)
-	const parts = [plural(dashboards.length, "dashboard", "dashboards"), plural(widgets, "widget", "widgets")]
+	const parts = [countLabel(dashboards.length, "dashboard"), countLabel(widgets, "widget")]
 
 	const latest = dashboards.reduce<string | null>((newest, dashboard) => {
 		if (newest === null) return dashboard.updatedAt

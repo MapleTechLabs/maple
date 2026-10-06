@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -51,9 +52,7 @@ function ServiceMapBenchPage() {
 			{/* Namespace-group control — flips ?groups so the ELK grouped layout can
 			    be exercised without hand-editing the URL. */}
 			<div className="absolute left-1/2 top-2 z-[60] flex -translate-x-1/2 items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 backdrop-blur-sm">
-				<span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-					Namespace groups
-				</span>
+				<Eyebrow>Namespace groups</Eyebrow>
 				{GROUP_OPTIONS.map((g) => (
 					<button
 						key={g}

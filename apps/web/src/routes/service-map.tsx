@@ -15,7 +15,7 @@ import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-r
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { LONG_RANGE_PRESET_OPTIONS, snapRangeForCache } from "@/lib/time-utils"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -148,7 +148,7 @@ function ServiceMapContent() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Service Map">
+						<DashboardLayout.Header>
 							{/* Wraps, and below the header's side-by-side breakpoint the
 							    environment select takes a row of its own: all three controls
 							    on one narrow row left it ~70px, and unwrapped they stacked
@@ -204,9 +204,9 @@ function ServiceMapContent() {
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						{Result.isFailure(facetsResult) ? (
-							<QueryErrorState
+							<ErrorState
 								error={facetsResult.cause}
-								titleOverride="Failed to load service environments"
+								title="Failed to load service environments"
 								onRetry={refreshFacets}
 							/>
 						) : (

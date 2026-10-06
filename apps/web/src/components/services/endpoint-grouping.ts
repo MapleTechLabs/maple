@@ -22,6 +22,7 @@
 // therefore produces no headers at all and degrades into a plain sorted list.
 
 import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
+import type { SortDir } from "@/hooks/use-table-sort"
 
 export type EndpointGroupKind = "stem" | "ungrouped" | "unrouted" | "probes"
 
@@ -41,7 +42,6 @@ export interface EndpointGroup {
 }
 
 export type EndpointSort = "traffic" | "path" | "errorRate" | "p50" | "p95" | "p99"
-export type EndpointSortDir = "asc" | "desc"
 
 const segments = (route: string): string[] => route.split("/").filter((part) => part.length > 0)
 
@@ -263,7 +263,7 @@ const byPath = (a: ServiceEndpoint, b: ServiceEndpoint) =>
 export function groupEndpoints(
 	endpoints: readonly ServiceEndpoint[],
 	sort: EndpointSort = "traffic",
-	dir: EndpointSortDir = sort === "path" ? "asc" : "desc",
+	dir: SortDir = sort === "path" ? "asc" : "desc",
 ): EndpointGroup[] {
 	const probes: ServiceEndpoint[] = []
 	const unrouted: ServiceEndpoint[] = []

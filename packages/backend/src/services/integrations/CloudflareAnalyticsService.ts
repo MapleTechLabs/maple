@@ -142,6 +142,7 @@ import {
 } from "./cloudflare-analytics/queries"
 import * as Integrations from "@maple/query-engine-integrations"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 /**
  * OAuth scopes the poller needs (space-delimited ids in `oauth_connections.scope`). Kept next to
@@ -2598,14 +2599,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 				const datapoints = row.datapoints
 				agg.buckets.push(
 					new CloudflareUsageBucket({
-						bucketStart: Date.parse(row.bucket),
+						bucketStart: parseWarehouseDateTime(row.bucket),
 						requests,
 						datapoints,
 					}),
 				)
 				agg.totalRequests += requests
 				agg.totalDatapoints += datapoints
-				const lastMs = Date.parse(row.lastTimeUnix)
+				const lastMs = parseWarehouseDateTime(row.lastTimeUnix)
 				if (Number.isFinite(lastMs)) {
 					agg.lastDataAt = agg.lastDataAt == null ? lastMs : Math.max(agg.lastDataAt, lastMs)
 				}

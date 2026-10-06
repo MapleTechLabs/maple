@@ -1,21 +1,23 @@
 import type { CycleCostEstimate } from "@/lib/billing/cost-estimate"
 
 import { formatCurrency } from "@maple/domain/format"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 export function CostBreakdownSkeleton() {
 	return (
-		<div className="divide-y divide-border/60">
-			{Array.from({ length: 3 }).map((_, i) => (
-				<div key={i} className="flex items-center justify-between py-2.5">
+		<SkeletonList
+			rows={3}
+			className="gap-0 divide-y divide-border/60"
+			renderRow={() => (
+				<div className="flex items-center justify-between py-2.5">
 					<div className="flex flex-col gap-1.5">
 						<Skeleton className="h-3.5 w-28" />
 						<Skeleton className="h-3 w-44" />
 					</div>
 					<Skeleton className="h-3.5 w-14" />
 				</div>
-			))}
-		</div>
+			)}
+		/>
 	)
 }
 

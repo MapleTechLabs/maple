@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { Cause, Exit } from "effect"
 
 import { BillingAddress, type BillingProfile, UpdateBillingProfileRequest } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	Combobox,
 	ComboboxContent,
@@ -19,17 +19,12 @@ import {
 	DialogPopup,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
-import { Label } from "@maple/ui/components/ui/label"
-import { Spinner } from "@maple/ui/components/ui/spinner"
-import { toastManager } from "@maple/ui/components/ui/toast"
+import { Input } from "@maple/ui/components/ui/input"
 
-import { useAtomSet } from "@/lib/effect-atom"
+import { useMutationAction } from "@/hooks/use-mutation-action"
 import { fieldOrNull } from "@/lib/billing/billing-profile"
 import { countryName, sortedCountryCodes } from "@/lib/billing/countries"
 import { BILLING_PROFILE_KEY, updateBillingProfileMutation } from "@/lib/services/atoms/billing-atoms"
-
-const FIELD =
-	"h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-sm outline-none focus:border-ring"
 
 const COUNTRIES = sortedCountryCodes()
 
@@ -47,7 +42,11 @@ export function BillingDetailsDialog({
 	readonly open: boolean
 	readonly onOpenChange: (open: boolean) => void
 }) {
-	const save = useAtomSet(updateBillingProfileMutation, { mode: "promiseExit" })
+	const [save, saving] = useMutationAction(updateBillingProfileMutation, {
+		success: "Billing details saved.",
+		error: "Billing details could not be saved.",
+		onSuccess: () => onOpenChange(false),
+	})
 	const address = profile.address
 	const [name, setName] = useState(profile.name ?? "")
 	const [line1, setLine1] = useState(address?.line1 ?? "")
@@ -56,7 +55,6 @@ export function BillingDetailsDialog({
 	const [state, setState] = useState(address?.state ?? "")
 	const [postalCode, setPostalCode] = useState(address?.postalCode ?? "")
 	const [country, setCountry] = useState<string | null>(address?.country?.toUpperCase() ?? null)
-	const [saving, setSaving] = useState(false)
 
 	async function handleSave() {
 		const fields = {
@@ -69,8 +67,7 @@ export function BillingDetailsDialog({
 		}
 		const anyAddress = Object.values(fields).some((value) => value !== null)
 
-		setSaving(true)
-		const exit = await save({
+		await save({
 			payload: new UpdateBillingProfileRequest({
 				name: fieldOrNull(name),
 				// All-empty clears the address outright; otherwise every line is sent
@@ -78,18 +75,6 @@ export function BillingDetailsDialog({
 				address: anyAddress ? new BillingAddress(fields) : null,
 			}),
 			reactivityKeys: [BILLING_PROFILE_KEY],
-		})
-		setSaving(false)
-
-		if (Exit.isSuccess(exit)) {
-			toastManager.add({ title: "Billing details saved.", type: "success" })
-			onOpenChange(false)
-			return
-		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "Billing details could not be saved.",
-			type: "error",
 		})
 	}
 
@@ -101,76 +86,70 @@ export function BillingDetailsDialog({
 				</DialogHeader>
 
 				<div className="space-y-4 px-5 pt-[18px]">
-					<div className="space-y-1.5">
-						<Label htmlFor="billing-name">Company name</Label>
-						<input
+					<Field>
+						<FieldLabel htmlFor="billing-name">Company name</FieldLabel>
+						<Input
 							id="billing-name"
 							value={name}
 							onChange={(event) => setName(event.target.value)}
 							placeholder="Legal entity as it should appear on invoices"
 							maxLength={150}
 							autoComplete="organization"
-							className={FIELD}
 						/>
-					</div>
+					</Field>
 
-					<div className="space-y-1.5">
-						<Label htmlFor="billing-line1">Address</Label>
-						<input
+					<Field>
+						<FieldLabel htmlFor="billing-line1">Address</FieldLabel>
+						<Input
 							id="billing-line1"
 							value={line1}
 							onChange={(event) => setLine1(event.target.value)}
 							placeholder="Street and number"
 							autoComplete="address-line1"
-							className={FIELD}
 						/>
-						<input
+						<Input
 							aria-label="Address line 2"
 							value={line2}
 							onChange={(event) => setLine2(event.target.value)}
 							placeholder="Suite, floor, c/o (optional)"
 							autoComplete="address-line2"
-							className={FIELD}
 						/>
-					</div>
+					</Field>
 
 					<div className="grid grid-cols-[1fr_2fr] gap-2">
-						<div className="space-y-1.5">
-							<Label htmlFor="billing-postal">Postal code</Label>
-							<input
+						<Field>
+							<FieldLabel htmlFor="billing-postal">Postal code</FieldLabel>
+							<Input
 								id="billing-postal"
 								value={postalCode}
 								onChange={(event) => setPostalCode(event.target.value)}
 								autoComplete="postal-code"
-								className={FIELD}
 							/>
-						</div>
-						<div className="space-y-1.5">
-							<Label htmlFor="billing-city">City</Label>
-							<input
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="billing-city">City</FieldLabel>
+							<Input
 								id="billing-city"
 								value={city}
 								onChange={(event) => setCity(event.target.value)}
 								autoComplete="address-level2"
-								className={FIELD}
 							/>
-						</div>
+						</Field>
 					</div>
 
 					<div className="grid grid-cols-2 gap-2">
-						<div className="space-y-1.5">
-							<Label htmlFor="billing-state">State / region</Label>
-							<input
+						<Field>
+							<FieldLabel htmlFor="billing-state">State / region</FieldLabel>
+							<Input
 								id="billing-state"
 								value={state}
 								onChange={(event) => setState(event.target.value)}
 								placeholder="Optional"
 								autoComplete="address-level1"
-								className={FIELD}
 							/>
-						</div>
-						<div className="space-y-1.5">
-							<Label htmlFor="billing-country">Country</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="billing-country">Country</FieldLabel>
 							<Combobox<string | null>
 								items={COUNTRIES}
 								itemToStringLabel={(code: string | null) => (code ? countryName(code) : "")}
@@ -193,7 +172,7 @@ export function BillingDetailsDialog({
 									</ComboboxList>
 								</ComboboxContent>
 							</Combobox>
-						</div>
+						</Field>
 					</div>
 
 					<p className="text-[11px] leading-4 text-muted-foreground">
@@ -204,8 +183,8 @@ export function BillingDetailsDialog({
 
 				<DialogFooter className="px-5 pt-[18px] pb-5">
 					<DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
-					<Button size="sm" onClick={handleSave} disabled={saving}>
-						{saving ? <Spinner className="size-4" /> : "Save details"}
+					<Button size="sm" onClick={handleSave} loading={saving}>
+						Save details
 					</Button>
 				</DialogFooter>
 			</DialogPopup>

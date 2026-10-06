@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as CH from "./index"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { tracesTimeseriesQuery, tracesBreakdownQuery, tracesListQuery } from "./queries/traces"
 import { logsFacetsQuery } from "./queries/logs"
 import { servicesFacetsQuery } from "./queries/services"
@@ -11,18 +11,23 @@ import {
 	spanHierarchyQuery,
 	spanDetailQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 } from "./queries/errors"
-import { unionAll } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import { unionAll } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
 
 // Core DSL tests
 
 describe("CH.from / select / where / compile", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
-		Attrs: CH.map(CH.string, CH.string),
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+			Attrs: CH.map(CH.string, CH.string),
+		},
 	})
 
 	it("compiles a basic select", () => {
@@ -50,7 +55,7 @@ describe("CH.from / select / where / compile", () => {
 			.where(($) => [$.Id.eq(CH.param.string("orgId")), $.Name.eq("test")])
 			.groupBy("id")
 
-		const { sql } = compileUnsafe(q, { orgId: "org_123" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_123") })
 		expect(sql).toContain("Id AS id")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("Id = 'org_123'")
@@ -208,7 +213,7 @@ describe("CH.from / select / where / compile", () => {
 
 describe("tracesTimeseriesQuery", () => {
 	const baseParams = {
-		orgId: "org_123",
+		orgId: OrgId.make("org_123"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 		bucketSeconds: 3600,
@@ -690,7 +695,7 @@ describe("tracesTimeseriesQuery", () => {
 
 describe("tracesBreakdownQuery", () => {
 	const baseParams = {
-		orgId: "org_123",
+		orgId: OrgId.make("org_123"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 	}
@@ -891,7 +896,7 @@ describe("tracesBreakdownQuery", () => {
 
 describe("tracesListQuery", () => {
 	const baseParams = {
-		orgId: "org_123",
+		orgId: OrgId.make("org_123"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 	}
@@ -1003,9 +1008,12 @@ describe("tracesListQuery", () => {
 
 describe("unionAll", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+		},
 	})
 
 	it("compiles two queries with UNION ALL", () => {
@@ -1061,9 +1069,12 @@ describe("unionAll", () => {
 
 describe("subquery support", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+		},
 	})
 
 	it("compiles inSubquery", () => {
@@ -1121,16 +1132,22 @@ describe("subquery support", () => {
 
 describe("type-safe joins", () => {
 	const Users = CH.table("users", {
-		Id: CH.string,
-		Name: CH.string,
-		OrgId: CH.string,
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			OrgId: CH.string,
+		},
 	})
 
 	const Orders = CH.table("orders", {
-		Id: CH.string,
-		UserId: CH.string,
-		Amount: CH.uint64,
-		Status: CH.string,
+		external: true,
+		columns: {
+			Id: CH.string,
+			UserId: CH.string,
+			Amount: CH.uint64,
+			Status: CH.string,
+		},
 	})
 
 	it("compiles innerJoin with Table", () => {
@@ -1234,7 +1251,10 @@ describe("type-safe joins", () => {
 	})
 
 	it("compiles multiple chained joins", () => {
-		const Tags = CH.table("tags", { Id: CH.string, UserId: CH.string, Label: CH.string })
+		const Tags = CH.table("tags", {
+			external: true,
+			columns: { Id: CH.string, UserId: CH.string, Label: CH.string },
+		})
 
 		const q = CH.from(Users)
 			.innerJoin(Orders, "o", (u, o) => u.Id.eq(o.UserId))
@@ -1270,10 +1290,13 @@ describe("type-safe joins", () => {
 
 describe("new expression functions", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
-		Attrs: CH.map(CH.string, CH.string),
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+			Attrs: CH.map(CH.string, CH.string),
+		},
 	})
 
 	it("compiles uniq()", () => {
@@ -1343,7 +1366,7 @@ describe("new expression functions", () => {
 // Converted queries — smoke tests
 
 describe("converted queries", () => {
-	const baseParams = { orgId: "org_1", startTime: "2024-01-01", endTime: "2024-01-02" }
+	const baseParams = { orgId: OrgId.make("org_1"), startTime: "2024-01-01", endTime: "2024-01-02" }
 
 	it("logsFacetsQuery compiles UNION ALL", () => {
 		const q = logsFacetsQuery({})
@@ -1409,7 +1432,7 @@ describe("converted queries", () => {
 
 	it("spanHierarchyQuery projects only the trimmed tree attribute keys", () => {
 		const q = spanHierarchyQuery({ traceId: "abc123" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		// Maps are trimmed to the keys the tree views render — never the full map.
 		expect(sql).not.toContain("toJSONString(SpanAttributes)")
 		expect(sql).not.toContain("toJSONString(ResourceAttributes)")
@@ -1427,14 +1450,14 @@ describe("converted queries", () => {
 
 	it("spanHierarchyQuery with spanId marks target", () => {
 		const q = spanHierarchyQuery({ traceId: "abc", spanId: "span1" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).toContain("'target'")
 		expect(sql).toContain("'related'")
 	})
 
 	it("spanHierarchyQuery without narrowByTime omits Timestamp filter", () => {
 		const q = spanHierarchyQuery({ traceId: "abc" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).not.toContain("Timestamp >=")
 		expect(sql).not.toContain("Timestamp <=")
 	})
@@ -1442,7 +1465,7 @@ describe("converted queries", () => {
 	it("spanHierarchyQuery with narrowByTime adds Timestamp BETWEEN filter", () => {
 		const q = spanHierarchyQuery({ traceId: "abc", narrowByTime: true })
 		const { sql } = compileUnsafe(q, {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-04-15 13:00:00",
 			endTime: "2026-04-15 15:00:00",
 		})
@@ -1452,7 +1475,7 @@ describe("converted queries", () => {
 
 	it("spanDetailQuery is a point lookup returning the full attribute maps", () => {
 		const q = spanDetailQuery({ traceId: "abc123", spanId: "span1" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).toContain("toJSONString(trace_detail_spans.SpanAttributes) AS spanAttributes")
 		expect(sql).toContain("toJSONString(trace_detail_spans.ResourceAttributes) AS resourceAttributes")
 		expect(sql).toContain("FROM trace_detail_spans")
@@ -1467,7 +1490,7 @@ describe("converted queries", () => {
 	it("spanDetailQuery with narrowByTime adds Timestamp filters", () => {
 		const q = spanDetailQuery({ traceId: "abc", spanId: "s1", narrowByTime: true })
 		const { sql } = compileUnsafe(q, {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-04-15 13:00:00",
 			endTime: "2026-04-15 15:00:00",
 		})
@@ -1477,7 +1500,7 @@ describe("converted queries", () => {
 
 	it("traceTimeProbeQuery is a cheap LIMIT-1 timestamp seek with no ORDER BY", () => {
 		const q = traceTimeProbeQuery({ traceId: "abc123" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).toContain("Timestamp AS timestamp")
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
@@ -1490,9 +1513,9 @@ describe("converted queries", () => {
 		expect(sql).not.toContain("Timestamp >=")
 	})
 
-	it("traceTimeProbeQuery with narrowByTime adds a Timestamp lower bound for partition pruning", () => {
-		const q = traceTimeProbeQuery({ traceId: "abc123", narrowByTime: true })
-		const { sql } = compileUnsafe(q, { orgId: "org_1", startTime: "2026-04-15 13:00:00" })
+	it("recentTraceTimeProbeQuery adds a Timestamp lower bound for partition pruning", () => {
+		const q = recentTraceTimeProbeQuery({ traceId: "abc123" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1"), startTime: "2026-04-15 13:00:00" })
 		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
 		// Lower bound only — "recent" needs no upper bound.
 		expect(sql).not.toContain("Timestamp <=")

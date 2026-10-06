@@ -1,5 +1,6 @@
 import type { StructuredToolOutput } from "@maple/domain"
 import type { ReactNode } from "react"
+import { formatErrorRate } from "@maple/ui/lib/format"
 import { DataTable } from "./components/data-table"
 import { ErrorList } from "./components/error-list"
 import { LogList } from "./components/log-list"
@@ -397,8 +398,8 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 									service.name,
 									String(service.previous.throughput),
 									String(service.current.throughput),
-									`${(service.previous.errorRate * 100).toFixed(2)}%`,
-									`${(service.current.errorRate * 100).toFixed(2)}%`,
+									formatErrorRate(service.previous.errorRate),
+									formatErrorRate(service.current.errorRate),
 								]),
 								title: "Per-Service Comparison",
 							}}
@@ -444,7 +445,7 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 						rows: output.data.services.map((service) => [
 							service.name,
 							String(service.throughput),
-							`${(service.errorRate * 100).toFixed(2)}%`,
+							formatErrorRate(service.errorRate),
 							`${service.p95Ms.toFixed(1)}ms`,
 						]),
 						title: `Services (${output.data.total})`,

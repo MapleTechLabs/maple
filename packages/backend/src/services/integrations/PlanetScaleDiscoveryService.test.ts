@@ -53,6 +53,7 @@ const makeLayer = (testDb: TestDb, fetchStub?: typeof globalThis.fetch) => {
 	const composed = Layer.mergeAll(
 		discoveryLive,
 		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+			Layer.provide(FetchHttpClient.layer),
 			Layer.provide(Layer.mergeAll(discoveryLive, oauthLive)),
 		),
 		oauthLive,

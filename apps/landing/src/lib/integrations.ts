@@ -62,7 +62,7 @@ export function register() {
 			},
 			{
 				title: "API routes",
-				description: "Full tracing of API route handlers including request/response metadata.",
+				description: "Spans for API route handlers, with request and response metadata.",
 			},
 			{
 				title: "Server Components",
@@ -206,7 +206,7 @@ sdk.start();`,
 			{
 				title: "gRPC services",
 				description:
-					"Full client and server gRPC tracing with service name, method, and status attributes.",
+					"Client and server gRPC spans with service name, method, and status attributes.",
 			},
 			{
 				title: "Logs with trace context",

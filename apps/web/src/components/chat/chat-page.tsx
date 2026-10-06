@@ -1,8 +1,11 @@
 import { Suspense, useCallback, useEffect, useState } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@maple/ui/components/ui/sidebar"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Button } from "@maple/ui/components/ui/button"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
@@ -309,12 +312,12 @@ function SharedChatView({
 						<SidebarTrigger className="size-9" />
 						<LinkIcon size={14} className="shrink-0 opacity-60" />
 						<div className="flex min-w-0 flex-1 flex-col justify-center">
-							<span className="truncate text-sm font-medium leading-tight" title={heading}>
+							<TruncatedText text={heading} className="text-sm font-medium leading-tight">
 								{heading}
-							</span>
-							<span className="text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60 leading-tight">
+							</TruncatedText>
+							<Eyebrow className="leading-tight text-sidebar-foreground/60">
 								Read-only · shared
-							</span>
+							</Eyebrow>
 						</div>
 						<Button
 							render={<Link to="/chat" search={{}} />}
@@ -356,12 +359,12 @@ function ChatConversationFallback() {
 	return (
 		<div className="flex h-full flex-col">
 			<div className="mx-auto w-full max-w-3xl flex-1 space-y-3 px-4 py-6" aria-hidden>
-				<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-				<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-				<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+				<Skeleton className="h-3 w-1/2" />
+				<Skeleton className="h-3 w-2/3" />
+				<Skeleton className="h-3 w-1/3" />
 			</div>
 			<div className="mx-auto w-full max-w-3xl px-4 pb-4" aria-hidden>
-				<div className="h-[88px] animate-pulse rounded-lg border bg-muted/40" />
+				<Skeleton className="h-[88px] rounded-lg border" />
 			</div>
 		</div>
 	)

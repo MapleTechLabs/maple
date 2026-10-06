@@ -39,7 +39,7 @@ const coreGuides = [
         href: "/guides/what-is-apdex",
         label: "Metric",
         title: "What is Apdex?",
-        description: "Read the score that turns response times into one satisfaction number, choose the target T behind it, and know when it beats a p95 alert.",
+        description: "How Apdex turns response times into one satisfaction score, how to pick its target T, and when it beats a p95 alert.",
         read: "10 min",
     },
     {
@@ -56,7 +56,7 @@ const investigationGuides = [
         href: "/guides/api-latency",
         label: "API performance",
         title: "When API p99 jumps but p50 doesn't",
-        description: "Measure the right latency clock, isolate the slow population, and trace a regression to the release and operation responsible.",
+        description: "Measure the right latency clock, isolate the slow requests, and trace a regression to the release and operation responsible.",
         read: "14 min",
     },
 ];
@@ -100,11 +100,11 @@ const itemListJsonLd = {
             <div class="relative mx-auto max-w-6xl px-6 pb-14 pt-20 md:pb-20 md:pt-28">
                 <p class="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">Maple field manual</p>
                 <h1 class="mt-5 max-w-[12ch] font-display text-[clamp(42px,8vw,80px)] font-medium leading-[0.94] tracking-[-0.045em] text-fg">
-                    Operate from evidence.
+                    Guides for production engineers.
                 </h1>
                 <p class="mt-7 max-w-[64ch] text-[15px] leading-[1.75] text-fg-muted">
                     Plain-English foundations and hands-on investigations for engineers running production software.
-                    Start with APM, then go deeper into observability, OpenTelemetry, and the signals behind a useful answer.
+                    Start with APM, then read about observability, OpenTelemetry, and the signals you debug with.
                 </p>
             </div>
         </header>
@@ -130,7 +130,7 @@ const itemListJsonLd = {
                             What is APM, and why is it important?
                         </h2>
                         <p class="mt-5 max-w-[55ch] text-sm leading-[1.7] text-fg-muted">
-                            Learn how application performance monitoring turns service metrics, traces, errors, and logs into a repeatable path from “users are waiting” to “this dependency caused it.”
+                            Learn how application performance monitoring uses service metrics, traces, errors, and logs to get you from “users are waiting” to “this dependency caused it.”
                         </p>
                         <span class="mt-8 inline-flex items-center gap-2 font-mono text-xs text-fg transition-colors group-hover:text-primary">
                             Read the guide
@@ -193,7 +193,7 @@ const itemListJsonLd = {
                         <h2 id="guide-library" class="mt-3 font-display text-3xl font-medium tracking-[-0.025em] text-fg">Build the mental model</h2>
                     </div>
                     <p class="hidden max-w-[38ch] text-right text-xs leading-relaxed text-fg-muted md:block">
-                        Read in any order. Each guide answers one durable question without assuming a vendor or stack.
+                        Read in any order. Each guide answers one question and none of them assume a vendor or stack.
                     </p>
                 </div>
 

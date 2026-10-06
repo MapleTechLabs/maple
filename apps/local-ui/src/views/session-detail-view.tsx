@@ -1,6 +1,12 @@
 import type { ReactNode } from "react"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { shortId } from "@maple/ui/lib/ids"
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	ArrowLeftIcon,
 	ArrowRightIcon,
@@ -23,7 +29,8 @@ import {
 } from "../hooks/use-local-session-detail"
 import { hrefFor } from "../lib/router"
 import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, parseClickHouseDateTime } from "../lib/time"
-import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay-format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { ErrorState } from "../components/view-states"
 import { RefreshButton } from "../components/toolbar"
 
@@ -52,9 +59,9 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 					<ArrowLeftIcon size={14} />
 					{backLabel}
 				</Button>
-				<span className="truncate font-mono text-xs text-muted-foreground" title={sessionId}>
+				<TruncatedText mono className="text-xs text-muted-foreground">
 					{sessionId}
-				</span>
+				</TruncatedText>
 				<RefreshButton className="ml-auto" since={detail.dataUpdatedAt} />
 			</div>
 
@@ -84,7 +91,12 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 									<StatusBadge active={isActive} />
 								</div>
 								<div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-									<span className="font-mono text-xs">{sessionId.slice(0, 8)}</span>
+									<TruncatedId
+										value={sessionId}
+										kind="session"
+										length={8}
+										className="text-xs"
+									/>
 									<span className="inline-flex items-center gap-1.5">
 										<DeviceIcon className="size-3.5 opacity-60" />
 										{session.browserName || "Unknown"}
@@ -116,24 +128,44 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 						<div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
 							<div className="flex flex-col gap-5">
 								<Card title="Client">
-									<dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-										<Field label="User" value={label} />
-										<Field label="Browser" value={session.browserName} />
-										<Field label="OS" value={session.osName} />
-										<Field label="Device" value={session.deviceType} />
-										<Field label="Service" value={session.serviceName} />
-										<Field
-											label="Entry URL"
-											value={hostFromUrl(session.urlInitial)}
-											title={session.urlInitial}
-											className="col-span-2"
-										/>
-										<Field
-											label="User agent"
-											value={session.userAgent}
-											className="col-span-2"
-										/>
-									</dl>
+									<KeyValueList
+										layout="stacked"
+										className="grid-cols-2 gap-x-4 gap-y-3 text-sm [&_dt]:text-xs"
+									>
+										<KeyValue label="User">
+											<TruncatedText text={label}>{label || "-"}</TruncatedText>
+										</KeyValue>
+										<KeyValue label="Browser">
+											<TruncatedText text={session.browserName}>
+												{session.browserName || "-"}
+											</TruncatedText>
+										</KeyValue>
+										<KeyValue label="OS">
+											<TruncatedText text={session.osName}>
+												{session.osName || "-"}
+											</TruncatedText>
+										</KeyValue>
+										<KeyValue label="Device">
+											<TruncatedText text={session.deviceType}>
+												{session.deviceType || "-"}
+											</TruncatedText>
+										</KeyValue>
+										<KeyValue label="Service">
+											<TruncatedText text={session.serviceName}>
+												{session.serviceName || "-"}
+											</TruncatedText>
+										</KeyValue>
+										<KeyValue label="Entry URL" className="col-span-2">
+											<TruncatedText text={session.urlInitial}>
+												{hostFromUrl(session.urlInitial) || "-"}
+											</TruncatedText>
+										</KeyValue>
+										<KeyValue label="User agent" className="col-span-2">
+											<TruncatedText text={session.userAgent}>
+												{session.userAgent || "-"}
+											</TruncatedText>
+										</KeyValue>
+									</KeyValueList>
 								</Card>
 
 								<Card title={`Correlated traces · ${traceIds.length}`}>
@@ -157,14 +189,16 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 															className={cn(
 																"size-1.5 shrink-0 rounded-full",
 																trace.hasError
-																	? "bg-destructive"
+																	? "bg-severity-error"
 																	: "bg-muted-foreground/40",
 															)}
 														/>
 														<span className="min-w-0 flex-1">
 															<span className="block truncate text-sm">
 																{trace.rootSpanName ||
-																	trace.traceId.slice(0, 12)}
+																	shortId(trace.traceId, "trace", {
+																		length: 12,
+																	})}
 															</span>
 															<span className="block truncate text-xs text-muted-foreground">
 																{trace.rootServiceName || "unknown"} ·{" "}
@@ -265,7 +299,7 @@ function Transcript({
 							className={cn(
 								"mt-0.5 grid size-6 shrink-0 place-items-center rounded-full",
 								danger
-									? "bg-destructive/10 text-destructive"
+									? "bg-severity-error/10 text-severity-error"
 									: "bg-muted text-muted-foreground",
 							)}
 						>
@@ -309,7 +343,9 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 			return (
 				<p className="truncate text-xs text-muted-foreground">
 					<span className="font-medium text-foreground">{event.netMethod}</span> {event.netUrl}
-					<span className={cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-destructive")}>
+					<span
+						className={cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-severity-error")}
+					>
 						{event.netStatus || "-"} · {Math.round(event.netDurationMs)}ms
 					</span>
 				</p>
@@ -317,7 +353,7 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 		case "error":
 			return (
 				<div>
-					<p className="break-words text-xs text-destructive">{event.message}</p>
+					<p className="break-words text-xs text-severity-error">{event.message}</p>
 					{event.errorStack ? (
 						<pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-[10px] text-muted-foreground">
 							{event.errorStack}
@@ -335,19 +371,16 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 function StatusBadge({ active }: { active: boolean }) {
 	if (active) {
 		return (
-			<span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-				<span className="relative flex size-1.5">
-					<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-					<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-				</span>
+			<Badge variant="ok" pill className="gap-1.5">
+				<StatusDot tone="ok" />
 				Active
-			</span>
+			</Badge>
 		)
 	}
 	return (
-		<span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+		<Badge variant="muted" pill>
 			Ended
-		</span>
+		</Badge>
 	)
 }
 
@@ -358,7 +391,7 @@ function StatTile({ label, value, danger }: { label: string; value: string; dang
 			<p
 				className={cn(
 					"mt-1 text-2xl font-semibold tabular-nums tracking-tight",
-					danger && "text-destructive",
+					danger && "text-severity-error",
 				)}
 			>
 				{value}
@@ -373,26 +406,5 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 			<h2 className="mb-3 text-sm font-medium">{title}</h2>
 			{children}
 		</section>
-	)
-}
-
-function Field({
-	label,
-	value,
-	title,
-	className,
-}: {
-	label: string
-	value: string
-	title?: string
-	className?: string
-}) {
-	return (
-		<div className={cn("min-w-0", className)}>
-			<dt className="text-xs text-muted-foreground">{label}</dt>
-			<dd className="truncate" title={title ?? value}>
-				{value || "-"}
-			</dd>
-		</div>
 	)
 }

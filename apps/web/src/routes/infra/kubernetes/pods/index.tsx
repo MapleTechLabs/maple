@@ -1,4 +1,7 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -9,7 +12,7 @@ import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
 
 import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon, MagnifierIcon } from "@/components/icons"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
@@ -17,7 +20,7 @@ import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
 import { PodTable, PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
 import { FleetBand, FleetBandLoading, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { podFilterChips } from "@/lib/infra/pod-filter-chips"
 import {
 	listPodsResultAtom,
@@ -31,6 +34,7 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const PAGE_SIZE = 50
 const DEFAULT_PRESET = "12h"
@@ -292,12 +296,12 @@ function PodsPage() {
 									{
 										key: "elevated",
 										count: counts.elevatedPods,
-										className: "bg-[var(--severity-warn)]",
+										className: TONE_FILL.warn,
 									},
 									{
 										key: "saturated",
 										count: counts.saturatedPods,
-										className: "bg-[var(--severity-error)]",
+										className: TONE_FILL.crit,
 									},
 								]}
 								cells={cells}
@@ -311,7 +315,7 @@ function PodsPage() {
 
 				{Result.builder(podsResult)
 					.onInitial(() => <PodTableLoading />)
-					.onError((err) => <QueryErrorState error={err} />)
+					.onError((err) => <ErrorState error={err} />)
 					.onSuccess((response, result) => {
 						const page = response.data
 						const total = response.totalCount
@@ -354,9 +358,10 @@ function PodsPage() {
 
 						return (
 							<div
-								className={`space-y-3 transition-opacity ${result.waiting ? "opacity-60" : ""}`}
+								className={cn("space-y-3", refreshingClass(result.waiting))}
+								aria-busy={result.waiting || undefined}
 							>
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search all pods…"
@@ -375,22 +380,18 @@ function PodsPage() {
 								/>
 
 								{page.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No pods match these filters</EmptyTitle>
-											<EmptyDescription>
-												{scope
-													? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
-													: "Try a different name, or clear the filters to see the whole fleet."}
-											</EmptyDescription>
-										</EmptyHeader>
-										<Button variant="outline" size="sm" onClick={onClearFilters}>
-											Clear all filters
-										</Button>
-									</Empty>
+									<FilteredEmpty
+										noun="pods"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										description={
+											scope
+												? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
+												: "Try a different name, or clear the filters to see the whole fleet."
+										}
+										onClear={onClearFilters}
+										clearLabel="Clear all filters"
+									/>
 								) : (
 									<PodTable
 										pods={page}

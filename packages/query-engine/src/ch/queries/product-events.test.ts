@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventsFunnelQuery,
 	productEventsFunnelBreakdownQuery,
@@ -9,8 +9,13 @@ import {
 	ProductEventsFunnelError,
 	type FunnelStep,
 } from "./product-events"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-06-24 04:00:00",
+	endTime: "2026-06-25 06:00:00",
+}
 
 const STEPS: ReadonlyArray<FunnelStep> = [
 	{ kind: "page", pagePath: "/pricing", host: "maple.dev" },

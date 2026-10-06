@@ -1,4 +1,4 @@
-import { ToolCallScorer } from "vitest-evals"
+import { ToolCallScorer } from "vitest-evals/legacy"
 import { describeMapleEval, predictToolCalls, FIXTURES } from "./utils"
 
 // Tool-selection + argument evals over the observability surface (the tools

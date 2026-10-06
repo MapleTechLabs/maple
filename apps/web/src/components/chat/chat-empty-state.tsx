@@ -78,10 +78,7 @@ export function ChatEmptyState({
 			<div className="flex flex-col items-center gap-2.5 text-center">
 				<span className="relative flex size-11 items-center justify-center">
 					{/* The lit ground behind the mark: one soft primary bloom, no border. */}
-					<span
-						aria-hidden
-						className="absolute inset-0 rounded-full bg-primary/20 blur-lg motion-safe:animate-pulse [animation-duration:4s]"
-					/>
+					<span aria-hidden className="absolute inset-0 rounded-full bg-primary/20 blur-lg" />
 					<PixelSparkleIcon size={24} className="relative text-primary" />
 				</span>
 				<h3 className="font-medium text-base tracking-tight">Maple AI</h3>

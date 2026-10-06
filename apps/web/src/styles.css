@@ -774,21 +774,6 @@ width = its duration */
 }
 
 /* Infra "Operations Terminal" — shared primitives */
-@keyframes severity-pulse {
-	0% {
-		transform: scale(1);
-		opacity: 0.55;
-	}
-	70% {
-		transform: scale(2.4);
-		opacity: 0;
-	}
-	100% {
-		transform: scale(2.4);
-		opacity: 0;
-	}
-}
-
 @keyframes ref-line-draw {
 	from {
 		stroke-dashoffset: 240;
@@ -841,10 +826,6 @@ width = its duration */
 	animation: skeleton-bar 1.5s ease-in-out infinite;
 }
 
-.infra-pulse {
-	animation: severity-pulse 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-}
-
 .infra-ref-line line,
 .recharts-reference-line-line.infra-ref-line {
 	stroke-dasharray: 4 4;
@@ -852,9 +833,6 @@ width = its duration */
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.infra-pulse {
-		animation: none;
-	}
 	.infra-ref-line line,
 	.recharts-reference-line-line.infra-ref-line {
 		animation: none;

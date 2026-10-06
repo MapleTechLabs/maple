@@ -38,6 +38,7 @@ import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
 import * as serviceMapQueries from "../ch/queries/service-map"
 import * as serviceEndpointQueries from "../ch/queries/service-endpoints"
 import * as serviceOperationQueries from "../ch/queries/service-operations"
+import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
 import * as releaseQueries from "../ch/queries/releases"
 import * as sessionEventQueries from "../ch/queries/session-events"
@@ -272,6 +273,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"service-map-rollup": serviceMapRollupQueries,
 	"service-map": serviceMapQueries,
 	"service-endpoints": serviceEndpointQueries,
+	"pr-review": prReviewQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
 	"signal-presence": signalPresenceQueries,
@@ -340,6 +342,7 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 
 	// todo (dead export — removal tracked separately; zero consumers)
 	"errors/traceTimeProbeQuery",
+	"errors/recentTraceTimeProbeQuery",
 
 	// todo batch ② — alerting correctness (anomaly, alert-checks, setup-audit, activity, liveness, internal)
 	"alert-checks/listRuleChecksQuery",
@@ -359,7 +362,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	// todo batch ③ — infra + integrations (infra, cloudflare-*, planetscale-*, service-map, rollups)
 	"infra/listHostsQuery",
 	"infra/hostDetailSummaryQuery",
-	"infra/fleetUtilizationTimeseriesQuery",
 	"infra/hostNetworkTimeseriesQuery",
 	"infra/listPodsQuery",
 	"infra/listPodsSummaryQuery",

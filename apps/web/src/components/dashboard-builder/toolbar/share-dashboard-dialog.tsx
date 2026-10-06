@@ -24,7 +24,9 @@ import {
 	LockIcon,
 	ShieldIcon,
 } from "@/components/icons"
+import { Alert } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { useCopy } from "@maple/ui/hooks/use-copy"
 import {
 	Dialog,
 	DialogClose,
@@ -39,6 +41,7 @@ import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 import { cn } from "@maple/ui/lib/utils"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "./share-support"
 import {
 	asDashboardId,
@@ -79,7 +82,6 @@ export function ShareDashboardDialog({
 	)
 	const boardShare = useMemo(() => shares.find((share) => share.widgetId === undefined), [shares])
 
-	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
 	/*
@@ -101,23 +103,18 @@ export function ShareDashboardDialog({
 	 * every pick or replace flashed. The guard lives here instead, so the
 	 * protection is centralised and no control has to change how it looks to get it.
 	 */
-	const run = async <A,>(action: () => Promise<Exit.Exit<A, unknown>>) => {
-		if (busy) return null
-		setBusy(true)
+	const [runAction, busy] = useAsyncAction(async (action: () => Promise<Exit.Exit<unknown, unknown>>) => {
 		setError(null)
-		try {
-			const result = await action()
-			if (Exit.isFailure(result)) {
-				setError(displayError(result).message)
-				setPendingMode(null)
-				return null
-			}
-			refreshList()
-			return result.value
-		} finally {
-			setBusy(false)
+		const result = await action()
+		if (Exit.isFailure(result)) {
+			setError(displayError(result).message)
+			setPendingMode(null)
+			return
 		}
-	}
+		refreshList()
+	})
+	const run = (action: () => Promise<Exit.Exit<unknown, unknown>>) =>
+		busy ? Promise.resolve() : runAction(action)
 
 	/*
 	 * None of these keep the token: the refreshed list carries it, because storage
@@ -289,29 +286,19 @@ export function ShareLinkRow({
 	replaceWarning: string
 }) {
 	const [confirmingReplace, setConfirmingReplace] = useState(false)
-	const [copied, setCopied] = useState(false)
 	const [copyBlocked, setCopyBlocked] = useState(false)
-	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
 	const field = useRef<HTMLInputElement>(null)
 
-	// Browsers deny `writeText` outside a secure context or when the clipboard
-	// permission is refused, and the promise rejects. Without this the button just
-	// sat there — the one thing the dialog exists to hand over, silently withheld.
-	// Falling back to selecting the field leaves ⌘C as a working escape.
-	const copy = () => {
-		void navigator.clipboard.writeText(url).then(
-			() => {
-				setCopyBlocked(false)
-				setCopied(true)
-				clearTimeout(resetCopied.current)
-				resetCopied.current = setTimeout(() => setCopied(false), 2000)
-			},
-			() => {
-				setCopyBlocked(true)
-				field.current?.select()
-			},
-		)
-	}
+	// When even the fallback write fails, select the field so ⌘C still works.
+	const { copy, copied } = useCopy({
+		label: "Share link",
+		toast: false,
+		onCopy: () => setCopyBlocked(false),
+		onError: () => {
+			setCopyBlocked(true)
+			field.current?.select()
+		},
+	})
 
 	return (
 		<div className="space-y-2">
@@ -329,7 +316,7 @@ export function ShareLinkRow({
 						className="min-w-0 flex-1 truncate bg-transparent outline-none"
 					/>
 				</div>
-				<Button size="sm" onClick={copy}>
+				<Button size="sm" onClick={() => void copy(url)}>
 					{copied ? <CheckIcon /> : <CopyIcon />}
 					{copied ? "Copied" : "Copy"}
 				</Button>
@@ -344,8 +331,8 @@ export function ShareLinkRow({
 				</Button>
 			</div>
 			{confirmingReplace ? (
-				<div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
-					<p className="text-xs leading-relaxed">
+				<Alert variant="crit" size="sm" className="gap-y-2 py-2.5">
+					<p className="leading-relaxed">
 						<span className="font-medium">Replace this link?</span>{" "}
 						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>
 					</p>
@@ -364,7 +351,7 @@ export function ShareLinkRow({
 							Replace link
 						</Button>
 					</div>
-				</div>
+				</Alert>
 			) : null}
 			{copyBlocked ? (
 				<p className="text-muted-foreground text-xs leading-relaxed">

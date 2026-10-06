@@ -1,3 +1,4 @@
+import { Panel } from "@maple/ui/components/ui/panel"
 import * as React from "react"
 
 import { Input } from "@maple/ui/components/ui/input"
@@ -85,7 +86,7 @@ export function MetricQueryControls({
 	)
 
 	return (
-		<div className="flex flex-wrap items-start gap-x-4 gap-y-2 rounded-md border bg-card p-3">
+		<Panel className="flex-row flex-wrap items-start gap-x-4 gap-y-2 p-3">
 			<div className="flex items-center gap-2">
 				<span className="text-xs text-muted-foreground shrink-0">Aggregate</span>
 				<Select
@@ -150,7 +151,7 @@ export function MetricQueryControls({
 			</div>
 
 			<StepIntervalInput stepInterval={stepInterval} onCommit={(step) => onPatch({ step })} />
-		</div>
+		</Panel>
 	)
 }
 

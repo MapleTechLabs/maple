@@ -3,6 +3,9 @@ import { Handle, Position } from "@xyflow/react"
 import { DatabaseIcon } from "../icons"
 
 import { cn } from "../../lib/utils"
+import { httpStatusTone } from "../../lib/http"
+import { TONE_SOFT } from "../../lib/tone"
+import { TruncatedId } from "../ui/truncated-id"
 import { formatDuration } from "../../lib/format"
 import { cacheResultStyles } from "../../lib/cache"
 import type { CacheInfo } from "../../lib/cache"
@@ -115,6 +118,7 @@ function StatusBadge({
 	}
 	if (httpInfo?.statusCode != null) {
 		const code = httpInfo.statusCode
+		const tone = httpStatusTone(code)
 		return (
 			<span
 				className={cn(
@@ -122,8 +126,7 @@ function StatusBadge({
 					"font-mono",
 					code >= 200 && code < 300 && "bg-severity-info/15 text-severity-info",
 					code >= 300 && code < 400 && "bg-chart-p50/15 text-chart-p50",
-					code >= 400 && code < 500 && "bg-severity-warn/15 text-severity-warn",
-					code >= 500 && "bg-severity-error/15 text-severity-error",
+					tone !== "neutral" && TONE_SOFT[tone],
 					code < 200 && "text-muted-foreground",
 				)}
 			>
@@ -166,9 +169,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 					<div className="flex items-center gap-1.5 min-w-0 text-[11px]">
 						<span className="font-semibold text-muted-foreground">Missing Span</span>
 						<span className="flex-1" />
-						<span className="font-mono text-muted-foreground/60 truncate" title={span.spanId}>
-							{span.spanId.slice(0, 8)}
-						</span>
+						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
 					</div>
 					<div className="text-[10px] italic text-muted-foreground/50">Not ingested or dropped</div>
 				</div>

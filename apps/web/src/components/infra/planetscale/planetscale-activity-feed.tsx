@@ -1,6 +1,8 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ExternalLinkIcon } from "@/components/icons"
@@ -20,7 +22,7 @@ import { presentEvent } from "./planetscale-events"
  */
 export function PlanetScaleActivityFeed({
 	events,
-	waiting,
+	waiting = false,
 	emptyMessage = "No deploys or branch events in this window.",
 	onSelectBranch,
 }: {
@@ -33,7 +35,7 @@ export function PlanetScaleActivityFeed({
 		return <p className="py-3 text-xs text-muted-foreground">{emptyMessage}</p>
 	}
 	return (
-		<ul className={cn("flex flex-col transition-opacity", waiting && "opacity-60")}>
+		<ul className={cn("flex flex-col", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			{events.map((event) => (
 				<PlanetScaleActivityRow
 					key={event.id}
@@ -73,17 +75,7 @@ export function PlanetScaleActivityRow({
 		<li className="flex items-baseline gap-2.5 border-l border-border/60 py-1.5 pl-3 text-xs">
 			{/* Not SeverityDot: that primitive speaks host *status* (active/idle/…),
 			    which is a different vocabulary from event severity. */}
-			<span
-				aria-hidden
-				className={cn(
-					"mt-1 size-1.5 shrink-0 rounded-full",
-					presentation.tone === "crit"
-						? "bg-severity-error"
-						: presentation.tone === "warn"
-							? "bg-severity-warn"
-							: "bg-muted-foreground/50",
-				)}
-			/>
+			<StatusDot tone={presentation.tone} className="mt-1" />
 			<span className="min-w-0 flex-1 truncate text-foreground/90">{title}</span>
 			{branchName !== "" ? (
 				onSelectBranch !== undefined ? (
@@ -114,9 +106,10 @@ export function PlanetScaleActivityRow({
 					<ExternalLinkIcon size={12} />
 				</a>
 			) : null}
-			<span className="shrink-0 tabular-nums text-muted-foreground">
-				{formatRelativeTime(new Date(occurredAt).toISOString())}
-			</span>
+			<RelativeTime
+				value={new Date(occurredAt)}
+				className="shrink-0 tabular-nums text-muted-foreground"
+			/>
 		</li>
 	)
 }

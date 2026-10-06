@@ -2,6 +2,9 @@ import * as React from "react"
 import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
@@ -126,9 +129,7 @@ function TimelineHeader() {
 	// marker legend for the activity dots below.
 	return (
 		<div className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2">
-			<span className="font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-				Timeline
-			</span>
+			<Eyebrow variant="label">Timeline</Eyebrow>
 			<MarkerLegend />
 		</div>
 	)
@@ -287,9 +288,9 @@ const TracesTrack = React.memo(function TracesTrack({
 			<PulseIcon className="size-3.5" />
 			Traces
 			{count != null && count > 0 && (
-				<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] tabular-nums text-primary">
+				<Badge variant="muted" pill size="xs" className="bg-primary/10 text-primary tabular-nums">
 					{count}
-				</span>
+				</Badge>
 			)}
 		</div>
 	)
@@ -314,8 +315,8 @@ const TracesTrack = React.memo(function TracesTrack({
 					<>
 						{header(null)}
 						<div className="space-y-2 px-3 py-3">
-							<div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-							<div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+							<Skeleton className="h-4 w-2/3" />
+							<Skeleton className="h-4 w-1/2" />
 						</div>
 					</>
 				))
@@ -453,7 +454,7 @@ function TraceBar({
 		<span
 			className={cn(
 				"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
-				isError ? "bg-destructive ring-destructive/40" : "bg-primary ring-primary/40",
+				isError ? "bg-severity-error ring-severity-error/40" : "bg-primary ring-primary/40",
 				outOfRange && "opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
 			)}
 			style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 6 }}
@@ -494,7 +495,7 @@ function TraceSpanLane({
 	return Result.builder(result)
 		.onInitial(() => (
 			<div className="bg-muted/10 px-3 py-2">
-				<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+				<Skeleton className="h-3 w-1/2" />
 			</div>
 		))
 		.onError(() => (
@@ -567,7 +568,7 @@ function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 				<span
 					className={cn(
 						"absolute top-1/2 h-2.5 -translate-y-1/2 rounded-sm transition-[filter] hover:brightness-110",
-						isError ? "bg-destructive" : "bg-primary/70",
+						isError ? "bg-severity-error" : "bg-primary/70",
 						range.outOfRange && "opacity-50",
 					)}
 					style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 4 }}

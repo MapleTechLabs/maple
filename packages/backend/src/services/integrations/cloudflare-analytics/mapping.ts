@@ -32,6 +32,7 @@ import type {
 	QueueConsumersGroupDefinition,
 	WorkersGroupDefinition,
 } from "./queries"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 type Attrs = Record<string, string>
 
@@ -75,7 +76,7 @@ export interface CloudflareMetricRows {
 }
 
 /** GraphQL buckets arrive as RFC 3339 datetimes ("2026-07-03T10:05:00Z"). */
-const bucketToTs = (bucket: string): string => fmtMetricTs(Date.parse(bucket))
+const bucketToTs = (bucket: string): string => fmtMetricTs(parseWarehouseDateTime(bucket))
 
 const DELTA_TEMPORALITY = 1
 

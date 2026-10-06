@@ -5,13 +5,13 @@ import { Schema } from "effect"
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { SquareSparkleIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
 import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
 import {
@@ -104,11 +104,7 @@ function AgentSessionDetailPage() {
 								</div>
 							</div>
 							<Skeleton className="h-4 w-full rounded-sm" />
-							<div className="space-y-2">
-								{Array.from({ length: 8 }).map((_, index) => (
-									<Skeleton key={index} className="h-12 w-full" />
-								))}
-							</div>
+							<SkeletonList rows={8} rowClassName="h-12" gap="2" />
 						</div>
 					</DashboardLayout.Fill>
 				</DashboardLayout.Content>
@@ -117,16 +113,13 @@ function AgentSessionDetailPage() {
 		.onError((error) => (
 			<SessionShell sessionId={sessionId}>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={breadcrumbSessionId(sessionId)} />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
-						<QueryErrorState
+						<ErrorState
 							error={error}
 							// The 413 describes itself precisely ("Session is too large to
 							// load"); overriding it would replace a specific, actionable
 							// message with a generic one.
-							titleOverride={
+							title={
 								displayError(error)._tag === SESSION_TOO_LARGE_TAG
 									? undefined
 									: "Failed to load this agent session"
@@ -140,9 +133,6 @@ function AgentSessionDetailPage() {
 			value.data.length === 0 ? (
 				<SessionShell sessionId={sessionId}>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title={breadcrumbSessionId(sessionId)} />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />
 						</DashboardLayout.Scroll>

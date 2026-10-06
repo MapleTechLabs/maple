@@ -1,10 +1,11 @@
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import type { CatalogPlan } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -17,6 +18,7 @@ import { useCheckoutReturn } from "@/hooks/use-checkout-return"
 import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "@/components/settings/checkout-return-panel"
 import { getPlanFeatures, TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { featureUnit, type SpendModel } from "@/lib/billing/spend"
+import { ErrorState } from "@/components/common/error-state"
 
 /**
  * The plans section: one offer, not a tier ladder.
@@ -83,9 +85,9 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 			<div className="max-w-sm">
 				<div className="flex items-center gap-2">
 					<span className="text-sm">{model.planName ?? "Your plan"}</span>
-					<span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary">
+					<Badge variant="muted" pill size="xs" mono className="px-2 bg-primary/15 text-primary">
 						Current plan
-					</span>
+					</Badge>
 				</div>
 				<div className="mt-3 flex items-baseline gap-2">
 					<span className="font-mono text-3xl tabular-nums">
@@ -107,9 +109,7 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 			</div>
 
 			<div className="flex-1 lg:px-6">
-				<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-					Included every cycle
-				</span>
+				<Eyebrow>Included every cycle</Eyebrow>
 				<p className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/85">
 					{included.length > 0 ? included : "Allotments are set on your contract."}
 				</p>
@@ -149,7 +149,7 @@ export function PlanOffer({
 	if (checkoutReturn === "confirming") return <CheckoutConfirmingPanel />
 	if (Result.isInitial(plansResult)) return <PlanOfferSkeleton />
 	if (!Result.isSuccess(plansResult)) {
-		return <p className="text-sm text-muted-foreground">Unable to load pricing plans.</p>
+		return <ErrorState error={plansResult.cause} title="Unable to load pricing plans" variant="row" />
 	}
 
 	const plans = plansResult.value.plans
@@ -202,11 +202,17 @@ export function PlanOffer({
 							<div className="flex items-center gap-2">
 								<span className="text-sm">{plan.name}</span>
 								{isActive && (
-									<span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary">
+									<Badge
+										variant="muted"
+										pill
+										size="xs"
+										mono
+										className="px-2 bg-primary/15 text-primary"
+									>
 										{isTrialing && daysRemaining != null
 											? `Trial · ${daysRemaining}d left`
 											: "Current plan"}
-									</span>
+									</Badge>
 								)}
 							</div>
 							<div className="mt-3 flex items-baseline gap-2">
@@ -223,9 +229,7 @@ export function PlanOffer({
 						</div>
 
 						<div className="flex-1 lg:px-6">
-							<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-								Included every cycle
-							</span>
+							<Eyebrow>Included every cycle</Eyebrow>
 							<p className="mt-2 font-mono text-[11px] leading-relaxed text-foreground/85">
 								{includedRun(plan)}
 								{retention && ` · ${retention.value.toLowerCase()} retention`}
@@ -255,16 +259,12 @@ export function PlanOffer({
 							) : (
 								<Button
 									size="sm"
-									disabled={attaching === plan.id}
+									loading={attaching === plan.id}
 									onClick={() => handleSubscribe(plan.id)}
 								>
-									{attaching === plan.id ? (
-										<Spinner className="size-4" />
-									) : trialAvailable ? (
-										`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-									) : (
-										"Subscribe"
-									)}
+									{trialAvailable
+										? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+										: "Subscribe"}
 								</Button>
 							)}
 							<p className="text-center text-[11px] text-muted-foreground">
@@ -280,9 +280,7 @@ export function PlanOffer({
 			    full card of attention on a call-us flow. */}
 			<div className="flex flex-col gap-4 border border-primary/25 bg-primary/[0.04] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-						Enterprise
-					</span>
+					<Eyebrow className="text-primary">Enterprise</Eyebrow>
 					<p className="mt-1.5 max-w-[48ch] text-[11px] leading-relaxed text-foreground/85">
 						Higher volume, custom retention, priority support.
 					</p>

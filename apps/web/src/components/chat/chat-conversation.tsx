@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Exit } from "effect"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
 import { useMapleChat, type FailedSend } from "@/hooks/use-maple-chat"
@@ -32,10 +33,9 @@ import {
 } from "@/components/ai-elements/prompt-input"
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
-import { Button } from "@maple/ui/components/ui/button"
 import { trackProduct } from "@/lib/analytics"
 import { ChatApplyRequest, type AiTriageResult } from "@maple/domain/http"
-import { TurnFailureNotice } from "./turn-failure-notice"
+import { ChatFailureNotice, TurnFailureNotice } from "./turn-failure-notice"
 import { ChatEmptyState } from "./chat-empty-state"
 
 const DEFAULT_SUGGESTIONS = [
@@ -387,14 +387,10 @@ function InvestigationLead({ ctx }: { ctx: InvestigationContext }) {
  */
 function FailedSendNotice({ failed, onRetry }: { failed: FailedSend; onRetry: (text: string) => void }) {
 	return (
-		<div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-			<span className="min-w-0 truncate text-destructive">
-				Message not sent — {failed.error.message}
-			</span>
-			<Button size="sm" variant="outline" onClick={() => onRetry(failed.message)}>
-				Try again
-			</Button>
-		</div>
+		<ChatFailureNotice truncate actionLabel="Try again" onAction={() => onRetry(failed.message)}>
+			Message not sent: {failed.error.message}
+		</ChatFailureNotice>
+
 	)
 }
 
@@ -434,9 +430,9 @@ function WidgetFixAutoSendTrigger({ onFire }: { onFire: () => void }) {
 function ConversationLoadingSkeleton() {
 	return (
 		<div className="flex flex-col gap-3 py-6" aria-hidden>
-			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+			<Skeleton className="h-3 w-1/2" />
+			<Skeleton className="h-3 w-2/3" />
+			<Skeleton className="h-3 w-1/3" />
 		</div>
 	)
 }

@@ -54,7 +54,7 @@ const shippedItems = sorted
 		<div class="border border-border bg-bg-elevated mb-16 md:mb-20">
 			<div class="flex items-center justify-between gap-3 px-4 md:px-5 py-2.5 border-b border-border">
 				<div class="flex items-center gap-2">
-					<div class="w-1.5 h-1.5 rounded-full bg-chart-3 animate-pulse-dot"></div>
+					<div class="w-1.5 h-1.5 rounded-full bg-chart-3"></div>
 					<span class="font-mono text-[11px] uppercase tracking-[0.15em] text-fg-muted">build.progress</span>
 				</div>
 				<span class="font-mono text-[11px] tracking-wider text-fg-muted">
@@ -84,7 +84,7 @@ const shippedItems = sorted
 					{meterOrder.map((k) => (
 						<div class="bg-bg-elevated px-4 py-3.5">
 							<div class="flex items-center gap-2 mb-2">
-								<div class={`w-2 h-2 rounded-full ${STATUS[k].dot} ${k === "in-progress" ? "animate-pulse-dot" : ""}`} />
+								<div class={`w-2 h-2 rounded-full ${STATUS[k].dot}`} />
 								<span class="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">{STATUS[k].label}</span>
 							</div>
 							<div class={`font-display text-3xl md:text-4xl font-semibold tabular-nums leading-none ${STATUS[k].text}`}>
@@ -113,7 +113,7 @@ const shippedItems = sorted
 						{isNow && <div class="absolute inset-x-0 top-0 h-px bg-chart-3" />}
 
 						<div class="flex items-center gap-2.5">
-							<div class={`w-2 h-2 rounded-full ${s.dot} ${isNow ? "animate-pulse-dot" : ""}`} />
+							<div class={`w-2 h-2 rounded-full ${s.dot}`} />
 							<span class={`font-mono text-[11px] uppercase tracking-[0.15em] font-medium ${s.text}`}>{lane.kicker}</span>
 							<span class="font-mono text-[10px] text-fg-muted">[{items.length}]</span>
 						</div>

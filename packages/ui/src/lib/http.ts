@@ -196,3 +196,11 @@ export const HTTP_METHOD_COLORS: Record<string, string> = {
 	HEAD: "bg-[#8A7F72]",
 	OPTIONS: "bg-[#5A5248]",
 } satisfies Record<string, string>
+
+/** HTTP status → tone: 5xx is critical, 4xx a warning, everything else quiet. */
+export function httpStatusTone(code: number | null | undefined): "crit" | "warn" | "neutral" {
+	if (code == null || !Number.isFinite(code)) return "neutral"
+	if (code >= 500) return "crit"
+	if (code >= 400) return "warn"
+	return "neutral"
+}

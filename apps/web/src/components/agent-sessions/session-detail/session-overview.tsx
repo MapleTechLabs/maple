@@ -1,9 +1,12 @@
 import { useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
-import { ArrowRightIcon, ChevronRightIcon } from "@/components/icons"
+import { ArrowRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
@@ -178,15 +181,15 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 				<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
 			</div>
 
-			<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
-				{bands.map((band) => (
-					<div
-						key={band.kind}
-						className={AGENT_TIME_FILL[band.kind]}
-						style={{ width: `${(band.ms / total) * 100}%` }}
-					/>
-				))}
-			</div>
+			<SegmentedBar
+				segments={bands.map((band) => ({
+					key: band.kind,
+					value: band.ms,
+					className: AGENT_TIME_FILL[band.kind],
+				}))}
+				total={total}
+				className="h-2 w-full gap-px rounded-xs bg-muted"
+			/>
 
 			{legend.map((band) => {
 				const Icon = AGENT_TIME_ICON[band.kind]
@@ -209,9 +212,7 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 function Clock({ label, value, className }: { label: string; value: string; className?: string }) {
 	return (
 		<span className="flex items-baseline gap-1.5">
-			<span className="font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<span className={cn("font-mono font-semibold text-xs tabular-nums", className)}>{value}</span>
 		</span>
 	)
@@ -251,14 +252,13 @@ function Rail({ summary }: { summary: SessionSummary }) {
 								</span>
 							</div>
 							{model.cost !== undefined && topModelCost > 0 && (
-								<div className="h-1 w-full overflow-hidden rounded-xs bg-muted">
-									<div
-										className="h-full bg-primary"
-										style={{
-											width: `${sharePercent(model.cost, topModelCost)}%`,
-										}}
-									/>
-								</div>
+								<Meter
+									value={model.cost}
+									max={topModelCost}
+									minVisible={0}
+									fillClassName="bg-primary"
+									className="w-full rounded-xs bg-muted"
+								/>
 							)}
 						</div>
 					))
@@ -285,17 +285,15 @@ function Rail({ summary }: { summary: SessionSummary }) {
 					<p className="text-muted-foreground text-xs">no token usage reported</p>
 				) : (
 					<>
-						<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
-							{tokenBuckets.map((bucket) => (
-								<div
-									key={bucket.key}
-									className={bucket.fill}
-									style={{
-										width: `${sharePercent(summary.tokens[bucket.key], summary.tokens.total)}%`,
-									}}
-								/>
-							))}
-						</div>
+						<SegmentedBar
+							segments={tokenBuckets.map((bucket) => ({
+								key: bucket.key,
+								value: summary.tokens[bucket.key],
+								className: bucket.fill,
+							}))}
+							total={summary.tokens.total}
+							className="h-2 w-full gap-px rounded-xs bg-muted"
+						/>
 						{tokenBuckets.map((bucket) => (
 							<div key={bucket.key} className="flex items-center gap-2.5">
 								<bucket.icon aria-hidden size={13} className={cn("shrink-0", bucket.text)} />
@@ -417,20 +415,20 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 
 	return (
 		<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-			<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+			<Eyebrow variant="label" as="h3">
 				Tools
-			</h3>
+			</Eyebrow>
 			{summary.tools.length > 0 && (
 				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 					<LedgerStat label="Distinct" value={formatNumber(summary.tools.length)} />
 					<LedgerStat label="Calls" value={formatNumber(calls)} />
 					<LedgerStat label="Tool time" value={formatToolDuration(toolMs)} tone="text-chart-4" />
 					{failed > 0 && (
-						<span className="flex items-baseline gap-1.5 rounded-sm bg-destructive/12 px-1.5 py-0.5">
-							<span className="font-mono font-semibold text-destructive text-xs tabular-nums">
+						<span className="flex items-baseline gap-1.5 rounded-sm bg-severity-error/12 px-1.5 py-0.5">
+							<span className="font-mono font-semibold text-severity-error text-xs tabular-nums">
 								{failed}
 							</span>
-							<span className="text-[11px] text-destructive">failed</span>
+							<span className="text-[11px] text-severity-error">failed</span>
 						</span>
 					)}
 				</div>
@@ -442,9 +440,7 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 function LedgerStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
 	return (
 		<span className="flex items-baseline gap-1.5">
-			<span className="font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<span className={cn("font-mono font-semibold text-xs tabular-nums", tone ?? "text-foreground")}>
 				{value}
 			</span>
@@ -460,7 +456,7 @@ const LEDGER_TIME = "w-16 shrink-0 text-right"
 
 function ToolLedgerColumns({ axis }: { axis: SessionAxis }) {
 	return (
-		<div className="flex items-end gap-4 border-border border-b pb-2 font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
+		<Eyebrow as="div" className="flex items-end gap-4 border-border border-b pb-2">
 			<span className={LEDGER_NAME}>Tool</span>
 			<span className={LEDGER_COUNT}>Calls</span>
 			<span className={LEDGER_COUNT}>Fail</span>
@@ -488,7 +484,7 @@ function ToolLedgerColumns({ axis }: { axis: SessionAxis }) {
 					),
 				)}
 			</span>
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -516,7 +512,7 @@ function ToolLedgerRow({
 	const disclosable = tool.description !== undefined || failures.length > 0
 
 	return (
-		<div className={cn("flex flex-col", tool.failed > 0 && "bg-destructive/[0.06]")}>
+		<div className={cn("flex flex-col", tool.failed > 0 && "bg-severity-error/[0.06]")}>
 			<div className="flex h-6 items-center gap-4">
 				{disclosable ? (
 					<button
@@ -528,11 +524,7 @@ function ToolLedgerRow({
 							"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary",
 						)}
 					>
-						<ChevronRightIcon
-							aria-hidden
-							size={9}
-							className={cn("shrink-0 transition-transform", expanded && "rotate-90")}
-						/>
+						<DisclosureChevron open={expanded} size={9} />
 						<span className="min-w-0 truncate font-mono text-xs" title={tool.name}>
 							{tool.name}
 						</span>
@@ -550,7 +542,7 @@ function ToolLedgerRow({
 					className={cn(
 						LEDGER_COUNT,
 						"font-mono text-xs tabular-nums",
-						tool.failed > 0 ? "text-destructive" : "text-muted-foreground/50",
+						tool.failed > 0 ? "text-severity-error" : "text-muted-foreground/50",
 					)}
 				>
 					{tool.failed > 0 ? tool.failed : "."}
@@ -621,7 +613,7 @@ function CallLane({
 					className={cn(
 						"absolute cursor-pointer rounded-[1px]",
 						event.failed
-							? "top-[5px] h-3.5 bg-destructive"
+							? "top-[5px] h-3.5 bg-severity-error"
 							: muted
 								? "top-2 h-2 bg-muted-foreground/50"
 								: "top-[7px] h-2.5 bg-chart-4",
@@ -652,8 +644,8 @@ function FailedCallRow({
 	onOpenSpan: OpenSpan
 }) {
 	return (
-		<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-destructive border-l-2 bg-destructive/[0.06] py-1.5 pr-2 pl-2.5">
-			<span className="font-medium font-mono text-destructive text-xs">
+		<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-severity-error border-l-2 bg-severity-error/[0.06] py-1.5 pr-2 pl-2.5">
+			<span className="font-medium font-mono text-severity-error text-xs">
 				{event.errorLabel ?? "error"}
 			</span>
 			<span className="font-mono text-muted-foreground text-xs">{callWhen(event, sessionStartMs)}</span>
@@ -700,9 +692,9 @@ function RailSection({ title, aside, children }: { title: string; aside?: ReactN
 	return (
 		<section className="flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0">
 			<div className="flex items-baseline justify-between gap-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
+				<Eyebrow variant="label" as="h3">
 					{title}
-				</h3>
+				</Eyebrow>
 				{aside}
 			</div>
 			{children}

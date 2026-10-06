@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	useDeferredValue,
 	useMemo,
@@ -12,11 +14,13 @@ import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Switch } from "@maple/ui/components/ui/switch"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { cn } from "@maple/ui/lib/utils"
 
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { SectionHeader } from "@/components/layout/section-header"
 import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
 import { RawSqlEditorPanel } from "@/components/dashboard-builder/config/raw-sql-editor-panel"
@@ -146,7 +150,7 @@ const COMPARATOR_OPTIONS: ReadonlyArray<{ value: AlertComparator; label: string 
 	Object.keys(comparatorLabels) as AlertComparator[]
 ).map((value) => ({ value, label: comparatorLabels[value] }))
 
-/* Severity is rendered with branded color (amber / destructive-red) instead of
+/* Severity is rendered with severity colour (warn / error) instead of
    the default neutral segmented toggle, because severity is the one field on
    the page that should *feel* like its outcome. */
 const SEVERITY_OPTIONS: ReadonlyArray<{
@@ -161,14 +165,15 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 		selectedClass:
 			"border-severity-warn/60 bg-severity-warn/10 text-severity-warn hover:bg-severity-warn/15 focus-visible:ring-severity-warn/40",
 		dotClass:
-			"bg-severity-warn shadow-[0_0_0_2px_color-mix(in_oklch,var(--severity-warn)_25%,transparent)]",
+			"bg-severity-warn shadow-[0_0_0_2px_color-mix(in_oklch,var(--color-severity-warn)_25%,transparent)]",
 	},
 	{
 		value: "critical",
 		label: "Critical",
 		selectedClass:
-			"border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive/15 focus-visible:ring-destructive/40",
-		dotClass: "bg-destructive shadow-[0_0_0_2px_color-mix(in_oklch,var(--destructive)_25%,transparent)]",
+			"border-severity-error/60 bg-severity-error/10 text-severity-error hover:bg-severity-error/15 focus-visible:ring-severity-error/40",
+		dotClass:
+			"bg-severity-error shadow-[0_0_0_2px_color-mix(in_oklch,var(--color-severity-error)_25%,transparent)]",
 	},
 ]
 
@@ -211,7 +216,7 @@ export function SignalAndThresholdSection({
 
 			<div className="space-y-4">
 				{/* Tier 1: signal kind. Always visible. */}
-				<AlertSegmentedSelect<SignalKind>
+				<SegmentedSelect<SignalKind>
 					options={SIGNAL_KIND_OPTIONS}
 					value={kind}
 					onChange={setKind}
@@ -236,8 +241,8 @@ export function SignalAndThresholdSection({
 				    `min-w-36` so a narrow Condition column doesn't push its
 				    chevron into the next field. */}
 				<div className="grid gap-3 sm:grid-cols-[140px_1fr_1fr]">
-					<div className="min-w-0 space-y-1.5">
-						<Label htmlFor="rule-comparator">Condition</Label>
+					<Field className="min-w-0 items-stretch gap-1.5">
+						<FieldLabel htmlFor="rule-comparator">Condition</FieldLabel>
 						<Select
 							items={comparatorLabels}
 							value={form.comparator}
@@ -256,15 +261,15 @@ export function SignalAndThresholdSection({
 								))}
 							</SelectContent>
 						</Select>
-					</div>
-					<div className="min-w-0 space-y-1.5">
-						<Label htmlFor="rule-threshold">
+					</Field>
+					<Field className="min-w-0 items-stretch gap-1.5">
+						<FieldLabel htmlFor="rule-threshold">
 							{rangeMode ? "Lower" : "Threshold"}
 							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
 							{isBuilderErrorRate && (
 								<span className="text-muted-foreground"> (0–1 ratio, 0.05 = 5%)</span>
 							)}
-						</Label>
+						</FieldLabel>
 						<Input
 							id="rule-threshold"
 							type="number"
@@ -274,9 +279,9 @@ export function SignalAndThresholdSection({
 							className={NUMERIC_INPUT_CLASS}
 							placeholder="0"
 						/>
-					</div>
-					<div className="min-w-0 space-y-1.5">
-						<Label
+					</Field>
+					<Field className="min-w-0 items-stretch gap-1.5">
+						<FieldLabel
 							htmlFor="rule-threshold-upper"
 							className={cn(!rangeMode && "text-muted-foreground/60")}
 						>
@@ -285,7 +290,7 @@ export function SignalAndThresholdSection({
 							{isBuilderErrorRate && (
 								<span className="text-muted-foreground"> (0–1 ratio)</span>
 							)}
-						</Label>
+						</FieldLabel>
 						<Input
 							id="rule-threshold-upper"
 							type="number"
@@ -296,7 +301,7 @@ export function SignalAndThresholdSection({
 							className={NUMERIC_INPUT_CLASS}
 							placeholder={rangeMode ? "0" : "—"}
 						/>
-					</div>
+					</Field>
 				</div>
 
 				{/* Severity inline — branded pills, not neutral toggle. */}
@@ -384,24 +389,24 @@ export function SignalAndThresholdSection({
 									}))
 								}
 							/>
-							<div className="flex items-start gap-2.5 sm:col-span-2 lg:col-span-3">
-								<Switch
-									id="rule-alert-on-no-data"
-									checked={form.alertOnNoData && !grouped}
-									disabled={grouped}
-									onCheckedChange={(checked) =>
-										onChange((c) => ({ ...c, alertOnNoData: checked }))
-									}
-								/>
-								<div className="space-y-0.5">
-									<Label htmlFor="rule-alert-on-no-data">Alert when there is no data</Label>
-									<p className="text-muted-foreground text-xs">
-										{grouped
-											? "Not available on grouped rules: a group that stops reporting keeps its incident open until telemetry returns."
-											: "Count a window with no data as a breach. Off, those windows are skipped and the rule goes quiet when its query stops matching."}
-									</p>
-								</div>
-							</div>
+							<SettingRow
+								className="sm:col-span-2 lg:col-span-3"
+								label="Alert when there is no data"
+								description={
+									grouped
+										? "Not available on grouped rules: a group that stops reporting keeps its incident open until telemetry returns."
+										: "Count a window with no data as a breach. Off, those windows are skipped and the rule goes quiet when its query stops matching."
+								}
+								disabled={grouped}
+								control={
+									<Switch
+										checked={form.alertOnNoData && !grouped}
+										onCheckedChange={(checked) =>
+											onChange((c) => ({ ...c, alertOnNoData: checked }))
+										}
+									/>
+								}
+							/>
 						</div>
 					)}
 				</div>
@@ -434,20 +439,11 @@ function BuiltinSignalChips({
 					const selected = value === opt.value
 					const Icon = opt.icon
 					return (
-						<button
+						<RadioChip
 							key={opt.value}
-							type="button"
-							role="radio"
-							aria-checked={selected}
-							onClick={() => onChange(opt.value)}
-							className={cn(
-								"inline-flex h-7 items-center gap-1.5 rounded-sm border border-transparent px-2 text-xs font-medium",
-								"transition-[background-color,border-color,color] duration-150",
-								"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-								selected
-									? opt.selectedClass
-									: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-							)}
+							selected={selected}
+							selectedClass={opt.selectedClass}
+							onSelect={() => onChange(opt.value)}
 						>
 							<Icon
 								size={12}
@@ -458,7 +454,7 @@ function BuiltinSignalChips({
 								)}
 							/>
 							{opt.label}
-						</button>
+						</RadioChip>
 					)
 				})}
 			</div>
@@ -493,33 +489,56 @@ function SeverityToggle({
 			{SEVERITY_OPTIONS.map((opt) => {
 				const selected = value === opt.value
 				return (
-					<button
+					<RadioChip
 						key={opt.value}
-						type="button"
-						role="radio"
-						aria-checked={selected}
-						onClick={() => onChange(opt.value)}
-						className={cn(
-							"inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-transparent px-2.5 text-xs font-medium",
-							"transition-[background-color,border-color,color] duration-150",
-							// `ring-ring` is the base so an unselected pill still shows a focus
-							// ring; the selected variants override it with their brand color.
-							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-							selected ? opt.selectedClass : "text-muted-foreground hover:text-foreground",
-						)}
+						selected={selected}
+						selectedClass={opt.selectedClass}
+						onSelect={() => onChange(opt.value)}
 					>
-						<span
-							aria-hidden
+						<StatusDot
+							tone="custom"
 							className={cn(
-								"size-1.5 rounded-full transition-shadow",
+								"transition-shadow",
 								selected ? opt.dotClass : "bg-muted-foreground/40",
 							)}
 						/>
 						{opt.label}
-					</button>
+					</RadioChip>
 				)
 			})}
 		</div>
+	)
+}
+
+/** One option in a chip radiogroup; the selected chip takes its option's brand colour. */
+function RadioChip({
+	selected,
+	selectedClass,
+	onSelect,
+	children,
+}: {
+	selected: boolean
+	selectedClass: string
+	onSelect: () => void
+	children: ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			role="radio"
+			aria-checked={selected}
+			onClick={onSelect}
+			className={cn(
+				"inline-flex h-7 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-medium",
+				"transition-[background-color,border-color,color] duration-150",
+				// `ring-ring` is the base so an unselected chip still shows a focus ring;
+				// the selected variants override it with their brand color.
+				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+				selected ? selectedClass : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+			)}
+		>
+			{children}
+		</button>
 	)
 }
 
@@ -537,8 +556,8 @@ function NumericField({
 	onChange: (value: string) => void
 }) {
 	return (
-		<div className="space-y-1.5">
-			<Label htmlFor={id}>{label}</Label>
+		<Field className="items-stretch gap-1.5">
+			<FieldLabel htmlFor={id}>{label}</FieldLabel>
 			<Input
 				id={id}
 				type="number"
@@ -548,8 +567,8 @@ function NumericField({
 				onChange={(e) => onChange(e.target.value)}
 				className={NUMERIC_INPUT_CLASS}
 			/>
-			{hint && <p className="text-muted-foreground text-xs">{hint}</p>}
-		</div>
+			{hint && <FieldDescription>{hint}</FieldDescription>}
+		</Field>
 	)
 }
 
@@ -664,8 +683,8 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 		case "apdex":
 			return (
 				<div className="flex items-end gap-3">
-					<div className="space-y-1.5">
-						<Label htmlFor="apdex-threshold">Apdex target (ms)</Label>
+					<Field className="gap-1.5">
+						<FieldLabel htmlFor="apdex-threshold">Apdex target (ms)</FieldLabel>
 						<Input
 							id="apdex-threshold"
 							type="number"
@@ -673,7 +692,7 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 							onChange={(e) => onChange((c) => ({ ...c, apdexThresholdMs: e.target.value }))}
 							className={cn("w-[180px]", NUMERIC_INPUT_CLASS)}
 						/>
-					</div>
+					</Field>
 					<p className="text-muted-foreground pb-2 text-xs">
 						Requests under this duration count as fully satisfied.
 					</p>
@@ -699,15 +718,15 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 						targetLabel="alert rule"
 					/>
 					<p className="text-muted-foreground text-xs">
-						Return a numeric <code>value</code> column. Optional: <code>group</code> for one
-						series per value, and <code>samples</code> for the event count behind each row (Min
-						samples sums it; without it each row counts as 1). A query that returns no rows is a
-						no-data check.
+						Return a numeric <InlineCode>value</InlineCode> column. Optional:{" "}
+						<InlineCode>group</InlineCode> for one series per value, and{" "}
+						<InlineCode>samples</InlineCode> for the event count behind each row (Min samples sums
+						it; without it each row counts as 1). A query that returns no rows is a no-data check.
 					</p>
-					{sampleWarning && <p className="text-warning text-xs">{sampleWarning}</p>}
+					{sampleWarning && <p className="text-severity-warn text-xs">{sampleWarning}</p>}
 					<div className="flex items-end gap-3">
-						<div className="space-y-1.5">
-							<Label htmlFor="rule-raw-reducer">Reduce buckets by</Label>
+						<Field className="gap-1.5">
+							<FieldLabel htmlFor="rule-raw-reducer">Reduce buckets by</FieldLabel>
 							<Select
 								items={RAW_QUERY_REDUCER_LABELS}
 								value={form.rawQueryReducer}
@@ -730,7 +749,7 @@ function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresh
 									))}
 								</SelectContent>
 							</Select>
-						</div>
+						</Field>
 					</div>
 				</div>
 			)

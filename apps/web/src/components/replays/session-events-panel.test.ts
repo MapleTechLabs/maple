@@ -58,8 +58,8 @@ describe("eventVisual", () => {
 	})
 
 	it("tones a failed request as an error", () => {
-		expect(eventVisual(row({ type: "network", netStatus: 503 })).tone).toContain("destructive")
-		expect(eventVisual(row({ type: "network", netStatus: 200 })).tone).not.toContain("destructive")
+		expect(eventVisual(row({ type: "network", netStatus: 503 })).tone).toContain("severity-error")
+		expect(eventVisual(row({ type: "network", netStatus: 200 })).tone).not.toContain("severity-error")
 	})
 
 	it("falls back without pretending to know the kind", () => {

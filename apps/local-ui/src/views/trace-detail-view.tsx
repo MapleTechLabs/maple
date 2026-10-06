@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { isTraceView, TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { Button } from "@maple/ui/components/ui/button"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { ArrowLeftIcon } from "@maple/ui/components/icons"
 import type { SpanNode } from "@maple/ui/lib/types"
@@ -45,9 +46,9 @@ export function TraceDetailView({ traceId, backLabel, onBack }: TraceDetailViewP
 					<ArrowLeftIcon size={14} />
 					{backLabel}
 				</Button>
-				<span className="truncate font-mono text-xs text-muted-foreground" title={traceId}>
+				<TruncatedText mono className="text-xs text-muted-foreground">
 					{traceId}
-				</span>
+				</TruncatedText>
 				<RefreshButton className="ml-auto" since={trace.dataUpdatedAt} />
 			</div>
 

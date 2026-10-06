@@ -1,10 +1,14 @@
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
-import { useCallback, useState } from "react"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
+import { useState } from "react"
+import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { Badge, badgeVariants } from "@maple/ui/components/ui/badge"
+import { ListFooter, LoadMoreButton, LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { ChevronRightIcon } from "@/components/icons"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -19,6 +23,7 @@ import {
 	SESSION_TAG_STYLES,
 } from "./session-tags"
 import { sessionListItems } from "./session-list-items"
+import { ErrorCountPill, LivePill } from "./session-pills"
 import { formatSessionDuration, hostFromUrl, isSessionLive, sessionDurationMs } from "./replay-format"
 
 export interface SessionRow {
@@ -109,34 +114,6 @@ interface SessionsListProps {
 	 *  Either way it is sampled once per render, never per row: two rows in one
 	 *  frame must not disagree about what time it is. */
 	nowMs?: number
-}
-
-function observeReachEnd(element: HTMLDivElement, onReachEnd: () => void): () => void {
-	const observer = new IntersectionObserver(
-		(entries) => {
-			if (entries[0]?.isIntersecting) onReachEnd()
-		},
-		{ rootMargin: "400px 0px" },
-	)
-	observer.observe(element)
-	return () => observer.disconnect()
-}
-
-function SessionsSentinel({
-	onReachEnd,
-	loadingMore,
-}: Pick<SessionsListProps, "onReachEnd" | "loadingMore">) {
-	const elementRef = useCallback(
-		(element: HTMLDivElement | null) => {
-			if (!element) return
-			return observeReachEnd(element, () => {
-				if (!loadingMore) onReachEnd?.()
-			})
-		},
-		[loadingMore, onReachEnd],
-	)
-
-	return <div ref={elementRef} aria-hidden className="h-px w-full" />
 }
 
 export function SessionsList({
@@ -259,30 +236,22 @@ export function SessionsList({
 
 			{hasMore &&
 				(manualLoadMore ? (
-					<button
-						type="button"
-						onClick={() => onReachEnd?.()}
-						disabled={loadingMore}
-						className="w-full py-3 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-					>
-						Load more sessions
-					</button>
+					<div className="flex justify-center py-3">
+						<LoadMoreButton
+							label="Load more sessions"
+							loading={loadingMore}
+							onClick={() => onReachEnd?.()}
+						/>
+					</div>
 				) : (
-					<SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />
+					<ReachEndSentinel onReachEnd={onReachEnd} loading={loadingMore} />
 				))}
 
 			{isCapped && (
-				<p className="py-3 text-sm text-muted-foreground">
-					Showing first {sessions.length.toLocaleString()} sessions. Narrow filters to continue.
-				</p>
+				<ListFooter shown={sessions.length} noun="sessions" capped align="start" className="px-0" />
 			)}
 
-			{loadingMore && (
-				<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-					<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-					Loading more sessions…
-				</div>
-			)}
+			{loadingMore && <LoadingMoreRow label="Loading more sessions…" className="py-6" />}
 		</div>
 	)
 }
@@ -361,7 +330,9 @@ function SessionListRow({
 			/>
 			{/* Errored sessions get a left accent so they can be picked out
 			    while scanning — the strongest "watch this one first" signal. */}
-			{hasErrors && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-destructive" />}
+			{hasErrors && (
+				<span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-severity-error" />
+			)}
 
 			{/* User: name, then email or entry page. Below @2xl the other columns
 			    stack underneath it. */}
@@ -375,7 +346,7 @@ function SessionListRow({
 					>
 						{label}
 					</span>
-					{isActive && <LivePill />}
+					{isActive && <LivePill compact />}
 					<span
 						className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
 						title={absoluteTs(session.startTime, timeZone)}
@@ -435,12 +406,15 @@ function SessionListRow({
 					{formatSessionDuration(durationMs)}
 				</span>
 				{durationP95 != null && durationP95 > 0 && durationMs != null && durationMs > durationP95 && (
-					<span
-						className="shrink-0 self-center rounded-full bg-accent px-1.5 py-px text-[10px] font-medium text-accent-foreground"
+					<Badge
+						variant="muted"
+						pill
+						size="xs"
+						className="self-center bg-accent text-accent-foreground"
 						title={`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(durationP95)})`}
 					>
 						long
-					</span>
+					</Badge>
 				)}
 				<span className="truncate text-xs text-muted-foreground">
 					{session.pageViews || 1} page{(session.pageViews || 1) === 1 ? "" : "s"} ·{" "}
@@ -504,10 +478,7 @@ function SessionTags({
 	return (
 		<>
 			{SESSION_TAG_ORDER.filter((tag) => tags.includes(tag)).map((tag) => {
-				const className = cn(
-					"inline-flex shrink-0 items-center rounded-full px-1.5 py-px text-[10px] font-medium",
-					SESSION_TAG_STYLES[tag],
-				)
+				const className = cn(badgeVariants({ pill: true, size: "xs" }), SESSION_TAG_STYLES[tag])
 				if (!onFilter) {
 					return (
 						<span key={tag} className={className} title={SESSION_TAG_DESCRIPTIONS[tag]}>
@@ -534,24 +505,19 @@ function SessionTags({
 function SessionBadges({ session }: { session: SessionRow }) {
 	return (
 		<>
-			{session.errorCount > 0 && (
-				<span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-destructive">
-					<span className="size-1 rounded-full bg-destructive" aria-hidden />
-					{session.errorCount} error{session.errorCount === 1 ? "" : "s"}
-				</span>
-			)}
+			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
-				<span className="inline-flex shrink-0 items-center rounded-full bg-indigo-500/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-indigo-600 dark:text-indigo-400">
+				<Badge pill size="xs" mono className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
 					{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
-				</span>
+				</Badge>
 			)}
 			{/* Metadata-only session — no rrweb chunks were ever written, so the
 			    detail page has no player. Flag it here rather than let the row look
 			    like every other (playable) session. */}
 			{session.recorded === "false" && (
-				<span className="inline-flex shrink-0 items-center rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+				<Badge variant="meta" pill size="xs" className="border-dashed border-border">
 					Transcript only
-				</span>
+				</Badge>
 			)}
 		</>
 	)
@@ -584,7 +550,7 @@ function QuietRunRow({
 			<span className="flex min-w-0 items-center gap-3 overflow-hidden" title={summary}>
 				{tiers.map(({ tag, count: n }) => (
 					<span key={tag} className="flex shrink-0 items-center gap-1.5">
-						<span className={cn("size-1.5 rounded-full", SESSION_TAG_DOTS[tag])} aria-hidden />
+						<StatusDot tone="custom" className={SESSION_TAG_DOTS[tag]} />
 						<span className="tabular-nums">{n}</span> {SESSION_TAG_LABELS[tag].toLowerCase()}
 						{n === 1 ? "" : "s"}
 					</span>
@@ -592,24 +558,8 @@ function QuietRunRow({
 			</span>
 			<span className="ml-auto flex shrink-0 items-center gap-1">
 				{expanded ? "Hide" : "Show"}
-				<ChevronRightIcon
-					size={14}
-					aria-hidden
-					className={cn("transition-transform", expanded && "rotate-90")}
-				/>
+				<DisclosureChevron open={expanded} size={14} />
 			</span>
 		</button>
-	)
-}
-
-function LivePill() {
-	return (
-		<span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-px text-[10px] font-medium tracking-wide text-success">
-			<span className="relative flex size-1.5" aria-hidden>
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-			LIVE
-		</span>
 	)
 }

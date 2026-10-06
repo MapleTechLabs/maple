@@ -1,5 +1,7 @@
-import { lazy, memo, Suspense, useMemo, useState } from "react"
-import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon, LoaderIcon } from "@/components/icons"
+import { lazy, memo, Suspense, useMemo, useState, type ComponentProps } from "react"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
+import { CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
 import type { StructuredToolOutput } from "@maple/domain"
 import { STRUCTURED_MARKER } from "./renderers/constants"
@@ -48,10 +50,10 @@ function StatusGlyph({ status, live }: { status: ToolStatus; live: boolean }) {
 			live ? (
 				<DotLoader />
 			) : (
-				<LoaderIcon className="size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" />
+				<Spinner className="size-3.5 text-muted-foreground motion-reduce:animate-none" />
 			)
 		) : status === "error" ? (
-			<CircleXmarkIcon className="size-3.5 text-destructive" />
+			<CircleXmarkIcon className="size-3.5 text-severity-error" />
 		) : (
 			<CircleCheckIcon className="size-3.5 text-severity-info" />
 		)
@@ -261,9 +263,8 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 
 	return (
 		<div className="text-xs">
-			<button
-				type="button"
-				className="group/tool flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
+			<TranscriptRowButton
+				className="group/tool disabled:cursor-default disabled:hover:bg-transparent"
 				disabled={!hasContent}
 				onClick={() => setOpen((v) => !v)}
 			>
@@ -289,14 +290,9 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 				)}
 				{status === "running" && live ? <RunningClock /> : null}
 				{hasContent ? (
-					<ChevronDownIcon
-						className={cn(
-							"size-3 shrink-0 text-muted-foreground/60 transition-transform",
-							open ? "rotate-0" : "-rotate-90",
-						)}
-					/>
+					<DisclosureChevron open={open} className="size-3 text-muted-foreground/60" />
 				) : null}
-			</button>
+			</TranscriptRowButton>
 
 			{open && hasContent && (
 				<div className="ms-[0.9375rem] space-y-2 border-s border-border/60 py-1.5 ps-3">
@@ -320,8 +316,8 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 
 					{errorText != null && (
 						<div>
-							<p className="mb-1 font-medium text-destructive">Error</p>
-							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-destructive/80">
+							<p className="mb-1 font-medium text-severity-error">Error</p>
+							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-severity-error/80">
 								{errorText}
 							</pre>
 						</div>
@@ -364,3 +360,17 @@ export function RunningClock() {
 export const Tool = memo(function Tool(props: ToolProps) {
 	return <ToolRow {...props} />
 })
+
+/** The full-width inset row a tool call, tool group or sub-agent task opens from. */
+export function TranscriptRowButton({ className, ...props }: ComponentProps<"button">) {
+	return (
+		<button
+			type="button"
+			className={cn(
+				"flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60",
+				className,
+			)}
+			{...props}
+		/>
+	)
+}

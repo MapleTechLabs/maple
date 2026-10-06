@@ -1,3 +1,4 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -24,6 +25,7 @@ import {
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DocsLink } from "@/components/common/docs-link"
@@ -43,9 +45,9 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
  */
 
 export const PULL_REQUEST_STATE_TONE = {
-	open: "bg-success/10 text-success",
+	open: TONE_SOFT.ok,
 	merged: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-	closed: "bg-muted text-muted-foreground",
+	closed: TONE_SOFT.neutral,
 } satisfies Record<PullRequestSummary["state"], string>
 
 /** `#123`, `123`, or a full PR URL — the three things a person actually types. */
@@ -234,17 +236,17 @@ export function AttachPullRequestDialog({
 									/>
 									<ComboboxContent>
 										{loadingPullRequests ? (
-											<div className="py-4 text-center text-xs text-muted-foreground">
+											<EmptyMessage className="py-4">
 												Loading pull requests…
-											</div>
+											</EmptyMessage>
 										) : visible.length === 0 ? (
-											<div className="py-4 text-center text-xs text-muted-foreground">
+											<EmptyMessage className="py-4">
 												{typedUrl !== null
 													? "Press Enter to attach the pull request you typed."
 													: pullRequests.length === 0
 														? "No pull requests in this repository yet."
 														: "Nothing matches that search."}
-											</div>
+											</EmptyMessage>
 										) : (
 											<ComboboxList>
 												{visible.map((pr) => (
@@ -290,7 +292,8 @@ export function AttachPullRequestDialog({
 						onClick={() => {
 							if (typedUrl !== null) void attach(typedUrl)
 						}}
-						disabled={typedUrl === null || busy}
+						disabled={typedUrl === null}
+						loading={busy}
 					>
 						Attach
 					</Button>

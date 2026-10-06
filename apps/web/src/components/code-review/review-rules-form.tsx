@@ -7,15 +7,17 @@ import {
 	PrReviewSeverity,
 } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
-import { LoaderIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 import { CATEGORY_LABELS } from "./code-review-format"
 
@@ -44,6 +46,8 @@ const BUILT_IN = {
 	minInlineSeverity: "warn",
 	reviewDrafts: false,
 	feedbackScope: "organization",
+	blockOnContractBreaks: false,
+	postMergeCheck: true,
 } as const
 
 /**
@@ -54,6 +58,15 @@ const BUILT_IN = {
 export type ReviewRulesMode = "organization" | "repository"
 
 type Inheritable<A> = A | typeof INHERIT
+type Toggle = Inheritable<"on" | "off">
+
+/** A boolean setting as the form holds it: inherited in a repository, else the built-in default. */
+const toggleFromConfig = (value: boolean | undefined, inherits: boolean, builtIn: boolean): Toggle =>
+	value === undefined ? (inherits ? INHERIT : builtIn ? "on" : "off") : value ? "on" : "off"
+
+/** The stored value: omitted when inherited, or when an organization keeps the built-in default. */
+const toggleToConfig = (value: Toggle, org: boolean, builtIn: boolean): boolean | undefined =>
+	value === INHERIT || (org && (value === "on") === builtIn) ? undefined : value === "on"
 
 interface FormState {
 	readonly instructions: string
@@ -65,6 +78,8 @@ interface FormState {
 	readonly dailyLimit: string
 	readonly automaticReviewLimit: string
 	readonly feedbackScope: Inheritable<PrReviewFeedbackScope>
+	readonly blockOnContractBreaks: Toggle
+	readonly postMergeCheck: Toggle
 }
 
 const stateFromConfig = (mode: ReviewRulesMode, config: PrReviewRepositoryConfig): FormState => {
@@ -86,6 +101,12 @@ const stateFromConfig = (mode: ReviewRulesMode, config: PrReviewRepositoryConfig
 		automaticReviewLimit:
 			config.automaticReviewLimit === undefined ? "" : String(config.automaticReviewLimit),
 		feedbackScope: config.feedbackScope ?? (inherits ? INHERIT : BUILT_IN.feedbackScope),
+		blockOnContractBreaks: toggleFromConfig(
+			config.blockOnContractBreaks,
+			inherits,
+			BUILT_IN.blockOnContractBreaks,
+		),
+		postMergeCheck: toggleFromConfig(config.postMergeCheck, inherits, BUILT_IN.postMergeCheck),
 	}
 }
 
@@ -100,6 +121,8 @@ const sameState = (a: FormState, b: FormState) =>
 	a.dailyLimit === b.dailyLimit &&
 	a.automaticReviewLimit === b.automaticReviewLimit &&
 	a.feedbackScope === b.feedbackScope &&
+	a.blockOnContractBreaks === b.blockOnContractBreaks &&
+	a.postMergeCheck === b.postMergeCheck &&
 	sameCategories(a.categories, b.categories)
 
 const parseIgnorePaths = (text: string) =>
@@ -157,6 +180,8 @@ const configFromState = (mode: ReviewRulesMode, state: FormState) => {
 		state.feedbackScope === INHERIT || (org && state.feedbackScope === BUILT_IN.feedbackScope)
 			? undefined
 			: state.feedbackScope
+	const block = toggleToConfig(state.blockOnContractBreaks, org, BUILT_IN.blockOnContractBreaks)
+	const postMerge = toggleToConfig(state.postMergeCheck, org, BUILT_IN.postMergeCheck)
 	return new PrReviewRepositoryConfig({
 		...(instructions === "" ? undefined : { instructions }),
 		...(ignorePaths.length === 0 ? undefined : { ignorePaths }),
@@ -166,7 +191,73 @@ const configFromState = (mode: ReviewRulesMode, state: FormState) => {
 		...(limit === "" ? undefined : { dailyLimit: Number(limit) }),
 		...(perPullRequest === "" ? undefined : { automaticReviewLimit: Number(perPullRequest) }),
 		...(feedback === undefined ? undefined : { feedbackScope: feedback }),
+		...(block === undefined ? undefined : { blockOnContractBreaks: block }),
+		...(postMerge === undefined ? undefined : { postMergeCheck: postMerge }),
 	})
+}
+
+/**
+ * One on/off rule: a switch for the organization, and for a repository a choice that can also
+ * follow the organization.
+ */
+function ToggleSetting({
+	id,
+	label,
+	description,
+	value,
+	inherited,
+	repository,
+	onChange,
+}: {
+	id: string
+	label: string
+	description: string
+	value: Toggle
+	/** What the organization (or the built-in default) has, named in the inherit option. */
+	inherited: boolean
+	repository: boolean
+	onChange: (value: Toggle) => void
+}) {
+	if (!repository) {
+		return (
+			<SettingRow
+				label={label}
+				description={description}
+				control={
+					<Switch
+						id={id}
+						checked={value === "on"}
+						onCheckedChange={(on) => onChange(on ? "on" : "off")}
+					/>
+				}
+			/>
+		)
+	}
+	const items = { [INHERIT]: `Organization default (${inherited ? "On" : "Off"})`, on: "On", off: "Off" }
+	return (
+		<Field className="items-stretch">
+			<FieldLabel htmlFor={id}>{label}</FieldLabel>
+			<Select
+				items={items}
+				value={value}
+				onValueChange={(next) => {
+					if (next === INHERIT || next === "on" || next === "off") onChange(next)
+				}}
+			>
+				<SelectTrigger id={id} className="w-full sm:w-1/2">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{Object.entries(items).map(([item, text]) => (
+						<SelectItem key={item} value={item}>
+							{text}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<FieldDescription>{description}</FieldDescription>
+		</Field>
+	)
 }
 
 export function ReviewRulesForm({
@@ -187,7 +278,6 @@ export function ReviewRulesForm({
 	const isAdmin = useIsOrgAdmin()
 	const [state, setState] = useState(() => stateFromConfig(mode, config))
 	const [saved, setSaved] = useState(() => stateFromConfig(mode, config))
-	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	// What was last sent, so a refetch landing after the save keeps any edit made since.
 	const [submitted, setSubmitted] = useState<FormState | null>(null)
@@ -210,14 +300,12 @@ export function ReviewRulesForm({
 		setError(null)
 	}
 
-	async function handleSave() {
-		setSaving(true)
+	const [handleSave, saving] = useAsyncAction(async () => {
 		setSubmitted(state)
 		setError(null)
 		const failure = await onSave(configFromState(mode, state))
-		setSaving(false)
 		if (failure !== null) setError(failure)
-	}
+	})
 
 	const inheritedSeverity = SEVERITY_LABELS[parent.minInlineSeverity ?? BUILT_IN.minInlineSeverity]
 	const inheritedFeedback = FEEDBACK_LABELS[parent.feedbackScope ?? BUILT_IN.feedbackScope]
@@ -243,10 +331,10 @@ export function ReviewRulesForm({
 	// Frozen while saving: a refetch after the save would replace any edit made in the meantime.
 	return (
 		<fieldset disabled={saving} className="m-0 flex min-w-0 flex-col gap-6 border-0 p-0">
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor={`${idPrefix}-instructions`}>
+			<Field className="items-stretch">
+				<FieldLabel htmlFor={`${idPrefix}-instructions`}>
 					{repository ? "Additional instructions" : "Instructions"}
-				</Label>
+				</FieldLabel>
 				<Textarea
 					id={`${idPrefix}-instructions`}
 					size="sm"
@@ -260,16 +348,16 @@ export function ReviewRulesForm({
 					controlClassName="min-h-24 max-h-64"
 					onChange={(event) => update({ instructions: event.target.value })}
 				/>
-				<p className="text-xs text-muted-foreground">
+				<FieldDescription>
 					Read alongside each repository&apos;s own CLAUDE.md, AGENTS.md and .maple/review.md.{" "}
 					{state.instructions.length}/{INSTRUCTIONS_MAX}
-				</p>
-			</div>
+				</FieldDescription>
+			</Field>
 
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor={`${idPrefix}-ignore`}>
+			<Field className="items-stretch">
+				<FieldLabel htmlFor={`${idPrefix}-ignore`}>
 					{repository ? "Additional ignored paths" : "Ignored paths"}
-				</Label>
+				</FieldLabel>
 				<Textarea
 					id={`${idPrefix}-ignore`}
 					size="sm"
@@ -278,13 +366,13 @@ export function ReviewRulesForm({
 					controlClassName="max-h-40 font-mono"
 					onChange={(event) => update({ ignorePaths: event.target.value })}
 				/>
-				<p className="text-xs text-muted-foreground">
+				<FieldDescription>
 					One per line. The review never reads files that match.
 					{repository && parent.ignorePaths && parent.ignorePaths.length > 0
 						? ` The organization already ignores ${parent.ignorePaths.length}.`
 						: null}
-				</p>
-			</div>
+				</FieldDescription>
+			</Field>
 
 			<fieldset className="flex flex-col gap-2">
 				<legend className="mb-2 flex w-full items-center justify-between gap-3 text-sm font-medium">
@@ -329,8 +417,8 @@ export function ReviewRulesForm({
 			</fieldset>
 
 			<div className="grid gap-6 sm:grid-cols-2">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-severity`}>Inline comments</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-severity`}>Inline comments</FieldLabel>
 					<Select
 						items={severityItems}
 						value={state.minInlineSeverity}
@@ -349,13 +437,11 @@ export function ReviewRulesForm({
 							))}
 						</SelectContent>
 					</Select>
-					<p className="text-xs text-muted-foreground">
-						The summary comment lists every issue either way.
-					</p>
-				</div>
+					<FieldDescription>The summary comment lists every issue either way.</FieldDescription>
+				</Field>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-feedback`}>Learn from feedback</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-feedback`}>Learn from feedback</FieldLabel>
 					<Select
 						items={feedbackItems}
 						value={state.feedbackScope}
@@ -374,14 +460,14 @@ export function ReviewRulesForm({
 							))}
 						</SelectContent>
 					</Select>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						Skips issues like ones your team downvoted or dismissed. Security and critical issues
 						are always posted.
-					</p>
-				</div>
+					</FieldDescription>
+				</Field>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-limit`}>Daily limit per repository</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-limit`}>Daily limit per repository</FieldLabel>
 					<Input
 						id={`${idPrefix}-limit`}
 						type="number"
@@ -393,13 +479,11 @@ export function ReviewRulesForm({
 						value={state.dailyLimit}
 						onChange={(event) => update({ dailyLimit: event.target.value })}
 					/>
-					<p className="text-xs text-muted-foreground">
-						Reviews a repository may start per UTC day.
-					</p>
-				</div>
+					<FieldDescription>Reviews a repository may start per UTC day.</FieldDescription>
+				</Field>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-per-pr`}>Reviews per pull request</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-per-pr`}>Reviews per pull request</FieldLabel>
 					<Input
 						id={`${idPrefix}-per-pr`}
 						type="number"
@@ -411,16 +495,16 @@ export function ReviewRulesForm({
 						value={state.automaticReviewLimit}
 						onChange={(event) => update({ automaticReviewLimit: event.target.value })}
 					/>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						After this many, pushes stop starting reviews. Mention the reviewer with{" "}
-						<code>review</code> to run one anyway.
-					</p>
-				</div>
+						<InlineCode>review</InlineCode> to run one anyway.
+					</FieldDescription>
+				</Field>
 			</div>
 
 			{repository ? (
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor={`${idPrefix}-drafts`}>Draft pull requests</Label>
+				<Field className="items-stretch">
+					<FieldLabel htmlFor={`${idPrefix}-drafts`}>Draft pull requests</FieldLabel>
 					<Select
 						items={draftItems}
 						value={state.reviewDrafts}
@@ -440,22 +524,40 @@ export function ReviewRulesForm({
 							))}
 						</SelectContent>
 					</Select>
-				</div>
+				</Field>
 			) : (
-				<label htmlFor={`${idPrefix}-drafts`} className="flex items-center justify-between gap-3">
-					<span className="flex flex-col gap-0.5">
-						<span className="text-sm font-medium">Review drafts</span>
-						<span className="text-xs text-muted-foreground">
-							Draft pull requests are skipped unless this is on.
-						</span>
-					</span>
-					<Switch
-						id={`${idPrefix}-drafts`}
-						checked={state.reviewDrafts === "on"}
-						onCheckedChange={(checked) => update({ reviewDrafts: checked ? "on" : "off" })}
-					/>
-				</label>
+				<SettingRow
+					label="Review drafts"
+					description="Draft pull requests are skipped unless this is on."
+					control={
+						<Switch
+							id={`${idPrefix}-drafts`}
+							checked={state.reviewDrafts === "on"}
+							onCheckedChange={(checked) => update({ reviewDrafts: checked ? "on" : "off" })}
+						/>
+					}
+				/>
 			)}
+
+			<ToggleSetting
+				id={`${idPrefix}-block-breaks`}
+				label="Fail the check on broken telemetry"
+				description="Fails the review check when a pull request removes a span, attribute or metric name that an alert or dashboard reads, and the name is not emitted anywhere else."
+				value={state.blockOnContractBreaks}
+				inherited={parent.blockOnContractBreaks ?? BUILT_IN.blockOnContractBreaks}
+				repository={repository}
+				onChange={(value) => update({ blockOnContractBreaks: value })}
+			/>
+
+			<ToggleSetting
+				id={`${idPrefix}-post-merge`}
+				label="Check production after merge"
+				description="An hour after a reviewed pull request deploys, compares the operations it touched before and after, and comments on the pull request."
+				value={state.postMergeCheck}
+				inherited={parent.postMergeCheck ?? BUILT_IN.postMergeCheck}
+				repository={repository}
+				onChange={(value) => update({ postMergeCheck: value })}
+			/>
 
 			{error !== null ? (
 				<p className="text-xs text-severity-error" role="alert">
@@ -481,8 +583,11 @@ export function ReviewRulesForm({
 				>
 					Reset
 				</Button>
-				<Button onClick={handleSave} disabled={!isAdmin || !dirty || problem !== null || saving}>
-					{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				<Button
+					onClick={() => void handleSave()}
+					loading={saving}
+					disabled={!isAdmin || !dirty || problem !== null}
+				>
 					Save
 				</Button>
 			</div>

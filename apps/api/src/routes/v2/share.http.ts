@@ -465,20 +465,21 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// no such chart, like every other reason this can fail.
 					const chatSessions = yield* Effect.serviceOption(ChatSessions)
 					if (Option.isNone(chatSessions)) return yield* notFound
-					const stub = chatSessions.value.stub(sessionId)
-					if (stub === undefined) return yield* notFound
+					const session = chatSessions.value.session(sessionId)
 
 					// The uniform not-found is the answer, not the diagnosis: a cross-script
 					// binding error and an evicted isolate are operator problems, and
 					// answering both with a silent 404 would leave nothing to find them by.
-					const messages = yield* Effect.tryPromise(() => stub.history()).pipe(
-						Effect.catchCause((cause) =>
-							Effect.logWarning("Chat chart transcript unavailable").pipe(
-								Effect.annotateLogs({ cause: summarizeCause(cause) }),
-								Effect.andThen(notFound),
+					const messages = yield* session
+						.history()
+						.pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning("Chat chart transcript unavailable").pipe(
+									Effect.annotateLogs({ cause: summarizeCause(cause) }),
+									Effect.andThen(notFound),
+								),
 							),
-						),
-					)
+						)
 					const chart = chatChartFrom(messages, claims)
 					if (chart === null) return yield* notFound
 

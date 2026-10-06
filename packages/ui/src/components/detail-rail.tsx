@@ -2,6 +2,8 @@ import type * as React from "react"
 
 import { cn } from "../lib/utils"
 import type { IconComponent } from "./icons"
+import { CopyButton } from "./ui/copy-button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip"
 
 /* -------------------------------------------------------------------------------------------------
  * DetailRail — the label/value rail every detail page hangs off its trailing edge.
@@ -124,18 +126,55 @@ function Field({
  * Monospace metadata row for infra detail pages (node/workload/pod, host
  * metadata) — a denser, divider-separated sibling of `Row`. Renders nothing
  * for absent values so callers can list every candidate field unconditionally.
+ * `copyable` adds a hover-revealed copy button; `tooltip` explains the value.
  */
-function MetaRow({ label, value }: { label: string; value: string | null | undefined }) {
+function MetaRow({
+	label,
+	value,
+	copyable,
+	copyValue,
+	tooltip,
+}: {
+	label: string
+	value: string | null | undefined
+	copyable?: boolean
+	/** What the copy button copies, when it differs from the displayed value. */
+	copyValue?: string
+	tooltip?: string
+}) {
 	if (!value) return null
+	const valueNode = (
+		<span className="break-all text-right font-mono text-[11px] tabular-nums text-foreground/85">
+			{value}
+		</span>
+	)
 	return (
 		<div
 			data-slot="detail-rail-meta-row"
-			className="flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0"
+			className="group flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0"
 		>
 			<span className="font-mono text-[11px] text-muted-foreground">{label}</span>
-			<span className="break-all text-right font-mono text-[11px] tabular-nums text-foreground/85">
-				{value}
-			</span>
+			<div className="flex min-w-0 items-center gap-1.5 text-[11px]">
+				{tooltip ? (
+					<Tooltip>
+						<TooltipTrigger render={<span />} className="cursor-default">
+							{valueNode}
+						</TooltipTrigger>
+						<TooltipContent>{tooltip}</TooltipContent>
+					</Tooltip>
+				) : (
+					valueNode
+				)}
+				{copyable || copyValue ? (
+					<CopyButton
+						value={copyValue ?? value}
+						label={label}
+						toast={false}
+						iconSize={11}
+						className="size-5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+					/>
+				) : null}
+			</div>
 		</div>
 	)
 }

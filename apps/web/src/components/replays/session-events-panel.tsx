@@ -1,14 +1,22 @@
 import * as React from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import * as Predicate from "effect/Predicate"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getSessionTranscriptResultAtom,
 	getSessionTraceSummariesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { DetailRail } from "@maple/ui/components/detail-rail"
@@ -107,7 +115,8 @@ export interface SessionRailSession {
 	readonly utmCampaign?: string | null
 }
 
-type RailTab = "events" | "traces" | "session"
+const RAIL_TABS = ["events", "traces", "session"] as const
+type RailTab = (typeof RAIL_TABS)[number]
 type EventFilter = "all" | "custom" | "console" | "network" | "error"
 
 /**
@@ -160,20 +169,22 @@ export function SessionRail({
 
 	return (
 		<section className={cn("flex min-h-0 flex-col overflow-hidden border-border bg-card", className)}>
-			<div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
-				<RailTabButton active={tab === "events"} onClick={() => setTab("events")}>
-					Events
-				</RailTabButton>
-				<RailTabButton
-					active={tab === "traces"}
-					onClick={() => setTab("traces")}
-					count={traceIds.length}
+			<div className="flex shrink-0 items-center border-b border-border px-2 py-1.5">
+				<ToggleGroup
+					size="sm"
+					aria-label="Rail section"
+					value={[tab]}
+					onValueChange={(next: ReadonlyArray<unknown>) => {
+						const picked = RAIL_TABS.find((candidate) => candidate === next[0])
+						if (picked) setTab(picked)
+					}}
 				>
-					Traces
-				</RailTabButton>
-				<RailTabButton active={tab === "session"} onClick={() => setTab("session")}>
-					Session
-				</RailTabButton>
+					<RailTabItem value="events">Events</RailTabItem>
+					<RailTabItem value="traces" count={traceIds.length}>
+						Traces
+					</RailTabItem>
+					<RailTabItem value="session">Session</RailTabItem>
+				</ToggleGroup>
 			</div>
 
 			{tab === "events" && <EventsTab sessionId={sessionId} window={window} />}
@@ -183,32 +194,25 @@ export function SessionRail({
 	)
 }
 
-function RailTabButton({
-	active,
-	onClick,
+function RailTabItem({
+	value,
 	count,
 	children,
 }: {
-	active: boolean
-	onClick: () => void
+	value: RailTab
 	count?: number | null
 	children: React.ReactNode
 }) {
 	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-pressed={active}
-			className={cn(
-				"flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-				active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-			)}
+		<ToggleGroupItem
+			value={value}
+			className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs"
 		>
 			{children}
 			{count != null && (
 				<span className="font-mono text-[10px] tabular-nums text-muted-foreground">{count}</span>
 			)}
-		</button>
+		</ToggleGroupItem>
 	)
 }
 
@@ -302,10 +306,10 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 		.orElse(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
 }
 
+// Status 0 is a request that never got a response: as bad as a 5xx.
 function statusTone(status: number): string {
-	if (status >= 500 || status === 0) return "text-destructive"
-	if (status >= 400) return "text-warning-foreground"
-	return "text-success-foreground"
+	const tone = status === 0 ? "crit" : httpStatusTone(status)
+	return tone === "neutral" ? "text-severity-info" : TONE_TEXT[tone]
 }
 
 /**
@@ -366,8 +370,8 @@ const EVENT_KIND_VISUALS = {
 	},
 	error: {
 		Icon: PixelTriangleWarningIcon,
-		tone: "text-destructive",
-		selected: "bg-destructive/15 text-destructive",
+		tone: "text-severity-error",
+		selected: "bg-severity-error/15 text-severity-error",
 		label: "Error",
 	},
 } as const satisfies Record<string, { Icon: IconComponent; tone: string; selected: string; label: string }>
@@ -548,9 +552,9 @@ function EventKindLegend({ className }: { className?: string }) {
 			    than content. This one pads 8/4 and sizes to its text. */}
 			<PopoverContent align="end" tooltipStyle sideOffset={6}>
 				<div className="flex flex-col gap-1.5 py-0.5">
-					<p className="text-[9px] font-semibold uppercase leading-none tracking-[0.08em] text-muted-foreground">
+					<Eyebrow as="p" className="leading-none">
 						Event kinds
-					</p>
+					</Eyebrow>
 					<ul className="flex flex-col gap-1">
 						{LEGEND_KINDS.map((kind) => {
 							const { Icon, tone, label } = EVENT_KIND_VISUALS[kind]
@@ -601,7 +605,7 @@ function EventProps({ attributes }: { attributes?: string }) {
 }
 
 function isFailedRequest(ev: EventRow): boolean {
-	return ev.type === "network" && (ev.netStatus >= 500 || ev.netStatus === 0)
+	return ev.type === "network" && (httpStatusTone(ev.netStatus) === "crit" || ev.netStatus === 0)
 }
 
 /**
@@ -628,8 +632,8 @@ function EventLine({
 	const isError = ev.type === "error" || isFailedRequest(ev)
 
 	return (
-		<li className={cn("relative", isError && "bg-destructive/5")}>
-			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-destructive" />}
+		<li className={cn("relative", isError && "bg-severity-error/5")}>
+			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-severity-error" />}
 			<button
 				type="button"
 				onClick={() => {
@@ -647,7 +651,7 @@ function EventLine({
 					<Icon size={16} className={tone} />
 				</span>
 				<span className="flex min-w-0 flex-1 items-baseline gap-1.5 truncate">
-					<span className={cn("truncate", isError ? "text-destructive" : "text-foreground")}>
+					<span className={cn("truncate", isError ? "text-severity-error" : "text-foreground")}>
 						{lead}
 					</span>
 					{trail && <span className="shrink-0 text-[10px] text-muted-foreground">{trail}</span>}
@@ -661,9 +665,9 @@ function EventLine({
 							<span
 								className={cn(
 									isError || ev.netDurationMs >= 1000
-										? "font-semibold text-warning-foreground"
+										? cn("font-semibold", TONE_TEXT.warn)
 										: "text-muted-foreground",
-									isError && "text-destructive",
+									isError && TONE_TEXT.crit,
 								)}
 							>
 								{formatNetDuration(ev.netDurationMs)}
@@ -735,18 +739,15 @@ function formatNetDuration(ms: number): string {
 /** Relative-duration micro-bar for the Network view — slow requests jump out
  *  without reading every number. Log-free linear scale capped at 3s. */
 function NetDurationBar({ durationMs, failed }: { durationMs: number; failed: boolean }) {
-	const pct = Math.min(100, Math.max(2, (durationMs / NET_BAR_MAX_MS) * 100))
 	const slow = durationMs >= 1000
 	return (
-		<span className="block h-[3px] w-full overflow-hidden rounded-full bg-muted">
-			<span
-				className={cn(
-					"block h-full rounded-full",
-					failed ? "bg-destructive" : slow ? "bg-warning" : "bg-chart-1",
-				)}
-				style={{ width: `${pct}%` }}
-			/>
-		</span>
+		<Meter
+			value={durationMs}
+			max={NET_BAR_MAX_MS}
+			minVisible={2}
+			fillClassName={failed ? TONE_FILL.crit : slow ? TONE_FILL.warn : "bg-chart-1"}
+			className="h-[3px] w-full bg-muted"
+		/>
 	)
 }
 
@@ -761,7 +762,7 @@ function TracesTab({
 		return (
 			<p className="p-4 text-xs leading-relaxed text-muted-foreground">
 				No backend traces were linked to this session. Correlation populates automatically when the
-				page is instrumented with <span className="font-mono">@maple-dev/browser</span> tracing.
+				page is instrumented with <InlineCode>@maple-dev/browser</InlineCode> tracing.
 			</p>
 		)
 	}
@@ -816,10 +817,10 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 		<li
 			className={cn(
 				"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-muted/50",
-				isError && "bg-destructive/5",
+				isError && "bg-severity-error/5",
 			)}
 		>
-			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-destructive" />}
+			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-severity-error" />}
 			<div className="flex items-center gap-2.5">
 				<button
 					type="button"
@@ -838,13 +839,13 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 					className="min-w-0 flex-1"
 					textClassName={cn(
 						"truncate text-xs font-medium",
-						isError ? "text-destructive" : "text-foreground",
+						isError ? "text-severity-error" : "text-foreground",
 					)}
 				/>
 				<span
 					className={cn(
 						"shrink-0 font-mono text-[11px] tabular-nums",
-						isError ? "font-semibold text-destructive" : "text-muted-foreground",
+						isError ? "font-semibold text-severity-error" : "text-muted-foreground",
 					)}
 				>
 					{formatNetDuration(Math.round(summary.durationMs))}
@@ -900,7 +901,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 							className="truncate font-mono text-xs text-primary underline-offset-2 hover:underline"
 							title="All sessions from this visitor"
 						>
-							{session.visitorId.slice(0, 12)}…
+							{shortId(session.visitorId, "generic", { ellipsis: true })}
 						</Link>
 					</Row>
 					<Row icon={UserIcon} label="Visitor">
@@ -990,7 +991,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				)}
 				<Row icon={IdBadgeIcon} label="Session ID" title={sessionId}>
 					<Value mono className="truncate">
-						{sessionId.slice(0, 12)}…
+						{shortId(sessionId, "session", { ellipsis: true })}
 					</Value>
 					<CopyButton
 						value={sessionId}
@@ -1003,13 +1004,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				{session.recorded !== undefined && (
 					<Row icon={EyeIcon} label="Recording">
 						<span className="flex items-center gap-1.5 text-xs">
-							<span
-								aria-hidden
-								className={cn(
-									"size-1.5 rounded-full",
-									session.recorded ? "bg-success-foreground" : "bg-muted-foreground/50",
-								)}
-							/>
+							<StatusDot tone={session.recorded ? "ok" : "neutral"} />
 							<span className={session.recorded ? "text-foreground" : "text-muted-foreground"}>
 								{session.recorded ? "Complete" : "Not recorded"}
 							</span>
@@ -1188,10 +1183,14 @@ function SessionSummary({ session }: { session: SessionRailSession }) {
 
 			{share && (
 				<>
-					<div aria-hidden className="mt-3 flex h-1 gap-px overflow-hidden rounded-full bg-muted">
-						<span className="bg-primary" style={{ width: `${share.active}%` }} />
-						<span className="bg-muted-foreground/40" style={{ width: `${share.idle}%` }} />
-					</div>
+					<SegmentedBar
+						segments={[
+							{ key: "active", value: share.active, className: "bg-primary" },
+							{ key: "idle", value: share.idle, className: "bg-muted-foreground/40" },
+						]}
+						total={100}
+						className="mt-3 h-1 gap-px bg-muted"
+					/>
 					<div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
 						{active != null && (
 							<Legend
@@ -1250,17 +1249,17 @@ function Stat({
 		<div
 			className={cn(
 				"flex flex-col gap-0.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5",
-				danger && "border-destructive/30 bg-destructive/5",
+				danger && "border-severity-error/30 bg-severity-error/5",
 			)}
 		>
 			<span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-				<Icon className={cn("size-3 shrink-0", danger && "text-destructive")} aria-hidden />
+				<Icon className={cn("size-3 shrink-0", danger && "text-severity-error")} aria-hidden />
 				<span className="truncate">{label}</span>
 			</span>
 			<span
 				className={cn(
 					"font-mono text-sm font-semibold tabular-nums",
-					danger ? "text-destructive" : "text-foreground",
+					danger ? "text-severity-error" : "text-foreground",
 				)}
 			>
 				{value}

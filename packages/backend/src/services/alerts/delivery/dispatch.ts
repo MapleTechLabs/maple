@@ -18,6 +18,7 @@ import { hazelTransport } from "./transports/hazel"
 import { pagerDutyTransport } from "./transports/pagerduty"
 import { telegramTransport } from "./transports/telegram"
 import { webhookTransport } from "./transports/webhook"
+import type { HttpClient } from "effect/http"
 import { runEffectTransport, runHttpTransport, type TransportRuntime } from "./runTransport"
 import type { EffectTransportDeps, RenderInput } from "./Transport"
 import type { DispatchContext, DispatchResult } from "./context"
@@ -25,14 +26,13 @@ import type { DispatchContext, DispatchResult } from "./context"
 export const dispatchDelivery = (
 	context: DispatchContext,
 	payloadJson: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
 	linkUrl: string,
 	chatUrl: string,
 	/** `sendEmail` (the platform email channel) and `postChatAlert` (a chat connector). */
 	deps: EffectTransportDeps,
-): Effect.Effect<DispatchResult, AlertDeliveryFailure> => {
-	const runtime: TransportRuntime = { fetchFn, timeoutMs }
+): Effect.Effect<DispatchResult, AlertDeliveryFailure, HttpClient.HttpClient> => {
+	const runtime: TransportRuntime = { timeoutMs }
 	/**
 	 * Resolved once here rather than by each provider: the template is a
 	 * property of the rule and the destination TYPE, not of the transport's

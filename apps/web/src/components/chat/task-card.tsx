@@ -1,17 +1,14 @@
 import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetPanel,
-	SheetTitle,
-} from "@maple/ui/components/ui/sheet"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Sheet, SheetContent, SheetPanel } from "@maple/ui/components/ui/sheet"
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ChevronRightIcon, CircleCheckIcon, CircleWarningIcon, CircleXmarkIcon } from "@/components/icons"
 import { agentPresentation } from "@/components/ai-elements/agent-metadata"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
-import { RunningClock, Tool } from "@/components/ai-elements/tool"
+import { RunningClock, Tool, TranscriptRowButton } from "@/components/ai-elements/tool"
 import { RichText } from "@/components/ai-elements/rich-text"
 import type { UIMessage } from "@/components/ai-elements/types"
 import { toolNameFor, type ToolPart } from "./transcript-rows"
@@ -37,15 +34,13 @@ const OUTCOME: Record<Exclude<TaskStatus, "running">, string> = {
 	aborted: "stopped",
 } satisfies Record<Exclude<TaskStatus, "running">, string>
 
-const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
-
 function StatusGlyph({ status }: { status: TaskStatus }) {
 	return (
 		<span className="flex size-5 shrink-0 items-center justify-center">
 			{status === "running" ? (
 				<DotLoader />
 			) : status === "error" ? (
-				<CircleXmarkIcon className="size-3.5 text-destructive" />
+				<CircleXmarkIcon className="size-3.5 text-severity-error" />
 			) : status === "aborted" ? (
 				<CircleWarningIcon className="size-3.5 text-muted-foreground" />
 			) : (
@@ -85,11 +80,7 @@ export function TaskCard({
 
 	return (
 		<div className="text-xs">
-			<button
-				type="button"
-				onClick={() => setOpen(true)}
-				className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
-			>
+			<TranscriptRowButton onClick={() => setOpen(true)}>
 				<StatusGlyph status={status} />
 				{/* While it runs the loader is the glyph; once it settles the agent's own mark is
 				    what distinguishes this line from the tool rows around it. */}
@@ -107,40 +98,42 @@ export function TaskCard({
 					{prompt}
 				</span>
 				{status === "error" ? (
-					<span className="shrink-0 text-[11px] text-destructive">failed</span>
+					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.crit)}>failed</span>
 				) : budgetExhausted === true ? (
-					<span className="shrink-0 text-[11px] text-warning">partial</span>
+					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.warn)}>partial</span>
 				) : null}
 				{running ? <RunningClock /> : null}
 				<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground/60" />
-			</button>
+			</TranscriptRowButton>
 
 			<Sheet open={open} onOpenChange={setOpen}>
 				<SheetContent className="sm:max-w-xl">
-					<SheetHeader>
-						<div className="flex items-center gap-2">
-							<AgentIcon className="size-3 shrink-0 text-muted-foreground" />
-							<span className={EYEBROW}>{label} sub-agent</span>
-							<span className="text-muted-foreground/40">·</span>
-							<span className={EYEBROW}>{running ? "running" : OUTCOME[status]}</span>
-						</div>
-						{/* The question, unclamped — the thing the row cannot show and the reason
-						    this panel exists. */}
-						<SheetTitle className="text-base leading-snug">{prompt}</SheetTitle>
-						<SheetDescription className="sr-only">
-							What this sub-agent was asked, and what it came back with.
-						</SheetDescription>
-					</SheetHeader>
+					{/* The title is the question, unclamped: the thing the row cannot show. */}
+					<SheetDetailHeader
+						mono={false}
+						kind={
+							<span className="inline-flex items-center gap-2">
+								<AgentIcon className="size-3 shrink-0" />
+								{label} sub-agent
+								<span className="text-muted-foreground/40">·</span>
+								{running ? "running" : OUTCOME[status]}
+							</span>
+						}
+						title={prompt}
+						description="What this sub-agent was asked, and what it came back with."
+					/>
 					<SheetPanel className="flex flex-col gap-6">
 						{budgetExhausted === true ? (
-							<p className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">
-								Answered from what it had: the run spent its budget before it finished
-								searching.
-							</p>
+							<Alert variant="warn" size="sm">
+								<AlertDescription>
+									Answered from what it had: the run spent its budget before it finished
+									searching.
+								</AlertDescription>
+							</Alert>
 						) : null}
 
 						<section className="flex flex-col gap-2">
-							<h3 className={EYEBROW}>Answer</h3>
+							<Eyebrow as="h3">Answer</Eyebrow>
 							{running ? (
 								// A div, not a p: the loader renders a dot grid, which cannot live inside one.
 								<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -149,7 +142,7 @@ export function TaskCard({
 									<RunningClock />
 								</div>
 							) : errorText != null ? (
-								<pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs text-destructive/80">
+								<pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error/80">
 									{errorText}
 								</pre>
 							) : answer != null ? (
@@ -171,7 +164,7 @@ export function TaskCard({
 						 */}
 						{messages.length > 0 ? (
 							<section className="flex flex-col gap-2">
-								<h3 className={EYEBROW}>Its own steps</h3>
+								<Eyebrow as="h3">Its own steps</Eyebrow>
 								{messages.map((message) => (
 									<div key={message.id} className="flex flex-col gap-1.5">
 										{message.parts.map((part, index) =>

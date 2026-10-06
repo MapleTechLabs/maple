@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { pickValueField, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { heatmapSampleData, pieSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 import { QueryBuilderAreaChart } from "@maple/ui/components/charts/area/query-builder-area-chart"
@@ -542,9 +544,9 @@ function LabShell({
 				<h1 className="font-semibold text-lg">TanStack charts</h1>
 				<p className="text-muted-foreground text-sm">
 					Production on the left, TanStack on the right, same rows.
-					<code className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs">
+					<InlineCode className="ml-2 px-1.5 py-0.5 text-xs">
 						?renderer=tanstack-svg|tanstack-canvas&amp;arm=&lt;chart&gt;-&lt;impl&gt;
-					</code>
+					</InlineCode>
 				</p>
 			</header>
 			{children}
@@ -555,9 +557,9 @@ function LabShell({
 function Section({ title, children }: { title: string; children: ReactNode }) {
 	return (
 		<section className="mb-8">
-			<h2 className="mb-3 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+			<Eyebrow variant="label" as="h2" className="mb-3">
 				{title}
-			</h2>
+			</Eyebrow>
 			<div className="grid gap-4">{children}</div>
 		</section>
 	)

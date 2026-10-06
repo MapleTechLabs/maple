@@ -1,4 +1,7 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
+import { constTrue } from "effect/Function"
+import { FetchHttpClient, HttpClient, HttpClientRequest, Url } from "effect/http"
+import type { HttpClientError, HttpClientResponse } from "effect/http"
 
 export class UrlValidationError extends Schema.TaggedError<UrlValidationError>()(
 	"@maple/safe-fetch/UrlValidationError",
@@ -137,54 +140,51 @@ const isPrivateHost = (hostname: string): boolean => {
 	return false
 }
 
-/** The validation itself: returns the failure rather than throwing it. */
-const checkExternalUrl = (raw: string): URL | UrlValidationError => {
+/**
+ * Parse `raw` and reject anything Maple must not send a request to: non-http(s)
+ * schemes, embedded credentials, and loopback / private / metadata hosts.
+ */
+export const parseExternalUrl = (raw: string): Result.Result<URL, UrlValidationError> => {
 	const trimmed = raw.trim()
 	if (trimmed.length === 0) {
-		return new UrlValidationError({ message: "URL is required" })
+		return Result.fail(new UrlValidationError({ message: "URL is required" }))
 	}
 	if (!URL.canParse(trimmed)) {
-		return new UrlValidationError({ message: `Invalid URL: ${trimmed}`, url: trimmed })
+		return Result.fail(new UrlValidationError({ message: `Invalid URL: ${trimmed}`, url: trimmed }))
 	}
 	const parsed = new URL(trimmed)
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-		return new UrlValidationError({
-			message: `URL scheme '${parsed.protocol}' is not allowed; use http or https`,
-			url: trimmed,
-		})
+		return Result.fail(
+			new UrlValidationError({
+				message: `URL scheme '${parsed.protocol}' is not allowed; use http or https`,
+				url: trimmed,
+			}),
+		)
 	}
 	if (parsed.hostname.length === 0) {
-		return new UrlValidationError({ message: "URL must include a hostname", url: trimmed })
+		return Result.fail(new UrlValidationError({ message: "URL must include a hostname", url: trimmed }))
 	}
 	// Credentials in the URL are both a way to smuggle a second host past a
 	// reader (`https://real.example.com@internal/`, where the parser's host is
 	// `internal`) and a way to have Maple replay them at the destination.
 	if (parsed.username !== "" || parsed.password !== "") {
-		return new UrlValidationError({
-			message: "URL must not embed credentials",
-			url: trimmed,
-		})
+		return Result.fail(
+			new UrlValidationError({ message: "URL must not embed credentials", url: trimmed }),
+		)
 	}
 	if (isPrivateHost(parsed.hostname)) {
-		return new UrlValidationError({
-			message: `URL host '${parsed.hostname}' is not allowed (loopback, private, or metadata range)`,
-			url: trimmed,
-		})
+		return Result.fail(
+			new UrlValidationError({
+				message: `URL host '${parsed.hostname}' is not allowed (loopback, private, or metadata range)`,
+				url: trimmed,
+			}),
+		)
 	}
-	return parsed
-}
-
-export const validateExternalUrlSync = (raw: string): URL => {
-	const result = checkExternalUrl(raw)
-	if (result instanceof UrlValidationError) throw result
-	return result
+	return Result.succeed(parsed)
 }
 
 export const validateExternalUrl = (raw: string): Effect.Effect<URL, UrlValidationError> =>
-	Effect.suspend(() => {
-		const result = checkExternalUrl(raw)
-		return result instanceof UrlValidationError ? Effect.fail(result) : Effect.succeed(result)
-	})
+	Effect.suspend(() => Effect.fromResult(parseExternalUrl(raw)))
 
 const MAX_REDIRECTS = 5
 
@@ -195,39 +195,98 @@ const MAX_REDIRECTS = 5
  */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"] as const
 
-/** Strip credential headers, whatever shape `RequestInit.headers` arrived in. */
-const withoutCredentialHeaders = (headers: RequestInit["headers"]): Headers => {
-	const next = new Headers(headers)
-	for (const name of CREDENTIAL_HEADERS) next.delete(name)
-	return next
+const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) =>
+	CREDENTIAL_HEADERS.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
+
+/** The full URL a request targets, query params and hash included. */
+const requestUrl = (request: HttpClientRequest.HttpClientRequest) =>
+	Effect.fromResult(Url.make(request.url, request.urlParams, Option.getOrUndefined(request.hash))).pipe(
+		Effect.mapError(
+			() => new UrlValidationError({ message: `Invalid URL: ${request.url}`, url: request.url }),
+		),
+	)
+
+/**
+ * Wrap a fetch-backed `HttpClient` so it only reaches external hosts, for URLs
+ * that came from user configuration.
+ *
+ * - Every hop is validated, redirects included. `HttpClient.followRedirects`
+ *   cannot do this: it re-runs only `postprocess` per hop, so a check placed in
+ *   `mapRequest*` would see the first URL and nothing after it.
+ * - Redirects are followed here with `redirect: "manual"`, at most 5.
+ * - A cross-origin hop drops credential headers for good: restoring them on a
+ *   bounce back to the original origin would make the strip trivially
+ *   bypassable by redirecting away and back again.
+ * - The client's own span is disabled. It records `url.full`, and the URLs this
+ *   guards routinely carry credentials (signed query params, webhook tokens in
+ *   the path). Callers open their own client span with safe attributes.
+ */
+export const guard = <E, R>(
+	client: HttpClient.HttpClient.With<E, R>,
+): HttpClient.HttpClient.With<E | UrlValidationError, R> => {
+	const send = (request: HttpClientRequest.HttpClientRequest) =>
+		Effect.serviceOption(FetchHttpClient.RequestInit).pipe(
+			Effect.flatMap((init) =>
+				client.execute(request).pipe(
+					Effect.provideService(FetchHttpClient.RequestInit, {
+						...Option.getOrUndefined(init),
+						redirect: "manual",
+					}),
+					Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+				),
+			),
+		)
+
+	const hop = (
+		request: HttpClientRequest.HttpClientRequest,
+		redirects: number,
+		previousOrigin: string | null,
+	): Effect.Effect<HttpClientResponse.HttpClientResponse, E | UrlValidationError, R> =>
+		Effect.gen(function* () {
+			const validated = yield* requestUrl(request).pipe(
+				Effect.flatMap((url) => validateExternalUrl(url.toString())),
+			)
+			const outgoing =
+				previousOrigin !== null && validated.origin !== previousOrigin
+					? withoutCredentialHeaders(request)
+					: request
+			const response = yield* send(outgoing)
+			if (response.status < 300 || response.status >= 400) return response
+			const location = response.headers["location"]
+			// An empty Location resolves to the current URL; following it would
+			// resend the same request until the cap.
+			if (!location) return response
+			if (redirects >= MAX_REDIRECTS) {
+				return yield* new UrlValidationError({
+					message: `Too many redirects (>${MAX_REDIRECTS})`,
+					url: validated.toString(),
+				})
+			}
+			if (!URL.canParse(location, validated.href)) {
+				return yield* new UrlValidationError({ message: "Redirect has an invalid Location header" })
+			}
+			const next = HttpClientRequest.setUrl(outgoing, new URL(location, validated))
+			return yield* hop(next, redirects + 1, validated.origin)
+		})
+
+	return HttpClient.makeWith<E | UrlValidationError, R, E | UrlValidationError, R>(
+		(request) => Effect.flatMap(request, (initial) => hop(initial, 0, null)),
+		Effect.succeed,
+	)
 }
 
-export interface SafeFetchOptions extends RequestInit {
-	readonly fetchFn?: typeof fetch
-}
-
-export const safeFetch = async (initialUrl: string, init: SafeFetchOptions = {}): Promise<Response> => {
-	const fetchFn = init.fetchFn ?? fetch
-	let currentUrl = initialUrl
-	let headers = init.headers
-	let previousOrigin: string | null = null
-	for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-		const validated = validateExternalUrlSync(currentUrl)
-		// A cross-origin hop drops the credentials for good: restoring them on a
-		// bounce back to the original origin would make the strip trivially
-		// bypassable by redirecting away and back again.
-		if (previousOrigin !== null && validated.origin !== previousOrigin) {
-			headers = withoutCredentialHeaders(headers)
-		}
-		previousOrigin = validated.origin
-		const response = await fetchFn(validated.toString(), { ...init, headers, redirect: "manual" })
-		if (response.status < 300 || response.status >= 400) return response
-		const location = response.headers.get("location")
-		if (!location) return response
-		currentUrl = new URL(location, validated).toString()
-	}
-	throw new UrlValidationError({
-		message: `Too many redirects (>${MAX_REDIRECTS})`,
-		url: initialUrl,
-	})
+/**
+ * An `HttpClientError` message without the request URL. Effect's own messages
+ * embed `METHOD url`, and the URLs `guard` sees routinely carry credentials.
+ */
+export const describeHttpClientError = (error: HttpClientError.HttpClientError): string => {
+	const { cause, description, request } = error.reason
+	const message = cause instanceof Error ? cause.message : (description ?? error.reason._tag)
+	// Some runtimes put the URL in the cause's own message; keep only its origin.
+	const url = Url.make(request.url, request.urlParams, Option.getOrUndefined(request.hash))
+	if (Result.isFailure(url)) return message
+	return [url.success.href, request.url].reduce(
+		(redacted, secret) => redacted.split(secret).join(url.success.origin),
+		message,
+	)
 }

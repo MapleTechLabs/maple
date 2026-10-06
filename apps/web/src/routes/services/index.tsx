@@ -127,7 +127,7 @@ function ServicesPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Services">
+							<DashboardLayout.Header>
 								<TimeRangeHeaderControls
 									startTime={search.startTime ?? effectiveStartTime}
 									endTime={search.endTime ?? effectiveEndTime}

@@ -23,6 +23,7 @@ import {
 import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
 	parseBase64Aes256GcmKey,
@@ -38,7 +39,8 @@ import {
 	buildScrapeAuthHeaders,
 	TokenCredentialsSchema,
 } from "@maple/backend/services/auth/scrape-auth"
-import { safeFetch, validateExternalUrl } from "@maple/safe-fetch"
+import { describeHttpClientError, guard, validateExternalUrl } from "@maple/safe-fetch"
+import { countSamples, parsePrometheusText } from "@maple/prometheus-otlp"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
 import {
@@ -508,6 +510,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
+			// Scoped per hop, so an unread body (non-2xx, PlanetScale) is cancelled on exit.
+			const probeClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient))
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			)
@@ -1209,38 +1213,59 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const headers = yield* authHeadersForRow(row)
 
 				const now = yield* Clock.currentTimeMillis
-				// `safeFetch` is retained for SSRF protection + redirect re-validation. The
-				// manual AbortController/setTimeout is replaced by the interruption-aware
-				// signal plus a fixed 10s `Effect.timeout`; the timeout lands as a failure
-				// in the captured Exit (→ success: false), matching the old abort path.
-				const requestExit = yield* Effect.tryPromise({
-					try: (signal) =>
-						safeFetch(row.url, {
-							method: "GET",
-							headers,
-							signal,
-						}),
-					catch: (cause) =>
-						new ScrapeTargetUpstreamError({
-							message: cause instanceof Error ? cause.message : "Connection failed",
-						}),
-				}).pipe(
-					Effect.flatMap((response) =>
-						response.ok
-							? Effect.void
-							: Effect.fail(
+				// `guard` supplies SSRF protection + redirect re-validation; the 10s
+				// timeout interrupts (and aborts) the request and lands as a failure in
+				// the captured Exit (→ success: false).
+				const requestExit = yield* probeClient
+					.execute(HttpClientRequest.get(row.url, { headers }))
+					.pipe(
+						Effect.catchTags({
+							"@maple/safe-fetch/UrlValidationError": (cause) =>
+								Effect.fail(new ScrapeTargetUpstreamError({ message: cause.message })),
+							HttpClientError: (cause) =>
+								Effect.fail(
 									new ScrapeTargetUpstreamError({
-										message: `HTTP ${response.status} ${response.statusText}`,
-										status: response.status,
+										message: describeHttpClientError(cause),
 									}),
 								),
-					),
-					Effect.timeout(10_000),
-					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
-					),
-					Effect.exit,
-				)
+						}),
+						Effect.flatMap((response) => {
+							if (response.status < 200 || response.status >= 300) {
+								return Effect.fail(
+									new ScrapeTargetUpstreamError({
+										message: `HTTP ${response.status}`,
+										status: response.status,
+									}),
+								)
+							}
+							// A PlanetScale row's url is its discovery endpoint (JSON); anything else
+							// must parse the way the scraper will, so an HTML 200 doesn't pass.
+							if (row.targetType === "planetscale") return Effect.void
+							return response.text.pipe(
+								Effect.mapError(
+									() =>
+										new ScrapeTargetUpstreamError({
+											message: "Failed to read response body",
+										}),
+								),
+								Effect.flatMap((body) =>
+									countSamples(parsePrometheusText(body).families) > 0
+										? Effect.void
+										: Effect.fail(
+												new ScrapeTargetUpstreamError({
+													message: "Response contained no Prometheus metrics",
+												}),
+											),
+								),
+							)
+						}),
+						Effect.timeout(10_000),
+						Effect.catchTag("TimeoutError", () =>
+							Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
+						),
+						Effect.scoped,
+						Effect.exit,
+					)
 				const requestError = Exit.isFailure(requestExit)
 					? Option.match(Cause.findErrorOption(requestExit.cause), {
 							onNone: () => "Connection failed",

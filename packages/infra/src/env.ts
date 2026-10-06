@@ -116,6 +116,11 @@ export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv>
 	merge(
 		plainWithDefault("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest ?? "ingest.maple.dev"}`),
 		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+		// Canonical API origin for self-published URLs (MCP `server.json`, email one-click
+		// unsubscribe), never forwarded headers.
+		domains.api
+			? derived("MAPLE_API_BASE_URL", `https://${domains.api}`)
+			: plainWithDefault("MAPLE_API_BASE_URL", "https://api.maple.dev"),
 		plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
 	)
 
@@ -142,7 +147,7 @@ export const selfObservabilityEnv = (
 				),
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
-		// Read for Durable Object jurisdiction (`chatSessionStub`).
+		// Read for Durable Object jurisdiction (`chatSessionsLayer`).
 		derived("MAPLE_REGION", region),
 		// Tells the instances apart in the shared internal org.
 		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),

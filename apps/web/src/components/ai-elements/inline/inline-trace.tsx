@@ -1,3 +1,4 @@
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { Link } from "@tanstack/react-router"
 import type { InlineTraceData } from "@maple/domain/chat-annotations"
 import { cn } from "@maple/ui/lib/utils"
@@ -53,9 +54,12 @@ export function InlineTrace({ data }: { data: InlineTraceData }) {
 			<div className={INLINE_CARD_META}>
 				{/* The id is evidence rather than a label — it is what a follow-up question
 				    names — so it sits under the span name instead of competing with it. */}
-				<span className="shrink-0 font-mono text-[11px] text-muted-foreground/70" title={data.id}>
-					{data.id.slice(0, 12)}
-				</span>
+				<TruncatedId
+					value={data.id}
+					kind="trace"
+					length={12}
+					className="shrink-0 text-[11px] text-muted-foreground/70"
+				/>
 				<InlineServiceChips services={services} />
 			</div>
 		</Link>

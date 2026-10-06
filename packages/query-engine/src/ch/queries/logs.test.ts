@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	canUseLogsAggregatesHourly,
 	logsTimeseriesQuery,
@@ -11,9 +11,10 @@ import {
 	errorRateByServiceQuery,
 	logsFacetsQuery,
 } from "./logs"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -401,7 +402,7 @@ describe("logsBreakdownQuery", () => {
 		expect(build).not.toThrow()
 
 		const error = Effect.runSync(Effect.flip(compile(build(), baseParams)))
-		expect(error._tag).toBe("@maple-dev/effect-clickhouse/QueryBuilderError")
+		expect(error._tag).toBe("@maple-dev/effect-orm/QueryBuilderError")
 		expect(error.message).toContain("Timestamp")
 	})
 

@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { SettingsSourceMode, WidgetSettings } from "@/components/dashboard-builder/config/settings-fields"
 import { widgetTypes } from "@/components/dashboard-builder/widgets/types"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
@@ -19,9 +20,9 @@ export function WidgetSettingsBar({ sourceMode = "builder" }: { sourceMode?: "bu
 	return (
 		<SettingsSourceMode mode={sourceMode}>
 			<div className="flex flex-col gap-5">
-				<p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+				<Eyebrow variant="label" as="p">
 					Panel Options
-				</p>
+				</Eyebrow>
 				<WidgetSettings.Name />
 				<WidgetSettings.Description />
 				<WidgetSettings.TimeRange />
