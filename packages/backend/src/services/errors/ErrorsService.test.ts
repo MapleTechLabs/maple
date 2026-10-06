@@ -1641,6 +1641,13 @@ describe("ErrorsService.runTick", () => {
 				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
 			)
 			assert.strictEqual(cursor[0]?.processedThrough.getTime(), TICK_MS - 60_000)
+			// Every chunk landed, not just the ones a counter reports: one `created`
+			// event per issue, and no promoted candidate left behind.
+			const created = yield* database.execute((db) =>
+				db.select().from(errorIssueEvents).where(eq(errorIssueEvents.type, "created")),
+			)
+			assert.lengthOf(created, 3_100)
+			assert.lengthOf(yield* database.execute((db) => db.select().from(errorFingerprintCandidates)), 0)
 
 			// The same burst a minute later lands on the incidents it just opened.
 			yield* TestClock.setTime(TICK_MS + 60_000)

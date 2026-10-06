@@ -872,13 +872,11 @@ export const persistErrorTickWindow = (
 						)
 						.returning({ id: errorIncidents.id }),
 				)
-				const flippedIds = flipped.map((row) => row.id)
-				incidentsResolved = flippedIds.length
+				const flippedIds = new Set(flipped.map((row) => row.id))
+				incidentsResolved = flippedIds.size
 
-				if (flippedIds.length > 0) {
-					const resolvedIncidents = staleIncidents.filter((incident) =>
-						flippedIds.includes(incident.id),
-					)
+				if (flippedIds.size > 0) {
+					const resolvedIncidents = staleIncidents.filter((incident) => flippedIds.has(incident.id))
 					// Match on `open_incident_id` too: a state pointing at some other
 					// incident must not be cleared by this one resolving. An incident and
 					// its issue share a chunk, so chunking leaves the pairing intact.
