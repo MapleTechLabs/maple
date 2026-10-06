@@ -32,11 +32,13 @@ import {
 	type PrReviewSkipReason,
 	type PrReviewStatus,
 	PR_REVIEW_CONFIDENCE_LABEL,
+	PR_REVIEW_CONFIDENCE_MAX,
 	PR_REVIEW_FAILURE_COPY,
 	DEFAULT_REVIEWER_MENTION,
 	type PrReviewFailureReason,
 	prReviewFailureReason,
 	confidencePrReview,
+	prReviewConfidenceTone,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
 	type PullRequestEventJob,
@@ -506,7 +508,8 @@ const SEVERITY_ALERT = {
 } as const satisfies Record<PrReviewFinding["severity"], string>
 
 /** Green when safe, amber when it needs a look, red when risky. */
-const confidenceMark = (confidence: number) => (confidence >= 4 ? "🟢" : confidence === 3 ? "🟡" : "🔴")
+const CONFIDENCE_MARK = { safe: "🟢", attention: "🟡", risky: "🔴" } as const
+const confidenceMark = (confidence: number) => CONFIDENCE_MARK[prReviewConfidenceTone(confidence)]
 
 /** `observability · SPAN-03`, or the bare category for every other lens. */
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
@@ -597,7 +600,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push("**Nothing to review**", "")
 	} else {
 		lines.push(
-			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
+			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
 		)
 		// An early end is already the warning below; the reason would only say it again.
 		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
@@ -847,14 +850,16 @@ export const buildPublication = (input: {
 		checkName: PR_REVIEW_CHECK_NAME,
 		// Fixed order, like the scorecard: a check list scans down one column.
 		title: [
-			`Confidence ${confidence === undefined ? "–" : `${confidence.confidence}/5`}`,
+			`Confidence ${confidence === undefined ? "–" : `${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}`}`,
 			verdictTitle(report, carried),
 		].join(" · "),
 		summary: renderCheckSummary(markdown),
 		// Never `failure`: the review informs, it does not block a merge. Green only for a review
 		// that finished, found nothing to address and is confident the change is safe.
 		conclusion:
-			hasIssues || input.partial || (confidence !== undefined && confidence.confidence <= 3)
+			hasIssues ||
+			input.partial ||
+			(confidence !== undefined && prReviewConfidenceTone(confidence.confidence) !== "safe")
 				? "neutral"
 				: "success",
 		annotations,
