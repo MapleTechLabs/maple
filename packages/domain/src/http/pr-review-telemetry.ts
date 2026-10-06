@@ -42,7 +42,9 @@ export class PrReviewContractBreak extends Schema.Class<PrReviewContractBreak>("
 }) {}
 
 /** One production operation a changed file names. */
-export class PrReviewOperationTraffic extends Schema.Class<PrReviewOperationTraffic>("PrReviewOperationTraffic")({
+export class PrReviewOperationTraffic extends Schema.Class<PrReviewOperationTraffic>(
+	"PrReviewOperationTraffic",
+)({
 	service: Schema.String,
 	spanName: Schema.String,
 	perDay: Schema.Number,
@@ -80,13 +82,15 @@ export class PrReviewCostNote extends Schema.Class<PrReviewCostNote>("PrReviewCo
 }) {}
 
 /** A name the diff adds or removes, as the warehouse knows it. */
-export class PrReviewTelemetryChange extends Schema.Class<PrReviewTelemetryChange>("PrReviewTelemetryChange")({
-	kind: PrReviewTelemetryKind,
-	name: Schema.String,
-	path: Schema.String,
-	line: Schema.Number,
-	perDay: Schema.optionalKey(Schema.Number),
-}) {}
+export class PrReviewTelemetryChange extends Schema.Class<PrReviewTelemetryChange>("PrReviewTelemetryChange")(
+	{
+		kind: PrReviewTelemetryKind,
+		name: Schema.String,
+		path: Schema.String,
+		line: Schema.Number,
+		perDay: Schema.optionalKey(Schema.Number),
+	},
+) {}
 
 export class PrReviewTelemetry extends Schema.Class<PrReviewTelemetry>("PrReviewTelemetry")({
 	/** Days of production telemetry the facts were read from. */
@@ -149,7 +153,12 @@ export class PrReviewPostMerge extends Schema.Class<PrReviewPostMerge>("PrReview
 	verdict: Schema.Literals(["clean", "regressed"]),
 }) {}
 
-export const PrReviewPostMergeStatus = Schema.Literals(["waiting", "reported", "no_deploy", "no_traffic"]).annotate({
+export const PrReviewPostMergeStatus = Schema.Literals([
+	"waiting",
+	"reported",
+	"no_deploy",
+	"no_traffic",
+]).annotate({
 	identifier: "@maple/PrReviewPostMergeStatus",
 	title: "Pull Request Review Post-Merge Status",
 })

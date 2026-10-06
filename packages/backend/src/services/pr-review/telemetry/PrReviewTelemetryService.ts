@@ -34,7 +34,6 @@ const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
 const ISSUE_SCAN_LIMIT = 500
 const SOURCE_SCAN_LIMIT = 500
 
-
 export interface OperationWindowStats {
 	readonly service: string
 	readonly spanName: string
@@ -53,7 +52,10 @@ export interface DeploymentVersion {
 
 export interface PrReviewTelemetryServiceApi {
 	/** The pull request's diff read against the last week of production. */
-	readonly analyze: (orgId: OrgId, files: ReadonlyArray<PullRequestFile>) => Effect.Effect<PrReviewTelemetry | undefined>
+	readonly analyze: (
+		orgId: OrgId,
+		files: ReadonlyArray<PullRequestFile>,
+	) => Effect.Effect<PrReviewTelemetry | undefined>
 	/** Versions of these services that first reported after `sinceMs`, oldest first. */
 	readonly deploymentsSince: (
 		orgId: OrgId,
@@ -83,7 +85,11 @@ export interface PrReviewTelemetryServiceApi {
 		sinceMs: number,
 	) => Effect.Effect<ReadonlyArray<CatalogIssue>>
 	/** Attribute keys set at least once in a window. */
-	readonly attributeKeysIn: (orgId: OrgId, startMs: number, endMs: number) => Effect.Effect<ReadonlySet<string>>
+	readonly attributeKeysIn: (
+		orgId: OrgId,
+		startMs: number,
+		endMs: number,
+	) => Effect.Effect<ReadonlySet<string>>
 }
 
 /** A failed read is logged and read as empty: the review goes on without that fact. */
@@ -119,11 +125,10 @@ export class PrReviewTelemetryService extends Context.Service<
 			const [operations, spanKeys, resourceKeys, metrics, usage] = yield* Effect.all(
 				[
 					warehouse
-						.compiledQuery(
-							tenant,
-							CH.compile(CH.operationTrafficHourlyQuery({}), params),
-							{ profile: "aggregation", context: "prReviewOperationCatalog" },
-						)
+						.compiledQuery(tenant, CH.compile(CH.operationTrafficHourlyQuery({}), params), {
+							profile: "aggregation",
+							context: "prReviewOperationCatalog",
+						})
 						.pipe(orEmpty([], "operations", orgId)),
 					warehouse
 						.compiledQuery(
@@ -140,16 +145,17 @@ export class PrReviewTelemetryService extends Context.Service<
 						)
 						.pipe(orEmpty([], "resource attribute keys", orgId)),
 					warehouse
-						.compiledQuery(
-							tenant,
-							CH.compile(CH.listMetricsQuery({ limit: 2_000 }), params),
-							{ profile: "aggregation", context: "prReviewMetricCatalog" },
-						)
+						.compiledQuery(tenant, CH.compile(CH.listMetricsQuery({ limit: 2_000 }), params), {
+							profile: "aggregation",
+							context: "prReviewMetricCatalog",
+						})
 						.pipe(orEmpty([], "metrics", orgId)),
 					warehouse
 						.compiledQuery(
 							tenant,
-							CH.compile(CH.serviceUsageQuery({}), params, { rowSchema: CH.serviceUsageRowSchema }),
+							CH.compile(CH.serviceUsageQuery({}), params, {
+								rowSchema: CH.serviceUsageRowSchema,
+							}),
 							{ profile: "aggregation", context: "prReviewServiceUsage" },
 						)
 						.pipe(orEmpty([], "ingest usage", orgId)),
@@ -164,15 +170,13 @@ export class PrReviewTelemetryService extends Context.Service<
 			)
 			const catalog: TelemetryCatalog = {
 				windowDays: TELEMETRY_WINDOW_DAYS,
-				operations: operations.map(
-					(row): CatalogOperation => ({
-						service: row.serviceName,
-						spanName: row.spanName,
-						count: row.spanCount,
-						errorCount: row.errorCount,
-						p95Ms: row.p95DurationMs,
-					}),
-				),
+				operations: operations.map((row): CatalogOperation => ({
+					service: row.serviceName,
+					spanName: row.spanName,
+					count: row.spanCount,
+					errorCount: row.errorCount,
+					p95Ms: row.p95DurationMs,
+				})),
 				attributeKeys,
 				metricNames: new Map(metrics.map((row) => [row.metricName, row.dataPointCount] as const)),
 				bytesPerLogRecord: logCount > 0 ? logBytes / logCount : DEFAULT_BYTES_PER_LOG_RECORD,
@@ -199,7 +203,11 @@ export class PrReviewTelemetryService extends Context.Service<
 					),
 					database.execute((db) =>
 						db
-							.select({ id: dashboards.id, name: dashboards.name, payloadJson: dashboards.payloadJson })
+							.select({
+								id: dashboards.id,
+								name: dashboards.name,
+								payloadJson: dashboards.payloadJson,
+							})
 							.from(dashboards)
 							.where(eq(dashboards.orgId, orgId))
 							.orderBy(desc(dashboards.updatedAt))
@@ -209,22 +217,23 @@ export class PrReviewTelemetryService extends Context.Service<
 				{ concurrency: "unbounded" },
 			)
 			return [
-				...rules.map(
-					(rule): ReferenceSource => ({
-						kind: "alert",
-						id: rule.id,
-						name: rule.name,
-						texts: textsOf([rule.querySpecJson, rule.queryBuilderDraftJson, rule.rawQuerySql, rule.groupBy]),
-					}),
-				),
-				...boards.map(
-					(board): ReferenceSource => ({
-						kind: "dashboard",
-						id: board.id,
-						name: board.name,
-						texts: textsOf(board.payloadJson),
-					}),
-				),
+				...rules.map((rule): ReferenceSource => ({
+					kind: "alert",
+					id: rule.id,
+					name: rule.name,
+					texts: textsOf([
+						rule.querySpecJson,
+						rule.queryBuilderDraftJson,
+						rule.rawQuerySql,
+						rule.groupBy,
+					]),
+				})),
+				...boards.map((board): ReferenceSource => ({
+					kind: "dashboard",
+					id: board.id,
+					name: board.name,
+					texts: textsOf(board.payloadJson),
+				})),
 			]
 		})
 
@@ -293,7 +302,12 @@ export class PrReviewTelemetryService extends Context.Service<
 				),
 			)
 
-		const deploymentsSince: PrReviewTelemetryServiceApi["deploymentsSince"] = (orgId, services, sinceMs, nowMs) =>
+		const deploymentsSince: PrReviewTelemetryServiceApi["deploymentsSince"] = (
+			orgId,
+			services,
+			sinceMs,
+			nowMs,
+		) =>
 			Effect.forEach(
 				services,
 				(serviceName) =>
@@ -313,16 +327,17 @@ export class PrReviewTelemetryService extends Context.Service<
 				Effect.map((perService) =>
 					perService
 						.flat()
-						.map(
-							(row): DeploymentVersion => ({
-								service: row.serviceName,
-								environment: row.environment,
-								commitSha: row.commitSha,
-								firstSeenAt: Date.parse(`${row.firstSeen.replace(" ", "T")}Z`),
-								spanCount: row.spanCount,
-							}),
+						.map((row): DeploymentVersion => ({
+							service: row.serviceName,
+							environment: row.environment,
+							commitSha: row.commitSha,
+							firstSeenAt: Date.parse(`${row.firstSeen.replace(" ", "T")}Z`),
+							spanCount: row.spanCount,
+						}))
+						.filter(
+							(version) =>
+								Number.isFinite(version.firstSeenAt) && version.firstSeenAt >= sinceMs,
 						)
-						.filter((version) => Number.isFinite(version.firstSeenAt) && version.firstSeenAt >= sinceMs)
 						.sort((a, b) => a.firstSeenAt - b.firstSeenAt),
 				),
 				Effect.withSpan("PrReviewTelemetryService.deploymentsSince"),
@@ -357,7 +372,12 @@ export class PrReviewTelemetryService extends Context.Service<
 					orEmpty([], "operation window", orgId),
 				)
 
-		const issueCountsIn: PrReviewTelemetryServiceApi["issueCountsIn"] = (orgId, fingerprintHashes, startMs, endMs) =>
+		const issueCountsIn: PrReviewTelemetryServiceApi["issueCountsIn"] = (
+			orgId,
+			fingerprintHashes,
+			startMs,
+			endMs,
+		) =>
 			fingerprintHashes.length === 0
 				? Effect.succeed(new Map())
 				: warehouse
@@ -371,12 +391,17 @@ export class PrReviewTelemetryService extends Context.Service<
 						)
 						.pipe(
 							Effect.map(
-								(rows) => new Map(rows.map((row) => [row.fingerprintHash, row.count] as const)),
+								(rows) =>
+									new Map(rows.map((row) => [row.fingerprintHash, row.count] as const)),
 							),
 							orEmpty(new Map<string, number>(), "issue counts", orgId),
 						)
 
-		const issuesFirstSeenSince: PrReviewTelemetryServiceApi["issuesFirstSeenSince"] = (orgId, services, sinceMs) =>
+		const issuesFirstSeenSince: PrReviewTelemetryServiceApi["issuesFirstSeenSince"] = (
+			orgId,
+			services,
+			sinceMs,
+		) =>
 			services.length === 0
 				? Effect.succeed([])
 				: database
@@ -415,10 +440,10 @@ export class PrReviewTelemetryService extends Context.Service<
 				(["span", "resource"] as const).map((scope) =>
 					warehouse.compiledQuery(
 						systemTenant(orgId),
-						CH.compile(
-							CH.attributeKeysQuery({ scope, limit: 2_000 }),
-							{ orgId, ...window(startMs, endMs) },
-						),
+						CH.compile(CH.attributeKeysQuery({ scope, limit: 2_000 }), {
+							orgId,
+							...window(startMs, endMs),
+						}),
 						{ profile: "aggregation", context: "prReviewAttributeKeysWindow" },
 					),
 				),

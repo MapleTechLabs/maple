@@ -44,5 +44,8 @@ export const referencesFor = (
 	const pattern = tokenPattern(name)
 	return sources
 		.filter((source) => source.texts.some((text) => text === name || pattern.test(text)))
-		.map((source) => new PrReviewTelemetryReference({ kind: source.kind, id: source.id, name: source.name }))
+		.map(
+			(source) =>
+				new PrReviewTelemetryReference({ kind: source.kind, id: source.id, name: source.name }),
+		)
 }

@@ -16,12 +16,16 @@ import {
 	PrReviewFinding,
 	PrReviewId,
 	PrReviewReport,
+	PrReviewContractBreak,
 	PrReviewRepositoryConfig,
+	PrReviewTelemetry,
+	PrReviewTelemetryReference,
 	SubmitPrReviewRequest,
 	VcsRepoUnavailableError,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { prReviewFindingEmbeddings, prReviewFindings } from "@maple/db"
+import { prReviewFindingEmbeddings, prReviewFindings, prReviews } from "@maple/db"
+import { eq } from "drizzle-orm"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -55,6 +59,10 @@ import {
 	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
+import {
+	PrReviewTelemetryService,
+	type PrReviewTelemetryServiceApi,
+} from "./telemetry/PrReviewTelemetryService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -105,6 +113,10 @@ const layerFor = (
 		readonly comments?: Array<string>
 		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
 		readonly checks?: Array<string>
+		/** Present: the review reads these telemetry facts at start. */
+		readonly telemetry?: PrReviewTelemetry
+		/** Files at the head, by path, for verifying a telemetry dismissal. */
+		readonly sourceFiles?: Readonly<Record<string, string>>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -121,7 +133,7 @@ const layerFor = (
 		fetchCommit: unused,
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
-		fetchPullRequestFiles: unused,
+		fetchPullRequestFiles: () => Effect.succeed([]),
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
 		resolveReviewThread: (_installation, _repo, input) =>
@@ -137,7 +149,12 @@ const layerFor = (
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
-		fetchSourceFile: unused,
+		fetchSourceFile: (_installation, _repo, path) =>
+			Effect.succeed(
+				Option.fromUndefinedOr(options.sourceFiles?.[path]).pipe(
+					Option.map((content) => ({ path, sha: "s", htmlUrl: "", size: content.length, content })),
+				),
+			),
 		writePullRequestSummaryComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				const next = input.body(commentsByMarker.get(input.marker))
@@ -210,6 +227,9 @@ const layerFor = (
 				options.embedder === undefined
 					? Layer.empty
 					: Layer.succeed(FindingEmbedder, options.embedder),
+				options.telemetry === undefined
+					? Layer.empty
+					: Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
 				OrganizationFeatureFlagsService.fixed({
 					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
 					prReview: options.rolledOut ?? true,
@@ -218,6 +238,37 @@ const layerFor = (
 		),
 	)
 }
+
+const telemetryReaderFake = (telemetry: PrReviewTelemetry): PrReviewTelemetryServiceApi => ({
+	analyze: () => Effect.succeed(telemetry),
+	deploymentsSince: () => Effect.succeed([]),
+	operationsIn: () => Effect.succeed([]),
+	issueCountsIn: () => Effect.succeed(new Map()),
+	issuesFirstSeenSince: () => Effect.succeed([]),
+	attributeKeysIn: () => Effect.succeed(new Set()),
+})
+
+const breakingTelemetry = new PrReviewTelemetry({
+	windowDays: 7,
+	services: ["api"],
+	contractBreaks: [
+		new PrReviewContractBreak({
+			kind: "attribute",
+			name: "payment.provider",
+			path: "src/pay.ts",
+			line: 12,
+			references: [
+				new PrReviewTelemetryReference({ kind: "alert", id: "rule-1", name: "Checkout by provider" }),
+			],
+			perDay: 1_000,
+		}),
+	],
+	hotFiles: [],
+	linkedIssues: [],
+	costNotes: [],
+	added: [],
+	removed: [],
+})
 
 const seed = (enabled: boolean) =>
 	Effect.gen(function* () {
@@ -1582,5 +1633,128 @@ describe("buildReviewKickoff", () => {
 		assert.include(text, "[cut at 30000 of 40000 characters")
 		assert.notInclude(text, '<rules path="AGENTS.md">')
 		assert.include(text, "Also binding, left out for length: AGENTS.md, .maple/review.md.")
+	})
+})
+
+describe("PrReviewService telemetry", () => {
+	it.effect(
+		"states production facts in the kickoff and fails the check on a break when the repository asks",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true)
+				const repo = yield* VcsRepository
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ blockOnContractBreaks: true }),
+				)
+				const reviews = yield* PrReviewService
+				const started = yield* reviews.onPullRequestEvent(orgId, job())
+				assert.include(
+					begun[0]!.text,
+					"`payment.provider` (attribute, ~1.0k/day) removed at src/pay.ts:12",
+				)
+				yield* reviews.submitReview(
+					orgId,
+					started.reviewId!,
+					new SubmitPrReviewRequest({ report: report([]) }),
+				)
+				const publication = published[0]!
+				assert.equal(publication.conclusion, "failure")
+				assert.include(publication.summaryComment.body, "This check fails")
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+				assert.deepStrictEqual(
+					stored.report?.findings.map((finding) => [finding.checkId, finding.severity]),
+					[["TEL-01", "critical"]],
+				)
+				assert.equal(stored.report?.telemetry?.contractBreaks.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun, published, telemetry: breakingTelemetry })))
+		},
+	)
+
+	it.effect(
+		"informs without failing by default, and drops a break the head proves is still emitted",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				yield* seed(true)
+				const reviews = yield* PrReviewService
+				const first = yield* reviews.onPullRequestEvent(orgId, job())
+				yield* reviews.submitReview(
+					orgId,
+					first.reviewId!,
+					new SubmitPrReviewRequest({ report: report([]) }),
+				)
+				assert.equal(published[0]!.conclusion, "neutral")
+
+				const second = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				yield* reviews.submitReview(
+					orgId,
+					second.reviewId!,
+					new SubmitPrReviewRequest({
+						report: report([]),
+						telemetryDismissals: [
+							// A comment is not proof; the second line is.
+							{ name: "payment.provider", path: "src/other.ts", line: 1 },
+							{ name: "payment.provider", path: "src/other.ts", line: 2 },
+						],
+					}),
+				)
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
+				assert.deepStrictEqual(stored.report?.telemetry?.contractBreaks[0]?.dismissed, {
+					path: "src/other.ts",
+					line: 2,
+				})
+				assert.deepStrictEqual(stored.report?.findings, [])
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, {
+						published,
+						telemetry: breakingTelemetry,
+						sourceFiles: {
+							"src/other.ts": '// "payment.provider"\nspan.setAttribute("payment.provider", p)',
+						},
+					}),
+				),
+			)
+		},
+	)
+
+	it.effect("schedules one look at production when a reviewed pull request merges", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			const merged = job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 })
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			const db = yield* Database
+			const rows = yield* db.execute((client) =>
+				client
+					.select({
+						status: prReviews.postMergeStatus,
+						after: prReviews.postMergeAfter,
+						sha: prReviews.mergeCommitSha,
+					})
+					.from(prReviews)
+					.where(eq(prReviews.id, started.reviewId!)),
+			)
+			assert.deepStrictEqual(rows, [
+				{ status: "waiting", after: new Date(1_000 + 15 * 60_000), sha: "ccc" },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
 	})
 })

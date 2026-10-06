@@ -85,7 +85,9 @@ export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined)
 }
 
 /** The facts the service files as findings itself: open contract breaks and costly additions. */
-export const telemetryFindings = (telemetry: PrReviewTelemetry | undefined): ReadonlyArray<PrReviewFinding> => {
+export const telemetryFindings = (
+	telemetry: PrReviewTelemetry | undefined,
+): ReadonlyArray<PrReviewFinding> => {
 	if (telemetry === undefined) return []
 	const breaks = openContractBreaks(telemetry).map(
 		(item) =>
@@ -178,7 +180,10 @@ export const withDismissals = (
 					const proof = verified.find((dismissal) => dismissal.name === item.name)
 					return proof === undefined || item.dismissed !== undefined
 						? item
-						: new PrReviewContractBreak({ ...item, dismissed: { path: proof.path, line: proof.line } })
+						: new PrReviewContractBreak({
+								...item,
+								dismissed: { path: proof.path, line: proof.line },
+							})
 				}),
 			})
 
@@ -258,8 +263,13 @@ export const renderTelemetryMarkdown = (
 		)
 	}
 	const changes = [
-		...telemetry.removed.map((item) => `- ➖ ${KIND_LABEL[item.kind]} \`${item.name}\`${item.perDay === undefined ? "" : ` (~${formatCount(item.perDay)}/day today)`} · \`${item.path}:${item.line}\``),
-		...telemetry.added.map((item) => `- ➕ ${KIND_LABEL[item.kind]} \`${item.name}\` · \`${item.path}:${item.line}\``),
+		...telemetry.removed.map(
+			(item) =>
+				`- ➖ ${KIND_LABEL[item.kind]} \`${item.name}\`${item.perDay === undefined ? "" : ` (~${formatCount(item.perDay)}/day today)`} · \`${item.path}:${item.line}\``,
+		),
+		...telemetry.added.map(
+			(item) => `- ➕ ${KIND_LABEL[item.kind]} \`${item.name}\` · \`${item.path}:${item.line}\``,
+		),
 	]
 	if (changes.length > 0) {
 		sections.push(
@@ -271,7 +281,8 @@ export const renderTelemetryMarkdown = (
 						"",
 						"Removed here but still emitted elsewhere at this commit:",
 						...dismissed.map(
-							(item) => `- \`${item.name}\` · \`${item.dismissed?.path}:${item.dismissed?.line}\``,
+							(item) =>
+								`- \`${item.name}\` · \`${item.dismissed?.path}:${item.dismissed?.line}\``,
 						),
 					]
 				: []),

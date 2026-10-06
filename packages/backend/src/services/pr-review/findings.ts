@@ -106,7 +106,8 @@ const restates = (
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
 	((finding.checkId?.startsWith("TEL-") === true && finding.title === tracked.title) ||
-		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES && similarTitles(finding.title, tracked.title)))
+		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
+			similarTitles(finding.title, tracked.title)))
 
 /**
  * New findings minus near-exact restatements of a finding still open or already dismissed, a

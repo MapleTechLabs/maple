@@ -36,6 +36,7 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	// agent, which the toolkit and the audit log both read off the tenant.
 	ErrorActorsService.layer,
 	InvestigationService.layer.pipe(Layer.provide(Env.layer)),
-	PrReviewService.layer.pipe(Layer.provide(Env.layer)),
-	PrReviewConversationService.layer.pipe(Layer.provide(Env.layer)),
+	// The review reads production telemetry through the warehouse, which caches at the edge.
+	PrReviewService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 )

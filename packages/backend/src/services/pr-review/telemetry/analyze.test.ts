@@ -114,7 +114,10 @@ describe("analyzeTelemetry", () => {
 			telemetry.contractBreaks.map((item) => [item.name, item.kind, item.line, item.perDay]),
 			[["payment.provider", "attribute", 2, 1_000]],
 		)
-		assert.deepStrictEqual(telemetry.contractBreaks[0]?.references.map((ref) => ref.id), ["rule-1"])
+		assert.deepStrictEqual(
+			telemetry.contractBreaks[0]?.references.map((ref) => ref.id),
+			["rule-1"],
+		)
 		assert.deepStrictEqual(
 			telemetry.added.map((item) => item.name),
 			[],

@@ -144,7 +144,8 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		for (const line of file.lines) {
 			if (line.kind !== "del") continue
 			for (const literal of literalsOf(line.text)) {
-				if (literal.templated || addedValues.has(literal.value) || seenRemoved.has(literal.value)) continue
+				if (literal.templated || addedValues.has(literal.value) || seenRemoved.has(literal.value))
+					continue
 				const known = kindOf(literal.value)
 				if (known === undefined) continue
 				seenRemoved.add(literal.value)
@@ -217,14 +218,24 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 			const nearby = nearbyText(file.lines, index)
 			for (const name of emittedNames(line.text, nearby)) {
 				if (name.templated) {
-					if (name.kind === "span") costNotes.push(templatedSpanNote(file.path, line.newLine, name.value))
+					if (name.kind === "span")
+						costNotes.push(templatedSpanNote(file.path, line.newLine, name.value))
 					continue
 				}
-				if (seenAdded.has(name.value) || removedValues.has(name.value) || kindOf(name.value) !== undefined)
+				if (
+					seenAdded.has(name.value) ||
+					removedValues.has(name.value) ||
+					kindOf(name.value) !== undefined
+				)
 					continue
 				seenAdded.add(name.value)
 				added.push(
-					new PrReviewTelemetryChange({ kind: name.kind, name: name.value, path: file.path, line: line.newLine }),
+					new PrReviewTelemetryChange({
+						kind: name.kind,
+						name: name.value,
+						path: file.path,
+						line: line.newLine,
+					}),
 				)
 			}
 			if (filePerDay > 0 && isLogCall(line.text)) {
@@ -278,13 +289,17 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 			.sort(
 				(a, b) =>
 					Number(b.references.some((ref) => ref.kind === "alert")) -
-						Number(a.references.some((ref) => ref.kind === "alert")) || (b.perDay ?? 0) - (a.perDay ?? 0),
+						Number(a.references.some((ref) => ref.kind === "alert")) ||
+					(b.perDay ?? 0) - (a.perDay ?? 0),
 			)
 			.slice(0, MAX_BREAKS),
 		hotFiles: hotFiles.slice(0, MAX_HOT_FILES),
 		linkedIssues,
 		costNotes: costNotes
-			.sort((a, b) => (b.gbPerMonth ?? Number.POSITIVE_INFINITY) - (a.gbPerMonth ?? Number.POSITIVE_INFINITY))
+			.sort(
+				(a, b) =>
+					(b.gbPerMonth ?? Number.POSITIVE_INFINITY) - (a.gbPerMonth ?? Number.POSITIVE_INFINITY),
+			)
 			.slice(0, MAX_COST_NOTES),
 		added: added.slice(0, MAX_CHANGES),
 		removed: removed.slice(0, MAX_CHANGES),
@@ -314,4 +329,8 @@ export const formatCount = (value: number): string =>
 			: String(Math.round(value))
 
 export const formatGb = (value: number): string =>
-	value >= 10 ? `${Math.round(value)} GB` : value >= 1 ? `${value.toFixed(1)} GB` : `${Math.round(value * 1000)} MB`
+	value >= 10
+		? `${Math.round(value)} GB`
+		: value >= 1
+			? `${value.toFixed(1)} GB`
+			: `${Math.round(value * 1000)} MB`

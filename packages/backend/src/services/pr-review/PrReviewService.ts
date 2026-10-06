@@ -59,7 +59,7 @@ import {
 	type PrReviewFindingRow,
 	type PrReviewRow,
 } from "@maple/db"
-import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -79,6 +79,7 @@ import {
 } from "./feedback"
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource } from "./telemetry/diff"
+import { POST_MERGE_FIRST_LOOK_MS } from "./telemetry/post-merge"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	fixedContractBreaks,
@@ -231,6 +232,8 @@ const rowToReview = (row: PrReviewRow): PrReview =>
 		finishedAt: dateToMs(row.finishedAt),
 		createdAt: dateToMs(row.createdAt),
 		updatedAt: dateToMs(row.updatedAt),
+		postMergeStatus: row.postMergeStatus ?? null,
+		postMerge: row.postMergeJson ?? null,
 	})
 
 const DAY_MS = 86_400_000
@@ -909,7 +912,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			// Present where the agent runs; without it the feedback filter is off.
 			const embedder = Option.getOrUndefined(yield* Effect.serviceOption(FindingEmbedder))
 			// Present where a warehouse is wired; without it reviews read the diff alone.
-			const telemetryReader = Option.getOrUndefined(yield* Effect.serviceOption(PrReviewTelemetryService))
+			const telemetryReader = Option.getOrUndefined(
+				yield* Effect.serviceOption(PrReviewTelemetryService),
+			)
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -1152,7 +1157,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Effect.timeout("20 seconds"),
 					Effect.withSpan("PrReviewService.telemetryFor"),
 					Effect.catchCause((cause) =>
-						Effect.logWarning("[PrReview] could not read production telemetry; reviewing the diff alone").pipe(
+						Effect.logWarning(
+							"[PrReview] could not read production telemetry; reviewing the diff alone",
+						).pipe(
 							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
 							Effect.as(undefined),
 						),
@@ -1649,6 +1656,60 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return { reviewId, outcome: "started" as const }
 			})
 
+			/**
+			 * A merged pull request's last review with telemetry facts gets a look at production once
+			 * the merge ships (`PrReviewPostMergeService`). Once per pull request: a redelivered event
+			 * finds the row already scheduled.
+			 */
+			const schedulePostMerge = (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				job: PullRequestEventJob,
+				nowMs: number,
+			) =>
+				Effect.gen(function* () {
+					const config = yield* repositories.getEffectivePrReviewConfig(orgId, repositoryId)
+					if (config.postMergeCheck === false) return
+					const latest = yield* database.execute((db) =>
+						db
+							.select({ id: prReviews.id, postMergeStatus: prReviews.postMergeStatus })
+							.from(prReviews)
+							.where(
+								and(
+									eq(prReviews.orgId, orgId),
+									eq(prReviews.repositoryId, repositoryId),
+									eq(prReviews.number, job.number),
+									eq(prReviews.status, "completed"),
+									isNotNull(prReviews.telemetryJson),
+								),
+							)
+							.orderBy(desc(prReviews.finishedAt))
+							.limit(1),
+					)
+					const row = latest[0]
+					if (row === undefined || row.postMergeStatus !== null) return
+					yield* database.execute((db) =>
+						db
+							.update(prReviews)
+							.set({
+								mergeCommitSha: job.mergeCommitSha,
+								postMergeStatus: "waiting",
+								postMergeAfter: msToDate(
+									(job.mergedAtMs ?? nowMs) + POST_MERGE_FIRST_LOOK_MS,
+								),
+								updatedAt: msToDate(nowMs),
+							})
+							.where(and(eq(prReviews.id, row.id), isNull(prReviews.postMergeStatus))),
+					)
+					yield* Effect.annotateCurrentSpan("maple.pr_review.post_merge_scheduled", row.id)
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not schedule the post-merge look").pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+						),
+					),
+				)
+
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
@@ -1688,6 +1749,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										),
 								)
 								.pipe(Effect.mapError(toPersistence))
+							yield* schedulePostMerge(orgId, repositoryId, job, nowMs)
 						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
@@ -1970,7 +2032,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				orgId: OrgId,
 				reviewId: PrReviewId,
 				headSha: GitCommitSha,
-				dismissals: ReadonlyArray<{ readonly name: string; readonly path: string; readonly line: number }>,
+				dismissals: ReadonlyArray<{
+					readonly name: string
+					readonly path: string
+					readonly line: number
+				}>,
 				repository: Option.Option<VcsRepo>,
 				installation: Option.Option<VcsInstallation>,
 			) {
@@ -1985,13 +2051,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.pipe(Effect.mapError(toPersistence))
 				const stored = rows[0]?.telemetryJson
 				if (stored === null || stored === undefined) return undefined
-				const telemetry = yield* Schema.decodeUnknownEffect(PrReviewTelemetry)(stored).pipe(Effect.option)
+				const telemetry = yield* Schema.decodeUnknownEffect(PrReviewTelemetry)(stored).pipe(
+					Effect.option,
+				)
 				if (Option.isNone(telemetry)) return undefined
 				const open = new Set(openContractBreaks(telemetry.value).map((item) => item.name))
-				const candidates = dismissals.filter((item) => open.has(item.name) && isRuntimeSource(item.path))
+				const candidates = dismissals.filter(
+					(item) => open.has(item.name) && isRuntimeSource(item.path),
+				)
 				if (candidates.length === 0 || Option.isNone(repository) || Option.isNone(installation))
 					return telemetry.value
-				const target = yield* providerFor(orgId, repository.value).pipe(Effect.option, Effect.map(Option.flatten))
+				const target = yield* providerFor(orgId, repository.value).pipe(
+					Effect.option,
+					Effect.map(Option.flatten),
+				)
 				if (Option.isNone(target)) return telemetry.value
 				const { provider, ref } = target.value
 				const verified = yield* Effect.forEach(
@@ -1999,7 +2072,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					(item) =>
 						provider.fetchSourceFile(installation.value, ref, item.path, headSha).pipe(
 							Effect.map((file) =>
-								Option.isSome(file) && lineStillEmits(file.value.content, item.line, item.name)
+								Option.isSome(file) &&
+								lineStillEmits(file.value.content, item.line, item.name)
 									? [item]
 									: [],
 							),
@@ -2057,7 +2131,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const stillOpen = open.filter((finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
-				const allowed = [...weighByTraffic(request.report.findings, telemetry), ...telemetryFindings(telemetry)].filter(
+				const allowed = [
+					...weighByTraffic(request.report.findings, telemetry),
+					...telemetryFindings(telemetry),
+				].filter(
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
