@@ -1,3 +1,4 @@
+import { countLabel } from "../../lib/format"
 import type { SpanNode } from "../../lib/types"
 import {
 	Select,
@@ -38,7 +39,7 @@ export function ColorByPicker({ value, onChange, rootSpans }: ColorByPickerProps
 				if (next) onChange(next)
 			}}
 		>
-			<SelectTrigger size="sm" className="h-5 min-w-0 text-[10px] gap-1 px-2 py-0 rounded-md">
+			<SelectTrigger size="sm" className="h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md">
 				<span className="text-muted-foreground">Color:</span>
 				<SelectValue placeholder="Service">{colorByLabel(value)}</SelectValue>
 			</SelectTrigger>
@@ -62,7 +63,7 @@ export function ColorByPicker({ value, onChange, rootSpans }: ColorByPickerProps
 									<SelectItem
 										key={colorByFieldId(field)}
 										value={colorByFieldId(field)}
-										title={`${a.count} span${a.count === 1 ? "" : "s"}`}
+										title={countLabel(a.count, "span")}
 									>
 										<span className="font-mono">{a.key}</span>
 									</SelectItem>
@@ -82,7 +83,7 @@ export function ColorByPicker({ value, onChange, rootSpans }: ColorByPickerProps
 									<SelectItem
 										key={colorByFieldId(field)}
 										value={colorByFieldId(field)}
-										title={`${a.count} span${a.count === 1 ? "" : "s"}`}
+										title={countLabel(a.count, "span")}
 									>
 										<span className="text-muted-foreground mr-1">R:</span>
 										<span className="font-mono">{a.key}</span>

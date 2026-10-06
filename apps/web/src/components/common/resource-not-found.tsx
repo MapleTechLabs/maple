@@ -1,6 +1,7 @@
 import type React from "react"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { cn } from "@maple/ui/lib/utils"
 import { CircleWarningIcon } from "@/components/icons"
 
 interface ResourceNotFoundProps {
@@ -22,10 +23,11 @@ export function ResourceNotFound({
 	backLink,
 	backLabel,
 	icon,
-	className = "py-12",
+	className,
 }: ResourceNotFoundProps): React.ReactElement {
 	return (
-		<Empty className={className}>
+		// Inside a page shell the body already centres it; `Empty`'s tall `md:py-20` only pushes it down.
+		<Empty className={cn("md:py-12", className)}>
 			<EmptyHeader>
 				<EmptyMedia variant="icon">{icon ?? <CircleWarningIcon size={18} />}</EmptyMedia>
 				<EmptyTitle>{title}</EmptyTitle>

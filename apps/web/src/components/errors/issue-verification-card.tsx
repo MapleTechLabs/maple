@@ -2,10 +2,13 @@ import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueVerificationDocument, WorkflowState } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { formatRatePerHour } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+
+import { IN_FLIGHT_SOFT } from "./workflow-badge"
 
 import { MagnifierCheckIcon } from "@/components/icons"
 
@@ -20,8 +23,8 @@ import { MagnifierCheckIcon } from "@/components/icons"
  */
 
 const STATUS_TONE: Record<ErrorIssueVerificationDocument["status"], string> = {
-	waiting: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-	running: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+	waiting: IN_FLIGHT_SOFT,
+	running: IN_FLIGHT_SOFT,
 	verified: TONE_SOFT.ok,
 	not_fixed: TONE_SOFT.crit,
 	inconclusive: TONE_SOFT.warn,
@@ -87,7 +90,7 @@ export function IssueVerificationCard({
 		verification.status === "inconclusive"
 
 	return (
-		<section className="rounded-xl border bg-card px-4 py-3">
+		<Panel className="px-4 py-3">
 			<div className="flex items-center justify-between gap-2">
 				<div className="flex items-center gap-2">
 					<MagnifierCheckIcon className="size-4 text-muted-foreground" />
@@ -137,6 +140,6 @@ export function IssueVerificationCard({
 					First check was inconclusive; watching for longer.
 				</p>
 			) : null}
-		</section>
+		</Panel>
 	)
 }

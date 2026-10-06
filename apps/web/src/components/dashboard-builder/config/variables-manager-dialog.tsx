@@ -1,15 +1,9 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useState } from "react"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Input } from "@maple/ui/components/ui/input"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@maple/ui/components/ui/item"
@@ -111,32 +105,37 @@ export function VariablesManagerDialog({
 	variables: DashboardVariable[]
 	onSave: (variables: DashboardVariable[]) => void
 }) {
+	// Remounted on every opening so each session starts from the saved state.
+	const [session, setSession] = useState(0)
+	const [wasOpen, setWasOpen] = useState(open)
+	if (open !== wasOpen) {
+		setWasOpen(open)
+		if (open) setSession((n) => n + 1)
+	}
+
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-xl">
-				{/* Mounted only while open so each session starts from the saved state. */}
-				{open && (
-					<VariablesEditor
-						initial={variables}
-						onCancel={() => onOpenChange(false)}
-						onSave={(next) => {
-							onSave(next)
-							onOpenChange(false)
-						}}
-					/>
-				)}
-			</DialogContent>
-		</Dialog>
+		<VariablesEditor
+			key={session}
+			open={open}
+			onOpenChange={onOpenChange}
+			initial={variables}
+			onSave={(next) => {
+				onSave(next)
+				onOpenChange(false)
+			}}
+		/>
 	)
 }
 
 function VariablesEditor({
+	open,
+	onOpenChange,
 	initial,
-	onCancel,
 	onSave,
 }: {
+	open: boolean
+	onOpenChange: (open: boolean) => void
 	initial: DashboardVariable[]
-	onCancel: () => void
 	onSave: (variables: DashboardVariable[]) => void
 }) {
 	// With no variables yet, land the user directly in "create" — one blank
@@ -186,116 +185,106 @@ function VariablesEditor({
 	}
 
 	return (
-		<>
-			<DialogHeader>
-				<DialogTitle>Dashboard variables</DialogTitle>
-				<DialogDescription>
+		<FormDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			className="sm:max-w-xl"
+			panelClassName="flex flex-col gap-3 space-y-0"
+			title="Dashboard variables"
+			description={
+				<>
 					Reference variables as <InlineCode>$name</InlineCode> in widget filters and raw SQL.
 					Selectors appear in the dashboard toolbar.
-				</DialogDescription>
-			</DialogHeader>
-			<DialogPanel className="flex flex-col gap-3">
-				{startedEmpty && (
-					<div className="rounded-md border border-dashed border-border px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">
-						<p>
-							A variable adds a selector to the toolbar; widgets that reference it re-query when
-							the selection changes.
-						</p>
-						<ul className="mt-1.5 flex flex-col gap-0.5">
-							<li>
-								<span className="text-foreground">Query</span> — values from your telemetry
-								(services, environments, attribute values).
-							</li>
-							<li>
-								<span className="text-foreground">Custom</span> — a fixed list you define.
-							</li>
-							<li>
-								<span className="text-foreground">Textbox</span> — free text, e.g. a search
-								needle.
-							</li>
-						</ul>
-					</div>
-				)}
-				{drafts.map((draft, index) => (
-					<div key={index} className="rounded-md border border-border">
-						<Item size="xs" variant="flush" className="px-3">
-							<ItemContent>
-								<ItemTitle className="block truncate font-mono text-foreground">
-									${draft.name || "…"}
-									<span className="ml-2 font-sans font-normal text-muted-foreground">
-										{TYPE_LABELS[draft.type]}
-									</span>
-								</ItemTitle>
-								<ItemDescription className="block truncate text-[11px]">
-									{errors[index] !== null && editingIndex !== index ? (
-										<span className="text-destructive">{errors[index]}</span>
-									) : (
-										sourceSummary(draft)
-									)}
-								</ItemDescription>
-							</ItemContent>
-							<ItemActions>
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									aria-label="Move up"
-									disabled={index === 0}
-									onClick={() => move(index, -1)}
-								>
-									<ArrowUpIcon size={13} />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									aria-label="Move down"
-									disabled={index === drafts.length - 1}
-									onClick={() => move(index, 1)}
-								>
-									<ArrowDownIcon size={13} />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									aria-label="Edit variable"
-									onClick={() => setEditingIndex(editingIndex === index ? null : index)}
-								>
-									<PencilIcon size={13} />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									aria-label="Delete variable"
-									onClick={() => remove(index)}
-								>
-									<TrashIcon size={13} />
-								</Button>
-							</ItemActions>
-						</Item>
-						{editingIndex === index && (
-							<div className="border-t border-border px-3 py-3">
-								<VariableForm
-									variable={draft}
-									error={errors[index] ?? null}
-									onChange={(next) => updateDraft(index, next)}
-								/>
-							</div>
-						)}
-					</div>
-				))}
-				<Button variant="outline" size="sm" className="self-start" onClick={add}>
-					<PlusIcon size={14} data-icon="inline-start" />
-					Add variable
-				</Button>
-			</DialogPanel>
-			<DialogFooter>
-				<Button type="button" variant="outline" size="sm" onClick={onCancel}>
-					Cancel
-				</Button>
-				<Button type="button" size="sm" onClick={handleSave} disabled={hasErrors}>
-					Save variables
-				</Button>
-			</DialogFooter>
-		</>
+				</>
+			}
+			submitLabel="Save variables"
+			submitDisabled={hasErrors}
+			onSubmit={handleSave}
+		>
+			{startedEmpty && (
+				<div className="rounded-md border border-dashed border-border px-3 py-3 text-2xs leading-relaxed text-muted-foreground">
+					<p>
+						A variable adds a selector to the toolbar; widgets that reference it re-query when the
+						selection changes.
+					</p>
+					<ul className="mt-1.5 flex flex-col gap-0.5">
+						<li>
+							<span className="text-foreground">Query</span> — values from your telemetry
+							(services, environments, attribute values).
+						</li>
+						<li>
+							<span className="text-foreground">Custom</span> — a fixed list you define.
+						</li>
+						<li>
+							<span className="text-foreground">Textbox</span> — free text, e.g. a search
+							needle.
+						</li>
+					</ul>
+				</div>
+			)}
+			{drafts.map((draft, index) => (
+				<div key={index} className="rounded-md border border-border">
+					<Item size="xs" variant="flush" className="px-3">
+						<ItemContent>
+							<ItemTitle className="block truncate font-mono text-foreground">
+								${draft.name || "…"}
+								<span className="ml-2 font-sans font-normal text-muted-foreground">
+									{TYPE_LABELS[draft.type]}
+								</span>
+							</ItemTitle>
+							<ItemDescription className="block truncate text-2xs">
+								{errors[index] !== null && editingIndex !== index ? (
+									<span className={TONE_TEXT.crit}>{errors[index]}</span>
+								) : (
+									sourceSummary(draft)
+								)}
+							</ItemDescription>
+						</ItemContent>
+						<ItemActions>
+							<IconButton
+								size="icon-xs"
+								label="Move up"
+								disabled={index === 0}
+								onClick={() => move(index, -1)}
+							>
+								<ArrowUpIcon size={13} />
+							</IconButton>
+							<IconButton
+								size="icon-xs"
+								label="Move down"
+								disabled={index === drafts.length - 1}
+								onClick={() => move(index, 1)}
+							>
+								<ArrowDownIcon size={13} />
+							</IconButton>
+							<IconButton
+								size="icon-xs"
+								label="Edit variable"
+								onClick={() => setEditingIndex(editingIndex === index ? null : index)}
+							>
+								<PencilIcon size={13} />
+							</IconButton>
+							<IconButton size="icon-xs" label="Delete variable" onClick={() => remove(index)}>
+								<TrashIcon size={13} />
+							</IconButton>
+						</ItemActions>
+					</Item>
+					{editingIndex === index && (
+						<div className="border-t border-border px-3 py-3">
+							<VariableForm
+								variable={draft}
+								error={errors[index] ?? null}
+								onChange={(next) => updateDraft(index, next)}
+							/>
+						</div>
+					)}
+				</div>
+			))}
+			<Button variant="outline" size="sm" className="self-start" onClick={add}>
+				<PlusIcon size={14} data-icon="inline-start" />
+				Add variable
+			</Button>
+		</FormDialog>
 	)
 }
 
@@ -322,12 +311,12 @@ function VariableForm({
 						onChange={(event) => onChange({ ...variable, name: event.target.value })}
 					/>
 					{error !== null ? (
-						<FieldError match className="text-[11px] text-destructive">
+						<FieldError match className="text-2xs">
 							{error}
 						</FieldError>
 					) : (
 						variable.name !== "" && (
-							<FieldDescription className="text-[11px]">
+							<FieldDescription className="text-2xs">
 								Reference it as <InlineCode>${variable.name}</InlineCode> in widget filters
 								and SQL.
 							</FieldDescription>
@@ -362,7 +351,7 @@ function VariableForm({
 							}
 						}}
 					>
-						<SelectTrigger className="h-8 text-xs">
+						<SelectTrigger size="sm">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -478,7 +467,7 @@ function QuerySourceFields({
 						}
 					}}
 				>
-					<SelectTrigger className="h-8 text-xs">
+					<SelectTrigger size="sm">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>

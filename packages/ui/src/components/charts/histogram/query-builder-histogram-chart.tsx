@@ -3,7 +3,7 @@ import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import * as React from "react"
 
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "../../../lib/format"
 import { cn } from "../../../lib/utils"
 import {
 	PlotFrame,
@@ -15,13 +15,13 @@ import {
 	minBarLength,
 	niceLinearDomain,
 	usePlotColors,
-	type PlotColorToken,
+	type PlotColorSource,
 } from "../../plot"
 import type { QueryBuilderHistogramChartProps } from "../_shared/chart-types"
 
 const HISTOGRAM_TOKENS = {
-	bar: ["--chart-1", "#6366f1"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	bar: "--chart-1",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Stable identity for the no-data case: `data ?? []` would allocate a fresh array
@@ -212,7 +212,7 @@ function CountTooltipBody({ heading, count, color }: { heading: string; count: n
 				{heading}
 			</div>
 			<div className="flex w-full items-center gap-2">
-				<span className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: color }} />
+				<span className="size-2.5 shrink-0 rounded-xs" style={{ backgroundColor: color }} />
 				<div className="flex flex-1 items-center justify-between gap-3 leading-none">
 					<span className="text-muted-foreground">Count</span>
 					<span className="font-mono font-semibold text-foreground tabular-nums">
@@ -460,7 +460,10 @@ export function QueryBuilderHistogramChart({
 
 	const prebucketed = React.useMemo<PrebucketedBin[] | null>(() => {
 		if (!isPrebucketed(source)) return null
-		return source.map((row) => ({ name: String(row.name ?? "—"), value: asFiniteNumber(row.value) }))
+		return source.map((row) => ({
+			name: String(row.name ?? EMPTY_VALUE),
+			value: asFiniteNumber(row.value),
+		}))
 	}, [source])
 
 	const numeric = React.useMemo<NumericBin[]>(() => {
@@ -517,7 +520,7 @@ export function QueryBuilderHistogramChart({
 
 	return (
 		<div className={cn("relative grid h-full w-full place-items-center", className)}>
-			<span className="text-[11px] text-muted-foreground">No data</span>
+			<span className="text-2xs text-muted-foreground">No data</span>
 		</div>
 	)
 }

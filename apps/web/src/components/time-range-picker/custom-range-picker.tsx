@@ -7,6 +7,7 @@ import type { DateRange } from "react-day-picker"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 interface CustomRangePickerProps {
 	startTime?: string
@@ -108,24 +109,28 @@ export function CustomRangePicker({ startTime, endTime, onApply, onCancel }: Cus
 			</div>
 
 			<div className="flex gap-4 items-end">
-				<div className="flex-1 space-y-1">
-					<label className="text-xs text-muted-foreground">Start time</label>
+				<Field className="flex-1 items-stretch gap-1">
+					<FieldLabel className="font-normal text-xs text-muted-foreground sm:text-xs">
+						Start time
+					</FieldLabel>
 					<Input
 						type="time"
 						value={startTimeInput}
 						onChange={(e) => setStartTimeInput(e.target.value)}
 						className="font-mono"
 					/>
-				</div>
-				<div className="flex-1 space-y-1">
-					<label className="text-xs text-muted-foreground">End time</label>
+				</Field>
+				<Field className="flex-1 items-stretch gap-1">
+					<FieldLabel className="font-normal text-xs text-muted-foreground sm:text-xs">
+						End time
+					</FieldLabel>
 					<Input
 						type="time"
 						value={endTimeInput}
 						onChange={(e) => setEndTimeInput(e.target.value)}
 						className="font-mono"
 					/>
-				</div>
+				</Field>
 			</div>
 
 			<div className="flex justify-end gap-2">

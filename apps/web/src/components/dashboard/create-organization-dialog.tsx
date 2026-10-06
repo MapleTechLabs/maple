@@ -3,7 +3,7 @@ import { useOrganizationList } from "@clerk/clerk-react"
 import { Cause, Exit, Option } from "effect"
 import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 
 import { CreateOrganizationRequest } from "@maple/domain/http"
@@ -97,7 +97,7 @@ export function CreateOrganizationDialog({
 					<RadioGroup
 						value={region}
 						onValueChange={(value) => setRegion(parseMapleRegion(value))}
-						className="gap-0 divide-y divide-border overflow-hidden rounded-lg border"
+						className="gap-0 divide-y divide-border overflow-hidden rounded-md border"
 					>
 						{MapleRegionSchema.literals.map((option) => (
 							<label
@@ -122,7 +122,11 @@ export function CreateOrganizationDialog({
 					</FieldDescription>
 				</Field>
 			)}
-			{errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+			{errorMessage && (
+				<FieldError match className="text-sm">
+					{errorMessage}
+				</FieldError>
+			)}
 		</FormDialog>
 	)
 }

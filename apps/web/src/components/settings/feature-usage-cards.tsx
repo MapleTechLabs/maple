@@ -1,6 +1,8 @@
 import { Badge } from "@maple/ui/components/ui/badge"
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatCurrency } from "@maple/domain/format"
@@ -17,20 +19,20 @@ import { formatFeatureUsage } from "./format-feature-usage"
  * One card per billable signal: how much was ingested, how much of it was
  * included, what the excess costs, and whether a cap is holding it back.
  *
- * These sit above the spend chart on purpose — they are the five things the
+ * These sit above the spend chart on purpose: they are the five things the
  * customer is billed for, and the chart is only their sum over time.
  */
 
 export function FeatureUsageCardsSkeleton() {
 	return (
-		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 			{Array.from({ length: SPEND_FEATURES.length }).map((_, i) => (
-				<div key={i} className="border border-border/60 bg-card/40 p-4">
+				<Panel key={i} padded>
 					<Skeleton className="h-3 w-20" />
 					<Skeleton className="mt-3 h-6 w-32" />
 					<Skeleton className="mt-3 h-1 w-full" />
 					<Skeleton className="mt-4 h-3 w-28" />
-				</div>
+				</Panel>
 			))}
 		</div>
 	)
@@ -69,7 +71,7 @@ function FeatureCard({
 		// nowrap: "Browser Sessions" is allowed to wrap to two lines (truncating it
 		// to "Browse…" is worse), the slot just reserves the room whether it wraps
 		// or not — so a one-word card doesn't pull its meter up.
-		<div className="flex h-full flex-col border border-border/60 bg-card/40 p-4">
+		<Panel padded className="h-full">
 			<div className="flex h-9 items-start justify-between gap-2">
 				<div className="flex min-w-0 items-start gap-2">
 					<span
@@ -111,7 +113,7 @@ function FeatureCard({
 				<span className="font-mono text-xl leading-6 tabular-nums">
 					{formatFeatureUsage(feature.featureId, feature.used)}
 				</span>
-				<span className="truncate text-[11px] leading-4 text-muted-foreground">
+				<span className="truncate text-2xs leading-4 text-muted-foreground">
 					{feature.unlimited
 						? "unlimited"
 						: included === null
@@ -129,11 +131,15 @@ function FeatureCard({
 				total={100}
 				segments={[
 					{ key: "included", value: includedFraction, color },
-					{ key: "overage", value: hasOverage ? 100 - includedFraction : 0, className: "bg-primary" },
+					{
+						key: "overage",
+						value: hasOverage ? 100 - includedFraction : 0,
+						className: "bg-primary",
+					},
 				]}
 			/>
 
-			<div className="mt-auto flex items-baseline justify-between gap-2 pt-4 text-[11px]">
+			<div className="mt-auto flex items-baseline justify-between gap-2 pt-4 text-2xs">
 				<span className="text-muted-foreground">
 					{hasOverage ? (
 						<>
@@ -149,10 +155,10 @@ function FeatureCard({
 					)}
 				</span>
 				<span className="font-mono tabular-nums text-muted-foreground/70">
-					{hardCapped ? "hard cap" : (formatRateLabel(feature) ?? "—")}
+					{hardCapped ? "hard cap" : (formatRateLabel(feature) ?? EMPTY_VALUE)}
 				</span>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -164,7 +170,7 @@ export function FeatureUsageCards({
 	overageCaps: Readonly<Record<string, number | null>>
 }) {
 	return (
-		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 			{model.features.map((feature) => (
 				<FeatureCard
 					key={feature.featureId}

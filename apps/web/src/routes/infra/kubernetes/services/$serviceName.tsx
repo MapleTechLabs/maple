@@ -12,7 +12,9 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatPercent } from "@maple/ui/lib/format"
+import { ChartLoading } from "@maple/ui/components/charts"
+import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { SectionHeading } from "@/components/common/section-heading"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -323,7 +325,7 @@ function LensBody({
 		(Result.isSuccess(cpuResult) && cpuResult.waiting)
 
 	const workloadMeta = workload ? (
-		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-[11px] text-muted-foreground">
+		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground">
 			<Link
 				to="/infra/kubernetes/workloads/$kind/$workloadName"
 				params={{ kind: workload.workloadKind, workloadName: workload.workloadName }}
@@ -357,7 +359,7 @@ function LensBody({
 				<PageHero
 					title={
 						evidenceMissing
-							? `${serviceName} — evidence incomplete.`
+							? `${serviceName}: evidence incomplete.`
 							: lensHeadline(verdict, serviceName)
 					}
 					description={
@@ -387,37 +389,29 @@ function LensBody({
 			) : (
 				<>
 					<section className="space-y-2.5">
-						<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<h2 className="text-[13px] font-medium text-foreground">
-								Service signal over infrastructure signal
-							</h2>
-							<span className="font-mono text-[11px] text-muted-foreground">
-								one cursor, one time axis
-							</span>
-						</div>
+						<SectionHeading
+							title="Service signal over infrastructure signal"
+							hint="one cursor, one time axis"
+						/>
 						{loading ? (
-							<Skeleton className="h-[360px] w-full rounded-lg" />
+							<ChartLoading variant="line" height={360} />
 						) : (
 							<CorrelationStrips series={strips} xDomain={xDomain} waiting={waiting} />
 						)}
 					</section>
 
 					<section className="space-y-2.5">
-						<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-							<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-								<h2 className="text-[13px] font-medium text-foreground">
-									The pods behind this service
-								</h2>
-								<span className="font-mono text-[11px] text-muted-foreground">
-									worst first, by peak saturation
+						<SectionHeading
+							title="The pods behind this service"
+							hint="worst first, by peak saturation"
+							actions={
+								<span className="font-mono text-2xs tabular-nums text-muted-foreground">
+									{totalPods > pods.length
+										? `Top ${pods.length} of ${formatNumber(totalPods)}`
+										: countLabel(totalPods, "pod")}
 								</span>
-							</div>
-							<span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-								{totalPods > pods.length
-									? `Top ${pods.length} of ${totalPods.toLocaleString()}`
-									: `${totalPods.toLocaleString()} ${totalPods === 1 ? "pod" : "pods"}`}
-							</span>
-						</div>
+							}
+						/>
 						{Result.builder(podsResult)
 							.onInitial(() => <PodTableLoading />)
 							.onError((error) => <ErrorState error={error} title="Failed to load pods" />)
@@ -476,19 +470,17 @@ function PodDistribution({
 
 	return (
 		<section className={cn("space-y-2.5", refreshingClass(waiting))} aria-busy={waiting || undefined}>
-			<h2 className="text-[13px] font-medium text-foreground">Spread across nodes</h2>
+			<SectionHeading title="Spread across nodes" />
 			<div className="flex flex-wrap gap-2">
 				{byNode.map(([node, { count, worst }]) => (
 					<Link
 						key={node}
 						to="/infra/kubernetes/nodes/$nodeName"
 						params={{ nodeName: node }}
-						className="flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] transition-colors hover:bg-accent/50"
+						className="flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs transition-colors hover:bg-accent/50"
 					>
 						<span className="text-foreground">{node}</span>
-						<span className="text-muted-foreground">
-							{count} {count === 1 ? "pod" : "pods"}
-						</span>
+						<span className="text-muted-foreground">{countLabel(count, "pod")}</span>
 						<span className="tabular-nums text-muted-foreground">
 							worst {formatPercent(worst)}
 						</span>

@@ -10,6 +10,7 @@ import {
 	inferRangeMs,
 	parseBucketMs,
 } from "../../lib/format"
+import { DEFAULT_TOKEN_FALLBACK } from "../../lib/colors"
 import { resolveSeriesColors } from "../../lib/semantic-series-colors"
 import { cn } from "../../lib/utils"
 import type { ChartLegendMode } from "../charts/_shared/chart-types"
@@ -67,7 +68,7 @@ const EMPTY_ROWS: ReadonlyArray<Record<string, unknown>> = []
 export const HARD_SERIES_LIMIT = 60
 
 /** Used when a series colour token resolves to nothing. */
-export const SERIES_FALLBACK_COLOR = "#6366f1"
+export const SERIES_FALLBACK_COLOR = DEFAULT_TOKEN_FALLBACK
 
 /** One normalised row: the bucket, its parsed date, and every series value. */
 export interface TimeseriesRow extends Record<string, unknown> {

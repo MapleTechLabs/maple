@@ -1,4 +1,5 @@
-import { AlertStatCell, AlertStatShell } from "@/components/alerts/alert-stat-card"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
+import type { Tone } from "@maple/ui/lib/tone"
 
 /** Health buckets a rule can land in — mirrors the `status` search param. */
 export type AlertsStatusFilter = "firing" | "attention" | "healthy" | "disabled"
@@ -15,45 +16,17 @@ const cards: Array<{
 	label: string
 	hint: string
 	/** Value tone when the bucket is non-empty. */
-	tone: string
-	activeClass: string
+	tone: Tone
 }> = [
-	{
-		key: "firing",
-		label: "Firing",
-		hint: "open incidents",
-		tone: "text-severity-error",
-		activeClass: "ring-severity-error/50 bg-severity-error/[0.04]",
-	},
-	{
-		key: "attention",
-		label: "Needs attention",
-		hint: "errors · stale · unrouted",
-		tone: "text-severity-warn",
-		activeClass: "ring-severity-warn/50 bg-severity-warn/[0.05]",
-	},
-	{
-		key: "healthy",
-		label: "Healthy",
-		hint: "evaluating normally",
-		tone: "text-severity-info",
-		activeClass: "ring-severity-info/50 bg-severity-info/[0.05]",
-	},
-	{
-		key: "disabled",
-		label: "Disabled",
-		hint: "not evaluating",
-		tone: "text-muted-foreground",
-		activeClass: "ring-border bg-muted/40",
-	},
+	{ key: "firing", label: "Firing", hint: "open incidents", tone: "crit" },
+	{ key: "attention", label: "Needs attention", hint: "errors · stale · unrouted", tone: "warn" },
+	{ key: "healthy", label: "Healthy", hint: "evaluating normally", tone: "info" },
+	{ key: "disabled", label: "Disabled", hint: "not evaluating", tone: "neutral" },
 ]
 
 /**
- * Row of four clickable health buckets that leads the alerts overview. Follows
- * the flat divider-separated strip treatment from `alert-stat-card.tsx` (a
- * `bg-border` backplate showing through 1px gaps) rather than a card grid; the
- * active filter is marked with an inset ring + tint so it survives the
- * `overflow-hidden` container. Clicking the active card clears the filter.
+ * Row of four clickable health buckets that leads the alerts overview, as a
+ * `StatRail` of selectable tiles. Clicking the active tile clears the filter.
  */
 export function AlertsHealthSummary({
 	counts,
@@ -65,23 +38,30 @@ export function AlertsHealthSummary({
 	onActiveChange: (status: AlertsStatusFilter | undefined) => void
 }) {
 	return (
-		<AlertStatShell>
+		<StatRail>
 			{cards.map((card) => {
 				const count = counts[card.key]
 				const isActive = active === card.key
 				return (
-					<AlertStatCell
+					<StatRailItem
 						key={card.key}
-						label={card.label}
+						size="sm"
+						eyebrow={card.label}
 						value={count}
-						hint={card.hint}
-						valueClassName={count > 0 ? card.tone : "text-muted-foreground/60"}
+						subline={card.hint}
+						tone={card.tone}
+						valueClassName={
+							count === 0
+								? "text-muted-foreground/60"
+								: card.key === "disabled"
+									? "text-muted-foreground"
+									: undefined
+						}
 						onSelect={() => onActiveChange(isActive ? undefined : card.key)}
 						selected={isActive}
-						selectedClassName={card.activeClass}
 					/>
 				)
 			})}
-		</AlertStatShell>
+		</StatRail>
 	)
 }

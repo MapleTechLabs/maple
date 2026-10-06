@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react"
 import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { Field, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
@@ -90,17 +91,11 @@ export function SelfHostedSignInPage() {
 				<form className="space-y-6" onSubmit={onSubmit}>
 					{/* Label and field are one group: the gap between them stays tighter
 					 * than the gap to the next control, or the pairing stops reading. */}
-					<div className="space-y-2">
-						<label
-							htmlFor="root-password"
-							className="block font-mono font-medium text-xs tracking-[0.02em]"
-						>
+					<Field invalid={Boolean(errorMessage)} className="items-stretch">
+						<FieldLabel className="font-mono text-xs sm:text-xs tracking-[0.02em]">
 							Root password
-						</label>
+						</FieldLabel>
 						<Input
-							id="root-password"
-							aria-invalid={Boolean(errorMessage)}
-							aria-describedby={errorMessage ? "login-error" : undefined}
 							type="password"
 							value={password}
 							onChange={(event) => setPassword(event.target.value)}
@@ -109,11 +104,11 @@ export function SelfHostedSignInPage() {
 							required
 						/>
 						{errorMessage ? (
-							<p id="login-error" role="alert" className="font-mono text-destructive text-xs">
+							<FieldError match role="alert" className="font-mono">
 								{errorMessage}
-							</p>
+							</FieldError>
 						) : null}
-					</div>
+					</Field>
 					<Button type="submit" className="w-full" loading={isSubmitting}>
 						Sign in
 					</Button>

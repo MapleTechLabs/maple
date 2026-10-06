@@ -10,6 +10,8 @@ import { NativeSelect, NativeSelectOption } from "./ui/native-select"
 import { SearchInput } from "./ui/search-input"
 import { useDebouncedCallback } from "../hooks/use-debounced-callback"
 import { cn } from "../lib/utils"
+import { TONE_TEXT } from "../lib/tone"
+import { formatNumber } from "../lib/format"
 
 export function Toolbar({ children, className }: { children: ReactNode; className?: string }) {
 	return (
@@ -125,8 +127,8 @@ export function ToolbarStat({
 	return (
 		<span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
 			{dot ? <span className="size-1.5 rounded-full bg-severity-info" /> : null}
-			<span className={cn("font-medium tabular-nums", danger && value > 0 && "text-destructive")}>
-				{value.toLocaleString()}
+			<span className={cn("font-medium tabular-nums", danger && value > 0 && TONE_TEXT.crit)}>
+				{formatNumber(value)}
 			</span>
 			<span className="text-muted-foreground">{label}</span>
 		</span>

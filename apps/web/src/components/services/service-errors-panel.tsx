@@ -24,7 +24,7 @@ function PanelFrame({ children, detailLimited }: { children: React.ReactNode; de
 			action={
 				<div className="flex items-center gap-3">
 					{detailLimited && (
-						<span className="text-[11px] text-muted-foreground">Latest 90 days</span>
+						<span className="text-2xs text-muted-foreground">Latest 90 days</span>
 					)}
 					{/* `/errors/issues` now 302s to `/errors` and rewrites the time range
 					    to 7d on the way through. Link to the hub directly. */}

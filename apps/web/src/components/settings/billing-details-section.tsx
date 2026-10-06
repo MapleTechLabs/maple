@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Cause, Schema } from "effect"
 import { toastExit } from "@/lib/error-toast"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 
 import {
 	AddBillingTaxIdRequest,
@@ -17,11 +18,14 @@ import {
 } from "@maple/domain/billing-tax-ids"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Field, FieldError } from "@maple/ui/components/ui/field"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { XmarkIcon } from "@/components/icons"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -59,8 +63,8 @@ const TYPE_OPTIONS = [
 
 export function BillingDetailsSkeleton() {
 	return (
-		<div className="border border-border/60 bg-card/40">
-			<div className="grid grid-cols-1 gap-6 px-5 py-4 sm:grid-cols-2">
+		<Panel padded>
+			<div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
 				<div className="flex flex-col gap-1.5">
 					<Skeleton className="h-2.5 w-16" />
 					<Skeleton className="h-4 w-40" />
@@ -71,7 +75,7 @@ export function BillingDetailsSkeleton() {
 					<Skeleton className="h-4 w-48" />
 				</div>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -97,16 +101,15 @@ function TaxIdRow({
 				</Badge>
 			)}
 			{canEdit && (
-				<Button
-					variant="ghost"
+				<IconButton
 					size="icon-xs"
 					onClick={onRemove}
 					loading={removing}
-					aria-label={`Remove ${taxIdLabel(taxId.type)} ${taxId.value}`}
+					label={`Remove ${taxIdLabel(taxId.type)} ${taxId.value}`}
 					className="ml-auto text-muted-foreground"
 				>
 					<XmarkIcon size={14} />
-				</Button>
+				</IconButton>
 			)}
 		</li>
 	)
@@ -116,21 +119,19 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 	const add = useAtomSet(addBillingTaxIdMutation, { mode: "promiseExit" })
 	const [type, setType] = useState<string>(defaultTaxIdTypeFor(profile.address?.country) ?? "eu_vat")
 	const [value, setValue] = useState("")
-	const [adding, setAdding] = useState(false)
+	const [missingValue, setMissingValue] = useState(false)
 
-	async function handleAdd() {
+	const [handleAdd, adding] = useAsyncAction(async () => {
 		const trimmed = value.trim()
 		if (!isTaxIdType(type)) return
 		if (trimmed.length === 0) {
-			toastManager.add({ title: "Enter the tax ID first.", type: "error" })
+			setMissingValue(true)
 			return
 		}
-		setAdding(true)
 		const exit = await add({
 			payload: new AddBillingTaxIdRequest({ type, value: trimmed }),
 			reactivityKeys: [BILLING_PROFILE_KEY],
 		})
-		setAdding(false)
 		if (
 			toastExit(exit, {
 				success: "Tax ID added. Stripe is verifying it.",
@@ -139,36 +140,42 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 		) {
 			setValue("")
 		}
-	}
+	})
 
 	return (
-		<div className="flex flex-wrap items-center gap-2">
-			<Select items={TYPE_OPTIONS} value={type} onValueChange={(next) => next && setType(next)}>
-				<SelectTrigger aria-label="Tax ID type" className="h-8 w-56 text-xs">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent className="max-h-72">
-					{TYPE_OPTIONS.map((option) => (
-						<SelectItem key={option.value} value={option.value} className="text-xs">
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-			<Input
-				aria-label="Tax ID"
-				value={value}
-				onChange={(event) => setValue(event.target.value)}
-				onKeyDown={(event) => {
-					if (event.key === "Enter") void handleAdd()
-				}}
-				placeholder={taxIdExampleFor(type, profile.address?.country)}
-				className="w-56 font-mono"
-			/>
-			<Button size="sm" variant="outline" onClick={handleAdd} loading={adding} disabled={adding}>
-				Add tax ID
-			</Button>
-		</div>
+		<Field invalid={missingValue} className="gap-1.5">
+			<div className="flex flex-wrap items-center gap-2">
+				<Select items={TYPE_OPTIONS} value={type} onValueChange={(next) => next && setType(next)}>
+					<SelectTrigger aria-label="Tax ID type" size="sm" className="w-56">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent className="max-h-72">
+						{TYPE_OPTIONS.map((option) => (
+							<SelectItem key={option.value} value={option.value} className="text-xs">
+								{option.label}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+				<Input
+					aria-label="Tax ID"
+					value={value}
+					onChange={(event) => {
+						setValue(event.target.value)
+						setMissingValue(false)
+					}}
+					onKeyDown={(event) => {
+						if (event.key === "Enter") void handleAdd()
+					}}
+					placeholder={taxIdExampleFor(type, profile.address?.country)}
+					className="w-56 font-mono"
+				/>
+				<Button size="sm" variant="outline" onClick={() => void handleAdd()} loading={adding}>
+					Add tax ID
+				</Button>
+			</div>
+			{missingValue ? <FieldError match>Enter the tax ID first.</FieldError> : null}
+		</Field>
 	)
 }
 
@@ -180,7 +187,17 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 	const profileResult = useAtomValue(billingProfileAtom)
 	const remove = useAtomSet(removeBillingTaxIdMutation, { mode: "promiseExit" })
 	const [editing, setEditing] = useState(false)
-	const [removingId, setRemovingId] = useState<string | null>(null)
+	const [confirmRemove, setConfirmRemove] = useState<BillingTaxId | null>(null)
+	const removal = useKeyedAsyncAction(async (_id: string, taxId: BillingTaxId) => {
+		const exit = await remove({
+			params: { taxIdId: taxId.id },
+			reactivityKeys: [BILLING_PROFILE_KEY],
+		})
+		return toastExit(exit, {
+			success: `Removed ${taxIdLabel(taxId.type)} ${taxId.value}.`,
+			error: "The tax ID could not be removed.",
+		})
+	})
 
 	if (Result.isInitial(profileResult)) return <BillingDetailsSkeleton />
 
@@ -188,36 +205,23 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 		const notConfigured =
 			Result.isFailure(profileResult) && isNotConfigured(Cause.squash(profileResult.cause))
 		return (
-			<div className="border border-border/60 bg-card/40 px-5 py-4">
+			<Panel padded>
 				<p className="text-sm text-muted-foreground">
 					{notConfigured
 						? "Billing details aren't set up for this deployment. Company name, address and tax IDs are managed in the billing portal instead."
-						: "Billing details aren't available right now. Try again in a moment — your invoices still carry the details already on file."}
+						: "Billing details aren't available right now. Try again in a moment; your invoices still carry the details already on file."}
 				</p>
-			</div>
+			</Panel>
 		)
 	}
 
 	const profile = profileResult.value
 	const addressLines = formatAddressLines(profile.address)
 
-	async function handleRemove(taxId: BillingTaxId) {
-		setRemovingId(taxId.id)
-		const exit = await remove({
-			params: { taxIdId: taxId.id },
-			reactivityKeys: [BILLING_PROFILE_KEY],
-		})
-		setRemovingId(null)
-		toastExit(exit, {
-			success: `Removed ${taxIdLabel(taxId.type)} ${taxId.value}.`,
-			error: "The tax ID could not be removed.",
-		})
-	}
-
 	return (
 		<>
-			<div className="border border-border/60 bg-card/40">
-				<div className="grid grid-cols-1 gap-x-8 gap-y-5 px-5 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto]">
+			<Panel>
+				<div className="grid grid-cols-1 gap-x-8 gap-y-5 px-4 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto]">
 					<div className="flex flex-col gap-1">
 						<Eyebrow>Bill to</Eyebrow>
 						{profile.name ? (
@@ -253,8 +257,8 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 										key={taxId.id}
 										taxId={taxId}
 										canEdit={canEdit}
-										removing={removingId === taxId.id}
-										onRemove={() => void handleRemove(taxId)}
+										removing={removal.isPending(taxId.id)}
+										onRemove={() => setConfirmRemove(taxId)}
 									/>
 								))}
 							</ul>
@@ -271,15 +275,28 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 				</div>
 
 				{canEdit && (
-					<div className="border-t border-border/40 px-5 py-3">
+					<div className="border-t px-4 py-3">
 						<AddTaxIdRow key={profile.address?.country ?? "none"} profile={profile} />
-						<p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+						<p className="mt-2 text-2xs leading-4 text-muted-foreground">
 							EU, UK and Australian numbers are checked against the official registry; the ID is
 							printed on invoices either way.
 						</p>
 					</div>
 				)}
-			</div>
+			</Panel>
+
+			<ConfirmDialog
+				open={confirmRemove !== null}
+				onOpenChange={(open) => (open ? undefined : setConfirmRemove(null))}
+				title="Remove tax ID?"
+				description={
+					confirmRemove
+						? `${taxIdLabel(confirmRemove.type)} ${confirmRemove.value} will no longer print on invoices.`
+						: undefined
+				}
+				confirmLabel="Remove tax ID"
+				onConfirm={() => (confirmRemove ? removal.run(confirmRemove.id, confirmRemove) : undefined)}
+			/>
 
 			{editing && <BillingDetailsDialog profile={profile} open={editing} onOpenChange={setEditing} />}
 		</>

@@ -32,6 +32,7 @@ import {
 	type ReleaseServiceImpact,
 } from "./release-model"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
 const COMMIT_RESOLVE_LIMIT = 50
@@ -62,7 +63,7 @@ function ResolvedCommits({
 	return <>{children(commits)}</>
 }
 
-interface DeltaProps {
+interface BaselineShiftProps {
 	value: number
 	baseline: number | undefined
 	format: (value: number) => string
@@ -71,11 +72,11 @@ interface DeltaProps {
 }
 
 /** "0.30% → 1.24%": the version it replaced, then this one. */
-function Delta({ value, baseline, format, tone }: DeltaProps) {
+function BaselineShift({ value, baseline, format, tone }: BaselineShiftProps) {
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{baseline !== undefined ? (
-				<span className="text-[10px] text-muted-foreground/70" title="The version this one replaced">
+				<span className="text-3xs text-muted-foreground/70" title="The version this one replaced">
 					{format(baseline)} →
 				</span>
 			) : null}
@@ -132,7 +133,7 @@ function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpa
 					</span>
 				))}
 				{flagged.length > 2 ? (
-					<span className="text-[11px] text-muted-foreground/70">+{flagged.length - 2}</span>
+					<span className="text-2xs text-muted-foreground/70">+{flagged.length - 2}</span>
 				) : null}
 			</span>
 		)
@@ -178,7 +179,7 @@ function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitle
 					<CommitShaHoverCard
 						sha={commitSha}
 						className={cn(
-							"min-w-0 truncate text-[13px] text-foreground",
+							"min-w-0 truncate text-sm text-foreground",
 							commit === undefined && "font-mono text-xs",
 						)}
 					>
@@ -186,7 +187,7 @@ function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitle
 					</CommitShaHoverCard>
 					{health === "healthy" ? null : <ReleaseHealthPill health={health} label={figure} />}
 				</div>
-				<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					{commit ? <span className="font-mono">{shortReleaseLabel(commitSha)}</span> : null}
 					{author ? <span className="truncate">{author}</span> : null}
 					{!commit && !resolvable ? <span>deployment reference</span> : null}
@@ -273,13 +274,10 @@ function ReleasesTableRows({
 	let lastDay: string | undefined
 
 	return (
-		<div
-			className={cn("rounded-md border bg-card", refreshingClass(waiting === true))}
-			aria-busy={waiting || undefined}
-		>
+		<Panel className={refreshingClass(waiting === true)} aria-busy={waiting || undefined}>
 			<Table>
 				<TableHeader>
-					<TableRow className="hover:bg-transparent">
+					<TableRow>
 						<TableHead className="w-[46%] min-w-[260px]">Release</TableHead>
 						<TableHead>Services</TableHead>
 						<TableHead className="whitespace-nowrap">Deployed</TableHead>
@@ -360,7 +358,7 @@ function ReleasesTableRows({
 													<ServiceDot serviceName={worst.serviceName} />
 												</span>
 											) : null}
-											<Delta
+											<BaselineShift
 												value={worst.errorRate}
 												baseline={worst.baseline?.errorRate}
 												format={formatErrorRate}
@@ -369,7 +367,7 @@ function ReleasesTableRows({
 										</span>
 									</TableCell>
 									<TableCell className="py-2 align-top">
-										<Delta
+										<BaselineShift
 											value={worst.p95LatencyMs}
 											baseline={worst.baseline?.p95LatencyMs}
 											format={formatLatency}
@@ -426,7 +424,7 @@ function ReleasesTableRows({
 													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.errorRate}
 														baseline={service.baseline?.errorRate}
 														format={formatErrorRate}
@@ -438,7 +436,7 @@ function ReleasesTableRows({
 													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.p95LatencyMs}
 														baseline={service.baseline?.p95LatencyMs}
 														format={formatLatency}
@@ -454,6 +452,6 @@ function ReleasesTableRows({
 					})}
 				</TableBody>
 			</Table>
-		</div>
+		</Panel>
 	)
 }

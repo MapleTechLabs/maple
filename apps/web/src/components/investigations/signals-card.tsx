@@ -22,7 +22,7 @@ import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -34,6 +34,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatForTinybird } from "@/lib/time-utils"
 import { servicesTouched } from "./impact-strip"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The design's strip is 32 bars wide; the bucket falls out of the window, not the other way round. */
 const BUCKETS = 32
@@ -45,13 +46,9 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 	if (!window || !service) return null
 
 	return (
-		<section className="flex shrink-0 flex-col gap-4 rounded-xl border bg-card px-5 py-4">
+		<Panel className="shrink-0 gap-4 px-5 py-4">
 			<header className="flex items-center gap-2">
-				<span
-					aria-hidden
-					className="size-2 shrink-0 rounded-[3px]"
-					style={{ backgroundColor: getServiceColor(service) }}
-				/>
+				<ServiceDot serviceName={service} />
 				<span className="font-mono text-sm text-foreground">{service}</span>
 				{window.label ? (
 					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
@@ -71,7 +68,7 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 
 			<LogsRow service={service} window={window} />
 			<TracesRow service={service} window={window} />
-		</section>
+		</Panel>
 	)
 }
 

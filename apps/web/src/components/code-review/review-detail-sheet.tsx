@@ -11,22 +11,19 @@ import { DateTime } from "effect"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetPanel,
-	SheetTitle,
-} from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetPanel, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
+import { SectionHeading } from "@/components/common/section-heading"
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -116,38 +113,49 @@ function ReviewDetailContent({
 
 	return (
 		<>
-			<SheetHeader>
-				<SheetTitle className="flex items-start gap-2 pr-8 text-base leading-snug">
-					<span className="shrink-0 text-muted-foreground">#{review.number}</span>
-					<span>{review.title ?? "Untitled pull request"}</span>
-				</SheetTitle>
-				<SheetDescription>
-					{review.repositoryFullName}
-					{review.authorLogin ? (
-						<>
-							{" · opened by "}
-							<AuthorLabel login={review.authorLogin} className="align-middle" />
-						</>
-					) : null}{" "}
-					· head <TruncatedId value={review.headSha} kind="sha" />
-				</SheetDescription>
-				<div className="flex flex-wrap gap-2 pt-1">
-					<LinkButton href={review.url}>Pull request</LinkButton>
-					{review.commentUrl ? (
-						<LinkButton href={review.commentUrl}>Summary comment</LinkButton>
-					) : null}
-					{detail.reviewUrl ? <LinkButton href={detail.reviewUrl}>Inline review</LinkButton> : null}
-					{detail.checkRunUrl ? <LinkButton href={detail.checkRunUrl}>Check run</LinkButton> : null}
-				</div>
-			</SheetHeader>
+			<SheetDetailHeader
+				kind={["Review", `#${review.number}`]}
+				title={review.title ?? "Untitled pull request"}
+				mono={false}
+				description={`Review of ${review.repositoryFullName} #${review.number}`}
+				meta={
+					<>
+						<p className="w-full text-sm text-muted-foreground">
+							{review.repositoryFullName}
+							{review.authorLogin ? (
+								<>
+									{" · opened by "}
+									<AuthorLabel login={review.authorLogin} className="align-middle" />
+								</>
+							) : null}{" "}
+							· head <TruncatedId value={review.headSha} kind="sha" />
+						</p>
+						<div className="flex flex-wrap gap-2 pt-1">
+							<LinkButton href={review.url}>Pull request</LinkButton>
+							{review.commentUrl ? (
+								<LinkButton href={review.commentUrl}>Summary comment</LinkButton>
+							) : null}
+							{detail.reviewUrl ? (
+								<LinkButton href={detail.reviewUrl}>Inline review</LinkButton>
+							) : null}
+							{detail.checkRunUrl ? (
+								<LinkButton href={detail.checkRunUrl}>Check run</LinkButton>
+							) : null}
+						</div>
+					</>
+				}
+			/>
 			<SheetPanel className="flex flex-col gap-6">
 				<StatRail>
 					<Stat label="Outcome" value={outcome.label} tone={outcome.tone} />
 					<Stat
 						label="Confidence"
-						value={review.confidence === null ? "–" : `${review.confidence}/10`}
+						value={review.confidence === null ? EMPTY_VALUE : `${review.confidence}/10`}
 					/>
-					<Stat label="Quality" value={review.score === null ? "–" : `${review.score}/100`} />
+					<Stat
+						label="Quality"
+						value={review.score === null ? EMPTY_VALUE : `${review.score}/100`}
+					/>
 					<Stat label="Issues" value={formatCount(review.findings)} />
 					<Stat label="Duration" value={formatSpan(durationSeconds)} />
 					<Stat label="Model" value={modelLabel(review.model)} />
@@ -248,11 +256,13 @@ function ReviewDetailContent({
 												{entryOutcome.label}
 											</span>
 											<span className="tabular-nums text-muted-foreground">
-												{entry.findings} {entry.findings === 1 ? "issue" : "issues"}
+												{countLabel(entry.findings, "issue")}
 											</span>
-											<span className="w-20 text-right text-xs text-muted-foreground">
-												{formatRelativeFrom(entry.createdAt)}
-											</span>
+											<RelativeTime
+												value={entry.createdAt}
+												tooltip="title"
+												className="w-20 text-right text-xs text-muted-foreground"
+											/>
 										</button>
 									</li>
 								)
@@ -301,7 +311,7 @@ function FindingCard({
 }
 
 const modelLabel = (model: string | null) =>
-	model === null ? "–" : (PR_REVIEW_MODELS.find((entry) => entry.id === model)?.label ?? model)
+	model === null ? EMPTY_VALUE : (PR_REVIEW_MODELS.find((entry) => entry.id === model)?.label ?? model)
 
 /** A dense StatRail tile: sheet-sized value that truncates instead of overflowing. */
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
@@ -396,7 +406,7 @@ function PostMergeSection({ postMerge }: { postMerge: PrReviewPostMerge }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
 		<section className="flex flex-col gap-2.5">
-			<h3 className="text-sm font-medium">{title}</h3>
+			<SectionHeading title={title} as="h3" />
 			{children}
 		</section>
 	)

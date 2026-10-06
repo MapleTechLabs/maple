@@ -4,6 +4,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { GlobeIcon, ClockIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { RelativeTime } from "@/components/common/relative-time"
@@ -71,23 +72,29 @@ export function SessionIdentityBar({
 				</div>
 				<h2 className="min-w-0 truncate text-sm font-medium leading-tight">{label}</h2>
 				<StatusPill active={isActive} />
-				<a
-					href={urlInitial}
-					target="_blank"
-					rel="noreferrer"
-					title={urlInitial}
-					className="hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
-				>
-					<GlobeIcon className="size-3 shrink-0 opacity-70" />
-					<span className="truncate">{hostFromUrl(urlInitial)}</span>
-				</a>
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<a
+								href={urlInitial}
+								target="_blank"
+								rel="noreferrer"
+								className="hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
+							/>
+						}
+					>
+						<GlobeIcon className="size-3 shrink-0 opacity-70" />
+						<span className="truncate">{hostFromUrl(urlInitial)}</span>
+					</TooltipTrigger>
+					<TooltipContent className="max-w-sm break-all">{urlInitial}</TooltipContent>
+				</Tooltip>
 				{startedValid && (
 					<span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
 						<ClockIcon className="size-3 shrink-0 opacity-70" />
 						<RelativeTime value={startedEpoch} prefix="started" tooltip="title" />
 					</span>
 				)}
-				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground xl:inline-flex">
+				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground xl:inline-flex">
 					{shortId(sessionId, "session", { length: 8 })}
 					<CopyButton
 						value={sessionId}
@@ -100,7 +107,7 @@ export function SessionIdentityBar({
 			</div>
 			<div className="flex shrink-0 items-center gap-3">
 				<span className="flex items-baseline gap-1.5">
-					<span className="font-mono text-[15px] font-semibold tabular-nums">
+					<span className="font-mono text-sm font-semibold tabular-nums">
 						{formatSessionDuration(durationMs)}
 					</span>
 					<Eyebrow>duration</Eyebrow>
@@ -123,11 +130,11 @@ export function ReplayDetailSkeleton() {
 					<Skeleton className="h-4 w-64" />
 					<Skeleton className="ml-auto h-4 w-24" />
 				</div>
-				<Skeleton className="aspect-video w-full rounded-t-xl" />
-				<Skeleton className="-mt-3.5 h-14 w-full rounded-b-xl" />
-				<Skeleton className="h-48 w-full rounded-xl" />
+				<Skeleton className="aspect-video w-full rounded-t-md" />
+				<Skeleton className="-mt-3.5 h-14 w-full rounded-b-md" />
+				<Skeleton className="h-48 w-full rounded-md" />
 			</div>
-			<Skeleton className="h-72 w-full rounded-xl lg:h-auto lg:w-84 lg:shrink-0" />
+			<Skeleton className="h-72 w-full rounded-md lg:h-auto lg:w-84 lg:shrink-0" />
 		</div>
 	)
 }

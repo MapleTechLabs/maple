@@ -1,3 +1,4 @@
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { health, HEALTH_COLOR } from "./spatial-layout"
 
 /** WebGL material inputs in sRGB. The scene shares Maple's warm neutral surface
@@ -47,8 +48,9 @@ export const FACTORY_FINISH = {
 export function connectionStyle(errorRate: number, dark: boolean, active: boolean, dimmed: boolean) {
 	let color = dark ? "#6c8073" : "#42614e"
 	if (active) color = dark ? "#b9d6c6" : "#42614e"
-	if (errorRate >= 0.01)
-		color = dark ? HEALTH_COLOR[health(errorRate)] : errorRate >= 0.02 ? "#a95a4a" : "#9d762b"
+	const level = errorRateLevel(errorRate)
+	if (level !== "neutral")
+		color = dark ? HEALTH_COLOR[health(errorRate)] : level === "crit" ? "#a95a4a" : "#9d762b"
 	return { color, opacity: dimmed ? 0.08 : active ? 0.95 : dark ? 0.48 : 0.72 }
 }
 

@@ -1,6 +1,7 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
@@ -23,7 +24,7 @@ const TONE: Record<Confidence, Tone> = { high: "ok", medium: "warn", low: "neutr
 
 /** `ok` value text is plain foreground; a confidence word wants the ok hue itself. */
 export const CONFIDENCE_TONE: Record<string, string> = {
-	high: "text-severity-info",
+	high: TONE_TEXT.info,
 	medium: TONE_TEXT[TONE.medium],
 	low: TONE_TEXT[TONE.low],
 } satisfies Record<string, string>
@@ -48,7 +49,7 @@ export function ConfidenceMeter({
 	if (confidence === null) {
 		return (
 			<span className={cn("text-xs text-muted-foreground/60", className)} title="No diagnosis yet">
-				—
+				{EMPTY_VALUE}
 			</span>
 		)
 	}

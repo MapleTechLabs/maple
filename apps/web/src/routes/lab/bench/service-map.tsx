@@ -59,7 +59,7 @@ function ServiceMapBenchPage() {
 						type="button"
 						onClick={() => navigate({ search: (prev) => ({ ...prev, groups: g }) })}
 						className={cn(
-							"rounded px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+							"rounded px-1.5 py-0.5 font-mono text-2xs transition-colors",
 							g === params.groups
 								? "bg-primary text-primary-foreground"
 								: "text-muted-foreground hover:text-foreground",

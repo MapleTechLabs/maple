@@ -18,7 +18,6 @@ import {
 } from "@maple/ui/components/ui/item"
 import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 
 import { ErrorState } from "@/components/common/error-state"
@@ -29,7 +28,7 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
-import { getExitErrorMessage } from "@/lib/error-toast"
+import { toastExit } from "@/lib/error-toast"
 import { catalogEntry, chatIntegrationId, IntegrationIconPlate } from "./integration-catalog"
 import {
 	IntegrationEmpty,
@@ -92,14 +91,7 @@ function WorkspaceSettings({
 			reactivityKeys: REACTIVITY_KEYS,
 		})
 		onBusy(null)
-		toastManager.add(
-			Exit.isSuccess(result)
-				? { title: "Settings saved", type: "success" }
-				: {
-						title: getExitErrorMessage(result, "Failed to save the settings"),
-						type: "error",
-					},
-		)
+		toastExit(result, { success: "Settings saved", error: "Failed to save the settings" })
 	}
 
 	if (fields.length === 0) return null
@@ -119,7 +111,7 @@ function WorkspaceSettings({
 							setDraft((current) => ({ ...current, [field.key]: event.target.value }))
 						}
 					/>
-					<FieldDescription className="text-[11px]">{field.help}</FieldDescription>
+					<FieldDescription className="text-2xs">{field.help}</FieldDescription>
 				</Field>
 			))}
 			<div>
@@ -167,29 +159,19 @@ function ChatIdentityRow({
 			window.location.href = result.value.url
 			return new Promise<never>(() => {})
 		}
-		toastManager.add({
-			title: getExitErrorMessage(result, "Failed to start the account link"),
-			type: "error",
-		})
+		toastExit(result, { error: "Failed to start the account link" })
 	})
 
 	const [handleUnlink, unlinking] = useAsyncAction(async () => {
 		const result = await unlink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
-		toastManager.add(
-			Exit.isSuccess(result)
-				? { title: "Account unlinked", type: "success" }
-				: {
-						title: getExitErrorMessage(result, "Failed to unlink the account"),
-						type: "error",
-					},
-		)
+		toastExit(result, { success: "Account unlinked", error: "Failed to unlink the account" })
 	})
 
 	return (
 		<Item variant="card" className="gap-3 px-4 py-3">
 			<ItemContent className="gap-0.5">
 				<ItemTitle>Your {platform} account</ItemTitle>
-				<ItemDescription className="truncate text-[11px]">
+				<ItemDescription className="truncate text-2xs">
 					{identity === undefined
 						? `Link it so Maple knows it's you acting from ${platform}.`
 						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
@@ -259,10 +241,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 			return
 		}
 		setBusy(null)
-		toastManager.add({
-			title: getExitErrorMessage(result, `Failed to start the ${platform} install`),
-			type: "error",
-		})
+		toastExit(result, { error: `Failed to start the ${platform} install` })
 	}
 
 	async function handleDisconnect(workspaceId: ChatWorkspaceId) {
@@ -273,14 +252,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 		})
 		setBusy(null)
 		setConfirmId(null)
-		toastManager.add(
-			Exit.isSuccess(result)
-				? { title: "Workspace disconnected", type: "success" }
-				: {
-						title: getExitErrorMessage(result, "Failed to disconnect the workspace"),
-						type: "error",
-					},
-		)
+		toastExit(result, { success: "Workspace disconnected", error: "Failed to disconnect the workspace" })
 	}
 
 	if (Result.isInitial(listResult) && status === null) {
@@ -357,7 +329,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 						<RelativeTime
 							value={workspace.created_at}
 							prefix="Connected"
-							className="text-[11px] text-muted-foreground"
+							className="text-2xs text-muted-foreground"
 						/>
 						{/* Keyed by the stored settings so a save reseeds the form from what
 						    the server actually kept. */}
@@ -398,7 +370,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				</Button>
 			</div>
 			{showNotAdmin ? (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					Only organization admins can change or disconnect {manifest.name} workspaces.
 				</p>
 			) : null}

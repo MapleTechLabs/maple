@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo } from "react"
 import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { Schema } from "effect"
 
@@ -10,7 +10,9 @@ import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { SquareSparkleIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import type { BreadcrumbEntry } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { DetailHeaderSkeleton } from "@/components/common/detail-header"
 import { ErrorState } from "@/components/common/error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
 import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
@@ -80,67 +82,59 @@ function AgentSessionDetailPage() {
 			: disabledResultAtom<GetAiSessionSummaryResponse>(),
 	)
 
+	const searchStr = useRouterState({ select: (state) => state.location.searchStr })
+	const breadcrumbs = [
+		{ label: "Agent Sessions", href: buildBackToSessionsHref(searchStr) },
+		{ label: breadcrumbSessionId(sessionId) },
+	]
+
 	return Result.builder(spansState.firstPage)
 		.onInitial(() => (
-			<SessionShell sessionId={sessionId}>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<Skeleton className="h-9 w-80" />
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Fill>
-						{/* The Overview's own shape — switcher, verdict, vitals, time bar —
-						    so the page doesn't reflow on resolve. */}
-						<div className="space-y-6 p-4">
-							<Skeleton className="h-8 w-72" />
-							<div className="flex flex-wrap items-start justify-between gap-8">
-								<div className="space-y-3">
-									<Skeleton className="h-9 w-[26rem] max-w-full" />
-									<Skeleton className="h-4 w-80 max-w-full" />
-								</div>
-								<div className="flex gap-6">
-									{Array.from({ length: 3 }).map((_, index) => (
-										<Skeleton key={index} className="h-16 w-32" />
-									))}
-								</div>
-							</div>
-							<Skeleton className="h-4 w-full rounded-sm" />
-							<SkeletonList rows={8} rowClassName="h-12" gap="2" />
+			<DashboardPage breadcrumbs={breadcrumbs} header={<DetailHeaderSkeleton meta={false} />} fill>
+				{/* The Overview's own shape — switcher, verdict, vitals, time bar —
+				    so the page doesn't reflow on resolve. */}
+				<div className="space-y-6 p-4">
+					<Skeleton className="h-8 w-72" />
+					<div className="flex flex-wrap items-start justify-between gap-8">
+						<div className="space-y-3">
+							<Skeleton className="h-9 w-[26rem] max-w-full" />
+							<Skeleton className="h-4 w-80 max-w-full" />
 						</div>
-					</DashboardLayout.Fill>
-				</DashboardLayout.Content>
-			</SessionShell>
+						<div className="flex gap-6">
+							{Array.from({ length: 3 }).map((_, index) => (
+								<Skeleton key={index} className="h-16 w-32" />
+							))}
+						</div>
+					</div>
+					<Skeleton className="h-4 w-full rounded-sm" />
+					<SkeletonList rows={8} rowClassName="h-12" gap="2" />
+				</div>
+			</DashboardPage>
 		))
 		.onError((error) => (
-			<SessionShell sessionId={sessionId}>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>
-						<ErrorState
-							error={error}
-							// The 413 describes itself precisely ("Session is too large to
-							// load"); overriding it would replace a specific, actionable
-							// message with a generic one.
-							title={
-								displayError(error)._tag === SESSION_TOO_LARGE_TAG
-									? undefined
-									: "Failed to load this agent session"
-							}
-						/>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</SessionShell>
+			<DashboardPage breadcrumbs={breadcrumbs}>
+				<ErrorState
+					error={error}
+					// The 413 describes itself precisely ("Session is too large to
+					// load"); overriding it would replace a specific, actionable
+					// message with a generic one.
+					title={
+						displayError(error)._tag === SESSION_TOO_LARGE_TAG
+							? undefined
+							: "Failed to load this agent session"
+					}
+				/>
+			</DashboardPage>
 		))
 		.onSuccess((value) =>
 			value.data.length === 0 ? (
-				<SessionShell sessionId={sessionId}>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</SessionShell>
+				<DashboardPage breadcrumbs={breadcrumbs}>
+					<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />
+				</DashboardPage>
 			) : (
 				<SessionDetailBody
 					sessionId={sessionId}
+					breadcrumbs={breadcrumbs}
 					spansState={spansState}
 					totals={Result.isSuccess(summaryResult) ? summaryResult.value : undefined}
 				/>
@@ -151,10 +145,12 @@ function AgentSessionDetailPage() {
 
 function SessionDetailBody({
 	sessionId,
+	breadcrumbs,
 	spansState,
 	totals,
 }: {
 	sessionId: string
+	breadcrumbs: ReadonlyArray<BreadcrumbEntry>
 	spansState: SessionSpansState
 	totals: GetAiSessionSummaryResponse | undefined
 }) {
@@ -225,70 +221,45 @@ function SessionDetailBody({
 	)
 
 	return (
-		<SessionShell sessionId={sessionId}>
-			<DashboardLayout.Content>
-				<DashboardLayout.Sticky>
-					<DashboardLayout.Header
-						titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
-					>
-						{/* The one sign a session larger than a page is still arriving.
-						    Every view renders what is in hand and grows as pages land;
-						    nothing below asks the reader to fetch anything. */}
-						{progress !== undefined && progress.phase !== "complete" && (
-							<SessionLoadIndicator progress={progress} totals={totals} />
-						)}
-					</DashboardLayout.Header>
-				</DashboardLayout.Sticky>
-				{/* `py-0` (the content blocks carry the padding instead) so the views'
-				    sticky elements pin flush to the scroller's edges — sticky offsets
-				    resolve against the padding edge. The top edge is the control bar;
-				    the bottom is the Flow view's floor, whose legend and zoom otherwise
-				    float a padding's height short of the viewport with the canvas
-				    scrolling visibly beneath them. `pr-6` keeps the overlay
-				    scrollbar off the right-aligned duration/cost columns, and
-				    `overflow-x-hidden` means a span that escapes its truncation can
-				    never make the whole page scroll sideways. */}
-				<DashboardLayout.Scroll className="overflow-x-hidden py-0 pr-6">
-					{/* Content-driven height inside the scroller: `shrink-0` because a
-					    scroll container's flex items shrink to fit before they overflow,
-					    which would collapse the views instead of scrolling them; `grow`
-					    (basis auto, not `flex-1`'s basis 0) so short content still fills
-					    the viewport; the floor keeps the empty states from a sliver. */}
-					<div className="flex min-h-64 shrink-0 grow flex-col">
-						<SessionViews
-							view={view}
-							onViewChange={changeView}
-							turns={turns}
-							summary={summary}
-							progress={progress}
-							totals={totals}
-							selectedSpanId={search.span}
-							onSelectSpan={selectSpan}
-							initialQuery={search.tool}
-						/>
-					</div>
-				</DashboardLayout.Scroll>
-			</DashboardLayout.Content>
-			{/* No side panel at any width: span detail opens as a popover against
-			    the row, node or finding the reader clicked. */}
-		</SessionShell>
-	)
-}
-
-/** Root, breadcrumbs, and the body row every branch fills with a `Content` column. */
-function SessionShell({ sessionId, children }: { sessionId: string; children: ReactNode }) {
-	const searchStr = useRouterState({ select: (state) => state.location.searchStr })
-
-	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
-					{ label: "Agent Sessions", href: buildBackToSessionsHref(searchStr) },
-					{ label: breadcrumbSessionId(sessionId) },
-				]}
-			/>
-			<DashboardLayout.Body>{children}</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		// No side panel at any width: span detail opens as a popover against the row,
+		// node or finding the reader clicked.
+		<DashboardPage
+			breadcrumbs={breadcrumbs}
+			titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
+			headerActions={
+				// The one sign a session larger than a page is still arriving. Every view
+				// renders what is in hand and grows as pages land; nothing below asks the
+				// reader to fetch anything.
+				progress !== undefined && progress.phase !== "complete" ? (
+					<SessionLoadIndicator progress={progress} totals={totals} />
+				) : null
+			}
+			// `py-0` (the content blocks carry the padding instead) so the views' sticky
+			// elements pin flush to the scroller's edges: sticky offsets resolve against the
+			// padding edge. `pr-6` keeps the overlay scrollbar off the right-aligned
+			// duration/cost columns, and `overflow-x-hidden` stops an escaped span from
+			// scrolling the whole page sideways.
+			scrollClassName="overflow-x-hidden py-0 pr-6"
+		>
+			{/* Content-driven height inside the scroller: `shrink-0` because a
+			    scroll container's flex items shrink to fit before they overflow,
+			    which would collapse the views instead of scrolling them; `grow`
+			    (basis auto, not `flex-1`'s basis 0) so short content still fills
+			    the viewport; the floor keeps the empty states from a sliver. */}
+			<div className="flex min-h-64 shrink-0 grow flex-col">
+				<SessionViews
+					view={view}
+					onViewChange={changeView}
+					turns={turns}
+					summary={summary}
+					progress={progress}
+					totals={totals}
+					selectedSpanId={search.span}
+					onSelectSpan={selectSpan}
+					initialQuery={search.tool}
+				/>
+			</div>
+		</DashboardPage>
 	)
 }
 

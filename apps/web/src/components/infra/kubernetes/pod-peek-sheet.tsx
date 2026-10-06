@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { Sheet, SheetContent, SheetFooter, SheetPanel } from "@maple/ui/components/ui/sheet"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -186,7 +187,7 @@ export function PodPeekSheet({
 										value={pod.lastSeen}
 										prefix="seen"
 										mono
-										className="ml-auto text-[11px] text-muted-foreground"
+										className="ml-auto text-2xs text-muted-foreground"
 									/>
 								</>
 							}
@@ -228,30 +229,28 @@ export function PodPeekSheet({
 
 						<SheetFooter className="flex-row items-center justify-between gap-3 border-t">
 							<div className="flex items-center gap-1.5">
-								<Button
+								<IconButton
 									variant="outline"
-									size="icon-sm"
-									aria-label="Previous pod"
+									label="Previous pod"
 									disabled={!canStepBack}
 									onClick={() => onStep(-1)}
 								>
 									<ArrowUpIcon size={14} />
-								</Button>
-								<Button
+								</IconButton>
+								<IconButton
 									variant="outline"
-									size="icon-sm"
-									aria-label="Next pod"
+									label="Next pod"
 									disabled={!canStepForward}
 									onClick={() => onStep(1)}
 								>
 									<ArrowDownIcon size={14} />
-								</Button>
+								</IconButton>
 								{position ? (
-									<span className="ml-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
 										{position.index + 1} of {position.count}
 									</span>
 								) : null}
-								<span className="ml-2 hidden items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
+								<span className="ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex">
 									<Kbd>↑</Kbd>
 									<Kbd>↓</Kbd> walk the list
 								</span>
@@ -357,14 +356,14 @@ function PeekSummary({ pod, startTime, endTime }: { pod: PodRow; startTime: stri
 						tone={severityLevel(summary.cpuLimitPct)}
 						compact
 						className="px-4 py-3"
-						valueClassName="text-[22px]"
+						valueClassName="text-xl"
 					/>
 					<StatRailItem
 						eyebrow="CPU vs request"
 						value={formatPercent(summary.cpuRequestPct)}
 						compact
 						className="px-4 py-3"
-						valueClassName="text-[22px]"
+						valueClassName="text-xl"
 					/>
 					<StatRailItem
 						eyebrow="Mem vs limit"
@@ -372,14 +371,14 @@ function PeekSummary({ pod, startTime, endTime }: { pod: PodRow; startTime: stri
 						tone={severityLevel(summary.memoryLimitPct)}
 						compact
 						className="px-4 py-3"
-						valueClassName="text-[22px]"
+						valueClassName="text-xl"
 					/>
 					<StatRailItem
 						eyebrow="Mem vs request"
 						value={formatPercent(summary.memoryRequestPct)}
 						compact
 						className="px-4 py-3"
-						valueClassName="text-[22px]"
+						valueClassName="text-xl"
 					/>
 				</StatRail>
 			)

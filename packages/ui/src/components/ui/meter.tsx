@@ -111,3 +111,36 @@ export function SegmentedBar({
 		</div>
 	)
 }
+
+/**
+ * Share-of-max bar painted behind a row's own text (a table cell, a list row).
+ * The parent must be `relative`, with the row content in a `relative` layer above it.
+ */
+export function BackdropBar({
+	value,
+	max = 1,
+	align = "left",
+	className,
+}: {
+	value: number
+	max?: number
+	/** The edge the bar grows from: `right` for right-aligned numeric cells. */
+	align?: "left" | "right"
+	/** Fill colour and opacity, e.g. `bg-severity-info/10`. */
+	className?: string
+}): React.ReactElement | null {
+	const width = widthPercent(max > 0 ? value / max : 0, 0)
+	if (width === 0) return null
+	return (
+		<div
+			aria-hidden
+			data-slot="backdrop-bar"
+			className={cn(
+				"pointer-events-none absolute inset-y-1.5 rounded-sm",
+				align === "left" ? "left-2" : "right-2",
+				className,
+			)}
+			style={{ width: `calc(${width}% - 0.5rem)` }}
+		/>
+	)
+}

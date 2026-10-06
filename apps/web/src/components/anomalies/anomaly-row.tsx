@@ -19,6 +19,7 @@ import {
 	TRIAGE_STATUS_CHIP,
 } from "./anomaly-format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 export interface AnomalyRowProps {
 	incident: AnomalyIncidentDocument
@@ -105,7 +106,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			) : null}
 
 			<span className="relative z-10 hidden shrink-0 text-xs text-muted-foreground xl:inline-block">
-				{incident.deploymentEnv || "—"}
+				{incident.deploymentEnv || EMPTY_VALUE}
 			</span>
 
 			<span className="relative z-0 hidden min-w-0 flex-1 sm:block" />

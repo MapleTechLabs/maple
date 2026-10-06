@@ -1,7 +1,9 @@
 import { createContext, use, type ReactNode } from "react"
 
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { Button } from "@maple/ui/components/ui/button"
+import { eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { XmarkIcon } from "@/components/icons"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -65,15 +67,16 @@ function useSettings() {
 	}
 }
 
-/** Dense rail setting: an eyebrow caption over a segmented control or select, not a form field. */
+// The eyebrow caption, restated at `sm:` because FieldLabel sets its own size there.
+const RAIL_LABEL_CLASS = cn(eyebrowVariants({ variant: "label" }), "sm:text-2xs sm:leading-normal")
+
+/** Dense rail setting: an eyebrow caption labelling a segmented control, select or input. */
 function RailSetting({ label, children }: { label: string; children: ReactNode }) {
 	return (
-		<div className="space-y-1.5">
-			<Eyebrow variant="label" as="p">
-				{label}
-			</Eyebrow>
+		<Field className="items-stretch gap-1.5">
+			<FieldLabel className={RAIL_LABEL_CLASS}>{label}</FieldLabel>
 			{children}
-		</div>
+		</Field>
 	)
 }
 
@@ -114,17 +117,17 @@ function CheckboxRow({
 	onChange: (checked: boolean) => void
 }) {
 	return (
-		<div className="flex items-center gap-2">
+		<Field className="flex-row items-center gap-2">
 			<Checkbox
 				id={id}
 				checked={checked}
 				disabled={disabled}
 				onCheckedChange={(next) => onChange(next === true)}
 			/>
-			<label htmlFor={id} className="text-xs text-muted-foreground">
+			<FieldLabel htmlFor={id} className="font-normal text-xs text-muted-foreground sm:text-xs">
 				{label}
-			</label>
-		</div>
+			</FieldLabel>
+		</Field>
 	)
 }
 
@@ -241,7 +244,7 @@ function RampSwatch({ scale }: { scale: HeatmapColorScale }) {
 			{[0, 1, 2, 3, 4].map((stop) => (
 				<span
 					key={stop}
-					className="size-2 rounded-[2px]"
+					className="size-2 rounded-xs"
 					style={{ backgroundColor: `var(--heatmap-${scale}-${stop})` }}
 				/>
 			))}
@@ -524,15 +527,15 @@ function Thresholds() {
 							}}
 							className="h-8"
 						/>
-						<Button
+						<IconButton
 							variant="outline"
 							size="icon"
+							label="Remove threshold"
 							onClick={() => replace(thresholds.filter((_, i) => i !== index))}
 							className="text-muted-foreground hover:text-foreground"
-							aria-label="Remove threshold"
 						>
-							×
-						</Button>
+							<XmarkIcon size={14} />
+						</IconButton>
 					</div>
 				))}
 				<button

@@ -43,7 +43,7 @@ export function DiagnosisReportCard({ report }: { report: AiTriageResult }) {
 					<Eyebrow variant="label">AI Diagnosis</Eyebrow>
 					<span className="text-muted-foreground/40">·</span>
 					<span
-						className={`text-[11px] font-medium capitalize ${CONFIDENCE_TONE[report.confidence] ?? ""}`}
+						className={`text-2xs font-medium capitalize ${CONFIDENCE_TONE[report.confidence] ?? ""}`}
 					>
 						{report.confidence} confidence
 					</span>
@@ -96,7 +96,7 @@ export function DiagnosisReportCard({ report }: { report: AiTriageResult }) {
 										onClick={() => setOpenIndex(action.index)}
 										className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
 									>
-										<span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-[11px] tabular-nums text-muted-foreground">
+										<span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-2xs tabular-nums text-muted-foreground">
 											{action.index + 1}
 										</span>
 										<Icon

@@ -82,16 +82,16 @@ export function PlanetScaleActivityRow({
 					<button
 						type="button"
 						onClick={() => onSelectBranch(branchName)}
-						className="shrink-0 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+						className="shrink-0 font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"
 					>
 						{branchName}
 					</button>
 				) : (
-					<span className="shrink-0 font-mono text-[11px] text-muted-foreground">{branchName}</span>
+					<span className="shrink-0 font-mono text-2xs text-muted-foreground">{branchName}</span>
 				)
 			) : null}
 			{actorLogin !== null ? (
-				<span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
+				<span className="hidden shrink-0 text-2xs text-muted-foreground sm:inline">
 					{actorLogin}
 				</span>
 			) : null}

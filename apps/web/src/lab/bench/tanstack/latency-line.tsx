@@ -13,16 +13,16 @@ import {
 	focusDot,
 	usePlotChromeColors,
 	usePlotColors,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { overviewBenchRows, type OverviewBenchRow } from "./bench-data"
 import { type TanstackRenderer, plotRendererFor } from "@/lab/bench/tanstack/renderer-arm"
 const LATENCY_TOKENS = {
-	p99: ["--chart-p99", "#f97316"],
-	p95: ["--chart-p95", "#eab308"],
-	p50: ["--chart-p50", "#22c55e"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	p99: "--chart-p99",
+	p95: "--chart-p95",
+	p50: "--chart-p50",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * TanStack port of `packages/ui/src/components/charts/line/latency-line-chart.tsx`.

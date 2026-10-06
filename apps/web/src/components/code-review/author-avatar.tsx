@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 /** A GitHub login's avatar, from GitHub's public `<login>.png` redirect; the initial while it loads. */
 export function AuthorAvatar({ login, className }: { login: string; className?: string }) {
 	return (
-		<Avatar className={cn("size-[18px] text-[9px]", className)}>
+		<Avatar className={cn("size-[18px] text-4xs", className)}>
 			<AvatarImage src={`https://github.com/${encodeURIComponent(login)}.png?size=64`} alt="" />
 			<AvatarFallback>{login.slice(0, 1).toUpperCase()}</AvatarFallback>
 		</Avatar>

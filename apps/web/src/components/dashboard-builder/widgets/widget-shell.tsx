@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { PlotLegendSlotContext, type PlotLegendItem } from "@maple/ui/components/plot"
 import {
 	GripDotsIcon,
@@ -162,7 +163,7 @@ export function WidgetShell({
 					)}
 					{timeRangeLabel && (
 						<span
-							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-3xs font-medium text-muted-foreground"
 							title={`This widget uses its own time range (${timeRangeLabel}) instead of the dashboard's`}
 						>
 							<ClockIcon size={10} />
@@ -185,7 +186,7 @@ export function WidgetShell({
 									{visible.map((item) => (
 										<span
 											key={item.key}
-											className="flex min-w-0 shrink items-center gap-1.5 text-[10px] text-muted-foreground"
+											className="flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground"
 										>
 											{/* A dashed outline, not a filled square, when the series is
 											    painted as a dashed stroke — an errors overlay drawn dashed
@@ -193,7 +194,7 @@ export function WidgetShell({
 											    the chart does not. Mirrors `FixedMetricLegend`. */}
 											<span
 												className={cn(
-													"size-2 shrink-0 rounded-[2px]",
+													"size-2 shrink-0 rounded-xs",
 													item.dashed && "border border-dashed",
 												)}
 												style={
@@ -207,7 +208,7 @@ export function WidgetShell({
 									))}
 									{overflow > 0 && (
 										<span
-											className="shrink-0 text-[10px] text-muted-foreground"
+											className="shrink-0 text-3xs text-muted-foreground"
 											title={legendItems.map((i) => i.label).join(", ")}
 										>
 											+{overflow}
@@ -242,7 +243,7 @@ export function WidgetShell({
 						<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 							<DropdownMenuTrigger
 								render={
-									<Button variant="ghost" size="icon-xs">
+									<Button variant="ghost" size="icon-xs" aria-label="Widget actions">
 										<DotsVerticalIcon size={14} />
 									</Button>
 								}
@@ -316,7 +317,7 @@ export function WidgetShell({
 				<PlotLegendSlotContext.Provider value={legendSlot}>{children}</PlotLegendSlotContext.Provider>
 			</CardContent>
 			{footer != null && (
-				<div className="shrink-0 px-3 pb-2.5 text-[11px] text-muted-foreground">{footer}</div>
+				<div className="shrink-0 px-3 pb-2.5 text-2xs text-muted-foreground">{footer}</div>
 			)}
 		</Card>
 	)
@@ -346,7 +347,7 @@ export function WidgetEmptyState() {
 	return (
 		<EmptyMessage className="flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0">
 			<span className="font-medium">No data in the selected time range</span>
-			<span className="text-[10px] text-muted-foreground/70 max-w-full line-clamp-3">
+			<span className="text-3xs text-muted-foreground/70 max-w-full line-clamp-3">
 				Widen the time range or check the query's filters.
 			</span>
 		</EmptyMessage>
@@ -392,7 +393,7 @@ export function WidgetFrame({
 								(dataState.kind === "range" ? "Range too wide" : "Not configured")}
 						</span>
 						{dataState.message && (
-							<span className="text-[10px] text-muted-foreground/70 max-w-full text-center line-clamp-3">
+							<span className="text-3xs text-muted-foreground/70 max-w-full text-center line-clamp-3">
 								{dataState.message}
 							</span>
 						)}
@@ -401,7 +402,7 @@ export function WidgetFrame({
 								variant="outline"
 								size="xs"
 								onClick={narrowRange}
-								className="mt-1 h-6 gap-1 text-[10px]"
+								className="mt-1 h-6 gap-1 text-3xs"
 							>
 								<ClockIcon size={12} />
 								{actions?.narrowRangeLabel ?? "Narrow range"}
@@ -412,7 +413,7 @@ export function WidgetFrame({
 								variant="outline"
 								size="xs"
 								onClick={configure}
-								className="mt-1 h-6 gap-1 text-[10px]"
+								className="mt-1 h-6 gap-1 text-3xs"
 							>
 								<PencilIcon size={12} />
 								Edit
@@ -421,11 +422,16 @@ export function WidgetFrame({
 					</div>
 				) : (
 					<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
-						<span className="text-xs font-medium text-destructive">
+						<span className={cn("text-xs font-medium", TONE_TEXT.crit)}>
 							{dataState.title ?? "Unable to load"}
 						</span>
 						{dataState.message && (
-							<span className="text-[10px] text-destructive/70 max-w-full text-center line-clamp-2">
+							<span
+								className={cn(
+									"text-3xs opacity-70 max-w-full text-center line-clamp-2",
+									TONE_TEXT.crit,
+								)}
+							>
 								{dataState.message}
 							</span>
 						)}
@@ -434,7 +440,7 @@ export function WidgetFrame({
 								variant="outline"
 								size="xs"
 								onClick={fix}
-								className="mt-1 h-6 gap-1 text-[10px]"
+								className="mt-1 h-6 gap-1 text-3xs"
 							>
 								<ChatBubbleSparkleIcon size={12} />
 								Fix with AI

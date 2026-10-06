@@ -12,18 +12,14 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useDashboardMutationSync } from "@/hooks/use-dashboard-store"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { displayError } from "@/lib/error-messages"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
+import { showErrorToast } from "@/lib/error-toast"
 import { TemplateList, type ReadinessFilter } from "@/components/dashboard-builder/templates/template-list"
 import { TemplateDetailPanel } from "@/components/dashboard-builder/templates/template-detail-panel"
 import { BLANK_TEMPLATE_ID } from "@/components/dashboard-builder/templates/template-summary"
 import { useTemplateReadiness } from "@/components/dashboard-builder/templates/use-template-readiness"
-import {
-	ArrowLeftIcon,
-	ArrowRotateClockwiseIcon,
-	CircleWarningIcon,
-	GridSquareCirclePlusIcon,
-} from "@/components/icons"
+import { ArrowLeftIcon, CircleWarningIcon, GridSquareCirclePlusIcon } from "@/components/icons"
 
 const asTemplateId = Schema.decodeUnknownSync(DashboardTemplateId)
 
@@ -123,8 +119,7 @@ function TemplatesPage() {
 			})
 
 			if (Exit.isFailure(result)) {
-				const { title, message } = displayError(result)
-				toastManager.add({ title, description: message, type: "error" })
+				showErrorToast(result)
 				return
 			}
 
@@ -149,97 +144,86 @@ function TemplatesPage() {
 	)
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Dashboards", href: "/dashboards" }, { label: "Templates" }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								// Readiness fails open, so until it resolves every template reads as
-								// ready; stating the count then would flash a wrong number.
-								failed || loading || !readinessResolved ? undefined : (
-									<div className="flex items-center gap-2 text-xs">
-										<span className="text-primary font-mono">
-											{readyCount} ready for your data
-										</span>
-										<span className="text-muted-foreground">·</span>
-										<span className="text-muted-foreground font-mono">
-											{catalogueCount} templates
-										</span>
-									</div>
-								)
-							}
-						>
+		<>
+			<DashboardPage
+				breadcrumbs={[{ label: "Dashboards", href: "/dashboards" }, { label: "Templates" }]}
+				titleContent={
+					// Readiness fails open, so until it resolves every template reads as
+					// ready; stating the count then would flash a wrong number.
+					failed || loading || !readinessResolved ? undefined : (
+						<div className="flex items-center gap-2 text-xs">
+							<span className="text-primary font-mono">{readyCount} ready for your data</span>
+							<span className="text-muted-foreground">·</span>
+							<span className="text-muted-foreground font-mono">
+								{catalogueCount} templates
+							</span>
+						</div>
+					)
+				}
+				headerActions={
+					<Button variant="outline" size="sm" onClick={() => navigate({ to: "/dashboards" })}>
+						<ArrowLeftIcon size={14} data-icon="inline-start" />
+						Back to dashboards
+					</Button>
+				}
+				fill
+			>
+				{failed ? (
+					<Empty className="h-full">
+						<EmptyHeader>
+							<EmptyMedia variant="icon">
+								<CircleWarningIcon size={18} />
+							</EmptyMedia>
+							<EmptyTitle>Couldn't load the templates</EmptyTitle>
+							<EmptyDescription>
+								The template catalogue didn't answer. Nothing you've built is affected — this
+								page only reads.
+							</EmptyDescription>
+						</EmptyHeader>
+						<div className="flex items-center gap-2">
+							<RefreshButton
+								variant="default"
+								size="sm"
+								label="Try again"
+								onRefresh={() => refreshList()}
+							/>
 							<Button
 								variant="outline"
 								size="sm"
-								onClick={() => navigate({ to: "/dashboards" })}
+								onClick={() => createFromTemplate(BLANK_TEMPLATE_ID, {})}
 							>
-								<ArrowLeftIcon size={14} data-icon="inline-start" />
-								Back to dashboards
+								Start blank instead
 							</Button>
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Fill>
-						{failed ? (
-							<Empty className="h-full">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<CircleWarningIcon size={18} />
-									</EmptyMedia>
-									<EmptyTitle>Couldn't load the templates</EmptyTitle>
-									<EmptyDescription>
-										The template catalogue didn't answer. Nothing you've built is affected
-										— this page only reads.
-									</EmptyDescription>
-								</EmptyHeader>
-								<div className="flex items-center gap-2">
-									<Button size="sm" onClick={() => refreshList()}>
-										<ArrowRotateClockwiseIcon size={13} data-icon="inline-start" />
-										Try again
-									</Button>
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() => createFromTemplate(BLANK_TEMPLATE_ID, {})}
-									>
-										Start blank instead
-									</Button>
-								</div>
-							</Empty>
-						) : (
-							<div className="flex h-full min-h-0">
-								<div className="flex min-h-0 w-full flex-col border-border lg:w-[460px] lg:shrink-0 lg:border-r">
-									<TemplateList
-										templates={templates}
-										readiness={readiness}
-										selectedId={selected?.id ?? null}
-										onSelect={(template) => setSelected(template.id)}
-										onSelectBlank={() => createFromTemplate(BLANK_TEMPLATE_ID, {})}
-										query={query}
-										onQueryChange={(next) => setQuery(next ?? "")}
-										filter={filter}
-										onFilterChange={setFilter}
-										loading={loading}
-									/>
-								</div>
-								{/* `--panel-surface` is the colour the panel's sticky footer
-								    paints and fades the scrolling preview into. It has to be
-								    declared by whoever owns the surface — here the page, in the
-								    sheet below its popover. */}
-								{!panelIsSheet && (
-									<div className="bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]">
-										{panel}
-									</div>
-								)}
+						</div>
+					</Empty>
+				) : (
+					<div className="flex h-full min-h-0">
+						<div className="flex min-h-0 w-full flex-col border-border lg:w-[460px] lg:shrink-0 lg:border-r">
+							<TemplateList
+								templates={templates}
+								readiness={readiness}
+								selectedId={selected?.id ?? null}
+								onSelect={(template) => setSelected(template.id)}
+								onSelectBlank={() => createFromTemplate(BLANK_TEMPLATE_ID, {})}
+								query={query}
+								onQueryChange={(next) => setQuery(next ?? "")}
+								filter={filter}
+								onFilterChange={setFilter}
+								loading={loading}
+							/>
+						</div>
+						{/* `--panel-surface` is the colour the panel's sticky footer
+						    paints and fades the scrolling preview into. It has to be
+						    declared by whoever owns the surface — here the page, in the
+						    sheet below its popover. */}
+						{!panelIsSheet && (
+							<div className="bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]">
+								{panel}
 							</div>
 						)}
-					</DashboardLayout.Fill>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
+					</div>
+				)}
+			</DashboardPage>
 
 			{panelIsSheet && (
 				<Sheet
@@ -260,6 +244,6 @@ function TemplatesPage() {
 					</SheetContent>
 				</Sheet>
 			)}
-		</DashboardLayout.Root>
+		</>
 	)
 }

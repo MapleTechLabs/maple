@@ -1,59 +1,32 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { useOrganization, useAuth } from "@clerk/clerk-react"
 import { useState } from "react"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@maple/ui/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
 import { Badge } from "@maple/ui/components/ui/badge"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { toastAccountError } from "@/components/account/account-errors"
+import { settleClerk } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { PlusIcon, DotsVerticalIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/components/icons"
+import { PlusIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/components/icons"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
 	const first = firstName?.[0] ?? ""
 	const last = lastName?.[0] ?? ""
 	return (first + last).toUpperCase() || "?"
-}
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-	month: "short",
-	day: "numeric",
-	year: "numeric",
-})
-
-function formatDate(date: Date) {
-	return dateFormatter.format(date)
 }
 
 function roleBadge(role: string) {
@@ -83,24 +56,30 @@ export function MembersSection() {
 	} | null>(null)
 	const [withRemoveLoading, removeLoading] = useAsyncAction((task: () => Promise<void>) => task())
 
+	const [invitationToRevoke, setInvitationToRevoke] = useState<{
+		email: string
+		revoke: () => Promise<unknown>
+	} | null>(null)
+	const [withRevokeLoading, revokeLoading] = useAsyncAction((task: () => Promise<void>) => task())
+	const { effectiveTimezone } = useTimezonePreference()
+
 	const isAdmin = orgRole === "org:admin"
 
 	function handleInvite() {
 		if (!organization || !inviteEmail.trim()) return
 		return withInviteLoading(async () => {
-			try {
-				await organization.inviteMember({
+			const ok = await settleClerk(
+				organization.inviteMember({
 					emailAddress: inviteEmail.trim(),
-					role: inviteRole as "org:admin" | "org:member",
-				})
-				toastManager.add({ title: `Invitation sent to ${inviteEmail}`, type: "success" })
-				setInviteEmail("")
-				setInviteRole("org:member")
-				setInviteOpen(false)
-				invitations?.revalidate?.()
-			} catch (err: unknown) {
-				toastAccountError(err, "Failed to send invitation")
-			}
+					role: inviteRole === "org:admin" ? "org:admin" : "org:member",
+				}),
+				{ success: `Invitation sent to ${inviteEmail}`, error: "Failed to send invitation" },
+			)
+			if (!ok) return
+			setInviteEmail("")
+			setInviteRole("org:member")
+			setInviteOpen(false)
+			invitations?.revalidate?.()
 		})
 	}
 
@@ -109,42 +88,39 @@ export function MembersSection() {
 		update: (params: { role: string }) => Promise<unknown>,
 	) {
 		const newRole = currentRole === "org:admin" ? "org:member" : "org:admin"
-		try {
-			await update({ role: newRole })
-			toastManager.add({
-				title: `Role updated to ${newRole === "org:admin" ? "Admin" : "Member"}`,
-				type: "success",
-			})
-			memberships?.revalidate?.()
-		} catch (err: unknown) {
-			toastAccountError(err, "Failed to update role")
-		}
+		const ok = await settleClerk(update({ role: newRole }), {
+			success: `Role updated to ${newRole === "org:admin" ? "Admin" : "Member"}`,
+			error: "Failed to update role",
+		})
+		if (ok) memberships?.revalidate?.()
 	}
 
 	function handleRemoveMember() {
 		if (!memberToRemove) return
 		return withRemoveLoading(async () => {
-			try {
-				await memberToRemove.destroy()
-				toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
-				memberships?.revalidate?.()
-				setRemoveDialogOpen(false)
-				setMemberToRemove(null)
-			} catch (err: unknown) {
-				// Keep the confirmation open with its member selected so the admin can retry.
-				toastAccountError(err, "Failed to remove member")
-			}
+			// On failure the confirmation stays open with its member selected so the admin can retry.
+			const ok = await settleClerk(memberToRemove.destroy(), {
+				success: `${memberToRemove.name} has been removed`,
+				error: "Failed to remove member",
+			})
+			if (!ok) return
+			memberships?.revalidate?.()
+			setRemoveDialogOpen(false)
+			setMemberToRemove(null)
 		})
 	}
 
-	async function handleRevokeInvitation(revoke: () => Promise<unknown>, email: string) {
-		try {
-			await revoke()
-			toastManager.add({ title: `Invitation to ${email} revoked`, type: "success" })
+	function handleRevokeInvitation() {
+		if (!invitationToRevoke) return
+		return withRevokeLoading(async () => {
+			const ok = await settleClerk(invitationToRevoke.revoke(), {
+				success: `Invitation to ${invitationToRevoke.email} revoked`,
+				error: "Failed to revoke invitation",
+			})
+			if (!ok) return
 			invitations?.revalidate?.()
-		} catch (err: unknown) {
-			toastAccountError(err, "Failed to revoke invitation")
-		}
+			setInvitationToRevoke(null)
+		})
 	}
 
 	if (!isLoaded) {
@@ -188,256 +164,225 @@ export function MembersSection() {
 	const memberList = memberships?.data ?? []
 	const invitationList = invitations?.data ?? []
 
+	const inviteButton = isAdmin ? (
+		<Button size="sm" onClick={() => setInviteOpen(true)}>
+			<PlusIcon data-icon="inline-start" />
+			Invite member
+		</Button>
+	) : null
+
 	return (
-		<div className="space-y-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>Team Members</CardTitle>
-					{isAdmin && (
-						<CardAction>
-							<Button size="sm" onClick={() => setInviteOpen(true)}>
-								<PlusIcon size={14} />
-								Invite
-							</Button>
-						</CardAction>
-					)}
-				</CardHeader>
-				<CardContent>
-					{memberList.length === 0 ? (
-						<Empty>
-							<EmptyHeader>
-								<EmptyMedia>
-									<UserIcon size={20} />
-								</EmptyMedia>
-								<EmptyTitle>No members</EmptyTitle>
-								<EmptyDescription>This organization has no members yet.</EmptyDescription>
-							</EmptyHeader>
-							{isAdmin && (
-								<Button size="sm" onClick={() => setInviteOpen(true)}>
-									<PlusIcon size={14} />
-									Invite
-								</Button>
-							)}
-						</Empty>
-					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>User</TableHead>
-									<TableHead>Role</TableHead>
-									<TableHead>Joined</TableHead>
-									{isAdmin && <TableHead className="w-10" />}
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{memberList.map((member) => {
-									const userData = member.publicUserData
-									const isCurrentUser = userData?.userId === userId
-									const memberName =
-										[userData?.firstName, userData?.lastName].filter(Boolean).join(" ") ||
-										userData?.identifier ||
-										"Unknown"
+		<SettingsSections>
+			<SettingsSection
+				title="Team members"
+				actions={memberList.length > 0 ? inviteButton : undefined}
+				padded={memberList.length === 0}
+			>
+				{memberList.length === 0 ? (
+					<Empty>
+						<EmptyHeader>
+							<EmptyMedia>
+								<UserIcon size={20} />
+							</EmptyMedia>
+							<EmptyTitle>No members</EmptyTitle>
+							<EmptyDescription>This organization has no members yet.</EmptyDescription>
+						</EmptyHeader>
+						{inviteButton}
+					</Empty>
+				) : (
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>User</TableHead>
+								<TableHead>Role</TableHead>
+								<TableHead>Joined</TableHead>
+								{isAdmin && <TableHead className="w-10" />}
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{memberList.map((member) => {
+								const userData = member.publicUserData
+								const isCurrentUser = userData?.userId === userId
+								const memberName =
+									[userData?.firstName, userData?.lastName].filter(Boolean).join(" ") ||
+									userData?.identifier ||
+									"Unknown"
 
-									return (
-										<TableRow key={member.id}>
-											<TableCell>
-												<div className="flex items-center gap-3">
-													<Avatar className="size-6">
-														<AvatarImage src={userData?.imageUrl} />
-														<AvatarFallback>
-															{getInitials(
-																userData?.firstName,
-																userData?.lastName,
-															)}
-														</AvatarFallback>
-													</Avatar>
-													<div className="min-w-0">
-														<div className="text-xs font-medium truncate">
-															{memberName}
-															{isCurrentUser && (
-																<span className="text-muted-foreground ml-1">
-																	(you)
-																</span>
-															)}
-														</div>
-														<div className="text-muted-foreground text-xs truncate">
-															{userData?.identifier}
-														</div>
-													</div>
-												</div>
-											</TableCell>
-											<TableCell>{roleBadge(member.role)}</TableCell>
-											<TableCell className="text-muted-foreground text-xs">
-												{formatDate(member.createdAt)}
-											</TableCell>
-											{isAdmin && (
-												<TableCell>
-													{!isCurrentUser && (
-														<DropdownMenu>
-															<DropdownMenuTrigger
-																render={
-																	<Button
-																		variant="ghost"
-																		size="icon"
-																		className="size-7"
-																	/>
-																}
-															>
-																<DotsVerticalIcon size={14} />
-															</DropdownMenuTrigger>
-															<DropdownMenuContent align="end">
-																<DropdownMenuItem
-																	onClick={() =>
-																		handleRoleChange(
-																			member.role,
-																			(params) => member.update(params),
-																		)
-																	}
-																>
-																	<ShieldIcon size={14} />
-																	{member.role === "org:admin"
-																		? "Change to Member"
-																		: "Change to Admin"}
-																</DropdownMenuItem>
-																<DropdownMenuItem
-																	variant="destructive"
-																	onClick={() => {
-																		setMemberToRemove({
-																			id: member.id,
-																			name: memberName,
-																			destroy: () => member.destroy(),
-																		})
-																		setRemoveDialogOpen(true)
-																	}}
-																>
-																	<TrashIcon size={14} />
-																	Remove member
-																</DropdownMenuItem>
-															</DropdownMenuContent>
-														</DropdownMenu>
-													)}
-												</TableCell>
-											)}
-										</TableRow>
-									)
-								})}
-							</TableBody>
-						</Table>
-					)}
-				</CardContent>
-			</Card>
-
-			{invitationList.length > 0 && (
-				<Card>
-					<CardHeader>
-						<CardTitle>Pending Invitations</CardTitle>
-						<CardDescription>
-							Invitations that have been sent but not yet accepted.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Email</TableHead>
-									<TableHead>Role</TableHead>
-									<TableHead>Status</TableHead>
-									{isAdmin && <TableHead className="w-10" />}
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{invitationList.map((invitation) => (
-									<TableRow key={invitation.id}>
+								return (
+									<TableRow key={member.id}>
 										<TableCell>
 											<div className="flex items-center gap-3">
 												<Avatar className="size-6">
+													<AvatarImage src={userData?.imageUrl} />
 													<AvatarFallback>
-														<EnvelopeIcon size={12} />
+														{getInitials(userData?.firstName, userData?.lastName)}
 													</AvatarFallback>
 												</Avatar>
-												<span className="text-xs">{invitation.emailAddress}</span>
+												<div className="min-w-0">
+													<div className="text-xs font-medium truncate">
+														{memberName}
+														{isCurrentUser && (
+															<span className="text-muted-foreground ml-1">
+																(you)
+															</span>
+														)}
+													</div>
+													<div className="text-muted-foreground text-xs truncate">
+														{userData?.identifier}
+													</div>
+												</div>
 											</div>
 										</TableCell>
-										<TableCell>{roleBadge(invitation.role)}</TableCell>
-										<TableCell>
-											<Badge variant="secondary">Pending</Badge>
+										<TableCell>{roleBadge(member.role)}</TableCell>
+										<TableCell className="text-muted-foreground text-xs">
+											{formatDateInTimezone(member.createdAt, {
+												timeZone: effectiveTimezone,
+											})}
 										</TableCell>
 										{isAdmin && (
 											<TableCell>
-												<Button
-													variant="ghost"
-													size="sm"
-													className="text-destructive hover:text-destructive text-xs"
-													onClick={() =>
-														handleRevokeInvitation(
-															() => invitation.revoke(),
-															invitation.emailAddress,
-														)
-													}
-												>
-													Revoke
-												</Button>
+												{!isCurrentUser && (
+													<RowActionsMenu label={`Actions for ${memberName}`}>
+														<DropdownMenuItem
+															onClick={() =>
+																handleRoleChange(member.role, (params) =>
+																	member.update(params),
+																)
+															}
+														>
+															<ShieldIcon size={14} />
+															{member.role === "org:admin"
+																? "Change to Member"
+																: "Change to Admin"}
+														</DropdownMenuItem>
+														<DropdownMenuItem
+															variant="destructive"
+															onClick={() => {
+																setMemberToRemove({
+																	id: member.id,
+																	name: memberName,
+																	destroy: () => member.destroy(),
+																})
+																setRemoveDialogOpen(true)
+															}}
+														>
+															<TrashIcon size={14} />
+															Remove member
+														</DropdownMenuItem>
+													</RowActionsMenu>
+												)}
 											</TableCell>
 										)}
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</CardContent>
-				</Card>
+								)
+							})}
+						</TableBody>
+					</Table>
+				)}
+			</SettingsSection>
+
+			{invitationList.length > 0 && (
+				<SettingsSection
+					title="Pending invitations"
+					description="Invitations that have been sent but not yet accepted."
+					padded={false}
+				>
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Email</TableHead>
+								<TableHead>Role</TableHead>
+								<TableHead>Status</TableHead>
+								{isAdmin && <TableHead className="w-10" />}
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{invitationList.map((invitation) => (
+								<TableRow key={invitation.id}>
+									<TableCell>
+										<div className="flex items-center gap-3">
+											<Avatar className="size-6">
+												<AvatarFallback>
+													<EnvelopeIcon size={12} />
+												</AvatarFallback>
+											</Avatar>
+											<span className="text-xs">{invitation.emailAddress}</span>
+										</div>
+									</TableCell>
+									<TableCell>{roleBadge(invitation.role)}</TableCell>
+									<TableCell>
+										<Badge variant="secondary">Pending</Badge>
+									</TableCell>
+									{isAdmin && (
+										<TableCell>
+											<Button
+												variant="ghost"
+												size="sm"
+												className="text-destructive hover:text-destructive text-xs"
+												onClick={() =>
+													setInvitationToRevoke({
+														email: invitation.emailAddress,
+														revoke: () => invitation.revoke(),
+													})
+												}
+											>
+												Revoke
+											</Button>
+										</TableCell>
+									)}
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				</SettingsSection>
 			)}
 
-			<Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Invite member</DialogTitle>
-						<DialogDescription>Send an invitation to join {organization.name}.</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-4 px-6 py-2">
-						<Field>
-							<FieldLabel htmlFor="invite-email" className="text-xs font-medium">
-								Email address
-							</FieldLabel>
-							<Input
-								id="invite-email"
-								type="email"
-								placeholder="colleague@example.com"
-								value={inviteEmail}
-								onChange={(e) => setInviteEmail(e.target.value)}
-								onKeyDown={(e) => e.stopPropagation()}
-							/>
-						</Field>
-						<Field>
-							<FieldLabel htmlFor="invite-role" className="text-xs font-medium">
-								Role
-							</FieldLabel>
-							<Select value={inviteRole} onValueChange={(val) => val && setInviteRole(val)}>
-								<SelectTrigger id="invite-role" className="w-full">
-									<SelectValue placeholder="Select role">
-										{inviteRole === "org:admin" ? "Admin" : "Member"}
-									</SelectValue>
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="org:member">Member</SelectItem>
-									<SelectItem value="org:admin">Admin</SelectItem>
-								</SelectContent>
-							</Select>
-						</Field>
-					</div>
-					<DialogFooter>
-						<Button
-							variant="outline"
-							onClick={() => setInviteOpen(false)}
-							disabled={inviteLoading}
-						>
-							Cancel
-						</Button>
-						<Button onClick={handleInvite} loading={inviteLoading} disabled={!inviteEmail.trim()}>
-							Send invitation
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+			<FormDialog
+				open={inviteOpen}
+				onOpenChange={setInviteOpen}
+				title="Invite member"
+				description={`Send an invitation to join ${organization.name}.`}
+				onSubmit={() => void handleInvite()}
+				submitLabel="Send invitation"
+				pending={inviteLoading}
+				submitDisabled={!inviteEmail.trim()}
+			>
+				<Field>
+					<FieldLabel htmlFor="invite-email">Email address</FieldLabel>
+					<Input
+						id="invite-email"
+						type="email"
+						placeholder="colleague@example.com"
+						value={inviteEmail}
+						onChange={(e) => setInviteEmail(e.target.value)}
+						onKeyDown={(e) => e.stopPropagation()}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="invite-role">Role</FieldLabel>
+					<Select value={inviteRole} onValueChange={(val) => val && setInviteRole(val)}>
+						<SelectTrigger id="invite-role" className="w-full">
+							<SelectValue placeholder="Select role">
+								{inviteRole === "org:admin" ? "Admin" : "Member"}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="org:member">Member</SelectItem>
+							<SelectItem value="org:admin">Admin</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+			</FormDialog>
+
+			<ConfirmDialog
+				open={invitationToRevoke !== null}
+				onOpenChange={(open) => (open ? undefined : setInvitationToRevoke(null))}
+				title="Revoke invitation?"
+				description={`The invitation to ${invitationToRevoke?.email ?? ""} will stop working. You can invite them again later.`}
+				confirmLabel="Revoke invitation"
+				pending={revokeLoading}
+				onConfirm={() => void handleRevokeInvitation()}
+			/>
 
 			<ConfirmDialog
 				open={removeDialogOpen}
@@ -448,6 +393,6 @@ export function MembersSection() {
 				pending={removeLoading}
 				onConfirm={() => void handleRemoveMember()}
 			/>
-		</div>
+		</SettingsSections>
 	)
 }

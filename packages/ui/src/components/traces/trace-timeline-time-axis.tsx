@@ -41,7 +41,7 @@ export function TraceTimelineTimeAxis({ controller, columnWidthPx, gridRef }: Tr
 			syncChildren(axis, ticks.length, () => {
 				const el = document.createElement("span")
 				el.className =
-					"pointer-events-none absolute bottom-1 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-medium text-muted-foreground"
+					"pointer-events-none absolute bottom-1 -translate-x-1/2 whitespace-nowrap font-mono text-3xs font-medium text-muted-foreground"
 				return el
 			})
 			const grid = gridRef?.current ?? null

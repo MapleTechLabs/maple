@@ -7,8 +7,10 @@ import { useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { MagnifierIcon, PlusIcon, ServerIcon } from "@/components/icons"
 import { ResultView } from "@/components/common/result-view"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
@@ -28,8 +30,6 @@ import { listHostsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const DEFAULT_PRESET = "12h"
 
@@ -66,10 +66,7 @@ function HostsPage() {
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
 	}
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -77,89 +74,59 @@ function HostsPage() {
 	}
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Infrastructure", href: "/infra" }, { label: "Hosts" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								titleContent={<HostsViewTabs view="hosts" timeSearch={search} />}
-							>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title="Hosts"
-									description="Every machine sending CPU, memory, disk and network metrics, busiest first."
-									actions={
-										<Button
-											size="sm"
-											variant="outline"
-											onClick={() => setInstallOpen(true)}
-										>
-											<PlusIcon size={14} />
-											Add host
-										</Button>
-									}
-								/>
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Hosts" }]}
+			titleContent={<HostsViewTabs view="hosts" timeSearch={search} />}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			gap="lg"
+		>
+			<PageHero
+				title="Hosts"
+				description="Every machine sending CPU, memory, disk and network metrics, busiest first."
+				actions={
+					<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
+						<PlusIcon size={14} />
+						Add host
+					</Button>
+				}
+			/>
 
-								<ResultView
-									result={hostsResult}
-									loading={
-										<div className="space-y-6">
-											<HostSummaryBandLoading className={FLEET_BAND_BOXED} />
-											<HostTableLoading />
-										</div>
-									}
-									isEmpty={(response) => response.data.length === 0}
-									empty={
-										<InfraSetupEmpty
-											icon={<ServerIcon size={16} />}
-											title="No hosts reporting yet"
-											description="Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
-											installTab="hosts"
-											actionLabel="Add host"
-											docs="hosts"
-										/>
-									}
-								>
-									{(response, { waiting }) => (
-										<HostList
-											hosts={response.data}
-											waiting={waiting}
-											referenceTime={endTime}
-											query={search.q ?? ""}
-											scope={search.scope}
-											onQueryChange={(q) => patchSearch({ q: q || undefined })}
-											onScopeChange={(scope) => patchSearch({ scope })}
-											onClear={() => patchSearch({ q: undefined, scope: undefined })}
-										/>
-									)}
-								</ResultView>
-							</div>
+			<ResultView
+				result={hostsResult}
+				loading={
+					<div className="space-y-6">
+						<HostSummaryBandLoading className={FLEET_BAND_BOXED} />
+						<HostTableLoading />
+					</div>
+				}
+				isEmpty={(response) => response.data.length === 0}
+				empty={
+					<InfraSetupEmpty
+						icon={<ServerIcon size={16} />}
+						title="No hosts reporting yet"
+						description="Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
+						installTab="hosts"
+						actionLabel="Add host"
+						docs="hosts"
+					/>
+				}
+			>
+				{(response, { waiting }) => (
+					<HostList
+						hosts={response.data}
+						waiting={waiting}
+						referenceTime={endTime}
+						query={search.q ?? ""}
+						scope={search.scope}
+						onQueryChange={(q) => patchSearch({ q: q || undefined })}
+						onScopeChange={(scope) => patchSearch({ scope })}
+						onClear={() => patchSearch({ q: undefined, scope: undefined })}
+					/>
+				)}
+			</ResultView>
 
-							<InstallHostModal
-								open={installOpen}
-								onOpenChange={setInstallOpen}
-								defaultTab="hosts"
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+			<InstallHostModal open={installOpen} onOpenChange={setInstallOpen} defaultTab="hosts" />
+		</DashboardPage>
 	)
 }
 
@@ -208,7 +175,7 @@ function HostList({
 				placeholder="Search hosts…"
 				trailing={
 					hosts.length >= HOST_LIST_LIMIT
-						? `${filtered.length.toLocaleString()} of the ${HOST_LIST_LIMIT.toLocaleString()} most recently seen hosts`
+						? `${formatNumber(filtered.length)} of the ${formatNumber(HOST_LIST_LIMIT)} most recently seen hosts`
 						: filtered.length === hosts.length
 							? countLabel(hosts.length, hosts.length, "host")
 							: `${filtered.length} of ${hosts.length} hosts`

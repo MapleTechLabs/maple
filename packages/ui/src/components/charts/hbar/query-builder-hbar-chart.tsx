@@ -2,7 +2,7 @@ import * as React from "react"
 
 import type { QueryBuilderHbarChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
 import { pickValueField, toBreakdownRows, type BreakdownRow } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
@@ -28,11 +28,8 @@ function fmtValue(value: number, unit?: string): string {
 	return unit ? formatValueByUnit(value, unit) : formatNumber(value)
 }
 
-function fmtPct(fraction: number): string {
-	const pct = fraction * 100
-	if (pct > 0 && pct < 0.1) return "<0.1%"
-	return `${pct.toFixed(pct < 10 && pct > 0 ? 1 : 0)}%`
-}
+// A sliver of the total reads "<0.1%", never a misleading "0%".
+const PCT_FLOOR = { floor: 0.001 }
 
 const ROW_GAP = 6
 const ROW_MIN_H = 18
@@ -108,7 +105,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 	if (bars.length === 0) {
 		return (
 			<div className={cn("relative h-full w-full grid place-items-center", className)}>
-				<span className="text-[11px] text-muted-foreground">No data</span>
+				<span className="text-2xs text-muted-foreground">No data</span>
 			</div>
 		)
 	}
@@ -139,7 +136,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 							// Label / track / value: the value column is sized by its content
 							// and right-aligned, so the numbers line up down the panel however
 							// long the category names are.
-							className="grid min-h-0 shrink-0 items-center gap-2 text-[11px] leading-none"
+							className="grid min-h-0 shrink-0 items-center gap-2 text-2xs leading-none"
 							style={{
 								gridTemplateColumns: "minmax(0, 38%) 1fr max-content",
 								height: rowH,
@@ -172,7 +169,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 							<span className="shrink-0 text-right tabular-nums text-muted-foreground">
 								<span className="text-foreground/90">{fmtValue(bar.value, unit)}</span>
 								<span className="px-1 text-muted-foreground/50">·</span>
-								<span>{fmtPct(bar.pctOfTotal)}</span>
+								<span>{formatPercent(bar.pctOfTotal, PCT_FLOOR)}</span>
 							</span>
 						</div>
 					)
@@ -180,7 +177,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 			</div>
 			{hiddenCount > 0 && (
 				<div
-					className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-[10px] leading-none text-muted-foreground"
+					className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-3xs leading-none text-muted-foreground"
 					style={{ height: MORE_ROW_H + 16 }}
 					data-slot="hbar-more"
 				>

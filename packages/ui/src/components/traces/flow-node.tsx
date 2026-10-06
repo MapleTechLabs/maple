@@ -100,7 +100,7 @@ function StatusBadge({
 	statusCode: string
 }) {
 	const { platform, cacheInfo, httpInfo } = desc
-	const base = "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+	const base = "shrink-0 rounded px-1.5 py-0.5 text-3xs font-semibold"
 
 	if (platform?.outcome?.bad) {
 		return (
@@ -166,12 +166,12 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
 					)}
 				>
-					<div className="flex items-center gap-1.5 min-w-0 text-[11px]">
+					<div className="flex items-center gap-1.5 min-w-0 text-2xs">
 						<span className="font-semibold text-muted-foreground">Missing Span</span>
 						<span className="flex-1" />
 						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
 					</div>
-					<div className="text-[10px] italic text-muted-foreground/50">Not ingested or dropped</div>
+					<div className="text-3xs italic text-muted-foreground/50">Not ingested or dropped</div>
 				</div>
 				<Handle
 					type="source"
@@ -228,7 +228,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 				)}
 			>
 				{isCombined && (
-					<span className="absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground shadow-sm">
+					<span className="absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-3xs font-semibold tabular-nums text-muted-foreground shadow-sm">
 						×{count}
 					</span>
 				)}
@@ -254,7 +254,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						{/* Row 1: operation + status */}
 						<div className="flex min-w-0 items-center gap-1.5">
 							<span
-								className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground"
+								className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground"
 								title={primaryText}
 							>
 								{primaryText}
@@ -263,7 +263,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						</div>
 
 						{/* Row 2: service + category label + duration */}
-						<div className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+						<div className="flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground">
 							<ServiceDot serviceName={span.serviceName} className="size-1.5" />
 							<span className="truncate">{span.serviceName}</span>
 							<span className="shrink-0 text-muted-foreground/50">·</span>

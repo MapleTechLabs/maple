@@ -27,7 +27,7 @@ export const badgeVariants = cva(
 				lg: "h-6.5 min-w-6.5 px-[calc(--spacing(1.5)-1px)] text-base sm:h-5.5 sm:min-w-5.5 sm:text-sm",
 				sm: "h-5 min-w-5 rounded-[.25rem] px-[calc(--spacing(1)-1px)] text-xs sm:h-4 sm:min-w-4 sm:text-[.625rem]",
 				// Dense tables and meta rows: fixed 10px on every breakpoint.
-				xs: "h-4 min-w-4 rounded-[.25rem] px-1 text-[10px] sm:h-4 sm:min-w-4 sm:text-[10px] [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
+				xs: "h-4 min-w-4 rounded-[.25rem] px-1 text-3xs sm:h-4 sm:min-w-4 sm:text-3xs [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
 			},
 			pill: {
 				false: "",
@@ -51,6 +51,9 @@ export const badgeVariants = cva(
 				secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
 				ok: TONE_SOFT.ok,
 				warn: TONE_SOFT.warn,
+				// Tiny uppercase label chip (System, Current, Pinned). Sizes itself, so it
+				// resets the size variant; recolour with className.
+				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-muted/80 [button&,a&]:hover:text-foreground",
 			},
 		},
 	},

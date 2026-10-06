@@ -3,16 +3,17 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useAuth, useOrganization, useOrganizationList } from "@clerk/clerk-react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { UserIcon } from "@/components/icons"
 import { ImageDropzone, TypeToConfirmField } from "@/components/common/image-dropzone"
-import { toastAccountError } from "@/components/account/account-errors"
+import { settleClerk } from "@/components/account/account-errors"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { toastExit } from "@/lib/error-toast"
 import { OrgAvatar } from "@/components/dashboard/org-switcher-menu"
@@ -33,8 +34,8 @@ export function OrganizationSection() {
 	const isAdmin = orgRole === "org:admin"
 
 	const [name, setName] = useState("")
-	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<void>) => task())
-	const [withSavingLogo, isSavingLogo] = useAsyncAction((task: () => Promise<void>) => task())
+	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<boolean>) => task())
+	const [withSavingLogo, isSavingLogo] = useAsyncAction((task: () => Promise<boolean>) => task())
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
 	const [withDeleting, isDeleting] = useAsyncAction((task: () => Promise<void>) => task())
@@ -71,38 +72,32 @@ export function OrganizationSection() {
 
 	function handleRename() {
 		if (!organization || !nameDirty) return
-		return withSavingName(async () => {
-			try {
-				await organization.update({ name: trimmedName })
-				toastManager.add({ title: "Organization renamed", type: "success" })
-			} catch (err) {
-				toastAccountError(err, "Failed to rename organization")
-			}
-		})
+		return withSavingName(() =>
+			settleClerk(organization.update({ name: trimmedName }), {
+				success: "Organization renamed",
+				error: "Failed to rename organization",
+			}),
+		)
 	}
 
 	function handleLogoSelect(file: File) {
 		if (!organization || !isAdmin || isSavingLogo) return
-		return withSavingLogo(async () => {
-			try {
-				await organization.setLogo({ file })
-				toastManager.add({ title: "Organization logo updated", type: "success" })
-			} catch (err) {
-				toastAccountError(err, "Failed to update logo")
-			}
-		})
+		return withSavingLogo(() =>
+			settleClerk(organization.setLogo({ file }), {
+				success: "Organization logo updated",
+				error: "Failed to update logo",
+			}),
+		)
 	}
 
 	function handleRemoveLogo() {
 		if (!organization || !isAdmin || isSavingLogo) return
-		return withSavingLogo(async () => {
-			try {
-				await organization.setLogo({ file: null })
-				toastManager.add({ title: "Organization logo removed", type: "success" })
-			} catch (err) {
-				toastAccountError(err, "Failed to remove logo")
-			}
-		})
+		return withSavingLogo(() =>
+			settleClerk(organization.setLogo({ file: null }), {
+				success: "Organization logo removed",
+				error: "Failed to remove logo",
+			}),
+		)
 	}
 
 	function handleDelete() {
@@ -114,11 +109,8 @@ export function OrganizationSection() {
 					(m) => m.organization.id !== organization.id,
 				)
 				const next = remaining[0]?.organization.id ?? null
-				try {
-					if (setActive) await setActive({ organization: next })
-				} catch {
-					// fall through to navigation; Clerk session will refresh on next load
-				}
+				// A failed switch falls through to navigation; Clerk's session refreshes on next load.
+				if (setActive) await setActive({ organization: next }).catch(() => undefined)
 				toastManager.add({ title: "Organization deleted", type: "success" })
 				setDeleteOpen(false)
 				setConfirmText("")
@@ -133,89 +125,80 @@ export function OrganizationSection() {
 	}
 
 	return (
-		<div className="space-y-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>General</CardTitle>
-					<CardDescription>
-						{isAdmin
-							? "Update your organization's logo and name. Changes are visible to all members."
-							: "Only org admins can change these settings."}
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="space-y-4 max-w-md">
-						<Field>
-							<FieldLabel>Logo</FieldLabel>
-							<ImageDropzone
-								preview={
-									<OrgAvatar
-										name={organization.name}
-										imageUrl={organization.imageUrl}
-										className="size-full"
-										fit="contain"
-									/>
-								}
-								onFile={(file) => void handleLogoSelect(file)}
-								onRemove={organization.hasImage ? () => void handleRemoveLogo() : undefined}
-								uploading={isSavingLogo}
-								disabled={!isAdmin}
-								targetLabel="Change organization logo"
-								changeLabel="Change logo"
-							/>
-						</Field>
-						<Field>
-							<FieldLabel htmlFor="org-name">Name</FieldLabel>
-							<Input
-								id="org-name"
-								value={name}
-								onChange={(e) => setName(e.target.value)}
-								disabled={!isAdmin || isSavingName}
-								placeholder="Organization name"
-							/>
-						</Field>
-						<div className="flex justify-end">
-							<Button
-								size="sm"
-								onClick={handleRename}
-								loading={isSavingName}
-								disabled={!isAdmin || !nameDirty}
-							>
-								Save
-							</Button>
-						</div>
-						<DataRegionRow metadata={organization.publicMetadata} />
-					</div>
-				</CardContent>
-			</Card>
-
-			<Card className="border-destructive/40">
-				<CardHeader>
-					<CardTitle className="text-destructive">Danger Zone</CardTitle>
-					<CardDescription>
-						Permanently delete this organization, its dashboards, alerts, API keys, and all
-						associated data. Telemetry already sent to Maple will age out per its retention
-						policy. This cannot be undone.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="flex items-center justify-between gap-4">
-						<div className="text-xs text-muted-foreground">
-							{isAdmin
-								? `Delete "${organization.name}" and remove every member's access.`
-								: "Only org admins can delete the organization."}
-						</div>
-						<Button
-							variant="destructive"
-							size="sm"
+		<SettingsSections>
+			<SettingsSection
+				title="General"
+				description={
+					isAdmin
+						? "Update your organization's logo and name. Changes are visible to all members."
+						: "Only org admins can change these settings."
+				}
+			>
+				<div className="max-w-md space-y-4">
+					<Field>
+						<FieldLabel>Logo</FieldLabel>
+						<ImageDropzone
+							preview={
+								<OrgAvatar
+									name={organization.name}
+									imageUrl={organization.imageUrl}
+									className="size-full"
+									fit="contain"
+								/>
+							}
+							onFile={(file) => void handleLogoSelect(file)}
+							onRemove={organization.hasImage ? () => void handleRemoveLogo() : undefined}
+							uploading={isSavingLogo}
 							disabled={!isAdmin}
-							onClick={() => setDeleteOpen(true)}
+							targetLabel="Change organization logo"
+							changeLabel="Change logo"
+						/>
+					</Field>
+					<Field>
+						<FieldLabel htmlFor="org-name">Name</FieldLabel>
+						<Input
+							id="org-name"
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							disabled={!isAdmin || isSavingName}
+							placeholder="Organization name"
+						/>
+					</Field>
+					<div className="flex justify-end">
+						<Button
+							size="sm"
+							onClick={handleRename}
+							loading={isSavingName}
+							disabled={!isAdmin || !nameDirty}
 						>
-							Delete organization
+							Save
 						</Button>
 					</div>
-				</CardContent>
-			</Card>
+					<DataRegionRow metadata={organization.publicMetadata} />
+				</div>
+			</SettingsSection>
+
+			<SettingsSection
+				title="Danger zone"
+				description="Permanently delete this organization, its dashboards, alerts, API keys, and all associated data. Telemetry already sent to Maple will age out per its retention policy. This cannot be undone."
+				framed={false}
+			>
+				<Panel padded className="flex-row items-center justify-between gap-4 border-destructive/40">
+					<p className="text-xs text-muted-foreground">
+						{isAdmin
+							? `Delete "${organization.name}" and remove every member's access.`
+							: "Only org admins can delete the organization."}
+					</p>
+					<Button
+						variant="destructive"
+						size="sm"
+						disabled={!isAdmin}
+						onClick={() => setDeleteOpen(true)}
+					>
+						Delete organization
+					</Button>
+				</Panel>
+			</SettingsSection>
 
 			<ConfirmDialog
 				open={deleteOpen}
@@ -234,7 +217,7 @@ export function OrganizationSection() {
 					onChange={setConfirmText}
 				/>
 			</ConfirmDialog>
-		</div>
+		</SettingsSections>
 	)
 }
 

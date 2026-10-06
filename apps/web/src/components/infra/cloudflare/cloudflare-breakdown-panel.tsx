@@ -37,7 +37,6 @@ import {
 	cloudflareZoneBreakdownResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { formatNumber } from "@maple/ui/lib/format"
 import { XmarkIcon } from "@/components/icons"
 import { MonoLinkButton } from "../primitives/mono-link-button"
 import { CompactFilterInput } from "./compact-filter-input"
@@ -48,7 +47,8 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
-import { formatBytes, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { CACHE_STATUS_COLORS, CACHE_STATUS_ORDER, STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "./constants"
 import { PanelScope } from "./panel-scope"
@@ -119,12 +119,8 @@ const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 
 /** ISO-8601 UTC → "Jul 28". */
-const formatCollectedFrom = (iso: string, timeZone: string) => {
-	const date = new Date(iso)
-	return Number.isNaN(date.getTime())
-		? null
-		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })
-}
+const formatCollectedFrom = (iso: string, timeZone: string) =>
+	Number.isNaN(new Date(iso).getTime()) ? null : formatDateInTimezone(iso, { timeZone, withYear: false })
 
 export function CloudflareBreakdownPanel({
 	serviceName,
@@ -344,35 +340,35 @@ function BreakdownTable({
 									type="button"
 									onClick={() => onToggleFilter(dimension.filterKey, row.key)}
 									aria-pressed={selected}
-									title={`Filter this page by ${row.key || "—"}`}
+									title={`Filter this page by ${row.key || EMPTY_VALUE}`}
 									className={cn(
-										"max-w-full truncate rounded-xs font-mono text-[13px] underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
+										"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
 										selected ? "text-primary" : "text-foreground",
 									)}
 								>
-									{row.key || "—"}
+									{row.key || EMPTY_VALUE}
 								</button>
 							) : (
-								<span className="block max-w-full truncate font-mono text-[13px] text-foreground">
-									{row.key || "—"}
+								<span className="block max-w-full truncate font-mono text-xs text-foreground">
+									{row.key || EMPTY_VALUE}
 								</span>
 							)}
 						</div>
 						<div
-							className="w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80"
+							className="w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80"
 							title={`${formatPercent(row.share)} of listed requests`}
 						>
 							{formatNumber(row.requests)}
 						</div>
 						<div
 							className={cn(
-								"w-[90px] text-right font-mono text-[12px] tabular-nums",
+								"w-[90px] text-right font-mono text-xs tabular-nums",
 								errorRateClass(row.errorRate),
 							)}
 						>
 							{formatPercent(row.errorRate)}
 						</div>
-						<div className="hidden w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+						<div className="hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{formatBytes(row.bytes)}
 						</div>
 					</div>
@@ -419,7 +415,7 @@ function StoredBreakdown({
 				</div>
 			}
 			error={() => (
-				<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+				<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
 					Couldn't load the {dimension.column.toLowerCase()} breakdown.
 				</p>
 			)}
@@ -446,7 +442,7 @@ function StoredBreakdown({
 							meta={
 								// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
 								data.coverage < 0.995 && data.totals.length > 0 ? (
-									<span className="font-mono text-[10px] text-muted-foreground">
+									<span className="font-mono text-3xs text-muted-foreground">
 										{formatPercent(data.coverage)} of zone requests
 									</span>
 								) : null
@@ -520,7 +516,7 @@ function Footer({
 			total={total}
 			noun={dimension.noun}
 			align="start"
-			className="justify-start gap-x-3 gap-y-1 px-3 py-2 font-mono text-[10px]"
+			className="justify-start gap-x-3 gap-y-1 px-3 py-2 font-mono text-3xs"
 		>
 			{collectedFrom ? <span>collected from {collectedFrom}</span> : null}
 			{onSearchLive ? (
@@ -577,7 +573,7 @@ function LiveBreakdown({
 			onChange={onSearchChange}
 			count={count}
 			meta={
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-3xs text-muted-foreground">
 					Live from Cloudflare · no history
 				</span>
 			}
@@ -600,7 +596,7 @@ function LiveBreakdown({
 			error={() => (
 				<>
 					{toolbar(0)}
-					<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+					<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
 						Couldn't reach Cloudflare's analytics API for this zone right now.
 					</p>
 				</>
@@ -611,7 +607,7 @@ function LiveBreakdown({
 					return (
 						<>
 							{toolbar(0)}
-							<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
+							<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
 								Cloudflare can't serve this breakdown: {data.unavailableReason}
 							</p>
 						</>
@@ -637,7 +633,7 @@ function LiveBreakdown({
 							emptyMessage={`No ${dimension.noun} match "${query}" in this window.`}
 							interactive={false}
 						/>
-						<p className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
+						<p className="px-3 py-2 font-mono text-3xs text-muted-foreground">
 							Cloudflare's top {rows.length} for "{query}" · clear the filter to return to
 							stored data
 						</p>

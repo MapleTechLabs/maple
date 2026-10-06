@@ -6,7 +6,7 @@ import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/wi
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { useTableSort } from "@/hooks/use-table-sort"
-import { formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 
 interface TableWidgetProps {
 	dataState: WidgetDataState
@@ -28,7 +28,7 @@ interface TableWidgetProps {
  * counts, where abbreviating `1234` to "1.2K" destroys the value being read.
  */
 export function formatCellValue(value: unknown, unit?: string): string {
-	if (value == null) return "-"
+	if (value == null) return EMPTY_VALUE
 	const num = Number(value)
 	if (Number.isNaN(num)) return String(value)
 	if (!unit) return String(value)
@@ -165,9 +165,7 @@ export const TableWidget = memo(function TableWidget({
 			mode={mode}
 			contentClassName="flex-1 min-h-0 overflow-auto p-0"
 			footer={truncated ? `Top ${rowLimit} rows` : undefined}
-			loadingSkeleton={
-				<SkeletonList rows={3} rowClassName="h-6" gap="2" className="p-3" />
-			}
+			loadingSkeleton={<SkeletonList rows={3} rowClassName="h-6" gap="2" className="p-3" />}
 		>
 			{rows.length === 0 ? (
 				<WidgetEmptyState />

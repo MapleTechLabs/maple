@@ -30,7 +30,7 @@ export function CompactFilterInput({
 				onChange={(event) => onChange(event.target.value)}
 				placeholder={placeholder}
 				aria-label={label}
-				className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
+				className="min-w-0 flex-1 bg-transparent font-mono text-2xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
 			/>
 			{value ? (
 				<button

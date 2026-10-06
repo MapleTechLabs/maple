@@ -26,7 +26,7 @@ export interface FilterChip<Key extends string> {
 const VISIBLE_LIMIT = 6
 
 const CHIP_CLASS =
-	"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-[10px] text-muted-foreground"
+	"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 
 export function FilterChipRail<Key extends string>({
 	chips,

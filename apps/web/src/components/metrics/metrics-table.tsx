@@ -147,7 +147,7 @@ export function MetricsTable({
 												className="text-xs"
 											/>
 											{metric.metricDescription && (
-												<span className="text-[10px] text-muted-foreground line-clamp-1">
+												<span className="text-3xs text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
 												</span>
 											)}

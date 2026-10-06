@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router"
-import { countLabel, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+} from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -32,11 +39,11 @@ function changeTone(row: ComparisonRow): string {
 }
 
 function formatChange(row: ComparisonRow): string {
-	if (row.change === undefined) return "—"
+	if (row.change === undefined) return EMPTY_VALUE
 	if (row.direction === "lower-is-better" && row.change >= 1) return `${(1 + row.change).toFixed(1)}×`
 	if (!Number.isFinite(row.change)) return "from 0"
-	const pct = Math.round(row.change * 100)
-	return `${pct > 0 ? "+" : ""}${pct}%`
+	const sign = row.change > 0 ? "+" : row.change < 0 ? "-" : ""
+	return `${sign}${formatPercent(Math.abs(row.change))}`
 }
 
 const ratioChange = (value: number, baseline: number | undefined): number | undefined =>
@@ -114,11 +121,11 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 			title="This version vs. the previous one"
 			action={
 				baseline === undefined ? (
-					<span className="text-[11px] text-muted-foreground/70">no previous version</span>
+					<span className="text-2xs text-muted-foreground/70">no previous version</span>
 				) : (
 					<CommitShaHoverCard
 						sha={baseline.commitSha}
-						className="font-mono text-[11px] text-muted-foreground"
+						className="font-mono text-2xs text-muted-foreground"
 					>
 						replaced {shortReleaseLabel(baseline.commitSha)}
 					</CommitShaHoverCard>
@@ -133,7 +140,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 			) : (
 				<Table size="sm">
 					<TableHeader>
-						<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
+						<TableRow className={eyebrowVariants()}>
 							<TableHead className="pl-4" />
 							<TableHead className="text-right">
 								<span className="font-mono normal-case tracking-normal">
@@ -156,7 +163,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 									{row.format(row.value)}
 								</TableCell>
 								<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-									{row.baseline === undefined ? "—" : row.format(row.baseline)}
+									{row.baseline === undefined ? EMPTY_VALUE : row.format(row.baseline)}
 								</TableCell>
 								<TableCell
 									className={cn("pr-4 text-right font-mono tabular-nums", changeTone(row))}
@@ -169,7 +176,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 				</Table>
 			)}
 			{baseline !== undefined && !comparable ? (
-				<div className="border-t px-4 py-2 text-[11px] text-muted-foreground/70">
+				<div className="border-t px-4 py-2 text-2xs text-muted-foreground/70">
 					Changes are withheld below {MIN_COMPARE_SPANS} requests on either side.
 				</div>
 			) : null}
@@ -200,7 +207,7 @@ export function ReleaseVersionsRail({
 		<SectionCard
 			title="Versions in window"
 			action={
-				<span className="text-[11px] text-muted-foreground/70">
+				<span className="text-2xs text-muted-foreground/70">
 					{countLabel(sorted.length, "version")}
 				</span>
 			}

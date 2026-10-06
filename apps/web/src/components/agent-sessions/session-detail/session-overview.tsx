@@ -6,11 +6,15 @@ import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { ArrowRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+
+import { SectionHeading } from "@/components/common/section-heading"
 
 import {
 	buildSessionChecks,
@@ -266,7 +270,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 				{/* Cost is only ever what an instrumentation stamped on a span — Maple
 				    prices nothing itself, and saying so is the difference between a
 				    figure and a bill. */}
-				<p className="text-[11px] text-muted-foreground leading-relaxed">
+				<p className="text-2xs text-muted-foreground leading-relaxed">
 					{summary.cost === undefined
 						? "No span reported a cost. Maple does not price tokens itself."
 						: "As reported by the instrumentation. Not a bill."}
@@ -304,7 +308,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 							</div>
 						))}
 						{summary.tokenReporting === "session-level" && (
-							<p className="text-[11px] text-muted-foreground">
+							<p className="text-2xs text-muted-foreground">
 								Reported once for the whole session
 							</p>
 						)}
@@ -328,7 +332,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 								)}
 								<span
 									className={cn(
-										"min-w-0 truncate rounded-sm px-2 py-0.5 font-mono text-[11px]",
+										"min-w-0 truncate rounded-sm px-2 py-0.5 font-mono text-2xs",
 										index === 0
 											? "bg-primary/12 text-primary"
 											: "bg-muted text-muted-foreground",
@@ -415,36 +419,31 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 
 	return (
 		<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-			<Eyebrow variant="label" as="h3">
-				Tools
-			</Eyebrow>
+			<SectionHeading variant="eyebrow" as="h3" title="Tools" className="mb-0" />
 			{summary.tools.length > 0 && (
 				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-					<LedgerStat label="Distinct" value={formatNumber(summary.tools.length)} />
-					<LedgerStat label="Calls" value={formatNumber(calls)} />
-					<LedgerStat label="Tool time" value={formatToolDuration(toolMs)} tone="text-chart-4" />
+					<KeyValueList layout="inline">
+						<KeyValue label="Distinct" mono valueClassName="font-semibold">
+							{formatNumber(summary.tools.length)}
+						</KeyValue>
+						<KeyValue label="Calls" mono valueClassName="font-semibold">
+							{formatNumber(calls)}
+						</KeyValue>
+						<KeyValue label="Tool time" mono valueClassName="font-semibold text-chart-4">
+							{formatToolDuration(toolMs)}
+						</KeyValue>
+					</KeyValueList>
 					{failed > 0 && (
 						<span className="flex items-baseline gap-1.5 rounded-sm bg-severity-error/12 px-1.5 py-0.5">
 							<span className="font-mono font-semibold text-severity-error text-xs tabular-nums">
 								{failed}
 							</span>
-							<span className="text-[11px] text-severity-error">failed</span>
+							<span className="text-2xs text-severity-error">failed</span>
 						</span>
 					)}
 				</div>
 			)}
 		</div>
-	)
-}
-
-function LedgerStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-	return (
-		<span className="flex items-baseline gap-1.5">
-			<Eyebrow>{label}</Eyebrow>
-			<span className={cn("font-mono font-semibold text-xs tabular-nums", tone ?? "text-foreground")}>
-				{value}
-			</span>
-		</span>
 	)
 }
 
@@ -470,7 +469,7 @@ function ToolLedgerColumns({ axis }: { axis: SessionAxis }) {
 							// The last tick anchors to the axis end rather than centring on
 							// it: a centred one would hang off the column.
 							className={cn(
-								"absolute top-0 whitespace-nowrap font-mono font-normal text-[10px] normal-case tracking-normal",
+								"absolute top-0 whitespace-nowrap font-mono font-normal text-3xs normal-case tracking-normal",
 								tick.fraction < 0.92 && "-translate-x-1/2",
 							)}
 							style={
@@ -525,17 +524,14 @@ function ToolLedgerRow({
 						)}
 					>
 						<DisclosureChevron open={expanded} size={9} />
-						<span className="min-w-0 truncate font-mono text-xs" title={tool.name}>
+						<TruncatedText mono className="text-xs">
 							{tool.name}
-						</span>
+						</TruncatedText>
 					</button>
 				) : (
-					<span
-						className={cn(LEDGER_NAME, "truncate pl-[15px] font-mono text-xs")}
-						title={tool.name}
-					>
+					<TruncatedText mono className={cn(LEDGER_NAME, "pl-[15px] text-xs")}>
 						{tool.name}
-					</span>
+					</TruncatedText>
 				)}
 				<span className={cn(LEDGER_COUNT, "font-mono text-xs tabular-nums")}>{tool.calls}</span>
 				<span
@@ -691,12 +687,7 @@ function formatToolDuration(ms: number): string {
 function RailSection({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
 	return (
 		<section className="flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0">
-			<div className="flex items-baseline justify-between gap-2">
-				<Eyebrow variant="label" as="h3">
-					{title}
-				</Eyebrow>
-				{aside}
-			</div>
+			<SectionHeading variant="eyebrow" as="h3" title={title} actions={aside} className="mb-0" />
 			{children}
 		</section>
 	)

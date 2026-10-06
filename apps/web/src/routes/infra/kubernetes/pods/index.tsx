@@ -2,6 +2,7 @@ import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { formatNumber } from "@maple/ui/lib/format"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -342,7 +343,7 @@ function PodsPage() {
 										</EmptyMedia>
 										<EmptyTitle>Nothing running right now</EmptyTitle>
 										<EmptyDescription>
-											{`Every pod that reported in this window has since ended. Open the Ended scope to see the ${endedPods.toLocaleString()} that ran.`}
+											{`Every pod that reported in this window has since ended. Open the Ended scope to see the ${formatNumber(endedPods)} that ran.`}
 										</EmptyDescription>
 									</EmptyHeader>
 									<Button

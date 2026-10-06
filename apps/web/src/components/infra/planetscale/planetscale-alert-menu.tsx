@@ -84,7 +84,7 @@ export function PlanetScaleAlertMenu({
 						>
 							<div className="flex flex-col gap-0.5">
 								<span className="text-xs font-medium">{suggestion.title}</span>
-								<span className="text-[11px] text-muted-foreground">
+								<span className="text-2xs text-muted-foreground">
 									{suggestion.summary}
 								</span>
 							</div>

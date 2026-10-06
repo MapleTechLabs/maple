@@ -1,10 +1,9 @@
-import { useMemo, type ReactNode } from "react"
-import { format } from "date-fns"
+import { useMemo } from "react"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -15,6 +14,9 @@ import {
 	billingUsageAtom,
 } from "@/lib/services/atoms/billing-atoms"
 import { useBillingActions } from "@/hooks/use-billing-actions"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { getLegacyPlanInfo, getTrialStatus, type TrialStatus } from "@/lib/billing/plan-gating"
 import { buildSpendModel } from "@/lib/billing/spend"
 import { estimateCycleCost } from "@/lib/billing/cost-estimate"
@@ -38,42 +40,6 @@ import { BillingDetailsSection } from "./billing-details-section"
  * billed, and the chart is only their sum over time.
  */
 
-function DataPoint({
-	label,
-	value,
-	accent,
-	className,
-	trailing,
-}: {
-	label: string
-	value: string
-	accent?: boolean
-	className?: string
-	/** Rendered inline with the value, on its baseline (e.g. a status badge). */
-	trailing?: ReactNode
-}) {
-	return (
-		<div className="flex flex-col gap-0.5">
-			<Eyebrow>{label}</Eyebrow>
-			<span className="flex items-center gap-2">
-				<span className={cn("text-sm tabular-nums", accent && "text-primary", className)}>
-					{value}
-				</span>
-				{trailing}
-			</span>
-		</div>
-	)
-}
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-	return (
-		<div className="flex items-baseline justify-between gap-4 border-b border-border/60 pb-2">
-			<Eyebrow as="h2">{title}</Eyebrow>
-			{subtitle && <span className="text-xs tabular-nums text-muted-foreground/60">{subtitle}</span>}
-		</div>
-	)
-}
-
 function SubscriptionStrip({
 	trial,
 	isLegacy,
@@ -87,6 +53,7 @@ function SubscriptionStrip({
 	isLoading: boolean
 	onManageBilling: () => void
 }) {
+	const { effectiveTimezone } = useTimezonePreference()
 	if (isLoading) {
 		return (
 			<div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
@@ -117,22 +84,25 @@ function SubscriptionStrip({
 	return (
 		<div>
 			<div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-				<div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
-					<DataPoint
-						label="Plan"
-						value={planName}
-						className="capitalize"
-						trailing={
-							isLegacy ? (
-								<Badge size="sm" variant="warn">
-									Legacy
-								</Badge>
-							) : undefined
-						}
-					/>
-					<DataPoint label="Status" value={statusValue} accent={isTrialing} />
-					<DataPoint label="Period" value={billingPeriodLabel} />
-				</div>
+				<KeyValueList layout="stacked" className="flex flex-wrap gap-x-8 gap-y-3">
+					<KeyValue label="Plan" valueClassName="gap-2 text-sm">
+						<span className="capitalize">{planName}</span>
+						{isLegacy ? (
+							<Badge size="sm" variant="warn" className="ml-2">
+								Legacy
+							</Badge>
+						) : null}
+					</KeyValue>
+					<KeyValue
+						label="Status"
+						valueClassName={cn("text-sm tabular-nums", isTrialing && "text-primary")}
+					>
+						{statusValue}
+					</KeyValue>
+					<KeyValue label="Period" valueClassName="text-sm tabular-nums">
+						{billingPeriodLabel}
+					</KeyValue>
+				</KeyValueList>
 				<Button variant="outline" size="sm" onClick={onManageBilling}>
 					Manage billing
 				</Button>
@@ -145,8 +115,9 @@ function SubscriptionStrip({
 			)}
 			{isTrialing && trialEndsAt && (
 				<p className="mt-3 text-xs text-muted-foreground">
-					Card charges when trial ends on {format(trialEndsAt, "MMM d")}. Cancel anytime before to
-					avoid charges.
+					Card charges when trial ends on{" "}
+					{formatDateInTimezone(trialEndsAt, { timeZone: effectiveTimezone, withYear: false })}.
+					Cancel anytime before to avoid charges.
 				</p>
 			)}
 		</div>
@@ -159,6 +130,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 	const usageResult = useAtomValue(billingUsageAtom)
 	const dailySpendResult = useAtomValue(billingDailySpendAtom)
 	const { openCustomerPortal } = useBillingActions()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	const customer = Result.isSuccess(customerResult) ? customerResult.value : undefined
 	const plans = Result.isSuccess(plansResult) ? plansResult.value.plans : undefined
@@ -174,16 +146,16 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 	const { isLegacy } = getLegacyPlanInfo(customer, plans)
 
 	const billingPeriodLabel = useMemo(() => {
+		const timeZone = effectiveTimezone
+		const range = (start: Date, end: Date) =>
+			`${formatDateInTimezone(start, { timeZone, withYear: false })} – ${formatDateInTimezone(end, { timeZone })}`
 		const activeSub = customer?.subscriptions?.find((s) => s.status === "active")
 		if (activeSub?.currentPeriodStart && activeSub?.currentPeriodEnd) {
-			const start = new Date(activeSub.currentPeriodStart)
-			const end = new Date(activeSub.currentPeriodEnd)
-			return `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`
+			return range(new Date(activeSub.currentPeriodStart), new Date(activeSub.currentPeriodEnd))
 		}
 		const now = new Date()
-		const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-		return `${format(startOfMonth, "MMM d")} – ${format(now, "MMM d, yyyy")}`
-	}, [customer])
+		return range(new Date(now.getFullYear(), now.getMonth(), 1), now)
+	}, [customer, effectiveTimezone])
 
 	const costEstimate = useMemo(
 		() => estimateCycleCost({ customer, plans, usage: usageTotal }),
@@ -205,7 +177,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 	)
 
 	return (
-		<div>
+		<SettingsSections>
 			<SubscriptionStrip
 				trial={trial}
 				isLegacy={isLegacy}
@@ -214,84 +186,68 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 				onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
 			/>
 
-			<section className="mt-8">
+			{isLoading || model === null ? (
+				<BillingKpisSkeleton />
+			) : (
+				<BillingKpis model={model} maximumInvoiceCents={maximumInvoice} />
+			)}
+
+			<SettingsSection title="Usage by feature" description={billingPeriodLabel} framed={false}>
 				{isLoading || model === null ? (
-					<BillingKpisSkeleton />
+					<FeatureUsageCardsSkeleton />
 				) : (
-					<BillingKpis model={model} maximumInvoiceCents={maximumInvoice} />
+					<FeatureUsageCards model={model} overageCaps={overageCaps} />
 				)}
-			</section>
+			</SettingsSection>
 
-			<section className="mt-10">
-				<SectionHeader title="Usage by feature" subtitle={billingPeriodLabel} />
-				<div className="mt-4">
-					{isLoading || model === null ? (
-						<FeatureUsageCardsSkeleton />
-					) : (
-						<FeatureUsageCards model={model} overageCaps={overageCaps} />
-					)}
-				</div>
-			</section>
+			{isLoading || model === null || Result.isInitial(dailySpendResult) ? (
+				<SpendChartSkeleton />
+			) : (
+				<SpendChart model={model} daily={daily} />
+			)}
 
-			<section className="mt-10">
-				{isLoading || model === null || Result.isInitial(dailySpendResult) ? (
-					<SpendChartSkeleton />
+			<SettingsSection
+				title="Billing controls"
+				description="Paid overage caps, enforced per feature"
+				framed={false}
+			>
+				{customer === undefined ? (
+					<BillingControlsCardSkeleton />
 				) : (
-					<SpendChart model={model} daily={daily} />
+					<BillingControlsCard customer={customer} model={model} canEdit={isAdmin} />
 				)}
-			</section>
+			</SettingsSection>
 
-			<section className="mt-12">
-				<SectionHeader title="Billing controls" subtitle="Paid overage caps, enforced per feature" />
-				<div className="mt-4">
-					{customer === undefined ? (
-						<BillingControlsCardSkeleton />
+			<SettingsSection title="Billing details" description="Printed on every invoice" framed={false}>
+				<BillingDetailsSection canEdit={isAdmin} />
+			</SettingsSection>
+
+			{(isCostLoading || costEstimate !== null) && (
+				<SettingsSection title="Estimated costs" description={billingPeriodLabel} framed={false}>
+					{isCostLoading || !costEstimate ? (
+						<CostBreakdownSkeleton />
 					) : (
-						<BillingControlsCard customer={customer} model={model} canEdit={isAdmin} />
+						<CostBreakdown estimate={costEstimate} />
 					)}
-				</div>
-			</section>
+				</SettingsSection>
+			)}
 
-			<section className="mt-12">
-				<SectionHeader title="Billing details" subtitle="Printed on every invoice" />
-				<div className="mt-4">
-					<BillingDetailsSection canEdit={isAdmin} />
-				</div>
-			</section>
+			<SettingsSection title="Invoices" framed={false}>
+				<InvoicesSection
+					onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
+				/>
+			</SettingsSection>
 
-			<div className="mt-12 grid grid-cols-1 gap-8 lg:grid-cols-2">
-				{(isCostLoading || costEstimate !== null) && (
-					<section>
-						<SectionHeader title="Estimated costs" subtitle={billingPeriodLabel} />
-						<div className="mt-3">
-							{isCostLoading || !costEstimate ? (
-								<CostBreakdownSkeleton />
-							) : (
-								<CostBreakdown estimate={costEstimate} />
-							)}
-						</div>
-					</section>
-				)}
-
-				<section>
-					<SectionHeader title="Invoices" />
-					<div className="mt-3">
-						<InvoicesSection
-							onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
-						/>
-					</div>
-				</section>
-			</div>
-
-			<section className="mt-12">
-				<SectionHeader title="Plans" subtitle="Need higher volume or custom retention?" />
-				<div className="mt-4">
-					<PlanOffer
-						model={model}
-						onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
-					/>
-				</div>
-			</section>
-		</div>
+			<SettingsSection
+				title="Plans"
+				description="Need higher volume or custom retention?"
+				framed={false}
+			>
+				<PlanOffer
+					model={model}
+					onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
+				/>
+			</SettingsSection>
+		</SettingsSections>
 	)
 }

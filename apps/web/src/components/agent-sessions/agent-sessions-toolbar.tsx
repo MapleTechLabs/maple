@@ -68,7 +68,7 @@ export function AgentSessionsToolbar({
 						<Switch
 							checked={errorsOnly}
 							onCheckedChange={onToggleErrorsOnly}
-							className="[--thumb-size:--spacing(3.5)] data-checked:bg-destructive sm:[--thumb-size:--spacing(3.5)]"
+							className="[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]"
 						/>
 						With errors
 					</TooltipTrigger>

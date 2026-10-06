@@ -16,6 +16,7 @@ import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 import { XmarkIcon } from "@/components/icons"
 import { SEVERITY_LABEL, SEVERITY_ORDER, SeverityDot } from "./severity-badge"
 import type { IssueMutations } from "./use-issue-mutations"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 
 /**
  * A selected row carries its workflow state, not just its id: the "Move to"
@@ -112,9 +113,9 @@ export function IssuesBulkBar({
 					))
 				)}
 			</BulkMenu>
-			<Button size="icon-sm" variant="ghost" onClick={onClear} aria-label="Clear selection">
+			<IconButton onClick={onClear} label="Clear selection">
 				<XmarkIcon size={14} />
-			</Button>
+			</IconButton>
 		</div>
 	)
 }

@@ -2,7 +2,8 @@ import * as React from "react"
 
 import type { PathsChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
-import { formatNumber } from "../../../lib/format"
+import { Eyebrow } from "../../ui/eyebrow"
+import { formatNumber, formatPercent } from "../../../lib/format"
 import { asFiniteNumber } from "../_shared/breakdown-rows"
 import { useContainerSize } from "../../../hooks/use-container-size"
 import { ArrowLeftIcon, UserIcon } from "../../icons"
@@ -205,7 +206,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 	if (!anchor || anchor.count <= 0) {
 		return (
 			<div className={cn("relative grid h-full w-full place-items-center", className)}>
-				<span className="text-[11px] text-muted-foreground">No data</span>
+				<span className="text-2xs text-muted-foreground">No data</span>
 			</div>
 		)
 	}
@@ -251,7 +252,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 								x={atRightEdge ? x + NODE_W : x}
 								y={10}
 								textAnchor={atRightEdge ? "end" : "start"}
-								className="fill-muted-foreground text-[10px] font-medium uppercase tracking-wider"
+								className="fill-muted-foreground text-3xs font-medium uppercase tracking-wider"
 							>
 								{label}
 							</text>
@@ -345,7 +346,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 										y={node.y + Math.min(node.h, 12) / 2 + 3.5}
 										textAnchor={labelLeft ? "start" : "end"}
 										className={cn(
-											"text-[11px] font-medium",
+											"text-2xs font-medium",
 											node.kind === "event"
 												? "fill-foreground"
 												: "fill-muted-foreground",
@@ -359,7 +360,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 												<tspan
 													x={twoLine ? textX : undefined}
 													dy={twoLine ? 13 : undefined}
-													className="fill-muted-foreground text-[10px] font-normal tabular-nums"
+													className="fill-muted-foreground text-3xs font-normal tabular-nums"
 												>
 													{formatNumber(node.count)}
 												</tspan>
@@ -374,7 +375,7 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 			)}
 			{hoveredNode && graph && (
 				<div
-					className="pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-[11px] shadow-md"
+					className="pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md"
 					style={{
 						left: Math.min(Math.max(0, hoveredNode.x + NODE_W + 10), Math.max(0, width - TIP_W)),
 						top: Math.min(hoveredNode.y + 4, Math.max(0, height - 96)),
@@ -385,14 +386,14 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 					<div className="mb-1.5 flex min-w-0 items-center gap-1.5">
 						<span
 							className={cn(
-								"size-2 shrink-0 rounded-[2px]",
+								"size-2 shrink-0 rounded-xs",
 								hoveredNode.kind === "event" && "bg-[var(--chart-2)]",
 								hoveredNode.kind === "end" && "bg-foreground/20",
 								hoveredNode.kind === "other" && "bg-foreground/35",
 							)}
 						/>
 						<span className="truncate font-medium text-foreground">{labelOf(hoveredNode)}</span>
-						<span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] leading-none text-muted-foreground">
+						<span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-3xs leading-none text-muted-foreground">
 							{hoveredNode.column === 0
 								? "anchor"
 								: reverse
@@ -415,20 +416,17 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 							<span className="font-semibold text-foreground">
 								{hoveredNode.count.toLocaleString("en-US")}
 							</span>
-							<span className="text-[10px] whitespace-nowrap text-muted-foreground">
-								{((hoveredNode.count / anchor.count) * 100).toFixed(
-									hoveredNode.count / anchor.count < 0.1 ? 1 : 0,
-								)}
-								% of anchor
+							<span className="text-3xs whitespace-nowrap text-muted-foreground">
+								{formatPercent(hoveredNode.count / anchor.count)} of anchor
 							</span>
 						</span>
 					</div>
 					{hoveredNode.column > 0 && (
 						<>
 							<div className="-mx-2.5 my-1.5 h-px bg-border" />
-							<div className="mb-1 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+							<Eyebrow as="div" className="mb-1">
 								Came from
-							</div>
+							</Eyebrow>
 							{links
 								.filter((link) => link.target === hoveredNode.id)
 								.sort((a, b) => b.count - a.count)

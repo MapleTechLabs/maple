@@ -24,6 +24,14 @@ export const SEVERITY_FILL: Record<IssueSeverity, string> = {
 	low: "bg-severity-debug",
 } satisfies Record<IssueSeverity, string>
 
+/** Design-token name for the same four levels, for canvas charts that resolve it to a literal. */
+export const SEVERITY_TOKEN: Record<IssueSeverity, `--${string}`> = {
+	critical: "--severity-fatal",
+	high: "--severity-error",
+	medium: "--severity-warn",
+	low: "--severity-debug",
+} satisfies Record<IssueSeverity, `--${string}`>
+
 /** `text-*` counterpart of {@link SEVERITY_FILL}, for `currentColor` SVG marks. */
 export const SEVERITY_TEXT: Record<IssueSeverity, string> = {
 	critical: "text-severity-fatal",

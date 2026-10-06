@@ -6,7 +6,7 @@ import {
 	usePlotChromeColors,
 	usePlotColors,
 	usePlotLegendHighlight,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotLegendSeries,
 } from "@maple/ui/components/plot"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -29,12 +29,12 @@ export interface PieSpikeRow {
 }
 
 const SLICE_TOKENS = {
-	c1: ["--chart-1", "#6366f1"],
-	c2: ["--chart-2", "#ec4899"],
-	c3: ["--chart-3", "#f59e0b"],
-	c4: ["--chart-4", "#10b981"],
-	c5: ["--chart-5", "#3b82f6"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	c1: "--chart-1",
+	c2: "--chart-2",
+	c3: "--chart-3",
+	c4: "--chart-4",
+	c5: "--chart-5",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * How much the hovered slice grows, and how far the rest fade — both lifted from
@@ -226,7 +226,7 @@ function PieFigure({
 				return (
 					<div className="flex items-center gap-2">
 						<span
-							className="size-2.5 shrink-0 rounded-[2px]"
+							className="size-2.5 shrink-0 rounded-xs"
 							style={{ backgroundColor: colorFor(slice.name) }}
 						/>
 						<span className="text-muted-foreground">{slice.name}</span>

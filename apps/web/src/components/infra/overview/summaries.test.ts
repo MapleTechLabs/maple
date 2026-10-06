@@ -93,9 +93,9 @@ describe("summarizeCloudflare", () => {
 
 describe("summarizePlanetScale", () => {
 	it("flags lag and storage separately and puts critical findings first", () => {
-		const { findings } = summarizePlanetScale([db("ledger", 2, 85), db("users", 0.1, null)])
+		const { findings } = summarizePlanetScale([db("ledger", 2, 92), db("users", 0.1, null)])
 		expect(findings.map((f) => [f.tone, f.title])).toEqual([
-			["crit", "ledger storage at 85%"],
+			["crit", "ledger storage at 92%"],
 			["warn", "ledger replica 2.0s behind primary"],
 		])
 	})

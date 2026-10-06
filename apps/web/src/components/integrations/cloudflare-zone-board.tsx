@@ -13,7 +13,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 import { ColumnHead, type SortDir } from "@/components/common/data-table"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
 
@@ -147,7 +147,7 @@ function ErrorLine({ info, raw }: { info: CloudflareErrorInfo; raw: string }) {
 				>
 					Details
 				</TooltipTrigger>
-				<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-[11px]">
+				<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-2xs">
 					{raw}
 				</TooltipContent>
 			</Tooltip>
@@ -295,11 +295,11 @@ function ResourceRow({
 					{name}
 				</TruncatedText>
 				{/* In a narrow card the status column is hidden, so surface the detail under the name. */}
-				<div className={cn("mt-0.5 text-[11px] @lg:hidden", status.detailClass)}>{status.detail}</div>
+				<div className={cn("mt-0.5 text-2xs @lg:hidden", status.detailClass)}>{status.detail}</div>
 			</div>
 			<div
 				className={cn(
-					"hidden w-[190px] min-w-0 shrink-0 self-center text-[11px] @lg:block",
+					"hidden w-[190px] min-w-0 shrink-0 self-center text-2xs @lg:block",
 					status.detailClass,
 				)}
 			>
@@ -310,7 +310,7 @@ function ResourceRow({
 					<StatSparkline data={usage.points} color={CLOUDFLARE_ACCENT} className="h-5 w-16" />
 				) : null}
 				<span className="w-12 text-right text-xs font-medium tabular-nums text-foreground">
-					{hasData && usage ? formatNumber(usage.totalRequests) : "—"}
+					{hasData && usage ? formatNumber(usage.totalRequests) : EMPTY_VALUE}
 				</span>
 			</div>
 		</>
@@ -457,7 +457,7 @@ export function CloudflareZoneBoard({
 		setFilter(CHIP_ORDER.find((kind) => kind === values[0]) ?? "all")
 
 	return (
-		<Panel className={cn("@container rounded-lg border-border/60", className)}>
+		<Panel className={cn("@container border-border/60", className)}>
 			{/* Title bar: the health rollup (chips double as a single-select filter) + a name search. */}
 			<PanelHeader className="gap-2 border-border/60 pl-4 pr-2.5">
 				<h3 className="text-sm font-semibold">Zones</h3>
@@ -576,7 +576,7 @@ export function CloudflareWorkersCard({
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
 
 	return (
-		<Panel className={cn("h-fit rounded-lg border-border/60", className)}>
+		<Panel className={cn("h-fit border-border/60", className)}>
 			<PanelHeader
 				className="border-border/60 py-3"
 				action={
@@ -592,7 +592,7 @@ export function CloudflareWorkersCard({
 			</PanelHeader>
 
 			{aggregate.kind === "issue" || aggregate.kind === "no-data" ? (
-				<div className={cn("border-b border-border/40 px-4 py-2 text-[11px]", aggregate.detailClass)}>
+				<div className={cn("border-b border-border/40 px-4 py-2 text-2xs", aggregate.detailClass)}>
 					{aggregate.detail}
 				</div>
 			) : null}
@@ -600,7 +600,7 @@ export function CloudflareWorkersCard({
 			{scripts.length === 0 ? (
 				<div className="flex items-center gap-2.5 px-4 py-3">
 					<StatusDot tone={aggregate.tone} />
-					<span className={cn("text-[11px]", aggregate.detailClass)}>{aggregate.detail}</span>
+					<span className={cn("text-2xs", aggregate.detailClass)}>{aggregate.detail}</span>
 				</div>
 			) : (
 				<div className="flex flex-col px-4 pb-2 pt-1">
@@ -616,7 +616,9 @@ export function CloudflareWorkersCard({
 								</TruncatedText>
 							</span>
 							<span className="shrink-0 text-xs font-medium tabular-nums text-foreground">
-								{service.totalRequests > 0 ? formatNumber(service.totalRequests) : "—"}
+								{service.totalRequests > 0
+									? formatNumber(service.totalRequests)
+									: EMPTY_VALUE}
 							</span>
 						</div>
 					))}
@@ -624,7 +626,7 @@ export function CloudflareWorkersCard({
 						<button
 							type="button"
 							onClick={() => setExpanded((current) => !current)}
-							className="pb-1 pt-2.5 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+							className="pb-1 pt-2.5 text-left text-2xs text-muted-foreground transition-colors hover:text-foreground"
 						>
 							{expanded
 								? "Show fewer"

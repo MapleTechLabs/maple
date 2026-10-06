@@ -9,7 +9,8 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
 import { PageHero } from "@/components/common/page-hero"
@@ -41,12 +42,10 @@ import {
 } from "@/components/integrations/planetscale-setup-steps"
 import { getServiceMapPlanetScaleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const planetscaleSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,
@@ -68,10 +67,7 @@ function PlanetScalePage() {
 		search.timePreset ?? "12h",
 	)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -87,59 +83,40 @@ function PlanetScalePage() {
 	)
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Infrastructure", href: "/infra" }, { label: "PlanetScale" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title="PlanetScale"
-									description="Database health from your PlanetScale organization: connections, CPU, memory, storage, and replication lag for every branch."
-								/>
-								<ResultView
-									result={statusResult}
-									loading={
-										<div className="space-y-4">
-											<StatRailLoading />
-											<PlanetScaleDatabaseTableLoading />
-										</div>
-									}
-								>
-									{(status) => {
-										if (!status.connected) return <PlanetScaleNotConnected />
-										return (
-											<PlanetScaleData
-												startTime={startTime}
-												endTime={endTime}
-												metricsPaused={status.metrics_auth === "missing"}
-												neverCollected={metricsNeverCollected(status)}
-												setupSteps={derivePlanetScaleSetup(status, Date.now()).steps}
-												revoked={status.revoked_at !== null}
-												lastInventoryError={status.last_inventory_error}
-											/>
-										)
-									}}
-								</ResultView>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "PlanetScale" }]}
+			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
+			gap="lg"
+		>
+			<PageHero
+				title="PlanetScale"
+				description="Database health from your PlanetScale organization: connections, CPU, memory, storage, and replication lag for every branch."
+			/>
+			<ResultView
+				result={statusResult}
+				loading={
+					<div className="space-y-4">
+						<StatRailLoading />
+						<PlanetScaleDatabaseTableLoading />
+					</div>
+				}
+			>
+				{(status) => {
+					if (!status.connected) return <PlanetScaleNotConnected />
+					return (
+						<PlanetScaleData
+							startTime={startTime}
+							endTime={endTime}
+							metricsPaused={status.metrics_auth === "missing"}
+							neverCollected={metricsNeverCollected(status)}
+							setupSteps={derivePlanetScaleSetup(status, Date.now()).steps}
+							revoked={status.revoked_at !== null}
+							lastInventoryError={status.last_inventory_error}
+						/>
+					)
+				}}
+			</ResultView>
+		</DashboardPage>
 	)
 }
 
@@ -228,10 +205,7 @@ function PlanetScaleData({
 							/>
 						) : null}
 						{Result.isFailure(statsResult) ? (
-							<ErrorState
-								error={statsResult.cause}
-								className="flex flex-col gap-1 rounded-md border border-severity-error/20 bg-severity-error/5 px-3 py-2 text-xs"
-							/>
+							<ErrorState error={statsResult.cause} variant="row" />
 						) : null}
 						{neverCollected ? <PlanetScaleSetupState steps={setupSteps} /> : null}
 						{/* Inventory counts have no time series, so no sparkline slot to reserve. */}
@@ -249,7 +223,7 @@ function PlanetScaleData({
 										eyebrow="Worst storage"
 										value={
 											totals.storageMax === null
-												? "—"
+												? EMPTY_VALUE
 												: formatStoragePercent(totals.storageMax)
 										}
 										tone={
@@ -270,7 +244,7 @@ function PlanetScaleData({
 										eyebrow="Worst replica lag"
 										value={
 											metricsPaused && stats.length === 0
-												? "—"
+												? EMPTY_VALUE
 												: formatLag(totals.lagMax)
 										}
 										tone={lagTone(totals.lagMax)}

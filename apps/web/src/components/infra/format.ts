@@ -1,5 +1,6 @@
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { Tone } from "@maple/ui/lib/tone"
+import { type UtilizationLevel, utilizationLevel } from "@maple/ui/lib/utilization"
 
 // Generic number/byte/percent formatting lives in `@maple/ui/lib/format`; only
 // infra-specific status policy stays here.
@@ -15,14 +16,10 @@ import type { Tone } from "@maple/ui/lib/tone"
  * desired replicas), and belongs beside these rather than instead of them.
  */
 export type HostStatus = "active" | "idle" | "ended"
-export type SeverityLevel = Extract<Tone, "ok" | "warn" | "crit">
+export type SeverityLevel = UtilizationLevel
 
-export function severityLevel(fraction: number): SeverityLevel {
-	if (!Number.isFinite(fraction)) return "ok"
-	if (fraction >= 0.9) return "crit"
-	if (fraction >= 0.6) return "warn"
-	return "ok"
-}
+/** Utilization fraction → tone; the shared thresholds in `@maple/ui/lib/utilization`. */
+export const severityLevel: (fraction: number) => SeverityLevel = utilizationLevel
 
 const SCRAPE_INTERVAL_MS = 30_000
 
@@ -39,4 +36,4 @@ export function deriveHostStatus(lastSeenIso: string, reference: number | string
 
 /** Whole-number percent of a 0-1 fraction; table cells want "7%", not formatPercent's "7.2%". */
 export const formatWholePercent = (fraction: number) =>
-	Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : "—"
+	Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : EMPTY_VALUE

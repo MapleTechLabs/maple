@@ -107,13 +107,13 @@ function DnsNamesTable({
 
 			{rows.map((row) => (
 				<div key={row.queryName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs text-foreground">
 						{row.queryName}
 					</div>
-					<div className="w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{formatNumber(row.queries)}
 					</div>
-					<div className="w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{row.queries > 0 ? formatPercent(row.nxdomain / row.queries) : "—"}
 					</div>
 				</div>

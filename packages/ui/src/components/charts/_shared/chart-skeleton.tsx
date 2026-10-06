@@ -58,7 +58,7 @@ function Bars({ heights, delay }: { heights: number[]; delay: (i: number) => num
 			{heights.map((h, i) => (
 				<div
 					key={i}
-					className="flex-1 rounded-[2px] bg-foreground/10 skeleton-bar"
+					className="flex-1 rounded-xs bg-foreground/10 skeleton-bar"
 					style={{ height: `${h}%`, animationDelay: `${delay(i)}s` }}
 				/>
 			))}
@@ -120,7 +120,7 @@ function PathsGhost() {
 		<div className="flex h-full w-full flex-col">
 			<div className="flex h-[18px] shrink-0 items-start justify-between">
 				{PATH_COLUMNS.map((_, i) => (
-					<div key={i} className="h-2 w-10 rounded-[2px] bg-foreground/10" />
+					<div key={i} className="h-2 w-10 rounded-xs bg-foreground/10" />
 				))}
 			</div>
 			<svg viewBox="0 0 100 100" preserveAspectRatio="none" className="min-h-0 w-full flex-1">
@@ -262,7 +262,7 @@ function renderVariant(variant: ChartSkeletonVariant) {
 							style={{ gridTemplateColumns: "minmax(0, 38%) 1fr 44px" }}
 						>
 							<div
-								className="h-2.5 rounded-[2px] bg-foreground/10"
+								className="h-2.5 rounded-xs bg-foreground/10"
 								style={{ width: `${[72, 88, 60, 48, 66][i]}%` }}
 							/>
 							<div className="h-3 overflow-hidden rounded-[3px] bg-foreground/5">
@@ -271,7 +271,7 @@ function renderVariant(variant: ChartSkeletonVariant) {
 									style={{ width: `${w}%`, animationDelay: `${-i * 0.13}s` }}
 								/>
 							</div>
-							<div className="h-2.5 w-full rounded-[2px] bg-foreground/10" />
+							<div className="h-2.5 w-full rounded-xs bg-foreground/10" />
 						</div>
 					))}
 				</div>
@@ -284,10 +284,10 @@ function renderVariant(variant: ChartSkeletonVariant) {
 						<div key={i} className="flex flex-col gap-1">
 							<div className="flex items-center justify-between">
 								<div
-									className="h-2.5 rounded-[2px] bg-foreground/10"
+									className="h-2.5 rounded-xs bg-foreground/10"
 									style={{ width: `${[26, 34, 22, 30][i]}%` }}
 								/>
-								<div className="h-2.5 w-12 rounded-[2px] bg-foreground/10" />
+								<div className="h-2.5 w-12 rounded-xs bg-foreground/10" />
 							</div>
 							<div className="h-2.5 overflow-hidden rounded-[3px] bg-foreground/5">
 								<div
@@ -306,7 +306,7 @@ function renderVariant(variant: ChartSkeletonVariant) {
 			return (
 				<div className="flex h-full w-full flex-col px-1">
 					<div className="flex justify-end pb-2">
-						<div className="h-2.5 w-24 rounded-[2px] bg-foreground/10" />
+						<div className="h-2.5 w-24 rounded-xs bg-foreground/10" />
 					</div>
 					<div className="grid min-h-0 flex-1 grid-cols-4 gap-3">
 						{[100, 44, 20, 8].map((h, i) => {
@@ -315,11 +315,11 @@ function renderVariant(variant: ChartSkeletonVariant) {
 								<div key={i} className="flex min-w-0 flex-col">
 									<div className="flex flex-col gap-1.5">
 										<div
-											className="h-2.5 rounded-[2px] bg-foreground/10"
+											className="h-2.5 rounded-xs bg-foreground/10"
 											style={{ width: `${[60, 72, 56, 64][i]}%` }}
 										/>
 										<div className="h-4 w-12 rounded-[3px] bg-foreground/15" />
-										<div className="h-2.5 w-8 rounded-[2px] bg-foreground/10" />
+										<div className="h-2.5 w-8 rounded-xs bg-foreground/10" />
 									</div>
 									<div className="relative mt-2.5 min-h-0 flex-1">
 										{i > 0 && (

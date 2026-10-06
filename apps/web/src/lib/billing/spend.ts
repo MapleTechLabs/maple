@@ -9,6 +9,7 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
+import { formatCount } from "./usage"
 
 /**
  * The billing page's spend model: one place that turns the Autumn snapshot plus
@@ -90,7 +91,7 @@ export const formatRateLabel = (feature: FeatureSpend): string | null => {
 	if (unit === undefined) return `$${feature.ratePerUnit.toFixed(2)}/GB`
 	if (feature.billingUnits > 1) {
 		const perBlock = feature.ratePerUnit * feature.billingUnits
-		return `$${Number(perBlock.toPrecision(6))}/${feature.billingUnits.toLocaleString("en-US")} ${unit}s`
+		return `$${Number(perBlock.toPrecision(6))}/${formatCount(feature.billingUnits)} ${unit}s`
 	}
 	return `$${feature.ratePerUnit}/${unit}`
 }

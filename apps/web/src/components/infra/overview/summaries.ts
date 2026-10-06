@@ -5,7 +5,7 @@
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
-import { formatPercent } from "@maple/ui/lib/format"
+import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { ContainerScopeCounts } from "../container-summary-band"
@@ -56,8 +56,6 @@ export interface SourceSummary {
 /** Rows a single source contributes before it summarizes the rest into one line. */
 const MAX_FINDINGS_PER_SOURCE = 3
 
-const plural = (count: number, noun: string) => `${count.toLocaleString()} ${count === 1 ? noun : `${noun}s`}`
-
 const okCount = (total: number, ...flagged: number[]) =>
 	Math.max(total - flagged.reduce((sum, n) => sum + n, 0), 0)
 
@@ -92,7 +90,7 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 			key: "hosts:saturated-rest",
 			source: "hosts",
 			tone: "crit",
-			title: `${plural(hot.length - MAX_FINDINGS_PER_SOURCE, "more host")} at 90% or above`,
+			title: `${countLabel(hot.length - MAX_FINDINGS_PER_SOURCE, "more host")} at 90% or above`,
 			detail: "Busiest of CPU, memory and disk",
 			target: { kind: "hosts", scope: "saturated" },
 		})
@@ -102,7 +100,7 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 			key: "hosts:stale",
 			source: "hosts",
 			tone: "stale",
-			title: `${plural(stale, "host")} stopped reporting`,
+			title: `${countLabel(stale, "host")} stopped reporting`,
 			detail: "No metrics in the last 5 minutes of the window. The collector or the host is down.",
 			target: { kind: "hosts", scope: "stale" },
 		})
@@ -111,7 +109,7 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 	const busiest = byPeak[0]
 	return {
 		// At the cap the list is a sample, so the count is a floor.
-		resources: total >= HOST_LIST_LIMIT ? `${total.toLocaleString()}+ hosts` : plural(total, "host"),
+		resources: total >= HOST_LIST_LIMIT ? `${formatNumber(total)}+ hosts` : countLabel(total, "host"),
 		segments: [
 			{ key: "ok", count: okCount(total, saturated, elevated) },
 			{ key: "elevated", count: elevated },
@@ -131,7 +129,7 @@ export function summarizeContainers(counts: ContainerScopeCounts): SourceSummary
 			key: "containers:saturated",
 			source: "containers",
 			tone: "crit",
-			title: `${plural(saturatedContainers, "container")} at 90% of CPU or memory limit`,
+			title: `${countLabel(saturatedContainers, "container")} at 90% of CPU or memory limit`,
 			detail: "Peak utilization against each container's own limit",
 			target: { kind: "containers", scope: "saturated" },
 		})
@@ -141,13 +139,13 @@ export function summarizeContainers(counts: ContainerScopeCounts): SourceSummary
 			key: "containers:stale",
 			source: "containers",
 			tone: "stale",
-			title: `${plural(staleContainers, "container")} stopped reporting`,
+			title: `${countLabel(staleContainers, "container")} stopped reporting`,
 			detail: "The Docker agent beside them has gone quiet",
 			target: { kind: "containers", scope: "stale" },
 		})
 	}
 	return {
-		resources: plural(totalContainers, "container"),
+		resources: countLabel(totalContainers, "container"),
 		segments: [
 			{ key: "ok", count: okCount(totalContainers, saturatedContainers, elevatedContainers) },
 			{ key: "elevated", count: elevatedContainers },
@@ -155,7 +153,7 @@ export function summarizeContainers(counts: ContainerScopeCounts): SourceSummary
 		],
 		headline:
 			saturatedContainers + elevatedContainers > 0
-				? `${plural(saturatedContainers + elevatedContainers, "container")} above 60%`
+				? `${countLabel(saturatedContainers + elevatedContainers, "container")} above 60%`
 				: "all under 60% of limit",
 		headlineTone: worstTone(findings),
 		findings,
@@ -178,7 +176,7 @@ export function summarizePods(counts: PodCounts): SourceSummary {
 			key: "pods:saturated",
 			source: "kubernetes",
 			tone: "crit",
-			title: `${plural(saturatedPods, "pod")} at their CPU or memory limit`,
+			title: `${countLabel(saturatedPods, "pod")} at their CPU or memory limit`,
 			detail: "Peak use at or above 90% of the limit",
 			target: { kind: "pods", scope: "saturated" },
 		})
@@ -188,19 +186,19 @@ export function summarizePods(counts: PodCounts): SourceSummary {
 			key: "pods:unbounded",
 			source: "kubernetes",
 			tone: "warn",
-			title: `${plural(unboundedPods, "pod")} running with no limits`,
+			title: `${countLabel(unboundedPods, "pod")} running with no limits`,
 			detail: "Nothing stops them from starving their neighbours",
 			target: { kind: "pods", scope: "unbounded" },
 		})
 	}
 	return {
-		resources: plural(livePods, "live pod"),
+		resources: countLabel(livePods, "live pod"),
 		segments: [
 			{ key: "ok", count: okCount(livePods, saturatedPods, elevatedPods) },
 			{ key: "elevated", count: elevatedPods },
 			{ key: "saturated", count: saturatedPods },
 		],
-		headline: saturatedPods > 0 ? `${plural(saturatedPods, "pod")} at limit` : "no pod at its limit",
+		headline: saturatedPods > 0 ? `${countLabel(saturatedPods, "pod")} at limit` : "no pod at its limit",
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -208,9 +206,6 @@ export function summarizePods(counts: PodCounts): SourceSummary {
 
 /** Zones with fewer requests than this can't move an error rate meaningfully. */
 const MIN_ZONE_REQUESTS = 100
-
-const compactCount = (n: number) =>
-	n.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })
 
 export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): SourceSummary {
 	const erroring = zones
@@ -223,7 +218,7 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 		source: "cloudflare",
 		tone: errorRateLevel(zone.errorRate) === "crit" ? "crit" : "warn",
 		title: `${zone.zoneName} returning ${formatPercent(zone.errorRate)} 5xx`,
-		detail: `${compactCount(zone.requests)} requests, origin p99 ${Math.round(zone.originP99Ms)}ms`,
+		detail: `${formatNumber(zone.requests)} requests, origin p99 ${Math.round(zone.originP99Ms)}ms`,
 		target: { kind: "zone", zoneName: zone.zoneName },
 	}))
 
@@ -234,13 +229,13 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 		cacheHits += zone.cacheHits
 	}
 	return {
-		resources: plural(zones.length, "zone"),
+		resources: countLabel(zones.length, "zone"),
 		segments: [
 			{ key: "ok", count: okCount(zones.length, erroring.length) },
 			{ key: "elevated", count: erroring.length - crit },
 			{ key: "saturated", count: crit },
 		],
-		headline: `${compactCount(requests)} requests, ${formatPercent(requests > 0 ? cacheHits / requests : 0)} cached`,
+		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? cacheHits / requests : 0)} cached`,
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -259,7 +254,7 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 		target: { kind: "railway", serviceId: row.serviceId, environmentId: row.environmentId },
 	}))
 	return {
-		resources: plural(services.length, "service"),
+		resources: countLabel(services.length, "service"),
 		segments: [
 			{ key: "ok", count: okCount(services.length, saturated.length, elevated, unbounded) },
 			{ key: "elevated", count: elevated },
@@ -268,7 +263,7 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 		],
 		headline:
 			saturated.length + elevated > 0
-				? `${plural(saturated.length + elevated, "service")} above 60% of limit`
+				? `${countLabel(saturated.length + elevated, "service")} above 60% of limit`
 				: "all under 60% of limit",
 		headlineTone: worstTone(findings),
 		findings,
@@ -334,7 +329,7 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 		undefined,
 	)
 	return {
-		resources: plural(databases.length, "database"),
+		resources: countLabel(databases.length, "database"),
 		segments: [
 			{ key: "ok", count: okCount(databases.length, saturated, elevated) },
 			{ key: "elevated", count: elevated },

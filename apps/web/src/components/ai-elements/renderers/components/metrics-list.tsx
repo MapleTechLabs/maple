@@ -26,7 +26,7 @@ export function MetricsList({ props }: RendererComponentProps<MetricsListProps>)
 			{summary.length > 0 && (
 				<div className="flex flex-wrap gap-2">
 					{summary.map((s) => (
-						<div key={s.metricType} className="flex items-center gap-1 text-[11px]">
+						<div key={s.metricType} className="flex items-center gap-1 text-2xs">
 							<Badge variant="secondary" size="xs">
 								{s.metricType}
 							</Badge>

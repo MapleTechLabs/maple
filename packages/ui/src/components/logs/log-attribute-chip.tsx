@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react"
 import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
 import { useMountEffect } from "../../hooks/use-mount-effect"
+import { Eyebrow } from "../ui/eyebrow"
 import { HoverCard, HoverCardContent } from "../ui/hover-card"
 import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
@@ -150,7 +151,7 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 					}
 				}}
 				className={cn(
-					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-[10px] font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					TONE_CLASSES[tone],
 				)}
 			>
@@ -168,17 +169,17 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 						onPointerLeave={scheduleClose}
 					>
 						<div className="px-3 py-2 border-b">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<Eyebrow as="div" className="mb-0.5">
 								Attribute
-							</div>
+							</Eyebrow>
 							<div className="font-mono text-xs break-all">
 								<CopyableValue value={attrKey}>{attrKey}</CopyableValue>
 							</div>
 						</div>
 						<div className="px-3 py-2">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<Eyebrow as="div" className="mb-0.5">
 								Value
-							</div>
+							</Eyebrow>
 							<div className="font-mono text-xs break-all">
 								{parsed !== null ? (
 									<CollapsibleJsonValue value={value} parsed={parsed} />

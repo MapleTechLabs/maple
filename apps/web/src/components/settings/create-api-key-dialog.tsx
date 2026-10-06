@@ -1,11 +1,11 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Field, FieldLabel } from "@maple/ui/components/ui/field"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useId, useState } from "react"
 import { Exit } from "effect"
 import type { ApiKeyKind } from "@maple/domain/http"
 import type { V2ApiKeyWithSecret, V2Scope } from "@maple/domain/http/v2"
-import { toastManager } from "@maple/ui/components/ui/toast"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { useApiKeyMutationSync } from "@/hooks/use-api-keys"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { displayError } from "@/lib/error-messages"
+import { toastExit } from "@/lib/error-toast"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { trackProduct } from "@/lib/analytics"
 import { buildApiKeyCreatePayload } from "./api-key-create-payload"
@@ -143,15 +143,14 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 					...(restrictedScopes !== undefined ? { scopes: restrictedScopes } : undefined),
 				}),
 			})
-			if (Exit.isSuccess(result)) {
-				setCreatedKey(result.value)
-				trackProduct("api_key_created", { kind, access: isMcp ? "full" : accessMode })
-				onCreated?.(result.value.secret)
-				void reconcileTxid(result.value.txid)
-			} else {
-				const { title, message } = displayError(result)
-				toastManager.add({ title, description: message, type: "error" })
+			if (!Exit.isSuccess(result)) {
+				toastExit(result, { error: isMcp ? "Couldn't create MCP key" : "Couldn't create API key" })
+				return
 			}
+			setCreatedKey(result.value)
+			trackProduct("api_key_created", { kind, access: isMcp ? "full" : accessMode })
+			onCreated?.(result.value.secret)
+			void reconcileTxid(result.value.txid)
 		})
 	}
 
@@ -184,7 +183,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 						<DialogPanel className="space-y-3">
 							<div className="flex flex-wrap items-center gap-1.5">
 								<span className="text-foreground text-sm font-medium">{createdKey.name}</span>
-								<InlineCode variant="plain" className="text-[11px] tracking-tight">
+								<InlineCode variant="plain" className="text-2xs tracking-tight">
 									{createdKey.key_prefix}…
 								</InlineCode>
 								{createdKey.scopes !== null &&
@@ -247,7 +246,10 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 										label: o.label,
 									}))}
 									value={expiration}
-									onValueChange={(value) => setExpiration(value as ExpirationValue)}
+									onValueChange={(value) => {
+										const option = EXPIRATION_OPTIONS.find((o) => o.value === value)
+										if (option) setExpiration(option.value)
+									}}
 								>
 									<SelectTrigger id="api-key-expiration" className="w-full">
 										<SelectValue />
@@ -316,9 +318,9 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 												/>
 											)}
 											{visibleFamilies.length === 0 && (
-												<p className="text-muted-foreground py-2 text-xs">
+												<EmptyMessage className="py-2 text-left">
 													No resource family matches "{scopeFilter.trim()}".
-												</p>
+												</EmptyMessage>
 											)}
 											{visibleFamilies.map((family) => {
 												return (
@@ -344,15 +346,15 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 													</div>
 												)
 											})}
-											<p className="text-muted-foreground text-xs">
-												Write includes read. Scopes are fixed at creation — roll the
+											<FieldDescription>
+												Write includes read. Scopes are fixed at creation; roll the
 												key to change access.
-											</p>
+											</FieldDescription>
 										</div>
 									) : (
-										<p className="text-muted-foreground text-xs">
+										<FieldDescription>
 											Full access to the organization's API.
-										</p>
+										</FieldDescription>
 									)}
 								</Field>
 							)}

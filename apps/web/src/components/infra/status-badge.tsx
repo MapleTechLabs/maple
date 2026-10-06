@@ -36,7 +36,7 @@ export function HostStatusBadge({ lastSeen, referenceTime, quiet, className }: H
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1.5 text-[11px] font-medium",
+				"inline-flex items-center gap-1.5 text-2xs font-medium",
 				STATUS_TEXT[status],
 				className,
 			)}

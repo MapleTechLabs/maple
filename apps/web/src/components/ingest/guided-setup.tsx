@@ -124,7 +124,7 @@ export function FrameworkPicker({
 						className={cn(
 							"flex items-center gap-1.5 border font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							compact
-								? "rounded-full px-2.5 py-1 font-mono text-[11px] leading-3.5"
+								? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5"
 								: "rounded-lg px-3 py-2 text-xs gap-2",
 							active
 								? compact
@@ -178,7 +178,7 @@ export function ConnectInstructions({
 	}
 
 	const tabs = (
-		<div className={variant === "boxed" ? "rounded-lg border bg-card overflow-hidden" : undefined}>
+		<div className={variant === "boxed" ? "rounded-md border bg-card overflow-hidden" : undefined}>
 			<Tabs defaultValue="install" className="flex flex-col">
 				<div className={cn("border-b", variant === "boxed" ? "px-3" : "px-4")}>
 					<TabsList variant="underline" className="h-9">

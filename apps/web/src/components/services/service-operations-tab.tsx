@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRate } from "@maple/ui/lib/format"
@@ -138,10 +139,10 @@ export function ServiceOperationsTab({
 				</p>
 			)}
 			{/* Desktop: dense sortable table with inline distribution bars. */}
-			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
+			<Panel className="hidden md:block">
 				<Table>
 					<TableHeader>
-						<TableRow className="hover:bg-transparent border-b">
+						<TableRow className="border-b">
 							<HeadLabel className="pl-3">Operation</HeadLabel>
 							<SortColumnHead
 								label="Calls /s"
@@ -191,7 +192,7 @@ export function ServiceOperationsTab({
 									>
 										<TableCell className="max-w-0 py-2 pl-3 align-middle">
 											<span
-												className="block truncate font-mono text-[12.5px] text-foreground"
+												className="block truncate font-mono text-xs text-foreground"
 												title={op.spanName}
 											>
 												{op.spanName}
@@ -203,7 +204,7 @@ export function ServiceOperationsTab({
 											tone="calls"
 										>
 											<SampledValue
-												className="tabular-nums font-mono text-[12.5px] text-foreground"
+												className="tabular-nums font-mono text-xs text-foreground"
 												estimated={op.estimatedSpanCount > op.spanCount}
 												value={formatRate(
 													callsPerSecond(op.estimatedSpanCount, seconds),
@@ -217,20 +218,20 @@ export function ServiceOperationsTab({
 											max={0.05}
 											tone="errors"
 										>
-											<ErrorRateValue rate={op.errorRate} className="text-[12.5px]" />
+											<ErrorRateValue rate={op.errorRate} className="text-xs" />
 										</BarCell>
 										<TableCell className="py-2 text-right align-middle">
 											<LatencyValue
 												ms={op.p50DurationMs}
 												scale="p50"
-												className="text-[12.5px]"
+												className="text-xs"
 											/>
 										</TableCell>
 										<BarCell value={op.p95DurationMs} max={maxima.p95} tone="latency">
 											<LatencyValue
 												ms={op.p95DurationMs}
 												scale="p95"
-												className="text-[12.5px]"
+												className="text-xs"
 											/>
 										</BarCell>
 										<TableCell className="py-1.5 pr-3 align-middle">
@@ -245,7 +246,7 @@ export function ServiceOperationsTab({
 						)}
 					</TableBody>
 				</Table>
-			</div>
+			</Panel>
 
 			{/* Mobile: tap-to-trace list with a compact sort control. */}
 			<div className="space-y-2 md:hidden">
@@ -261,7 +262,7 @@ export function ServiceOperationsTab({
 					sortDir={sortDir}
 					onSort={handleSort}
 				/>
-				<div className={TABLE_CARD_CLASS}>
+				<Panel>
 					{sorted.length === 0 ? (
 						<EmptyMessage>No operations recorded in this window.</EmptyMessage>
 					) : (
@@ -292,7 +293,7 @@ export function ServiceOperationsTab({
 							)
 						})
 					)}
-				</div>
+				</Panel>
 			</div>
 		</div>
 	)

@@ -4,7 +4,7 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import {
 	WidgetQueryBuilderPage,
 	type WidgetQueryBuilderPageHandle,
@@ -26,6 +26,7 @@ import {
 	variableSearchRest,
 } from "@/lib/dashboard-controls/search-params"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 // The editor carries the dashboard's per-viewer controls through its own search
@@ -94,18 +95,9 @@ function WidgetConfigurePage() {
 
 	if (!activeDashboard || !configureWidget) {
 		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Dashboards", href: "/dashboards" }, { label: "..." }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<WidgetEditorSkeleton />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<DashboardPage breadcrumbs={[{ label: "Dashboards", href: "/dashboards" }, { label: "..." }]}>
+				<WidgetEditorSkeleton />
+			</DashboardPage>
 		)
 	}
 
@@ -135,17 +127,16 @@ function WidgetConfigurePage() {
 				urlValues={{}}
 				onValueChange={() => undefined}
 			>
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs
-						items={[
-							{ label: "Dashboards", href: "/dashboards" },
-							{
-								label: activeDashboard.name,
-								href: `/dashboards/${activeDashboard.id}`,
-							},
-							{ label: "Configure Widget" },
-						]}
-					>
+				<DashboardPage
+					breadcrumbs={[
+						{ label: "Dashboards", href: "/dashboards" },
+						{
+							label: activeDashboard.name,
+							href: `/dashboards/${activeDashboard.id}`,
+						},
+						{ label: "Configure Widget" },
+					]}
+					topbarActions={
 						<div className="flex items-center gap-2">
 							<Button variant="ghost" size="sm" onClick={navigateBack} disabled={isSaving}>
 								&larr; Back
@@ -157,40 +148,28 @@ function WidgetConfigurePage() {
 								Apply
 							</Button>
 						</div>
-					</DashboardLayout.Breadcrumbs>
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							<DashboardLayout.Scroll>
-								<WidgetBuilderProvider widget={configureWidget}>
-									<WidgetQueryBuilderPage
-										ref={builderRef}
-										widget={configureWidget}
-										onApply={handleApply}
-									/>
-								</WidgetBuilderProvider>
-							</DashboardLayout.Scroll>
-						</DashboardLayout.Content>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
+					}
+				>
+					<WidgetBuilderProvider widget={configureWidget}>
+						<WidgetQueryBuilderPage
+							ref={builderRef}
+							widget={configureWidget}
+							onApply={handleApply}
+						/>
+					</WidgetBuilderProvider>
+				</DashboardPage>
 
-				{status === "blocked" && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-						<div className="bg-background rounded-lg border p-6 shadow-lg max-w-sm">
-							<h3 className="text-sm font-medium mb-2">Unsaved changes</h3>
-							<p className="text-sm text-muted-foreground mb-4">
-								You have unsaved widget changes. Are you sure you want to leave?
-							</p>
-							<div className="flex justify-end gap-2">
-								<Button variant="outline" size="sm" onClick={reset}>
-									Stay
-								</Button>
-								<Button variant="destructive" size="sm" onClick={proceed}>
-									Discard changes
-								</Button>
-							</div>
-						</div>
-					</div>
-				)}
+				<ConfirmDialog
+					open={status === "blocked"}
+					onOpenChange={(open) => {
+						if (!open) reset?.()
+					}}
+					title="Unsaved changes"
+					description="You have unsaved widget changes. Are you sure you want to leave?"
+					cancelLabel="Stay"
+					confirmLabel="Discard changes"
+					onConfirm={() => proceed?.()}
+				/>
 			</DashboardVariablesProvider>
 		</DashboardTimeRangeWrapper>
 	)

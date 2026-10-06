@@ -11,6 +11,7 @@ import type {
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { cn } from "@maple/ui/lib/utils"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { CheckIcon, ChevronDownIcon, CircleWarningIcon } from "@/components/icons"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import {
@@ -175,8 +176,8 @@ export function RuleDiagnosisPanel({
 							{showAll
 								? "Show only issues"
 								: passingCount === hiddenCount
-									? `${passingCount} ${passingCount === 1 ? "check" : "checks"} passing`
-									: `Show ${hiddenCount} more ${hiddenCount === 1 ? "step" : "steps"}`}
+									? `${countLabel(passingCount, "check")} passing`
+									: `Show ${hiddenCount} more ${pluralize(hiddenCount, "step")}`}
 						</button>
 					)}
 				</div>

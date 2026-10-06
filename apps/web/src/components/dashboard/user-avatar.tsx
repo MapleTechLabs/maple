@@ -13,7 +13,7 @@ export function UserAvatar({
 	name: string
 	className?: string
 }) {
-	const base = className ?? "size-6 rounded-md text-[10px]"
+	const base = className ?? "size-6 rounded-md text-3xs"
 	return imageUrl ? (
 		<img alt={name} className={`${base} shrink-0 object-cover`} src={imageUrl} />
 	) : (

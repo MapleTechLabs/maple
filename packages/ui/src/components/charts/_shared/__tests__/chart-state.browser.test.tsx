@@ -73,7 +73,7 @@ describe("empty vs error", () => {
 
 		expect(emptyClasses).toContain("text-muted-foreground")
 		expect(emptyClasses).not.toContain("destructive")
-		expect(errorClasses).toContain("text-destructive")
+		expect(errorClasses).toContain("text-severity-error")
 
 		// Shared typography — the half that IS supposed to match.
 		expect(emptyClasses).toContain("font-mono")

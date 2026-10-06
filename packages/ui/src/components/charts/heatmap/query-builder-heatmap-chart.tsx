@@ -10,7 +10,7 @@ import {
 	type HeatmapScaleType,
 } from "@maple/domain/http"
 import { useContainerSize } from "../../../hooks/use-container-size"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { countLabel, formatNumber, formatValueByUnit } from "../../../lib/format"
 import { cn } from "../../../lib/utils"
 import {
 	PlotFrame,
@@ -18,7 +18,7 @@ import {
 	resolveSequentialDomain,
 	usePlotColors,
 	usePlotTimeZone,
-	type PlotColorToken,
+	type PlotColorSource,
 } from "../../plot"
 import type { QueryBuilderHeatmapChartProps } from "../_shared/chart-types"
 
@@ -131,7 +131,7 @@ const RAMP_STOP_TOKENS = {
 	cividis2: ["--heatmap-cividis-2", "oklch(0.58 0.03 130)"],
 	cividis3: ["--heatmap-cividis-3", "oklch(0.71 0.075 95)"],
 	cividis4: ["--heatmap-cividis-4", "oklch(0.85 0.13 95)"],
-} as const satisfies Record<`${HeatmapColorScale}${0 | 1 | 2 | 3 | 4}`, readonly [PlotColorToken, string]>
+} as const satisfies Record<`${HeatmapColorScale}${0 | 1 | 2 | 3 | 4}`, PlotColorSource>
 
 type RampColors = Readonly<Record<keyof typeof RAMP_STOP_TOKENS, string>>
 
@@ -143,10 +143,10 @@ const RAMP_INDICES = [0, 1, 2, 3, 4] as const
  * literal per render would re-read computed style on every frame.
  */
 const HEATMAP_CHROME_TOKENS = {
-	foreground: ["--foreground", "#fafafa"],
+	foreground: "--foreground",
 	/** The recessed surface a hole is a hole *in*. */
 	grout: ["--heatmap-grout", "oklch(0.175 0.008 62)"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Whether a persisted `colorScale` still names a ramp we ship.
@@ -641,7 +641,7 @@ function HeatmapLegend({
 				{Array.from({ length: LEGEND_STEPS }).map((_, index) => (
 					<div
 						key={index}
-						className="flex-1 rounded-[2px]"
+						className="flex-1 rounded-xs"
 						style={{
 							backgroundColor: colorAt(
 								valueAtRampPosition((index + 0.5) / LEGEND_STEPS, domain, scaleType),
@@ -703,8 +703,6 @@ const UNMATCHED_OPACITY = 0.28
 // empty one. Gallery thumbnails pass their sample rows in explicitly via `data`.
 const EMPTY_ROWS: ReadonlyArray<Record<string, unknown>> = []
 
-const pluralize = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
-
 export function QueryBuilderHeatmapChart({
 	data,
 	className,
@@ -741,8 +739,8 @@ export function QueryBuilderHeatmapChart({
 	const footnote =
 		model.hiddenX > 0 || model.hiddenY > 0
 			? [
-					model.hiddenX > 0 ? pluralize(model.hiddenX, "empty column") : null,
-					model.hiddenY > 0 ? pluralize(model.hiddenY, "empty row") : null,
+					model.hiddenX > 0 ? countLabel(model.hiddenX, "empty column") : null,
+					model.hiddenY > 0 ? countLabel(model.hiddenY, "empty row") : null,
 				]
 					.filter(Boolean)
 					.join(" · ") + " hidden"
@@ -959,7 +957,7 @@ export function QueryBuilderHeatmapChart({
 								/>
 							))}
 						</div>
-						<div className="text-[11px] text-muted-foreground">No data</div>
+						<div className="text-2xs text-muted-foreground">No data</div>
 					</div>
 				</div>
 			</div>
@@ -996,7 +994,7 @@ export function QueryBuilderHeatmapChart({
 				footer={
 					footnote ? (
 						<p
-							className="pt-1 text-right text-[10px] leading-[12px] tabular-nums text-muted-foreground/70"
+							className="pt-1 text-right text-3xs leading-[12px] tabular-nums text-muted-foreground/70"
 							style={{
 								height: FOOTNOTE_BLOCK_H,
 								paddingLeft: layout.gutter,
@@ -1028,7 +1026,7 @@ export function QueryBuilderHeatmapChart({
 								) : (
 									<>
 										<span
-											className="size-2 shrink-0 rounded-[2px]"
+											className="size-2 shrink-0 rounded-xs"
 											style={{ backgroundColor: colors(slot.value) }}
 										/>
 										<span className="font-medium tabular-nums text-foreground">

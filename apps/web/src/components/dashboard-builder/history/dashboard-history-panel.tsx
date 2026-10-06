@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { DashboardId, DashboardVersionId } from "@maple/domain/http"
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Result } from "@/lib/effect-atom"
 import { ErrorState } from "@/components/common/error-state"
@@ -35,16 +35,15 @@ export function DashboardHistoryPanel({
 			<div className="flex items-center gap-2 border-b px-4 py-3">
 				<HistoryIcon className="size-4" />
 				<h2 className="text-sm font-medium tracking-tight">History</h2>
-				<span className="ml-1 font-mono text-[10px] text-muted-foreground">{versions.length}</span>
-				<Button
-					variant="ghost"
+				<span className="ml-1 font-mono text-3xs text-muted-foreground">{versions.length}</span>
+				<IconButton
 					size="icon-xs"
+					label="Close history panel"
 					onClick={onClose}
 					className="ml-auto text-muted-foreground hover:text-foreground"
-					aria-label="Close history panel"
 				>
 					<XmarkIcon className="size-4" />
-				</Button>
+				</IconButton>
 			</div>
 
 			<div className="flex-1 min-h-0 overflow-y-auto">
@@ -74,7 +73,7 @@ export function DashboardHistoryPanel({
 							<HistoryIcon className="size-4 text-muted-foreground" />
 						</div>
 						<p className="text-xs font-medium text-foreground">No history yet</p>
-						<p className="mt-1 text-[11px] text-muted-foreground">
+						<p className="mt-1 text-2xs text-muted-foreground">
 							Each save is captured here so you can revisit or restore.
 						</p>
 					</div>

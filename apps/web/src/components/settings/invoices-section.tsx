@@ -1,10 +1,15 @@
 import { useMemo } from "react"
-import { format } from "date-fns"
 import type { BillingInvoice } from "@maple/domain/http"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { billingInvoicesAtom } from "@/lib/services/atoms/billing-atoms"
 import { formatCurrency } from "@maple/domain/format"
@@ -31,28 +36,28 @@ function statusBadge(status: string) {
 
 function planLabel(invoice: BillingInvoice): string {
 	const ids = invoice.planIds ?? []
-	if (ids.length === 0) return "—"
+	if (ids.length === 0) return EMPTY_VALUE
 	// planIds are catalog slugs ("startup"); capitalize for display.
 	return ids.map((id) => id.charAt(0).toUpperCase() + id.slice(1)).join(" + ")
 }
 
-function InvoiceRow({ invoice }: { invoice: BillingInvoice }) {
+function InvoiceRow({ invoice, timeZone }: { invoice: BillingInvoice; timeZone: string }) {
 	const badge = statusBadge(invoice.status)
 	return (
-		<div className="flex items-center gap-4 py-2.5">
-			<span className="w-28 shrink-0 whitespace-nowrap text-sm tabular-nums">
-				{format(new Date(invoice.createdAt), "MMM d, yyyy")}
-			</span>
-			<span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
-				{planLabel(invoice)}
-			</span>
-			<Badge size="sm" variant={badge.variant}>
-				{badge.label}
-			</Badge>
-			<span className="w-20 shrink-0 text-right text-sm tabular-nums">
+		<TableRow>
+			<TableCell className="whitespace-nowrap tabular-nums">
+				{formatDateInTimezone(invoice.createdAt, { timeZone })}
+			</TableCell>
+			<TableCell className="max-w-0 truncate text-muted-foreground">{planLabel(invoice)}</TableCell>
+			<TableCell>
+				<Badge size="sm" variant={badge.variant}>
+					{badge.label}
+				</Badge>
+			</TableCell>
+			<TableCell className="text-right tabular-nums">
 				{formatCurrency(invoice.total, invoice.currency)}
-			</span>
-			<span className="w-12 shrink-0 text-right">
+			</TableCell>
+			<TableCell className="text-right">
 				{invoice.hostedInvoiceUrl ? (
 					<a
 						href={invoice.hostedInvoiceUrl}
@@ -63,8 +68,8 @@ function InvoiceRow({ invoice }: { invoice: BillingInvoice }) {
 						View
 					</a>
 				) : null}
-			</span>
-		</div>
+			</TableCell>
+		</TableRow>
 	)
 }
 
@@ -92,6 +97,7 @@ function InvoicesSkeleton() {
  */
 export function InvoicesSection({ onManageBilling }: { onManageBilling: () => void }) {
 	const invoicesResult = useAtomValue(billingInvoicesAtom)
+	const { effectiveTimezone } = useTimezonePreference()
 
 	const invoices = useMemo(() => {
 		if (!Result.isSuccess(invoicesResult)) return []
@@ -115,17 +121,36 @@ export function InvoicesSection({ onManageBilling }: { onManageBilling: () => vo
 
 	if (invoices.length === 0) {
 		return (
-			<p className="text-muted-foreground text-sm">
+			<EmptyMessage dashed>
 				Your first invoice appears after your first billing cycle closes.
-			</p>
+			</EmptyMessage>
 		)
 	}
 
 	return (
-		<div className="divide-y divide-border/60">
-			{invoices.map((invoice, index) => (
-				<InvoiceRow key={invoice.stripeId ?? `${invoice.createdAt}:${index}`} invoice={invoice} />
-			))}
-		</div>
+		<Panel>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead className="w-32">Date</TableHead>
+						<TableHead>Plan</TableHead>
+						<TableHead className="w-24">Status</TableHead>
+						<TableHead className="w-24 text-right">Amount</TableHead>
+						<TableHead className="w-14">
+							<span className="sr-only">Invoice</span>
+						</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{invoices.map((invoice, index) => (
+						<InvoiceRow
+							key={invoice.stripeId ?? `${invoice.createdAt}:${index}`}
+							invoice={invoice}
+							timeZone={effectiveTimezone}
+						/>
+					))}
+				</TableBody>
+			</Table>
+		</Panel>
 	)
 }

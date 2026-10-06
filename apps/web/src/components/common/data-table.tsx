@@ -5,6 +5,7 @@
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { ArrowUpDownIcon } from "@/components/icons"
 
@@ -55,7 +56,7 @@ export function ColumnHead<K extends string>({
 	return (
 		<div
 			className={cn(
-				"flex items-center text-[11px] font-medium",
+				"flex items-center text-2xs font-medium",
 				align === "right" && "justify-end",
 				width,
 				hidden,
@@ -88,7 +89,7 @@ export function ColumnHead<K extends string>({
 }
 
 export function MetaChip({ children }: { children: React.ReactNode }) {
-	return <span className="font-mono text-[10px] text-muted-foreground/80">{children}</span>
+	return <span className="font-mono text-3xs text-muted-foreground/80">{children}</span>
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -154,8 +155,9 @@ function DataTableRoot({
 	return (
 		<DataTableContext value={ctx}>
 			<div
-				className={cn("border-y border-border/70 transition-opacity", waiting && "opacity-60", className)}
+				className={cn("border-y border-border/70", refreshingClass(Boolean(waiting)), className)}
 				aria-label={ariaLabel}
+				aria-busy={waiting || undefined}
 			>
 				<div
 					className={cn("overflow-x-auto", scrolls && "overflow-y-auto overscroll-contain")}

@@ -3,7 +3,15 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { countLabel, formatErrorRate, formatLatency, formatNumber, pluralize } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+	pluralize,
+} from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -32,6 +40,7 @@ import {
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 const ISSUE_LIMIT = 100
 const NO_COUNTS: ReadonlyMap<string, number> = new Map()
@@ -78,10 +87,12 @@ export function ReleaseDeployOverview({
 	const { impacts, group } = derived
 	if (group === undefined) {
 		return (
-			<EmptyMessage className="rounded-md border bg-card text-sm">
-				<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic in this
-				window. Widen the time range to include its deploy.
-			</EmptyMessage>
+			<Panel>
+				<EmptyMessage className="text-sm">
+					<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic in
+					this window. Widen the time range to include its deploy.
+				</EmptyMessage>
+			</Panel>
 		)
 	}
 
@@ -140,7 +151,7 @@ function BeforeAfter({
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{before !== undefined ? (
-				<span className="text-[10px] text-muted-foreground/70">{format(before)} →</span>
+				<span className="text-3xs text-muted-foreground/70">{format(before)} →</span>
 			) : null}
 			<span
 				className={cn(
@@ -171,14 +182,12 @@ function DeployServices({
 		<SectionCard
 			title="Services"
 			action={
-				<span className="text-[11px] text-muted-foreground/70">
-					against the version each replaced
-				</span>
+				<span className="text-2xs text-muted-foreground/70">against the version each replaced</span>
 			}
 		>
 			<Table size="sm">
 				<TableHeader>
-					<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
+					<TableRow className={eyebrowVariants()}>
 						<TableHead className="pl-4">Service</TableHead>
 						<TableHead>Replaced</TableHead>
 						<TableHead className="text-right">Requests</TableHead>
@@ -212,7 +221,7 @@ function DeployServiceRow({
 	timeSearch: TimeRangeSearch
 }) {
 	return (
-		<TableRow className="border-border/60 hover:bg-muted/30">
+		<TableRow className="border-border/60">
 			<TableCell className="pl-4">
 				<Link
 					to="/releases/$commitSha"
@@ -234,8 +243,8 @@ function DeployServiceRow({
 					)}
 				</Link>
 			</TableCell>
-			<TableCell className="font-mono text-[11px] text-muted-foreground">
-				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : "-"}
+			<TableCell className="font-mono text-2xs text-muted-foreground">
+				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : EMPTY_VALUE}
 			</TableCell>
 			<TableCell className="text-right font-mono tabular-nums">
 				{formatNumber(impact.spanCount)}
@@ -264,7 +273,7 @@ function DeployServiceRow({
 						: "text-muted-foreground",
 				)}
 			>
-				{impact.share === undefined ? "-" : `${Math.round(impact.share * 100)}%`}
+				{impact.share === undefined ? EMPTY_VALUE : formatPercent(impact.share)}
 			</TableCell>
 		</TableRow>
 	)

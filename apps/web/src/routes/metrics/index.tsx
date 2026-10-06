@@ -1,7 +1,8 @@
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import {
 	MetricsBrowse,
 	MetricsBrowseFilters,
@@ -10,8 +11,6 @@ import {
 } from "@/components/metrics/metrics-browse"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import {
 	QUERY_BUILDER_METRIC_TYPES,
 	type QueryBuilderMetricType,
@@ -41,7 +40,7 @@ function MetricsPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 
-	const handleTimeChange = (range: { startTime?: string; endTime?: string; presetValue?: string }) => {
+	const handleTimeChange = (range: TimeRange) => {
 		navigate({ search: (prev) => applyTimeRangeSearch(prev, range) })
 	}
 
@@ -58,64 +57,42 @@ function MetricsPage() {
 	}
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "24h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Metrics" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								titleContent={
-									<MetricsBrowseFilters
-										startTime={search.startTime}
-										endTime={search.endTime}
-										timePreset={search.timePreset}
-										q={search.q ?? ""}
-										type={search.type ?? null}
-										onPatch={handlePatch}
-									/>
-								}
-							>
-								<div className="flex flex-wrap items-center gap-2">
-									<MetricsViewToggle view={search.view ?? "grid"} onPatch={handlePatch} />
-									<TimeRangeHeaderControls
-										startTime={search.startTime}
-										endTime={search.endTime}
-										presetValue={
-											search.timePreset ?? (search.startTime ? undefined : "24h")
-										}
-										defaultPreset="24h"
-										onTimeChange={handleTimeChange}
-									/>
-								</div>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<MetricsBrowse
-								startTime={search.startTime}
-								endTime={search.endTime}
-								timePreset={search.timePreset}
-								q={search.q ?? ""}
-								type={search.type ?? null}
-								view={search.view ?? "grid"}
-								onPatch={handlePatch}
-								onOpenMetric={(metric) => {
-									navigate({
-										to: "/metrics/$metricName",
-										params: { metricName: metric.metricName },
-										search: {
-											startTime: search.startTime,
-											endTime: search.endTime,
-											timePreset: search.timePreset,
-											type: asMetricType(metric.metricType),
-										},
-									})
-								}}
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Metrics" }]}
+			titleContent={
+				<MetricsBrowseFilters
+					startTime={search.startTime}
+					endTime={search.endTime}
+					timePreset={search.timePreset}
+					q={search.q ?? ""}
+					type={search.type ?? null}
+					onPatch={handlePatch}
+				/>
+			}
+			headerActions={<MetricsViewToggle view={search.view ?? "grid"} onPatch={handlePatch} />}
+			time={{ search, defaultPreset: "24h", onChange: handleTimeChange }}
+		>
+			<MetricsBrowse
+				startTime={search.startTime}
+				endTime={search.endTime}
+				timePreset={search.timePreset}
+				q={search.q ?? ""}
+				type={search.type ?? null}
+				view={search.view ?? "grid"}
+				onPatch={handlePatch}
+				onOpenMetric={(metric) => {
+					navigate({
+						to: "/metrics/$metricName",
+						params: { metricName: metric.metricName },
+						search: {
+							startTime: search.startTime,
+							endTime: search.endTime,
+							timePreset: search.timePreset,
+							type: asMetricType(metric.metricType),
+						},
+					})
+				}}
+			/>
+		</DashboardPage>
 	)
 }

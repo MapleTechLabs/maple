@@ -1,5 +1,4 @@
 import { useState } from "react"
-import type { ReactNode } from "react"
 import { Exit } from "effect"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import {
@@ -7,21 +6,25 @@ import {
 	EscalationPolicyEvaluationRequest,
 	type IssueSeverity,
 } from "@maple/domain/http"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
+import { ListRow } from "@maple/ui/components/ui/list-row"
 import { NativeSelect, NativeSelectOption } from "@maple/ui/components/ui/native-select"
 
 import { SeverityBadge } from "@/components/errors/severity-badge"
+import { ErrorState } from "@/components/common/error-state"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { SeveritySelect } from "@/components/errors/severity-select"
 import { AiTriageSettingsSection } from "./ai-triage-settings-section"
 import { EscalationPolicySection } from "./escalation-policy-section"
-import { SectionHeader } from "@/components/layout/section-header"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 
 const CONFIDENCES: ReadonlyArray<EscalationConfidence> = ["high", "medium", "low"]
 
@@ -33,22 +36,20 @@ export function AutomationSection({
 	hasEntitlement: boolean
 }) {
 	return (
-		<div className="max-w-5xl space-y-10">
-			<section aria-labelledby="automatic-investigations-heading">
-				<SectionHeader id="automatic-investigations-heading" label="Automatic investigations" />
+		<SettingsSections>
+			<SettingsSection title="Automatic investigations" framed={false}>
 				<AiTriageSettingsSection isAdmin={isAdmin} hasEntitlement={hasEntitlement} />
-			</section>
-			<section aria-labelledby="routing-heading">
-				<SectionHeader id="routing-heading" label="Severity and confidence routing" />
-				<p className="mb-4 text-sm text-muted-foreground">
-					Confidence gates apply only to AI decisions. A manual severity change is explicit human
-					intent and bypasses the confidence threshold.
-				</p>
+			</SettingsSection>
+			<SettingsSection
+				title="Severity and confidence routing"
+				description="Confidence gates apply only to AI decisions. A manual severity change is explicit human intent and bypasses the confidence threshold."
+				framed={false}
+			>
 				<EscalationPolicySection isAdmin={isAdmin} />
-			</section>
+			</SettingsSection>
 			<PolicySimulator />
 			<RecentDeliveries />
-		</div>
+		</SettingsSections>
 	)
 }
 
@@ -78,92 +79,79 @@ function PolicySimulator() {
 				...(source === "ai" ? { confidence } : undefined),
 			}),
 		})
-		if (Exit.isSuccess(result)) {
+		if (toastExit(result, { error: "Policy evaluation failed" }) && Exit.isSuccess(result)) {
 			setDecision(result.value)
-		} else {
-			toastManager.add({ title: "Policy evaluation failed", type: "error" })
 		}
 	})
 
 	return (
-		<section aria-labelledby="policy-simulator-heading">
-			<SectionHeader id="policy-simulator-heading" label="Policy simulator" />
-			<div className="border bg-card/20 p-4">
-				<div className="grid gap-4 md:grid-cols-3">
-					<SimulatorField label="Severity">
-						<SeveritySelect
-							value={severity}
-							onChange={(next) => setSeverity(next ?? "high")}
-							className="h-8 w-full"
-						/>
-					</SimulatorField>
-					<SimulatorField label="Decision source">
-						<NativeSelect
-							value={source}
-							onChange={(event) => setSource(event.target.value === "manual" ? "manual" : "ai")}
-							className="w-full"
-						>
-							<NativeSelectOption value="ai">AI diagnosis</NativeSelectOption>
-							<NativeSelectOption value="manual">Manual change</NativeSelectOption>
-						</NativeSelect>
-					</SimulatorField>
-					<SimulatorField label="AI confidence">
-						<NativeSelect
-							value={confidence}
-							onChange={(event) =>
-								setConfidence(
-									CONFIDENCES.find((value) => value === event.target.value) ?? "high",
-								)
-							}
-							disabled={source === "manual"}
-							className="w-full"
-						>
-							{CONFIDENCES.map((value) => (
-								<NativeSelectOption key={value} value={value}>
-									{value}
-								</NativeSelectOption>
-							))}
-						</NativeSelect>
-					</SimulatorField>
-				</div>
-				<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
-					<Button size="sm" onClick={() => void run()} loading={busy}>
-						Evaluate policy
-					</Button>
-					{decision ? (
-						<>
-							<Badge variant="outline" className="capitalize">
-								{decision.outcome}
-							</Badge>
-							<span className="text-sm text-muted-foreground">
-								{decision.outcome === "route"
-									? decision.destinationIds
-											.map(
-												(id) =>
-													destinations.find((destination) => destination.id === id)
-														?.name ?? id,
-											)
-											.join(", ")
-									: decision.skipReason?.replaceAll("_", " ")}
-							</span>
-						</>
-					) : (
-						<span className="text-sm text-muted-foreground">
-							Preview the exact worker decision without sending a notification.
-						</span>
-					)}
-				</div>
+		<SettingsSection title="Policy simulator">
+			<div className="grid gap-4 md:grid-cols-3">
+				<Field>
+					<FieldLabel>Severity</FieldLabel>
+					<SeveritySelect
+						value={severity}
+						onChange={(next) => setSeverity(next ?? "high")}
+						className="h-8 w-full"
+					/>
+				</Field>
+				<Field>
+					<FieldLabel>Decision source</FieldLabel>
+					<NativeSelect
+						value={source}
+						onChange={(event) => setSource(event.target.value === "manual" ? "manual" : "ai")}
+						className="w-full"
+					>
+						<NativeSelectOption value="ai">AI diagnosis</NativeSelectOption>
+						<NativeSelectOption value="manual">Manual change</NativeSelectOption>
+					</NativeSelect>
+				</Field>
+				<Field>
+					<FieldLabel>AI confidence</FieldLabel>
+					<NativeSelect
+						value={confidence}
+						onChange={(event) =>
+							setConfidence(CONFIDENCES.find((value) => value === event.target.value) ?? "high")
+						}
+						disabled={source === "manual"}
+						className="w-full"
+					>
+						{CONFIDENCES.map((value) => (
+							<NativeSelectOption key={value} value={value}>
+								{value}
+							</NativeSelectOption>
+						))}
+					</NativeSelect>
+				</Field>
 			</div>
-		</section>
-	)
-}
-
-function SimulatorField({ label, children }: { label: string; children: ReactNode }) {
-	return (
-		<label className="space-y-1.5">
-			<span className="text-xs font-medium text-muted-foreground">{label}</span>
-			{children}
-		</label>
+			<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
+				<Button size="sm" onClick={() => void run()} loading={busy}>
+					Evaluate policy
+				</Button>
+				{decision ? (
+					<>
+						<Badge variant="outline" className="capitalize">
+							{decision.outcome}
+						</Badge>
+						<span className="text-sm text-muted-foreground">
+							{decision.outcome === "route"
+								? decision.destinationIds
+										.map(
+											(id) =>
+												destinations.find((destination) => destination.id === id)
+													?.name ?? id,
+										)
+										.join(", ")
+								: decision.skipReason?.replaceAll("_", " ")}
+						</span>
+					</>
+				) : (
+					<span className="text-sm text-muted-foreground">
+						Preview the exact worker decision without sending a notification.
+					</span>
+				)}
+			</div>
+		</SettingsSection>
 	)
 }
 
@@ -175,52 +163,58 @@ function RecentDeliveries() {
 		}),
 	)
 	return (
-		<section aria-labelledby="recent-deliveries-heading">
-			<SectionHeader id="recent-deliveries-heading" label="Recent escalation deliveries" />
+		<SettingsSection title="Recent escalation deliveries" padded={false}>
 			{Result.builder(result)
 				.onSuccess((response) =>
 					response.attempts.length === 0 ? (
-						<EmptyMessage className="border text-sm">
-							No escalation attempts have been recorded.
-						</EmptyMessage>
+						<EmptyMessage>No escalation attempts have been recorded.</EmptyMessage>
 					) : (
-						<div className="divide-y border">
+						<div>
 							{response.attempts.map((attempt) => (
-								<div
+								<ListRow
 									key={attempt.id}
-									className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[8rem_1fr_auto]"
-								>
-									<div className="flex items-center gap-2">
-										<SeverityBadge severity={attempt.severity} />
-										<span className="capitalize text-muted-foreground">
-											{attempt.status}
+									divided
+									leading={
+										<span className="flex w-32 items-center gap-2">
+											<SeverityBadge severity={attempt.severity} />
+											<span className="capitalize">{attempt.status}</span>
 										</span>
-									</div>
-									<p className="min-w-0 truncate text-muted-foreground">
-										{attempt.deliveries.length > 0
-											? attempt.deliveries
-													.map(
-														(delivery) =>
-															`${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
-													)
-													.join(", ")
-											: (attempt.skipReason?.replaceAll("_", " ") ??
-												"Awaiting delivery")}
-									</p>
-									<RelativeTime
-										value={attempt.createdAt}
-										className="text-xs text-muted-foreground"
-									/>
-								</div>
+									}
+									title={
+										<span className="font-normal text-muted-foreground">
+											{attempt.deliveries.length > 0
+												? attempt.deliveries
+														.map(
+															(delivery) =>
+																`${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
+														)
+														.join(", ")
+												: (attempt.skipReason?.replaceAll("_", " ") ??
+													"Awaiting delivery")}
+										</span>
+									}
+									trailing={
+										<RelativeTime
+											value={attempt.createdAt}
+											className="text-xs text-muted-foreground"
+										/>
+									}
+								/>
 							))}
 						</div>
 					),
 				)
+				.onError((error) => (
+					<ErrorState
+						error={error}
+						title="Recent escalation activity could not be loaded"
+						variant="inline"
+						className="px-4"
+					/>
+				))
 				.orElse(() => (
-					<EmptyMessage className="border text-sm">
-						Recent escalation activity could not be loaded.
-					</EmptyMessage>
+					<SkeletonList rows={3} rowClassName="h-10" gap="2" className="p-4" />
 				))}
-		</section>
+		</SettingsSection>
 	)
 }

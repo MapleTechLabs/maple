@@ -4,7 +4,8 @@ import { ScrollArea } from "../ui/scroll-area"
 import { Separator } from "../ui/separator"
 import { Skeleton } from "../ui/skeleton"
 import { cn } from "../../lib/utils"
-import { FILTER_SECTION_LABEL } from "./filter-styles"
+import { refreshingClass } from "../../lib/refreshing"
+import { Eyebrow } from "../ui/eyebrow"
 
 interface FilterSidebarFrameProps {
 	children: ReactNode
@@ -17,7 +18,10 @@ export function FilterSidebarFrame({ children, waiting = false, className }: Fil
 	// on desktop, a sheet below lg). Setting one here would fight it — callers that own their own
 	// layout (local mode) pass a width via className instead.
 	return (
-		<div className={cn("flex h-full w-full flex-col", waiting && "opacity-60", className)}>
+		<div
+			className={cn("flex h-full w-full flex-col", refreshingClass(waiting), className)}
+			aria-busy={waiting || undefined}
+		>
 			{children}
 		</div>
 	)
@@ -37,7 +41,9 @@ export function FilterSidebarHeader({
 	return (
 		<div className="flex items-center justify-between py-2">
 			{/* Same size as the section labels below; distinguished by weight and full-strength color. */}
-			<h3 className={cn(FILTER_SECTION_LABEL, "font-semibold text-foreground")}>{title}</h3>
+			<Eyebrow as="h3" variant="label" className="font-semibold text-foreground">
+				{title}
+			</Eyebrow>
 			{canClear && onClear && (
 				<button
 					type="button"

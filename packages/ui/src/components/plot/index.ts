@@ -60,6 +60,18 @@ export {
 	type TimeseriesYAxisOptions,
 } from "./timeseries"
 
+// The warehouse-bucket time axis app charts share, so identical ranges tick identically.
+export { bucketDate, makeBucketAxis, type BucketAxis } from "./bucket-axis"
+
+// A plot with the cursor tooltip and colour resolution wired: the app charts' frame.
+export {
+	CursorPlot,
+	useCursorPlot,
+	type CursorPlotProps,
+	type CursorPlotSeries,
+	type CursorPlotState,
+} from "./cursor-plot"
+
 // Fixed-metric charts: latency, throughput, apdex, error rate.
 export {
 	FixedMetricLegend,
@@ -141,6 +153,7 @@ export {
 	usePlotColors,
 	useResolvedSeriesColors,
 	type PlotChromeColors,
+	type PlotColorSource,
 	type PlotColorToken,
 } from "./theme"
 export {

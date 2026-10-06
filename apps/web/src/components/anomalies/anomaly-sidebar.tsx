@@ -9,7 +9,6 @@ import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 import { LinkIcon } from "@/components/icons"
 import { shortIssueId } from "@/components/errors/issue-id"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import {
 	deviation,
 	formatSignalValue,
@@ -22,6 +21,7 @@ import {
 } from "./anomaly-format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { DetailRail } from "@maple/ui/components/detail-rail"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 
 export function AnomalySidebar({
 	incident,
@@ -78,11 +78,15 @@ export function AnomalySidebar({
 			<DetailRail.Group label="Details">
 				<DetailRail.Row label="State">
 					<span className="text-right text-sm text-foreground">
-						{isStale
-							? `stale · last seen ${formatRelativeTime(incident.lastTriggeredAt)}`
-							: isOpen
-								? "open"
-								: "resolved"}
+						{isStale ? (
+							<>
+								stale · <RelativeTime value={incident.lastTriggeredAt} prefix="last seen" />
+							</>
+						) : isOpen ? (
+							"open"
+						) : (
+							"resolved"
+						)}
 					</span>
 				</DetailRail.Row>
 				<DetailRail.Row label="Signal">
@@ -105,7 +109,7 @@ export function AnomalySidebar({
 					</span>
 				</DetailRail.Row>
 				<DetailRail.Row label="Environment">
-					<span className="text-sm text-foreground">{incident.deploymentEnv || "—"}</span>
+					<span className="text-sm text-foreground">{incident.deploymentEnv || EMPTY_VALUE}</span>
 				</DetailRail.Row>
 				<DetailRail.Row label="Detector" title={incident.detectorKey}>
 					<code className="block max-w-full truncate font-mono text-xs text-muted-foreground">
@@ -159,7 +163,7 @@ export function AnomalySidebar({
 				</DetailRail.Row>
 				<DetailRail.Row label="Samples">
 					<span className="font-mono text-sm tabular-nums text-muted-foreground">
-						{incident.lastSampleCount.toLocaleString()}
+						{formatNumber(incident.lastSampleCount)}
 					</span>
 				</DetailRail.Row>
 			</DetailRail.Group>

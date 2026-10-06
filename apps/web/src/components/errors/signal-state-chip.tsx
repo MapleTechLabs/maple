@@ -46,7 +46,7 @@ export function SignalStateChip({
 		return (
 			<span
 				className={cn(
-					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-severity-error",
+					"inline-flex max-w-full items-center gap-1.5 text-2xs font-medium whitespace-nowrap text-severity-error",
 					className,
 				)}
 				title="An incident is open for this error"
@@ -75,7 +75,7 @@ export function SignalStateChip({
 	return (
 		<span
 			className={cn(
-				"inline-flex max-w-full items-center gap-1.5 text-[11px] whitespace-nowrap text-muted-foreground",
+				"inline-flex max-w-full items-center gap-1.5 text-2xs whitespace-nowrap text-muted-foreground",
 				className,
 			)}
 			title={`Workflow state: ${WORKFLOW_LABEL[state.state]}`}
@@ -122,7 +122,7 @@ export function InvestigationChip({
 				navigate({ to: "/investigations/$id", params: { id: investigation.id } })
 			}}
 			className={cn(
-				"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap",
+				"inline-flex max-w-full items-center gap-1.5 text-2xs font-medium whitespace-nowrap",
 				"text-muted-foreground hover:text-foreground hover:underline",
 				"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
 				className,

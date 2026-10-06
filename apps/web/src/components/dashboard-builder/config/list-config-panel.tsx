@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Reorder, useDragControls } from "motion/react"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { WIDGET_UNITS } from "@maple/domain/http"
@@ -13,7 +14,7 @@ import { Switch } from "@maple/ui/components/ui/switch"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
-import { GripDotsIcon } from "@/components/icons"
+import { GripDotsIcon, XmarkIcon } from "@/components/icons"
 import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
 import {
@@ -194,7 +195,7 @@ function DraggableColumnRow({
 					})
 				}
 			>
-				<SelectTrigger className="h-8 w-24 text-xs">
+				<SelectTrigger size="sm" className="w-24">
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
@@ -212,7 +213,7 @@ function DraggableColumnRow({
 					updateColumn(index, { align: value as "left" | "center" | "right" })
 				}
 			>
-				<SelectTrigger className="h-8 w-20 text-xs">
+				<SelectTrigger size="sm" className="w-20">
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
@@ -221,14 +222,14 @@ function DraggableColumnRow({
 					<SelectItem value="right">Right</SelectItem>
 				</SelectContent>
 			</Select>
-			<Button
-				variant="ghost"
-				size="sm"
-				className="size-8 p-0 text-muted-foreground hover:text-destructive"
+			<IconButton
+				size="icon"
+				label="Remove column"
+				className="text-muted-foreground hover:text-destructive"
 				onClick={() => removeColumn(index)}
 			>
-				&times;
-			</Button>
+				<XmarkIcon size={14} />
+			</IconButton>
 		</Reorder.Item>
 	)
 }
@@ -415,7 +416,7 @@ export function ListConfigPanel() {
 						<div className="mt-1.5 space-y-1.5">
 							{slow.length > 0 && (
 								<Alert variant="warn" size="sm">
-									<AlertDescription className="gap-1 text-[11px] text-severity-warn">
+									<AlertDescription className="gap-1 text-2xs text-severity-warn">
 										{slow.map((h) => (
 											<p key={h.key}>{h.reason}</p>
 										))}
@@ -424,7 +425,7 @@ export function ListConfigPanel() {
 							)}
 							{fast.length > 0 && (
 								<Alert variant="ok" size="sm">
-									<AlertDescription className="gap-1 text-[11px] text-severity-info">
+									<AlertDescription className="gap-1 text-2xs text-severity-info">
 										{fast.map((h) => (
 											<p key={h.key}>{h.reason}</p>
 										))}
@@ -450,7 +451,7 @@ export function ListConfigPanel() {
 					max={200}
 					className="w-32"
 				/>
-				<p className="text-[10px] text-muted-foreground">
+				<p className="text-3xs text-muted-foreground">
 					Max 200. Recommended: 25-50 for dashboard widgets.
 				</p>
 			</div>

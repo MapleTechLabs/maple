@@ -179,7 +179,7 @@ export function RailwayServiceTable({
 					className={ROW_LINK_CLASS}
 				>
 					<div className="w-0 min-w-[240px] flex-1">
-						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+						<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 							{row.displayName}
 						</div>
 						<MetaLine items={[row.projectName, row.environmentName]} />
@@ -192,14 +192,14 @@ export function RailwayServiceTable({
 							]}
 						/>
 					</div>
-					<div className="w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{row.replicas}
 					</div>
 					<div className="w-[100px] text-right">
 						<RelativeTime
 							value={row.lastSeen}
 							mono
-							className="cursor-default text-[11px] text-muted-foreground"
+							className="cursor-default text-2xs text-muted-foreground"
 						/>
 					</div>
 				</Link>

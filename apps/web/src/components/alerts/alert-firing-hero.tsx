@@ -1,97 +1,8 @@
-import type { ReactNode } from "react"
 import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+import { pluralize } from "@maple/ui/lib/format"
+import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-
-export type AlertStatItem = {
-	label: string
-	value: ReactNode
-	hint?: ReactNode
-	tone?: Tone
-}
-
-/**
- * Flat, divider-separated summary row. Replaces the old "one card per single
- * value" grid (the hero-metric / identical-card-grid pattern the design system
- * rejects). Hairlines come from a `bg-border` backplate showing through a 1px
- * gap; cells stack on mobile and sit in a row from `sm` up.
- */
-export function AlertStatShell({ children, className }: { children: ReactNode; className?: string }) {
-	return (
-		<div
-			className={cn(
-				"flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border sm:flex-row",
-				className,
-			)}
-		>
-			{children}
-		</div>
-	)
-}
-
-/** One strip cell. Given `onSelect` it renders as a toggle button. */
-export function AlertStatCell({
-	label,
-	value,
-	hint,
-	valueClassName,
-	onSelect,
-	selected,
-	selectedClassName,
-}: {
-	label: string
-	value: ReactNode
-	hint?: ReactNode
-	valueClassName?: string
-	onSelect?: () => void
-	selected?: boolean
-	selectedClassName?: string
-}) {
-	const body = (
-		<>
-			<Eyebrow variant="label">{label}</Eyebrow>
-			<div className="flex items-baseline gap-2">
-				<span className={cn("text-xl font-semibold tabular-nums leading-none", valueClassName)}>
-					{value}
-				</span>
-				{hint && <span className="text-muted-foreground text-xs">{hint}</span>}
-			</div>
-		</>
-	)
-	if (!onSelect) {
-		return <div className="flex flex-1 flex-col gap-2 bg-card px-5 py-4">{body}</div>
-	}
-	return (
-		<button
-			type="button"
-			aria-pressed={selected}
-			onClick={onSelect}
-			className={cn(
-				"flex flex-1 flex-col gap-2 bg-card px-5 py-4 text-left transition-colors hover:bg-accent/50",
-				selected && cn("ring-1 ring-inset", selectedClassName),
-			)}
-		>
-			{body}
-		</button>
-	)
-}
-
-export function AlertStatStrip({ items, className }: { items: AlertStatItem[]; className?: string }) {
-	return (
-		<AlertStatShell className={className}>
-			{items.map((item) => (
-				<AlertStatCell
-					key={item.label}
-					label={item.label}
-					value={item.value}
-					hint={item.hint}
-					valueClassName={item.tone ? TONE_TEXT[item.tone] : "text-foreground"}
-				/>
-			))}
-		</AlertStatShell>
-	)
-}
 
 /* -------------------------------------------------------------------------- */
 /*  Status bar — flat one-row treatment that leads the Monitor / dashboard     */
@@ -160,15 +71,15 @@ export function AlertFiringHero({
 				<div className="flex min-w-0 items-center gap-3">
 					<StatusDot tone="crit" />
 					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-						<span className="text-severity-error text-[11px] font-medium uppercase tracking-[0.16em]">
+						<Eyebrow variant="label" className="text-severity-error">
 							Firing now
-						</span>
+						</Eyebrow>
 						<span className="flex items-baseline gap-1.5">
 							<span className="text-severity-error text-2xl font-semibold tabular-nums leading-none">
 								{openCount}
 							</span>
 							<span className="text-muted-foreground text-sm">
-								{openCount === 1 ? "incident" : "incidents"}
+								{pluralize(openCount, "incident")}
 							</span>
 						</span>
 						<span className="text-muted-foreground/40">·</span>

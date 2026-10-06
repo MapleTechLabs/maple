@@ -25,10 +25,10 @@ export function WidgetFixAttachmentCard({ ctx, className }: WidgetFixAttachmentC
 			{(ctx.errorTitle || ctx.errorMessage) && (
 				<div className="mt-2 space-y-0.5">
 					{ctx.errorTitle && (
-						<div className="text-[11px] font-medium text-severity-error">{ctx.errorTitle}</div>
+						<div className="text-2xs font-medium text-severity-error">{ctx.errorTitle}</div>
 					)}
 					{ctx.errorMessage && (
-						<div className="text-[11px] text-severity-error/80 line-clamp-2">
+						<div className="text-2xs text-severity-error/80 line-clamp-2">
 							{ctx.errorMessage}
 						</div>
 					)}

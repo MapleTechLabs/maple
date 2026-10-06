@@ -36,10 +36,10 @@ function UnsubscribePage() {
 	if (!token) {
 		return (
 			<AuthLayout maxWidth="max-w-md">
-				<h1 className="text-xl font-semibold">Invalid unsubscribe link</h1>
-				<p className="mt-2 text-sm text-muted-foreground">
+				<AuthLayout.Title>Invalid unsubscribe link</AuthLayout.Title>
+				<AuthLayout.Description>
 					This link is incomplete. Use the unsubscribe link from the email itself.
-				</p>
+				</AuthLayout.Description>
 			</AuthLayout>
 		)
 	}
@@ -71,11 +71,11 @@ function UnsubscribeConfirm({ token }: { token: string }) {
 	if (state.kind === "done") {
 		return (
 			<AuthLayout maxWidth="max-w-md">
-				<h1 className="text-xl font-semibold">You're unsubscribed</h1>
-				<p className="mt-2 text-sm text-muted-foreground">
+				<AuthLayout.Title>You're unsubscribed</AuthLayout.Title>
+				<AuthLayout.Description>
 					You won't receive {label} anymore. You can turn it back on any time in your notification
 					settings.
-				</p>
+				</AuthLayout.Description>
 				<div className="mt-4">
 					<Button
 						variant="outline"
@@ -90,8 +90,8 @@ function UnsubscribeConfirm({ token }: { token: string }) {
 
 	return (
 		<AuthLayout maxWidth="max-w-md">
-			<h1 className="text-xl font-semibold">Unsubscribe</h1>
-			<p className="mt-2 text-sm text-muted-foreground">Stop receiving {label} from Maple?</p>
+			<AuthLayout.Title>Unsubscribe</AuthLayout.Title>
+			<AuthLayout.Description>Stop receiving {label} from Maple?</AuthLayout.Description>
 			{state.kind === "error" && <p className="mt-3 text-sm text-destructive">{state.message}</p>}
 			<div className="mt-4">
 				<Button onClick={unsubscribe} loading={state.kind === "pending"}>

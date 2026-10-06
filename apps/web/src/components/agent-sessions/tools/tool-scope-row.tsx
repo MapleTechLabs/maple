@@ -1,4 +1,8 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+
+import { XmarkIcon } from "@/components/icons"
 
 /** One removable piece of the current scope. */
 export interface ToolScopeChip {
@@ -46,37 +50,41 @@ export function ToolScopeRow({
 			)}
 		>
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="text-[10.5px] tracking-[0.06em] text-muted-foreground/60">SCOPE</span>
+				<Eyebrow variant="mono">Scope</Eyebrow>
 				{chips.length === 0 ? (
-					<span className="text-[11px] text-muted-foreground/60">all tools · all models</span>
+					<span className="text-2xs text-muted-foreground/60">all tools · all models</span>
 				) : (
 					<>
 						{chips.map((chip) => (
-							<button
-								key={`${chip.kind}:${chip.value}`}
-								type="button"
-								onClick={() => onRemove(chip)}
-								title={`Remove ${chip.kind} ${chip.value}`}
-								className="inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20"
-							>
-								<span className="text-[10.5px] text-muted-foreground">{chip.kind}</span>
-								<span className="truncate text-[11.5px] text-primary">{chip.value}</span>
-								<span aria-hidden className="text-[11px] text-muted-foreground">
-									✕
-								</span>
-							</button>
+							<Tooltip key={`${chip.kind}:${chip.value}`}>
+								<TooltipTrigger
+									render={<button type="button" />}
+									aria-label={`Remove ${chip.kind} ${chip.value}`}
+									onClick={() => onRemove(chip)}
+									className="inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20"
+								>
+									<span className="text-2xs text-muted-foreground">{chip.kind}</span>
+									<span className="truncate text-2xs text-primary">{chip.value}</span>
+									<XmarkIcon
+										size={10}
+										aria-hidden
+										className="shrink-0 text-muted-foreground"
+									/>
+								</TooltipTrigger>
+								<TooltipContent>{`Remove ${chip.kind} ${chip.value}`}</TooltipContent>
+							</Tooltip>
 						))}
 						<button
 							type="button"
 							onClick={onClearAll}
-							className="pl-0.5 text-[10.5px] text-muted-foreground underline-offset-2 hover:underline"
+							className="pl-0.5 text-2xs text-muted-foreground underline-offset-2 hover:underline"
 						>
 							Clear all
 						</button>
 					</>
 				)}
 			</div>
-			<span className="flex items-center gap-1.5 text-[11.5px] tabular-nums">
+			<span className="flex items-center gap-1.5 text-2xs tabular-nums">
 				<span className="text-foreground">{count}</span>
 				<span className="text-muted-foreground">{rest.join(" ")}</span>
 			</span>

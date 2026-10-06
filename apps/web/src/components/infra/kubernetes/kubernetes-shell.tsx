@@ -1,9 +1,7 @@
 import type { ReactNode } from "react"
 import { defaultStringifySearch } from "@tanstack/react-router"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { pickTimeRangeSearch, type TimeRangeSearch } from "@/components/time-range-picker/search"
 import type { TimeRange } from "@/components/time-range-picker/types"
 
@@ -64,45 +62,22 @@ export function KubernetesShell({
 	const query = defaultStringifySearch(window)
 
 	return (
-		<PageRefreshProvider timePreset={timeSearch.timePreset ?? defaultPreset}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Infrastructure", href: "/infra" },
-						{ label: "Kubernetes", href: `${KUBERNETES_ROOT}${query}` },
-						trail.length > 0
-							? { label: current.title, href: `${current.href}${query}` }
-							: { label: current.title },
-						...trail,
-					]}
-				/>
-				<DashboardLayout.Body>
-					{filters ? (
-						<DashboardLayout.Filters width={filtersWidth}>{filters}</DashboardLayout.Filters>
-					) : null}
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								titleContent={<KubernetesViewTabs view={view} timeSearch={window} />}
-							>
-								<TimeRangeHeaderControls
-									startTime={timeSearch.startTime ?? startTime}
-									endTime={timeSearch.endTime ?? endTime}
-									presetValue={
-										timeSearch.timePreset ??
-										(timeSearch.startTime ? undefined : defaultPreset)
-									}
-									onTimeChange={onTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-					{rightPanel ? (
-						<DashboardLayout.RightPanel>{rightPanel}</DashboardLayout.RightPanel>
-					) : null}
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Infrastructure", href: "/infra" },
+				{ label: "Kubernetes", href: `${KUBERNETES_ROOT}${query}` },
+				trail.length > 0
+					? { label: current.title, href: `${current.href}${query}` }
+					: { label: current.title },
+				...trail,
+			]}
+			titleContent={<KubernetesViewTabs view={view} timeSearch={window} />}
+			time={{ search: timeSearch, startTime, endTime, defaultPreset, onChange: onTimeChange }}
+			filters={filters}
+			filtersWidth={filtersWidth}
+			rightPanel={rightPanel}
+		>
+			{children}
+		</DashboardPage>
 	)
 }

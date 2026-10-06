@@ -96,7 +96,7 @@ export function IntegrationEmptyFeatures({ children }: { children: React.ReactNo
 				<li
 					// Children.toArray prefixes existing keys; tiles are a static list, so this is stable.
 					key={isValidElement(child) ? child.key : index}
-					className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card px-4 py-3.5 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none"
+					className="flex flex-col gap-2 rounded-md border border-border/60 bg-card px-4 py-3.5 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none"
 					style={{ animationDelay: `${50 + index * 50}ms`, animationFillMode: "backwards" }}
 				>
 					{child}

@@ -104,7 +104,7 @@ export function ImageDropzone({
 			>
 				{preview}
 				{isDragging && (
-					<div className="absolute inset-0 flex items-center justify-center rounded-md bg-primary/10 text-center text-[10px] font-medium text-primary">
+					<div className="absolute inset-0 flex items-center justify-center rounded-md bg-primary/10 text-center text-3xs font-medium text-primary">
 						Drop image
 					</div>
 				)}

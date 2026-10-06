@@ -3,6 +3,7 @@ import { IssueField } from "./issue-field"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { DetailRail } from "@maple/ui/components/detail-rail"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { PulseIcon } from "@/components/icons"
@@ -129,7 +130,7 @@ function OverviewSkeleton({ windowLabel }: { windowLabel: string }) {
 
 			{/* `IssueOccurrencePanel`. The heading is the real one; the plot is the
 			    chart's own `h-44`, so nothing reflows when the bars arrive. */}
-			<section className="flex shrink-0 flex-col gap-3.5 rounded-xl border bg-card px-5 py-4">
+			<Panel className="shrink-0 gap-3.5 px-5 py-4">
 				<div className="flex items-baseline gap-2.5">
 					<h2 className="font-display text-base font-semibold tracking-[-0.01em] text-foreground">
 						Occurrences
@@ -137,7 +138,7 @@ function OverviewSkeleton({ windowLabel }: { windowLabel: string }) {
 					<Skeleton className="h-3.5 w-28" />
 				</div>
 				<Skeleton className="h-44 w-full rounded-md" />
-			</section>
+			</Panel>
 		</div>
 	)
 }

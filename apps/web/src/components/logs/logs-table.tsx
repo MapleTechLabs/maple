@@ -9,6 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
 import { cn } from "@maple/ui/lib/utils"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { type Log } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "./log-detail-sheet"
@@ -215,7 +216,7 @@ const LogRow = React.memo(function LogRow({
 					<StatusDot tone="custom" style={{ backgroundColor: severityColor }} />
 				</span>
 				<span
-					className="shrink-0 w-12 text-[10px] uppercase tabular-nums font-semibold hidden md:inline-block"
+					className="shrink-0 w-12 text-3xs uppercase tabular-nums font-semibold hidden md:inline-block"
 					style={{ color: severityColor }}
 				>
 					{log.severityText}
@@ -227,8 +228,9 @@ const LogRow = React.memo(function LogRow({
 					{log.serviceName}
 				</span>
 				{pinnedColumns.map((key) => {
-					const value = log.logAttributes[key] ?? log.resourceAttributes[key] ?? "—"
-					const numeric = value !== "—" && value.trim() !== "" && !Number.isNaN(Number(value))
+					const value = log.logAttributes[key] ?? log.resourceAttributes[key] ?? EMPTY_VALUE
+					const numeric =
+						value !== EMPTY_VALUE && value.trim() !== "" && !Number.isNaN(Number(value))
 					return (
 						<span
 							key={key}
@@ -246,17 +248,14 @@ const LogRow = React.memo(function LogRow({
 				{fill ? (
 					<span
 						className={cn(
-							"min-w-0 flex-1 text-foreground text-[12px]",
+							"min-w-0 flex-1 text-foreground text-xs",
 							wrap ? "whitespace-pre-wrap break-words" : "truncate",
 						)}
 					>
 						<HighlightedText text={log.body} query={highlight} />
 					</span>
 				) : (
-					<span
-						style={{ width: BODY_WIDTH }}
-						className="shrink-0 truncate text-foreground text-[12px]"
-					>
+					<span style={{ width: BODY_WIDTH }} className="shrink-0 truncate text-foreground text-xs">
 						<HighlightedText text={log.body} query={highlight} />
 					</span>
 				)}

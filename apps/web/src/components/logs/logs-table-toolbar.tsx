@@ -8,6 +8,7 @@ import { SearchableFilterSection } from "@/components/filters/filter-section"
 import { LineHeightIcon, TextWrapIcon, ThumbtackIcon } from "@/components/icons"
 import { Toggle } from "@maple/ui/components/ui/toggle"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Button } from "@maple/ui/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
@@ -65,7 +66,7 @@ export function LogsTableToolbar() {
 						<TooltipTrigger
 							render={
 								<PopoverTrigger
-									className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-2 text-xs text-foreground transition-colors hover:bg-muted/64 data-[popup-open]:bg-muted/64"
+									render={<Button variant="outline" size="sm" />}
 									aria-label="Pin attributes as columns"
 								>
 									<ThumbtackIcon size={13} className="text-muted-foreground" />

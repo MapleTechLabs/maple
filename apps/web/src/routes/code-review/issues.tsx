@@ -14,7 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { ListRow } from "@maple/ui/components/ui/list-row"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import {
 	CATEGORY_LABELS,
@@ -153,15 +156,17 @@ function CodeReviewIssuesPage() {
 			>
 				{(response) => (
 					<div className="flex flex-col gap-3">
-						<ul className="divide-y overflow-hidden rounded-xl border bg-card">
-							{response.findings.map((finding) => (
-								<FindingRow
-									key={finding.id}
-									finding={finding}
-									onOpen={() => onChange({ review: finding.reviewId })}
-								/>
-							))}
-						</ul>
+						<Panel>
+							<ul className="divide-y">
+								{response.findings.map((finding) => (
+									<FindingRow
+										key={finding.id}
+										finding={finding}
+										onOpen={() => onChange({ review: finding.reviewId })}
+									/>
+								))}
+							</ul>
+						</Panel>
 						{response.nextCursor !== null ? (
 							<ListFooter
 								shown={response.findings.length}
@@ -223,22 +228,18 @@ function FilterSelect<T extends string>({
 function FindingRow({ finding, onOpen }: { finding: CodeReviewFinding; onOpen: () => void }) {
 	return (
 		<li>
-			<button
-				type="button"
-				onClick={onOpen}
-				className="flex w-full items-start gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
-			>
-				<span
-					className={cn(
-						"w-16 shrink-0 pt-0.5 text-xs font-medium",
-						TONE_TEXT[SEVERITY_TONE[finding.severity]],
-					)}
-				>
-					{SEVERITY_LABELS[finding.severity]}
-				</span>
-				<span className="min-w-0 flex-1">
-					<span className="block truncate text-sm font-medium">{finding.title}</span>
-					<span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+			<ListRow
+				render={<button type="button" onClick={onOpen} />}
+				leading={
+					<span
+						className={cn("w-16 text-xs font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}
+					>
+						{SEVERITY_LABELS[finding.severity]}
+					</span>
+				}
+				title={finding.title}
+				meta={
+					<span className="flex min-w-0 items-center gap-1.5">
 						<span className="truncate font-mono">
 							{finding.path}:{finding.line}
 						</span>
@@ -246,17 +247,22 @@ function FindingRow({ finding, onOpen }: { finding: CodeReviewFinding; onOpen: (
 							· {finding.repositoryFullName}#{finding.number}
 						</span>
 					</span>
-				</span>
-				<span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-					{CATEGORY_LABELS[finding.category]}
-				</span>
-				<Badge variant="outline" size="sm" className="shrink-0">
-					{FINDING_STATUS_LABELS[finding.status]}
-				</Badge>
-				<span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground md:block">
-					{formatRelativeFrom(finding.createdAt)}
-				</span>
-			</button>
+				}
+				trailing={
+					<>
+						<span className="hidden text-xs text-muted-foreground sm:block">
+							{CATEGORY_LABELS[finding.category]}
+						</span>
+						<Badge variant="outline" size="sm">
+							{FINDING_STATUS_LABELS[finding.status]}
+						</Badge>
+						<RelativeTime
+							value={finding.createdAt}
+							className="hidden w-20 text-right text-xs text-muted-foreground md:block"
+						/>
+					</>
+				}
+			/>
 		</li>
 	)
 }

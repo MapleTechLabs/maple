@@ -3,6 +3,7 @@
 import { createContext, use, type ReactNode } from "react"
 
 import { cn } from "../../../lib/utils"
+import { TONE_BORDER, TONE_TEXT } from "../../../lib/tone"
 import { ChartSkeleton, type ChartSkeletonVariant } from "./chart-skeleton"
 
 /**
@@ -13,7 +14,7 @@ import { ChartSkeleton, type ChartSkeletonVariant } from "./chart-skeleton"
  * Every async chart renders the same three branches, and before this each one
  * spelled them out by hand. The result was drift in every dimension that is
  * supposed to be a constant: `rounded-none` vs `rounded-md` vs `rounded-lg` on
- * the skeleton, `font-mono text-[11px]` vs `text-xs` on the message, a
+ * the skeleton, `font-mono text-2xs` vs `text-xs` on the message, a
  * `border-destructive/40 bg-destructive/5` error box copied verbatim across four
  * files. None of that is a per-chart decision, so none of it belongs at a call
  * site.
@@ -132,7 +133,7 @@ export function ChartLoading({
 }
 
 /** Shared type + layout of the two message states, so they cannot drift apart. */
-const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mono text-[11px]"
+const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mono text-2xs"
 
 /**
  * A chart with nothing to draw — "no data in this window", "not collected yet".
@@ -167,7 +168,7 @@ export function ChartEmpty({
 			<EmptyAxes />
 			<div className="relative flex flex-col items-center gap-1">
 				<span className="text-foreground/70">{children}</span>
-				{hint != null && <span className="text-[10px] text-muted-foreground/80">{hint}</span>}
+				{hint != null && <span className="text-3xs text-muted-foreground/80">{hint}</span>}
 			</div>
 		</ChartStateBox>
 	)
@@ -230,7 +231,9 @@ export function ChartError({
 			height={height}
 			className={cn(
 				MESSAGE_BASE,
-				"border border-destructive/40 bg-destructive/5 text-destructive",
+				"border bg-severity-error/5",
+				TONE_BORDER.crit,
+				TONE_TEXT.crit,
 				className,
 			)}
 		>

@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
 
@@ -129,7 +130,7 @@ export function decorateRoutes(routes: FactoryRoute[], edges: ReadonlyArray<Edge
 					!edge.relation &&
 					(route.kind === "conveyor" ||
 						edge.callsPerSecond >= peak * 0.15 ||
-						edge.errorRate >= 0.015),
+						errorRateLevel(edge.errorRate) !== "neutral"),
 			},
 		]
 	})

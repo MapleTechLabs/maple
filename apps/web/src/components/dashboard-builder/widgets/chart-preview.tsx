@@ -1,6 +1,6 @@
 import { Suspense, type ComponentType } from "react"
 import type { PlotProps } from "@maple/ui/components/charts/_shared/chart-types"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 
 interface ChartPreviewProps {
 	/**
@@ -24,7 +24,7 @@ interface ChartPreviewProps {
 export function ChartPreview({ component: Component, data }: ChartPreviewProps) {
 	return (
 		<div className="aspect-[4/3] w-full overflow-hidden">
-			<Suspense fallback={<Skeleton className="h-full w-full" />}>
+			<Suspense fallback={<ChartSkeleton variant="area" />}>
 				<Component className="h-full w-full aspect-auto" data={data} />
 			</Suspense>
 		</div>

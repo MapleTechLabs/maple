@@ -2,7 +2,7 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { countLabel } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Exit, Option } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import {
@@ -18,6 +18,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia } from "@map
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -39,7 +40,8 @@ import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
-import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
@@ -108,7 +110,17 @@ export function GithubIntegrationCard() {
 	const [refreshing, setRefreshing] = useState(false)
 	// Repo awaiting delete confirmation; id of the repo currently being deleted (shows spinner).
 	const [repoToDelete, setRepoToDelete] = useState<GithubRepoSummary | null>(null)
-	const [deletingRepoId, setDeletingRepoId] = useState<string | null>(null)
+	const deleteAction = useKeyedAsyncAction((_repoId: string, repo: GithubRepoSummary) =>
+		deleteRepository({
+			params: { repositoryId: repo.id },
+			reactivityKeys: ["githubIntegrationStatus"],
+		}).then((result) =>
+			toastExit(result, {
+				success: `Deleted ${repo.fullName} from Maple`,
+				error: `Failed to delete ${repo.fullName}`,
+			}),
+		),
+	)
 	// Disconnect is a full purge (repos + commit history), so it routes through a confirmation.
 	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 	const [forcePoll, setForcePoll] = useState(false)
@@ -150,42 +162,26 @@ export function GithubIntegrationCard() {
 		return () => clearTimeout(id)
 	}, [refreshing])
 
-	async function handleDeleteRepository(repo: GithubRepoSummary) {
+	function handleDeleteRepository(repo: GithubRepoSummary) {
 		setRepoToDelete(null)
-		setDeletingRepoId(repo.id)
-		const result = await deleteRepository({
-			params: { repositoryId: repo.id },
-			reactivityKeys: ["githubIntegrationStatus"],
-		})
-		setDeletingRepoId(null)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: `Deleted ${repo.fullName} from Maple`, type: "success" })
-		} else {
-			toastManager.add({ title: `Failed to delete ${repo.fullName}`, type: "error" })
-		}
+		void deleteAction.run(repo.id, repo)
 	}
 
+	/** Resolves false on failure so the selector can revert its optimistic state. */
 	async function handleSetTrackedBranch(repo: GithubRepoSummary, trackedBranch: string) {
 		const result = await setTrackedBranch({
 			params: { repositoryId: repo.id },
 			payload: new GithubSetTrackedBranchRequest({ trackedBranch }),
 			reactivityKeys: ["githubIntegrationStatus"],
 		})
-		if (Exit.isSuccess(result)) {
-			if (result.value.backfillQueued) {
-				toastManager.add({
-					title: `Now tracking ${trackedBranch} — re-syncing commits…`,
-					type: "success",
-				})
-				// Poll through the gap between enqueue and the worker flipping the repo to "backfilling".
-				setForcePoll(true)
-				refreshStatus()
-			}
-		} else {
-			toastManager.add({ title: "Failed to change tracked branch", type: "error" })
-			// Surface failure so the selector can revert its optimistic state.
-			throw new Error("Failed to change tracked branch")
+		if (!toastExit(result, { error: "Failed to change tracked branch" })) return false
+		if (Exit.isSuccess(result) && result.value.backfillQueued) {
+			toastManager.add({ title: `Now tracking ${trackedBranch}, re-syncing commits…`, type: "success" })
+			// Poll through the gap between enqueue and the worker flipping the repo to "backfilling".
+			setForcePoll(true)
+			refreshStatus()
 		}
+		return true
 	}
 
 	return (
@@ -204,7 +200,8 @@ export function GithubIntegrationCard() {
 					connectFlow={connectFlow}
 					disconnectBusy={disconnectBusy}
 					refreshing={refreshing}
-					deletingRepoId={deletingRepoId}
+					isDeleting={deleteAction.isPending}
+					anyDeleting={deleteAction.anyPending}
 					onRefresh={handleManualRefresh}
 					onRequestDisconnect={() => setConfirmingDisconnect(true)}
 					onRequestDelete={setRepoToDelete}
@@ -244,7 +241,7 @@ export function GithubIntegrationCard() {
 				}
 				confirmLabel="Delete"
 				onConfirm={() => {
-					if (repoToDelete) void handleDeleteRepository(repoToDelete)
+					if (repoToDelete) handleDeleteRepository(repoToDelete)
 				}}
 			/>
 		</>
@@ -256,14 +253,14 @@ function LoadingState() {
 	return (
 		<div className="space-y-4">
 			<Skeleton className="h-16 w-full rounded-lg" />
-			<div className="overflow-hidden rounded-lg border">
+			<Panel className="overflow-hidden">
 				<Skeleton className="h-11 w-full rounded-none" />
 				<div className="divide-y">
 					{[0, 1, 2].map((i) => (
 						<Skeleton key={i} className="m-3 h-9 rounded-md" />
 					))}
 				</div>
-			</div>
+			</Panel>
 		</div>
 	)
 }
@@ -389,7 +386,8 @@ function ConnectedView({
 	connectFlow,
 	disconnectBusy,
 	refreshing,
-	deletingRepoId,
+	isDeleting,
+	anyDeleting,
 	onRefresh,
 	onRequestDisconnect,
 	onRequestDelete,
@@ -399,11 +397,12 @@ function ConnectedView({
 	connectFlow: IntegrationConnect
 	disconnectBusy: boolean
 	refreshing: boolean
-	deletingRepoId: string | null
+	isDeleting: (repoId: string) => boolean
+	anyDeleting: boolean
 	onRefresh: () => void
 	onRequestDisconnect: () => void
 	onRequestDelete: (repo: GithubRepoSummary) => void
-	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<void>
+	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<boolean>
 }) {
 	const actionBusy = connectFlow.busy || disconnectBusy
 	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
@@ -453,10 +452,7 @@ function ConnectedView({
 				</ItemContent>
 
 				<ItemActions className="gap-1.5">
-					<Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing}>
-						<ArrowRotateClockwiseIcon size={14} className={refreshing ? "animate-spin" : ""} />
-						Refresh
-					</Button>
+					<RefreshButton onRefresh={onRefresh} pending={refreshing} />
 					<Button
 						size="sm"
 						variant="outline"
@@ -498,7 +494,7 @@ function ConnectedView({
 				/>
 			) : null}
 
-			<Panel className="rounded-lg">
+			<Panel>
 				<PanelHeader
 					action={
 						activeRepos.length > 0 ? (
@@ -551,7 +547,7 @@ function ConnectedView({
 
 			{/* Repos GitHub revoked access to — kept (with history) until explicitly deleted. */}
 			{removedRepos.length > 0 ? (
-				<Panel className="rounded-lg">
+				<Panel>
 					<PanelHeader>
 						<h3 className="flex items-center gap-1.5 text-sm font-medium">
 							<CircleWarningIcon size={15} className="text-severity-warn" />
@@ -593,8 +589,8 @@ function ConnectedView({
 									variant="destructive-outline"
 									className="shrink-0"
 									onClick={() => onRequestDelete(repo)}
-									disabled={deletingRepoId !== null}
-									loading={deletingRepoId === repo.id}
+									disabled={anyDeleting}
+									loading={isDeleting(repo.id)}
 								>
 									<TrashIcon size={13} />
 									Delete
@@ -626,7 +622,7 @@ function RepoRow({
 	onSetTrackedBranch,
 }: {
 	repo: GithubRepoSummary
-	onSetTrackedBranch: (branch: string) => Promise<void>
+	onSetTrackedBranch: (branch: string) => Promise<boolean>
 }) {
 	const presentation = SYNC_PRESENTATION[repo.syncStatus]
 	const StatusIcon = presentation.Icon
@@ -699,7 +695,7 @@ function BranchSelector({
 	onSelect,
 }: {
 	repo: GithubRepoSummary
-	onSelect: (trackedBranch: string) => Promise<void>
+	onSelect: (trackedBranch: string) => Promise<boolean>
 }) {
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState("")
@@ -719,7 +715,7 @@ function BranchSelector({
 		const prev = tracked
 		setTracked(name)
 		setOpen(false)
-		await onSelect(name).catch(() => setTracked(prev)) // revert on failure
+		if (!(await onSelect(name))) setTracked(prev) // revert on failure
 	})
 
 	// Nothing to offer until branches have synced.
@@ -750,7 +746,9 @@ function BranchSelector({
 							loading={saving}
 						>
 							<span className="text-muted-foreground">branch</span>
-							<span className="max-w-[10rem] truncate font-medium">{tracked ?? "—"}</span>
+							<span className="max-w-[10rem] truncate font-medium">
+								{tracked ?? EMPTY_VALUE}
+							</span>
 							<ChevronDownIcon size={12} className="text-muted-foreground" />
 						</Button>
 					}

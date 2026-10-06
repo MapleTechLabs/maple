@@ -16,6 +16,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 
 export function AnomalyLinkedIssueCard({
 	incident,
@@ -40,7 +41,7 @@ export function AnomalyLinkedIssueCard({
 								: "Escalate this anomaly by linking it to an existing error issue."}
 						</p>
 						{incident.fingerprintHash !== null ? (
-							<InlineCode className="inline-block px-1.5 py-0.5 text-[11px] text-muted-foreground">
+							<InlineCode className="inline-block px-1.5 py-0.5 text-2xs text-muted-foreground">
 								fingerprint {incident.fingerprintHash}
 							</InlineCode>
 						) : null}
@@ -173,18 +174,12 @@ function IssueCardActions({
 				Open issue
 				<ArrowRightIcon size={13} />
 			</Button>
-			<Button
-				size="sm"
-				variant="ghost"
-				onClick={onOpenLinkDialog}
-				disabled={busy}
-				title="Link a different issue"
-			>
+			<IconButton onClick={onOpenLinkDialog} disabled={busy} label="Link a different issue">
 				<LinkIcon size={13} />
-			</Button>
-			<Button size="sm" variant="ghost" onClick={onUnlink} disabled={busy} title="Unlink issue">
+			</IconButton>
+			<IconButton onClick={onUnlink} disabled={busy} label="Unlink issue">
 				<XmarkIcon size={13} />
-			</Button>
+			</IconButton>
 		</div>
 	)
 }

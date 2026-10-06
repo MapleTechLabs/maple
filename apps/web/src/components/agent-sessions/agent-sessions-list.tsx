@@ -14,18 +14,19 @@ import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { badgeVariants } from "@maple/ui/components/ui/badge"
-import { LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { EMPTY_VALUE, countLabel, formatNumber } from "@maple/ui/lib/format"
 import { formatCount } from "@maple/ui/components/filters/range-filter-section"
 import { cn } from "@maple/ui/lib/utils"
 import { FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@/components/icons"
 import { ServicePills } from "@/components/common/service-pills"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { SortableHeader } from "@/components/common/sortable-header"
+import { VirtualTableBody } from "@/components/common/virtual-table-body"
 import { useDetectedModels } from "@/hooks/use-detected-models"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -91,8 +92,6 @@ function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
 	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
-
-const plural = (count: number, noun: string) => `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`
 
 /** The row's buckets under the detail page's keys, so one palette serves both. */
 function rowTokenBuckets(session: AgentSessionRow): Record<TokenBucketKey, number> {
@@ -319,7 +318,7 @@ export function AgentSessionsList({
 				cell: ({ row }) => (
 					<Hint
 						className="font-mono text-xs tabular-nums"
-						content={`Across ${plural(row.original.traceCount, "trace")} · ${plural(row.original.spanCount, "span")}`}
+						content={`Across ${countLabel(row.original.traceCount, "trace")} · ${countLabel(row.original.spanCount, "span")}`}
 					>
 						{formatSessionDuration(row.original.durationMs)}
 					</Hint>
@@ -418,7 +417,6 @@ export function AgentSessionsList({
 		overscan: 10,
 		scrollMargin,
 	})
-	const virtualItems = virtualizer.getVirtualItems()
 
 	if (sessions.length === 0) {
 		return (
@@ -434,9 +432,6 @@ export function AgentSessionsList({
 		)
 	}
 
-	const firstItem = virtualItems[0]
-	const lastItem = virtualItems[virtualItems.length - 1]
-
 	return (
 		<div>
 			<div className="rounded-md border">
@@ -447,7 +442,7 @@ export function AgentSessionsList({
 				<Table scroll={false} className="table-fixed" aria-label="Agent sessions">
 					<TableHeader sticky>
 						{table.getHeaderGroups().map((headerGroup) => (
-							<TableRow key={headerGroup.id} className="hover:bg-transparent">
+							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
 									<TableHead
 										key={header.id}
@@ -471,23 +466,20 @@ export function AgentSessionsList({
 							</TableRow>
 						))}
 					</TableHeader>
-					<TableBody ref={listRef}>
-						{firstItem && (
-							<tr
-								aria-hidden
-								style={{ height: firstItem.start - virtualizer.options.scrollMargin }}
-							>
-								<td />
-							</tr>
-						)}
-						{virtualItems.map((virtualRow) => {
-							const row = rows[virtualRow.index]!
+					<VirtualTableBody
+						ref={listRef}
+						virtualizer={virtualizer}
+						rows={rows}
+						colSpan={SESSION_COLUMNS.length}
+						loadingMore={loadingMore}
+						loadingLabel="Loading more sessions…"
+						renderRow={(row, index, measureRef) => {
 							const session = row.original
 							return (
 								<TableRow
 									key={row.id}
-									ref={virtualizer.measureElement}
-									data-index={virtualRow.index}
+									ref={measureRef}
+									data-index={index}
 									onClick={() =>
 										navigate({
 											to: "/agent-sessions/$sessionId",
@@ -510,27 +502,8 @@ export function AgentSessionsList({
 									))}
 								</TableRow>
 							)
-						})}
-						{lastItem && (
-							<tr
-								aria-hidden
-								style={{
-									height:
-										virtualizer.getTotalSize() -
-										(lastItem.end - virtualizer.options.scrollMargin),
-								}}
-							>
-								<td />
-							</tr>
-						)}
-						{loadingMore && (
-							<tr>
-								<td colSpan={SESSION_COLUMNS.length} className="p-2">
-									<LoadingMoreRow label="Loading more sessions…" />
-								</td>
-							</tr>
-						)}
-					</TableBody>
+						}}
+					/>
 				</Table>
 			</div>
 
@@ -538,8 +511,8 @@ export function AgentSessionsList({
 
 			{isCapped && (
 				<p className="py-3 text-sm text-muted-foreground">
-					Showing the {sessions.length.toLocaleString()} most recent sessions — filter the list to
-					see older ones
+					Showing the {formatNumber(sessions.length)} most recent sessions — filter the list to see
+					older ones
 				</p>
 			)}
 		</div>
@@ -685,7 +658,7 @@ function WorkCount({
 				"inline-flex items-center gap-1 text-xs tabular-nums",
 				count > 0 ? tone : "text-muted-foreground",
 			)}
-			content={plural(count, noun)}
+			content={countLabel(count, noun)}
 		>
 			<Icon size={12} className="shrink-0" aria-hidden />
 			{formatCount(count)}
@@ -734,7 +707,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 		return (
 			<Hint
 				className="font-mono text-xs tabular-nums text-muted-foreground"
-				content={plural(total, "token")}
+				content={countLabel(total, "token")}
 			>
 				{formatCount(total)}
 			</Hint>
@@ -752,7 +725,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 			className="flex flex-col gap-0.5 font-mono text-xs tabular-nums"
 			content={
 				<div className="flex flex-col gap-1 tabular-nums">
-					<span className="font-medium">{plural(total, "token")}</span>
+					<span className="font-medium">{countLabel(total, "token")}</span>
 					{sides.map((side) => (
 						<div key={side.label} className="flex flex-col gap-0.5">
 							<span className="flex items-center gap-1.5 font-medium">
@@ -777,7 +750,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 							side.count > 0 ? side.tone : "text-muted-foreground/50",
 						)}
 					>
-						{side.count > 0 ? formatCount(side.count) : "—"}
+						{side.count > 0 ? formatCount(side.count) : EMPTY_VALUE}
 					</span>
 					<span className="text-muted-foreground">{side.label}</span>
 				</span>
@@ -808,7 +781,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					icon={FaceRobotIcon}
 					count={session.turnErrorCount}
 					noun="turn"
-					hint={`${plural(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
+					hint={`${countLabel(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
 					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
@@ -817,7 +790,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					icon={GearIcon}
 					count={session.toolErrorCount}
 					noun="tool"
-					hint={`${plural(session.toolErrorCount, "failed tool call")} — the agent may have recovered`}
+					hint={`${countLabel(session.toolErrorCount, "failed tool call")} — the agent may have recovered`}
 					className="border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
 				/>
 			)}
@@ -825,7 +798,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 				<ErrorChip
 					count={other}
 					noun="span"
-					hint={`${plural(other, "errored span")} outside the agent's turns and tools`}
+					hint={`${countLabel(other, "errored span")} outside the agent's turns and tools`}
 					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}

@@ -56,7 +56,7 @@ export function LabIndex() {
 															<span className="text-sm font-medium">
 																{entry.title}
 															</span>
-															<span className="font-mono text-[11px] text-muted-foreground">
+															<span className="font-mono text-2xs text-muted-foreground">
 																{entry.path}
 															</span>
 														</span>
@@ -64,7 +64,7 @@ export function LabIndex() {
 															{entry.description}
 														</span>
 														{entry.session === "required" && (
-															<span className="mt-1 self-start rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+															<span className="mt-1 self-start rounded-sm border px-1.5 py-0.5 text-3xs uppercase tracking-wide text-muted-foreground">
 																Session required
 															</span>
 														)}

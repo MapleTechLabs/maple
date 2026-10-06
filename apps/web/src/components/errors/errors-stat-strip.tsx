@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -48,17 +49,22 @@ export function ErrorsStatStrip({ filters }: { filters: GetErrorsSummaryInput })
 				return (
 					<div
 						className={cn(
-							"flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs",
+							"flex flex-wrap items-baseline gap-x-4 gap-y-1 px-3 py-2 text-xs",
 							refreshingClass(result.waiting),
 						)}
 						aria-busy={result.waiting || undefined}
 					>
-						{stats.map((stat) => (
-							<span key={stat.label} className="flex items-baseline gap-1.5">
-								<span className="font-medium tabular-nums text-foreground">{stat.value}</span>
-								<span className="text-muted-foreground">{stat.label}</span>
-							</span>
-						))}
+						<KeyValueList layout="inline" valueFirst>
+							{stats.map((stat) => (
+								<KeyValue
+									key={stat.label}
+									label={stat.label}
+									valueClassName="font-medium tabular-nums"
+								>
+									{stat.value}
+								</KeyValue>
+							))}
+						</KeyValueList>
 						<span className="text-muted-foreground/60">in the last 24 hours</span>
 					</div>
 				)

@@ -21,6 +21,7 @@ export function Delta({
 	suffix,
 	flatThreshold = 0.001,
 	format = formatPercent,
+	muteWorse = false,
 	className,
 }: {
 	/** Relative change (0.12 = +12%). Or pass `current` + `previous`. */
@@ -34,6 +35,8 @@ export function Delta({
 	flatThreshold?: number
 	/** Formats the absolute change: defaults to a percent; pass one for pp or durations. */
 	format?: (magnitude: number) => string
+	/** Leave a worsening move uncoloured, for volumes where a drop is not an alarm. */
+	muteWorse?: boolean
 	className?: string
 }): React.ReactElement {
 	const change =
@@ -56,7 +59,11 @@ export function Delta({
 		<span
 			className={cn(
 				"inline-flex items-center gap-1 tabular-nums",
-				flat ? "text-muted-foreground/70" : good ? "text-severity-info" : "text-severity-error",
+				flat || (!good && muteWorse)
+					? "text-muted-foreground/70"
+					: good
+						? "text-severity-info"
+						: "text-severity-error",
 				className,
 			)}
 			title={`${flat ? "Flat" : rose ? "Up" : "Down"} ${magnitude} vs the previous period`}

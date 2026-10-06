@@ -50,7 +50,8 @@ export function TableHeader({
 	return (
 		<thead
 			className={cn(
-				"[&_tr]:border-b in-data-[variant=bare]:[&_tr]:border-0",
+				// Header rows never take the body's hover tint (descendant selector out-specifies it).
+				"[&_tr]:border-b [&_tr]:hover:bg-transparent in-data-[variant=bare]:[&_tr]:border-0",
 				sticky && "sticky top-0 z-10 bg-background",
 				className,
 			)}
@@ -103,7 +104,7 @@ export function TableHead({ className, ...props }: React.ComponentProps<"th">): 
 	return (
 		<th
 			className={cn(
-				"h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none in-data-[size=sm]:h-8 in-data-[size=sm]:px-2 in-data-[size=sm]:text-xs in-data-[size=xs]:h-auto in-data-[size=xs]:px-0 in-data-[size=xs]:pr-2 in-data-[size=xs]:pb-1 in-data-[size=xs]:text-[11px] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+				"h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none in-data-[size=sm]:h-8 in-data-[size=sm]:px-2 in-data-[size=sm]:text-xs in-data-[size=xs]:h-auto in-data-[size=xs]:px-0 in-data-[size=xs]:pr-2 in-data-[size=xs]:pb-1 in-data-[size=xs]:text-2xs has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
 				className,
 			)}
 			data-slot="table-head"
@@ -116,7 +117,7 @@ export function TableCell({ className, ...props }: React.ComponentProps<"td">): 
 	return (
 		<td
 			className={cn(
-				"whitespace-nowrap bg-clip-padding p-2.5 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[size=sm]:px-2 in-data-[size=sm]:py-1.5 in-data-[size=sm]:text-xs in-data-[size=xs]:px-0 in-data-[size=xs]:py-0.5 in-data-[size=xs]:pr-2 in-data-[size=xs]:text-[11px] in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
+				"whitespace-nowrap bg-clip-padding p-2.5 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[size=sm]:px-2 in-data-[size=sm]:py-1.5 in-data-[size=sm]:text-xs in-data-[size=xs]:px-0 in-data-[size=xs]:py-0.5 in-data-[size=xs]:pr-2 in-data-[size=xs]:text-2xs in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
 				className,
 			)}
 			data-slot="table-cell"

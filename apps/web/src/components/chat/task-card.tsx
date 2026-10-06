@@ -2,7 +2,7 @@ import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { SectionHeading } from "@/components/common/section-heading"
 import { Sheet, SheetContent, SheetPanel } from "@maple/ui/components/ui/sheet"
 import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ChevronRightIcon, CircleCheckIcon, CircleWarningIcon, CircleXmarkIcon } from "@/components/icons"
@@ -93,14 +93,14 @@ export function TaskCard({
 				>
 					{running ? `${activity}…` : label}
 				</span>
-				<span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
+				<span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/70">
 					<span className="mr-1 text-muted-foreground/40">·</span>
 					{prompt}
 				</span>
 				{status === "error" ? (
-					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.crit)}>failed</span>
+					<span className={cn("shrink-0 text-2xs", TONE_TEXT.crit)}>failed</span>
 				) : budgetExhausted === true ? (
-					<span className={cn("shrink-0 text-[11px]", TONE_TEXT.warn)}>partial</span>
+					<span className={cn("shrink-0 text-2xs", TONE_TEXT.warn)}>partial</span>
 				) : null}
 				{running ? <RunningClock /> : null}
 				<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground/60" />
@@ -133,7 +133,7 @@ export function TaskCard({
 						) : null}
 
 						<section className="flex flex-col gap-2">
-							<Eyebrow as="h3">Answer</Eyebrow>
+							<SectionHeading variant="eyebrow" as="h3" title="Answer" className="mb-0" />
 							{running ? (
 								// A div, not a p: the loader renders a dot grid, which cannot live inside one.
 								<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -164,7 +164,12 @@ export function TaskCard({
 						 */}
 						{messages.length > 0 ? (
 							<section className="flex flex-col gap-2">
-								<Eyebrow as="h3">Its own steps</Eyebrow>
+								<SectionHeading
+									variant="eyebrow"
+									as="h3"
+									title="Its own steps"
+									className="mb-0"
+								/>
 								{messages.map((message) => (
 									<div key={message.id} className="flex flex-col gap-1.5">
 										{message.parts.map((part, index) =>

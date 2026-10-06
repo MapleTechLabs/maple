@@ -1,3 +1,4 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -98,7 +99,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 						]}
 						onChange={(direction) => onUpdate((current) => ({ ...current, direction }))}
 					/>
-					<span className="font-mono text-[10px] text-muted-foreground">
+					<span className="font-mono text-3xs text-muted-foreground">
 						{paths.direction === "after"
 							? "what people did next, from the first time they hit the anchor"
 							: "how people got there, back from the last time they hit the anchor"}
@@ -122,7 +123,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 			{/* Depth + branches */}
 			<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
 				<div className="flex items-center gap-2">
-					<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Steps</span>
+					<span className="w-16 shrink-0 text-2xs text-muted-foreground">Steps</span>
 					<SegmentedSelect
 						aria-label="Steps"
 						size="sm"
@@ -133,7 +134,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 					/>
 				</div>
 				<div className="flex items-center gap-2">
-					<span className="shrink-0 text-[11px] text-muted-foreground">Branches</span>
+					<span className="shrink-0 text-2xs text-muted-foreground">Branches</span>
 					<SegmentedSelect
 						aria-label="Branches per step"
 						size="sm"
@@ -144,7 +145,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 							onUpdate((current) => ({ ...current, branches: Number(branches) }))
 						}
 					/>
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-2xs text-muted-foreground">
 						named per step, the rest fold into Other
 					</span>
 				</div>
@@ -153,7 +154,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 			{/* Population filter */}
 			<div className="space-y-1">
 				<div className="flex items-start gap-2">
-					<span className="w-16 shrink-0 pt-2 text-[11px] text-muted-foreground">Where</span>
+					<span className="w-16 shrink-0 pt-2 text-2xs text-muted-foreground">Where</span>
 					<WhereClauseEditor
 						className="flex-1"
 						rows={1}
@@ -167,9 +168,9 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 						ariaLabel="Paths population filter"
 					/>
 				</div>
-				<p className="pl-18 text-[11px] text-muted-foreground">
+				<p className="pl-18 text-2xs text-muted-foreground">
 					{filterError ? (
-						<span className="text-destructive">{filterError}</span>
+						<span className={TONE_TEXT.crit}>{filterError}</span>
 					) : (
 						"Only persons with a session matching these dimensions take part."
 					)}
@@ -182,7 +183,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 				<div className="space-y-2 pt-1">
 					{paths.addOns.keyBy && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Count by</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Count by</span>
 							<Select
 								items={Object.fromEntries(
 									FUNNEL_KEY_BY_OPTIONS.map((option) => [option.value, option.label]),
@@ -195,7 +196,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 									if (option) onUpdate((current) => ({ ...current, keyBy: option.value }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[220px] text-xs" aria-label="Count by">
+								<SelectTrigger size="sm" className="w-[220px]" aria-label="Count by">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -203,7 +204,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 										<SelectItem key={option.value} value={option.value}>
 											<span className="flex flex-col">
 												<span>{option.label}</span>
-												<span className="text-[10px] text-muted-foreground">
+												<span className="text-3xs text-muted-foreground">
 													{option.description}
 												</span>
 											</span>
@@ -216,7 +217,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 
 					{paths.addOns.window && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Within</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Within</span>
 							<Select
 								items={Object.fromEntries(
 									FUNNEL_WINDOW_OPTIONS.map((option) => [
@@ -231,7 +232,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 										onUpdate((current) => ({ ...current, windowSeconds: seconds }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[160px] text-xs" aria-label="Window">
+								<SelectTrigger size="sm" className="w-[160px]" aria-label="Window">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -249,13 +250,13 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 									) : null}
 								</SelectContent>
 							</Select>
-							<span className="text-[11px] text-muted-foreground">of the anchor</span>
+							<span className="text-2xs text-muted-foreground">of the anchor</span>
 						</div>
 					)}
 
 					{paths.addOns.include && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Include</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Include</span>
 							<SegmentedSelect
 								size="sm"
 								className="*:text-xs"
@@ -273,7 +274,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 
 					{paths.addOns.exclude && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Exclude</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Exclude</span>
 							<Input
 								size="sm"
 								value={paths.excludeText}
@@ -284,7 +285,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 								aria-label="Excluded names"
 								className="w-[320px] font-mono text-xs"
 							/>
-							<span className="text-[11px] text-muted-foreground">
+							<span className="text-2xs text-muted-foreground">
 								event names or page paths, comma-separated, dropped before sequencing
 							</span>
 						</div>

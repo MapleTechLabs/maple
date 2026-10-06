@@ -45,7 +45,7 @@ describe("EmailAddressesSection", () => {
 		await mount(user)
 
 		// Only the non-primary verified row offers the action, so this is unambiguous.
-		fireEvent.click(screen.getAllByRole("button", { name: "" }).at(-1) ?? document.body)
+		fireEvent.click(screen.getAllByRole("button", { name: /^Actions for/ }).at(-1) ?? document.body)
 		fireEvent.click(await screen.findByText("Set as primary"))
 
 		// Clerk has no `emailAddress.setPrimary()`; the id goes up to `user.update`.
@@ -61,7 +61,7 @@ describe("EmailAddressesSection", () => {
 			update: vi.fn(),
 		})
 
-		fireEvent.click(screen.getAllByRole("button", { name: "" })[0] ?? document.body)
+		fireEvent.click(screen.getAllByRole("button", { name: /^Actions for/ })[0] ?? document.body)
 		const remove = await screen.findByText("Remove")
 		// Clerk requires one verified address; an enabled control here would only ever 4xx.
 		expect(remove.closest("[data-disabled], [aria-disabled='true']")).not.toBeNull()

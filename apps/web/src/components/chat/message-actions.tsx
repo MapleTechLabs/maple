@@ -1,6 +1,8 @@
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import type { UIMessage } from "@/components/ai-elements/types"
 import { LinkIcon } from "@/components/icons"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 /** The visible text of a message, with tool calls and markers left out. */
 export function messageText(message: UIMessage): string {
@@ -18,22 +20,6 @@ interface MessageActionsProps {
 }
 
 /**
- * Wall-clock label for a message, e.g. "Sep 11, 2:03 PM". The year is only spelled
- * out on threads from a previous one, where it is the part that disambiguates.
- */
-function timeLabel(createdAt: number): string {
-	const date = new Date(createdAt)
-	const options: Intl.DateTimeFormatOptions = {
-		month: "short",
-		day: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-	}
-	if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric"
-	return date.toLocaleString(undefined, options)
-}
-
-/**
  * Assistant-message actions, revealed on hover of the enclosing `Message` row,
  * with the turn's timestamp beside them. Deliberately limited to what
  * `useMapleChat` exposes: just `sendMessage`, so there is no retry or stop to
@@ -42,6 +28,7 @@ function timeLabel(createdAt: number): string {
 export function MessageActions({ message, permalink }: MessageActionsProps) {
 	const text = messageText(message)
 	const createdAt = message.createdAt
+	const { effectiveTimezone } = useTimezonePreference()
 	if (!text && !permalink && createdAt === undefined) return null
 
 	return (
@@ -74,10 +61,13 @@ export function MessageActions({ message, permalink }: MessageActionsProps) {
 			{createdAt === undefined ? null : (
 				<time
 					dateTime={new Date(createdAt).toISOString()}
-					title={new Date(createdAt).toLocaleString()}
-					className="ml-1 text-[11px] text-muted-foreground tabular-nums"
+					title={formatTimestampInTimezone(createdAt, {
+						timeZone: effectiveTimezone,
+						withYear: true,
+					})}
+					className="ml-1 text-2xs text-muted-foreground tabular-nums"
 				>
-					{timeLabel(createdAt)}
+					{formatTimestampInTimezone(createdAt, { timeZone: effectiveTimezone, style: "range" })}
 				</time>
 			)}
 		</div>

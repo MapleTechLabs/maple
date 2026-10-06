@@ -11,6 +11,7 @@ import {
 	type GithubRepoSummary,
 	PrReviewRepositoryConfig,
 } from "@maple/domain/http"
+import { pluralize } from "@maple/ui/lib/format"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -33,7 +34,7 @@ import { ExternalLinkIcon, GearIcon, GithubIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { errorMessage } from "@/lib/error-toast"
+import { errorMessage, toastExit } from "@/lib/error-toast"
 import { currentRegion } from "@/lib/region"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 
@@ -87,9 +88,9 @@ export function CodeReviewSettingsView() {
 						title="Default review rules"
 						description="Every repository starts from these. A repository can override any of them."
 					>
-						<div className="rounded-xl border bg-card p-5">
+						<Panel padded>
 							<ReviewRulesDefaults settings={response.settings} />
-						</div>
+						</Panel>
 					</Section>
 					<Section
 						title="Repositories"
@@ -149,17 +150,16 @@ function ModelSetting({ settings }: { settings: PrReviewOrgSettings }) {
 				...(settings.defaults === undefined ? undefined : { defaults: settings.defaults }),
 			}),
 		)
-		toastManager.add(
-			Exit.isSuccess(result)
-				? { title: `Reviews now run on ${MODEL_LABELS[model ?? DEFAULT_MODEL]}`, type: "success" }
-				: { title: errorMessage(result, "Failed to save the review model."), type: "error" },
-		)
+		toastExit(result, {
+			success: `Reviews now run on ${MODEL_LABELS[model ?? DEFAULT_MODEL]}`,
+			error: "Failed to save the review model.",
+		})
 	})
 
 	return (
 		<SettingRow
 			framed
-			className="rounded-xl bg-card px-5 py-4"
+			className="bg-card px-5 py-4"
 			label="Review model"
 			description="Runs pull request reviews and replies."
 			control={
@@ -271,7 +271,7 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 					)
 				const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
 				return (
-					<Panel className="rounded-xl">
+					<Panel>
 						<PanelHeader
 							className="px-5 py-3 text-xs text-muted-foreground"
 							action={
@@ -282,7 +282,7 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 						>
 							<span>
 								{enabled} of {repositories.length}{" "}
-								{repositories.length === 1 ? "repository" : "repositories"} reviewed
+								{pluralize(repositories.length, "repository", "repositories")} reviewed
 							</span>
 						</PanelHeader>
 						<ul className="divide-y">
@@ -325,20 +325,13 @@ function RepositoryRow({
 			payload: new GithubSetPrReviewRequest({ enabled: next }),
 			reactivityKeys: [STATUS_KEY],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: next
-					? `Maple will review pull requests on ${repo.fullName}`
-					: `Reviews off for ${repo.fullName}`,
-				type: "success",
-			})
-			return
-		}
-		setEnabled(!next)
-		toastManager.add({
-			title: errorMessage(result, "Failed to change pull request reviews."),
-			type: "error",
+		const ok = toastExit(result, {
+			success: next
+				? `Maple will review pull requests on ${repo.fullName}`
+				: `Reviews off for ${repo.fullName}`,
+			error: "Failed to change pull request reviews.",
 		})
+		if (!ok) setEnabled(!next)
 	})
 	// Ignored while a change is in flight, rather than disabling the switch, which would drop
 	// keyboard focus mid-toggle.

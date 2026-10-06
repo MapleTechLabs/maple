@@ -8,9 +8,10 @@ import {
 	DropdownMenuRadioItem,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { cn } from "@maple/ui/lib/utils"
 
-import { ArrowRotateAnticlockwiseIcon, ChevronDownIcon } from "@/components/icons"
+import { ChevronDownIcon } from "@/components/icons"
 import { REFRESH_INTERVAL_OPTIONS } from "@/lib/dashboard-controls/search-params"
 
 import { usePageRefreshContext } from "./page-refresh-context"
@@ -54,21 +55,16 @@ export function RefreshControls({
 
 	return (
 		<div className="flex items-center">
-			<Button
-				type="button"
-				variant="outline"
-				size="sm"
-				onClick={onReload}
-				disabled={isReloading}
+			<RefreshButton
+				onRefresh={onReload}
+				pending={isReloading}
+				label="Reload"
 				// Flush with the cadence half: square the shared edge, and square the
 				// `before:` inset highlight with it or a stray rounded corner shows
 				// through. `focus-visible:z-10` lifts the ring above the neighbour's
 				// border, which the -1px overlap would otherwise clip.
 				className="relative rounded-r-none before:rounded-r-none focus-visible:z-10"
-			>
-				<ArrowRotateAnticlockwiseIcon className={cn("size-3.5", isReloading && "animate-spin")} />
-				<span>Reload</span>
-			</Button>
+			/>
 			<DropdownMenu>
 				<DropdownMenuTrigger
 					render={
@@ -113,7 +109,7 @@ export function RefreshControls({
 							<DropdownMenuRadioItem key={seconds} value={String(seconds)}>
 								<span>{formatRefreshInterval(seconds)}</span>
 								{savedDefault === seconds && (
-									<span className="text-muted-foreground text-[10px]">default</span>
+									<span className="text-muted-foreground text-3xs">default</span>
 								)}
 							</DropdownMenuRadioItem>
 						))}

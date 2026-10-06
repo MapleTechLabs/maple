@@ -1,3 +1,4 @@
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 
@@ -121,21 +122,27 @@ export function McpToolsList() {
 				</div>
 			</CardHeader>
 			<CardContent>
-				<dl className="grid grid-cols-1 sm:grid-cols-[max-content_1fr] sm:gap-x-6 divide-y divide-border/60">
+				<KeyValueList
+					layout="grid"
+					divided
+					className="gap-x-6 max-sm:grid-cols-1 [&>div]:gap-y-1 [&>div]:py-2.5 [&>div:first-child]:pt-0 [&>div:last-child]:pb-0"
+				>
 					{MCP_TOOLS.map((tool) => (
-						<div
+						<KeyValue
 							key={tool.name}
-							className="grid grid-cols-subgrid sm:col-span-2 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+							label={
+								<code className="font-mono text-xs font-medium text-foreground">
+									{tool.name}
+								</code>
+							}
+							wrap
+							className="max-sm:col-span-1!"
+							valueClassName="text-muted-foreground leading-relaxed"
 						>
-							<dt>
-								<code className="font-mono text-xs font-medium">{tool.name}</code>
-							</dt>
-							<dd className="text-muted-foreground text-xs leading-relaxed">
-								{tool.description}
-							</dd>
-						</div>
+							{tool.description}
+						</KeyValue>
 					))}
-				</dl>
+				</KeyValueList>
 			</CardContent>
 		</Card>
 	)

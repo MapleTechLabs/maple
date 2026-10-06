@@ -1,9 +1,8 @@
 import { warmAtoms } from "@effect-router/core"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultPage } from "@/components/layout/result-page"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Panel, PanelBody, PanelHeader } from "@maple/ui/components/ui/panel"
@@ -46,12 +45,7 @@ export const Route = createFileRoute("/logs/$logId")({
 	},
 })
 
-/**
- * Standalone, shareable detail view for a single log. Every render path returns
- * a `DashboardLayout.Root` at the JSX root — keeping that element type stable
- * across the loading / error / success transitions lets React reconcile it in
- * place instead of tearing down (and rebuilding) the whole sidebar shell.
- */
+/** Standalone, shareable detail view for a single log. */
 function LogDetailPage() {
 	const { logId } = Route.useParams()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -62,154 +56,100 @@ function LogDetailPage() {
 		key ? getLogResultAtom({ data: keyToInput(key) }) : disabledResultAtom<GetLogResult>(),
 	)
 
-	if (!key) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Not found" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<ResourceNotFound
-								{...NOT_FOUND_PROPS}
-								title="Log not found"
-								description="The link could not be decoded. Check that it was copied in full."
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
-
-	return Result.builder(result)
-		.onInitial(() => (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Loading…" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<div className="flex flex-col gap-3">
-								<Skeleton className="h-24 w-full rounded-md" />
-								<div className="grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]">
-									<Skeleton className="h-64 w-full rounded-md" />
-									<Skeleton className="h-64 w-full rounded-md" />
-								</div>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		))
-		.onError((error) => (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Error" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<ErrorState error={error} title="Failed to load log" />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		))
-		.onSuccess(({ data: log }) => {
-			if (!log) {
-				return (
-					<DashboardLayout.Root>
-						<DashboardLayout.Breadcrumbs items={[LOGS_BREADCRUMB, { label: "Not found" }]} />
-						<DashboardLayout.Body>
-							<DashboardLayout.Content>
-								<DashboardLayout.Scroll>
-									<ResourceNotFound
-										{...NOT_FOUND_PROPS}
-										title="Log not found"
-										description={
-											<div className="flex flex-col items-center gap-4">
-												<p>
-													This log could not be found. It may have aged out of
-													retention.
-												</p>
-												<KeyValueList layout="grid" className="text-sm">
-													<KeyValue label="Service" mono>
-														{key.serviceName}
-													</KeyValue>
-													<KeyValue label="Timestamp" mono>
-														{key.timestamp}
-													</KeyValue>
-												</KeyValueList>
-											</div>
-										}
-									/>
-								</DashboardLayout.Scroll>
-							</DashboardLayout.Content>
-						</DashboardLayout.Body>
-					</DashboardLayout.Root>
+	return (
+		<ResultPage
+			breadcrumbs={[LOGS_BREADCRUMB]}
+			result={result}
+			select={(response) => response.data}
+			crumb={(log) => bodyExcerpt(log.body)}
+			gap="sm"
+			errorTitle="Failed to load log"
+			invalid={
+				key ? undefined : (
+					<ResourceNotFound
+						{...NOT_FOUND_PROPS}
+						title="Log not found"
+						description="The link could not be decoded. Check that it was copied in full."
+					/>
 				)
 			}
+			loading={
+				<>
+					<Skeleton className="h-24 w-full rounded-md" />
+					<div className="grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]">
+						<Skeleton className="h-64 w-full rounded-md" />
+						<Skeleton className="h-64 w-full rounded-md" />
+					</div>
+				</>
+			}
+			notFound={
+				<ResourceNotFound
+					{...NOT_FOUND_PROPS}
+					title="Log not found"
+					description={
+						<div className="flex flex-col items-center gap-4">
+							<p>This log could not be found. It may have aged out of retention.</p>
+							<KeyValueList layout="grid" className="text-sm">
+								<KeyValue label="Service" mono>
+									{key?.serviceName}
+								</KeyValue>
+								<KeyValue label="Timestamp" mono>
+									{key?.timestamp}
+								</KeyValue>
+							</KeyValueList>
+						</div>
+					}
+				/>
+			}
+		>
+			{(log) => {
+				const sev = log.severityText.toUpperCase()
+				const showErrorBanner = sev === "ERROR" || sev === "FATAL"
+				return (
+					<>
+						{/* Hero + meta as one card, mirroring the drawer's stacked top section. */}
+						<Panel tone="background">
+							<LogHeroHeader log={log} showClose={false} />
+							<LogMetaStrip log={log} timeZone={effectiveTimezone} showOpenFullPage={false} />
+							{showErrorBanner && <LogErrorBanner log={log} />}
+						</Panel>
 
-			const sev = log.severityText.toUpperCase()
-			const showErrorBanner = sev === "ERROR" || sev === "FATAL"
+						<div className="grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]">
+							<Panel>
+								<PanelHeader title="Attributes" />
+								<PanelBody className="p-3">
+									<LogAttributesPanel log={log} />
+								</PanelBody>
+							</Panel>
 
-			return (
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs
-						items={[LOGS_BREADCRUMB, { label: bodyExcerpt(log.body) }]}
-					/>
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							<DashboardLayout.Scroll>
-								<div className="flex flex-col gap-3">
-									{/* Hero + meta as one card, mirroring the drawer's stacked top section. */}
-									<div className="overflow-hidden rounded-md border">
-										<LogHeroHeader log={log} showClose={false} />
-										<LogMetaStrip
-											log={log}
-											timeZone={effectiveTimezone}
-											showOpenFullPage={false}
+							<div className="flex flex-col gap-3">
+								{log.traceId && (
+									<Panel padded="sm">
+										<LogTraceTimeline
+											currentLog={log}
+											onLogSelect={(next) =>
+												navigate({
+													to: "/logs/$logId",
+													params: { logId: encodeLogKey(next) },
+												})
+											}
 										/>
-										{showErrorBanner && <LogErrorBanner log={log} />}
-									</div>
-
-									<div className="grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]">
-										<Panel>
-											<PanelHeader title="Attributes" />
-											<PanelBody className="p-3">
-												<LogAttributesPanel log={log} />
-											</PanelBody>
-										</Panel>
-
-										<div className="flex flex-col gap-3">
-											{log.traceId && (
-												<Panel className="p-3">
-													<LogTraceTimeline
-														currentLog={log}
-														onLogSelect={(next) =>
-															navigate({
-																to: "/logs/$logId",
-																params: { logId: encodeLogKey(next) },
-															})
-														}
-													/>
-												</Panel>
-											)}
-											<Panel className="p-3">
-												<LogRawPanel log={log} />
-											</Panel>
-										</div>
-									</div>
-								</div>
-							</DashboardLayout.Scroll>
-						</DashboardLayout.Content>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
-			)
-		})
-		.render()
+									</Panel>
+								)}
+								<Panel padded="sm">
+									<LogRawPanel log={log} />
+								</Panel>
+							</div>
+						</div>
+					</>
+				)
+			}}
+		</ResultPage>
+	)
 }
 
-/** Shared by both not-found states: the dashed card with a way back to the list. */
+/** Shared by both not-found states: the way back to the list. */
 const NOT_FOUND_PROPS = {
-	className: "rounded-md border border-dashed py-12",
 	backLink: <Link to="/logs" />,
 	backLabel: "Back to Logs",
 }

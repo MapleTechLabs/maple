@@ -6,6 +6,7 @@ import { SpanId, TraceId } from "@maple/domain"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ErrorSection } from "@maple/ui/components/error-section"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -13,6 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-gro
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 
@@ -147,7 +149,7 @@ export function SpanExpansion({
 
 function TabCount({ count }: { count: number }) {
 	if (count === 0) return null
-	return <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{count}</span>
+	return <span className="font-mono text-3xs text-muted-foreground tabular-nums">{count}</span>
 }
 
 function CopySpanJsonButton({ span }: { span: AiSessionSpan }) {
@@ -219,12 +221,12 @@ function MetaStrip({ span }: { span: AiSessionSpan }) {
 			{pairs.map(([label, value]) =>
 				value === undefined ? null : (
 					<span key={label} className="flex items-baseline gap-1.5">
-						<span className="text-[11px] text-muted-foreground">{label}</span>
+						<span className="text-2xs text-muted-foreground">{label}</span>
 						<span className="font-mono text-foreground text-xs">{value}</span>
 					</span>
 				),
 			)}
-			<span className="ml-auto flex items-baseline gap-1.5 font-mono text-[11px] text-muted-foreground/70">
+			<span className="ml-auto flex items-baseline gap-1.5 font-mono text-2xs text-muted-foreground/70">
 				<CopyableValue value={span.spanId} label="Span ID">
 					span {span.spanId}
 				</CopyableValue>
@@ -347,7 +349,7 @@ function MessageBlock({ message, span }: { message: SpanMessage; span: AiSession
 				{/* Output messages are what this call produced, so the call's own
 				    response facts belong on them and on nothing else. */}
 				{message.origin === "output" && (
-					<span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
+					<span className="min-w-0 truncate font-mono text-2xs text-muted-foreground/80">
 						{callMetaLine(span)}
 					</span>
 				)}
@@ -476,17 +478,17 @@ function ToolCallCard({
 				<span aria-hidden className="size-1.5 shrink-0 rounded-xs bg-chart-4" />
 				<span className="shrink-0 font-medium font-mono text-chart-4 text-xs">tool</span>
 				{call.name !== undefined && (
-					<span className="min-w-0 truncate font-mono text-foreground text-xs" title={call.name}>
+					<TruncatedText mono className="text-foreground text-xs">
 						{call.name}
-					</span>
+					</TruncatedText>
 				)}
 				{call.id !== undefined && (
-					<span
-						className="ml-auto max-w-40 shrink-0 truncate font-mono text-[11px] text-muted-foreground/80"
-						title={call.id}
+					<TruncatedText
+						mono
+						className="ml-auto max-w-40 shrink-0 text-2xs text-muted-foreground/80"
 					>
 						{call.id}
-					</span>
+					</TruncatedText>
 				)}
 			</div>
 			{call.description !== undefined && (
@@ -530,7 +532,7 @@ function PayloadCard({
 					<span className="min-w-0 truncate font-mono text-foreground text-xs">{name}</span>
 				)}
 				{meta !== undefined && (
-					<span className="ml-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
+					<span className="ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground/80">
 						{meta}
 					</span>
 				)}
@@ -744,18 +746,17 @@ function IdentityRows({ span }: { span: AiSessionSpan }) {
 	]
 
 	return (
-		<div className="divide-y divide-border/40 overflow-hidden rounded-md border border-border/70">
+		<KeyValueList layout="grid" divided className="rounded-md border border-border/70 px-2.5">
 			{rows.map(([label, value]) =>
 				value === undefined ? null : (
-					<div key={label} className="flex min-w-0 items-baseline gap-3 px-2.5 py-1.5">
-						<span className="w-72 shrink-0 text-muted-foreground text-xs">{label}</span>
+					<KeyValue key={label} label={label} mono>
 						<CopyableValue value={value} className="min-w-0">
-							<span className="block truncate font-mono text-xs">{value}</span>
+							<span className="block truncate">{value}</span>
 						</CopyableValue>
-					</div>
+					</KeyValue>
 				),
 			)}
-		</div>
+		</KeyValueList>
 	)
 }
 

@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { XmarkIcon, ClockIcon, CircleInfoIcon, SquareTerminalIcon, ServerIcon } from "@/components/icons"
+import { XmarkIcon, ClockIcon, CircleInfoIcon, ServerIcon } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import { ErrorSection } from "@maple/ui/components/error-section"
 
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
@@ -43,27 +45,6 @@ interface SpanDetailPanelProps {
 }
 
 /**
- * Label/value row that survives a narrow panel: the label holds its width, the value takes the rest
- * and ellipsises. Values are click-to-copy, so a truncated display still yields the full string.
- */
-function PlatformRow({
-	label,
-	children,
-	className,
-}: {
-	label: string
-	children: ReactNode
-	className?: string
-}) {
-	return (
-		<div className={cn("flex items-center justify-between gap-2 min-w-0", className)}>
-			<span className="text-muted-foreground shrink-0">{label}</span>
-			<span className="font-mono truncate text-right">{children}</span>
-		</div>
-	)
-}
-
-/**
  * Where this span sits inside the whole trace: a muted track spanning the
  * trace's wall-clock time, with the span's own window in its service color.
  * Offsets are clamped so clock-skewed spans never paint outside the track.
@@ -93,7 +74,7 @@ function SpanPositionBar({
 					style={{ left: `${offsetPct}%`, width: `${widthPct}%`, backgroundColor: color }}
 				/>
 			</div>
-			<div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+			<div className="mt-1 flex justify-between text-3xs text-muted-foreground tabular-nums">
 				<span>+{formatDuration(Math.max(offsetMs, 0))}</span>
 				<span>{formatDuration(totalDurationMs)} total</span>
 			</div>
@@ -110,7 +91,7 @@ function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onCl
 			className="block w-full p-2 text-left hover:bg-muted/30 cursor-pointer"
 			onClick={() => onClick?.(log)}
 		>
-			<div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
+			<div className="flex items-center gap-2 text-3xs text-muted-foreground mb-1">
 				<span>{formatTimestampInTimezone(log.timestamp, { timeZone })}</span>
 				<SeverityBadge severity={log.severityText} className="h-4 px-1" />
 			</div>
@@ -261,17 +242,17 @@ export function SpanDetailPanel({
 					<div className="flex items-center gap-1.5 mt-0.5">
 						<ServiceDot serviceName={span.serviceName} size="sm" />
 						<CopyableValue value={span.serviceName}>
-							<span className="font-mono text-[10px]" style={{ color: serviceColor }}>
+							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
 								{span.serviceName}
 							</span>
 						</CopyableValue>
-						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
+						<span className="text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
-					<Button variant="ghost" size="icon" aria-label="Close span details" onClick={onClose}>
+					<IconButton size="icon" label="Close span details" onClick={onClose}>
 						<XmarkIcon size={16} />
-					</Button>
+					</IconButton>
 				</div>
 			</div>
 
@@ -336,20 +317,23 @@ export function SpanDetailPanel({
 							)}
 						</div>
 						{/* Two columns only once the panel is wide enough for them to hold real values. */}
-						<div className="grid grid-cols-1 gap-x-4 gap-y-1 text-[11px] @min-[22rem]/platform:grid-cols-2">
+						<KeyValueList className="grid grid-cols-1 gap-x-4 gap-y-1 text-2xs @min-[22rem]/platform:grid-cols-2">
 							{platform.edge && (
-								<PlatformRow label="Edge">
+								<KeyValue mono label="Edge">
 									<span className="inline-flex items-center gap-1">
 										<GlobeIcon size={10} className="shrink-0" />
 										{platform.edge}
 									</span>
-								</PlatformRow>
+								</KeyValue>
 							)}
 							{platform.location && (
-								<PlatformRow label="Location">{platform.location}</PlatformRow>
+								<KeyValue mono label="Location">
+									{platform.location}
+								</KeyValue>
 							)}
 							{platform.fields.map((field) => (
-								<PlatformRow
+								<KeyValue
+									mono
 									key={field.label}
 									label={field.label}
 									className={field.wide ? "@min-[22rem]/platform:col-span-2" : undefined}
@@ -361,9 +345,9 @@ export function SpanDetailPanel({
 									) : (
 										(field.display ?? field.value)
 									)}
-								</PlatformRow>
+								</KeyValue>
 							))}
-						</div>
+						</KeyValueList>
 					</div>
 				)}
 
@@ -390,7 +374,7 @@ export function SpanDetailPanel({
 							<CircleInfoIcon size={14} /> Details
 						</TabsTrigger>
 						<TabsTrigger value="logs">
-							<SquareTerminalIcon size={14} /> Logs
+							<CONCEPT_ICON.log size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
 								<Badge variant="secondary" size="xs" className="ml-1 px-1.5">
 									{logCountLabel}
@@ -418,24 +402,26 @@ export function SpanDetailPanel({
 											color={serviceColor}
 										/>
 									)}
-									<PlatformRow label="Start Time">
-										<CopyableValue value={span.startTime}>
-											{formatTimestampInTimezone(span.startTime, {
-												timeZone: effectiveTimezone,
-												withMilliseconds: true,
-											})}
-										</CopyableValue>
-									</PlatformRow>
-									<PlatformRow label="Span ID">
-										<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
-									</PlatformRow>
-									{span.parentSpanId && (
-										<PlatformRow label="Parent Span ID">
-											<CopyableValue value={span.parentSpanId}>
-												{span.parentSpanId}
+									<KeyValueList className="gap-1">
+										<KeyValue mono label="Start Time">
+											<CopyableValue value={span.startTime}>
+												{formatTimestampInTimezone(span.startTime, {
+													timeZone: effectiveTimezone,
+													withMilliseconds: true,
+												})}
 											</CopyableValue>
-										</PlatformRow>
-									)}
+										</KeyValue>
+										<KeyValue mono label="Span ID">
+											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
+										</KeyValue>
+										{span.parentSpanId && (
+											<KeyValue mono label="Parent Span ID">
+												<CopyableValue value={span.parentSpanId}>
+													{span.parentSpanId}
+												</CopyableValue>
+											</KeyValue>
+										)}
+									</KeyValueList>
 								</div>
 							</div>
 
@@ -460,7 +446,7 @@ export function SpanDetailPanel({
 									))
 									.onError(() => (
 										<>
-											<p className="rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+											<p className="rounded-md border border-dashed px-2 py-1.5 text-2xs text-muted-foreground">
 												Couldn't load all attributes. Showing the ones loaded with the
 												trace.
 											</p>

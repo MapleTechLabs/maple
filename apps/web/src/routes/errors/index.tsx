@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { IssueKind } from "@maple/domain/http"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { ErrorsFilterSidebar } from "@/components/errors/errors-filter-sidebar"
 import { ErrorsHub } from "@/components/errors/errors-hub"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -78,34 +78,23 @@ function ErrorsContent() {
 	const severity: SeverityFilter = search.severity ?? "all"
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Errors" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Filters>
-					<ErrorsFilterSidebar />
-				</DashboardLayout.Filters>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header>
-							<ReloadControls />
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFilters} />
-						<ErrorsHub
-							view={view}
-							sort={sort}
-							severity={severity}
-							range={trendWindow}
-							service={search.service}
-							env={search.env}
-							kind={search.kind}
-							regressed={search.regressed}
-							onClearFilters={hasErrorFilters(search) ? clearFilters : undefined}
-						/>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Errors" }]}
+			filters={<ErrorsFilterSidebar />}
+			headerActions={<ReloadControls />}
+		>
+			<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFilters} />
+			<ErrorsHub
+				view={view}
+				sort={sort}
+				severity={severity}
+				range={trendWindow}
+				service={search.service}
+				env={search.env}
+				kind={search.kind}
+				regressed={search.regressed}
+				onClearFilters={hasErrorFilters(search) ? clearFilters : undefined}
+			/>
+		</DashboardPage>
 	)
 }

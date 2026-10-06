@@ -9,7 +9,7 @@ import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessi
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
 import { ErrorState } from "@/components/common/error-state"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import {
 	TimeRangeSearchFields,
@@ -66,34 +66,27 @@ function AgentToolsPage() {
 
 	return (
 		<PageRefreshProvider timePreset={preset}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }]}
+			<DashboardPage
+				breadcrumbs={[{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }]}
+				// The view lays out its own tab strip, toolbar and gutters edge to edge.
+				scrollClassName="p-0"
+			>
+				<AgentToolsBody
+					search={search}
+					window={window}
+					preset={preset}
+					onSearchChange={onSearchChange}
+					actions={
+						<TimeRangeHeaderControls
+							search={search}
+							startTime={startTime}
+							endTime={endTime}
+							defaultPreset={TOOL_ANALYTICS_DEFAULT_PRESET}
+							onTimeChange={handleTimeChange}
+						/>
+					}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll className="p-0">
-							<AgentToolsBody
-								search={search}
-								window={window}
-								preset={preset}
-								onSearchChange={onSearchChange}
-								actions={
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ??
-											(search.startTime ? undefined : TOOL_ANALYTICS_DEFAULT_PRESET)
-										}
-										onTimeChange={handleTimeChange}
-									/>
-								}
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			</DashboardPage>
 		</PageRefreshProvider>
 	)
 }

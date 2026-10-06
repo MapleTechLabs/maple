@@ -1,8 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Delta } from "@maple/ui/components/ui/delta"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
-import { StatRailItem } from "@/components/common/stat-rail"
+import { StatRailItem, StatRailItemSkeleton } from "@/components/common/stat-rail"
 import {
 	ANALYTICS_METRICS,
 	isMetricAvailable,
@@ -96,7 +95,7 @@ function MetricTile({
 	return (
 		<StatRailItem
 			eyebrow={metric.label}
-			value={available && value !== null ? metric.format(value) : "—"}
+			value={available && value !== null ? metric.format(value) : EMPTY_VALUE}
 			spark={available ? metric.series(source).map((point) => point.value) : undefined}
 			delta={delta === null ? undefined : <Delta ratio={delta} invert={metric.invertDelta} />}
 			subline={
@@ -117,16 +116,9 @@ function MetricTile({
 
 export function AnalyticsMetricStripLoading() {
 	return (
-		<div className={GRID}>
+		<div className={GRID} aria-busy>
 			{ANALYTICS_METRICS.map((metric) => (
-				<div key={metric.key} className={cn("px-5 py-4", TILE_NARROW)}>
-					<Skeleton className="h-3 w-20" />
-					<div className="mt-3 flex items-end justify-between gap-3">
-						<Skeleton className="h-7 w-20" />
-						<Skeleton className="h-7 w-24" />
-					</div>
-					<Skeleton className="mt-3 h-3 w-28" />
-				</div>
+				<StatRailItemSkeleton key={metric.key} className={TILE_NARROW} />
 			))}
 		</div>
 	)

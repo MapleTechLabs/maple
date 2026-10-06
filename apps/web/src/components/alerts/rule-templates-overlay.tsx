@@ -90,7 +90,7 @@ function TemplateTile({
 		<TileShell onClick={() => onPick(template)}>
 			<TileHead icon={<Icon size={18} />} title={template.title} subtitle={template.description} />
 			<div className="mt-auto flex items-center justify-between">
-				<InlineCode className="text-[11px] text-muted-foreground">{template.summary}</InlineCode>
+				<InlineCode className="text-2xs text-muted-foreground">{template.summary}</InlineCode>
 				<ChevronRightIcon
 					size={14}
 					className="text-muted-foreground transition-transform group-hover:translate-x-0.5"
@@ -133,7 +133,7 @@ type TileShellLinkProps = TileShellBaseProps & {
 
 function TileShell(props: TileShellButtonProps | TileShellLinkProps) {
 	const baseClass = cn(
-		"group flex h-full flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
+		"group flex h-full flex-col gap-3 rounded-md border bg-card p-4 text-left transition-colors",
 		"hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none",
 		"focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 		props.className,

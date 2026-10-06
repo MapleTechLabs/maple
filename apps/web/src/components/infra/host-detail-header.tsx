@@ -62,7 +62,7 @@ export function HostDetailHeader({ summary, hostName, onWidenRange }: HostDetail
 			<RelativeTime
 				value={summary.lastSeen}
 				prefix="last reported"
-				className="text-[11px] text-muted-foreground/80"
+				className="text-2xs text-muted-foreground/80"
 			/>
 		</>
 	)

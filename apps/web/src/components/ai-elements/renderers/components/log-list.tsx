@@ -1,6 +1,8 @@
 import type { RendererComponentProps } from "./types"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimeInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatNumber } from "@maple/ui/lib/format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 interface LogListProps {
 	logs: ReadonlyArray<{
@@ -16,26 +18,28 @@ interface LogListProps {
 
 export function LogList({ props }: RendererComponentProps<LogListProps>) {
 	const { logs, totalCount } = props
+	const { effectiveTimezone } = useTimezonePreference()
 
 	return (
 		<div className="space-y-1">
 			{totalCount != null && (
-				<p className="text-[10px] text-muted-foreground">
-					{totalCount.toLocaleString()} total logs
+				<p className="text-3xs text-muted-foreground">
+					{formatNumber(totalCount)} total logs
 					{totalCount > logs.length && ` (showing ${logs.length})`}
 				</p>
 			)}
 			<div className="max-h-[300px] space-y-0.5 overflow-y-auto">
 				{logs.map((log) => {
-					const time = new Date(normalizeTimestampInput(log.timestamp)).toLocaleTimeString()
+					const time = formatTimeInTimezone(normalizeTimestampInput(log.timestamp), {
+						timeZone: effectiveTimezone,
+						withSeconds: true,
+					})
 					return (
 						<div
 							key={`${log.timestamp}-${log.body.slice(0, 30)}`}
-							className="flex items-start gap-1.5 rounded px-1 py-0.5 text-[11px] hover:bg-muted/50"
+							className="flex items-start gap-1.5 rounded px-1 py-0.5 text-2xs hover:bg-muted/50"
 						>
-							<span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-								{time}
-							</span>
+							<span className="shrink-0 font-mono text-3xs text-muted-foreground">{time}</span>
 							<SeverityBadge severity={log.severityText} className="shrink-0" />
 							<span className="shrink-0 text-muted-foreground">{log.serviceName}</span>
 							<span className="min-w-0 flex-1 truncate">{log.body}</span>

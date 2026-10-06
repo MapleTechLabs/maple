@@ -14,7 +14,6 @@
  * link the data does not carry.
  */
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 import { Button } from "@maple/ui/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetPanel, SheetTitle } from "@maple/ui/components/ui/sheet"
@@ -26,6 +25,8 @@ import { ArrowRightIcon } from "@/components/icons"
 import { CONFIDENCE_TONE } from "./confidence-meter"
 import { ACTION_GLYPH } from "./flow/flow-nodes"
 import type { ActionKind, ActionTarget } from "./flow/action-target"
+import { SectionHeading } from "@/components/common/section-heading"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 export interface ProposedAction {
 	/** Zero-based index into `report.suggestedActions` — the panel's identity and its URL key. */
@@ -64,22 +65,21 @@ export function EvidenceChips({ item }: { item: ActionEvidenceItem }) {
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{item.traceIds.map((traceId) => (
-				<Link
-					key={traceId}
-					to="/traces/$traceId"
-					params={{ traceId }}
-					title={traceId}
-					className="rounded"
-				>
-					<InlineCode className="px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-muted/70">
-						{shortId(traceId, "generic", { ellipsis: true })}
-					</InlineCode>
-				</Link>
+				<Tooltip key={traceId}>
+					<TooltipTrigger
+						render={<Link to="/traces/$traceId" params={{ traceId }} className="rounded" />}
+					>
+						<InlineCode className="px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-muted/70">
+							{shortId(traceId, "generic", { ellipsis: true })}
+						</InlineCode>
+					</TooltipTrigger>
+					<TooltipContent className="font-mono">{traceId}</TooltipContent>
+				</Tooltip>
 			))}
 			{item.logPatterns.map((pattern) => (
 				<InlineCode
 					key={pattern}
-					className="bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+					className="bg-muted/60 px-1.5 py-0.5 text-2xs text-muted-foreground"
 				>
 					{pattern}
 				</InlineCode>
@@ -142,14 +142,19 @@ export function ActionDetailSheet({
 								 * chip, not a disabled button: a button implies it will work
 								 * once something is enabled, and there is nothing to enable.
 								 */}
-								<span className="rounded border border-dashed px-2 py-1 text-[10px] tracking-[0.06em] text-muted-foreground/70">
+								<span className="rounded border border-dashed px-2 py-1 text-3xs tracking-[0.06em] text-muted-foreground/70">
 									{action.promise}
 								</span>
 							</div>
 
 							{report ? (
 								<section className="flex flex-col gap-2">
-									<Eyebrow as="h3">From the diagnosis</Eyebrow>
+									<SectionHeading
+										variant="eyebrow"
+										as="h3"
+										title="From the diagnosis"
+										className="mb-0"
+									/>
 									<p className="text-sm leading-relaxed text-foreground">
 										{report.suspectedCause}
 									</p>
@@ -174,7 +179,12 @@ export function ActionDetailSheet({
 
 							{evidence.length > 0 ? (
 								<section className="flex flex-col gap-2">
-									<Eyebrow as="h3">Evidence behind the diagnosis</Eyebrow>
+									<SectionHeading
+										variant="eyebrow"
+										as="h3"
+										title="Evidence behind the diagnosis"
+										className="mb-0"
+									/>
 									{evidence.map((item, index) => (
 										<div
 											key={index}
