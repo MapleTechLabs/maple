@@ -8,6 +8,7 @@ import { Result } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartLoading } from "@maple/ui/components/charts"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
@@ -241,8 +242,8 @@ function ZoneDetailContent({
 					<StatRailLoading />
 					<Skeleton className="h-28 w-full" />
 					<div className="grid gap-4 lg:grid-cols-2">
-						<Skeleton className="h-56 w-full" />
-						<Skeleton className="h-56 w-full" />
+						<ChartLoading variant="area" height={224} />
+						<ChartLoading variant="area" height={224} />
 					</div>
 				</div>
 			}

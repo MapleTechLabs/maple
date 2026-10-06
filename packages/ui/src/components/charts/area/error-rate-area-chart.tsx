@@ -22,7 +22,7 @@ import {
 	usePlotLegendSlot,
 	verticalGradient,
 	type FixedMetricSeries,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 	type TimeseriesRow,
 } from "../../plot"
@@ -43,8 +43,8 @@ const MIN_CEILING = 0.01
 
 /** Module scope — see `usePlotColors` on why a fresh literal defeats the memo. */
 const ERROR_RATE_TOKENS = {
-	errorRate: ["--chart-error", "#e5484d"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	errorRate: "--chart-error",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * The top of the axis: the worst bucket plus headroom, never below 1% and never

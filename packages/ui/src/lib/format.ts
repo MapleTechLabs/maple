@@ -8,6 +8,9 @@ import { formatDuration, formatNumber } from "@maple/domain/format"
 
 export { formatDuration, formatNumber }
 
+/** The one placeholder for a missing or unrenderable value. Reference this, never the glyph. */
+export const EMPTY_VALUE = "—"
+
 /**
  * Format a duration for an axis tick, at a precision derived from the tick spacing.
  *
@@ -19,7 +22,7 @@ export { formatDuration, formatNumber }
  * follows the *step*, so a 0.001 ms step still reads "1234μs" rather than "1.234000ms".
  */
 export function formatDurationAtStep(ms: number, stepMs: number): string {
-	if (!Number.isFinite(ms)) return "—"
+	if (!Number.isFinite(ms)) return EMPTY_VALUE
 	const step = Number.isFinite(stepMs) && stepMs > 0 ? stepMs : 1
 	// Decimals needed to separate two ticks one step apart. The epsilon absorbs the float noise
 	// in log10(0.001) = -3.0000000000000004, which would otherwise ask for one extra digit.
@@ -88,8 +91,11 @@ export function formatBytesPerSecond(bytes: number): string {
  * past 10%, which suits gauges and resource bars. Error rates want the opposite
  * (a visible "<0.01%" so a rare failure never reads as zero).
  */
-export function formatPercent(fraction: number): string {
-	if (!Number.isFinite(fraction)) return "—"
+export function formatPercent(fraction: number, options?: { readonly floor?: number }): string {
+	if (!Number.isFinite(fraction)) return EMPTY_VALUE
+	// `floor` (a fraction) renders a non-zero value under it as "<0.1%" instead of "0%".
+	const floor = options?.floor
+	if (floor !== undefined && fraction > 0 && fraction < floor) return `<${+(floor * 100).toFixed(4)}%`
 	const pct = fraction * 100
 	if (pct < 0.05) return "0%"
 	if (pct < 10) return `${pct.toFixed(1)}%`
@@ -98,13 +104,13 @@ export function formatPercent(fraction: number): string {
 
 /** Two-decimal load average. */
 export function formatLoad(load: number): string {
-	if (!Number.isFinite(load)) return "—"
+	if (!Number.isFinite(load)) return EMPTY_VALUE
 	return load.toFixed(2)
 }
 
 /** Coarse uptime: minutes, then hours, then `"3d 4h"`. */
 export function formatUptime(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+	if (!Number.isFinite(seconds) || seconds <= 0) return EMPTY_VALUE
 	const m = Math.floor(seconds / 60)
 	if (m < 60) return `${m}m`
 	const h = Math.floor(m / 60)
@@ -118,7 +124,7 @@ export function formatUptime(seconds: number): string {
  */
 export function formatLatency(ms: number): string {
 	if (ms == null || Number.isNaN(ms)) {
-		return "-"
+		return EMPTY_VALUE
 	}
 	if (ms < 1) {
 		return `${(ms * 1000).toFixed(0)}μs`
@@ -282,7 +288,7 @@ export function formatThroughput(value: number, suffix: string): string {
  * turns a request rate into "12.346".
  */
 export function formatRate(value: number): string {
-	if (!Number.isFinite(value)) return "—"
+	if (!Number.isFinite(value)) return EMPTY_VALUE
 	const abs = Math.abs(value)
 	if (abs >= 1_000) return formatNumber(value)
 	if (abs >= 100) return Math.round(value).toLocaleString()

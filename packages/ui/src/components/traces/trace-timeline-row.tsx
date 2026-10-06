@@ -7,6 +7,7 @@ import { formatDuration } from "../../lib/format"
 import { describeSpan } from "../../lib/span-category"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, ROW_HEIGHT } from "./trace-timeline-types"
+import { TONE_TEXT } from "../../lib/tone"
 
 interface TraceTimelineRowProps {
 	bar: TimelineBar
@@ -124,13 +125,13 @@ function TraceTimelineRowImpl({
 				<span className="flex shrink-0 items-center" title={category.label}>
 					<CategoryIcon
 						size={11}
-						className={bar.isError ? "text-destructive" : category.accent.text}
+						className={bar.isError ? TONE_TEXT.crit : category.accent.text}
 					/>
 				</span>
 				<span
 					className={cn(
 						"truncate font-mono font-medium text-foreground/90",
-						bar.isError && "text-destructive",
+						bar.isError && TONE_TEXT.crit,
 						bar.span.isMissing && "italic text-muted-foreground",
 					)}
 				>

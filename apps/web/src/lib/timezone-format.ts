@@ -1,4 +1,5 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { getBrowserTimeZone, isValidIanaTimeZone } from "@/atoms/timezone-preference-atoms"
 
 type TimezoneFormatInput = string | number | Date
@@ -32,7 +33,7 @@ export function formatTimestampInTimezone(
 	options: { timeZone: string; withMilliseconds?: boolean; withYear?: boolean; style?: "full" | "range" },
 ): string {
 	const date = toValidDate(input)
-	if (!date) return "-"
+	if (!date) return EMPTY_VALUE
 
 	const tz = resolveTimeZone(options.timeZone)
 	const style = options.style ?? "full"
@@ -74,7 +75,7 @@ export function formatTimeInTimezone(
 	options: { timeZone: string; withSeconds?: boolean },
 ): string {
 	const date = toValidDate(input)
-	if (!date) return "-"
+	if (!date) return EMPTY_VALUE
 
 	const tz = resolveTimeZone(options.timeZone)
 	const key = `${tz}|${options.withSeconds ? "s" : ""}`
@@ -98,7 +99,7 @@ const clockFormatters = new Map<string, Intl.DateTimeFormat>()
  *  `formatCompactTimeInTimezone` adds is noise down a thousand rows. */
 export function formatClockInTimezone(input: TimezoneFormatInput, options: { timeZone: string }): string {
 	const date = toValidDate(input)
-	if (!date) return "-"
+	if (!date) return EMPTY_VALUE
 
 	const tz = resolveTimeZone(options.timeZone)
 	let formatter = clockFormatters.get(tz)
@@ -121,7 +122,7 @@ export function formatCompactTimeInTimezone(
 	options: { timeZone: string },
 ): string {
 	const date = toValidDate(input)
-	if (!date) return "-"
+	if (!date) return EMPTY_VALUE
 
 	const tz = resolveTimeZone(options.timeZone)
 	let formatter = compactTimeFormatters.get(tz)

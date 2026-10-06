@@ -2,7 +2,7 @@ import * as React from "react"
 
 import type { QueryBuilderHbarChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
 import { pickValueField, toBreakdownRows, type BreakdownRow } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
@@ -28,11 +28,8 @@ function fmtValue(value: number, unit?: string): string {
 	return unit ? formatValueByUnit(value, unit) : formatNumber(value)
 }
 
-function fmtPct(fraction: number): string {
-	const pct = fraction * 100
-	if (pct > 0 && pct < 0.1) return "<0.1%"
-	return `${pct.toFixed(pct < 10 && pct > 0 ? 1 : 0)}%`
-}
+// A sliver of the total reads "<0.1%", never a misleading "0%".
+const PCT_FLOOR = { floor: 0.001 }
 
 const ROW_GAP = 6
 const ROW_MIN_H = 18
@@ -172,7 +169,7 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 							<span className="shrink-0 text-right tabular-nums text-muted-foreground">
 								<span className="text-foreground/90">{fmtValue(bar.value, unit)}</span>
 								<span className="px-1 text-muted-foreground/50">·</span>
-								<span>{fmtPct(bar.pctOfTotal)}</span>
+								<span>{formatPercent(bar.pctOfTotal, PCT_FLOOR)}</span>
 							</span>
 						</div>
 					)

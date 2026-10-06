@@ -2,7 +2,8 @@ import * as React from "react"
 
 import type { QueryBuilderFunnelChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
+import { TONE_TEXT } from "../../../lib/tone"
 import { asFiniteNumber, pickValueField, toBreakdownRows } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
@@ -53,14 +54,9 @@ function fmtValue(value: number, unit?: string): string {
 	return unit ? formatValueByUnit(value, unit) : formatNumber(value)
 }
 
-function fmtPct(fraction: number): string {
-	const pct = fraction * 100
-	return `${pct.toFixed(pct < 10 && pct > 0 ? 1 : 0)}%`
-}
-
 /** Coarse, human durations: the reader wants "2d 3h", not "51.2h". */
 function fmtSpan(ms: number): string {
-	if (!Number.isFinite(ms) || ms <= 0) return "—"
+	if (!Number.isFinite(ms) || ms <= 0) return EMPTY_VALUE
 	const s = Math.round(ms / 1000)
 	if (s < 60) return `${s}s`
 	const m = Math.round(s / 60)
@@ -252,7 +248,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 						</span>
 						<span className="text-2xs font-semibold text-foreground">
 							{showPercent
-								? fmtPct(last.ofFirst)
+								? formatPercent(last.ofFirst)
 								: `${fmtValue(last.value, unit)} of ${fmtValue(first.value, unit)}`}
 						</span>
 					</span>
@@ -290,7 +286,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 									{step.name}
 								</span>
 								<span className="truncate text-base font-semibold tabular-nums text-foreground">
-									{showPercent ? fmtPct(step.ofFirst) : fmtValue(step.value, unit)}
+									{showPercent ? formatPercent(step.ofFirst) : fmtValue(step.value, unit)}
 								</span>
 								<span className="truncate text-2xs tabular-nums text-muted-foreground">
 									{showPercent
@@ -372,12 +368,12 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 											) : (
 												<ArrowRightIcon size={12} className="text-severity-info" />
 											)}
-											{fmtPct(step.ofPrev)}
+											{formatPercent(step.ofPrev)}
 										</span>
 										{pillLoss && lostShare > 0 && (
 											<span className="flex items-center gap-1 text-foreground/80">
-												<ArrowDownIcon size={12} className="text-destructive" />
-												{fmtPct(lostShare)}
+												<ArrowDownIcon size={12} className={TONE_TEXT.crit} />
+												{formatPercent(lostShare)}
 											</span>
 										)}
 										{pillTime && step.p50Ms !== undefined && (
@@ -417,21 +413,21 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 							className="bg-severity-info"
 							style={{ width: `${(hovered.ofPrev ?? 0) * 100}%` }}
 						/>
-						<div className="flex-1 bg-destructive/70" />
+						<div className="flex-1 bg-severity-error/70" />
 					</div>
 					<Row
 						icon={<ArrowRightIcon size={12} className="text-severity-info" />}
 						label="converted"
 						value={fmtValue(hovered.value, unit)}
-						share={fmtPct(hovered.ofPrev ?? 0)}
+						share={formatPercent(hovered.ofPrev ?? 0)}
 						shareClass="text-success-foreground"
 					/>
 					<Row
-						icon={<ArrowDownIcon size={12} className="text-destructive" />}
+						icon={<ArrowDownIcon size={12} className={TONE_TEXT.crit} />}
 						label="dropped"
 						value={fmtValue(hovered.dropped, unit)}
-						share={hoveredPrev.value > 0 ? fmtPct(hovered.dropped / hoveredPrev.value) : "—"}
-						shareClass="text-destructive"
+						share={hoveredPrev.value > 0 ? formatPercent(hovered.dropped / hoveredPrev.value) : EMPTY_VALUE}
+						shareClass={TONE_TEXT.crit}
 					/>
 					{hovered.p50Ms !== undefined && (
 						<Row
@@ -446,7 +442,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 						<>
 							<div className="-mx-2.5 my-1.5 h-px bg-border" />
 							<div className="mb-1 flex items-center gap-1.5 text-3xs font-medium tracking-wider text-muted-foreground uppercase">
-								<ArrowDownIcon size={10} className="text-destructive" />
+								<ArrowDownIcon size={10} className={TONE_TEXT.crit} />
 								Dropped here went to
 							</div>
 							{leaverRows(hovered.leavers, hovered.dropped).map((entry) => (
@@ -461,7 +457,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 											{entry.name}
 										</span>
 										<span className="tabular-nums text-muted-foreground">
-											{fmtPct(entry.share)}
+											{formatPercent(entry.share)}
 										</span>
 									</div>
 									<div className="relative mt-0.5 h-1 rounded-sm bg-foreground/5">

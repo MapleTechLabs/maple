@@ -23,7 +23,7 @@ const TONE: Record<Confidence, Tone> = { high: "ok", medium: "warn", low: "neutr
 
 /** `ok` value text is plain foreground; a confidence word wants the ok hue itself. */
 export const CONFIDENCE_TONE: Record<string, string> = {
-	high: "text-severity-info",
+	high: TONE_TEXT.info,
 	medium: TONE_TEXT[TONE.medium],
 	low: TONE_TEXT[TONE.low],
 } satisfies Record<string, string>

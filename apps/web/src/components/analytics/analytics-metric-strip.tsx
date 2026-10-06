@@ -1,8 +1,6 @@
-import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Delta } from "@maple/ui/components/ui/delta"
 
-import { StatRailItem } from "@/components/common/stat-rail"
+import { StatRailItem, StatRailItemSkeleton } from "@/components/common/stat-rail"
 import {
 	ANALYTICS_METRICS,
 	isMetricAvailable,
@@ -117,16 +115,9 @@ function MetricTile({
 
 export function AnalyticsMetricStripLoading() {
 	return (
-		<div className={GRID}>
+		<div className={GRID} aria-busy>
 			{ANALYTICS_METRICS.map((metric) => (
-				<div key={metric.key} className={cn("px-5 py-4", TILE_NARROW)}>
-					<Skeleton className="h-3 w-20" />
-					<div className="mt-3 flex items-end justify-between gap-3">
-						<Skeleton className="h-7 w-20" />
-						<Skeleton className="h-7 w-24" />
-					</div>
-					<Skeleton className="mt-3 h-3 w-28" />
-				</div>
+				<StatRailItemSkeleton key={metric.key} className={TILE_NARROW} />
 			))}
 		</div>
 	)

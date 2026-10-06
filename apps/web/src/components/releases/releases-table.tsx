@@ -62,7 +62,7 @@ function ResolvedCommits({
 	return <>{children(commits)}</>
 }
 
-interface DeltaProps {
+interface BaselineShiftProps {
 	value: number
 	baseline: number | undefined
 	format: (value: number) => string
@@ -71,7 +71,7 @@ interface DeltaProps {
 }
 
 /** "0.30% → 1.24%": the version it replaced, then this one. */
-function Delta({ value, baseline, format, tone }: DeltaProps) {
+function BaselineShift({ value, baseline, format, tone }: BaselineShiftProps) {
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{baseline !== undefined ? (
@@ -279,7 +279,7 @@ function ReleasesTableRows({
 		>
 			<Table>
 				<TableHeader>
-					<TableRow className="hover:bg-transparent">
+					<TableRow>
 						<TableHead className="w-[46%] min-w-[260px]">Release</TableHead>
 						<TableHead>Services</TableHead>
 						<TableHead className="whitespace-nowrap">Deployed</TableHead>
@@ -360,7 +360,7 @@ function ReleasesTableRows({
 													<ServiceDot serviceName={worst.serviceName} />
 												</span>
 											) : null}
-											<Delta
+											<BaselineShift
 												value={worst.errorRate}
 												baseline={worst.baseline?.errorRate}
 												format={formatErrorRate}
@@ -369,7 +369,7 @@ function ReleasesTableRows({
 										</span>
 									</TableCell>
 									<TableCell className="py-2 align-top">
-										<Delta
+										<BaselineShift
 											value={worst.p95LatencyMs}
 											baseline={worst.baseline?.p95LatencyMs}
 											format={formatLatency}
@@ -426,7 +426,7 @@ function ReleasesTableRows({
 													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.errorRate}
 														baseline={service.baseline?.errorRate}
 														format={formatErrorRate}
@@ -438,7 +438,7 @@ function ReleasesTableRows({
 													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.p95LatencyMs}
 														baseline={service.baseline?.p95LatencyMs}
 														format={formatLatency}

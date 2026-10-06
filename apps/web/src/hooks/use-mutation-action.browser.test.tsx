@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
-import { useAsyncAction } from "./use-mutation-action"
+import { useAsyncAction, useKeyedAsyncAction } from "./use-mutation-action"
 
 describe("useAsyncAction", () => {
 	afterEach(cleanup)
@@ -25,5 +25,42 @@ describe("useAsyncAction", () => {
 			await expect(result.current[0]()).rejects.toThrow("popup blocked")
 		})
 		expect(result.current[1]).toBe(false)
+	})
+})
+
+describe("useKeyedAsyncAction", () => {
+	afterEach(cleanup)
+
+	it("tracks pending per key and clears each as it settles", async () => {
+		const gates = new Map<string, () => void>()
+		const { result } = renderHook(() =>
+			useKeyedAsyncAction(
+				(key: string) =>
+					new Promise<string>((resolve) => {
+						gates.set(key, () => resolve(key))
+					}),
+			),
+		)
+		let first: Promise<string> = Promise.resolve("")
+		act(() => {
+			first = result.current.run("a")
+			void result.current.run("b")
+		})
+		expect(result.current.isPending("a")).toBe(true)
+		expect(result.current.isPending("b")).toBe(true)
+		expect(result.current.isPending("c")).toBe(false)
+
+		await act(async () => {
+			gates.get("a")?.()
+			await first
+		})
+		expect(result.current.isPending("a")).toBe(false)
+		expect(result.current.isPending("b")).toBe(true)
+		expect(result.current.anyPending).toBe(true)
+
+		await act(async () => {
+			gates.get("b")?.()
+		})
+		expect(result.current.anyPending).toBe(false)
 	})
 })

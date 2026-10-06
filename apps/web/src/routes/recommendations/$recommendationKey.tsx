@@ -1,4 +1,4 @@
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { createFileRoute, Link } from "@tanstack/react-router"
@@ -308,7 +308,7 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 
 	return (
 		<section>
-			<SectionHeader label="What changes" />
+			<SectionHeading variant="eyebrow" title="What changes" />
 			<div className="overflow-hidden rounded-md border">
 				<div className="flex items-start gap-3 px-4 py-3">
 					<CircleXmarkIcon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
@@ -371,7 +371,7 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 
 	return (
 		<section>
-			<SectionHeader label={isLive ? "Active ingest mapping" : "What Apply does"} />
+			<SectionHeading variant="eyebrow" title={isLive ? "Active ingest mapping" : "What Apply does"} />
 			<div className="overflow-hidden rounded-md border bg-muted/40">
 				<div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
 					<span className="text-xs text-muted-foreground">
@@ -403,7 +403,7 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 function SdkFixBlock({ issue }: { issue: V2Recommendation }) {
 	return (
 		<section>
-			<SectionHeader label="How to fix" />
+			<SectionHeading variant="eyebrow" title="How to fix" />
 			<div className="rounded-md border bg-muted/40 px-4 py-3">
 				<p className="text-sm leading-relaxed text-muted-foreground">
 					Rename <InlineCode variant="plain">{issue.source_key}</InlineCode>
@@ -605,7 +605,6 @@ function InactiveShell() {
 	return (
 		<ShellLayout>
 			<ResourceNotFound
-				className=""
 				icon={<PulseIcon className="text-muted-foreground" />}
 				title="Recommendation not found"
 				description="This recommendation isn't in your list anymore. It may have resolved on its own."

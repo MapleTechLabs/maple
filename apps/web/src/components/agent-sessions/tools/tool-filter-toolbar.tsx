@@ -3,17 +3,15 @@ import type { ReactNode } from "react"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
+
+import { FacetSelect } from "@/components/common/facet-select"
 
 /** One option in the service / env selects, with the sessions behind it. */
 export interface ToolFilterOption {
 	readonly name: string
 	readonly count: number
 }
-
-/** Base UI selects need a real value for "no filter"; this is it, and it never reaches the URL. */
-const ALL = "__all__"
 
 interface ToolFilterToolbarProps {
 	/** The tool-name search. Absent on the tool detail page, which is one tool. */
@@ -112,57 +110,5 @@ export function ToolFilterToolbar({
 
 			{actions ? <div className="ml-auto">{actions}</div> : null}
 		</div>
-	)
-}
-
-function FacetSelect({
-	label,
-	value,
-	options,
-	onChange,
-}: {
-	/** The dimension, drawn small beside the value: `service All`. */
-	label: string
-	value: string | undefined
-	options: ReadonlyArray<ToolFilterOption>
-	onChange: (value: string | undefined) => void
-}) {
-	const set = value !== undefined
-	return (
-		<Select
-			value={value ?? ALL}
-			onValueChange={(next) => onChange(next === ALL || next === null ? undefined : next)}
-			// A dimension the window reported nothing for cannot be chosen from,
-			// and a select that opens onto one row reads as broken.
-			disabled={options.length === 0}
-		>
-			<SelectTrigger
-				size="sm"
-				aria-label={label}
-				className={cn(
-					"h-[30px] gap-2 rounded-md px-2.5 font-mono text-xs",
-					set
-						? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
-						: "bg-card text-foreground",
-				)}
-			>
-				{/* The sentinel is a Base UI implementation detail; rendered children
-				    are what keeps it off the trigger. */}
-				<SelectValue>
-					<span className={cn("text-2xs", set ? "text-primary/70" : "text-muted-foreground")}>
-						{label}
-					</span>{" "}
-					{value ?? "All"}
-				</SelectValue>
-			</SelectTrigger>
-			<SelectContent>
-				<SelectItem value={ALL}>All</SelectItem>
-				{options.map((option) => (
-					<SelectItem key={option.name} value={option.name}>
-						{option.name}
-					</SelectItem>
-				))}
-			</SelectContent>
-		</Select>
 	)
 }

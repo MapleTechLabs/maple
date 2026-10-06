@@ -9,8 +9,9 @@ import { FlamegraphMinimap } from "./flamegraph-minimap"
 import { spanStartMs as spanStartMsOf } from "../../lib/span-tree"
 import { cn } from "../../lib/utils"
 import { formatDuration } from "../../lib/format"
-import { getSpanColorStyle, getServiceColor } from "../../lib/colors"
+import { getSpanColorStyle } from "../../lib/colors"
 import type { SpanNode } from "../../lib/types"
+import { ServiceDot } from "../service-dot"
 
 interface FlamegraphProps {
 	rootSpans: SpanNode[]
@@ -229,7 +230,7 @@ export function Flamegraph({
 										"absolute flex items-center overflow-hidden px-2 text-left font-mono text-2xs font-medium cursor-pointer transition-[filter,box-shadow] duration-100",
 										"hover:brightness-125 hover:z-10",
 										bar.span.statusCode === "Error" &&
-											"bg-destructive text-destructive-foreground",
+											"bg-severity-error text-white",
 										hoveredSpan?.spanId === bar.span.spanId && "brightness-125 z-10",
 										focusedSpan?.spanId === bar.span.spanId &&
 											"ring-2 ring-foreground ring-offset-1 ring-offset-background",
@@ -293,15 +294,12 @@ export function Flamegraph({
 				<div className="flex items-center gap-3">
 					{services.map((service) => (
 						<div key={service} className="flex items-center gap-1.5">
-							<div
-								className="h-2.5 w-2.5"
-								style={{ backgroundColor: getServiceColor(service) }}
-							/>
+							<ServiceDot serviceName={service} className="size-2.5" />
 							<span className="font-medium">{service}</span>
 						</div>
 					))}
 					<div className="flex items-center gap-1.5">
-						<div className="h-2.5 w-2.5 bg-destructive" />
+						<span aria-hidden className="size-2.5 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]" />
 						<span className="font-medium">Error</span>
 					</div>
 				</div>

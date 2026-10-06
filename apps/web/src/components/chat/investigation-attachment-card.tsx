@@ -24,7 +24,7 @@ const KIND_LABEL: Record<InvestigationKind, string> = {
 const STATUS_TONE: Record<string, string> = {
 	Firing: TONE_TEXT.crit,
 	Open: TONE_TEXT.crit,
-	Resolved: "text-severity-info",
+	Resolved: TONE_TEXT.info,
 } satisfies Record<string, string>
 
 /** The last dash segment of a UUID-ish id, cut to 8 chars: the part that tells ids apart. */

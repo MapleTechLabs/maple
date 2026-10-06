@@ -16,6 +16,7 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { DocsLink } from "@/components/common/docs-link"
+import { StatFigure } from "@/components/common/stat-rail"
 import { ResultView } from "@/components/common/result-view"
 import { ListToolbar } from "@/components/common/list-toolbar"
 import { PageHero } from "@/components/common/page-hero"
@@ -492,14 +493,7 @@ function TriageStat({
 				<span aria-hidden className={`size-1.5 shrink-0 rounded-[3px] ${dot}`} />
 				<Eyebrow className={labelTone}>{label}</Eyebrow>
 			</div>
-			<div className="flex items-baseline gap-2.5">
-				<span
-					className={`font-display text-2xl font-semibold tracking-tight tabular-nums ${valueTone}`}
-				>
-					{value}
-				</span>
-				<span className="text-sm text-muted-foreground">{detail}</span>
-			</div>
+			<StatFigure value={value} unit={detail} mono={false} valueClassName={valueTone} />
 		</div>
 	)
 }

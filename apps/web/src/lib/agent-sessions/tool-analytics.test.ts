@@ -177,12 +177,12 @@ describe("toolSeriesColors", () => {
 
 	it("never hands a series the selection colour", () => {
 		const colors = toolSeriesColors(["a", "b", "c", "d", "e", "f"])
-		expect([...colors.values()]).not.toContain("--chart-1")
+		expect([...colors.values()]).not.toContain("var(--chart-1)")
 	})
 
 	it("paints Other grey wherever it lands, without consuming a palette slot", () => {
 		const colors = toolSeriesColors(["a", OTHER_SERIES_KEY, "b"])
-		expect(colors.get(OTHER_SERIES_KEY)).toBe("--muted-foreground")
+		expect(colors.get(OTHER_SERIES_KEY)).toBe("var(--muted-foreground)")
 		expect(colors.get("b")).toBe(TOOL_SERIES_COLOR_TOKENS[1])
 	})
 })

@@ -149,7 +149,6 @@ function NotFoundShell() {
 	return (
 		<InvestigationShell trail="Missing">
 			<ResourceNotFound
-				className=""
 				title="This investigation is unavailable"
 				description="It may have been removed, or it belongs to a different organization."
 				backLink={<Link to="/investigations" />}

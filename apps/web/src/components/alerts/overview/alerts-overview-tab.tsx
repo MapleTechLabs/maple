@@ -8,7 +8,7 @@ import type { AlertDestinationDocument, AlertRuleDocument } from "@maple/domain/
 import { Unitflow, View } from "@maple/unitflow/react"
 
 import { SegmentedSelect } from "@/components/common/segmented-select"
-import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { AlertTagControls } from "@/components/alerts/alert-tag-controls"
 import { ActiveIncidentsTable } from "@/components/alerts/overview/active-incidents-table"
 import { AlertsEmptyState } from "@/components/alerts/overview/alerts-empty-state"
@@ -376,17 +376,21 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 						aria-label="Triggered window"
 					/>
 				</div>
-				<AlertStatStrip
-					items={[
-						{
-							label: `Triggered (${triggeredWindow})`,
-							value: triggeredInWindow,
-							hint: triggeredInWindow === 1 ? "incident" : "incidents",
-						},
-						{ label: "Avg MTTR", value: mttr, hint: "resolved · 30d" },
-						{ label: "Rules enabled", value: enabledRules, hint: `of ${rules.length} total` },
-					]}
-				/>
+				<StatRail columns={3}>
+					<StatRailItem
+						size="sm"
+						eyebrow={`Triggered (${triggeredWindow})`}
+						value={triggeredInWindow}
+						hint={triggeredInWindow === 1 ? "incident" : "incidents"}
+					/>
+					<StatRailItem size="sm" eyebrow="Avg MTTR" value={mttr} hint="resolved · 30d" />
+					<StatRailItem
+						size="sm"
+						eyebrow="Rules enabled"
+						value={enabledRules}
+						hint={`of ${rules.length} total`}
+					/>
+				</StatRail>
 			</div>
 		</div>
 	)

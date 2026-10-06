@@ -760,7 +760,7 @@ function IssueShell({
 /**
  * A titled block in the page body.
  *
- * `SectionHeader`'s 10px eyebrow is the rail's typography — it is what
+ * The eyebrow `SectionHeading`'s 10px overline is the rail's typography, it is what
  * `DetailRail.Group` uses — so applying it to main-column sections made the two
  * read at the same rank and left the page with no heading hierarchy at all. This
  * is the investigation page's section heading instead.

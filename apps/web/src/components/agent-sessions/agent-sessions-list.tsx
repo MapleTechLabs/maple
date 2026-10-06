@@ -14,8 +14,7 @@ import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { badgeVariants } from "@maple/ui/components/ui/badge"
-import { LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
@@ -26,6 +25,7 @@ import { FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@
 import { ServicePills } from "@/components/common/service-pills"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { SortableHeader } from "@/components/common/sortable-header"
+import { VirtualTableBody } from "@/components/common/virtual-table-body"
 import { useDetectedModels } from "@/hooks/use-detected-models"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -418,7 +418,6 @@ export function AgentSessionsList({
 		overscan: 10,
 		scrollMargin,
 	})
-	const virtualItems = virtualizer.getVirtualItems()
 
 	if (sessions.length === 0) {
 		return (
@@ -434,9 +433,6 @@ export function AgentSessionsList({
 		)
 	}
 
-	const firstItem = virtualItems[0]
-	const lastItem = virtualItems[virtualItems.length - 1]
-
 	return (
 		<div>
 			<div className="rounded-md border">
@@ -447,7 +443,7 @@ export function AgentSessionsList({
 				<Table scroll={false} className="table-fixed" aria-label="Agent sessions">
 					<TableHeader sticky>
 						{table.getHeaderGroups().map((headerGroup) => (
-							<TableRow key={headerGroup.id} className="hover:bg-transparent">
+							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
 									<TableHead
 										key={header.id}
@@ -471,23 +467,20 @@ export function AgentSessionsList({
 							</TableRow>
 						))}
 					</TableHeader>
-					<TableBody ref={listRef}>
-						{firstItem && (
-							<tr
-								aria-hidden
-								style={{ height: firstItem.start - virtualizer.options.scrollMargin }}
-							>
-								<td />
-							</tr>
-						)}
-						{virtualItems.map((virtualRow) => {
-							const row = rows[virtualRow.index]!
+					<VirtualTableBody
+						ref={listRef}
+						virtualizer={virtualizer}
+						rows={rows}
+						colSpan={SESSION_COLUMNS.length}
+						loadingMore={loadingMore}
+						loadingLabel="Loading more sessions…"
+						renderRow={(row, index, measureRef) => {
 							const session = row.original
 							return (
 								<TableRow
 									key={row.id}
-									ref={virtualizer.measureElement}
-									data-index={virtualRow.index}
+									ref={measureRef}
+									data-index={index}
 									onClick={() =>
 										navigate({
 											to: "/agent-sessions/$sessionId",
@@ -510,27 +503,8 @@ export function AgentSessionsList({
 									))}
 								</TableRow>
 							)
-						})}
-						{lastItem && (
-							<tr
-								aria-hidden
-								style={{
-									height:
-										virtualizer.getTotalSize() -
-										(lastItem.end - virtualizer.options.scrollMargin),
-								}}
-							>
-								<td />
-							</tr>
-						)}
-						{loadingMore && (
-							<tr>
-								<td colSpan={SESSION_COLUMNS.length} className="p-2">
-									<LoadingMoreRow label="Loading more sessions…" />
-								</td>
-							</tr>
-						)}
-					</TableBody>
+						}}
+					/>
 				</Table>
 			</div>
 

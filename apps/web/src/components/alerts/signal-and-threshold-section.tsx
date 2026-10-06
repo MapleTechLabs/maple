@@ -21,7 +21,7 @@ import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { cn } from "@maple/ui/lib/utils"
 
 import { SegmentedSelect } from "@/components/common/segmented-select"
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
 import { RawSqlEditorPanel } from "@/components/dashboard-builder/config/raw-sql-editor-panel"
 import {
@@ -212,7 +212,7 @@ export function SignalAndThresholdSection({
 
 	return (
 		<Card className="p-4">
-			<SectionHeader id="rule-signal-heading" label="Signal & threshold" />
+			<SectionHeading variant="eyebrow" id="rule-signal-heading" title="Signal & threshold" />
 
 			<div className="space-y-4">
 				{/* Tier 1: signal kind. Always visible. */}

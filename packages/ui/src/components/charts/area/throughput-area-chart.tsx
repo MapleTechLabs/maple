@@ -22,7 +22,7 @@ import {
 	usePlotLegendSlot,
 	verticalGradient,
 	type FixedMetricSeries,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 	type TimeseriesRow,
 } from "../../plot"
@@ -62,9 +62,9 @@ const PARTIAL_ERROR_OPACITY = 0.5
 
 /** Module scope — see `usePlotColors` on why a fresh literal defeats the memo. */
 const THROUGHPUT_TOKENS = {
-	throughput: ["--chart-throughput", "#8b7cf6"],
-	error: ["--chart-error", "#e5484d"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	throughput: "--chart-throughput",
+	error: "--chart-error",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * One row with the rate conversion applied and the derived error count attached.

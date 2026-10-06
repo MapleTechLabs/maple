@@ -2,7 +2,7 @@ import * as React from "react"
 
 import type { QueryBuilderFunnelChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
-import { formatNumber, formatValueByUnit } from "../../../lib/format"
+import { formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
 import { asFiniteNumber, pickValueField, toBreakdownRows, type BreakdownRow } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
@@ -52,11 +52,6 @@ function dropTrailingZeroRows<T extends BreakdownRow>(rows: T[]): T[] {
 
 function fmtValue(value: number, unit?: string): string {
 	return unit ? formatValueByUnit(value, unit) : formatNumber(value)
-}
-
-function fmtPct(fraction: number): string {
-	const pct = fraction * 100
-	return `${pct.toFixed(pct < 10 && pct > 0 ? 1 : 0)}%`
 }
 
 const ROW_GAP = 6
@@ -312,7 +307,7 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 										{showShareOfFirst && (
 											<>
 												<span className="px-1 text-muted-foreground/50">·</span>
-												<span>{fmtPct(hoveredGroup.pctOfFirst)}</span>
+												<span>{formatPercent(hoveredGroup.pctOfFirst)}</span>
 											</>
 										)}
 									</>
@@ -324,13 +319,13 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 										{showShareOfFirst && (
 											<>
 												<span className="px-1 text-muted-foreground/50">·</span>
-												<span>{fmtPct(stage.pctOfFirst)}</span>
+												<span>{formatPercent(stage.pctOfFirst)}</span>
 											</>
 										)}
 										{showStepConversion && stage.pctOfPrev != null && (
 											<>
 												<span className="px-1 text-muted-foreground/50">↓</span>
-												<span>{fmtPct(stage.pctOfPrev)}</span>
+												<span>{formatPercent(stage.pctOfPrev)}</span>
 											</>
 										)}
 									</>

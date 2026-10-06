@@ -4,7 +4,6 @@ import {
 	BellIcon,
 	ChartLineIcon,
 	CircleWarningIcon,
-	CubeIcon,
 	DockerIcon,
 	FileIcon,
 	GridSquareCirclePlusIcon,
@@ -12,7 +11,9 @@ import {
 	PulseIcon,
 	ServerIcon,
 	XmarkIcon,
+	type IconComponent,
 } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import { autoContextDisplay, autoContextLabel, type AutoContext } from "./auto-contexts"
 
 /**
@@ -28,11 +29,11 @@ const CONTEXT_ICONS = {
 	host: ServerIcon,
 	logs_explorer: FileIcon,
 	metrics_explorer: ChartLineIcon,
-	service: CubeIcon,
+	service: CONCEPT_ICON.service,
 	service_map: NetworkNodesIcon,
 	trace: PulseIcon,
 	traces_explorer: PulseIcon,
-} satisfies Record<AutoContext["kind"], typeof CubeIcon>
+} satisfies Record<AutoContext["kind"], IconComponent>
 
 interface PageContextChipsProps {
 	contexts: AutoContext[]

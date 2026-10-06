@@ -33,7 +33,9 @@ import {
 	CloudflareZoneTable,
 	CloudflareZoneTableLoading,
 } from "@/components/infra/cloudflare/cloudflare-zone-table"
-import { MAX_ZONE_SERIES, OTHER_ZONES_COLOR } from "@/components/infra/cloudflare/constants"
+import { MAX_ZONE_SERIES, OTHER_ZONES_SERIES } from "@/components/infra/cloudflare/constants"
+import { SeriesLegend } from "@/components/common/series-legend"
+import { ChartLoading, OTHER_COLOR } from "@maple/ui/components/charts"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
@@ -110,7 +112,7 @@ function CloudflarePage() {
 									loading={
 										<div className="space-y-4">
 											<Skeleton className="h-28 w-full" />
-											<Skeleton className="h-64 w-full" />
+											<ChartLoading variant="line" height={256} />
 										</div>
 									}
 								>
@@ -246,39 +248,33 @@ function CloudflareData({
 							zoneSeries && (
 								<div className="space-y-2">
 									{(zoneSeries.top.length > 1 || zoneSeries.otherCount > 0) && (
-										<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
-											{zoneSeries.top.map((name) => (
-												<Link
-													key={name}
-													to="/infra/cloudflare/$zoneName"
-													params={{ zoneName: name }}
-													className="group inline-flex items-center gap-1.5"
-												>
-													<span
-														aria-hidden
-														className="size-1.5 rounded-full"
-														style={{
-															background: zoneSeries.colors.get(name),
-														}}
-													/>
-													<span className="text-2xs text-muted-foreground transition-colors group-hover:text-foreground">
-														{name}
-													</span>
-												</Link>
-											))}
-											{zoneSeries.otherCount > 0 && (
-												<span className="inline-flex items-center gap-1.5">
-													<span
-														aria-hidden
-														className="size-1.5 rounded-full"
-														style={{ background: OTHER_ZONES_COLOR }}
-													/>
-													<span className="text-2xs text-muted-foreground">
-														Other zones ({zoneSeries.otherCount})
-													</span>
-												</span>
-											)}
-										</div>
+										<SeriesLegend
+											className="justify-start gap-x-4 px-1"
+											items={[
+												...zoneSeries.top.map((name) => ({
+													key: name,
+													color: zoneSeries.colors.get(name),
+													label: (
+														<Link
+															to="/infra/cloudflare/$zoneName"
+															params={{ zoneName: name }}
+															className="transition-colors hover:text-foreground"
+														>
+															{name}
+														</Link>
+													),
+												})),
+												...(zoneSeries.otherCount > 0
+													? [
+															{
+																key: OTHER_ZONES_SERIES,
+																color: OTHER_COLOR,
+																label: `Other zones (${zoneSeries.otherCount})`,
+															},
+														]
+													: []),
+											]}
+										/>
 									)}
 									<div className="grid gap-4 lg:grid-cols-2">
 										<CloudflareZoneChart

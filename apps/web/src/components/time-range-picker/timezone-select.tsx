@@ -12,6 +12,7 @@ import {
 } from "@maple/ui/components/ui/combobox"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
 
 import { getBrowserTimeZone, SYSTEM_VALUE } from "@/atoms/timezone-preference-atoms"
 import { ChevronDownIcon, GlobeIcon } from "@/components/icons"
@@ -181,9 +182,9 @@ export function TimezoneSelect() {
 						{formatUtcOffset(effectiveTimezone)}
 					</span>
 					{selectedTimezone === null && (
-						<span className="shrink-0 rounded-sm border border-border/70 px-1 py-px text-4xs font-medium uppercase tracking-[0.1em] text-muted-foreground/80">
+						<Badge variant="tag" className="shrink-0">
 							System
-						</span>
+						</Badge>
 					)}
 					<ChevronDownIcon size={12} className="shrink-0 text-muted-foreground" />
 				</ComboboxTrigger>

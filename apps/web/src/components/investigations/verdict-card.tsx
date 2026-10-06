@@ -8,6 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { SEVERITY_LABEL } from "@/components/errors/severity-badge"
+import { StatFigure } from "@/components/common/stat-rail"
 import { CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
 import { useTickingNow } from "@/hooks/use-ticking-now"
 import { type Elapsed, reportHeadline, splitDuration } from "./investigation-display"
@@ -94,14 +95,7 @@ function Stat({ label, children, last }: { label: string; children: ReactNode; l
 
 /** A big number with a small unit riding its baseline. */
 function BigStat({ value, unit }: { value: string; unit: string }) {
-	return (
-		<span className="flex items-baseline gap-1">
-			<span className="font-display text-2xl font-semibold tracking-tight text-foreground tabular-nums">
-				{value}
-			</span>
-			<span className="text-sm text-muted-foreground">{unit}</span>
-		</span>
-	)
+	return <StatFigure value={value} unit={unit} mono={false} valueClassName="text-foreground" />
 }
 
 /* -------------------------------------------------------------------------------------------------

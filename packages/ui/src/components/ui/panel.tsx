@@ -1,15 +1,43 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
 
+const PANEL_TONE = {
+	default: "bg-card",
+	muted: "bg-muted/40",
+	background: "bg-background",
+} as const
+
+const PANEL_PADDING = {
+	sm: "p-3",
+	md: "p-4",
+} as const
+
+export type PanelTone = keyof typeof PANEL_TONE
+
 /**
  * Flat bordered section frame (charts, side lists, detail sections). `Card` is
  * the raised, rounded-2xl surface for standalone content; a panel sits inside
- * a page grid and stays quiet.
+ * a page grid and stays quiet. `rounded-md` is the one panel radius.
  */
-export function Panel({ className, ...props }: React.ComponentProps<"section">): React.ReactElement {
+export function Panel({
+	className,
+	padded = false,
+	tone = "default",
+	...props
+}: React.ComponentProps<"section"> & {
+	/** Inner padding: `true` is `p-4`, `"sm"` is `p-3`. Off for panels with a `PanelHeader`. */
+	padded?: boolean | "sm"
+	/** Surface fill: `muted` for a recessed well, `background` for a frame on a card. */
+	tone?: PanelTone
+}): React.ReactElement {
 	return (
 		<section
-			className={cn("flex min-w-0 flex-col overflow-hidden rounded-md border bg-card", className)}
+			className={cn(
+				"flex min-w-0 flex-col overflow-hidden rounded-md border",
+				PANEL_TONE[tone],
+				padded === "sm" ? PANEL_PADDING.sm : padded ? PANEL_PADDING.md : null,
+				className,
+			)}
 			data-slot="panel"
 			{...props}
 		/>

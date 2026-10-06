@@ -1,4 +1,3 @@
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 
 import type { ErrorIssueDocument, ErrorIssueId } from "@maple/domain/http"
@@ -14,9 +13,10 @@ import { useCopy } from "@maple/ui/hooks/use-copy"
 
 import { CopyIcon, DotsVerticalIcon, LinkIcon, PulseIcon } from "@/components/icons"
 import { OpenAnomalyBadge } from "@/components/anomalies/related-anomalies-section"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DetailHeader } from "@/components/common/detail-header"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import type { TimeRange } from "@/components/time-range-picker/types"
+import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { liveInvestigationSummary, resolveSignalState } from "@/lib/models/error-signal"
 
 import { agentPromptFromIssue } from "./agent-debug-prompt"
@@ -41,7 +41,7 @@ export interface IssueHeaderProps {
 	issue: ErrorIssueDocument
 	issueId: ErrorIssueId
 	investigation: V2Investigation | null
-	search: { startTime?: string; endTime?: string; timePreset?: string }
+	search: TimeRangeSearch
 	onTimeChange: (range: TimeRange) => void
 	onStartInvestigation: () => void
 	startingInvestigation: boolean
@@ -63,56 +63,40 @@ export function IssueHeader({
 	const state = resolveSignalState(issue, liveInvestigationSummary(investigation))
 
 	return (
-		<DashboardLayout.Header
-			titleContent={
-				<div className="min-w-0 space-y-2.5">
-					<Eyebrow as="div" className="flex flex-wrap items-center gap-x-2 gap-y-1">
-						<span className="truncate">{issue.serviceName || "Unknown service"}</span>
-						{/* Absorbs `IssueKindBadge`. A plain error is the default and says
-						    nothing here; an alert- or integration-backed issue is worth
-						    knowing before you read the title. */}
-						{issue.kind === "error" ? null : (
-							<>
-								<span aria-hidden className="text-muted-foreground/40">
-									·
-								</span>
-								<span>{issue.kind}</span>
-							</>
-						)}
-					</Eyebrow>
-					<DashboardLayout.Title title={headline}>{headline}</DashboardLayout.Title>
-					<div className="flex flex-wrap items-center gap-2">
-						<SeverityBadge severity={issue.severity} />
-						<SignalStateChip state={state} />
-						<OpenAnomalyBadge issueId={issueId} />
-					</div>
-				</div>
+		<DetailHeader
+			// Absorbs `IssueKindBadge`. A plain error is the default and says nothing
+			// here; an alert- or integration-backed issue is worth knowing before you
+			// read the title.
+			kind={[issue.serviceName || "Unknown service", issue.kind === "error" ? null : issue.kind]}
+			title={headline}
+			meta={
+				<>
+					<SeverityBadge severity={issue.severity} />
+					<SignalStateChip state={state} />
+					<OpenAnomalyBadge issueId={issueId} />
+				</>
 			}
-		>
-			<div className="flex items-center gap-2">
-				<TimeRangeHeaderControls
-					startTime={search.startTime}
-					endTime={search.endTime}
-					presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-					onTimeChange={onTimeChange}
-				/>
-				{investigation ? (
-					<Button
-						size="sm"
-						render={<Link to="/investigations/$id" params={{ id: investigation.id }} />}
-					>
-						<PulseIcon className="size-3.5" />
-						Open investigation
-					</Button>
-				) : (
-					<Button size="sm" disabled={startingInvestigation} onClick={onStartInvestigation}>
-						<PulseIcon className="size-3.5" />
-						Investigate
-					</Button>
-				)}
-				<IssueOverflowMenu issue={issue} issueId={issueId} />
-			</div>
-		</DashboardLayout.Header>
+			actions={
+				<>
+					<TimeRangeHeaderControls search={search} onTimeChange={onTimeChange} />
+					{investigation ? (
+						<Button
+							size="sm"
+							render={<Link to="/investigations/$id" params={{ id: investigation.id }} />}
+						>
+							<PulseIcon className="size-3.5" />
+							Open investigation
+						</Button>
+					) : (
+						<Button size="sm" disabled={startingInvestigation} onClick={onStartInvestigation}>
+							<PulseIcon className="size-3.5" />
+							Investigate
+						</Button>
+					)}
+					<IssueOverflowMenu issue={issue} issueId={issueId} />
+				</>
+			}
+		/>
 	)
 }
 

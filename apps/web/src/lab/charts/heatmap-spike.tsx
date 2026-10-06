@@ -4,7 +4,7 @@ import {
 	createSequentialColorScale,
 	rampStops,
 	usePlotColors,
-	type PlotColorToken,
+	type PlotColorSource,
 	type SequentialScaleType,
 } from "@maple/ui/components/plot"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -41,12 +41,12 @@ interface HeatmapHole {
  * literal per render would re-read computed style on every frame.
  */
 const HEATMAP_CHROME_TOKENS = {
-	foreground: ["--foreground", "#fafafa"],
+	foreground: "--foreground",
 	// Production's grout (`query-builder-heatmap-chart.tsx`), the recessed
 	// surface a hole is a hole *in*. `tokens.css` defines it for both themes and
 	// it inverts between them, hence the token rather than a literal.
 	grout: ["--heatmap-grout", "oklch(0.175 0.008 62)"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+} as const satisfies Record<string, PlotColorSource>
 
 /** Preserve first-appearance order — a `Set` over the rows, not a sort. */
 function uniqueInOrder(values: readonly string[]): string[] {

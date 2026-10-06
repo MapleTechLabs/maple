@@ -51,6 +51,9 @@ export const badgeVariants = cva(
 				secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
 				ok: TONE_SOFT.ok,
 				warn: TONE_SOFT.warn,
+				// Tiny uppercase label chip (System, Current, Pinned). Sizes itself, so it
+				// resets the size variant; recolour with className.
+				tag: "h-auto min-w-0 rounded-xs bg-muted px-1 py-px text-3xs text-muted-foreground uppercase tracking-wide sm:h-auto sm:min-w-0 sm:text-3xs [button&,a&]:hover:bg-muted/80 [button&,a&]:hover:text-foreground",
 			},
 		},
 	},

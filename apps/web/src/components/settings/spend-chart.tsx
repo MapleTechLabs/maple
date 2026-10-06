@@ -2,21 +2,16 @@ import { useMemo } from "react"
 import { areaY, d3Curve, defineChart, dot, lineY, ruleX, stack, text } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scalePoint } from "@tanstack/charts-scales/point"
 import { curveMonotoneX } from "d3-shape"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
 	focusCrosshair,
-	resolvePlotColor,
-	usePlotChromeColors,
-	type PlotTooltipSeries,
+	makeBucketAxis,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { useTheme } from "@maple/ui/hooks/use-theme"
 
 /** One stacked band segment: a day, the band it belongs to, and its dollars. */
 interface SpendCell {
@@ -33,11 +28,14 @@ type SpendDatum = CumulativePoint | SpendCell
 
 /** The day behind a datum — every band's cumulative total at that point. */
 function dayOf(datum: SpendDatum): CumulativePoint {
-	return typeof (datum as SpendCell).point === "object"
-		? (datum as SpendCell).point
-		: (datum as CumulativePoint)
+	return "point" in datum ? datum.point : datum
 }
+
+const numberOrNull = (value: unknown): number | null => (typeof value === "number" ? value : null)
 import { ChartEmpty, ChartLoading } from "@maple/ui/components/charts"
+
+import { ChartCard } from "@/components/common/chart-card"
+import { SeriesLegend } from "@/components/common/series-legend"
 
 import { formatCurrency } from "@maple/domain/format"
 import {
@@ -91,6 +89,19 @@ export function SpendChartSkeleton() {
 	return <ChartLoading variant="area" height={SPEND_CHART_HEIGHT} />
 }
 
+/** Spend days are UTC calendar days: label them on that clock whatever the viewer's zone. */
+const SPEND_TIME_ZONE = "UTC"
+
+const dateLabel = (value: string) =>
+	new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		timeZone: SPEND_TIME_ZONE,
+	})
+
+/** The dashed projection's series key; not a band, so not in the tooltip. */
+const PROJECTED = "projected"
+
 export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySpendResponse | undefined }) {
 	const data = useMemo(() => buildCumulativeSeries({ daily, model }), [daily, model])
 
@@ -122,31 +133,12 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 	const lastPoint = data[data.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 
-	if (data.length === 0) {
-		return <ChartEmpty height={SPEND_CHART_HEIGHT}>No ingest recorded this cycle yet</ChartEmpty>
-	}
-
-	const chromeColors = usePlotChromeColors()
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
-	const { theme } = useTheme()
-	// oxlint-disable-next-line react-hooks/exhaustive-deps
-	const primary = useMemo(() => resolvePlotColor("--primary", "#6366f1"), [theme])
-
-	const dateLabel = useMemo(
-		() => (value: string) =>
-			new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
-				month: "short",
-				day: "numeric",
-				timeZone: "UTC",
-			}),
-		[],
-	)
-
-	const tooltipSeries = useMemo<PlotTooltipSeries<SpendDatum>[]>(
-		() =>
-			BANDS.map((band) => ({
-				label: chartConfig[band]?.label ?? band,
-				color: chartConfig[band]?.color ?? chromeColors.border,
+	const series = useMemo<CursorPlotSeries<SpendDatum>[]>(
+		() => [
+			...BANDS.map((band) => ({
+				key: band,
+				label: chartConfig[band].label,
+				color: chartConfig[band].color,
 				// Read off the DAY, so a hovered band still prints every other band's
 				// running total at that point rather than only its own.
 				value: (datum: SpendDatum) => {
@@ -155,11 +147,33 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 				},
 				format: (value: number) => formatCurrency(value, model.currency),
 			})),
-		[chromeColors.border, model.currency],
+			{
+				key: PROJECTED,
+				label: "Projected",
+				color: "--primary",
+				value: (datum: SpendDatum) => dayOf(datum).projected,
+				format: (value: number) => formatCurrency(value, model.currency),
+				tooltip: false,
+			},
+		],
+		[model.currency],
+	)
+	const plot = useCursorPlot(series)
+	const primary = plot.color(PROJECTED)
+
+	// A daily time axis: the same ticks every other bucketed chart draws over
+	// the same range, printing "Feb 14" for day buckets.
+	const axis = useMemo(
+		() =>
+			makeBucketAxis(
+				data.map((point) => point.date),
+				SPEND_TIME_ZONE,
+			),
+		[data],
 	)
 
 	const definition = useMemo(() => {
-		const at = (point: CumulativePoint) => point.date
+		const at = (point: CumulativePoint) => new Date(point.dayMs)
 
 		/**
 		 * Stacking groups on `z`, so the bands are built as CELLS — one datum per
@@ -170,19 +184,19 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 			BANDS.map((band) => ({
 				point,
 				band,
-				value: typeof point[band] === "number" ? (point[band] as number) : null,
+				value: numberOrNull(point[band]),
 			})),
 		)
 
 		return defineChart({
 			marks: [
 				areaY(cells, {
-					x: (cell: SpendCell) => cell.point.date,
+					x: (cell: SpendCell) => at(cell.point),
 					y: (cell: SpendCell) => cell.value,
 					z: (cell: SpendCell) => cell.band,
-					fill: (cell: SpendCell) => chartConfig[cell.band]?.color ?? chromeColors.border,
+					fill: (cell: SpendCell) => plot.color(cell.band),
 					fillOpacity: 0.35,
-					stroke: (cell: SpendCell) => chartConfig[cell.band]?.color ?? chromeColors.border,
+					stroke: (cell: SpendCell) => plot.color(cell.band),
 					strokeWidth: 1,
 					curve: d3Curve(curveMonotoneX),
 					layout: stack({ order: [...BANDS] }),
@@ -233,24 +247,17 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 							decorative(
 								ruleX([todayPoint], {
 									x: at,
-									stroke: chromeColors.border,
+									stroke: plot.chrome.border,
 									strokeOpacity: 1,
 									strokeWidth: 1,
 								}),
 							),
 						]
 					: []),
-				focusCrosshair(chromeColors),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
-				x: {
-					scale: scalePoint,
-					axis: {
-						line: false,
-						ticks: { size: 0, padding: 8, format: dateLabel },
-						tickLabels: { thin: { minGap: 12 } },
-					},
-				},
+				x: axis.x,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain([0, yMax]),
@@ -271,71 +278,42 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 			margin: { top: 8, right: 56, left: 52 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [
-		data,
-		hasFuture,
-		lastPoint,
-		todayPoint,
-		projected,
-		yMax,
-		primary,
-		chromeColors,
-		dateLabel,
-		model.currency,
-		focusStore,
-	])
+	}, [data, hasFuture, lastPoint, todayPoint, projected, yMax, primary, plot, axis, model.currency])
+
+	if (data.length === 0) {
+		return <ChartEmpty height={SPEND_CHART_HEIGHT}>No ingest recorded this cycle yet</ChartEmpty>
+	}
 
 	return (
-		<div className="border border-border/60 bg-card/40">
-			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-border/60 px-4 py-3">
-				<div>
-					<h3 className="text-sm">Spend this cycle</h3>
-					<p className="mt-0.5 text-2xs text-muted-foreground">
-						Cumulative estimated spend by feature
-					</p>
-				</div>
-				{/* The legend carries each band's cycle-to-date dollars, not just its
-				    color: a row of six dots tells you which color is which, but not
-				    which band is worth reading. With the amounts it doubles as the
-				    breakdown, and the "$0.00" bands say plainly that they contribute
-				    nothing rather than hiding somewhere on the axis. */}
-				<div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-					{BANDS.map((band) => (
-						<span key={band} className="inline-flex items-baseline gap-1.5">
-							<span
-								aria-hidden
-								className="size-1.5 translate-y-[-1px] rounded-full"
-								style={{ background: chartConfig[band]?.color }}
-							/>
-							<span className="text-2xs text-muted-foreground">
-								{chartConfig[band]?.label}
-							</span>
-							<span className="font-mono text-2xs tabular-nums text-foreground/85">
-								{formatCurrency(bandTotals[band], model.currency)}
-							</span>
-						</span>
-					))}
-				</div>
-			</div>
-
-			<div className="px-2 pb-2 pt-4">
-				<div className="w-full" style={{ height: CHART_HEIGHT }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel="Cumulative spend this cycle"
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(datum: SpendDatum) => dateLabel(dayOf(datum).date)}
-							/>
-						)}
-					/>
-				</div>
+		<ChartCard
+			title="Spend this cycle"
+			description="Cumulative estimated spend by feature"
+			// The legend carries each band's cycle-to-date dollars, not just its
+			// color: with the amounts it doubles as the breakdown, and the "$0.00"
+			// bands say plainly that they contribute nothing.
+			legend={
+				<SeriesLegend
+					className="gap-x-4"
+					items={BANDS.map((band) => ({
+						key: band,
+						label: chartConfig[band].label,
+						color: chartConfig[band].color,
+						value: formatCurrency(bandTotals[band], model.currency),
+					}))}
+				/>
+			}
+		>
+			<div className="px-2 pt-4 pb-2">
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={series}
+					heading={(datum: SpendDatum) => dateLabel(dayOf(datum).date)}
+					ariaLabel="Cumulative spend this cycle"
+					height={CHART_HEIGHT}
+				/>
 			</div>
 
 			<div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-border/60 px-4 py-2.5 text-2xs text-muted-foreground">
@@ -346,6 +324,6 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 					projected {formatCurrency(projected, model.currency)}
 				</span>
 			</div>
-		</div>
+		</ChartCard>
 	)
 }

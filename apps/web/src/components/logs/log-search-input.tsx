@@ -1,4 +1,4 @@
-import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 
@@ -18,7 +18,7 @@ export function LogSearchInput({ value, onChange }: LogSearchInputProps) {
 	return (
 		<div className="pb-3">
 			<div className="flex items-center gap-1">
-				<span className={`${FILTER_SECTION_LABEL} text-muted-foreground`}>Search</span>
+				<Eyebrow variant="label">Search</Eyebrow>
 				<LogSearchHelp />
 			</div>
 			<SearchInput

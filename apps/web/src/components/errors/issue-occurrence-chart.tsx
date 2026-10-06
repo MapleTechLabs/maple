@@ -2,25 +2,25 @@ import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { barY, defineChart } from "@tanstack/charts"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scalePoint } from "@tanstack/charts-scales/point"
 import * as React from "react"
 
 import type { IssueSeverity } from "@maple/domain/http"
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	integerTickValues,
 	linearYDomain,
+	makeBucketAxis,
 	minBarLength,
 	niceLinearDomain,
-	usePlotColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { cn } from "@maple/ui/lib/utils"
-import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
+import { formatNumber } from "@maple/ui/lib/format"
+
+import { SEVERITY_TOKEN } from "./severity-badge"
 
 // A type alias, not an interface: only an alias gets TypeScript's implicit index
 // signature, which is what lets a row be read by key name — `linearYDomain` takes
@@ -53,20 +53,27 @@ interface IssueOccurrenceChartProps {
  * sparkline read against numbers printed beside it; at panel size a chart with no
  * scale is decoration.
  */
+// The badge's severity tokens, so a high-severity issue's bars match its badge.
 const SEVERITY_COLOR_TOKENS = {
-	critical: { bar: ["--destructive", "#ef4444"] },
-	high: { bar: ["--color-orange-500", "#f97316"] },
-	medium: { bar: ["--color-amber-500", "#f59e0b"] },
-	low: { bar: ["--color-sky-500", "#0ea5e9"] },
-	unset: { bar: ["--primary", "#6366f1"] },
-} as const satisfies Record<IssueSeverity | "unset", { bar: readonly [string, string] }>
+	...SEVERITY_TOKEN,
+	unset: "--primary",
+} satisfies Record<IssueSeverity | "unset", `--${string}`>
 
 export function IssueOccurrenceChart({ data, severity = null, className }: IssueOccurrenceChartProps) {
-	// Module-scope maps, indexed — `usePlotColors` memoises on the object's
-	// identity and reads computed style, so a literal built from the prop would
-	// re-read it every frame.
-	const colors = usePlotColors(SEVERITY_COLOR_TOKENS[severity ?? "unset"])
-	const focusStore = React.useMemo(() => createTooltipFocusStore(), [])
+	const color = SEVERITY_COLOR_TOKENS[severity ?? "unset"]
+	const series = React.useMemo<CursorPlotSeries<TimeseriesPoint>[]>(
+		() => [
+			{
+				key: "count",
+				label: "Occurrences",
+				color,
+				value: (point: TimeseriesPoint) => point.count,
+				format: (value: number) => value.toLocaleString(),
+			},
+		],
+		[color],
+	)
+	const plot = useCursorPlot(series)
 
 	const sorted = React.useMemo<TimeseriesPoint[]>(
 		() =>
@@ -78,29 +85,13 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 	)
 
 	const { effectiveTimezone: timeZone } = useTimezonePreference()
-	const axisContext = React.useMemo(() => {
-		if (sorted.length < 2) return { rangeMs: 0, bucketSeconds: undefined, timeZone }
-		const firstMs = Date.parse(sorted[0]!.bucket)
-		const secondMs = Date.parse(sorted[1]!.bucket)
-		const lastMs = Date.parse(sorted[sorted.length - 1]!.bucket)
-		const diffMs = secondMs - firstMs
-		return {
-			rangeMs: lastMs - firstMs,
-			bucketSeconds: diffMs > 0 ? diffMs / 1000 : undefined,
-			timeZone,
-		}
-	}, [sorted, timeZone])
-
-	const tooltipSeries = React.useMemo<PlotTooltipSeries<TimeseriesPoint>[]>(
-		() => [
-			{
-				label: "Occurrences",
-				color: colors.bar,
-				value: (point: TimeseriesPoint) => point.count,
-				format: (value: number) => value.toLocaleString(),
-			},
-		],
-		[colors.bar],
+	const axis = React.useMemo(
+		() =>
+			makeBucketAxis(
+				sorted.map((point) => point.bucket),
+				timeZone,
+			),
+		[sorted, timeZone],
 	)
 
 	/**
@@ -124,25 +115,14 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 			defineChart({
 				marks: [
 					barY(sorted, {
-						x: (point: TimeseriesPoint) => point.bucket,
+						x: (point: TimeseriesPoint) => bucketDate(point.bucket),
 						y: (point: TimeseriesPoint) => liftCount(point.count),
-						fill: colors.bar,
+						fill: plot.color("count"),
 						radius: 2,
 					}),
 				],
 				scales: {
-					x: {
-						scale: scalePoint,
-						axis: {
-							line: false,
-							ticks: {
-								size: 0,
-								padding: 4,
-								format: (value: string) => formatBucketLabel(value, axisContext, "tick"),
-							},
-							tickLabels: { thin: { minGap: 12 } },
-						},
-					},
+					x: axis.xBand,
 					y: {
 						grid: DASHED_Y_GRID,
 						scale: scaleLinear().domain(yDomain),
@@ -164,9 +144,9 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 				margin: { top: 8, right: 4, bottom: 22, left: 44 },
 				focus: "group-x",
 				focusRing: false,
-				tooltip: cursorTooltip(focusStore.anchor),
+				tooltip: plot.tooltip,
 			}),
-		[sorted, colors.bar, axisContext, focusStore, yDomain, liftCount],
+		[sorted, plot, axis, yDomain, liftCount],
 	)
 
 	if (sorted.length === 0) {
@@ -184,20 +164,13 @@ export function IssueOccurrenceChart({ data, severity = null, className }: Issue
 	}
 
 	return (
-		<PlotFrame
+		<CursorPlot
+			plot={plot}
 			definition={definition}
+			series={series}
+			heading={(point: TimeseriesPoint) => axis.heading(point.bucket)}
 			ariaLabel="Occurrences over time"
 			className={cn("h-44 w-full", className)}
-			renderTooltipBody={({ points }) => (
-				<PlotTooltipBody
-					points={points}
-					series={tooltipSeries}
-					focusStore={focusStore}
-					heading={(point: TimeseriesPoint) =>
-						formatBucketLabel(point.bucket, axisContext, "tooltip")
-					}
-				/>
-			)}
 		/>
 	)
 }

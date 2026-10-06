@@ -6,7 +6,7 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import { TagInput } from "@/components/alerts/tag-input"
 import { PlusIcon } from "@/components/icons"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
@@ -31,7 +31,7 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 
 	return (
 		<Card className="p-4">
-			<SectionHeader id="rule-details-heading" label="Details" />
+			<SectionHeading variant="eyebrow" id="rule-details-heading" title="Details" />
 
 			<div className="space-y-3">
 				<Field className="items-stretch gap-1.5">

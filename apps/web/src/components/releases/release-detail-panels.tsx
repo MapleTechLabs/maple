@@ -133,7 +133,7 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 			) : (
 				<Table size="sm">
 					<TableHeader>
-						<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
+						<TableRow className={eyebrowVariants()}>
 							<TableHead className="pl-4" />
 							<TableHead className="text-right">
 								<span className="font-mono normal-case tracking-normal">

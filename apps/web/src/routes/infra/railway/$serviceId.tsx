@@ -2,12 +2,12 @@ import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { formatBytes } from "@maple/ui/lib/format"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartLoading } from "@maple/ui/components/charts"
 
 import { ErrorState } from "@/components/common/error-state"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { chartBucketSeconds, type ChartUnit } from "@/components/infra/chart-utils"
-import { ChartCard } from "@/components/infra/primitives/chart-card"
+import { ChartCard } from "@/components/common/chart-card"
 import { InfraMetricChart } from "@/components/infra/primitives/infra-metric-chart"
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
@@ -205,7 +205,7 @@ function RailwayServicePage() {
 								) : Result.isInitial(timeseriesResult) ? (
 									<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 										{CHARTS.map((chart) => (
-											<Skeleton key={chart.title} className="h-64 w-full rounded-md" />
+											<ChartLoading key={chart.title} variant="line" height={256} />
 										))}
 									</div>
 								) : (

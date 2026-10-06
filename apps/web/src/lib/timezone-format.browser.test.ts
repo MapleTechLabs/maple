@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { formatTimeInTimezone, formatTimestampInTimezone } from "./timezone-format"
 
 describe("timezone-format", () => {
@@ -54,7 +55,7 @@ describe("timezone-format", () => {
 	})
 
 	it("returns '-' for invalid values", () => {
-		expect(formatTimestampInTimezone("not-a-date", { timeZone: "UTC" })).toBe("-")
-		expect(formatTimeInTimezone("not-a-date", { timeZone: "UTC" })).toBe("-")
+		expect(formatTimestampInTimezone("not-a-date", { timeZone: "UTC" })).toBe(EMPTY_VALUE)
+		expect(formatTimeInTimezone("not-a-date", { timeZone: "UTC" })).toBe(EMPTY_VALUE)
 	})
 })

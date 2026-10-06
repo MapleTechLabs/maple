@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 
 import type { CloudflareZoneCacheBucket } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -63,34 +63,29 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 					</span>
 				</div>
 			</div>
-			<div className="mt-3 flex h-3 w-full overflow-hidden rounded-sm">
-				{segments.map((seg) => (
-					<Tooltip key={seg.status}>
-						<TooltipTrigger
-							render={<div />}
-							tabIndex={0}
-							className="h-full min-w-[2px]"
-							style={{ width: `${seg.share * 100}%`, background: seg.color }}
-							aria-label={`${seg.label}: ${formatPercent(seg.share)}`}
-						/>
-						<TooltipContent>
-							{seg.label} · {formatNumber(seg.requests)} requests ({formatPercent(seg.share)})
-						</TooltipContent>
-					</Tooltip>
-				))}
-				<Tooltip>
-					<TooltipTrigger
-						render={<div />}
-						tabIndex={0}
-						className="h-full flex-1"
-						style={{ background: ORIGIN_COLOR }}
-						aria-label={`Origin: ${formatPercent(originShare)}`}
-					/>
-					<TooltipContent>
-						Origin · {formatNumber(originRequests)} requests ({formatPercent(originShare)})
-					</TooltipContent>
-				</Tooltip>
-			</div>
+			<SegmentedBar
+				className="mt-3 h-3 w-full rounded-sm bg-transparent"
+				total={total}
+				minVisible={0.5}
+				label={[
+					...segments.map((seg) => `${seg.label}: ${formatPercent(seg.share)}`),
+					`Origin: ${formatPercent(originShare)}`,
+				].join(", ")}
+				segments={[
+					...segments.map((seg) => ({
+						key: seg.status,
+						value: seg.requests,
+						color: seg.color,
+						title: `${seg.label} · ${formatNumber(seg.requests)} requests (${formatPercent(seg.share)})`,
+					})),
+					{
+						key: "origin",
+						value: originRequests,
+						color: ORIGIN_COLOR,
+						title: `Origin · ${formatNumber(originRequests)} requests (${formatPercent(originShare)})`,
+					},
+				]}
+			/>
 			<div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
 				{segments.map((seg) => (
 					<span key={seg.status} className="inline-flex items-baseline gap-1.5">

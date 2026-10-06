@@ -71,9 +71,9 @@ export function ReplaysToolbar({
 					title={
 						engagedOnly ? "Show every session type" : "Hide bots, bounces, idle tabs and glances"
 					}
-					pressedClassName="border-emerald-600 bg-emerald-600 text-white"
-					idleClassName="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400"
-					dotClassName="bg-emerald-500"
+					pressedClassName="border-severity-info bg-severity-info text-white"
+					idleClassName={cn(TONE_SOFT.ok, TONE_BORDER.ok, "hover:bg-severity-info/15")}
+					dotClassName={TONE_FILL.ok}
 				>
 					{engagedSessions !== undefined && (
 						<span className="tabular-nums">{engagedSessions.toLocaleString()}</span>

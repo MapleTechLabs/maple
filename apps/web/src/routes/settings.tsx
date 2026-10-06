@@ -1,7 +1,7 @@
 import { Navigate, useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { BillingSection } from "@/components/settings/billing-section"
@@ -75,77 +75,49 @@ function SettingsPage() {
 	// renders as soon as the session resolves.
 	const waitingForGatedTab = search.tab === "data-platform" && isCustomerLoading
 
-	if (isLoading || waitingForGatedTab) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Settings" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<div className="space-y-3">
-								<Skeleton className="h-8 w-56" />
-								<Skeleton className="h-40 w-full" />
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
+	const loading = isLoading || waitingForGatedTab
+	const empty = !loading && visibleItems.length === 0
 
-	if (visibleItems.length === 0) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Settings" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<p className="text-muted-foreground text-sm">
-								No settings are available for the current account.
-							</p>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
-
+	// One shell for every state, so the sidebar reconciles in place as the session resolves.
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTab] }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Filters>
-					<SettingsNav
-						sections={visibleSections}
-						active={activeTab}
-						onSelectTab={handleTabSelect}
-					/>
-				</DashboardLayout.Filters>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>
-						{activeTab === "organization" && <OrganizationSection />}
-						{activeTab === "members" && <MembersSection />}
-						{activeTab === "audit-log" && <AuditLogSection />}
-						{activeTab === "setup-audit" && <SetupAuditSection />}
-						{activeTab === "ingestion" && <IngestionSection />}
-						{activeTab === "api-keys" && <ApiKeysSection />}
-						{activeTab === "mcp" && <McpSection />}
-						{activeTab === "notifications" && <NotificationsSection />}
-						{activeTab === "automation" && (
-							<AutomationSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />
-						)}
-						{activeTab === "billing" && <BillingSection isAdmin={isAdmin} />}
-						{activeTab === "data-platform" && (
-							<OrgClickHouseSettingsSection
-								isAdmin={isAdmin}
-								hasEntitlement={canAccessDataPlatform}
-							/>
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={
+				loading || empty
+					? [{ label: "Settings" }]
+					: [{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTab] }]
+			}
+			filters={
+				loading || empty ? undefined : (
+					<SettingsNav sections={visibleSections} active={activeTab} onSelectTab={handleTabSelect} />
+				)
+			}
+		>
+			{loading ? (
+				<div className="space-y-3">
+					<Skeleton className="h-8 w-56" />
+					<Skeleton className="h-40 w-full" />
+				</div>
+			) : empty ? (
+				<p className="text-muted-foreground text-sm">No settings are available for the current account.</p>
+			) : (
+				<>
+					{activeTab === "organization" && <OrganizationSection />}
+					{activeTab === "members" && <MembersSection />}
+					{activeTab === "audit-log" && <AuditLogSection />}
+					{activeTab === "setup-audit" && <SetupAuditSection />}
+					{activeTab === "ingestion" && <IngestionSection />}
+					{activeTab === "api-keys" && <ApiKeysSection />}
+					{activeTab === "mcp" && <McpSection />}
+					{activeTab === "notifications" && <NotificationsSection />}
+					{activeTab === "automation" && (
+						<AutomationSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />
+					)}
+					{activeTab === "billing" && <BillingSection isAdmin={isAdmin} />}
+					{activeTab === "data-platform" && (
+						<OrgClickHouseSettingsSection isAdmin={isAdmin} hasEntitlement={canAccessDataPlatform} />
+					)}
+				</>
+			)}
+		</DashboardPage>
 	)
 }

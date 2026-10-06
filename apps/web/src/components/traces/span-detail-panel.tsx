@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { XmarkIcon, ClockIcon, CircleInfoIcon, SquareTerminalIcon, ServerIcon } from "@/components/icons"
+import { XmarkIcon, ClockIcon, CircleInfoIcon, ServerIcon } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import { ErrorSection } from "@maple/ui/components/error-section"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
@@ -40,27 +42,6 @@ interface SpanDetailPanelProps {
 	traceStartTime: string
 	totalDurationMs: number
 	className?: string
-}
-
-/**
- * Label/value row that survives a narrow panel: the label holds its width, the value takes the rest
- * and ellipsises. Values are click-to-copy, so a truncated display still yields the full string.
- */
-function PlatformRow({
-	label,
-	children,
-	className,
-}: {
-	label: string
-	children: ReactNode
-	className?: string
-}) {
-	return (
-		<div className={cn("flex items-center justify-between gap-2 min-w-0", className)}>
-			<span className="text-muted-foreground shrink-0">{label}</span>
-			<span className="font-mono truncate text-right">{children}</span>
-		</div>
-	)
 }
 
 /**
@@ -336,20 +317,21 @@ export function SpanDetailPanel({
 							)}
 						</div>
 						{/* Two columns only once the panel is wide enough for them to hold real values. */}
-						<div className="grid grid-cols-1 gap-x-4 gap-y-1 text-2xs @min-[22rem]/platform:grid-cols-2">
+						<KeyValueList className="grid grid-cols-1 gap-x-4 gap-y-1 text-2xs @min-[22rem]/platform:grid-cols-2">
 							{platform.edge && (
-								<PlatformRow label="Edge">
+								<KeyValue mono label="Edge">
 									<span className="inline-flex items-center gap-1">
 										<GlobeIcon size={10} className="shrink-0" />
 										{platform.edge}
 									</span>
-								</PlatformRow>
+								</KeyValue>
 							)}
 							{platform.location && (
-								<PlatformRow label="Location">{platform.location}</PlatformRow>
+								<KeyValue mono label="Location">{platform.location}</KeyValue>
 							)}
 							{platform.fields.map((field) => (
-								<PlatformRow
+								<KeyValue
+									mono
 									key={field.label}
 									label={field.label}
 									className={field.wide ? "@min-[22rem]/platform:col-span-2" : undefined}
@@ -361,9 +343,9 @@ export function SpanDetailPanel({
 									) : (
 										(field.display ?? field.value)
 									)}
-								</PlatformRow>
+								</KeyValue>
 							))}
-						</div>
+						</KeyValueList>
 					</div>
 				)}
 
@@ -390,7 +372,7 @@ export function SpanDetailPanel({
 							<CircleInfoIcon size={14} /> Details
 						</TabsTrigger>
 						<TabsTrigger value="logs">
-							<SquareTerminalIcon size={14} /> Logs
+							<CONCEPT_ICON.log size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
 								<Badge variant="secondary" size="xs" className="ml-1 px-1.5">
 									{logCountLabel}
@@ -418,24 +400,26 @@ export function SpanDetailPanel({
 											color={serviceColor}
 										/>
 									)}
-									<PlatformRow label="Start Time">
-										<CopyableValue value={span.startTime}>
-											{formatTimestampInTimezone(span.startTime, {
-												timeZone: effectiveTimezone,
-												withMilliseconds: true,
-											})}
-										</CopyableValue>
-									</PlatformRow>
-									<PlatformRow label="Span ID">
-										<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
-									</PlatformRow>
-									{span.parentSpanId && (
-										<PlatformRow label="Parent Span ID">
-											<CopyableValue value={span.parentSpanId}>
-												{span.parentSpanId}
+									<KeyValueList className="gap-1">
+										<KeyValue mono label="Start Time">
+											<CopyableValue value={span.startTime}>
+												{formatTimestampInTimezone(span.startTime, {
+													timeZone: effectiveTimezone,
+													withMilliseconds: true,
+												})}
 											</CopyableValue>
-										</PlatformRow>
-									)}
+										</KeyValue>
+										<KeyValue mono label="Span ID">
+											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
+										</KeyValue>
+										{span.parentSpanId && (
+											<KeyValue mono label="Parent Span ID">
+												<CopyableValue value={span.parentSpanId}>
+													{span.parentSpanId}
+												</CopyableValue>
+											</KeyValue>
+										)}
+									</KeyValueList>
 								</div>
 							</div>
 

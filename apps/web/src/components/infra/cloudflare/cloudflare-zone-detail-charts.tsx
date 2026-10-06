@@ -4,22 +4,21 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
 	roundCapDasharray,
 	useChartId,
-	usePlotChromeColors,
-	useResolvedSeriesColors,
+	useCursorPlot,
 	verticalGradient,
-	type PlotTooltipSeries,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
+import { OTHER_COLOR } from "@maple/ui/components/charts"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
@@ -30,14 +29,14 @@ import type {
 } from "@/api/warehouse/cloudflare-infra"
 import { formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
-import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis, transformRows } from "../chart-utils"
-import { CHART_HEIGHT, ChartCard, ChartCardMessage } from "../primitives/chart-card"
+import { transformRows } from "../chart-utils"
+import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
+import { SeriesLegend } from "@/components/common/series-legend"
 import {
 	BREAKDOWN_OTHER_KEY,
 	BREAKDOWN_OTHER_LABEL,
 	CACHE_STATUS_COLORS,
 	CACHE_STATUS_ORDER,
-	OTHER_ZONES_COLOR,
 	STATUS_CLASS_COLORS,
 	STATUS_CLASS_ORDER,
 } from "./constants"
@@ -144,20 +143,30 @@ export function StackedBreakdownChart({
 				name,
 				colors[name] ??
 					(name === BREAKDOWN_OTHER_KEY
-						? OTHER_ZONES_COLOR
-						: (identityColors.get(name) ?? OTHER_ZONES_COLOR)),
+						? OTHER_COLOR
+						: (identityColors.get(name) ?? OTHER_COLOR)),
 			)
 		}
 		return map
 	}, [series, colors])
 
-	const seriesColor = (name: string) => paletteByName.get(name) ?? OTHER_ZONES_COLOR
-
-	// Resolved to literals: canvas cannot read `var(--chart-3)`.
-	const chromeColors = usePlotChromeColors()
-	const resolvedColors = useResolvedSeriesColors(paletteByName, OTHER_ZONES_COLOR)
-	const colorOf = (name: string) => resolvedColors.get(name) ?? OTHER_ZONES_COLOR
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
+	const cursorSeries = useMemo<CursorPlotSeries<BreakdownCell>[]>(
+		() =>
+			series.map((name) => ({
+				key: name,
+				label: seriesLabel(name),
+				color: paletteByName.get(name) ?? OTHER_COLOR,
+				// Off the bucket ROW, so hovering one band still prints every series.
+				value: (cell: BreakdownCell) => {
+					const value = cell.row[name]
+					return typeof value === "number" ? value : null
+				},
+				format: (value: number) => formatNumber(value),
+			})),
+		[series, paletteByName],
+	)
+	const plot = useCursorPlot(cursorSeries)
+	const colorOf = plot.color
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
@@ -174,21 +183,6 @@ export function StackedBreakdownChart({
 	const yDomain = useMemo<[number, number]>(
 		() => niceLinearDomain(linearYDomain({ rows: data, keys: series, stacked: true })),
 		[data, series],
-	)
-
-	const tooltipSeries = useMemo<PlotTooltipSeries<BreakdownCell>[]>(
-		() =>
-			series.map((name) => ({
-				label: seriesLabel(name),
-				color: colorOf(name),
-				// Off the bucket ROW, so hovering one band still prints every series.
-				value: (cell: BreakdownCell) => {
-					const value = cell.row[name]
-					return typeof value === "number" ? value : null
-				},
-				format: (value: number) => formatNumber(value),
-			})),
-		[series, resolvedColors],
 	)
 
 	const definition = useMemo(() => {
@@ -218,7 +212,7 @@ export function StackedBreakdownChart({
 					curve: d3Curve(curveMonotoneX),
 					layout: stack({ order: [...series] }),
 				}),
-				focusCrosshair(chromeColors),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: axis.x,
@@ -236,38 +230,24 @@ export function StackedBreakdownChart({
 			margin: { top: 12, right: 12, left: 60 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [data, series, axis, resolvedColors, chromeColors, gradientPrefix, yDomain, focusStore])
-
-	const legendChips = series.slice(0, MAX_LEGEND_CHIPS)
-	const legendOverflow = series.length - legendChips.length
+	}, [data, series, axis, plot, colorOf, gradientPrefix, yDomain])
 
 	return (
 		<ChartCard
 			title={title}
 			scope={scope}
 			legend={
-				<>
-					{legendChips.map((s) => (
-						<span key={s} className="inline-flex min-w-0 items-center gap-1.5">
-							<span
-								aria-hidden
-								className="size-1.5 shrink-0 rounded-full"
-								style={{ background: seriesColor(s) }}
-							/>
-							<span
-								className="max-w-[24ch] truncate text-2xs text-muted-foreground"
-								title={seriesLabel(s)}
-							>
-								{seriesLabel(s)}
-							</span>
-						</span>
-					))}
-					{legendOverflow > 0 ? (
-						<span className="text-2xs text-muted-foreground/70">+{legendOverflow}</span>
-					) : null}
-				</>
+				<SeriesLegend
+					maxItems={MAX_LEGEND_CHIPS}
+					items={series.map((name) => ({
+						key: name,
+						label: seriesLabel(name),
+						title: seriesLabel(name),
+						color: paletteByName.get(name) ?? OTHER_COLOR,
+					}))}
+				/>
 			}
 		>
 			{data.length === 0 ? (
@@ -278,18 +258,13 @@ export function StackedBreakdownChart({
 					style={{ height: CHART_HEIGHT }}
 					{...linkedCursorChartProps(syncId != null ? `cf-breakdown-${title}` : undefined)}
 				>
-					<PlotFrame
+					<CursorPlot
+						plot={plot}
 						definition={definition}
+						series={cursorSeries}
+						heading={(cell: BreakdownCell) => axis.heading(cell.bucket)}
 						ariaLabel={title}
 						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(cell: BreakdownCell) => axis.heading(cell.bucket)}
-							/>
-						)}
 					/>
 				</div>
 			)}
@@ -363,13 +338,6 @@ const LATENCY_SERIES: ReadonlyArray<{
 	{ key: "originP99Ms", label: "Origin p99", color: "var(--chart-1)", dashed: true },
 ]
 
-function LatencyLegendSwatch({ color, dashed }: { color: string; dashed?: boolean }) {
-	if (dashed) {
-		return <span aria-hidden className="w-3 border-t border-dashed" style={{ borderColor: color }} />
-	}
-	return <span aria-hidden className="h-0.5 w-3 rounded-full" style={{ background: color }} />
-}
-
 /** One bucket of latency percentiles, keyed by series. */
 type LatencyPoint = { bucket: string; date: Date } & Record<string, string | number | Date>
 
@@ -406,23 +374,12 @@ export function CloudflareZoneLatencyChart({
 		[buckets, effectiveTimezone],
 	)
 
-	const chromeColors = usePlotChromeColors()
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
-
-	// The percentile tokens resolved to literals — canvas cannot read `var()`.
-	const colorTokens = useMemo(() => new Map(LATENCY_SERIES.map((entry) => [entry.key, entry.color])), [])
-	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
-
-	const yDomain = useMemo<[number, number]>(
-		() => niceLinearDomain(linearYDomain({ rows: data, keys: activeSeries.map((e) => e.key) })),
-		[data, activeSeries],
-	)
-
-	const tooltipSeries = useMemo<PlotTooltipSeries<LatencyPoint>[]>(
+	const cursorSeries = useMemo<CursorPlotSeries<LatencyPoint>[]>(
 		() =>
 			activeSeries.map((entry) => ({
+				key: entry.key,
 				label: entry.label,
-				color: colors.get(entry.key) ?? chromeColors.border,
+				color: entry.color,
 				dashed: entry.dashed,
 				value: (point: LatencyPoint) => {
 					const value = point[entry.key]
@@ -430,7 +387,13 @@ export function CloudflareZoneLatencyChart({
 				},
 				format: (value: number) => formatLatency(value),
 			})),
-		[activeSeries, colors, chromeColors.border],
+		[activeSeries],
+	)
+	const plot = useCursorPlot(cursorSeries)
+
+	const yDomain = useMemo<[number, number]>(
+		() => niceLinearDomain(linearYDomain({ rows: data, keys: activeSeries.map((e) => e.key) })),
+		[data, activeSeries],
 	)
 
 	const definition = useMemo(() => {
@@ -439,7 +402,7 @@ export function CloudflareZoneLatencyChart({
 			const value = point[key]
 			return typeof value === "number" ? value : null
 		}
-		const colorOf = (key: string) => colors.get(key) ?? chromeColors.border
+		const colorOf = plot.color
 		const curve = d3Curve(curveMonotoneX)
 
 		return defineChart({
@@ -457,9 +420,9 @@ export function CloudflareZoneLatencyChart({
 					}),
 				),
 				...activeSeries.map((entry) =>
-					focusDot(data, at, valueOf(entry.key), colorOf(entry.key), chromeColors),
+					focusDot(data, at, valueOf(entry.key), colorOf(entry.key), plot.chrome),
 				),
-				focusCrosshair(chromeColors),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: axis.x,
@@ -477,9 +440,9 @@ export function CloudflareZoneLatencyChart({
 			margin: { top: 12, right: 12, left: 60 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [data, activeSeries, axis, colors, chromeColors, yDomain, focusStore])
+	}, [data, activeSeries, axis, plot, yDomain])
 
 	// Latency quantiles are plan-gated on Cloudflare's side — say so instead of
 	// silently omitting the panel (the operator shouldn't wonder where it went).
@@ -498,30 +461,30 @@ export function CloudflareZoneLatencyChart({
 		<ChartCard
 			title="Latency percentiles"
 			scope={scope}
-			legend={activeSeries.map((s) => (
-				<span key={s.key} className="inline-flex items-center gap-1.5">
-					<LatencyLegendSwatch color={s.color} dashed={s.dashed} />
-					<span className="text-2xs text-muted-foreground">{s.label}</span>
-				</span>
-			))}
+			legend={
+				<SeriesLegend
+					swatch="line"
+					items={activeSeries.map((s) => ({
+						key: s.key,
+						label: s.label,
+						color: s.color,
+						swatch: s.dashed ? "dashed" : undefined,
+					}))}
+				/>
+			}
 		>
 			<div
 				className="w-full"
 				style={{ height: CHART_HEIGHT }}
 				{...linkedCursorChartProps(syncId != null ? "cf-zone-latency" : undefined)}
 			>
-				<PlotFrame
+				<CursorPlot
+					plot={plot}
 					definition={definition}
+					series={cursorSeries}
+					heading={(point: LatencyPoint) => axis.heading(point.bucket)}
 					ariaLabel="Latency percentiles"
 					className="h-full w-full"
-					renderTooltipBody={({ points }) => (
-						<PlotTooltipBody
-							points={points}
-							series={tooltipSeries}
-							focusStore={focusStore}
-							heading={(point: LatencyPoint) => axis.heading(point.bucket)}
-						/>
-					)}
 				/>
 			</div>
 		</ChartCard>

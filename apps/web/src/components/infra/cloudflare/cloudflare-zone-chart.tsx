@@ -6,20 +6,17 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
-	useResolvedSeriesColors,
-	usePlotChromeColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { OTHER_COLOR } from "@maple/ui/components/charts"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
@@ -27,9 +24,9 @@ import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import type { CloudflareZoneTimeseriesRow } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { CHART_EMPTY_MESSAGE, makeBucketAxis, transformRows, type TransformedPoint } from "../chart-utils"
-import { CHART_HEIGHT, ChartCardMessage } from "../primitives/chart-card"
-import { OTHER_ZONES_COLOR, OTHER_ZONES_SERIES } from "./constants"
+import { transformRows, type TransformedPoint } from "../chart-utils"
+import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
+import { OTHER_ZONES_SERIES } from "./constants"
 
 export type CloudflareZoneMetric = "requests" | "errorRate" | "cacheHitRate" | "bytes"
 
@@ -127,16 +124,20 @@ export function CloudflareZoneChart({
 	// Zone names contain dots (`example.com`), which are invalid in a raw
 	// `var(--color-…)` reference — colour series directly instead of via the
 	// ChartContainer CSS variables.
-	const seriesColor = useMemo(() => {
-		const map = resolveSeriesColors(topZones)
-		map.set(OTHER_ZONES_SERIES, OTHER_ZONES_COLOR)
-		return map
-	}, [topZones])
-
-	// Resolved to literals: canvas cannot read `var(--chart-3)`.
-	const chromeColors = usePlotChromeColors()
-	const colors = useResolvedSeriesColors(seriesColor, chromeColors.border)
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
+	const cursorSeries = useMemo<CursorPlotSeries<TransformedPoint>[]>(() => {
+		const tokens = resolveSeriesColors(topZones)
+		return series.map((name) => ({
+			key: name,
+			label: name,
+			color: name === OTHER_ZONES_SERIES ? OTHER_COLOR : (tokens.get(name) ?? OTHER_COLOR),
+			value: (point: TransformedPoint) => {
+				const value = point[name]
+				return typeof value === "number" ? value : null
+			},
+			format: (value: number) => formatMetricValue(value, metric),
+		}))
+	}, [topZones, series, metric])
+	const plot = useCursorPlot(cursorSeries)
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
@@ -155,27 +156,13 @@ export function CloudflareZoneChart({
 		[data, series],
 	)
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<TransformedPoint>[]>(
-		() =>
-			series.map((name) => ({
-				label: name,
-				color: colors.get(name) ?? chromeColors.border,
-				value: (point: TransformedPoint) => {
-					const value = point[name]
-					return typeof value === "number" ? value : null
-				},
-				format: (value: number) => formatMetricValue(value, metric),
-			})),
-		[series, colors, chromeColors.border, metric],
-	)
-
 	const definition = useMemo(() => {
 		const at = (point: TransformedPoint) => point.date
 		const valueOf = (name: string) => (point: TransformedPoint) => {
 			const value = point[name]
 			return typeof value === "number" ? value : null
 		}
-		const colorOf = (name: string) => colors.get(name) ?? chromeColors.border
+		const colorOf = plot.color
 
 		return defineChart({
 			marks: [
@@ -189,8 +176,8 @@ export function CloudflareZoneChart({
 						curve: d3Curve(curveMonotoneX),
 					}),
 				),
-				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), chromeColors)),
-				focusCrosshair(chromeColors),
+				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), plot.chrome)),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: axis.x,
@@ -209,12 +196,13 @@ export function CloudflareZoneChart({
 			margin: { top: 12, right: 12, left: 60 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [data, series, axis, colors, chromeColors, yDomain, metric, focusStore])
+	}, [data, series, axis, plot, yDomain, metric])
 
 	return (
-		<Panel
+		<ChartCard
+			title={METRIC_LABELS[metric]}
 			className={refreshingClass(waiting)}
 			aria-busy={waiting || undefined}
 			// `syncId` used to be handed to Recharts' hover-sync event bus. The linked
@@ -222,26 +210,18 @@ export function CloudflareZoneChart({
 			// it now names this chart within its group.
 			{...linkedCursorChartProps(syncId != null ? `cf-zone-${metric}` : undefined)}
 		>
-			<PanelHeader title={METRIC_LABELS[metric]} divided={false} className="px-3 pt-2.5" />
 			{data.length === 0 ? (
 				<ChartCardMessage>{CHART_EMPTY_MESSAGE}</ChartCardMessage>
 			) : (
-				<div className="w-full" style={{ height: CHART_HEIGHT }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel={METRIC_LABELS[metric]}
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(point: TransformedPoint) => axis.heading(point.bucket)}
-							/>
-						)}
-					/>
-				</div>
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={cursorSeries}
+					heading={(point: TransformedPoint) => axis.heading(point.bucket)}
+					ariaLabel={METRIC_LABELS[metric]}
+					height={CHART_HEIGHT}
+				/>
 			)}
-		</Panel>
+		</ChartCard>
 	)
 }

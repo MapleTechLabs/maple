@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
 	bucketIntervalLabel,
 	countLabel,
+	EMPTY_VALUE,
 	formatBucketLabel,
 	formatBytes,
 	formatBytesPerSecond,
@@ -46,7 +47,7 @@ describe("formatLatency", () => {
 	it("shares the duration ladder and has a placeholder for missing values", () => {
 		expect(formatLatency(90_000)).toBe("1.5min")
 		expect(formatLatency(3_600_000)).toBe("1.0h")
-		expect(formatLatency(Number.NaN)).toBe("-")
+		expect(formatLatency(Number.NaN)).toBe(EMPTY_VALUE)
 	})
 })
 
@@ -105,7 +106,13 @@ describe("percent formatters stay separate", () => {
 		expect(formatPercent(0.0001)).toBe("0%")
 		expect(formatPercent(0.052)).toBe("5.2%")
 		expect(formatPercent(0.87)).toBe("87%")
-		expect(formatPercent(Number.NaN)).toBe("—")
+		expect(formatPercent(Number.NaN)).toBe(EMPTY_VALUE)
+	})
+
+	it("formatPercent with a floor marks a tiny non-zero share", () => {
+		expect(formatPercent(0.0004, { floor: 0.001 })).toBe("<0.1%")
+		expect(formatPercent(0, { floor: 0.001 })).toBe("0%")
+		expect(formatPercent(0.052, { floor: 0.001 })).toBe("5.2%")
 	})
 
 	it("formatErrorRate surfaces a rare failure instead of showing 0%", () => {
@@ -119,8 +126,8 @@ describe("percent formatters stay separate", () => {
 describe("formatLoad / formatUptime", () => {
 	it("renders load and uptime", () => {
 		expect(formatLoad(1.234)).toBe("1.23")
-		expect(formatLoad(Number.NaN)).toBe("—")
-		expect(formatUptime(0)).toBe("—")
+		expect(formatLoad(Number.NaN)).toBe(EMPTY_VALUE)
+		expect(formatUptime(0)).toBe(EMPTY_VALUE)
 		expect(formatUptime(30 * 60)).toBe("30m")
 		expect(formatUptime(5 * 3600)).toBe("5h")
 		expect(formatUptime(3 * 86_400 + 4 * 3600)).toBe("3d 4h")

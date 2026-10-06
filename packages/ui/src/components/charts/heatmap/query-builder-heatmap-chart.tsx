@@ -18,7 +18,7 @@ import {
 	resolveSequentialDomain,
 	usePlotColors,
 	usePlotTimeZone,
-	type PlotColorToken,
+	type PlotColorSource,
 } from "../../plot"
 import type { QueryBuilderHeatmapChartProps } from "../_shared/chart-types"
 
@@ -131,7 +131,7 @@ const RAMP_STOP_TOKENS = {
 	cividis2: ["--heatmap-cividis-2", "oklch(0.58 0.03 130)"],
 	cividis3: ["--heatmap-cividis-3", "oklch(0.71 0.075 95)"],
 	cividis4: ["--heatmap-cividis-4", "oklch(0.85 0.13 95)"],
-} as const satisfies Record<`${HeatmapColorScale}${0 | 1 | 2 | 3 | 4}`, readonly [PlotColorToken, string]>
+} as const satisfies Record<`${HeatmapColorScale}${0 | 1 | 2 | 3 | 4}`, PlotColorSource>
 
 type RampColors = Readonly<Record<keyof typeof RAMP_STOP_TOKENS, string>>
 
@@ -143,10 +143,10 @@ const RAMP_INDICES = [0, 1, 2, 3, 4] as const
  * literal per render would re-read computed style on every frame.
  */
 const HEATMAP_CHROME_TOKENS = {
-	foreground: ["--foreground", "#fafafa"],
+	foreground: "--foreground",
 	/** The recessed surface a hole is a hole *in*. */
 	grout: ["--heatmap-grout", "oklch(0.175 0.008 62)"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Whether a persisted `colorScale` still names a ramp we ship.

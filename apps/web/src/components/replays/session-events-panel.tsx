@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { latencyLevel } from "@maple/ui/lib/latency-tone"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getSessionTranscriptResultAtom,
@@ -51,6 +52,7 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 import { countryFlag, countryName } from "@/components/analytics/labels"
+import { StatFigure } from "@/components/common/stat-rail"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import { formatClock, formatSessionDuration, type ReplayPartitionWindow } from "./replay-format"
 import { useReplayPlayer } from "./replay-player-context"
@@ -664,7 +666,7 @@ function EventLine({
 							</span>
 							<span
 								className={cn(
-									isError || ev.netDurationMs >= 1000
+									isError || isSlowRequest(ev.netDurationMs)
 										? cn("font-semibold", TONE_TEXT.warn)
 										: "text-muted-foreground",
 									isError && TONE_TEXT.crit,
@@ -736,10 +738,16 @@ function formatNetDuration(ms: number): string {
 	return `${ms}ms`
 }
 
+/** "Slow" on the shared p95 latency scale (>= 1s), so a request reads slow here as everywhere else. */
+function isSlowRequest(ms: number): boolean {
+	const level = latencyLevel(ms, "p95")
+	return level === "slow" || level === "critical"
+}
+
 /** Relative-duration micro-bar for the Network view — slow requests jump out
  *  without reading every number. Log-free linear scale capped at 3s. */
 function NetDurationBar({ durationMs, failed }: { durationMs: number; failed: boolean }) {
-	const slow = durationMs >= 1000
+	const slow = isSlowRequest(durationMs)
 	return (
 		<Meter
 			value={durationMs}
@@ -1174,12 +1182,7 @@ function SessionSummary({ session }: { session: SessionRailSession }) {
 
 	return (
 		<section className="border-b border-border/40 px-4 py-3.5">
-			<div className="flex items-baseline gap-1.5">
-				<span className="font-mono text-2xl font-semibold leading-none tracking-tight tabular-nums">
-					{formatSessionDuration(total)}
-				</span>
-				<span className="text-2xs text-muted-foreground">on the page</span>
-			</div>
+			<StatFigure value={formatSessionDuration(total)} unit="on the page" />
 
 			{share && (
 				<>

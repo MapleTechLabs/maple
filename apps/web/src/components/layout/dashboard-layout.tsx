@@ -26,6 +26,7 @@ import { AppUpdateBanner } from "@/components/layout/app-update-banner"
 import { Link } from "@tanstack/react-router"
 import { parseSearchFromHref } from "@/lib/href"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
+import { cn } from "@maple/ui/lib/utils"
 
 /* -------------------------------------------------------------------------------------------------
  * DashboardLayout — the app's page shell, as a compound component.
@@ -46,7 +47,7 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
  * composition.
  * -----------------------------------------------------------------------------------------------*/
 
-interface BreadcrumbEntry {
+export interface BreadcrumbEntry {
 	label: string
 	href?: string
 }
@@ -74,7 +75,13 @@ function Root({ children }: { children: React.ReactNode }) {
  * cluster (AI chat, connection status, the mobile filter trigger). `children` are
  * extra page-specific actions, appended to that cluster.
  */
-function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?: React.ReactNode }) {
+function Breadcrumbs({
+	items,
+	children,
+}: {
+	items: ReadonlyArray<BreadcrumbEntry>
+	children?: React.ReactNode
+}) {
 	return (
 		<header data-slot="app-topbar" className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
 			<SidebarTrigger className="-ml-1" />
@@ -199,9 +206,62 @@ function Header({ titleContent, children }: { titleContent?: React.ReactNode; ch
 	)
 }
 
-/** The scrolling page body. */
-function Scroll({ children, className }: { children: React.ReactNode; className?: string }) {
-	return <PageLayout.ScrollArea className={className}>{children}</PageLayout.ScrollArea>
+/** Centred column caps for a page body. `reading` suits prose and detail pages, `narrow` forms. */
+const PAGE_WIDTH = {
+	full: null,
+	reading: "mx-auto max-w-4xl",
+	narrow: "mx-auto max-w-3xl",
+} as const
+
+/** Vertical rhythm between a body's top-level blocks. */
+const PAGE_GAP = {
+	none: null,
+	sm: "gap-3",
+	md: "gap-4",
+	lg: "gap-6",
+} as const
+
+export type PageWidth = keyof typeof PAGE_WIDTH
+export type PageGap = keyof typeof PAGE_GAP
+
+/**
+ * The scrolling page body. `width` centres the content in a capped column and `gap`
+ * spaces its top-level children, so routes stop wrapping the body in
+ * `mx-auto max-w-* space-y-*` divs of their own.
+ */
+function Scroll({
+	children,
+	className,
+	width = "full",
+	gap = "none",
+}: {
+	children: React.ReactNode
+	className?: string
+	width?: PageWidth
+	gap?: PageGap
+}) {
+	if (width === "full") {
+		return <PageLayout.ScrollArea className={cn(PAGE_GAP[gap], className)}>{children}</PageLayout.ScrollArea>
+	}
+	return (
+		<PageLayout.ScrollArea className={className}>
+			<div data-slot="page-column" className={cn("flex w-full flex-col", PAGE_WIDTH[width], PAGE_GAP[gap])}>
+				{children}
+			</div>
+		</PageLayout.ScrollArea>
+	)
+}
+
+/**
+ * Page-level tabs (view switch, section tabs). Goes inside `Sticky`, after `Header`, so
+ * every tabbed page puts its tab strip in the same place and it never scrolls away.
+ */
+function Tabs({ children, className }: { children: React.ReactNode; className?: string }) {
+	return (
+		<div data-slot="page-tabs" className={cn("min-w-0", className)}>
+			{children}
+		</div>
+	)
 }
 
 /**
@@ -244,6 +304,7 @@ export const DashboardLayout = {
 	Sticky,
 	Header,
 	Scroll,
+	Tabs,
 	Fill,
 	RightPanel,
 	/** Escape hatch for a page whose title is more than a string (a badge, a service dot). */

@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import type { IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 
+import { ChartCard } from "@/components/common/chart-card"
 import { densifySpark, surgeRatio } from "@/lib/models/error-signal"
 
 import { IssueOccurrenceChart } from "./issue-occurrence-chart"
@@ -45,27 +46,21 @@ export function IssueOccurrencePanel({
 	}, [data, window])
 
 	return (
-		<section
-			aria-labelledby="occurrence-chart-heading"
-			className="flex shrink-0 flex-col gap-3.5 rounded-xl border bg-card px-5 py-4"
+		<ChartCard
+			title="Occurrences"
+			scope={
+				<span className="text-2xs text-muted-foreground">
+					peak <span className="tabular-nums">{formatNumber(peak)}</span> per{" "}
+					{formatBucket(window.bucketMs)}
+				</span>
+			}
+			legend={surging ? <Eyebrow className="text-severity-error">Surging</Eyebrow> : null}
+			className="shrink-0"
 		>
-			<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-				<div className="flex items-baseline gap-2.5">
-					<h2
-						id="occurrence-chart-heading"
-						className="font-display text-base font-semibold tracking-[-0.01em] text-foreground"
-					>
-						Occurrences
-					</h2>
-					<span className="text-sm text-muted-foreground">
-						peak <span className="tabular-nums">{formatNumber(peak)}</span> per{" "}
-						{formatBucket(window.bucketMs)}
-					</span>
-				</div>
-				{surging ? <Eyebrow className="text-severity-error">Surging</Eyebrow> : null}
+			<div className="px-3 pt-2 pb-3">
+				<IssueOccurrenceChart data={data} severity={severity} />
 			</div>
-			<IssueOccurrenceChart data={data} severity={severity} />
-		</section>
+		</ChartCard>
 	)
 }
 

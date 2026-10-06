@@ -6,33 +6,29 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
-	resolvePlotColor,
-	usePlotChromeColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { useTheme } from "@maple/ui/hooks/use-theme"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartLoading } from "@maple/ui/components/charts"
 import { cn } from "@maple/ui/lib/utils"
 
 import type { PlanetScaleInfraTimeseriesRow } from "@/api/warehouse/planetscale-infra"
 import { formatNumber } from "@maple/ui/lib/format"
-import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "../chart-utils"
 import {
 	chartEventMarkerMarks,
 	placeMarkersInWindow,
 	type ChartEventMarker,
 } from "../primitives/chart-event-markers"
 import { formatPercent } from "@maple/ui/lib/format"
-import { CHART_HEIGHT, ChartCard, ChartCardMessage } from "../primitives/chart-card"
+import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard, ChartCardMessage } from "@/components/common/chart-card"
 import { formatLag, formatStoragePercent } from "./metrics"
 
 export type PlanetScaleMetric =
@@ -50,19 +46,13 @@ const METRIC_LABELS: Record<PlanetScaleMetric, string> = {
 	replicaLagMaxSeconds: "Replica lag (max)",
 } satisfies Record<PlanetScaleMetric, string>
 
-/**
- * Tokens, plus the literal each falls back to.
- *
- * `var(--chart-2)` paints on SVG and resolves to NOTHING on canvas, so the token
- * is read off the document before it reaches a definition.
- */
 const METRIC_COLORS = {
-	connectionsAvg: ["--chart-1", "#6366f1"],
-	cpuMaxPercent: ["--chart-2", "#22d3ee"],
-	memMaxPercent: ["--chart-3", "#a78bfa"],
-	storageUsedPercent: ["--chart-5", "#f472b6"],
-	replicaLagMaxSeconds: ["--chart-4", "#fbbf24"],
-} satisfies Record<PlanetScaleMetric, readonly [token: string, fallback: string]>
+	connectionsAvg: "--chart-1",
+	cpuMaxPercent: "--chart-2",
+	memMaxPercent: "--chart-3",
+	storageUsedPercent: "--chart-5",
+	replicaLagMaxSeconds: "--chart-4",
+} satisfies Record<PlanetScaleMetric, string>
 
 function formatMetricValue(value: number, metric: PlanetScaleMetric): string {
 	if (metric === "cpuMaxPercent" || metric === "memMaxPercent") return formatPercent(value / 100)
@@ -78,9 +68,7 @@ const isPercentMetric = (metric: PlanetScaleMetric) =>
 export function PlanetScaleChartLoading({ metric }: { metric: PlanetScaleMetric }) {
 	return (
 		<ChartCard title={METRIC_LABELS[metric]} legend={null}>
-			<div className="px-3 pb-3 pt-2" style={{ height: CHART_HEIGHT }}>
-				<Skeleton className="h-full w-full" />
-			</div>
+			<ChartLoading variant="line" height={CHART_HEIGHT} className="px-3 pt-2 pb-3" />
 		</ChartCard>
 	)
 }
@@ -112,16 +100,20 @@ export function PlanetScaleChart({
 	emptyMessage?: ReactNode
 	className?: string
 }) {
-	const chromeColors = usePlotChromeColors()
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
-	const { theme } = useTheme()
-	// `theme` is in the deps but not in the body on purpose: `resolvePlotColor`
-	// reads computed style, so the colour has to be re-resolved when the theme
-	// flips even though nothing here references it.
-	const color = useMemo(() => {
-		const [token, fallback] = METRIC_COLORS[metric]
-		return resolvePlotColor(token, fallback)
-	}, [metric, theme])
+	const series = useMemo<CursorPlotSeries<MetricPoint>[]>(
+		() => [
+			{
+				key: metric,
+				label: METRIC_LABELS[metric],
+				color: METRIC_COLORS[metric],
+				value: (point: MetricPoint) => point.value,
+				format: (value: number) => formatMetricValue(value, metric),
+			},
+		],
+		[metric],
+	)
+	const plot = useCursorPlot(series)
+	const color = plot.color(metric)
 
 	const data = useMemo<MetricPoint[]>(
 		() =>
@@ -173,18 +165,6 @@ export function PlanetScaleChart({
 		)
 	}, [data, metric])
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<MetricPoint>[]>(
-		() => [
-			{
-				label: METRIC_LABELS[metric],
-				color,
-				value: (point: MetricPoint) => point.value,
-				format: (value: number) => formatMetricValue(value, metric),
-			},
-		],
-		[metric, color],
-	)
-
 	const definition = useMemo(() => {
 		const at = (point: MetricPoint) => point.date
 		// A bucket with no sample is a hole in the data; bridging it would draw a
@@ -202,8 +182,8 @@ export function PlanetScaleChart({
 					strokeWidth: 1.5,
 					curve: d3Curve(curveMonotoneX),
 				}),
-				focusDot(data, at, value, color, chromeColors),
-				focusCrosshair(chromeColors),
+				focusDot(data, at, value, color, plot.chrome),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: axis.x,
@@ -226,9 +206,9 @@ export function PlanetScaleChart({
 			margin: { left: 52, top: 12, right: 12 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [data, axis, placed, yDomain, color, chromeColors, metric, focusStore])
+	}, [data, axis, placed, yDomain, color, plot, metric])
 
 	return (
 		<ChartCard
@@ -240,21 +220,14 @@ export function PlanetScaleChart({
 			{!hasValues ? (
 				<ChartCardMessage>{emptyMessage ?? CHART_EMPTY_MESSAGE}</ChartCardMessage>
 			) : (
-				<div className="w-full" style={{ height: CHART_HEIGHT }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel={METRIC_LABELS[metric]}
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(point: MetricPoint) => axis.heading(point.bucket)}
-							/>
-						)}
-					/>
-				</div>
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={series}
+					heading={(point: MetricPoint) => axis.heading(point.bucket)}
+					ariaLabel={METRIC_LABELS[metric]}
+					height={CHART_HEIGHT}
+				/>
 			)}
 		</ChartCard>
 	)

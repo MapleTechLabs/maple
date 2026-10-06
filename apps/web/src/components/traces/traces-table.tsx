@@ -18,8 +18,9 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Badge } from "@maple/ui/components/ui/badge"
-import { LoadingMoreRow, ListFooter } from "@maple/ui/components/ui/list-footer"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { VirtualTableBody } from "@/components/common/virtual-table-body"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
@@ -391,8 +392,6 @@ function TracesTableView({
 		overscan: 10,
 	})
 
-	const virtualItems = virtualizer.getVirtualItems()
-
 	useVirtualReachEnd(virtualizer, {
 		count: rows.length,
 		hasMore: hasNextPage,
@@ -476,68 +475,46 @@ function TracesTableView({
 							</TableRow>
 						))}
 					</TableHeader>
-					<TableBody>
-						{virtualItems.length > 0 && (
-							<tr style={{ height: virtualItems[0].start }} aria-hidden="true">
-								<td />
-							</tr>
-						)}
-						{virtualItems.map((virtualRow) => {
-							const row = rows[virtualRow.index]
-							return (
-								<TableRow
-									key={row.id}
-									ref={virtualizer.measureElement}
-									data-index={virtualRow.index}
-									data-focused={virtualRow.index === focusedIndex || undefined}
-									data-active={row.original.spanId === activeRowSpanId || undefined}
-									className="hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-									tabIndex={0}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											onTraceClick(row.original)
-										}
-									}}
-								>
-									{row.getAllCells().map((cell) => {
-										const { responsive, cellClass } = columnClasses(cell.column.id)
-										return (
-											<TableCell
-												key={cell.id}
-												className={cn(
-													"p-2 whitespace-normal leading-normal",
-													responsive,
-													cellClass,
-												)}
-											>
-												{flexRender(cell.column.columnDef.cell, cell.getContext())}
-											</TableCell>
-										)
-									})}
-								</TableRow>
-							)
-						})}
-						{virtualItems.length > 0 && (
-							<tr
-								style={{
-									height:
-										virtualizer.getTotalSize() -
-										virtualItems[virtualItems.length - 1].end,
+					<VirtualTableBody
+						virtualizer={virtualizer}
+						rows={rows}
+						colSpan={TRACE_COLUMNS.length}
+						loadingMore={isFetchingNextPage}
+						loadingLabel="Loading more traces…"
+						renderRow={(row, index, measureRef) => (
+							<TableRow
+								key={row.id}
+								ref={measureRef}
+								data-index={index}
+								data-focused={index === focusedIndex || undefined}
+								data-active={row.original.spanId === activeRowSpanId || undefined}
+								className="hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+								tabIndex={0}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault()
+										onTraceClick(row.original)
+									}
 								}}
-								aria-hidden="true"
 							>
-								<td />
-							</tr>
+								{row.getAllCells().map((cell) => {
+									const { responsive, cellClass } = columnClasses(cell.column.id)
+									return (
+										<TableCell
+											key={cell.id}
+											className={cn(
+												"p-2 whitespace-normal leading-normal",
+												responsive,
+												cellClass,
+											)}
+										>
+											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+										</TableCell>
+									)
+								})}
+							</TableRow>
 						)}
-						{isFetchingNextPage && (
-							<tr>
-								<td colSpan={TRACE_COLUMNS.length}>
-									<LoadingMoreRow label="Loading more traces…" />
-								</td>
-							</tr>
-						)}
-					</TableBody>
+					/>
 				</Table>
 			</div>
 

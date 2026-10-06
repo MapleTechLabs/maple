@@ -2,6 +2,7 @@ import type { RendererComponentProps } from "./types"
 import { cn } from "@maple/ui/lib/utils"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { formatDuration } from "@maple/ui/lib/format"
+import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -75,8 +76,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 								<TableCell
 									className={cn(
 										"py-1 text-right font-mono",
-										trace.durationMs > 1000 && "text-severity-warn",
-										trace.durationMs > 5000 && "text-severity-error",
+										latencyToneClass(trace.durationMs, "p95"),
 									)}
 								>
 									{formatDuration(trace.durationMs)}

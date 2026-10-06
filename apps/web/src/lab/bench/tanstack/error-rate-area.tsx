@@ -16,13 +16,13 @@ import {
 	usePlotChromeColors,
 	usePlotColors,
 	verticalGradient,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { type TanstackRenderer, plotRendererFor } from "@/lab/bench/tanstack/renderer-arm"
 const ERROR_RATE_TOKENS = {
-	error: ["--chart-error", "#ef4444"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	error: "--chart-error",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * TanStack port of `packages/ui/src/components/charts/area/error-rate-area-chart.tsx`.

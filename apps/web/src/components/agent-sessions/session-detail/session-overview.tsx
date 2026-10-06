@@ -6,6 +6,7 @@ import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { ArrowRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
@@ -420,9 +421,17 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 			</Eyebrow>
 			{summary.tools.length > 0 && (
 				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-					<LedgerStat label="Distinct" value={formatNumber(summary.tools.length)} />
-					<LedgerStat label="Calls" value={formatNumber(calls)} />
-					<LedgerStat label="Tool time" value={formatToolDuration(toolMs)} tone="text-chart-4" />
+					<KeyValueList layout="inline">
+						<KeyValue label="Distinct" mono valueClassName="font-semibold">
+							{formatNumber(summary.tools.length)}
+						</KeyValue>
+						<KeyValue label="Calls" mono valueClassName="font-semibold">
+							{formatNumber(calls)}
+						</KeyValue>
+						<KeyValue label="Tool time" mono valueClassName="font-semibold text-chart-4">
+							{formatToolDuration(toolMs)}
+						</KeyValue>
+					</KeyValueList>
 					{failed > 0 && (
 						<span className="flex items-baseline gap-1.5 rounded-sm bg-severity-error/12 px-1.5 py-0.5">
 							<span className="font-mono font-semibold text-severity-error text-xs tabular-nums">
@@ -434,17 +443,6 @@ function ToolLedgerHeader({ summary }: { summary: SessionSummary }) {
 				</div>
 			)}
 		</div>
-	)
-}
-
-function LedgerStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-	return (
-		<span className="flex items-baseline gap-1.5">
-			<Eyebrow>{label}</Eyebrow>
-			<span className={cn("font-mono font-semibold text-xs tabular-nums", tone ?? "text-foreground")}>
-				{value}
-			</span>
-		</span>
 	)
 }
 

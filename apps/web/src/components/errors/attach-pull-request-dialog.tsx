@@ -28,6 +28,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
+import { IN_FLIGHT_SOFT } from "./workflow-badge"
+
 import { DocsLink } from "@/components/common/docs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -45,8 +47,9 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
  */
 
 export const PULL_REQUEST_STATE_TONE = {
-	open: TONE_SOFT.ok,
-	merged: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+	// Open is work under way; merged is done.
+	open: IN_FLIGHT_SOFT,
+	merged: TONE_SOFT.ok,
 	closed: TONE_SOFT.neutral,
 } satisfies Record<PullRequestSummary["state"], string>
 

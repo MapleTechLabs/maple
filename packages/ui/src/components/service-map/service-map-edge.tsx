@@ -1,6 +1,7 @@
 import { memo, useEffect, useId } from "react"
 import { getSmoothStepPath, type EdgeProps } from "@xyflow/react"
 import { getServiceColor, getValueHue } from "../../lib/colors"
+import { errorRateClass } from "../../lib/error-rate"
 import { getDbNodeColor } from "./service-map-db"
 import {
 	isDbNodeId,
@@ -225,15 +226,7 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 							{hasSampling ? "~" : ""}
 							{formatCallCount(hasSampling ? estimatedCallCount : callCount)}
 							{errorRate > 0 && (
-								<span
-									className={
-										errorRate > 0.05
-											? " text-severity-error"
-											: errorRate > 0.01
-												? " text-severity-warn"
-												: ""
-									}
-								>
+								<span className={errorRateClass(errorRate, { neutral: "" })}>
 									{" "}
 									{(errorRate * 100).toFixed(1)}%
 								</span>

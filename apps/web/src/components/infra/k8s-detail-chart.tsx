@@ -1,6 +1,7 @@
 import { useAtomValue } from "@/lib/effect-atom"
 
 import { ChartError, ChartLoading } from "@maple/ui/components/charts"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import {
 	podInfraTimeseriesResultAtom,
@@ -107,7 +108,7 @@ export function K8sMetricChartView({
 	height = CHART_HEIGHT,
 }: K8sMetricChartViewProps) {
 	return (
-		<div className="rounded-lg border bg-card p-4">
+		<Panel padded>
 			<InfraMetricChart
 				rows={rows}
 				unit={unit}
@@ -119,7 +120,7 @@ export function K8sMetricChartView({
 				linkedChartId={syncId != null ? (chartId ?? seriesLabel ?? "k8s-metric") : undefined}
 				header={K8sSeriesSummary}
 			/>
-		</div>
+		</Panel>
 	)
 }
 

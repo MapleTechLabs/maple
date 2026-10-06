@@ -10,7 +10,7 @@ import { spanStartMs as spanStartMsOf } from "../../lib/span-tree"
 import { getServiceColor } from "../../lib/colors"
 import { getCacheInfo, cacheResultStyles } from "../../lib/cache"
 import { getHttpInfo, HTTP_METHOD_COLORS, httpStatusTone } from "../../lib/http"
-import { TONE_TEXT } from "../../lib/tone"
+import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
 import { getCloudPlatform, outcomeBadgeStyle } from "../../lib/cloud-platforms"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "../../lib/span-kind"
 import { PixelDurationBar } from "./pixel-duration-bar"
@@ -112,18 +112,18 @@ function SpanRowImpl({
 
 	const barColor =
 		httpTone === "crit"
-			? "bg-destructive"
+			? TONE_FILL.crit
 			: httpTone === "warn"
-				? "bg-severity-warn"
+				? TONE_FILL.warn
 				: span.statusCode === "Error"
-					? "bg-destructive"
+					? TONE_FILL.crit
 					: "bg-primary"
 
 	return (
 		<div
 			className={cn(
 				"@container/row group flex items-center border-b py-1.5 hover:bg-muted/50 cursor-pointer px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-				span.statusCode === "Error" && "bg-destructive/5",
+				span.statusCode === "Error" && "bg-severity-error/5",
 				isSelected && "bg-primary/5 border-l-2 border-l-primary",
 			)}
 			role="button"

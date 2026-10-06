@@ -4,6 +4,7 @@ import { Suspense } from "react"
 import { Result } from "@/lib/effect-atom"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
+import { ChartLoading } from "@maple/ui/components/charts/_shared/chart-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { ErrorState } from "@/components/common/error-state"
@@ -164,7 +165,7 @@ export function MetricDetail({ metricName, state, startTime, endTime, onPatch }:
 		.onInitial(() => (
 			<div className="space-y-4">
 				<Skeleton className="h-14 w-full" />
-				<Skeleton className="h-80 w-full" />
+				<ChartLoading variant="area" height={320} />
 			</div>
 		))
 		.onError((error) => <ErrorState error={error} title="Failed to load metric" />)

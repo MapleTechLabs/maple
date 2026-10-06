@@ -1,3 +1,4 @@
+import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -48,7 +49,7 @@ import {
 	type VariantDifference,
 } from "@/lib/agent-sessions/tool-error-display"
 
-import { ErrorTextHeading, FailureStatusLine, TrendBars, windowRangeLabel } from "./tool-error-parts"
+import { ErrorTextHeading, FailureStatusLine, windowRangeLabel } from "./tool-error-parts"
 import type { PreparedToolError, ToolErrorsWindow } from "./tool-errors-table"
 
 /** One group's facts, read once per group — they do not page. */
@@ -314,7 +315,15 @@ export function ToolErrorModal({
 										max {formatToolCount(Math.max(0, ...group.spark))}
 									</span>
 								</div>
-								<TrendBars counts={group.spark} width={340} height={44} radius={2} />
+								<MiniBars
+									values={group.spark}
+									color="var(--color-severity-error)"
+									floor={4.5}
+									floorColor="var(--input)"
+									minHeight={6.8}
+									gap={group.spark.length > 12 ? 0.3 : 3.5}
+									className="h-11 w-[340px] shrink-0"
+								/>
 								<div className="flex justify-between font-mono text-2xs leading-3.5 text-muted-foreground/70">
 									<span>
 										{windowRangeLabel(range.startMs, range.startMs, effectiveTimezone)}

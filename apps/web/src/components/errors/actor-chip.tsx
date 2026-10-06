@@ -3,6 +3,8 @@ import { internalAgentLabel } from "@maple/domain/system-agents"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { gradientFor } from "@maple/ui/lib/replay"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { AGENT_ACCENT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import { FaceRobotIcon } from "@/components/icons"
@@ -93,7 +95,7 @@ const SIZE_CLASS = {
  * Round avatar for an actor. People get their Clerk photo, or a per-user
  * gradient with initials — the same identity treatment the Sessions list uses,
  * so the same person looks the same across the product. Agents render in the
- * violet that already means "not a human" everywhere in this timeline: Maple's
+ * agent accent that already means "not a human" everywhere in this timeline: Maple's
  * own subsystems carry the Maple mark, third-party agents the robot.
  */
 export function ActorAvatar({
@@ -131,7 +133,8 @@ export function IdentityAvatar({
 				aria-hidden
 				className={cn(
 					base,
-					"bg-violet-500/15 text-violet-600 ring-1 ring-violet-500/25 dark:text-violet-300",
+					AGENT_ACCENT.soft,
+					AGENT_ACCENT.ring,
 				)}
 			>
 				{identity.internal ? (
@@ -179,12 +182,12 @@ export function ActorChip({
 }) {
 	const identity = useActorIdentity(actor)
 	if (!identity) {
-		return <span className="text-xs text-muted-foreground">–</span>
+		return <span className="text-xs text-muted-foreground">{EMPTY_VALUE}</span>
 	}
 
 	const chipClass = cn(
 		"inline-flex max-w-full items-center gap-1.5 align-middle text-xs",
-		identity.kind === "agent" ? "text-violet-600 dark:text-violet-300" : "text-muted-foreground",
+		identity.kind === "agent" ? AGENT_ACCENT.text : "text-muted-foreground",
 		className,
 	)
 	const body = (

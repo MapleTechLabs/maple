@@ -50,7 +50,8 @@ export function TableHeader({
 	return (
 		<thead
 			className={cn(
-				"[&_tr]:border-b in-data-[variant=bare]:[&_tr]:border-0",
+				// Header rows never take the body's hover tint (descendant selector out-specifies it).
+				"[&_tr]:border-b [&_tr]:hover:bg-transparent in-data-[variant=bare]:[&_tr]:border-0",
 				sticky && "sticky top-0 z-10 bg-background",
 				className,
 			)}

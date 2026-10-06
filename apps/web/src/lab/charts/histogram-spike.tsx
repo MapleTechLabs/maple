@@ -1,4 +1,4 @@
-import { PlotFrame, cursorTooltip, usePlotColors, type PlotColorToken } from "@maple/ui/components/plot"
+import { PlotFrame, cursorTooltip, usePlotColors, type PlotColorSource } from "@maple/ui/components/plot"
 import { formatNumber } from "@maple/ui/lib/format"
 import { defineChart, rect } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -20,8 +20,8 @@ export interface HistogramSpikeRow {
 }
 
 const HISTOGRAM_TOKENS = {
-	bar: ["--chart-1", "#6366f1"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	bar: "--chart-1",
+} as const satisfies Record<string, PlotColorSource>
 
 /** Bin count, matching the production chart's `histogram.bucketCount` default. */
 const BIN_COUNT = 30

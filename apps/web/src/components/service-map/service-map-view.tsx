@@ -4,9 +4,12 @@ import {
 	formatLatency,
 	formatNumber,
 	formatPercent,
+	EMPTY_VALUE,
+	formatRate,
 	pluralize,
 } from "@maple/ui/lib/format"
 import { Separator } from "@maple/ui/components/ui/separator"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SampledValue } from "@/components/services/sampled-value"
 import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
@@ -100,7 +103,6 @@ import {
 	type PlanetScaleNodeMetrics,
 	type ServiceMapColorMode,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { formatRate } from "@maple/ui/components/service-map/service-map-node"
 import type { Tone } from "@maple/ui/lib/tone"
 import type {
 	HyperdriveConfigInput,
@@ -532,24 +534,18 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 				</div>
 			</div>
 
-			<div className="grid grid-cols-2 gap-2 text-3xs">
-				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-					<span className="text-muted-foreground">CPU</span>
-					<span className="font-mono tabular-nums text-foreground">
-						{workload.avgCpuLimitUtilization == null
-							? "—"
-							: formatPercent(workload.avgCpuLimitUtilization)}
-					</span>
-				</div>
-				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-					<span className="text-muted-foreground">Memory</span>
-					<span className="font-mono tabular-nums text-foreground">
-						{workload.avgMemoryLimitUtilization == null
-							? "—"
-							: formatPercent(workload.avgMemoryLimitUtilization)}
-					</span>
-				</div>
-			</div>
+			<KeyValueList className="grid grid-cols-2 gap-2 text-3xs">
+				<KeyValue label="CPU" mono className="rounded bg-muted/30 px-2 py-1">
+					{workload.avgCpuLimitUtilization == null
+						? EMPTY_VALUE
+						: formatPercent(workload.avgCpuLimitUtilization)}
+				</KeyValue>
+				<KeyValue label="Memory" mono className="rounded bg-muted/30 px-2 py-1">
+					{workload.avgMemoryLimitUtilization == null
+						? EMPTY_VALUE
+						: formatPercent(workload.avgMemoryLimitUtilization)}
+				</KeyValue>
+			</KeyValueList>
 
 			<div className="flex items-center gap-3 pt-0.5">
 				{knownKind && (
@@ -944,26 +940,10 @@ function PlanetScaleSection({
 								</div>
 								<div className="flex shrink-0 items-center gap-3 font-mono text-3xs tabular-nums text-muted-foreground">
 									<span>{formatRate(row.connectionsAvg)} conns</span>
-									<span
-										className={cn(
-											row.cpuMaxPercent > 80
-												? "text-severity-error"
-												: row.cpuMaxPercent > 60
-													? "text-severity-warn"
-													: undefined,
-										)}
-									>
+									<span className={utilizationClass(row.cpuMaxPercent)}>
 										{row.cpuMaxPercent.toFixed(0)}% cpu
 									</span>
-									<span
-										className={cn(
-											row.replicaLagMaxSeconds > 10
-												? "text-severity-error"
-												: row.replicaLagMaxSeconds > 1
-													? "text-severity-warn"
-													: undefined,
-										)}
-									>
+									<span className={lagClass(row.replicaLagMaxSeconds)}>
 										{formatReplicationLag(row.replicaLagMaxSeconds)} lag
 									</span>
 								</div>

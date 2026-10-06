@@ -22,7 +22,7 @@ import {
 } from "@/components/anomalies/anomaly-format"
 import { useAnomalyMutations } from "@/components/anomalies/use-anomaly-mutations"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { anomalyIncidentFromV2, anomalyTimeseriesFromV2 } from "@/lib/services/anomalies"
@@ -291,7 +291,7 @@ function AnomalyDetailBody({
 							</section>
 
 							<section aria-labelledby="linked-issue-heading">
-								<SectionHeader id="linked-issue-heading" label="Linked issue" />
+								<SectionHeading variant="eyebrow" id="linked-issue-heading" title="Linked issue" />
 								<AnomalyLinkedIssueCard
 									incident={incident}
 									onOpenLinkDialog={() => setLinkDialogOpen(true)}

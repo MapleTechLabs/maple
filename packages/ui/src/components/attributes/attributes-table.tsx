@@ -6,6 +6,7 @@ import { Option } from "effect"
 import { trySync } from "../../lib/try-sync"
 import { ChevronRightIcon } from "../icons"
 import { cn } from "../../lib/utils"
+import { Badge } from "../ui/badge"
 import { useCopy } from "../../hooks/use-copy"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible"
 import { groupAttributesByNamespace } from "../../lib/log-attributes"
@@ -49,7 +50,7 @@ export function CopyableValue({
 				// hovering the thing you just clicked.
 				status === "idle" && "hover:bg-muted/50",
 				status === "copied" && "bg-severity-info/20",
-				status === "error" && "bg-destructive/20",
+				status === "error" && "bg-severity-error/20",
 				className,
 			)}
 			onClick={(event) => {
@@ -154,15 +155,16 @@ function AttributeFilterAction({
 	children: React.ReactNode
 }) {
 	return (
-		<button
-			type="button"
+		<Badge
+			variant="tag"
+			render={<button type="button" />}
 			aria-label={label}
 			title={label}
 			onClick={onClick}
-			className="rounded-sm px-1 py-0.5 font-sans text-3xs uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			className="bg-transparent font-sans transition-colors"
 		>
 			{children}
-		</button>
+		</Badge>
 	)
 }
 

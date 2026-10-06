@@ -8,7 +8,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { formatDuration } from "../../lib/format"
 import { summarizeClockSkew } from "../../lib/span-tree"
 import type { SpanNode } from "../../lib/types"
-import { getServiceColor } from "../../lib/colors"
 import { isEditableTarget } from "../../lib/keyboard"
 import { useContainerSize } from "../../hooks/use-container-size"
 import { useTraceView } from "./trace-view-context"
@@ -40,6 +39,7 @@ import {
 	SIDEBAR_WIDTH_NARROW_MIN,
 	SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./trace-timeline-types"
+import { ServiceDot } from "../service-dot"
 
 function readSidebarWidth(): number {
 	if (typeof window === "undefined") return SIDEBAR_WIDTH_DEFAULT
@@ -699,15 +699,12 @@ export function TraceTimeline() {
 				<div className="-mx-2 flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto px-2 [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden @min-[560px]/timeline:mx-0 @min-[560px]/timeline:flex-wrap @min-[560px]/timeline:justify-end @min-[560px]/timeline:overflow-x-visible @min-[560px]/timeline:px-0 @min-[560px]/timeline:[mask-image:none]">
 					{services.map((service) => (
 						<div key={service} className="flex shrink-0 items-center gap-1">
-							<div
-								className="size-2 shrink-0"
-								style={{ backgroundColor: getServiceColor(service) }}
-							/>
+							<ServiceDot serviceName={service} />
 							<span className="font-medium whitespace-nowrap">{service}</span>
 						</div>
 					))}
 					<div className="flex shrink-0 items-center gap-1">
-						<div className="size-2 bg-destructive shrink-0" />
+						<span aria-hidden className="size-2 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]" />
 						<span className="font-medium">Error</span>
 					</div>
 				</div>

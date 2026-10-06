@@ -1,7 +1,8 @@
 import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import type { ReactNode } from "react"
 import { Result } from "@/lib/effect-atom"
-import { ChartLineIcon, DatabaseIcon, FileIcon, GridSquareCirclePlusIcon } from "@/components/icons"
+import { DatabaseIcon, type IconComponent } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
@@ -18,22 +19,22 @@ type StatKey = "logs" | "traces" | "metrics" | "dataSize"
 const STATS: ReadonlyArray<{
 	key: StatKey
 	label: string
-	icon: typeof FileIcon
+	icon: IconComponent
 	tone: string
 	format: (n: number) => string
 }> = [
-	{ key: "logs", label: "Logs", icon: FileIcon, tone: "text-chart-2", format: formatNumber },
+	{ key: "logs", label: "Logs", icon: CONCEPT_ICON.log, tone: "text-chart-2", format: formatNumber },
 	{
 		key: "traces",
 		label: "Traces",
-		icon: GridSquareCirclePlusIcon,
+		icon: CONCEPT_ICON.trace,
 		tone: "text-chart-5",
 		format: formatNumber,
 	},
 	{
 		key: "metrics",
 		label: "Metrics",
-		icon: ChartLineIcon,
+		icon: CONCEPT_ICON.metric,
 		tone: "text-chart-3",
 		format: formatNumber,
 	},

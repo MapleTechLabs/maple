@@ -15,7 +15,7 @@ import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/a
 
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
-import { BarSpark } from "@/components/common/stat-rail"
+import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { SPARK_COLOR } from "../../infra/severity-tokens"
 import {
 	FileCodeIcon,
@@ -192,9 +192,10 @@ export function AiProductCard({
 					{visits === 1 ? "visit sent" : "visits sent"}
 				</span>
 			</div>
-			<BarSpark
+			<MiniBars
 				values={referrals?.spark ?? []}
 				color={SPARK_COLOR.neutral}
+				opacityRamp
 				className={cn("mt-3 h-8 w-full", visits === 0 && "opacity-40")}
 			/>
 			<div className="mt-3 truncate text-2xs text-muted-foreground" title={line.title}>

@@ -15,7 +15,6 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 
 import {
-	AlertWarningIcon,
 	BellIcon,
 	BoltIcon,
 	ChartBarIcon,
@@ -24,13 +23,12 @@ import {
 	CodeIcon,
 	type IconComponent,
 	MagnifierIcon,
-	NetworkNodesIcon,
 	RadioCheckedIcon,
 	RocketIcon,
 	ServerIcon,
 	SlidersIcon,
-	SquareTerminalIcon,
 } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import type { ActionKind } from "./action-target"
 import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData } from "./provenance-graph"
 
@@ -39,7 +37,7 @@ import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData }
  * -----------------------------------------------------------------------------------------------*/
 
 const GLYPH: Record<FlowGlyph, IconComponent> = {
-	issue: AlertWarningIcon,
+	issue: CONCEPT_ICON.error,
 	check: RadioCheckedIcon,
 	incident: BellIcon,
 	investigation: MagnifierIcon,
@@ -312,9 +310,9 @@ export const ACTION_GLYPH: Record<ActionKind, { Icon: IconComponent; label: stri
 	rollback: { Icon: RocketIcon, label: "Deploy or rollback" },
 	alert: { Icon: BellIcon, label: "Alerting" },
 	dashboard: { Icon: ChartBarIcon, label: "Dashboard" },
-	traces: { Icon: NetworkNodesIcon, label: "Traces" },
-	logs: { Icon: SquareTerminalIcon, label: "Logs" },
-	issue: { Icon: AlertWarningIcon, label: "Error issue" },
+	traces: { Icon: CONCEPT_ICON.trace, label: "Traces" },
+	logs: { Icon: CONCEPT_ICON.log, label: "Logs" },
+	issue: { Icon: CONCEPT_ICON.error, label: "Error issue" },
 	config: { Icon: SlidersIcon, label: "Configuration" },
 	code: { Icon: CodeIcon, label: "Code change" },
 	service: { Icon: ServerIcon, label: "Service setup" },

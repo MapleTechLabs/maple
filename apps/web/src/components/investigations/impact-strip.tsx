@@ -1,7 +1,7 @@
 import { FactLane, FactStrip } from "@/components/errors/fact-strip"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 /**
@@ -44,11 +44,7 @@ export function ImpactStrip({ investigation }: { investigation: V2Investigation 
 					<span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 						{services.map((service) => (
 							<span key={service} className="flex items-center gap-1.5">
-								<span
-									aria-hidden
-									className="size-1.5 shrink-0 rounded-[3px]"
-									style={{ backgroundColor: getServiceColor(service) }}
-								/>
+								<ServiceDot serviceName={service} size="sm" />
 								<span className="text-foreground">{service}</span>
 							</span>
 						))}

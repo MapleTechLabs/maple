@@ -15,13 +15,13 @@ import {
 	minBarLength,
 	niceLinearDomain,
 	usePlotColors,
-	type PlotColorToken,
+	type PlotColorSource,
 } from "../../plot"
 import type { QueryBuilderHistogramChartProps } from "../_shared/chart-types"
 
 const HISTOGRAM_TOKENS = {
-	bar: ["--chart-1", "#6366f1"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	bar: "--chart-1",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Stable identity for the no-data case: `data ?? []` would allocate a fresh array

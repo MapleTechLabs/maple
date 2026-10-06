@@ -1,9 +1,10 @@
-import { formatLatency } from "../../lib/format"
+import { formatLatency, formatRate } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
 import { cn } from "../../lib/utils"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
-import { TONE_FILL } from "../../lib/tone"
+import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
+import { type UtilizationLevel, utilizationLevel } from "../../lib/utilization"
 import { latencyToneClass } from "../../lib/latency-tone"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
 import {
@@ -39,11 +40,12 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 	}
 }
 
-export function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
+// "ok" keeps the cell's default colour, as before.
+const UTILIZATION_TEXT = {
+	crit: TONE_TEXT.crit,
+	warn: TONE_TEXT.warn,
+	ok: undefined,
+} satisfies Record<UtilizationLevel, string | undefined>
 
 const HEALTH_DOT_CLASS = {
 	crit: TONE_FILL.crit,
@@ -214,13 +216,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 							<MetricCell
 								label="cpu"
 								value={`${planetscale.stats.cpuMaxPercent.toFixed(0)}%`}
-								valueClassName={
-									planetscale.stats.cpuMaxPercent > 80
-										? "text-severity-error"
-										: planetscale.stats.cpuMaxPercent > 60
-											? "text-severity-warn"
-											: undefined
-								}
+								valueClassName={UTILIZATION_TEXT[utilizationLevel(planetscale.stats.cpuMaxPercent / 100)]}
 							/>
 							<MetricCell
 								label="lag"

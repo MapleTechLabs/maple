@@ -211,7 +211,7 @@ export function ServiceApiTab({
 			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
 				<Table>
 					<TableHeader>
-						<TableRow className="border-b hover:bg-transparent">
+						<TableRow className="border-b">
 							<SortColumnHead
 								label="Endpoint"
 								sortKey="path"

@@ -1,4 +1,3 @@
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { IssueSeverity } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
@@ -11,7 +10,7 @@ import {
 
 import { ArrowPathIcon, DotsVerticalIcon } from "@/components/icons"
 import { SeverityBadge } from "@/components/errors/severity-badge"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DetailHeader } from "@/components/common/detail-header"
 import { investigationHeadline, investigationScope } from "./investigation-display"
 import { InvestigationStatusBadge, investigationKindLabel } from "./investigation-status"
 
@@ -44,41 +43,34 @@ export function InvestigationHeader({
 	const severity = asIssueSeverity(investigation.severity ?? investigation.snapshot.severity)
 
 	return (
-		<DashboardLayout.Header
-			titleContent={
-				<div className="min-w-0 space-y-2.5">
-					<Eyebrow as="div" className="flex flex-wrap items-center gap-x-2 gap-y-1">
-						<span>Investigation</span>
-						<span aria-hidden className="text-muted-foreground/40">
-							·
+		<DetailHeader
+			kind={["Investigation", investigationKindLabel(investigation.subject)]}
+			title={headline}
+			meta={
+				<>
+					<InvestigationStatusBadge status={investigation.status} />
+					{severity ? <SeverityBadge severity={severity} /> : null}
+					{/* `scope` is free text and a system-seeded investigation can carry a
+					    whole paragraph of it. One line, always. */}
+					{scope ? (
+						<span
+							title={scope}
+							className="min-w-0 max-w-[28rem] truncate text-sm text-muted-foreground"
+						>
+							{scope}
 						</span>
-						<span>{investigationKindLabel(investigation.subject)}</span>
-					</Eyebrow>
-					<DashboardLayout.Title title={headline}>{headline}</DashboardLayout.Title>
-					<div className="flex flex-wrap items-center gap-2">
-						<InvestigationStatusBadge status={investigation.status} />
-						{severity ? <SeverityBadge severity={severity} /> : null}
-						{/* `scope` is free text and a system-seeded investigation can carry a
-						    whole paragraph of it. One line, always. */}
-						{scope ? (
-							<span
-								title={scope}
-								className="min-w-0 max-w-[28rem] truncate text-sm text-muted-foreground"
-							>
-								{scope}
-							</span>
-						) : null}
-					</div>
-				</div>
+					) : null}
+				</>
 			}
-		>
-			<InvestigationActions
-				investigation={investigation}
-				busy={busy}
-				onResolve={onResolve}
-				onRestart={onRestart}
-			/>
-		</DashboardLayout.Header>
+			actions={
+				<InvestigationActions
+					investigation={investigation}
+					busy={busy}
+					onResolve={onResolve}
+					onRestart={onRestart}
+				/>
+			}
+		/>
 	)
 }
 

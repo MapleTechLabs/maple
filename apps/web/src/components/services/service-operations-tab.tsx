@@ -141,7 +141,7 @@ export function ServiceOperationsTab({
 			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
 				<Table>
 					<TableHeader>
-						<TableRow className="hover:bg-transparent border-b">
+						<TableRow className="border-b">
 							<HeadLabel className="pl-3">Operation</HeadLabel>
 							<SortColumnHead
 								label="Calls /s"

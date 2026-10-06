@@ -22,7 +22,7 @@ import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -47,11 +47,7 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 	return (
 		<section className="flex shrink-0 flex-col gap-4 rounded-xl border bg-card px-5 py-4">
 			<header className="flex items-center gap-2">
-				<span
-					aria-hidden
-					className="size-2 shrink-0 rounded-[3px]"
-					style={{ backgroundColor: getServiceColor(service) }}
-				/>
+				<ServiceDot serviceName={service} />
 				<span className="font-mono text-sm text-foreground">{service}</span>
 				{window.label ? (
 					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">

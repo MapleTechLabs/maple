@@ -1,23 +1,31 @@
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { SPARK_COLOR, VALUE_TONE, type Tone } from "@/components/infra/severity-tokens"
 
 interface StatRailProps {
 	children: React.ReactNode
 	/** Columns at the `md` breakpoint (always 2-up below it). Defaults to 4. */
-	columns?: 3 | 4
+	columns?: StatRailColumns
 	className?: string
+	"aria-busy"?: boolean
 }
 
-const COLUMNS_CLASS: Record<3 | 4, string> = {
+type StatRailColumns = 2 | 3 | 4 | 5
+
+const COLUMNS_CLASS: Record<StatRailColumns, string> = {
+	2: "md:grid-cols-2",
 	3: "md:grid-cols-3",
 	4: "md:grid-cols-4",
-} satisfies Record<3 | 4, string>
+	5: "md:grid-cols-5",
+} satisfies Record<StatRailColumns, string>
 
-export function StatRail({ children, columns = 4, className }: StatRailProps) {
+export function StatRail({ children, columns = 4, className, "aria-busy": ariaBusy }: StatRailProps) {
 	return (
 		<div
+			aria-busy={ariaBusy}
 			className={cn(
 				"grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card md:divide-y-0",
 				COLUMNS_CLASS[columns],
@@ -26,6 +34,54 @@ export function StatRail({ children, columns = 4, className }: StatRailProps) {
 		>
 			{children}
 		</div>
+	)
+}
+
+type StatFigureSize = "sm" | "md" | "lg"
+
+const FIGURE_VALUE: Record<StatFigureSize, string> = {
+	sm: "text-xl",
+	md: "text-2xl tracking-tight",
+	lg: "text-[26px] tracking-[-0.01em]",
+} satisfies Record<StatFigureSize, string>
+
+const FIGURE_UNIT: Record<StatFigureSize, string> = {
+	sm: "text-2xs",
+	md: "text-xs",
+	lg: "text-2xs",
+} satisfies Record<StatFigureSize, string>
+
+/** A headline number with a muted unit or caption riding its baseline; never wraps. */
+export function StatFigure({
+	value,
+	unit,
+	size = "md",
+	mono = true,
+	className,
+	valueClassName,
+}: {
+	value: React.ReactNode
+	unit?: React.ReactNode
+	size?: StatFigureSize
+	/** Mono figures for readouts; `false` sets the value in the display face. */
+	mono?: boolean
+	className?: string
+	valueClassName?: string
+}) {
+	return (
+		<span className={cn("flex items-baseline gap-1.5 whitespace-nowrap", className)}>
+			<span
+				className={cn(
+					"font-semibold tabular-nums leading-none",
+					mono ? "font-mono" : "font-display",
+					FIGURE_VALUE[size],
+					valueClassName,
+				)}
+			>
+				{value}
+			</span>
+			{unit ? <span className={cn("text-muted-foreground", FIGURE_UNIT[size])}>{unit}</span> : null}
+		</span>
 	)
 }
 
@@ -60,19 +116,11 @@ interface StatRailItemProps {
 	valueClassName?: string
 	/** Accessible name for the selectable tile when the eyebrow alone is ambiguous. */
 	ariaLabel?: string
+	/** `sm` is the dense tile: tighter padding, a smaller value and no reserved spark slot. */
+	size?: "md" | "sm"
+	/** Muted text set inline after the value, e.g. a unit or "of 12 total". */
+	hint?: React.ReactNode
 }
-
-/**
- * The active-tile marker, built the same way the sidebar builds its own: a 2px
- * lane reserved on *every* tile, painted only on the selected one, with the
- * corner squared so it reads as a rule against the tile edge rather than a
- * rounded sliver floating inside it. Reserving the lane on all of them is what
- * keeps the contents from shifting sideways as the selection moves.
- *
- * See `ACTIVE_RAIL` in `components/dashboard/app-sidebar.tsx` — same idiom, one
- * level out.
- */
-const RAIL_LANE = "before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors"
 
 export function StatRailItem({
 	eyebrow,
@@ -91,7 +139,10 @@ export function StatRailItem({
 	className,
 	valueClassName,
 	ariaLabel,
+	size = "md",
+	hint,
 }: StatRailItemProps) {
+	const small = size === "sm"
 	const body = (
 		<>
 			<div className="flex items-baseline justify-between gap-3">
@@ -110,26 +161,25 @@ export function StatRailItem({
 						</span>
 					) : null)}
 			</div>
-			<div className="mt-2 flex items-end justify-between gap-3">
+			<div className={cn("flex items-end justify-between gap-3", small ? "mt-1.5" : "mt-2")}>
 				{/* The value never wraps and never yields width; the sparkline gives way
 				    instead. A two-line "12m 45s" pushes its whole row taller than the
 				    tiles beside it, and the number is the thing the tile is for. */}
-				<div
-					className={cn(
-						"shrink-0 whitespace-nowrap font-mono text-[26px] font-semibold tabular-nums leading-none tracking-[-0.01em]",
-						VALUE_TONE[tone],
-						valueClassName,
-					)}
-				>
-					{value}
-				</div>
+				<StatFigure
+					value={value}
+					unit={hint}
+					size={small ? "sm" : "lg"}
+					className="shrink-0"
+					valueClassName={cn(VALUE_TONE[tone], valueClassName)}
+				/>
 				{spark && spark.length > 1 ? (
-					<BarSpark
+					<MiniBars
 						values={spark.slice(-28)}
 						color={sparkColor ?? SPARK_COLOR[tone]}
+						opacityRamp
 						className="h-7 w-24 min-w-0 shrink"
 					/>
-				) : compact ? null : (
+				) : compact || small ? null : (
 					<div className="h-7 w-24 min-w-0 shrink" />
 				)}
 			</div>
@@ -139,7 +189,11 @@ export function StatRailItem({
 		</>
 	)
 
-	const shell = cn("relative px-5 py-4 animate-in fade-in slide-in-from-bottom-1 duration-500", className)
+	const shell = cn(
+		"relative animate-in fade-in slide-in-from-bottom-1 duration-500",
+		small ? "px-4 py-3" : "px-5 py-4",
+		className,
+	)
 	const style = delay ? { animationDelay: `${delay}ms`, animationFillMode: "backwards" } : undefined
 
 	if (!onSelect) {
@@ -160,8 +214,7 @@ export function StatRailItem({
 			className={cn(
 				shell,
 				"w-full text-left",
-				RAIL_LANE,
-				selected ? "bg-muted/40 before:bg-primary" : "before:bg-transparent",
+				rowSelectedClass(selected),
 				disabled ? "cursor-default" : "cursor-pointer hover:bg-muted/25",
 				"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 			)}
@@ -172,62 +225,25 @@ export function StatRailItem({
 	)
 }
 
-/**
- * The ranked bar sparkline used inside a stat tile. Exported because the web
- * analytics KPI strip draws the same bars full-bleed along the bottom of its own
- * (selectable) tiles — same mark, different slot.
- */
-export function BarSpark({
-	values,
-	color,
-	className,
-}: {
-	values: ReadonlyArray<number>
-	color: string
-	className?: string
-}) {
-	if (!values.length) return <div className={className} />
-	const max = Math.max(...values, 0.0001)
-	const count = values.length
-	const gap = 2
-	const barWidth = Math.max((100 - gap * (count - 1)) / count, 0.5)
+/** One tile's placeholder, in the same shell as `StatRailItem`. */
+export function StatRailItemSkeleton({ className }: { className?: string }) {
 	return (
-		<svg viewBox="0 0 100 100" preserveAspectRatio="none" className={className} aria-hidden>
-			{values.map((v, i) => {
-				const safe = Number.isFinite(v) && v >= 0 ? v : 0
-				const ratio = max > 0 ? safe / max : 0
-				const h = Math.max(ratio * 100, safe > 0 ? 5 : 0)
-				const x = i * (barWidth + gap)
-				const y = 100 - h
-				return (
-					<rect
-						key={i}
-						x={x}
-						y={y}
-						width={barWidth}
-						height={h}
-						rx={0}
-						fill={color}
-						opacity={0.3 + ratio * 0.7}
-					/>
-				)
-			})}
-		</svg>
+		<div className={cn("px-5 py-4", className)}>
+			<Skeleton className="h-3 w-16" />
+			<div className="mt-3 flex items-end justify-between gap-3">
+				<Skeleton className="h-7 w-20" />
+				<Skeleton className="h-7 w-24" />
+			</div>
+			<Skeleton className="mt-3 h-3 w-28" />
+		</div>
 	)
 }
 
-export function StatRailLoading() {
+export function StatRailLoading({ count = 4, columns }: { count?: number; columns?: StatRailColumns }) {
 	return (
-		<StatRail>
-			{Array.from({ length: 4 }).map((_, i) => (
-				<div key={i} className="px-5 py-4">
-					<Skeleton className="h-3 w-16" />
-					<div className="mt-3 flex items-end justify-between gap-3">
-						<Skeleton className="h-7 w-20" />
-						<Skeleton className="h-7 w-24" />
-					</div>
-					<Skeleton className="mt-3 h-3 w-32" />
-				</div>
+		<StatRail columns={columns} aria-busy>
+			{Array.from({ length: count }, (_, i) => (
+				<StatRailItemSkeleton key={i} />
 			))}
 		</StatRail>
 	)

@@ -5,6 +5,7 @@ import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import { cn } from "@maple/ui/lib/utils"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
@@ -28,16 +29,14 @@ import {
 } from "@/lib/agent-sessions/tool-error-display"
 
 import {
-	ROW,
-	ROW_IDLE,
-	ROW_SELECTED,
 	ShareCell,
-	Table,
-	TableBody,
-	TableHead,
 	Th,
+	ToolTable,
+	ToolTableBody,
+	ToolTableHead,
+	toolRowClass,
 } from "./tool-breakdown-tables"
-import { ErrorTextLine, FailureStatusLine, MaskChip, TrendBars, windowRangeLabel } from "./tool-error-parts"
+import { ErrorTextLine, FailureStatusLine, MaskChip, windowRangeLabel } from "./tool-error-parts"
 
 type ErrorSortKey = "calls" | "sessions" | "lastSeen"
 
@@ -248,8 +247,8 @@ export function ToolErrorsTable({
 					</span>
 				</div>
 			) : (
-				<Table>
-					<TableHead>
+				<ToolTable>
+					<ToolTableHead>
 						<div className="flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-2xs leading-3.5">
 							<Eyebrow variant="mono">Error</Eyebrow>
 							{headHint === "" ? null : (
@@ -294,9 +293,9 @@ export function ToolErrorsTable({
 							hidden="hidden @min-[800px]/panel:flex"
 						/>
 						<span className="w-3.5 shrink-0" aria-hidden />
-					</TableHead>
+					</ToolTableHead>
 
-					<TableBody waiting={waiting} maxHeight={expanded ? 760 : 460}>
+					<ToolTableBody waiting={waiting} maxHeight={expanded ? 760 : 460}>
 						{failure !== undefined ? (
 							<ErrorState error={failure} title={`Failed to load ${tool} errors`} />
 						) : loading ? (
@@ -309,10 +308,7 @@ export function ToolErrorsTable({
 										type="button"
 										aria-pressed={row.fingerprint === selected}
 										onClick={() => onSelect(row.fingerprint)}
-										className={cn(
-											ROW,
-											row.fingerprint === selected ? ROW_SELECTED : ROW_IDLE,
-										)}
+										className={toolRowClass(row.fingerprint === selected)}
 										title={row.display === "" ? undefined : row.display}
 									>
 										<span className="flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-[12.5px] leading-4">
@@ -334,7 +330,15 @@ export function ToolErrorsTable({
 											) : null}
 										</span>
 										<span className="hidden w-[96px] shrink-0 items-center @min-[720px]/panel:flex">
-											<TrendBars counts={row.spark} width={92} height={16} />
+											<MiniBars
+												values={row.spark}
+												color="var(--color-severity-error)"
+												floor={12.5}
+												floorColor="var(--input)"
+												minHeight={18.75}
+												gap={row.spark.length > 12 ? 1 : 4.3}
+												className="h-4 w-[92px] shrink-0"
+											/>
 										</span>
 										<ShareCell
 											ratio={row.share}
@@ -394,7 +398,7 @@ export function ToolErrorsTable({
 								) : null}
 							</>
 						)}
-					</TableBody>
+					</ToolTableBody>
 
 					{masks.length > 0 && !loading ? (
 						<div className="flex flex-wrap items-center gap-2 border-t border-border px-2.5 pt-3 font-mono text-2xs leading-3.5 text-muted-foreground/70">
@@ -407,7 +411,7 @@ export function ToolErrorsTable({
 							))}
 						</div>
 					) : null}
-				</Table>
+				</ToolTable>
 			)}
 		</section>
 	)

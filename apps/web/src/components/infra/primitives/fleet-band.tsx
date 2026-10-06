@@ -15,7 +15,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { VALUE_TONE, type Tone } from "../severity-tokens"
+import { StatRailItem } from "@/components/common/stat-rail"
+import type { Tone } from "../severity-tokens"
 
 /** A band that stands alone on a page body rather than flush under a shell's header. */
 export const FLEET_BAND_BOXED = "overflow-hidden rounded-lg border"
@@ -131,31 +132,18 @@ function ScopeCell<S extends string>({
 	// which case the press is the only way back out.
 	const idle = value === 0 && !active
 	return (
-		<button
-			type="button"
-			aria-pressed={active}
+		<StatRailItem
+			size="sm"
+			eyebrow={label}
+			value={value}
+			hint={hint}
+			tone={tone}
+			valueClassName={value === 0 ? "text-muted-foreground" : undefined}
+			onSelect={() => onSelect(active ? undefined : scope)}
+			selected={active}
 			disabled={idle}
-			onClick={() => onSelect(active ? undefined : scope)}
-			className={cn(
-				"flex flex-1 flex-col justify-center gap-1.5 border-l px-4 py-3 text-left transition-colors",
-				"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				idle ? "cursor-default" : "hover:bg-muted/40",
-				active && "bg-muted/60",
-			)}
-		>
-			<span className="text-2xs text-muted-foreground">{label}</span>
-			<span className="flex items-baseline gap-1.5">
-				<span
-					className={cn(
-						"font-mono text-xl font-semibold leading-none tabular-nums",
-						value === 0 ? "text-muted-foreground" : VALUE_TONE[tone],
-					)}
-				>
-					{value}
-				</span>
-				<span className="text-3xs text-muted-foreground">{hint}</span>
-			</span>
-		</button>
+			className="flex flex-1 flex-col justify-center border-l"
+		/>
 	)
 }
 

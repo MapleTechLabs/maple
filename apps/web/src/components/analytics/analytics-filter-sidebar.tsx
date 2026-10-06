@@ -1,7 +1,6 @@
 import { Result } from "@/lib/effect-atom"
 
 import { Separator } from "@maple/ui/components/ui/separator"
-import { cn } from "@maple/ui/lib/utils"
 
 import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -11,7 +10,7 @@ import {
 	SingleCheckboxFilter,
 	type FilterOption,
 } from "@/components/filters/filter-section"
-import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
@@ -140,9 +139,9 @@ function AnalyticsFilterSidebarView({
 				    whichever of these is picked. Humans alone is checked on load — see
 				    DEFAULT_TRAFFIC. */}
 				<div className="py-1">
-					<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>
+					<Eyebrow as="h4" variant="label" className="py-1">
 						{FILTER_SECTION_LABEL_TEXT.traffic}
-					</h4>
+					</Eyebrow>
 					{/* Additive, not exclusive: both ticked is "all", which is what two
 					    checkboxes look like they should do. `toggleTraffic` owns the
 					    mapping, including that unticking the last one widens rather than
@@ -219,9 +218,9 @@ function AnalyticsFilterSidebarView({
 				    "zero new visitors" rather than as "not counted". Unchecking both means
 				    all visitors. */}
 				<div className="py-1">
-					<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>
+					<Eyebrow as="h4" variant="label" className="py-1">
 						{FILTER_SECTION_LABEL_TEXT.visitorType}
-					</h4>
+					</Eyebrow>
 					<SingleCheckboxFilter
 						title="New"
 						checked={filters.visitorType === "new"}

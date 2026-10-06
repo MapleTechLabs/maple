@@ -5,25 +5,23 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
-	PlotFrame,
-	PlotTooltipBody,
+	CursorPlot,
 	UNBOUNDED_FOCUS_DISTANCE,
-	createTooltipFocusStore,
-	cursorTooltip,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
-	usePlotChromeColors,
-	useResolvedSeriesColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { ChartEmpty } from "@maple/ui/components/charts"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartEmpty, ChartLoading } from "@maple/ui/components/charts"
 import { cn } from "@maple/ui/lib/utils"
 
+import { CHART_EMPTY_MESSAGE, ChartCard } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
-import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/infra/chart-utils"
+import { SeriesLegend } from "@/components/common/series-legend"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	formatToolMetric,
@@ -98,9 +96,7 @@ export function ToolSeriesChart({
 	modelLabel,
 	waiting,
 }: ToolSeriesChartProps) {
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
-	const chromeColors = usePlotChromeColors()
 
 	const plotted = useMemo<ReadonlyArray<ChartSeries>>(
 		() =>
@@ -109,9 +105,18 @@ export function ToolSeriesChart({
 				: [{ key: metric, label: toolMetricLabel(metric, percentile), color: "var(--primary)" }],
 		[metric, percentile],
 	)
-	// Canvas strokes cannot read `var()`; the lines take resolved colors.
-	const colorTokens = useMemo(() => new Map(plotted.map((entry) => [entry.key, entry.color])), [plotted])
-	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
+	const cursorSeries = useMemo<CursorPlotSeries<PlotCell>[]>(
+		() =>
+			plotted.map((entry) => ({
+				key: entry.key,
+				label: entry.label,
+				color: entry.color,
+				value: (cell: PlotCell) => valueAt(cell.row, entry.key),
+				format: (value: number) => formatToolMetric(value, metric),
+			})),
+		[plotted, metric],
+	)
+	const plot = useCursorPlot(cursorSeries)
 
 	const rows = useMemo<ReadonlyArray<ChartRow>>(
 		() =>
@@ -140,21 +145,10 @@ export function ToolSeriesChart({
 		[rows, effectiveTimezone],
 	)
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<PlotCell>[]>(
-		() =>
-			plotted.map((entry) => ({
-				label: entry.label,
-				color: entry.color,
-				value: (cell: PlotCell) => valueAt(cell.row, entry.key),
-				format: (value: number) => formatToolMetric(value, metric),
-			})),
-		[plotted, metric],
-	)
-
 	const definition = useMemo(() => {
 		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: plotted.map((entry) => entry.key) }))
 		return defineChart({
-			marks: [...seriesLines(rows, plotted, colors, chromeColors), focusCrosshair(chromeColors)],
+			marks: [...seriesLines(rows, plotted, plot.colors, plot.chrome), focusCrosshair(plot.chrome)],
 			scales: {
 				x: axis.x,
 				y: {
@@ -179,9 +173,9 @@ export function ToolSeriesChart({
 			// Sparse buckets sit far apart; keep the whole column live between them.
 			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [rows, plotted, axis, metric, focusStore, colors, chromeColors])
+	}, [rows, plotted, axis, metric, plot])
 
 	const title = toolChartTitle({
 		metric,
@@ -199,70 +193,45 @@ export function ToolSeriesChart({
 	const bucketMs = axis.stepMs ?? null
 
 	return (
-		<section
-			aria-busy={waiting || undefined}
-			className={cn(
-				"flex flex-col gap-4 border-b border-border px-6 pt-[22px] pb-5",
-				refreshingClass(waiting ?? false),
-			)}
-		>
-			<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 font-mono text-[12.5px]">
-				<h2 className="font-sans text-[15px] font-semibold leading-5 tracking-[-0.01em] text-foreground">
-					{toolMetricLabel(metric, percentile)}
-				</h2>
-				{scopeParts.map((part) => (
-					<span key={part} className="contents">
-						<Dot />
-						<span className="text-primary">{part}</span>
-					</span>
-				))}
-				<span className="grow" />
-				<span className="text-2xs text-muted-foreground/60">
-					{bucketMs === null ? null : `${bucketLabel(bucketMs)} buckets`}
+		<ChartCard
+			bare
+			title={toolMetricLabel(metric, percentile)}
+			scope={scopeParts.map((part) => (
+				<span key={part} className="contents font-mono text-xs">
+					<Dot />
+					<span className="text-primary">{part}</span>
 				</span>
-			</div>
-
-			{/* Only where there is more than one series to tell apart — a single
-			    series is already named by the head. */}
-			{plotted.length > 1 ? (
-				<div className="-mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-2xs leading-3.5">
-					{plotted.map((entry) => (
-						<span key={entry.key} className="flex items-center gap-1.5">
-							<span
-								aria-hidden
-								className="size-2 shrink-0 rounded-xs"
-								style={{ backgroundColor: entry.color }}
-							/>
-							<span className="text-foreground/75">{entry.label}</span>
-						</span>
-					))}
-				</div>
-			) : null}
-
+			))}
+			legend={
+				<>
+					{/* Only where there is more than one series to tell apart: a single
+					    series is already named by the head. */}
+					{plotted.length > 1 ? <SeriesLegend items={plotted} swatch="square" /> : null}
+					<span className="font-mono text-2xs text-muted-foreground/60">
+						{bucketMs === null ? null : `${bucketLabel(bucketMs)} buckets`}
+					</span>
+				</>
+			}
+			aria-busy={waiting || undefined}
+			className={cn("gap-4 border-b border-border px-6 pt-[22px] pb-5", refreshingClass(waiting ?? false))}
+		>
 			{failure !== undefined ? (
 				<ErrorState error={failure} title={`Failed to load ${title}`} />
 			) : loading && rows.length === 0 ? (
-				<Skeleton className="w-full" style={{ height: PLOT_HEIGHT }} />
+				<ChartLoading variant="line" height={PLOT_HEIGHT} />
 			) : rows.length === 0 ? (
 				<ChartEmpty height={PLOT_HEIGHT}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 			) : (
-				<div className="w-full" style={{ height: PLOT_HEIGHT }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel={title}
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(cell: PlotCell) => axis.heading(cell.row.bucket)}
-							/>
-						)}
-					/>
-				</div>
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={cursorSeries}
+					heading={(cell: PlotCell) => axis.heading(cell.row.bucket)}
+					ariaLabel={title}
+					height={PLOT_HEIGHT}
+				/>
 			)}
-		</section>
+		</ChartCard>
 	)
 }
 

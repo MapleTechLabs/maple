@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { ChevronDownIcon, CircleInfoIcon, type IconComponent, MagnifierIcon, XmarkIcon } from "../icons"
+import { Badge } from "../ui/badge"
 import { Checkbox } from "../ui/checkbox"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip"
@@ -10,7 +11,7 @@ import { useSectionCollapse } from "../../hooks/use-section-collapse"
 import { getServiceColor } from "../../lib/colors"
 import { formatNumber } from "../../lib/format"
 import { cn } from "../../lib/utils"
-import { FILTER_SECTION_LABEL } from "./filter-styles"
+import { eyebrowVariants } from "../ui/eyebrow"
 
 export interface FilterOption {
 	name: string
@@ -250,7 +251,7 @@ function FilterSectionBase({
 			<CollapsibleTrigger
 				className={cn(
 					"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground text-muted-foreground transition-colors",
-					FILTER_SECTION_LABEL,
+					eyebrowVariants({ variant: "label" }),
 				)}
 			>
 				<span className="flex min-w-0 items-center gap-1.5">
@@ -517,21 +518,22 @@ interface FilterRowActionProps {
  */
 function FilterRowAction({ onClick, label, pressed, children }: FilterRowActionProps) {
 	return (
-		<button
-			type="button"
+		<Badge
+			variant="tag"
+			render={<button type="button" />}
 			aria-label={label}
 			title={label}
 			aria-pressed={pressed}
 			onClick={onClick}
 			className={cn(
-				"rounded-sm px-1 py-0.5 text-3xs uppercase tracking-[0.06em] transition-colors",
+				"transition-colors",
 				pressed
-					? "bg-destructive/12 text-destructive hover:bg-destructive/20"
-					: "text-muted-foreground hover:bg-muted hover:text-foreground",
+					? "bg-destructive/12 text-destructive [button&]:hover:bg-destructive/20 [button&]:hover:text-destructive"
+					: "bg-transparent",
 			)}
 		>
 			{children}
-		</button>
+		</Badge>
 	)
 }
 

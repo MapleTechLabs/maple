@@ -6,7 +6,7 @@ import { Input } from "../ui/input"
 import { cn } from "../../lib/utils"
 import { useDebouncedCallback } from "../../hooks/use-debounced-callback"
 import { useSectionCollapse } from "../../hooks/use-section-collapse"
-import { FILTER_SECTION_LABEL } from "./filter-styles"
+import { eyebrowVariants } from "../ui/eyebrow"
 
 /** The unit the caller's numbers are already in. Only affects parsing and display —
  *  values cross this component's boundary unconverted. */
@@ -165,7 +165,7 @@ export function RangeFilterSection({
 			<CollapsibleTrigger
 				className={cn(
 					"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground text-muted-foreground transition-colors",
-					FILTER_SECTION_LABEL,
+					eyebrowVariants({ variant: "label" }),
 				)}
 			>
 				<span className="truncate">{title}</span>

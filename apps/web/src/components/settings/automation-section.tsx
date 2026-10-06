@@ -17,7 +17,7 @@ import { SeverityBadge } from "@/components/errors/severity-badge"
 import { SeveritySelect } from "@/components/errors/severity-select"
 import { AiTriageSettingsSection } from "./ai-triage-settings-section"
 import { EscalationPolicySection } from "./escalation-policy-section"
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { RelativeTime } from "@/components/common/relative-time"
@@ -35,11 +35,11 @@ export function AutomationSection({
 	return (
 		<div className="max-w-5xl space-y-10">
 			<section aria-labelledby="automatic-investigations-heading">
-				<SectionHeader id="automatic-investigations-heading" label="Automatic investigations" />
+				<SectionHeading variant="eyebrow" id="automatic-investigations-heading" title="Automatic investigations" />
 				<AiTriageSettingsSection isAdmin={isAdmin} hasEntitlement={hasEntitlement} />
 			</section>
 			<section aria-labelledby="routing-heading">
-				<SectionHeader id="routing-heading" label="Severity and confidence routing" />
+				<SectionHeading variant="eyebrow" id="routing-heading" title="Severity and confidence routing" />
 				<p className="mb-4 text-sm text-muted-foreground">
 					Confidence gates apply only to AI decisions. A manual severity change is explicit human
 					intent and bypasses the confidence threshold.
@@ -87,7 +87,7 @@ function PolicySimulator() {
 
 	return (
 		<section aria-labelledby="policy-simulator-heading">
-			<SectionHeader id="policy-simulator-heading" label="Policy simulator" />
+			<SectionHeading variant="eyebrow" id="policy-simulator-heading" title="Policy simulator" />
 			<div className="border bg-card/20 p-4">
 				<div className="grid gap-4 md:grid-cols-3">
 					<SimulatorField label="Severity">
@@ -176,7 +176,7 @@ function RecentDeliveries() {
 	)
 	return (
 		<section aria-labelledby="recent-deliveries-heading">
-			<SectionHeader id="recent-deliveries-heading" label="Recent escalation deliveries" />
+			<SectionHeading variant="eyebrow" id="recent-deliveries-heading" title="Recent escalation deliveries" />
 			{Result.builder(result)
 				.onSuccess((response) =>
 					response.attempts.length === 0 ? (

@@ -87,7 +87,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
 				<Table>
 					<TableHeader>
-						<TableRow className="hover:bg-transparent border-b">
+						<TableRow className="border-b">
 							<HeadLabel className="pl-3">Target</HeadLabel>
 							<SortColumnHead
 								label="Calls /s"

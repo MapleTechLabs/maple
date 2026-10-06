@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { RelativeTime } from "@/components/common/relative-time"
 import type { DashboardVersionChangeKind } from "@maple/domain/http"
 import type { V2DashboardVersion } from "@maple/domain/http/v2"
@@ -107,9 +108,9 @@ export function VersionListItem({ version, isPreviewing, isCurrent, onPreview }:
 								{KIND_LABEL[version.changeKind]}
 							</span>
 							{isCurrent && (
-								<span className="rounded-sm bg-primary/10 px-1 py-px text-4xs font-medium uppercase tracking-wider text-primary">
+								<Badge variant="tag" className="bg-primary/10 text-primary">
 									Current
-								</span>
+								</Badge>
 							)}
 							{version.sourceVersionId && (
 								<ArrowPathIcon

@@ -6,6 +6,7 @@ import { SpanId, TraceId } from "@maple/domain"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ErrorSection } from "@maple/ui/components/error-section"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -744,18 +745,17 @@ function IdentityRows({ span }: { span: AiSessionSpan }) {
 	]
 
 	return (
-		<div className="divide-y divide-border/40 overflow-hidden rounded-md border border-border/70">
+		<KeyValueList layout="grid" divided className="rounded-md border border-border/70 px-2.5">
 			{rows.map(([label, value]) =>
 				value === undefined ? null : (
-					<div key={label} className="flex min-w-0 items-baseline gap-3 px-2.5 py-1.5">
-						<span className="w-72 shrink-0 text-muted-foreground text-xs">{label}</span>
+					<KeyValue key={label} label={label} mono>
 						<CopyableValue value={value} className="min-w-0">
-							<span className="block truncate font-mono text-xs">{value}</span>
+							<span className="block truncate">{value}</span>
 						</CopyableValue>
-					</div>
+					</KeyValue>
 				),
 			)}
-		</div>
+		</KeyValueList>
 	)
 }
 

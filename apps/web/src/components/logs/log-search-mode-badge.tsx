@@ -1,3 +1,4 @@
+import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
 
 export type LogSearchMode = "text" | "trace" | "header"
@@ -16,14 +17,8 @@ const MODE = {
 
 export function LogSearchModeBadge({ mode, className }: { mode: LogSearchMode; className?: string }) {
 	return (
-		<span
-			className={cn(
-				"rounded-sm px-1 py-px font-medium text-3xs uppercase tracking-wide",
-				MODE[mode].className,
-				className,
-			)}
-		>
+		<Badge variant="tag" className={cn(MODE[mode].className, className)}>
 			{MODE[mode].label}
-		</span>
+		</Badge>
 	)
 }

@@ -70,7 +70,7 @@ function RouteError({ error, info, reset }: ErrorComponentProps) {
 		<Empty className="min-h-[60vh]" role="alert" aria-live="assertive" aria-atomic="true">
 			{isStaleChunk ? <StaleChunkReload /> : null}
 			<EmptyHeader>
-				<EmptyMedia variant="icon" className="bg-destructive/10 text-destructive">
+				<EmptyMedia variant="icon" className="bg-severity-error/10 text-severity-error">
 					<AlertWarningIcon size={18} />
 				</EmptyMedia>
 				<EmptyTitle>{title}</EmptyTitle>

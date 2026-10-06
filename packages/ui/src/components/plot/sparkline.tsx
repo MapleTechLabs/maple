@@ -28,7 +28,6 @@ export interface PlotSparklineProps {
 	className?: string
 }
 
-const FALLBACK_COLOR = "#6366f1"
 const STROKE_WIDTH = 1.5
 
 interface SparkPoint {
@@ -48,7 +47,7 @@ export function PlotSparkline({
 	// light/dark flip has to re-resolve or the sparkline keeps the old palette.
 	const { theme } = useTheme()
 	// oxlint-disable-next-line react-hooks/exhaustive-deps
-	const stroke = useMemo(() => resolvePlotColor(color, FALLBACK_COLOR), [color, theme])
+	const stroke = useMemo(() => resolvePlotColor(color), [color, theme])
 
 	const points = useMemo<SparkPoint[]>(() => values.map((value, index) => ({ index, value })), [values])
 

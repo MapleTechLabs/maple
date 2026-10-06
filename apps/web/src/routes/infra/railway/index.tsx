@@ -12,7 +12,7 @@ import {
 	railwayStatusAtom,
 	unsyncedEnvironments,
 } from "@/components/integrations/railway-integration-card"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageHero } from "@/components/common/page-hero"
 import { DataTable } from "@/components/common/data-table"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
@@ -32,9 +32,8 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { railwayServicesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const railwaySearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
@@ -66,10 +65,7 @@ function RailwayPage() {
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
 	}
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -77,59 +73,36 @@ function RailwayPage() {
 	}
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Infrastructure", href: "/infra" }, { label: "Railway" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title="Railway"
-									description="CPU, memory, network and disk for every Railway service, polled from Railway's metrics API."
-								/>
-								<ResultView
-									result={statusResult}
-									loading={<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />}
-								>
-									{(status) =>
-										status.connected ? (
-											<RailwayServices
-												startTime={startTime}
-												endTime={endTime}
-												syncing={
-													!status.authFailed && unsyncedEnvironments(status) > 0
-												}
-												query={search.q ?? ""}
-												scope={search.scope}
-												onQueryChange={(q) => patchSearch({ q: q || undefined })}
-												onScopeChange={(scope) => patchSearch({ scope })}
-											/>
-										) : (
-											<RailwayIntegrationCard />
-										)
-									}
-								</ResultView>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Railway" }]}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			gap="lg"
+		>
+			<PageHero
+				title="Railway"
+				description="CPU, memory, network and disk for every Railway service, polled from Railway's metrics API."
+			/>
+			<ResultView
+				result={statusResult}
+				loading={<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />}
+			>
+				{(status) =>
+					status.connected ? (
+						<RailwayServices
+							startTime={startTime}
+							endTime={endTime}
+							syncing={!status.authFailed && unsyncedEnvironments(status) > 0}
+							query={search.q ?? ""}
+							scope={search.scope}
+							onQueryChange={(q) => patchSearch({ q: q || undefined })}
+							onScopeChange={(scope) => patchSearch({ scope })}
+						/>
+					) : (
+						<RailwayIntegrationCard />
+					)
+				}
+			</ResultView>
+		</DashboardPage>
 	)
 }
 

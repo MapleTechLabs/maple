@@ -1,7 +1,5 @@
-import type { ReactNode } from "react"
-
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { shortId } from "@maple/ui/lib/ids"
 
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
@@ -48,16 +46,16 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 				{summary.failed && <Badge variant="crit">Failed</Badge>}
 			</div>
 
-			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-				<Fact label="Started">
+			<KeyValueList layout="inline">
+				<KeyValue label="Started">
 					<RelativeTime value={summary.startMs} variant="orDate" tooltip="title" />
-				</Fact>
+				</KeyValue>
 				{summary.serviceNames.length > 0 && (
-					<Fact label="Service" title={summary.serviceNames.join(", ")} mono>
+					<KeyValue label="Service" title={summary.serviceNames.join(", ")} mono>
 						{firstPlusRest(summary.serviceNames)}
-					</Fact>
+					</KeyValue>
 				)}
-				<Fact label={traceId === undefined ? "Session ID" : "Trace ID"} title={traceId ?? sessionId}>
+				<KeyValue label={traceId === undefined ? "Session ID" : "Trace ID"} title={traceId ?? sessionId}>
 					<CopyableValue
 						value={traceId ?? sessionId}
 						label={traceId === undefined ? "Session ID" : "Trace ID"}
@@ -71,8 +69,8 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 						</span>
 						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
 					</CopyableValue>
-				</Fact>
-			</dl>
+				</KeyValue>
+			</KeyValueList>
 		</div>
 	)
 }
@@ -100,27 +98,6 @@ export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "ve
  *  prefix identifies it as well as the whole, and the whole is in the `title`
  *  and the clipboard. */
 const ID_PREFIX_LENGTH = 32
-
-function Fact({
-	label,
-	title,
-	mono,
-	children,
-}: {
-	label: string
-	title?: string
-	mono?: boolean
-	children: ReactNode
-}) {
-	return (
-		<div className="flex min-w-0 max-w-full items-baseline gap-1.5" title={title}>
-			<Eyebrow as="dt" className="shrink-0">
-				{label}
-			</Eyebrow>
-			<dd className={mono ? "min-w-0 truncate font-mono" : "min-w-0 truncate"}>{children}</dd>
-		</div>
-	)
-}
 
 /** "claude-sonnet-5 +1": the first name, the rest as a count — the full list
  *  goes in the `title`. */

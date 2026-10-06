@@ -178,65 +178,6 @@ export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextTo
 	)
 }
 
-/** Failed calls per bucket: a bar where there were some, a floor where there
- *  were none, so a group that stopped reads as a row of empty buckets rather
- *  than a short chart. */
-export function TrendBars({
-	counts,
-	width,
-	height,
-	radius = 1,
-	className,
-}: {
-	counts: ReadonlyArray<number>
-	width: number
-	height: number
-	radius?: number
-	className?: string
-}) {
-	const gap = counts.length > 12 ? 1 : width > 200 ? 12 : 4
-	const bar = Math.max(1, (width - gap * (counts.length - 1)) / Math.max(counts.length, 1))
-	const max = Math.max(1, ...counts)
-	return (
-		<svg
-			width={width}
-			height={height}
-			viewBox={`0 0 ${width} ${height}`}
-			className={cn("shrink-0", className)}
-			aria-hidden
-		>
-			{counts.map((count, index) => {
-				const x = index * (bar + gap)
-				if (count === 0) {
-					return (
-						<rect
-							key={index}
-							x={x}
-							y={height - 2}
-							width={bar}
-							height={2}
-							rx={1}
-							fill="var(--input)"
-						/>
-					)
-				}
-				const barHeight = Math.max(3, Math.round((count / max) * height))
-				return (
-					<rect
-						key={index}
-						x={x}
-						y={height - barHeight}
-						width={bar}
-						height={barHeight}
-						rx={radius}
-						fill="var(--color-severity-error)"
-					/>
-				)
-			})}
-		</svg>
-	)
-}
-
 /** "Sep 4 – 11": the window as the trend column's head names it. */
 export function windowRangeLabel(startMs: number, endMs: number, timeZone: string): string {
 	const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone })

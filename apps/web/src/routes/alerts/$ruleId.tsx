@@ -21,7 +21,7 @@ import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-series"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
-import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { ErrorState } from "@/components/common/error-state"
 import { ResultView } from "@/components/common/result-view"
@@ -924,12 +924,18 @@ function RuleDetailContent() {
 											/>
 										</div>
 
-										<AlertStatStrip
-											items={[
-												{ label: "Total triggered", value: stats.totalTriggered },
-												{ label: "Avg resolution", value: stats.avgResolution },
-											]}
-										/>
+										<StatRail columns={2}>
+											<StatRailItem
+												size="sm"
+												eyebrow="Total triggered"
+												value={stats.totalTriggered}
+											/>
+											<StatRailItem
+												size="sm"
+												eyebrow="Avg resolution"
+												value={stats.avgResolution}
+											/>
+										</StatRail>
 
 										{stats.topContributors.length > 0 && (
 											<div className="space-y-2">
@@ -1363,21 +1369,20 @@ function ChecksPanel({
 	return (
 		<div className="space-y-4">
 			<h2 className="text-lg font-semibold">Checks</h2>
-			<AlertStatStrip
-				items={[
-					{ label: "Total checks", value: totals.total },
-					{
-						label: "Breached",
-						value: totals.breached,
-						tone: totals.breached > 0 ? "crit" : undefined,
-					},
-					{ label: "Healthy", value: totals.healthy, tone: "ok" },
-					...(totals.errored > 0
-						? [{ label: "Failed", value: totals.errored, tone: "crit" as const }]
-						: []),
-					{ label: "Transitions", value: totals.transitions },
-				]}
-			/>
+			<StatRail columns={totals.errored > 0 ? 5 : 4}>
+				<StatRailItem size="sm" eyebrow="Total checks" value={totals.total} />
+				<StatRailItem
+					size="sm"
+					eyebrow="Breached"
+					value={totals.breached}
+					tone={totals.breached > 0 ? "crit" : "neutral"}
+				/>
+				<StatRailItem size="sm" eyebrow="Healthy" value={totals.healthy} tone="ok" />
+				{totals.errored > 0 ? (
+					<StatRailItem size="sm" eyebrow="Failed" value={totals.errored} tone="crit" />
+				) : null}
+				<StatRailItem size="sm" eyebrow="Transitions" value={totals.transitions} />
+			</StatRail>
 
 			<div className="space-y-3">
 				<div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">

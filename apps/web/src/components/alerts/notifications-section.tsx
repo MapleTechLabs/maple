@@ -25,7 +25,7 @@ import {
 	ProviderLogo,
 } from "@/components/alerts/destination-provider"
 import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import {
 	chatDestinationForm,
 	defaultDestinationForm,
@@ -112,7 +112,7 @@ export function NotificationsSection({
 	return (
 		<Card className="p-4">
 			<div className="flex items-center justify-between gap-3">
-				<SectionHeader id="rule-notifications-heading" label="Who gets notified" className="mb-0" />
+				<SectionHeading variant="eyebrow" id="rule-notifications-heading" title="Who gets notified" className="mb-0" />
 				{selected.length > 0 && (
 					<Button
 						variant="ghost"

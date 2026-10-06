@@ -22,6 +22,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Meter } from "@maple/ui/components/ui/meter"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
@@ -363,12 +364,12 @@ const DeployCell = React.memo(function DeployCell({ commits }: { commits: Commit
 	) : info.rollout !== undefined ? (
 		<Tooltip>
 			<TooltipTrigger className="flex cursor-default items-center gap-1.5">
-				<span className="relative h-[3px] w-10 shrink-0 overflow-hidden rounded-full bg-muted">
-					<span
-						className="absolute inset-y-0 left-0 rounded-full bg-primary"
-						style={{ width: `${info.rollout.percentage}%` }}
-					/>
-				</span>
+				<Meter
+					value={info.rollout.percentage}
+					max={100}
+					className="h-[3px] w-10 shrink-0 bg-muted"
+					fillClassName="bg-primary"
+				/>
 				<span className="font-mono text-3xs text-primary">
 					{info.rollout.percentage}% · +{info.rollout.others.length}
 				</span>

@@ -178,7 +178,7 @@ function DeployServices({
 		>
 			<Table size="sm">
 				<TableHeader>
-					<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
+					<TableRow className={eyebrowVariants()}>
 						<TableHead className="pl-4">Service</TableHead>
 						<TableHead>Replaced</TableHead>
 						<TableHead className="text-right">Requests</TableHead>
