@@ -158,7 +158,7 @@ export function GoogleAnalyticsIntegrationCard() {
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">Google Analytics</h3>
 							{status.revoked ? (
-								<Badge variant="warning">Reconnect needed</Badge>
+								<Badge variant="warn">Reconnect needed</Badge>
 							) : (
 								<Badge variant="secondary">Connected</Badge>
 							)}
