@@ -51,13 +51,15 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 			},
 			// Read-after-write everywhere (alert state CAS, dashboard versioning).
 			caching: { disabled: true },
+			// The origin local workers actually dial. From `MAPLE_PG_URL` too: a hardcoded
+			// database here silently split a stack across two databases.
 			dev: {
 				scheme: "postgres",
-				host: "localhost",
-				port: 5499,
-				database: "maple",
-				user: "maple",
-				password: Redacted.make("maple"),
+				host: pgUrl.hostname,
+				port: Number(pgUrl.port || "5432"),
+				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				user: decodeURIComponent(pgUrl.username),
+				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 				// Docker Postgres has no TLS; alchemy's default `prefer` stalls until timeout.
 				sslmode: "disable",
 			},

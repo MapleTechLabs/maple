@@ -4,6 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"generate:og": "node scripts/generate-og.mjs",
+		"screenshots": "bun scripts/screenshots/capture.ts",
 		"dev": "bun run --silent sync:cli && exec env -u CLAUDECODE astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
 		"sync:i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale && astro sync",
 		"sync:cli": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install && cp ../../scripts/uninstall.sh public/cli/uninstall",
@@ -45,8 +46,11 @@
 		"tw-animate-css": "catalog:tailwind"
 	},
 	"devDependencies": {
+		"@effect/platform-node": "catalog:effect",
 		"@inlang/paraglide-js": "^2.25.4",
 		"@types/d3-scale": "^4.0.9",
+		"effect": "catalog:effect",
+		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}
