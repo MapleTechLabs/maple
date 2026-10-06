@@ -2,16 +2,11 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { Button } from "@maple/ui/components/ui/button"
 import { PlusIcon } from "@/components/icons"
-import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 import { mcpUrl } from "@/lib/services/common/mcp-url"
 import { McpToolsList } from "@/components/mcp/mcp-tools-list"
 import { CreateApiKeyDialog } from "@/components/settings/create-api-key-dialog"
@@ -63,20 +58,7 @@ export function McpSection() {
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<InputGroup>
-						<InputGroupInput
-							readOnly
-							value={mcpEndpoint}
-							className="font-mono text-xs tracking-wide select-all"
-						/>
-						<InputGroupAddon align="inline-end">
-							<CopyButton
-								value={mcpEndpoint}
-								label="MCP endpoint"
-								render={<InputGroupButton />}
-							/>
-						</InputGroupAddon>
-					</InputGroup>
+					<CopyableField value={mcpEndpoint} copyLabel="MCP endpoint" />
 					<div className="flex flex-wrap items-center gap-2">
 						<p className="text-muted-foreground text-xs">
 							Compatible clients open Maple in your browser and connect with OAuth.
@@ -120,10 +102,7 @@ export function McpSection() {
 								</div>
 								<div className="space-y-2">
 									<p className="text-muted-foreground text-xs">
-										Or add to{" "}
-										<code className="bg-muted px-1 py-0.5 rounded text-[11px]">
-											{CONFIG_FILE_HINTS["claude-code"]}
-										</code>
+										Or add to <InlineCode>{CONFIG_FILE_HINTS["claude-code"]}</InlineCode>
 									</p>
 									<CodeBlock
 										code={generateConfig("claude-code", createdSecret ?? undefined)}
@@ -137,10 +116,7 @@ export function McpSection() {
 								<div className="space-y-2">
 									{CONFIG_FILE_HINTS[client] && (
 										<p className="text-muted-foreground text-xs">
-											Add to{" "}
-											<code className="bg-muted px-1 py-0.5 rounded text-[11px]">
-												{CONFIG_FILE_HINTS[client]}
-											</code>
+											Add to <InlineCode>{CONFIG_FILE_HINTS[client]}</InlineCode>
 										</p>
 									)}
 									<CodeBlock

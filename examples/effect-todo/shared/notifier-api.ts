@@ -8,7 +8,7 @@
  * browser started, so all three services land in ONE distributed trace.
  */
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 
 /** Which todo lifecycle event triggered the notification. */
 export const NotifyEvent = Schema.Literals(["created", "toggled", "removed"])

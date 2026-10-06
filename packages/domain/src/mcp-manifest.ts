@@ -107,8 +107,8 @@ export type McpToolSurface =
 	| "chat"
 	/**
 	 * The chat-platform bot, which runs the same agent engine as `chat` but answers into a channel
-	 * anyone in it can post to. Its own surface rather than `chat` precisely so it is *not* an
-	 * internal one: see `INTERNAL_SURFACES` in `apps/ai/src/mcp/tools/types.ts`.
+	 * anyone in it can post to. Its own surface rather than `chat` so it can be offered less than an
+	 * internal one: see `AGENT_SURFACES` in `apps/ai/src/mcp/tools/types.ts`.
 	 */
 	| "bot"
 	/** Retired agent workflow passes. Kept so already-audited rows stay readable. */

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { planetscaleBranchInfraTimeseriesSQL, planetscaleInfraTimeseriesSQL } from "./planetscale-infra"
+import { OrgId } from "@maple/domain"
 
 describe("planetscaleInfraTimeseriesSQL", () => {
 	it("buckets per-timestamp totals for one database", () => {
 		const { sql } = compileUnsafe(planetscaleInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -14,21 +15,21 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		})
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) = 'main-db'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'main-db'",
 		)
 		// Inner per-timestamp grouping, outer bucketed aggregation.
 		expect(sql).toContain("GROUP BY t")
 		expect(sql).toContain("toStartOfInterval")
 		expect(sql).toContain("GROUP BY bucket")
-		expect(sql).toContain("avg(totalConnections)")
-		expect(sql).toContain("max(cpuMax)")
+		expect(sql).toContain("avg(points.totalConnections)")
+		expect(sql).toContain("max(points.cpuMax)")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("decodes ClickHouse numeric strings through the row schema", () => {
 		const compiled = compileUnsafe(planetscaleInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -64,7 +65,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 
 	it("aggregates volume gauges without counting unsampled buckets as full", () => {
 		const { sql } = compileUnsafe(planetscaleInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -76,14 +77,14 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		// sample must be excluded rather than read as zero bytes free.
 		expect(sql).toContain("availableSamples > 0")
 		// Phrased so SQL precedence yields a percentage — see planetscale-storage.test.ts.
-		expect(sql).toContain("100 - availableBytes / capacityBytes * 100")
+		expect(sql).toContain("100 - points.availableBytes / points.capacityBytes * 100")
 	})
 })
 
 describe("planetscaleBranchInfraTimeseriesSQL", () => {
 	it("scopes the same rollup to a single branch", () => {
 		const { sql } = compileUnsafe(planetscaleBranchInfraTimeseriesSQL(), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-07-02 00:00:00.000",
 			endTime: "2026-07-03 00:00:00.000",
 			bucketSeconds: 300,
@@ -91,10 +92,10 @@ describe("planetscaleBranchInfraTimeseriesSQL", () => {
 			branch: "pr-246",
 		})
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) = 'main-db'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'main-db'",
 		)
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_branch_name'], ''), Attributes['planetscale_branch']) = 'pr-246'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) = 'pr-246'",
 		)
 		expect(sql).toContain("GROUP BY bucket")
 		expect(sql).toContain("ORDER BY bucket ASC")

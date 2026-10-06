@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	cloudflareWorkerCountersSQL,
 	cloudflareWorkerLatencySQL,
@@ -10,9 +10,10 @@ import {
 	cloudflareZoneStatusTimeseriesSQL,
 	cloudflareZoneTimeseriesSQL,
 } from "./cloudflare-infra"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
 }
@@ -29,8 +30,8 @@ describe("cloudflareZoneCountersSQL", () => {
 		)
 		expect(sql).toContain("http.status_class'] = '5xx'")
 		expect(sql).toContain("cache.status'] IN ('hit', 'stale', 'revalidated', 'updating')")
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.http.bytes')")
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.http.visits')")
+		expect(sql).toContain("sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.bytes')")
+		expect(sql).toContain("sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits')")
 		// Worker analytics live in their own queries.
 		expect(sql).not.toContain("cloudflare.worker")
 		expect(sql).toContain("GROUP BY serviceName")
@@ -38,7 +39,10 @@ describe("cloudflareZoneCountersSQL", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareZoneCountersSQL(), { ...baseParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareZoneCountersSQL(), {
+			...baseParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 })
@@ -63,7 +67,7 @@ describe("cloudflareZoneLatencySQL", () => {
 describe("cloudflareZoneTimeseriesSQL", () => {
 	it("buckets zone counters by interval and orders for chart consumption", () => {
 		const { sql } = compileUnsafe(cloudflareZoneTimeseriesSQL(), timeseriesParams)
-		expect(sql).toContain("toStartOfInterval(TimeUnix, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 300 SECOND)")
 		expect(sql).toContain("http.status_class'] = '5xx'")
 		expect(sql).toContain("GROUP BY serviceName, bucket")
 		expect(sql).toContain("ORDER BY serviceName ASC, bucket ASC")
@@ -113,7 +117,9 @@ describe("cloudflareWorkerCountersSQL", () => {
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.worker.requests', 'cloudflare.worker.errors', 'cloudflare.worker.subrequests')",
 		)
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.worker.subrequests')")
+		expect(sql).toContain(
+			"sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.subrequests')",
+		)
 		expect(sql).not.toContain("cloudflare.http")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("FORMAT JSON")

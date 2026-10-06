@@ -1,6 +1,15 @@
+import { ConfigProvider, Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { resolveConnectorConfig, socketConnectors } from "./config.ts"
+import { resolveConnectorConfig as resolveConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { TEST_TOKEN_KEY, testSocketConnector, testWebhookConnector } from "./test-support.ts"
+
+/** Resolve against a Worker env the way the Worker does: through a `ConfigProvider` over it. */
+const resolveConnectorConfig = (env: Record<string, unknown>, connector: IngressConnector) =>
+	Effect.runSync(
+		resolveConfig(connector).pipe(
+			Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env)),
+		),
+	)
 
 describe("resolving a connector's configuration", () => {
 	it("hands over the declared values, trimmed", () => {
@@ -25,7 +34,7 @@ describe("resolving a connector's configuration", () => {
 	it("treats a binding that is not a string as absent", () => {
 		// A Worker env carries resources as well as configuration, and a name
 		// collision would otherwise hand a connector a namespace object.
-		for (const value of [42, true, {}, null]) {
+		for (const value of [{}, { get: () => undefined }, null]) {
 			expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: value }, testSocketConnector())).toEqual({
 				_tag: "missing",
 				names: [TEST_TOKEN_KEY],

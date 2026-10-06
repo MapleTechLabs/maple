@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	attributeKeysQuery,
 	logAttributeValuesQuery,
@@ -7,11 +7,14 @@ import {
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
 	resourceAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	spanAttributeValuesQuery,
 } from "./attribute-keys"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -24,7 +27,7 @@ describe("attributeKeysQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM attribute_keys_hourly")
 		expect(sql).toContain("AttributeKey AS attributeKey")
-		expect(sql).toContain("sum(UsageCount) AS usageCount")
+		expect(sql).toContain("sum(attribute_keys_hourly.UsageCount) AS usageCount")
 		expect(sql).toContain("AttributeScope = 'span'")
 		expect(sql).toContain("GROUP BY attributeKey")
 		expect(sql).toContain("ORDER BY usageCount DESC")
@@ -62,7 +65,7 @@ describe("spanAttributeValuesQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM attribute_values_hourly")
 		expect(sql).toContain("AttributeValue AS attributeValue")
-		expect(sql).toContain("sum(UsageCount) AS usageCount")
+		expect(sql).toContain("sum(attribute_values_hourly.UsageCount) AS usageCount")
 		expect(sql).toContain("AttributeScope = 'span'")
 		expect(sql).toContain("AttributeKey = 'http.method'")
 		expect(sql).toContain("GROUP BY attributeValue")
@@ -128,7 +131,7 @@ describe("metricScopedAttributeKeysQuery", () => {
 		const q = metricScopedAttributeKeysQuery({ metricType: "gauge" })
 		const { sql } = compileUnsafe(q, scopedParams)
 		expect(sql).toContain("FROM metrics_gauge")
-		expect(sql).toContain("arrayJoin(mapKeys(Attributes)) AS attributeKey")
+		expect(sql).toContain("arrayJoin(mapKeys(metrics_gauge.Attributes)) AS attributeKey")
 		expect(sql).toContain("count() AS usageCount")
 		expect(sql).toContain("MetricName = 'http.server.duration'")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -173,5 +176,34 @@ describe("metricScopedAttributeValuesQuery", () => {
 		expect(sql).toContain("ORDER BY usageCount DESC")
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
+})
+
+describe("serviceScopedAttributeKeysQuery", () => {
+	it("reads only the named service's spans, capped, from raw traces", () => {
+		const q = serviceScopedAttributeKeysQuery({ scope: "span" })
+		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "maple-ios" })
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("ServiceName = 'maple-ios'")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("LIMIT 20000")
+		expect(sql).toContain("mapKeys(")
+		expect(sql).not.toContain("attribute_keys_hourly")
+	})
+
+	it("reads ResourceAttributes for the resource scope", () => {
+		const q = serviceScopedAttributeKeysQuery({ scope: "resource" })
+		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "api" })
+		expect(sql).toContain("ResourceAttributes")
+		expect(sql).not.toContain("SpanAttributes")
+	})
+})
+
+describe("serviceScopedAttributeValuesQuery", () => {
+	it("lists one key's values for the service", () => {
+		const q = serviceScopedAttributeValuesQuery({ scope: "span", attributeKey: "http.route" })
+		const { sql } = compileUnsafe(q, { ...baseParams, serviceName: "api" })
+		expect(sql).toContain("ServiceName = 'api'")
+		expect(sql).toContain("['http.route']")
 	})
 })

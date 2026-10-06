@@ -4,7 +4,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import type { SandboxError } from "effect-agent/sandbox"
+import type { SandboxError } from "@yielded/agent/sandbox"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -31,6 +31,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import {
 	executeRegisteredMcpToolUnscoped,
 	inputSchemaOf,
@@ -58,6 +59,8 @@ let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
 const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
 		name: definition.name,
+		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
+		title: definition.title,
 		description: definition.description,
 		inputSchema: inputSchemaOf(definition),
 		...(definition.outputSchema === undefined
@@ -67,6 +70,7 @@ const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 			? undefined
 			: {
 					annotations: {
+						title: definition.title,
 						readOnlyHint: definition.hints.readOnly,
 						// The protocol defaults both of these to true; every Maple tool states them.
 						destructiveHint: !definition.hints.readOnly && definition.hints.destructive === true,
@@ -96,11 +100,21 @@ const failureResult = (text: string, category: string): McpToolResult => ({
  */
 export const withFeedbackHint = (text: string, name: string, surface: McpToolSurface): string =>
 	surface === "mcp" && name !== "send_maple_feedback"
-		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it with \`send_maple_feedback\`.`
+		? `${text}\nIf this looks like a bug in Maple rather than in your call, offer the user to report it with \`send_maple_feedback\`.`
 		: text
 
-/** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */
-const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
+/**
+ * Real failures leave the dispatcher span through the error channel so it exports as Error; the
+ * caller converts them into in-band results outside it. Expected 4xx stay Ok inside the span.
+ */
+const REAL_FAILURE_CATEGORY = new Map<string, string>([
+	["@maple/mcp/errors/McpQueryError", "query"],
+	["@maple/mcp/errors/McpTenantError", "tenant"],
+	["@maple/mcp/errors/McpAuthUnavailableError", "auth"],
+	["@maple/mcp/errors/McpInvalidTenantError", "tenant"],
+])
+
+const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	name: string,
 	input: unknown,
 	surface: McpToolSurface,
@@ -154,6 +168,49 @@ const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
 					}),
 					Effect.as(failureResult(`Query too expensive: ${error.message}`, "query_budget")),
 				),
+			// Missing/invalid credentials are expected 401s, not failures: they are
+			// recorded on the span as attributes + a Warn log (see
+			// `expected-failures.ts`), never as an Error status or exception event.
+			"@maple/mcp/errors/McpAuthMissingError": (error) =>
+				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
+					Effect.as(failureResult(`Authentication required: ${error.message}`, "auth")),
+				),
+			"@maple/mcp/errors/McpAuthInvalidError": (error) =>
+				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
+					Effect.as(failureResult(`Authentication failed: ${error.message}`, "auth")),
+				),
+		}),
+		// After the catchTags above, so a failure they converted into an in-band
+		// `isError` result is still counted. Tool handlers report failure in the
+		// result rather than the error channel, so span status alone never
+		// reflected a failed tool call.
+		Effect.tap((result) =>
+			Effect.annotateCurrentSpan({
+				"result.isError": result.isError === true,
+				"maple.mcp.result.chars": result.content.reduce(
+					(total, block) => total + block.text.length,
+					0,
+				),
+				"maple.mcp.result.structured": result.structuredContent !== undefined,
+				...(result.failureCategory === undefined
+					? undefined
+					: { "maple.mcp.error.category": result.failureCategory }),
+			}),
+		),
+		Effect.tapError((error) => {
+			const category = REAL_FAILURE_CATEGORY.get(error._tag)
+			return category === undefined
+				? Effect.void
+				: Effect.annotateCurrentSpan({ "result.isError": true, "maple.mcp.error.category": category })
+		}),
+		Effect.annotateLogs({ "maple.mcp.tool": name }),
+	)
+})
+
+/** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */
+const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurface) =>
+	dispatchInSpan(name, input, surface).pipe(
+		Effect.catchTags({
 			"@maple/mcp/errors/McpQueryError": (error) =>
 				Effect.logError("MCP tool execution failed").pipe(
 					Effect.annotateLogs({
@@ -178,17 +235,6 @@ const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
 						),
 					),
 				),
-			// Missing/invalid credentials are expected 401s, not failures: they are
-			// recorded on the span as attributes + a Warn log (see
-			// `expected-failures.ts`), never as an Error status or exception event.
-			"@maple/mcp/errors/McpAuthMissingError": (error) =>
-				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
-					Effect.as(failureResult(`Authentication required: ${error.message}`, "auth")),
-				),
-			"@maple/mcp/errors/McpAuthInvalidError": (error) =>
-				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
-					Effect.as(failureResult(`Authentication failed: ${error.message}`, "auth")),
-				),
 			"@maple/mcp/errors/McpAuthUnavailableError": (error) =>
 				Effect.logError("MCP authentication dependency failed").pipe(
 					Effect.annotateLogs({ "error.message": error.message, "error.type": error._tag }),
@@ -204,26 +250,8 @@ const callMcpToolUnscoped = Effect.fn("McpToolDispatcher.call")(function* (
 					Effect.as(failureResult(`Tenant error (${error.field}): ${error.message}`, "tenant")),
 				),
 		}),
-		// After the catchTags above, so a failure they converted into an in-band
-		// `isError` result is still counted. Tool handlers report failure in the
-		// result rather than the error channel, so span status alone never
-		// reflected a failed tool call.
-		Effect.tap((result) =>
-			Effect.annotateCurrentSpan({
-				"result.isError": result.isError === true,
-				"maple.mcp.result.chars": result.content.reduce(
-					(total, block) => total + block.text.length,
-					0,
-				),
-				"maple.mcp.result.structured": result.structuredContent !== undefined,
-				...(result.failureCategory === undefined
-					? undefined
-					: { "maple.mcp.error.category": result.failureCategory }),
-			}),
-		),
 		Effect.annotateLogs({ "maple.mcp.tool": name }),
 	)
-})
 
 export interface McpToolExecutorApi {
 	readonly execute: (
@@ -284,6 +312,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 		),
 	),
 	Layer.provide(PullRequestLookupLive),
+	Layer.provide(FetchHttpClient.layer),
 )
 
 export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExecutorApi>()(

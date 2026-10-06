@@ -11,8 +11,8 @@
  * would do exactly the same for a connector for any other platform.
  */
 import type { ChatConnectorId, ConnectorRequest, SocketStep } from "@maple/chat-platform"
-import { Duration, Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Duration, Effect, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { InboundHandler } from "../inbound.ts"
 
 /** The live connection, as much of it as the loop needs. */
@@ -20,9 +20,15 @@ export interface SocketSink {
 	readonly send: (frame: string) => void
 }
 
+/** The connector's state could not be persisted; the step stops before publishing anything. */
+export class SocketStateNotWritten extends Schema.TaggedError<SocketStateNotWritten>()(
+	"@maple/chat-bot/SocketStateNotWritten",
+	{ connector: Schema.String, message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Where the connector's opaque state lives between activations. */
 export interface SocketStore {
-	readonly write: (state: string) => Effect.Effect<void>
+	readonly write: (state: string) => Effect.Effect<void, SocketStateNotWritten>
 }
 
 export interface SocketPorts {

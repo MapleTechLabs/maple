@@ -35,9 +35,9 @@ These v1 groups mix public resource operations with private orchestration. Split
 | `integrations`                             | Promote a provider only when a public resource or supported external automation needs it. Chat connectors and PlanetScale already meet that bar.                                             | Cloudflare, GitHub, and Hazel dashboard control surfaces remain private until public demand exists. Split providers into independent contracts so one provider does not block retirement of another.                                                                                                              |
 | `warehouse` (**removed**), `observability` | Keep the existing stable telemetry resources: traces, logs, metrics, services, and service map. Add a specific public resource endpoint only after its request and response shape is stable. | Raw SQL, generic query documents, arbitrary warehouse execution, attribute/facet discovery used only by dashboard builders, infrastructure drill-down helpers, and provider-specific chart queries. (`queryEngine` is **done**: the whole group moved to `/internal/query-engine`, so nothing was left to split.) |
 
-### v2 telemetry gaps blocking full CLI parity
+### v2 telemetry gaps in CLI remote mode
 
-Rebuilding the CLI's remote mode on v2 surfaced capabilities local mode has and the public API does not. Each of these makes a command local-only today (`docs/local-mode.md` lists the user-facing effect):
+Rebuilding the CLI's remote mode on v2 surfaced capabilities local mode has and the public API does not. The CLI now covers each of them through the workspace's MCP tools rather than a v2 resource (`docs/local-mode.md` maps command to tool), so none blocks a command any more. They remain v2 gaps:
 
 - **No attribute discovery.** Nothing in `/v2` returns the attribute keys or values observed in telemetry; `/v2/attribute_mappings` is mapping configuration. This blocks `maple attributes` entirely and is the largest gap.
 - **`/v2/traces/search` cannot sort.** It filters by `min_duration_ms` but has no order parameter, so "slowest N traces" is unexpressible.

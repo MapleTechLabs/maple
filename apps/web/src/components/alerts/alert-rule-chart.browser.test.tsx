@@ -37,6 +37,7 @@ function check(offsetMinutes: number, status: AlertCheckDocument["status"], obse
 		evaluationDurationMs: 12,
 		errorMessage: null,
 		errorCategory: null,
+		skipReason: null,
 	})
 }
 

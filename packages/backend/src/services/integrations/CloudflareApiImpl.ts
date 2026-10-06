@@ -23,7 +23,7 @@ import * as Workers from "@distilled.cloud/cloudflare/workers"
 import * as Zones from "@distilled.cloud/cloudflare/zones"
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Match, Schema, Stream } from "effect"
-import { FetchHttpClient, type HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, type HttpClient } from "effect/http"
 
 /** The Effect context a distilled operation requires: resolved credentials + an HTTP client. */
 type CloudflareRequirements = Credentials | HttpClient.HttpClient

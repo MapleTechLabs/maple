@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { SectionHeading } from "@/components/common/section-heading"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -16,9 +17,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { PlanetScaleAlertMenu } from "@/components/infra/planetscale/planetscale-alert-menu"
 import { PlanetScaleBranchScope } from "@/components/infra/planetscale/branch-scope"
 import {
@@ -526,7 +527,7 @@ function PlanetScaleDatabaseData({
 	) : Result.isFailure(timeseriesResult) ? (
 		// Section-scoped: a failed chart query must not take the branch table and
 		// query insights down with it — they are separate queries.
-		<QueryErrorState error={timeseriesResult.cause} />
+		<ErrorState error={timeseriesResult.cause} />
 	) : (
 		<div className="space-y-4">
 			<PlanetScaleChart
@@ -562,10 +563,12 @@ function PlanetScaleDatabaseData({
 			{/* Between the charts and the tables: the markers above are the index,
 			    this is the detail. */}
 			<section className="space-y-2">
-				<div className="flex items-baseline justify-between gap-3">
-					<h2 className="text-sm font-medium text-foreground">Activity</h2>
-					<span className="font-mono text-[11px] text-muted-foreground">{events.length}</span>
-				</div>
+				<SectionHeading
+					title="Activity"
+					actions={
+						<span className="font-mono text-[11px] text-muted-foreground">{events.length}</span>
+					}
+				/>
 				{Result.isInitial(eventsResult) ? (
 					<PlanetScaleActivityFeedLoading />
 				) : Result.isFailure(eventsResult) ? (
@@ -588,7 +591,7 @@ function PlanetScaleDatabaseData({
 				{Result.isInitial(branchStatsResult) ? (
 					<PlanetScaleBranchBreakdownPanelLoading />
 				) : Result.isFailure(branchStatsResult) ? (
-					<QueryErrorState error={branchStatsResult.cause} />
+					<ErrorState error={branchStatsResult.cause} />
 				) : (
 					<PlanetScaleBranchBreakdownPanel
 						candidates={candidates}

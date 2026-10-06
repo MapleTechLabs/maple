@@ -1,18 +1,18 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useMemo, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { CloudflareServiceUsage, CloudflareUsageResponse } from "@maple/domain/http"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
-import { ColumnHead, type SortDir } from "@/components/infra/primitives/data-table"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
+import { ColumnHead, type SortDir } from "@/components/common/data-table"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
@@ -64,7 +64,7 @@ export function toRowUsage(
 
 const relativeFromMs = (ms: number) => formatRelativeTime(new Date(ms).toISOString())
 
-type CloudflareErrorTone = "error" | "warning"
+type CloudflareErrorTone = Extract<Tone, "crit" | "warn">
 
 export interface CloudflareErrorInfo {
 	/** Human-readable summary shown in the UI; falls back to the raw string when unrecognized. */
@@ -90,43 +90,43 @@ export function describeCloudflareError(raw: string): CloudflareErrorInfo {
 	if (has("revoked", "no longer valid"))
 		return {
 			summary: "Cloudflare access was revoked — reconnect to resume.",
-			tone: "error",
+			tone: "crit",
 			scope: "account",
 		}
 	if (has("lacks the analytics scopes", "scope"))
-		return { summary: "Reconnect to grant Maple analytics access.", tone: "warning", scope: "account" }
+		return { summary: "Reconnect to grant Maple analytics access.", tone: "warn", scope: "account" }
 	if (has("cloudflare_oauth_client_id", "is required", "ingest key unavailable"))
 		return {
 			summary: "Traffic collection is temporarily unavailable — try again shortly.",
-			tone: "error",
+			tone: "crit",
 			scope: "account",
 		}
 	if (has("not authenticated", "not authorized", "unauthorized", "access denied"))
 		return {
 			summary: "Cloudflare denied the request — reconnect to refresh access.",
-			tone: "error",
+			tone: "crit",
 			scope: "account",
 		}
 	if (has("no longer present"))
 		return {
 			summary: "This zone was removed from your Cloudflare account.",
-			tone: "warning",
+			tone: "warn",
 			scope: "resource",
 		}
 	if (has("not enabled", "disabled"))
 		return {
 			summary: "Analytics isn't enabled for this zone in Cloudflare.",
-			tone: "warning",
+			tone: "warn",
 			scope: "resource",
 		}
 	if (has("unknown field", "cannot query"))
 		return {
 			summary: "Some analytics aren't available on this Cloudflare plan.",
-			tone: "warning",
+			tone: "warn",
 			scope: "resource",
 		}
 
-	return { summary: raw, tone: "error", scope: "resource" }
+	return { summary: raw, tone: "crit", scope: "resource" }
 }
 
 export const isAccountScoped = (raw: string | null): boolean =>
@@ -175,20 +175,20 @@ export type ZoneStatusKind = "live" | "issue" | "no-data" | "paused" | "disabled
 
 export interface ZoneStatusInfo {
 	kind: ZoneStatusKind
-	/** Tailwind bg-* class for the leading status dot. */
-	dot: string
+	/** Leading status dot tone. */
+	tone: Tone
 	detail: ReactNode
 	detailClass: string
 }
 
 /** Chip label, dot color, and sort priority per state (live is healthiest → sorts first). */
-export const STATUS_META: Record<ZoneStatusKind, { label: string; order: number; dot: string }> = {
-	live: { label: "Live", order: 0, dot: "bg-success" },
-	issue: { label: "Issues", order: 1, dot: "bg-destructive" },
-	"no-data": { label: "No data", order: 2, dot: "bg-warning" },
-	paused: { label: "Paused", order: 3, dot: "bg-muted-foreground/40" },
-	disabled: { label: "Disabled", order: 4, dot: "bg-muted-foreground/40" },
-} satisfies Record<ZoneStatusKind, { label: string; order: number; dot: string }>
+export const STATUS_META: Record<ZoneStatusKind, { label: string; order: number; tone: Tone }> = {
+	live: { label: "Live", order: 0, tone: "ok" },
+	issue: { label: "Issues", order: 1, tone: "crit" },
+	"no-data": { label: "No data", order: 2, tone: "warn" },
+	paused: { label: "Paused", order: 3, tone: "neutral" },
+	disabled: { label: "Disabled", order: 4, tone: "neutral" },
+} satisfies Record<ZoneStatusKind, { label: string; order: number; tone: Tone }>
 
 const CHIP_ORDER: ReadonlyArray<ZoneStatusKind> = ["live", "issue", "no-data", "paused", "disabled"]
 
@@ -208,7 +208,7 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (!enabled) {
 		return {
 			kind: "disabled",
-			dot: "bg-muted-foreground/40",
+			tone: "neutral",
 			detail: "Disabled",
 			detailClass: "text-muted-foreground",
 		}
@@ -216,24 +216,23 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (accountPaused) {
 		return {
 			kind: "paused",
-			dot: "bg-muted-foreground/40",
+			tone: "neutral",
 			detail: "Paused",
 			detailClass: "text-muted-foreground",
 		}
 	}
 	if (showInlineError && err && lastError) {
-		const isError = err.tone === "error"
 		return {
 			kind: "issue",
-			dot: isError ? "bg-destructive" : "bg-warning",
+			tone: err.tone,
 			detail: <ErrorLine info={err} raw={lastError} />,
-			detailClass: isError ? "text-destructive-foreground" : "text-warning-foreground",
+			detailClass: TONE_TEXT[err.tone],
 		}
 	}
 	if (rowHasData(usage)) {
 		return {
 			kind: "live",
-			dot: "bg-success",
+			tone: "ok",
 			detail:
 				usage?.lastDataAt != null
 					? `Last data ${relativeFromMs(usage.lastDataAt)}`
@@ -244,24 +243,24 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (usageLoaded && lastSyncedAt) {
 		return {
 			kind: "no-data",
-			dot: "bg-warning",
+			tone: "warn",
 			detail: "No data in last 24h",
-			detailClass: "text-warning-foreground",
+			detailClass: TONE_TEXT.warn,
 		}
 	}
 	if (lastSyncedAt) {
 		return {
 			kind: "live",
-			dot: "bg-success",
+			tone: "ok",
 			detail: `Checked ${relativeFromMs(lastSyncedAt)}`,
 			detailClass: "text-muted-foreground",
 		}
 	}
 	return {
 		kind: "no-data",
-		dot: "bg-warning",
+		tone: "warn",
 		detail: "Waiting for first data",
-		detailClass: "text-warning-foreground",
+		detailClass: TONE_TEXT.warn,
 	}
 }
 
@@ -285,17 +284,16 @@ function ResourceRow({
 
 	const body = (
 		<>
-			<span className={cn("mt-[5px] size-1.5 shrink-0 rounded-full", status.dot)} aria-hidden />
+			<StatusDot tone={status.tone} className="mt-[5px]" />
 			<div className="min-w-0 flex-1">
-				<span
+				<TruncatedText
 					className={cn(
-						"block truncate text-xs font-medium text-foreground",
+						"text-xs font-medium text-foreground",
 						zoneLink && "group-hover:text-primary",
 					)}
-					title={name}
 				>
 					{name}
-				</span>
+				</TruncatedText>
 				{/* In a narrow card the status column is hidden, so surface the detail under the name. */}
 				<div className={cn("mt-0.5 text-[11px] @lg:hidden", status.detailClass)}>{status.detail}</div>
 			</div>
@@ -349,39 +347,27 @@ interface DecoratedZone {
 
 /** One filter chip: state color dot (or none for "All") + label + count. */
 function ZoneChip({
+	value,
 	label,
 	count,
-	dot,
-	active,
-	onClick,
+	tone,
 }: {
+	value: string
 	label: string
 	count: number
-	dot?: string
-	active: boolean
-	onClick: () => void
+	tone?: Tone
 }) {
 	return (
-		<button
-			type="button"
-			role="tab"
-			aria-selected={active}
-			onClick={onClick}
-			className={cn(
-				"inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors",
-				active
-					? "bg-muted text-foreground"
-					: "border border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-			)}
+		<ToggleGroupItem
+			value={value}
+			className="group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs"
 		>
-			{dot ? <span aria-hidden className={cn("size-1.5 rounded-full", dot)} /> : null}
+			{tone ? <StatusDot tone={tone} /> : null}
 			{label}
-			<span
-				className={cn("tabular-nums", active ? "text-muted-foreground" : "text-muted-foreground/70")}
-			>
+			<span className="tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground">
 				{count}
 			</span>
-		</button>
+		</ToggleGroupItem>
 	)
 }
 
@@ -466,61 +452,42 @@ export function CloudflareZoneBoard({
 		}
 	}
 
-	const activeChip = (kind: ZoneStatusKind | "all") => () =>
-		setFilter((current) => (current === kind ? "all" : kind))
+	// Pressing the active chip again unpresses it, which falls back to "All".
+	const handleFilter = (values: ReadonlyArray<string>) =>
+		setFilter(CHIP_ORDER.find((kind) => kind === values[0]) ?? "all")
 
 	return (
-		<div
-			className={cn(
-				"@container flex flex-col overflow-hidden rounded-lg border border-border/60 bg-card",
-				className,
-			)}
-		>
+		<Panel className={cn("@container rounded-lg border-border/60", className)}>
 			{/* Title bar: the health rollup (chips double as a single-select filter) + a name search. */}
-			<div className="flex flex-wrap items-center gap-2 border-b border-border/60 py-2.5 pl-4 pr-2.5">
+			<PanelHeader className="gap-2 border-border/60 pl-4 pr-2.5">
 				<h3 className="text-sm font-semibold">Zones</h3>
-				<div
-					role="tablist"
+				<ToggleGroup
+					connected={false}
+					size="xs"
 					aria-label="Filter zones by status"
-					className="ml-auto flex flex-wrap items-center gap-1.5"
+					value={[filter]}
+					onValueChange={handleFilter}
+					className="ml-auto gap-1.5"
 				>
-					<ZoneChip
-						label="All"
-						count={decorated.length}
-						active={filter === "all"}
-						onClick={activeChip("all")}
-					/>
+					<ZoneChip value="all" label="All" count={decorated.length} />
 					{CHIP_ORDER.filter((kind) => counts[kind] > 0).map((kind) => (
 						<ZoneChip
 							key={kind}
+							value={kind}
 							label={STATUS_META[kind].label}
 							count={counts[kind]}
-							dot={STATUS_META[kind].dot}
-							active={filter === kind}
-							onClick={activeChip(kind)}
+							tone={STATUS_META[kind].tone}
 						/>
 					))}
-				</div>
-				<InputGroup className="w-full sm:w-[170px]">
-					<InputGroupAddon>
-						<MagnifierIcon />
-					</InputGroupAddon>
-					<InputGroupInput
-						size="sm"
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						placeholder="Filter zones…"
-						aria-label="Filter zones by name"
-					/>
-					{search ? (
-						<InputGroupAddon align="inline-end">
-							<InputGroupButton aria-label="Clear filter" onClick={() => setSearch("")}>
-								<XmarkIcon />
-							</InputGroupButton>
-						</InputGroupAddon>
-					) : null}
-				</InputGroup>
-			</div>
+				</ToggleGroup>
+				<SearchInput
+					className="w-full sm:w-[170px]"
+					value={search}
+					onValueChange={setSearch}
+					placeholder="Filter zones…"
+					aria-label="Filter zones by name"
+				/>
+			</PanelHeader>
 
 			{banner ? <div className="px-3 pt-3">{banner}</div> : null}
 			<div className="flex flex-col">
@@ -556,9 +523,9 @@ export function CloudflareZoneBoard({
 				</div>
 
 				{sorted.length === 0 ? (
-					<div className="px-3 py-10 text-center text-[12px] text-muted-foreground">
+					<EmptyMessage className="px-3 py-10">
 						{query ? `No zones match "${search.trim()}".` : "No zones in this state."}
-					</div>
+					</EmptyMessage>
 				) : (
 					// Plain max-height + overflow container (not the Base UI ScrollArea, whose `h-full`
 					// viewport needs a definite-height ancestor — with only a max-height it clips without
@@ -576,7 +543,7 @@ export function CloudflareZoneBoard({
 					</div>
 				)}
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -609,21 +576,20 @@ export function CloudflareWorkersCard({
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
 
 	return (
-		<div
-			className={cn(
-				"flex h-fit flex-col overflow-hidden rounded-lg border border-border/60 bg-card",
-				className,
-			)}
-		>
-			<div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+		<Panel className={cn("h-fit rounded-lg border-border/60", className)}>
+			<PanelHeader
+				className="border-border/60 py-3"
+				action={
+					<Link
+						to="/service-map"
+						className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+					>
+						View on map →
+					</Link>
+				}
+			>
 				<h3 className="text-sm font-semibold">Workers</h3>
-				<Link
-					to="/service-map"
-					className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-				>
-					View on map →
-				</Link>
-			</div>
+			</PanelHeader>
 
 			{aggregate.kind === "issue" || aggregate.kind === "no-data" ? (
 				<div className={cn("border-b border-border/40 px-4 py-2 text-[11px]", aggregate.detailClass)}>
@@ -633,7 +599,7 @@ export function CloudflareWorkersCard({
 
 			{scripts.length === 0 ? (
 				<div className="flex items-center gap-2.5 px-4 py-3">
-					<span className={cn("size-1.5 shrink-0 rounded-full", aggregate.dot)} aria-hidden />
+					<StatusDot tone={aggregate.tone} />
 					<span className={cn("text-[11px]", aggregate.detailClass)}>{aggregate.detail}</span>
 				</div>
 			) : (
@@ -644,19 +610,10 @@ export function CloudflareWorkersCard({
 							className="flex items-center justify-between gap-3 border-b border-border/40 py-2.5 last:border-0"
 						>
 							<span className="flex min-w-0 items-center gap-2.5">
-								<span
-									className={cn(
-										"size-1.5 shrink-0 rounded-full",
-										service.totalRequests > 0 ? "bg-success" : "bg-muted-foreground/40",
-									)}
-									aria-hidden
-								/>
-								<span
-									className="truncate text-xs font-medium text-foreground"
-									title={service.displayName}
-								>
+								<StatusDot tone={service.totalRequests > 0 ? "ok" : "neutral"} />
+								<TruncatedText className="text-xs font-medium text-foreground">
 									{service.displayName}
-								</span>
+								</TruncatedText>
 							</span>
 							<span className="shrink-0 text-xs font-medium tabular-nums text-foreground">
 								{service.totalRequests > 0 ? formatNumber(service.totalRequests) : "—"}
@@ -676,6 +633,6 @@ export function CloudflareWorkersCard({
 					) : null}
 				</div>
 			)}
-		</div>
+		</Panel>
 	)
 }

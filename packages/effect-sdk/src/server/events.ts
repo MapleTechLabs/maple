@@ -35,7 +35,7 @@ import {
 	Schema,
 	Semaphore,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { SDK_VERSION } from "../version.js"
 import { resolveResource } from "./resource.js"
 import type { MapleRegion } from "@maple/browser-session/region"

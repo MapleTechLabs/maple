@@ -7,7 +7,6 @@
  *
  */
 import { MapleDb } from "@maple/infra/cloudflare"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Effect, Layer, Option } from "effect"
@@ -15,6 +14,7 @@ import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
 	CliAuthRateLimit,
+	EmailSender,
 	McpOAuthRateLimit,
 	type ObjectStore,
 	ObjectStoreError,
@@ -24,8 +24,14 @@ import {
 	RateLimitBindingError,
 	type RateLimiter,
 	ReplayBlobBucket,
+	SchemaApplyWorkflow,
 	VcsSyncQueueProducer,
+	WorkflowStartError,
+	type WorkflowStarter,
 } from "@maple/backend/platform/bindings"
+import { bindChatSessions, chatSessionsLayer } from "@maple/backend/platform/chat-sessions"
+import { bindEmailSender } from "@maple/backend/platform/email-sender"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
@@ -59,6 +65,10 @@ export const bindApiClients = Effect.gen(function* () {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
 		}),
+		// `send_email`, prd only.
+		email: yield* bindEmailSender,
+		// maple-ai's chat Durable Object, cross-script.
+		chatSessions: yield* bindChatSessions,
 	}
 })
 
@@ -70,6 +80,7 @@ export const ApiBindingLayers = Layer.mergeAll(
 	Cloudflare.Queues.WriteQueueBinding,
 	Cloudflare.R2.ReadBucketBinding,
 	Cloudflare.Workers.RateLimitBinding,
+	Cloudflare.Email.SendBinding,
 )
 
 /** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
@@ -124,13 +135,36 @@ const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 })
 
 /**
- * The ports the service graph depends on, over the clients the init bound,
- * plus the env itself as `WorkerEnvironment` and the `ConfigProvider` — the
- * one place a graph in this Worker gets its env from. `env` carries the
- * `MAPLE_DB` binding — real in the isolate, empty at plan time, where nothing
- * reads it.
+ * Alchemy's `create` dies when the binding rejects; recovered here into the
+ * port's typed channel, so the caller can release the run it claimed.
  */
-export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) =>
+const workflowStarter = <Params>(handle: Cloudflare.WorkflowHandle<Params>): WorkflowStarter<Params> => ({
+	create: (params) =>
+		handle.create({ params }).pipe(
+			Effect.asVoid,
+			Effect.catchDefect((cause) =>
+				Effect.fail(
+					new WorkflowStartError({
+						message: cause instanceof Error ? cause.message : "workflow create failed",
+						cause,
+					}),
+				),
+			),
+		),
+})
+
+/**
+ * The ports the service graph depends on, over the clients the init bound,
+ * plus the env-backed ports (`envPorts`: the env itself as `WorkerEnvironment`,
+ * the `ConfigProvider`, the ai service binding) and the `ChatSessions` port: the one place
+ * a graph in this Worker gets its env from. `env` carries the `MAPLE_DB`
+ * binding — real in the isolate, empty at plan time, where nothing reads it.
+ */
+export const apiPorts = (
+	clients: ApiBindingClients,
+	schemaApply: Cloudflare.WorkflowHandle<{ readonly orgId: string }>,
+	env: Record<string, unknown>,
+) =>
 	Layer.mergeAll(
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
@@ -139,8 +173,11 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
+		Layer.succeed(EmailSender, clients.email),
+		Layer.succeed(SchemaApplyWorkflow, workflowStarter(schemaApply)),
 		mapleDbConnectionLayer(env),
-		workerEnvLayer(env),
+		envPorts(env),
+		chatSessionsLayer(clients.chatSessions, env),
 	)
 
 export type ApiPortsLayer = ReturnType<typeof apiPorts>

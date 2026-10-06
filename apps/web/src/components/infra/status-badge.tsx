@@ -2,9 +2,10 @@ import { cn } from "@maple/ui/lib/utils"
 import { deriveHostStatus, type HostStatus } from "./format"
 import { SeverityDot } from "./primitives/severity-dot"
 import { statusLabel } from "./severity-tokens"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 const STATUS_TEXT: Record<HostStatus, string> = {
-	active: "text-[var(--severity-info)]",
+	active: TONE_TEXT.info,
 	idle: "text-muted-foreground",
 	ended: "text-muted-foreground",
 } satisfies Record<HostStatus, string>
@@ -22,9 +23,8 @@ interface HostStatusBadgeProps {
 	 *
 	 * For a badge sitting INLINE beside a name, "Active" on every row is not a
 	 * status, it is wallpaper — the Last seen column already carries freshness.
-	 * Quiet mode turns it back into what a badge is for: the exception. A badge
-	 * filling a dedicated Status COLUMN stays loud, because a column with a
-	 * header needs a value in every cell.
+	 * Quiet mode turns it back into what a badge is for: the exception. Every
+	 * infra table uses it; only a detail page's title shows the loud form.
 	 */
 	quiet?: boolean
 	className?: string

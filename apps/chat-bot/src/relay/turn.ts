@@ -36,7 +36,7 @@ import {
 	type ChatMessage,
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -100,7 +100,7 @@ export interface RelayPorts<R = never> {
 	/** Drop the link for a workspace the bot was removed from. */
 	readonly forgetWorkspace: (connector: ChatConnectorId, workspaceId: string) => Effect.Effect<void>
 	/** The conversation's Durable Object, or `undefined` where this deployment has no agent bound. */
-	readonly chatSession: (sessionId: ChatSessionId) => ChatSessionStub | undefined
+	readonly chatSession: (sessionId: ChatSessionId) => ChatSessionClient | undefined
 	/** Base of the Maple web app, for the links a reply carries. */
 	readonly appBaseUrl: string
 	/** A signed image for one chart in a reply, or `null` when this deployment cannot sign one. */
@@ -310,10 +310,8 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	// message and what the context block must not repeat. A session that cannot be read answers
 	// neither: `0` leaves the whole context in and takes no follow-up. It degrades the turn twice
 	// over, so it is logged rather than swallowed.
-	const transcript = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session's transcript could not be read"),
-		try: () => session.history(),
-	}).pipe(
+	const transcript = yield* session.history().pipe(
+		Effect.mapError(sessionUnreachable(sessionId, "The chat session's transcript could not be read")),
 		Effect.tapError((error) =>
 			Effect.logWarning("Chat session transcript could not be read").pipe(
 				Effect.annotateLogs({ "error.type": error._tag }),
@@ -353,23 +351,24 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 			Effect.orElseSucceed((): ReadonlyArray<ChatHistoryMessage> => []),
 		)
 
-	const claimed = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session did not accept a turn"),
-		try: () =>
-			session.beginTurn({
-				sessionId,
-				messageId: crypto.randomUUID(),
-				text: chatTurnText(message, { now, recent, seenUpTo }),
-				tenant: connectorTurnTenant(orgId),
-				origin: {
-					kind: "connector",
-					connectorId: message.connector,
-					workspaceId: message.workspaceId,
-					externalUserId: author.value,
-					displayName: message.author.displayName,
-				},
-			}),
-	}).pipe(Effect.exit)
+	const claimed = yield* session
+		.beginTurn({
+			sessionId,
+			messageId: crypto.randomUUID(),
+			text: chatTurnText(message, { now, recent, seenUpTo }),
+			tenant: connectorTurnTenant(orgId),
+			origin: {
+				kind: "connector",
+				connectorId: message.connector,
+				workspaceId: message.workspaceId,
+				externalUserId: author.value,
+				displayName: message.author.displayName,
+			},
+		})
+		.pipe(
+			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a turn")),
+			Effect.exit,
+		)
 	// A session that cannot be reached at all, as opposed to one that answered. Silence is the wrong
 	// reply to either — somebody asked a question.
 	if (Exit.isFailure(claimed)) {
@@ -481,25 +480,26 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		return yield* tellClicker(transport, action, notice(UNAVAILABLE_NOTICE))
 	}
 
-	const outcome = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session did not accept a decision"),
-		try: () =>
-			session.settleProposal({
-				sessionId: sessionId,
-				toolCallId: request.toolCallId,
-				decision: request.decision,
-				approver: {
-					kind: "connector",
-					connectorId: action.connector,
-					workspaceId: action.workspaceId,
-					externalUserId: approver.value,
-					displayName: action.actor.displayName,
-				},
-				// Only ever the user the HOST resolved from its own database, never anything the
-				// click carried: this is what the change runs as.
-				...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
-			}),
-	}).pipe(Effect.exit)
+	const outcome = yield* session
+		.settleProposal({
+			sessionId: sessionId,
+			toolCallId: request.toolCallId,
+			decision: request.decision,
+			approver: {
+				kind: "connector",
+				connectorId: action.connector,
+				workspaceId: action.workspaceId,
+				externalUserId: approver.value,
+				displayName: action.actor.displayName,
+			},
+			// Only ever the user the HOST resolved from its own database, never anything the
+			// click carried: this is what the change runs as.
+			...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
+		})
+		.pipe(
+			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a decision")),
+			Effect.exit,
+		)
 	if (Exit.isFailure(outcome)) {
 		yield* Effect.logError("A chat approval could not be settled").pipe(
 			Effect.annotateLogs({ "error.type": summarizeCause(outcome.cause) }),
@@ -541,16 +541,14 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 	request: ChatActionRequest,
 	orgId: OrgId,
 	sessionId: ChatSessionId,
-	session: ChatSessionStub,
+	session: ChatSessionClient,
 	ports: RelayPorts<R>,
 ) {
 	// A transcript that cannot be read leaves the decision applied and the message unchanged, which
 	// is confusing enough to be worth a line: the alternative is a silent degradation that looks
 	// exactly like the platform refusing the edit.
-	const history = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session did not answer with its history"),
-		try: () => session.history(),
-	}).pipe(
+	const history = yield* session.history().pipe(
+		Effect.mapError(sessionUnreachable(sessionId, "The chat session did not answer with its history")),
 		Effect.tapError((error) =>
 			Effect.logWarning("A settled approval could not be re-read").pipe(
 				Effect.annotateLogs({ "error.type": error._tag }),

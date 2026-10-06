@@ -1,4 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 
 import type { ReleaseHealth } from "./release-model"
 
@@ -19,17 +21,17 @@ export const RELEASE_HEALTH_DESCRIPTION = {
 
 /** Marker fill for the swimlanes and the filter legend. */
 export const RELEASE_HEALTH_DOT_CLASS = {
-	regressed: "bg-destructive",
-	watch: "bg-severity-warn",
+	regressed: TONE_FILL.crit,
+	watch: TONE_FILL.warn,
 	rolling: "border-2 border-primary bg-background",
 	healthy: "bg-primary/70",
 } satisfies Record<ReleaseHealth, string>
 
 const PILL_CLASS = {
-	regressed: "bg-destructive/10 text-destructive",
-	watch: "bg-severity-warn/15 text-severity-warn",
+	regressed: TONE_SOFT.crit,
+	watch: TONE_SOFT.warn,
 	rolling: "bg-primary/10 text-primary",
-	healthy: "bg-muted text-muted-foreground",
+	healthy: TONE_SOFT.neutral,
 } satisfies Record<ReleaseHealth, string>
 
 interface ReleaseHealthPillProps {
@@ -41,16 +43,15 @@ interface ReleaseHealthPillProps {
 
 export function ReleaseHealthPill({ health, label, className }: ReleaseHealthPillProps) {
 	return (
-		<span
+		<Badge
+			size="xs"
+			pill
+			mono
 			title={RELEASE_HEALTH_DESCRIPTION[health]}
-			className={cn(
-				"inline-flex h-[18px] shrink-0 cursor-default items-center rounded-full px-1.5 font-mono text-[10px] tabular-nums leading-none",
-				PILL_CLASS[health],
-				className,
-			)}
+			className={cn("cursor-default font-normal", PILL_CLASS[health], className)}
 		>
 			{label ?? RELEASE_HEALTH_LABEL[health]}
-		</span>
+		</Badge>
 	)
 }
 

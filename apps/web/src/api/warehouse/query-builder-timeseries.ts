@@ -26,7 +26,7 @@ import { makeWarehouseExecutor } from "@/api/warehouse/query-set-executor"
  *      alert-preview path still string-matches them.
  */
 
-const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
+const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u))
 
 const StrategySchema = Schema.Struct({
 	enableEmptyRangeFallback: Schema.optional(Schema.Boolean),

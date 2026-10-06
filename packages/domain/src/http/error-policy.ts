@@ -155,7 +155,7 @@ export const makeExactPublicHttpErrorBodySchema = <
 
 /** Runtime contract for a public error body when its exact tag/status are not known statically. */
 export const PublicHttpErrorBodySchema = makePublicHttpErrorBodySchema(
-	Schema.String.check(Schema.isPattern(/^@maple\//)),
+	Schema.String.check(Schema.isPattern(/^@maple\//u)),
 	PublicHttpErrorType,
 )
 export type AnyPublicHttpErrorBody = Schema.Schema.Type<typeof PublicHttpErrorBodySchema>

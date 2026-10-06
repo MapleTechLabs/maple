@@ -1,14 +1,4 @@
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { TrashIcon } from "@/components/icons"
 
 // Both destructive section actions offer the same shape of choice: keep the
@@ -38,32 +28,22 @@ export function DeleteSectionDialog({
 	}
 
 	return (
-		<AlertDialog open={open} onOpenChange={onOpenChange}>
-			<AlertDialogContent>
-				<AlertDialogHeader>
-					<AlertDialogMedia className="bg-destructive/10">
-						<TrashIcon className="text-destructive" />
-					</AlertDialogMedia>
-					<AlertDialogTitle>Delete “{sectionTitle}”?</AlertDialogTitle>
-					<AlertDialogDescription>
-						{widgetCount === 0
-							? "This group is empty, so nothing else will be removed."
-							: `This group holds ${widgetCount === 1 ? "1 widget" : `${widgetCount} widgets`}. Keep them on the dashboard, or delete them with the group.`}
-					</AlertDialogDescription>
-				</AlertDialogHeader>
-				<AlertDialogFooter>
-					<AlertDialogCancel>Cancel</AlertDialogCancel>
-					{widgetCount > 0 && (
-						<AlertDialogAction variant="outline" onClick={() => confirm("ungroup")}>
-							Keep widgets
-						</AlertDialogAction>
-					)}
-					<AlertDialogAction variant="destructive" onClick={() => confirm("delete")}>
-						{widgetCount === 0 ? "Delete group" : "Delete group & widgets"}
-					</AlertDialogAction>
-				</AlertDialogFooter>
-			</AlertDialogContent>
-		</AlertDialog>
+		<ConfirmDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			icon={<TrashIcon className="text-destructive" />}
+			title={<>Delete “{sectionTitle}”?</>}
+			description={
+				widgetCount === 0
+					? "This group is empty, so nothing else will be removed."
+					: `This group holds ${widgetCount === 1 ? "1 widget" : `${widgetCount} widgets`}. Keep them on the dashboard, or delete them with the group.`
+			}
+			secondaryAction={
+				widgetCount > 0 ? { label: "Keep widgets", onClick: () => confirm("ungroup") } : undefined
+			}
+			confirmLabel={widgetCount === 0 ? "Delete group" : "Delete group & widgets"}
+			onConfirm={() => confirm("delete")}
+		/>
 	)
 }
 
@@ -91,31 +71,23 @@ export function DeleteTabDialog({
 	}
 
 	return (
-		<AlertDialog open={open} onOpenChange={onOpenChange}>
-			<AlertDialogContent>
-				<AlertDialogHeader>
-					<AlertDialogMedia className="bg-destructive/10">
-						<TrashIcon className="text-destructive" />
-					</AlertDialogMedia>
-					<AlertDialogTitle>Delete tab “{tabTitle}”?</AlertDialogTitle>
-					<AlertDialogDescription>
-						{widgetCount === 0
-							? "This tab is empty, so nothing else will be removed."
-							: `This tab holds ${widgetCount === 1 ? "1 widget" : `${widgetCount} widgets`}.`}
-					</AlertDialogDescription>
-				</AlertDialogHeader>
-				<AlertDialogFooter>
-					<AlertDialogCancel>Cancel</AlertDialogCancel>
-					{widgetCount > 0 && (
-						<AlertDialogAction variant="outline" onClick={() => confirm("move")}>
-							Move to “{destinationTitle}”
-						</AlertDialogAction>
-					)}
-					<AlertDialogAction variant="destructive" onClick={() => confirm("delete")}>
-						{widgetCount === 0 ? "Delete tab" : "Delete tab & widgets"}
-					</AlertDialogAction>
-				</AlertDialogFooter>
-			</AlertDialogContent>
-		</AlertDialog>
+		<ConfirmDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			icon={<TrashIcon className="text-destructive" />}
+			title={<>Delete tab “{tabTitle}”?</>}
+			description={
+				widgetCount === 0
+					? "This tab is empty, so nothing else will be removed."
+					: `This tab holds ${widgetCount === 1 ? "1 widget" : `${widgetCount} widgets`}.`
+			}
+			secondaryAction={
+				widgetCount > 0
+					? { label: <>Move to “{destinationTitle}”</>, onClick: () => confirm("move") }
+					: undefined
+			}
+			confirmLabel={widgetCount === 0 ? "Delete tab" : "Delete tab & widgets"}
+			onConfirm={() => confirm("delete")}
+		/>
 	)
 }

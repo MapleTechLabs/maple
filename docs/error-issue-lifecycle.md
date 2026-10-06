@@ -121,7 +121,7 @@ on the `maybeStartInvestigation` span as `maple.investigation.start_result`:
    quiet minutes and the next occurrence opens a fresh one, so an issue firing on a retry cadence
    opened 83 incidents in five days and was diagnosed, identically, on fifteen of them.
 2. **The decision model** (`IncidentClassifier` → maple-ai's `POST /internal/triage/classify`,
-   Jev over OpenRouter). It answers what the incident is (`investigate` / `monitor` / `noise`),
+   Clef on Workers AI). It answers what the incident is (`investigate` / `monitor` / `noise`),
    how bad, whether a customer noticed, and whether one of the service's recent diagnoses already
    explains it. `evaluateIncidentGate` skips confident noise (`noise`) and confident matches
    (`covered_by_prior`), never anything the detector called `high` or `critical`, and only ever

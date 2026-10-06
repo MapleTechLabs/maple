@@ -84,7 +84,7 @@ export const MAPLE_NATIVE_TURN_ID_ATTR = "maple_ai.turn.id"
 
 // `gen_ai.operation.name` is an open set. These group the semantic convention's
 // operation names — plus `agent_step`, which the Vercel AI SDK emits and
-// production data carries — into the four readings the product distinguishes.
+// production data carries — into the five readings the product distinguishes.
 // Shared between the session summary query and the web's span classifier so an
 // "llm call" is the same span on the server and on the page.
 export const AI_INFERENCE_OPERATIONS = [
@@ -103,6 +103,19 @@ export const AI_AGENT_OPERATIONS = [
 	"plan",
 	"agent_step",
 ] as const
+/** The convention's memory-store operations: the agent's own bookkeeping, never
+ *  a model turn or a tool call. The ingest gateway decides this for the spans it
+ *  stamps (`KNOWN_OPS` in `apps/ingest/src/ai_session/usage.rs`); the span
+ *  classifier reads it for the spans ingested before. */
+export const AI_MEMORY_OPERATIONS = [
+	"search_memory",
+	"create_memory",
+	"update_memory",
+	"upsert_memory",
+	"delete_memory",
+	"create_memory_store",
+	"delete_memory_store",
+] as const
 /**
  * Count of whole oldest messages dropped from `gen_ai.input.messages` to fit
  * the emitter's attribute budget. Write-only diagnostics: nothing decodes it,
@@ -119,6 +132,50 @@ export const MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR = "maple_ai.input_messages_
  */
 export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 
+/**
+ * Every fact Agent Sessions aggregates or filters on, as the ingest gateway
+ * decided it for one span (`apps/ingest/src/ai_session/facts.rs`, `usage.rs`).
+ * `ai_trace_index_mv` projects these and holds no vendor rule, and the detail
+ * page reads the same ones, so the list and the page cannot disagree.
+ *
+ * - `llmCall`: `"1"` on the model call, `"0"` on every other stamped span. Its
+ *   presence is what says the gateway decided the rest; a span ingested
+ *   before it did carries none, and its readers keep their op/name rules and
+ *   usage conventions for it until it ages out of the 30-day TTL.
+ * - `toolCall`, `error`: `"1"` where they hold, absent otherwise. `toolCall`
+ *   is `"0"` on the copy a call paused for a human's approval leaves, by its
+ *   framework's explicit mark (Google ADK, OpenAI Agents up to 0.22.0,
+ *   pydantic-ai, LlamaIndex's own tracer): that copy is neither a call nor a
+ *   failure, and a call rejected after it counts none.
+ * - `model`, `agentName`, `toolName`, `responseId`: the first non-empty value
+ *   across the dialects' keys; `responseId` on model calls.
+ * - `toolDescription` (on tool calls) and `toolErrorResult` (a failed tool
+ *   call's result), cut by the gateway.
+ * - The usage buckets, on the model call alone: `inputTokens` the uncached
+ *   prompt, `outputTokens` the visible completion, a span's total the plain
+ *   sum of the five; `cost` in USD as the emitter priced the call. An agent or
+ *   workflow wrapper repeating its calls' usage carries none.
+ *
+ * Gateway-owned: stripped from customer input with the rest of the namespace.
+ */
+export const MAPLE_AI_STAMP_ATTRS = {
+	llmCall: "maple_ai.llm_call",
+	toolCall: "maple_ai.tool_call",
+	error: "maple_ai.error",
+	model: "maple_ai.model",
+	agentName: "maple_ai.agent.name",
+	toolName: "maple_ai.tool.name",
+	responseId: "maple_ai.response.id",
+	toolDescription: "maple_ai.tool.description",
+	toolErrorResult: "maple_ai.tool.error_result",
+	inputTokens: "maple_ai.usage.input_tokens",
+	cacheReadTokens: "maple_ai.usage.cache_read_tokens",
+	cacheWriteTokens: "maple_ai.usage.cache_write_tokens",
+	outputTokens: "maple_ai.usage.output_tokens",
+	reasoningTokens: "maple_ai.usage.reasoning_tokens",
+	cost: "maple_ai.usage.cost",
+} as const
+
 // Usage conventions — which of a reporter's token figures already contain
 // which others.
 //
@@ -128,11 +185,13 @@ export const MAPLE_GENAI_MODEL_DURATION_MS_ATTR = "maple_ai.model_duration_ms"
 // Anthropic's `input_tokens` EXCLUDES `cache_read_input_tokens` and
 // `cache_creation_input_tokens`; Gemini's `candidatesTokenCount` EXCLUDES
 // `thoughtsTokenCount`. A total that adds the five as if they were disjoint
-// bills a cache-heavy or reasoning-heavy call nearly twice. Both readers of
-// usage — `spanTokenBuckets` in the web app and `genAiTokensExpr` behind
-// `ai_trace_index` — resolve the reporter's convention here first and carve
-// the contained buckets back out, so `input` always means the uncached prompt,
-// `output` the visible completion, and a total is always the plain sum.
+// bills a cache-heavy or reasoning-heavy call nearly twice. The ingest gateway
+// settles this per emitter and stamps disjoint buckets (`MAPLE_AI_STAMP_ATTRS`);
+// `spanTokenBuckets` resolves the reporter's convention here only for a span
+// ingested before it did, carving the contained buckets back out, so `input`
+// always means the uncached prompt, `output` the visible completion, and a
+// total is always the plain sum. Remove once those spans have aged out of the
+// 30-day TTL.
 
 export interface GenAiUsageConvention {
 	/** The prompt figure already contains the cache-read and cache-write buckets. */
@@ -148,7 +207,7 @@ const NESTED: GenAiUsageConvention = { inputIncludesCache: true, outputIncludesR
  * under. Only providers whose wire shape was checked are listed; anything else
  * takes {@link GENAI_DEFAULT_USAGE_CONVENTION}.
  */
-export const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
+const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
 	// Messages API: `input_tokens` excludes both cache buckets and is billed
 	// beside them; `output_tokens` includes the thinking tokens.
 	["anthropic", { inputIncludesCache: false, outputIncludesReasoning: true }],
@@ -167,7 +226,7 @@ export const GENAI_PROVIDER_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageCon
  * Vendors that re-normalise usage before emitting it, whichever provider ran
  * the call — so the vendor, not the provider, decides.
  */
-export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
+const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> = new Map([
 	// The Vercel AI SDK emits `gen_ai.usage.input_tokens` as
 	// `usage.inputTokens.total` and the output as `outputTokens.total`, and its
 	// providers build both totals as the sum of their parts (`@ai-sdk/anthropic`
@@ -187,7 +246,7 @@ export const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConve
 
 /** What most of the field does, and the side that errs toward the smaller
  *  number rather than inventing tokens. */
-export const GENAI_DEFAULT_USAGE_CONVENTION: GenAiUsageConvention = NESTED
+const GENAI_DEFAULT_USAGE_CONVENTION: GenAiUsageConvention = NESTED
 
 /**
  * The convention a span's usage was reported under. The vendor is asked first
@@ -255,6 +314,17 @@ export const AI_GENAI_FIELDS = {
 	// none. Instrumentations that price calls themselves (OpenLLMetry,
 	// OpenInference, Logfire) each use their own key; this is OpenLLMetry's.
 	usageCost: { key: "gen_ai.usage.cost", type: "number" },
+	// The gateway's verdicts and disjoint usage buckets — see
+	// `MAPLE_AI_STAMP_ATTRS`.
+	mapleLlmCall: { key: MAPLE_AI_STAMP_ATTRS.llmCall, type: "number" },
+	mapleToolCall: { key: MAPLE_AI_STAMP_ATTRS.toolCall, type: "number" },
+	mapleError: { key: MAPLE_AI_STAMP_ATTRS.error, type: "number" },
+	mapleInputTokens: { key: MAPLE_AI_STAMP_ATTRS.inputTokens, type: "number" },
+	mapleCacheReadTokens: { key: MAPLE_AI_STAMP_ATTRS.cacheReadTokens, type: "number" },
+	mapleCacheWriteTokens: { key: MAPLE_AI_STAMP_ATTRS.cacheWriteTokens, type: "number" },
+	mapleOutputTokens: { key: MAPLE_AI_STAMP_ATTRS.outputTokens, type: "number" },
+	mapleReasoningTokens: { key: MAPLE_AI_STAMP_ATTRS.reasoningTokens, type: "number" },
+	mapleCost: { key: MAPLE_AI_STAMP_ATTRS.cost, type: "number" },
 
 	// conversation
 	conversationId: { key: "gen_ai.conversation.id", type: "string" },

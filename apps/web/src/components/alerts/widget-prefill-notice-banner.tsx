@@ -7,7 +7,7 @@ export function WidgetPrefillNoticeBanner({ notices }: { notices: WidgetAlertPre
 	if (notices.length === 0) return null
 	const hasError = notices.some((notice) => notice.severity === "error")
 	return (
-		<Alert variant={hasError ? "error" : "warning"} className="rounded-md">
+		<Alert variant={hasError ? "crit" : "warn"} className="rounded-md">
 			<CircleWarningIcon size={14} />
 			<AlertTitle>Review chart alert draft</AlertTitle>
 			<AlertDescription>

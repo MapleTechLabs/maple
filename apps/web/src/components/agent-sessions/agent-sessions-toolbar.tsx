@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { ToolbarSearch, ToolbarStat } from "@maple/ui/components/toolbar"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
@@ -45,10 +46,8 @@ export function AgentSessionsToolbar({
 			/>
 
 			<div
-				className={cn(
-					"flex flex-wrap items-center gap-4 transition-opacity",
-					waiting && "opacity-60",
-				)}
+				aria-busy={waiting || undefined}
+				className={cn("flex flex-wrap items-center gap-4", refreshingClass(waiting))}
 			>
 				{sessionCount !== undefined && (
 					<Tooltip>

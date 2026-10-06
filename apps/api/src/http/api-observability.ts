@@ -1,5 +1,5 @@
 import { Layer } from "effect"
-import { Headers, HttpMiddleware } from "effect/unstable/http"
+import { Headers, HttpMiddleware } from "effect/http"
 
 // OAuth callbacks whose query string carries a provider-issued authorization
 // `code` (exchangeable for an access token) plus the single-use connect `state`.
@@ -16,6 +16,10 @@ import { Headers, HttpMiddleware } from "effect/unstable/http"
 const OAUTH_CALLBACK_PATH =
 	/^(?:\/api\/integrations\/[^/]+\/callback|\/oauth\/chat\/[^/]+(?:\/identity)?\/callback)(?:\?|$)/
 
+// The email unsubscribe link's `token` query is a signed, non-expiring credential
+// for opting a subscriber out; `DigestService.unsubscribeByToken` owns the span.
+const EMAIL_UNSUBSCRIBE_PATH = /^\/api\/email\/unsubscribe(?:\?|$)/
+
 // The `TracerDisabledWhen` filter and the header-redaction list — both
 // references `HttpMiddleware.tracer` reads regardless of which Tracer is
 // active. The Worker registers this layer with alchemy's `Telemetry.layer`, so
@@ -28,6 +32,7 @@ export const ApiObservabilityLive = Layer.mergeAll(
 			request.url === "/health" ||
 			request.method === "OPTIONS" ||
 			OAUTH_CALLBACK_PATH.test(request.url) ||
+			EMAIL_UNSUBSCRIBE_PATH.test(request.url) ||
 			/\.(png|ico|jpg|jpeg|gif|css|js|svg|webp|woff2?)(\?.*)?$/i.test(request.url),
 	),
 	// Every request header lands on the server span as `http.request.header.<name>`.

@@ -15,10 +15,16 @@
 import type { TracesMetric, AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "./queries/errors"
 import type { OrgId } from "@maple/domain"
-import { compile, compileUnion, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import {
+	compile,
+	compileUnion,
+	type CHQuery,
+	type CompiledQuery,
+	type NeedsSelect,
+} from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "./raw-sql"
 import { Array as A, Effect, Match, Result, Schema } from "effect"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
@@ -32,6 +38,8 @@ import {
 	metricScopedAttributeValuesQuery,
 	resourceAttributeValuesQuery,
 	spanAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 } from "./queries/attribute-keys"
 import {
 	errorDetailTracesQuery,
@@ -70,7 +78,8 @@ import {
 	type TracesTimeseriesOpts,
 } from "./queries/traces"
 
-type CompileTarget = Parameters<typeof compile>[0]
+/** A query `compile` accepts, whatever it selects. */
+type CompileTarget<Output extends Record<string, unknown>> = CHQuery<any, Output> & NeedsSelect<Output>
 
 export type PipeCompiledQuery = CompiledQuery<unknown>
 
@@ -112,7 +121,7 @@ export function compilePipeQuery(
 	params: PipeParams,
 	capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
 ): PipeCompiled | undefined {
-	const orgId = String(params.org_id)
+	const orgId = params.org_id
 	const startTime = String(params.start_time ?? "2023-01-01 00:00:00")
 	const endTime = String(params.end_time ?? "2099-12-31 23:59:59")
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
@@ -145,9 +154,10 @@ export function compilePipeQuery(
 	// up: a row schema decodes bytes off a socket, so it cannot ask for a service,
 	// and a struct is service-free exactly when its fields are.
 	const compileCompare = <
+		Output extends Record<string, unknown>,
 		Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<any, any, never, never>>,
 	>(
-		query: CompileTarget,
+		query: CompileTarget<Output>,
 		ranges: {
 			currentStart: string
 			currentEnd: string
@@ -617,24 +627,54 @@ export function compilePipeQuery(
 			),
 		)
 		.pipe(
-			Match.when("span_attribute_keys", () =>
-				eraseType(
+			Match.when("span_attribute_keys", () => {
+				// The hourly rollup has no ServiceName; a service filter reads raw spans.
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(
+							serviceScopedAttributeKeysQuery({ scope: "span", limit: int("limit", 200) }),
+							{
+								orgId,
+								startTime,
+								endTime,
+								serviceName,
+							},
+						),
+					)
+				}
+				return eraseType(
 					compile(attributeKeysQuery({ scope: "span", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
 					}),
-				),
-			),
-			Match.when("resource_attribute_keys", () =>
-				eraseType(
+				)
+			}),
+			Match.when("resource_attribute_keys", () => {
+				// The hourly rollup has no ServiceName; a service filter reads raw spans.
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(
+							serviceScopedAttributeKeysQuery({ scope: "resource", limit: int("limit", 200) }),
+							{
+								orgId,
+								startTime,
+								endTime,
+								serviceName,
+							},
+						),
+					)
+				}
+				return eraseType(
 					compile(attributeKeysQuery({ scope: "resource", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
 					}),
-				),
-			),
+				)
+			}),
 			Match.when("metric_attribute_keys", () => {
 				// Optional per-metric scoping: reads the raw metric table (the hourly
 				// rollup carries no MetricName column).
@@ -642,12 +682,14 @@ export function compilePipeQuery(
 				const metricType = parseMetricType(str("metric_type"))
 				if (metricName && metricType) {
 					return eraseType(
-						compile(metricScopedAttributeKeysQuery({ metricType, limit: int("limit", 200) }), {
-							orgId,
-							startTime,
-							endTime,
-							metricName,
-						}),
+						compile(
+							metricScopedAttributeKeysQuery({
+								metricType,
+								serviceName: str("service_name"),
+								limit: int("limit", 200),
+							}),
+							{ orgId, startTime, endTime, metricName },
+						),
 					)
 				}
 				return eraseType(
@@ -658,8 +700,21 @@ export function compilePipeQuery(
 					}),
 				)
 			}),
-			Match.when("span_attribute_values", () =>
-				eraseType(
+			Match.when("span_attribute_values", () => {
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(
+							serviceScopedAttributeValuesQuery({
+								scope: "span",
+								attributeKey: String(params.attribute_key),
+								limit: int("limit", 50),
+							}),
+							{ orgId, startTime, endTime, serviceName },
+						),
+					)
+				}
+				return eraseType(
 					compile(
 						spanAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
@@ -667,10 +722,23 @@ export function compilePipeQuery(
 						}),
 						{ orgId, startTime, endTime },
 					),
-				),
-			),
-			Match.when("resource_attribute_values", () =>
-				eraseType(
+				)
+			}),
+			Match.when("resource_attribute_values", () => {
+				const serviceName = str("service_name")
+				if (serviceName) {
+					return eraseType(
+						compile(
+							serviceScopedAttributeValuesQuery({
+								scope: "resource",
+								attributeKey: String(params.attribute_key),
+								limit: int("limit", 50),
+							}),
+							{ orgId, startTime, endTime, serviceName },
+						),
+					)
+				}
+				return eraseType(
 					compile(
 						resourceAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
@@ -678,8 +746,8 @@ export function compilePipeQuery(
 						}),
 						{ orgId, startTime, endTime },
 					),
-				),
-			),
+				)
+			}),
 			Match.when("metric_attribute_values", () => {
 				const metricName = str("metric_name")
 				const metricType = parseMetricType(str("metric_type"))
@@ -688,6 +756,7 @@ export function compilePipeQuery(
 						compile(
 							metricScopedAttributeValuesQuery({
 								metricType,
+								serviceName: str("service_name"),
 								attributeKey: String(params.attribute_key),
 								limit: int("limit", 50),
 							}),
@@ -771,6 +840,7 @@ export function compilePipeQuery(
 							errorsOnly: hasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
+							environments: strList("deployment_env"),
 							attributeFilters,
 							resourceAttributeFilters: Array.isArray(params.resource_attribute_filters)
 								? (params.resource_attribute_filters as AttributeFilter[])

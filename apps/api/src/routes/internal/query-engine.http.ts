@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MapleInternalApi,
@@ -8,7 +8,6 @@ import {
 	SpanHierarchyResponse,
 	SpanDetailResponse,
 	ErrorsByTypeResponse,
-	ErrorsTimeseriesResponse,
 	ErrorsSparkResponse,
 	ErrorsSummaryResponse,
 	ErrorDetailTracesResponse,
@@ -18,6 +17,7 @@ import {
 	ServiceHealthBaselineResponse,
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
+	RailwayInfraRowsResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
 	CloudflareInfraZonesResponse,
@@ -51,7 +51,6 @@ import {
 	ListHostsResponse,
 	HostDetailSummaryResponse,
 	HostInfraTimeseriesResponse,
-	FleetUtilizationTimeseriesResponse,
 	ListPodsResponse,
 	PodsSummaryResponse,
 	PodDetailSummaryResponse,
@@ -522,18 +521,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("errorsTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.errorsTimeseries, tenant, payload)
-						return new ErrorsTimeseriesResponse({
-							data: rows.map((row) => ({
-								bucket: String(row.bucket),
-								count: Number(row.count),
-							})),
-						})
-					}),
-				)
 				.handle("errorsSpark", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -777,6 +764,20 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new PlanetScaleInfraTimeseriesResponse({
 							data: rows.map((row) => ({ ...row })),
 						})
+					}),
+				)
+				.handle("railwayInfraServices", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.railwayInfraServices, tenant, payload)
+						return new RailwayInfraRowsResponse({ data: rows.map((row) => ({ ...row })) })
+					}),
+				)
+				.handle("railwayInfraServiceTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.railwayInfraServiceTimeseries, tenant, payload)
+						return new RailwayInfraRowsResponse({ data: rows.map((row) => ({ ...row })) })
 					}),
 				)
 				.handle("cloudflareInfraZones", ({ payload }) =>
@@ -1398,20 +1399,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										load15: Number(row.load15) || 0,
 									}
 								: null,
-						})
-					}),
-				)
-				.handle("fleetUtilizationTimeseries", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.fleetUtilizationTimeseries, tenant, payload)
-						return new FleetUtilizationTimeseriesResponse({
-							data: rows.map((row) => ({
-								bucket: String(row.bucket),
-								avgCpu: Number(row.avgCpu) || 0,
-								avgMemory: Number(row.avgMemory) || 0,
-								activeHosts: Number(row.activeHosts) || 0,
-							})),
 						})
 					}),
 				)

@@ -11,13 +11,13 @@
 import { investigations } from "@maple/db"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { InvestigationSubject, InvestigationSubjectSnapshot, OrgId } from "@maple/domain/http"
 import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/incident-context"
 import type { InvestigationId } from "@maple/domain/primitives"
 import { UserId } from "@maple/domain/primitives"
 import { eq } from "drizzle-orm"
 import { Effect, Exit, Schema } from "effect"
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
@@ -36,8 +36,8 @@ export interface StartInvestigationTurnInput {
 	readonly investigationId: InvestigationId
 	readonly subject: InvestigationSubject
 	readonly snapshot: InvestigationSubjectSnapshot | null
-	/** The Worker env, for the `ChatSession` binding. Absent outside a Worker isolate. */
-	readonly workerEnv: Record<string, unknown> | undefined
+	/** The `ChatSession` port. Absent outside a Worker isolate. */
+	readonly chatSessions: ChatSessionsApi | undefined
 	readonly nowMs: number
 	/** Extra span attributes merged into every outcome annotation. */
 	readonly annotations?: Record<string, string>
@@ -74,7 +74,7 @@ export const startInvestigationTurn: (
 			.pipe(Effect.asVoid)
 
 	const sessionId = investigationSessionId(orgId, investigationId)
-	const stub = input.workerEnv === undefined ? undefined : chatSessionStub(input.workerEnv, sessionId)
+	const stub = input.chatSessions?.session(sessionId)
 	if (stub === undefined) {
 		yield* markFailed(AGENT_UNAVAILABLE_ERROR)
 		yield* annotate("no_binding")
@@ -88,20 +88,18 @@ export const startInvestigationTurn: (
 		"",
 	)
 	const claimed = yield* Effect.exit(
-		Effect.tryPromise(() =>
-			stub.beginTurn({
-				sessionId,
-				messageId: crypto.randomUUID(),
-				text,
-				tenant: encodeChatTurnTenant({
-					orgId,
-					userId: internalServiceUserId,
-					roles: [],
-					authMode: "self_hosted",
-				}),
-				origin: { kind: "autonomous" },
+		stub.beginTurn({
+			sessionId,
+			messageId: crypto.randomUUID(),
+			text,
+			tenant: encodeChatTurnTenant({
+				orgId,
+				userId: internalServiceUserId,
+				roles: [],
+				authMode: "self_hosted",
 			}),
-		),
+			origin: { kind: "autonomous" },
+		}),
 	)
 
 	if (Exit.isFailure(claimed)) {

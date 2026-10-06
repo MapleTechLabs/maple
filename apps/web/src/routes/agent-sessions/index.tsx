@@ -18,7 +18,7 @@ import {
 	usePageRefreshContext,
 } from "@/components/time-range-picker/page-refresh-context"
 import { ReloadControls } from "@/components/time-range-picker/reload-controls"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import {
@@ -206,7 +206,7 @@ function AgentSessionsBody() {
 					{Result.builder(firstPageResult)
 						.onInitial(() => <AgentSessionsListSkeleton />)
 						.onError((error) => (
-							<QueryErrorState error={error} titleOverride="Failed to load agent sessions" />
+							<ErrorState error={error} title="Failed to load agent sessions" />
 						))
 						.onSuccess(() => (
 							<AgentSessionsList

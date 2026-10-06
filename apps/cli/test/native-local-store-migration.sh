@@ -123,7 +123,7 @@ bounded 60 "legacy source fixture" \
 # compatibility evidence the v0 resolver is allowed to use.
 step "installing legacy marker"
 CHDB_VERSION="$(bounded 60 "maple --version" env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" --version 2>/dev/null | sed -n 's/.*chdb \([^ ]*\).*/\1/p')"
-[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.1.0"
+[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.7.3"
 printf '%s\n' "{\"chdb\":\"$CHDB_VERSION\",\"maple\":\"native-probe\",\"createdAt\":\"unknown\",\"schema\":\"428701854f9fd30e\"}" >"$ROOT/maple-store-version.json"
 chmod 600 "$ROOT/maple-store-version.json"
 
@@ -142,7 +142,7 @@ grep -q "local store migrated" "$ROOT/migrate.out" || fail "native migration did
 # must be bumped in lockstep with LOCAL_SCHEMA_VERSION and the matching
 # LOCAL_SCHEMA_V<n>.fingerprint in apps/cli/src/server/schema-identity.ts;
 # leaving it on the previous version is what makes this step fail after a bump.
-jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 25 and .schema == "bfaed79bcf2423f5"' \
+jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 28 and .schema == "8a24f256937e00e5"' \
 	"$ROOT/maple-store-version.json" >/dev/null || fail "native migration wrote the wrong active identity"
 
 step "reopening promoted store in a fresh server"

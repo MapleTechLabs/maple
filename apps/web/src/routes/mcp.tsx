@@ -16,12 +16,6 @@ function McpPage() {
 			<DashboardLayout.Breadcrumbs items={[{ label: "MCP" }]} />
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="MCP Server"
-							description="Connect your AI coding assistant to Maple's observability data via the Model Context Protocol."
-						/>
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						<McpSection />
 					</DashboardLayout.Scroll>

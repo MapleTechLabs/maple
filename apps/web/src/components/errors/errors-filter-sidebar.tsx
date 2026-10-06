@@ -6,7 +6,7 @@ import type { IssueKind } from "@maple/domain/http"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { FilterSection, SingleCheckboxFilter, serviceColorMap } from "@/components/traces/filter-section"
+import { FilterSection, SingleCheckboxFilter, serviceColorMap } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
 	FilterSidebarFrame,

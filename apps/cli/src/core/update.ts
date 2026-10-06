@@ -16,9 +16,9 @@
 import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { PlatformError } from "effect/PlatformError"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { randomUUID } from "node:crypto"
 import { realpathSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -202,7 +202,7 @@ const downloadTo = (
 			Effect.mapError((error) => toUpdateError("release download body failed", error)),
 		)
 		yield* Effect.tryPromise({
-			try: () => Bun.write(dest, body).then(() => undefined),
+			try: () => Bun.write(dest, body),
 			catch: (error) => toUpdateError("release download write failed", error),
 		})
 	}).pipe(
@@ -386,7 +386,7 @@ export const performUpdate = (
 		// in-flight update is never touched.
 		const sweepStaleTmpDirs = Effect.gen(function* () {
 			const entries = yield* fs.readDirectory(installDir)
-			const cutoff = Date.now() - 60 * 60 * 1000
+			const cutoff = (yield* Clock.currentTimeMillis) - 60 * 60 * 1000
 			for (const entry of entries) {
 				if (!entry.startsWith(".maple-update-tmp")) continue
 				const path = join(installDir, entry)

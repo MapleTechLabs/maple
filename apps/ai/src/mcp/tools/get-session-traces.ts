@@ -11,6 +11,7 @@ import { doc } from "../lib/tool-doc"
 export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_session_traces",
+		title: "Get Session Traces",
 		description:
 			"The backend traces a browser session replay observed (session id from `search_sessions`; not an AI agent session), with the session's client, user and error summary. Use it to jump from a user's session to the requests behind it; `inspect_trace` opens one.",
 		parameters: Schema.Struct({

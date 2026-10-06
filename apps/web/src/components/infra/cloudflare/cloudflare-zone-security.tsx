@@ -3,12 +3,14 @@
 // the window has no security events — most zones most of the time.
 
 import { useMemo } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneSecurityResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable } from "../primitives/data-table"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilters } from "./filters"
@@ -74,7 +76,10 @@ export function CloudflareZoneSecuritySection({
 				value: bucket.events,
 			}))
 			return (
-				<div className={`space-y-4 transition-opacity ${r.waiting ? "opacity-60" : ""}`}>
+				<div
+					className={cn("space-y-4", refreshingClass(r.waiting))}
+					aria-busy={r.waiting || undefined}
+				>
 					<StackedBreakdownChart
 						title="Security events by action"
 						rows={rows}

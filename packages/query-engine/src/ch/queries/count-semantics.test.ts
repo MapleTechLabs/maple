@@ -15,12 +15,13 @@
 // reading 5.5B directly above a status donut totalling 26.6M.
 
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { tracesBreakdownQuery, tracesTimeseriesQuery } from "./traces"
 import type { TracesBaseWhereOpts } from "./query-helpers"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -170,7 +171,7 @@ describe("traces count is sample-weighted on every route", () => {
 
 	it("weights count on the raw breakdown path", () => {
 		const { sql } = compileUnsafe(tracesBreakdownQuery({ metric: "count", groupBy: "span_name" }), {
-			orgId: "org_123",
+			orgId: OrgId.make("org_123"),
 			startTime: baseParams.startTime,
 			endTime: baseParams.endTime,
 		})
@@ -181,7 +182,7 @@ describe("traces count is sample-weighted on every route", () => {
 	it("weights count on the MV breakdown path", () => {
 		const { sql } = compileUnsafe(
 			tracesBreakdownQuery({ metric: "count", groupBy: "service", rootOnly: true }),
-			{ orgId: "org_123", startTime: baseParams.startTime, endTime: baseParams.endTime },
+			{ orgId: OrgId.make("org_123"), startTime: baseParams.startTime, endTime: baseParams.endTime },
 		)
 		expect(sourceTable(sql)).toBe("service_overview_spans")
 		expectWeighted(sql)
@@ -206,13 +207,14 @@ describe("a breakdown totals the same regardless of the dimension", () => {
 			const compiled = BREAKDOWN_DIMENSIONS.map(
 				(dim) =>
 					compileUnsafe(tracesBreakdownQuery({ metric: "count", ...dim, ...filters }), {
-						orgId: "org_123",
+						orgId: OrgId.make("org_123"),
 						startTime: baseParams.startTime,
 						endTime: baseParams.endTime,
 					}).sql,
 			)
 
-			const exprs = new Set(compiled.map(countExpr))
+			// Compare the definition, not the table it reads (qualifiers differ per table).
+			const exprs = new Set(compiled.map((sql) => countExpr(sql).replace(/\b[a-z_]+\.(?=[A-Z])/g, "")))
 			expect([...exprs]).toEqual(["sum(SampleRate)"])
 
 			// Table may differ (the MV can serve some dimensions and not others),
@@ -240,7 +242,7 @@ describe("timeseries and breakdown agree for the same query", () => {
 
 	const breakdownSql = (groupBy: string, opts: TracesBaseWhereOpts) =>
 		compileUnsafe(tracesBreakdownQuery({ metric: "count", groupBy, ...opts }), {
-			orgId: "org_123",
+			orgId: OrgId.make("org_123"),
 			startTime: baseParams.startTime,
 			endTime: baseParams.endTime,
 		}).sql
@@ -288,8 +290,8 @@ describe("timeseries and breakdown agree for the same query", () => {
 			}
 
 			// Both union branches weight, and the outer query just sums the partials.
-			expect(ts).toContain("sum(SampleRate) AS bWeightedCount")
-			expect(ts).toContain("sum(WeightedCount) AS bWeightedCount")
+			expect(ts).toContain("sum(traces.SampleRate) AS bWeightedCount")
+			expect(ts).toContain("sum(traces_aggregates_hourly.WeightedCount) AS bWeightedCount")
 			expect(countExpr(ts)).toBe("sum(bWeightedCount)")
 
 			// The edges cover [start, firstFullHour) ∪ [endHour, end] and the interior
@@ -314,7 +316,7 @@ describe("timeseries and breakdown agree for the same query", () => {
 	it("keeps union branch column types compatible", () => {
 		const sql = timeseriesSql("service", {}, 3600)
 		expect(sql).toContain("toFloat64(count()) AS bSpanCount")
-		expect(sql).toContain("sum(WeightedCount) AS bSpanCount")
+		expect(sql).toContain("sum(traces_aggregates_hourly.WeightedCount) AS bSpanCount")
 		expect(sql).not.toContain("count() AS bSpanCount\n")
 	})
 

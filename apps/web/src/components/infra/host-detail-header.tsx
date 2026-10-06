@@ -5,11 +5,12 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { HostDetailSummaryResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { HeroChip, PageHero } from "./primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "./primitives/stat-rail"
+import { PlatformLabel } from "./platform-label"
+import { HeroChip, PageHero } from "@/components/common/page-hero"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { severityLevel } from "./format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 interface HostDetailHeaderProps {
 	summary: HostDetailSummaryResponse["data"]
@@ -31,7 +32,7 @@ export function HostDetailHeader({ summary, hostName, onWidenRange }: HostDetail
 								Show last 7 days
 							</Button>
 						) : null}
-						<Button variant="outline" size="sm" render={<Link to="/infra" />}>
+						<Button variant="outline" size="sm" render={<Link to="/infra/hosts" />}>
 							Back to hosts
 						</Button>
 					</>
@@ -42,13 +43,27 @@ export function HostDetailHeader({ summary, hostName, onWidenRange }: HostDetail
 
 	const meta = (
 		<>
-			{summary.osType && <HeroChip>os {summary.osType}</HeroChip>}
-			{summary.hostArch && <HeroChip>arch {summary.hostArch}</HeroChip>}
-			{summary.cloudProvider && <HeroChip>cloud {summary.cloudProvider}</HeroChip>}
+			{summary.osType && (
+				<HeroChip>
+					<PlatformLabel kind="os" value={summary.osType} />
+				</HeroChip>
+			)}
+			{summary.hostArch && (
+				<HeroChip>
+					<PlatformLabel kind="arch" value={summary.hostArch} />
+				</HeroChip>
+			)}
+			{summary.cloudProvider && (
+				<HeroChip>
+					<PlatformLabel kind="cloud" value={summary.cloudProvider} />
+				</HeroChip>
+			)}
 			{summary.cloudRegion && <HeroChip>region {summary.cloudRegion}</HeroChip>}
-			<span className="text-[11px] text-muted-foreground/80">
-				last reported {formatRelativeTime(summary.lastSeen)}
-			</span>
+			<RelativeTime
+				value={summary.lastSeen}
+				prefix="last reported"
+				className="text-[11px] text-muted-foreground/80"
+			/>
 		</>
 	)
 

@@ -1,5 +1,5 @@
 import type { TracesSearchParams } from "@/routes/traces/index"
-import { attributeFilterOperator } from "@/lib/traces/advanced-filter-sync"
+import { attributeFilterOperator, formatAttributeClause } from "@/lib/traces/advanced-filter-sync"
 
 /**
  * One facet, in both polarities, as the sidebar spells it. `label` has to match the section title
@@ -39,8 +39,9 @@ function attributeChips(search: ChipSearch, param: AttributeParam): TraceFilterC
 	const prefix = param === "resourceAttributeFilters" ? "resource." : ""
 	return (search[param] ?? []).map((entry) => {
 		const text = attributeChipText(prefix, entry)
+		const group = entry.or?.length ? `:or:${JSON.stringify(entry.or)}` : ""
 		return {
-			id: `${param}:${entry.key}:${entry.value}:${entry.negated ? "not" : "is"}${entry.matchMode ? `:${entry.matchMode}` : ""}`,
+			id: `${param}:${entry.key}:${entry.value}:${entry.negated ? "not" : "is"}${entry.matchMode ? `:${entry.matchMode}` : ""}${group}`,
 			label: text.label,
 			values: [text.value],
 			negated: entry.negated === true,
@@ -51,7 +52,8 @@ function attributeChips(search: ChipSearch, param: AttributeParam): TraceFilterC
 							other.key === entry.key &&
 							other.value === entry.value &&
 							other.negated === entry.negated &&
-							other.matchMode === entry.matchMode
+							other.matchMode === entry.matchMode &&
+							JSON.stringify(other.or ?? []) === JSON.stringify(entry.or ?? [])
 						),
 				)
 				return { ...s, [param]: rest.length > 0 ? rest : undefined }
@@ -64,6 +66,8 @@ type AttributeEntry = NonNullable<ChipSearch["attributeFilters"]>[number]
 
 // The chip reads "<label> is|is not <value>", so the operator goes wherever that sentence stays readable.
 function attributeChipText(prefix: string, entry: AttributeEntry): { label: string; value: string } {
+	// An `(a OR b)` group has no single key, so the chip shows the group as written.
+	if (entry.or?.length) return { label: "Any of", value: formatAttributeClause(prefix, entry) }
 	const label = `${prefix}${entry.key}`
 	if (entry.matchMode === "contains") return { label: `${label} contains`, value: entry.value }
 	if (entry.matchMode === "exists") return { label, value: "set" }

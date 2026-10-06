@@ -1547,6 +1547,7 @@ describe("VcsSyncService orchestrator", () => {
 	const orchestratorLayer = (testDb: TestDb, opts: StubOpts) => {
 		const fakeProvider: VcsProviderClient = {
 			id: "github",
+			reviewerMention: "@maple-review-bot",
 			webhookToJobs: () => Effect.succeed([]),
 			fetchRepositories: () =>
 				opts.fetchReposError ? Effect.fail(opts.fetchReposError) : Effect.succeed(opts.repos ?? []),

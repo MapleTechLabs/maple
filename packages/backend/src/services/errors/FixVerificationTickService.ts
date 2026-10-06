@@ -4,8 +4,8 @@ import { errorIssuePullRequests, errorIssues, type ErrorIssueVerificationRow } f
 import { and, eq } from "drizzle-orm"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs } from "@maple/backend/platform/time"
@@ -130,7 +130,7 @@ const make: Effect.Effect<
 
 	// Present only inside a Worker isolate; absent in tests and local runs, where
 	// the enqueue records `no_binding` rather than silently degrading.
-	const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -322,7 +322,7 @@ const make: Effect.Effect<
 				pullRequestUrl: subject.url,
 				postMergeOccurrences: split.value.postMerge,
 				staleClientOccurrences: split.value.staleClients,
-				workerEnv,
+				chatSessions,
 			}).pipe(
 				Effect.provideService(Database, database),
 				// An interrupt here must never become `{ enqueued: false }`: the fallback

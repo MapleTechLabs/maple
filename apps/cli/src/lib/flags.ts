@@ -1,4 +1,4 @@
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Flag from "effect/cli/Flag"
 
 export const since = Flag.String("since").pipe(
 	Flag.withDescription("Relative window ending now: 30m, 6h, 7d, 2w (default: 6h)"),

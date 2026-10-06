@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { ProductEventsFunnelError } from "./product-events"
 import { productEventsPathsQuery, type ProductEventsPathsOpts } from "./product-events-paths"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-06-24 04:00:00",
+	endTime: "2026-06-25 06:00:00",
+}
 
 const base: ProductEventsPathsOpts = {
 	anchor: { kind: "event", eventName: "signup_completed" },
@@ -79,12 +84,12 @@ describe("productEventsPathsQuery", () => {
 			params,
 		)
 		// No identity join on a session key, so the columns go unprefixed.
-		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
+		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
 		// The anchor row is exempt from its own kind and name filters.
 		expect(sql).toContain(
 			"(r.isAnchor = 1 OR (r.kind = 'navigation' AND r.name NOT IN ('heartbeat', '/')))",
 		)
-		expect(sql).toContain("(Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev'")
+		expect(sql).toContain("(e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev'")
 		expect(sql).toContain("SessionId AS key")
 		expect(sql).not.toContain("identity_links")
 	})

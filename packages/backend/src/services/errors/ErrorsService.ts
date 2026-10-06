@@ -48,9 +48,9 @@ import {
 	isErrorTickClaimLost,
 	persistErrorTickWindow,
 } from "@maple/backend/services/errors/error-tick-persistence"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { toPgText } from "@maple/backend/platform/pg-text"
 import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { selectDistinctOrgIds } from "@maple/backend/platform/distinct-org-ids"
 import { Env } from "@maple/backend/platform/Env"
@@ -250,7 +250,7 @@ const make: Effect.Effect<
 	const dispatcher = yield* NotificationDispatcher
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
-	const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -1356,7 +1356,7 @@ const make: Effect.Effect<
 					lastSeen: formatWarehouseDateTime(pending.row.lastSeenMs),
 					issueId: pending.issueId,
 				},
-				workerEnv,
+				chatSessions,
 			}).pipe(Effect.provideService(Database, database)),
 		)
 

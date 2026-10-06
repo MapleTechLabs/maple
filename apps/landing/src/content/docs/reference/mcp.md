@@ -103,6 +103,7 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `list_alert_incidents`    | read   | Triggered alert incidents, open and resolved, with the last observed value               |
 | `get_incident_timeline`   | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'       |
 | `list_alert_checks`       | read   | A rule's recent evaluations with observed value, threshold and sample count              |
+| `preview_alert_rule`      | read   | Replay a saved or draft rule over past data: each window's verdict and skip reason       |
 | `create_alert_rule`       | write  | Create an alert rule from a template or from signal type, comparator and threshold       |
 | `update_alert_rule`       | write  | Change the fields you pass on an alert rule                                              |
 | `delete_alert_rule`       | write  | Delete an alert rule and its incident history. Requires `confirm=true`                   |

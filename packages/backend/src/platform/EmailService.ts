@@ -1,5 +1,5 @@
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { Context, Duration, Effect, Layer, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
+import { EmailSender } from "./bindings"
 import { Env } from "./Env"
 
 class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
@@ -7,30 +7,20 @@ class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
 	{ message: Schema.String },
 ) {}
 
+export interface EmailSendOptions {
+	readonly replyTo?: string
+	/** Extra MIME headers, e.g. `List-Unsubscribe`. */
+	readonly headers?: Readonly<Record<string, string>>
+}
+
 export interface EmailServiceApi {
 	readonly isConfigured: boolean
 	readonly send: (
 		to: string,
 		subject: string,
 		html: string,
-		replyTo?: string,
+		options?: EmailSendOptions,
 	) => Effect.Effect<void, EmailDeliveryError>
-}
-
-/**
- * Minimal shape of the Cloudflare Email Service Workers binding (`send_email`).
- * Mirrors the builder overload of `SendEmail` from `@cloudflare/workers-types`
- * — we only use the structured-object form, never the raw MIME `EmailMessage`.
- */
-interface SendEmailBinding {
-	send: (message: {
-		from: string
-		to: string
-		subject: string
-		html?: string
-		text?: string
-		replyTo?: string
-	}) => Promise<{ messageId: string }>
 }
 
 const EMAIL_TIMEOUT = Duration.seconds(15)
@@ -42,29 +32,28 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 			const env = yield* Env
 			const fromEmail = env.EMAIL_FROM
 
-			const workerEnv = yield* WorkerEnvironment
-			const binding = (workerEnv as Record<string, SendEmailBinding | undefined>).EMAIL
+			// The prd-only `send_email` binding, as the Worker's init bound it.
+			const sender = Option.flatten(yield* Effect.serviceOption(EmailSender))
 
 			// Real sends are production-only: non-prod stages share real user data
 			// (branched DBs, Clerk members), so a live binding there would deliver
 			// duplicate copies of every cron-driven email. The alchemy configs no
 			// longer attach EMAIL outside prd; this guard covers any binding that
 			// still reaches a non-prod worker (`alchemy dev`, manual deploys).
-			const emailAllowed =
-				env.MAPLE_ENVIRONMENT === "production" || env.MAPLE_EMAIL_ALLOW_NONPROD === "true"
-			const isConfigured = binding !== undefined && emailAllowed
+			const emailAllowed = env.MAPLE_ENVIRONMENT === "production" || env.MAPLE_EMAIL_ALLOW_NONPROD
+			const isConfigured = Option.isSome(sender) && emailAllowed
 
 			const send = Effect.fn("EmailService.send")(function* (
 				to: string,
 				subject: string,
 				html: string,
-				replyTo?: string,
+				options?: EmailSendOptions,
 			) {
 				// PII: never stamp recipient/reply-to addresses on spans or logs
 				yield* Effect.annotateCurrentSpan("email.subject", subject)
 				yield* Effect.annotateCurrentSpan("email.provider", "cloudflare")
 
-				if (binding === undefined) {
+				if (Option.isNone(sender)) {
 					return yield* Effect.fail(
 						new EmailDeliveryError({
 							message: "Email not configured: EMAIL binding is missing",
@@ -80,38 +69,25 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 					)
 				}
 
-				const result = yield* Effect.tryPromise({
-					try: () =>
-						binding.send({
-							from: fromEmail,
-							to,
-							subject,
-							html,
-							...(replyTo ? { replyTo } : undefined),
-						}),
-					catch: (error) => {
-						const code =
-							error && typeof error === "object" && "code" in error
-								? ` [${String((error as { code: unknown }).code)}]`
-								: ""
-						return new EmailDeliveryError({
-							message:
-								error instanceof Error
-									? `Cloudflare Email send failed${code}: ${error.message}`
-									: "Cloudflare Email send failed",
-						})
-					},
-				}).pipe(
-					Effect.timeoutOrElse({
-						duration: EMAIL_TIMEOUT,
-						orElse: () =>
-							Effect.fail(
+				const result = yield* sender.value
+					.send({ from: fromEmail, to, subject, html, ...options })
+					.pipe(
+						Effect.mapError(
+							(error) =>
 								new EmailDeliveryError({
-									message: "Cloudflare Email send timed out after 15s",
+									message: `Cloudflare Email send failed: ${error.message}`,
 								}),
-							),
-					}),
-				)
+						),
+						Effect.timeoutOrElse({
+							duration: EMAIL_TIMEOUT,
+							orElse: () =>
+								Effect.fail(
+									new EmailDeliveryError({
+										message: "Cloudflare Email send timed out after 15s",
+									}),
+								),
+						}),
+					)
 
 				yield* Effect.annotateCurrentSpan("email.message_id", result.messageId)
 				yield* Effect.logInfo("Email sent successfully").pipe(

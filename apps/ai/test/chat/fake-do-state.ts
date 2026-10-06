@@ -9,7 +9,21 @@
  * `node:sqlite` is the same engine Durable Object storage exposes, and the `SqlStorage` surface the
  * class touches is small: `exec(sql, ...bindings)` returning a cursor with `one()` and `toArray()`.
  */
+import { readdirSync, readFileSync } from "node:fs"
+import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { CHAT_SESSION_MIGRATIONS } from "../../src/chat/ChatSession"
+
+const migrationsDir = path.resolve(import.meta.dirname, "../../../..", CHAT_SESSION_MIGRATIONS)
+
+/** Every migration file, in order, as alchemy's `apply` runs them (minus its history table). */
+export const applyChatSessionMigrations = (sql: SqlStorage): void => {
+	for (const file of readdirSync(migrationsDir)
+		.filter((name) => name.endsWith(".sql"))
+		.toSorted()) {
+		sql.exec(readFileSync(path.join(migrationsDir, file), "utf8"))
+	}
+}
 
 /** Everything the DO under test reads off its state, and nothing more. */
 export interface FakeDurableObjectState {
@@ -24,14 +38,15 @@ export interface FakeDurableObjectState {
 	readonly pending: Array<Promise<unknown>>
 }
 
-export const makeFakeDurableObjectState = (): FakeDurableObjectState => {
+/** `migrated: false` leaves the database empty, for a test that migrates through the activation. */
+export const makeFakeDurableObjectState = ({ migrated = true } = {}): FakeDurableObjectState => {
 	const db = new DatabaseSync(":memory:")
 	const pending: Array<Promise<unknown>> = []
 	const alarms: Array<number> = []
 
 	const sql = {
 		exec: (statement: string, ...bindings: ReadonlyArray<unknown>) => {
-			// `ChatSession`'s CREATE TABLE block is several statements in one string; `node:sqlite`
+			// A migration file is several statements in one string; `node:sqlite`
 			// splits those only through `exec`, while parameterised statements need `prepare`.
 			if (bindings.length === 0 && /;\s*\S/.test(statement.trim())) {
 				db.exec(statement)
@@ -47,6 +62,8 @@ export const makeFakeDurableObjectState = (): FakeDurableObjectState => {
 			return makeCursor([])
 		},
 	}
+
+	if (migrated) applyChatSessionMigrations(sql as SqlStorage)
 
 	return {
 		storage: {
@@ -74,23 +91,3 @@ const makeCursor = (rows: Array<Record<string, unknown>>) => ({
 	},
 	[Symbol.iterator]: () => rows[Symbol.iterator](),
 })
-
-/**
- * `scheduler.wait` is a Workers global that node does not define. `ChatSession.subscribe` uses it
- * for its idle timeout, so tests that exercise a subscription need it present.
- *
- * The timer is unref'd: a subscription that ends on `turn-end` leaves its 25s idle timer pending,
- * and a ref'd timer would hold the process open long after the test finished.
- */
-export const installSchedulerWait = (): void => {
-	const globals = globalThis as { scheduler?: { wait?: (ms: number) => Promise<void> } }
-	if (globals.scheduler?.wait) return
-	globals.scheduler = {
-		...globals.scheduler,
-		wait: (ms: number) =>
-			new Promise<void>((resolve) => {
-				const timer = setTimeout(resolve, ms)
-				;(timer as { unref?: () => void }).unref?.()
-			}),
-	}
-}

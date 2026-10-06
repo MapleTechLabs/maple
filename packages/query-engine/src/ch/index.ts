@@ -1,13 +1,13 @@
 // ClickHouse Query DSL — Maple facade
 //
 // The generic, reusable query builder now lives in the standalone
-// @maple-dev/effect-clickhouse package. This module re-exports that public API
+// @maple-dev/effect-orm package. This module re-exports that public API
 // and layers Maple's OpenTelemetry-specific table definitions, the named-query
 // ("pipe") registry, and the pre-built query templates on top of it.
 
 // Generic DSL — types, table, expressions, functions, params, query builder,
 // compilation, and unions — re-exported from the standalone library.
-export * from "@maple-dev/effect-clickhouse"
+export * from "@maple-dev/effect-orm/clickhouse"
 
 // Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
 // is any string, with one that pins Maple's closed `RawSqlReason` union — the
@@ -73,6 +73,8 @@ export {
 	metricAttributeValuesQuery,
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	type MetricScopedAttributeKeysOpts,
 	type MetricScopedAttributeValuesOpts,
 	type AttributeKeysQueryOpts,
@@ -326,6 +328,11 @@ export {
 	type ReleasesTimelineOutput,
 	type ReleaseErrorFingerprintsOpts,
 	type ReleaseErrorFingerprintsOutput,
+	serviceDeploymentsQuery,
+	serviceDeploymentsRowSchema,
+	DEPLOYMENTS_PER_SERVICE_CAP,
+	type ServiceDeploymentsOpts,
+	type ServiceDeploymentsOutput,
 } from "./queries/releases"
 
 // Queries — Errors
@@ -338,12 +345,18 @@ export {
 	SPAN_HIERARCHY_MAX_SPANS,
 	spanDetailQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 	tracesDurationStatsQuery,
 	canUseTraceFacetsRollup,
 	tracesFacetsQuery,
 	errorsFacetsQuery,
 	errorsSummaryQuery,
 	errorDetailTracesQuery,
+	errorFingerprintSummaryQuery,
+	errorCooccurringFingerprintsQuery,
+	errorFingerprintOccurrencesQuery,
+	errorOccurrenceSpansQuery,
+	errorsWindowTotalsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
 	errorTickIssuesQuery,
@@ -421,6 +434,10 @@ export {
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	dbQueryVolumeQuery,
+	dbQueryVolumeRowSchema,
+	type DbQueryVolumeOpts,
+	type DbQueryVolumeOutput,
 	servicePlatformsSQL,
 	serviceMapEdgeJoinQuery,
 	type ServiceDependenciesOpts,
@@ -484,6 +501,11 @@ export {
 	type ServiceOperationsSummaryOutput,
 	type ServiceOperationsTimeseriesOpts,
 	type ServiceOperationsTimeseriesOutput,
+	routeUsageQuery,
+	routeUsageRowSchema,
+	type RouteUsageOpts,
+	type RouteUsageOrder,
+	type RouteUsageOutput,
 } from "./queries/service-operations"
 
 // Queries — Service API Endpoints (the HTTP slice of the operations rollup)
@@ -539,6 +561,9 @@ export {
 
 // Queries — Telemetry liveness (auto-resolve gating + local-mode header heartbeat)
 export {
+	ingestFreshnessQuery,
+	ingestFreshnessRowSchema,
+	logsFreshnessQuery,
 	orgTelemetryPulseQuery,
 	serviceLivenessQuery,
 	type ServiceLivenessOpts,
@@ -567,7 +592,6 @@ export {
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
 	hostNetworkTimeseriesQuery,
-	fleetUtilizationTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
@@ -589,7 +613,6 @@ export {
 	type HostGaugeTimeseriesOutput,
 	type HostNetworkTimeseriesOpts,
 	type HostNetworkTimeseriesOutput,
-	type FleetUtilizationTimeseriesOutput,
 	type ListPodsOpts,
 	type ListPodsOutput,
 	type ListPodsSummaryOutput,

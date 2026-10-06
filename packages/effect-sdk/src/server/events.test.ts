@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema, Scope } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { afterEach, expect, vi } from "vitest"
 import { make, makeHandle, MapleEvents } from "./events.js"
 

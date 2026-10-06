@@ -18,8 +18,8 @@
  * produce the same body, so nothing here is an oracle for whether a given token
  * ever existed.
  */
-import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { HttpServerRequest } from "effect/http"
 import {
 	ChartTimeseries,
 	AlertRuleId,
@@ -39,8 +39,7 @@ import {
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { redactForShare } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -464,22 +463,23 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// The conversation's own Durable Object, bound cross-script. No
 					// binding — an `alchemy dev` stack without the ai Worker — reads as
 					// no such chart, like every other reason this can fail.
-					const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-					if (Option.isNone(workerEnv)) return yield* notFound
-					const stub = chatSessionStub(workerEnv.value, sessionId)
-					if (stub === undefined) return yield* notFound
+					const chatSessions = yield* Effect.serviceOption(ChatSessions)
+					if (Option.isNone(chatSessions)) return yield* notFound
+					const session = chatSessions.value.session(sessionId)
 
 					// The uniform not-found is the answer, not the diagnosis: a cross-script
 					// binding error and an evicted isolate are operator problems, and
 					// answering both with a silent 404 would leave nothing to find them by.
-					const messages = yield* Effect.tryPromise(() => stub.history()).pipe(
-						Effect.catchCause((cause) =>
-							Effect.logWarning("Chat chart transcript unavailable").pipe(
-								Effect.annotateLogs({ cause: summarizeCause(cause) }),
-								Effect.andThen(notFound),
+					const messages = yield* session
+						.history()
+						.pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning("Chat chart transcript unavailable").pipe(
+									Effect.annotateLogs({ cause: summarizeCause(cause) }),
+									Effect.andThen(notFound),
+								),
 							),
-						),
-					)
+						)
 					const chart = chatChartFrom(messages, claims)
 					if (chart === null) return yield* notFound
 

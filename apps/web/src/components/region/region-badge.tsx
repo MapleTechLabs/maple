@@ -1,4 +1,4 @@
-import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
 
 import { MAPLE_REGION_LABELS, type MapleRegion } from "@/lib/region"
 
@@ -6,14 +6,14 @@ import { MAPLE_REGION_LABELS, type MapleRegion } from "@/lib/region"
 export function RegionBadge({ region, className }: { region: MapleRegion; className?: string }) {
 	const label = MAPLE_REGION_LABELS[region]
 	return (
-		<span
+		<Badge
+			variant="meta"
+			size="xs"
+			mono
 			title={`Data region: ${label.name}`}
-			className={cn(
-				"inline-flex h-4 shrink-0 items-center rounded-sm border border-border px-1 font-mono text-[10px] font-medium leading-none text-muted-foreground",
-				className,
-			)}
+			className={className}
 		>
 			{label.short}
-		</span>
+		</Badge>
 	)
 }

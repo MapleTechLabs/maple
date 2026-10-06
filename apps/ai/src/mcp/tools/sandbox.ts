@@ -57,11 +57,11 @@ const unsafeRef = (ref: string): boolean =>
 	/[\u0000-\u001f\u007f ~^:?*[\\]/.test(ref)
 
 /**
- * Maple's own agents only. These run commands inside a container holding the
- * org's source, and until the audience existed they were published to every MCP
- * client like any other tool.
+ * Maple's own agents only, the chat-platform bot included. These run commands inside a
+ * container holding the org's source, and until the audience existed they were published
+ * to every MCP client like any other tool.
  */
-const INTERNAL = "internal" as const
+const AGENT = "agent" as const
 
 /** Reads only, but against a repository checkout outside Maple's own data. */
 const HINTS = { readOnly: true, openWorld: true } as const
@@ -115,6 +115,7 @@ const nonEmptyLines = (output: string): ReadonlyArray<string> =>
 export function registerSandboxTools(server: McpToolRegistrar) {
 	server.define({
 		name: "sandbox_grep",
+		title: "Search Repository Checkout",
 		description: `Search one connected repository's checkout with git grep: \`pattern\` is a POSIX extended regex, matched against tracked files at the exact commit. Use this instead of search_source_code when it is available: it searches the deployed commit, not GitHub's index of the default branch, and is not rate limited. ${SANDBOX_NOTE}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -131,7 +132,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxGrepOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Searching the repository", "Grepping the code"],
 		handler: Effect.fn("McpTool.sandboxGrep")(function* ({
 			repository,
@@ -217,6 +218,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "sandbox_list_files",
+		title: "List Repository Files",
 		description: `List the files git tracks in a connected repository's checkout, optionally under one directory or matching a glob. Use it to learn a codebase's layout before sandbox_grep or sandbox_read_file. ${SANDBOX_REF}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -226,7 +228,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxListFilesOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Listing files"],
 		handler: Effect.fn("McpTool.sandboxListFiles")(function* ({ repository, path, glob, ref }) {
 			yield* checkPath("path", path)
@@ -277,6 +279,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "sandbox_read_file",
+		title: "Read Repository File",
 		description: `Read a line range of one file from a connected repository's checkout at the exact ref. Prefer this over read_source_file once you know the path: it reads the deployed commit, not GitHub's copy. ${SANDBOX_REF}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -287,7 +290,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxReadFileOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Reading a file"],
 		handler: Effect.fn("McpTool.sandboxReadFile")(function* ({
 			repository,
@@ -391,6 +394,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "sandbox_exec",
+		title: "Run Command in Repository",
 		description: `Run one program inside a connected repository's checkout. \`command\` is the program name, \`args\` its arguments, one per element; nothing is parsed by a shell, so \`command: "git", args: ["log", "-5"]\`, never \`args: ["git log -5"]\`. Available: git, coreutils, awk, sed, grep, find, wc, sort, jq, node, bun; no python. The checkout is a full clone, so git history works (git log, show, blame, diff against another commit). No network, files are read-only, output is cut at ${Math.round(SANDBOX_MAX_OUTPUT_BYTES / 1024)} KiB. Use sandbox_grep and sandbox_read_file for searching and reading; use this for what they do not cover. ${SANDBOX_REF}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -409,7 +413,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxExecOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Running a command"],
 		handler: Effect.fn("McpTool.sandboxExec")(function* ({
 			repository,

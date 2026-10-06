@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { sessionActivityQuery, IDLE_GAP_THRESHOLD_MS } from "./session-events"
+import { OrgId } from "@maple/domain"
 
-const sessionParams = { orgId: "org_1", sessionId: "sess_1" }
+const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 
 // sessionActivityQuery
@@ -16,19 +17,19 @@ describe("sessionActivityQuery", () => {
 		const { sql } = compileUnsafe(sessionActivityQuery(), sessionParams)
 		expect(sql).toContain("FROM session_events")
 		expect(sql).toContain(
-			"lagInFrame(Timestamp, 1, Timestamp) OVER (PARTITION BY SessionId ORDER BY Timestamp ASC, Seq ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)",
+			"lagInFrame(session_events.Timestamp, 1, session_events.Timestamp) OVER (PARTITION BY session_events.SessionId ORDER BY session_events.Timestamp ASC, session_events.Seq ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)",
 		)
 		// Nanosecond subtraction → milliseconds.
-		expect(sql).toContain("toUnixTimestamp64Nano(Timestamp)")
+		expect(sql).toContain("toUnixTimestamp64Nano(session_events.Timestamp)")
 		expect(sql).toContain("/ 1000000 AS gapMs")
 	})
 
 	it("splits gaps into active / idle at the idle threshold", () => {
 		const { sql } = compileUnsafe(sessionActivityQuery(), sessionParams)
 		expect(sql).toContain(
-			`sumIf(gapMs, (gapMs > 0 AND gapMs <= ${IDLE_GAP_THRESHOLD_MS})) AS activeTimeMs`,
+			`sumIf(g.gapMs, (g.gapMs > 0 AND g.gapMs <= ${IDLE_GAP_THRESHOLD_MS})) AS activeTimeMs`,
 		)
-		expect(sql).toContain(`sumIf(gapMs, gapMs > ${IDLE_GAP_THRESHOLD_MS}) AS idleTimeMs`)
+		expect(sql).toContain(`sumIf(g.gapMs, g.gapMs > ${IDLE_GAP_THRESHOLD_MS}) AS idleTimeMs`)
 		expect(sql).toContain("GROUP BY sessionId")
 	})
 

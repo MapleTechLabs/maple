@@ -202,6 +202,8 @@ export const prReviews = pgTable(
 		baseSha: text("base_sha").$type<GitCommitSha>(),
 		url: text("url").notNull(),
 		title: text("title"),
+		/** The pull request's author, for the analytics filters; null on rows from before it was kept. */
+		authorLogin: text("author_login"),
 		status: text("status").$type<PrReviewStatus>().notNull().default("queued"),
 		skipReason: text("skip_reason").$type<PrReviewSkipReason>(),
 		/** The `maple-chat` session (`<orgId>:pr-<id>`), written at insert; read to abort a superseded turn. */
@@ -222,6 +224,8 @@ export const prReviews = pgTable(
 		outputTokens: integer("output_tokens"),
 		startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
 		finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
+		/** When the pull request merged, stamped on every review of it by the `closed` event. */
+		mergedAt: timestamp("merged_at", { withTimezone: true, mode: "date" }),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
@@ -270,7 +274,8 @@ export const prReviewFindings = pgTable(
 	},
 	(table) => [
 		uniqueIndex("pr_review_findings_pr_handle_idx").on(table.repositoryId, table.number, table.handle),
-		index("pr_review_findings_org_idx").on(table.orgId),
+		// The analytics window scans and the findings list.
+		index("pr_review_findings_org_created_idx").on(table.orgId, table.createdAt),
 	],
 )
 
@@ -344,6 +349,20 @@ export const prReviewEdits = pgTable(
 	(table) => [uniqueIndex("pr_review_edits_reply_seq_idx").on(table.replyId, table.seq)],
 )
 
+/** Organization-wide review settings, one row per org; no row reviews on the deployment's defaults. */
+export const prReviewSettings = pgTable("pr_review_settings", {
+	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
+	/**
+	 * The model reviews and replies run on; null uses the deployment's default. Plain text, decoded
+	 * on read: a model dropped from the catalog falls back to the default instead of failing.
+	 */
+	model: text("model"),
+	/** Review rules every repository inherits; a repository's own config overrides field by field. */
+	defaults: jsonb("defaults").$type<PrReviewRepositoryConfig>(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	updatedBy: text("updated_by").$type<UserId>(),
+})
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
@@ -353,6 +372,7 @@ export type VcsCommitInsert = typeof vcsCommits.$inferInsert
 export type VcsRepositoryBranchRow = typeof vcsRepositoryBranches.$inferSelect
 export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInsert
 export type PrReviewRow = typeof prReviews.$inferSelect
+export type PrReviewSettingsRow = typeof prReviewSettings.$inferSelect
 export type PrReviewInsert = typeof prReviews.$inferInsert
 export type PrReviewFindingRow = typeof prReviewFindings.$inferSelect
 export type PrReviewFindingEmbeddingRow = typeof prReviewFindingEmbeddings.$inferSelect

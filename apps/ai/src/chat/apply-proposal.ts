@@ -23,7 +23,8 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
@@ -40,6 +41,8 @@ const telemetry = MapleCloudflareSDK.make(
 
 export type ApplyChatProposalInput = ChatProposalApproval & {
 	readonly env: Record<string, unknown>
+	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
+	readonly chatSessions?: ChatSessionNamespace
 	/** `"<orgId>:<tabId>"` — the org the change is made in. */
 	readonly sessionId: string
 	/** The tool and arguments the session read out of its own log, never off the wire. */
@@ -178,7 +181,8 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		ChatApplyServicesLive.pipe(
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
-			Layer.provideMerge(workerEnvLayer(input.env)),
+			Layer.provideMerge(envPorts(input.env)),
+			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
 			Layer.provideMerge(telemetry.layer),
 		),
 	)
@@ -242,10 +246,13 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		),
 	)
 
-	try {
-		return await runtime.runPromise(program)
-	} finally {
-		await runtime.dispose().catch(() => undefined)
-		await telemetry.flush(input.env).catch(() => undefined)
-	}
+	// The outcome (an interrupt included, which the session settles with its own copy) is replayed
+	// after the runtime is disposed and the spans flushed, both best effort.
+	return Effect.runPromise(
+		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
+			Effect.ensuring(Effect.tryPromise(() => runtime.dispose()).pipe(Effect.ignore)),
+			Effect.ensuring(Effect.tryPromise(() => telemetry.flush(input.env)).pipe(Effect.ignore)),
+			Effect.flatMap((exit) => exit),
+		),
+	)
 }

@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import { formatPercent } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Delta } from "@maple/ui/components/ui/delta"
 
-import { StatRailItem } from "../infra/primitives/stat-rail"
+import { StatRailItem } from "@/components/common/stat-rail"
 import {
 	ANALYTICS_METRICS,
 	isMetricAvailable,
@@ -98,7 +98,7 @@ function MetricTile({
 			eyebrow={metric.label}
 			value={available && value !== null ? metric.format(value) : "—"}
 			spark={available ? metric.series(source).map((point) => point.value) : undefined}
-			delta={delta === null ? undefined : <Delta delta={delta} invert={metric.invertDelta} />}
+			delta={delta === null ? undefined : <Delta ratio={delta} invert={metric.invertDelta} />}
 			subline={
 				available
 					? metric.subline(source)
@@ -112,40 +112,6 @@ function MetricTile({
 			className={TILE_NARROW}
 			valueClassName="@max-[560px]/page:text-[22px]"
 		/>
-	)
-}
-
-/**
- * Change against the previous window.
- *
- * Colour follows *improvement*, not direction: a falling bounce rate is green.
- * The arrow keeps pointing the way the number actually moved, so colour is never
- * the only thing carrying the meaning.
- *
- * Plain tinted text rather than a filled chip — the rails elsewhere set their
- * deltas in muted mono and colour a word inline when it matters, and a pill here
- * would be the loudest thing on a page whose accent is already doing the
- * selection rail, the sparklines and the row tints.
- */
-export function Delta({ delta, invert }: { delta: number; invert?: boolean }) {
-	const rose = delta > 0
-	const flat = Math.abs(delta) < 0.001
-	const good = invert ? !rose : rose
-
-	return (
-		<span
-			className={cn(
-				flat
-					? "text-muted-foreground/70"
-					: good
-						? "text-[var(--severity-info)]"
-						: "text-[var(--severity-error)]",
-			)}
-			title={`${flat ? "Flat" : rose ? "Up" : "Down"} ${formatPercent(Math.abs(delta))} vs the previous period`}
-		>
-			<span aria-hidden>{flat ? "→" : rose ? "↑" : "↓"}</span>
-			{formatPercent(Math.abs(delta))}
-		</span>
 	)
 }
 

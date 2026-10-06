@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Exit } from "effect"
 import { useAtomSet } from "@/lib/effect-atom"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { displayError } from "@/lib/error-messages"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -131,7 +132,6 @@ export function InvestigationView({
 	tab: InvestigationTab
 }) {
 	const navigate = useNavigate()
-	const [busy, setBusy] = useState(false)
 	const restart = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "restart"), {
 		mode: "promiseExit",
 	})
@@ -143,10 +143,8 @@ export function InvestigationView({
 
 	const reactivityKeys = ["investigations", `investigation:${investigation.id}`]
 
-	const handleRestart = async () => {
-		setBusy(true)
+	const [handleRestart, restarting] = useAsyncAction(async () => {
 		const result = await restart({ params: { id: investigation.id }, reactivityKeys })
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({
 				title: isResolved ? "Investigation reopened" : "Investigation restarted",
@@ -160,23 +158,22 @@ export function InvestigationView({
 			const { title, message } = displayError(result)
 			toastManager.add({ title, description: message, type: "error" })
 		}
-	}
+	})
 
-	const handleResolve = async () => {
-		setBusy(true)
+	const [handleResolve, resolving] = useAsyncAction(async () => {
 		const result = await updateStatus({
 			params: { id: investigation.id },
 			payload: { status: "resolved" },
 			reactivityKeys,
 		})
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "Investigation resolved", type: "success" })
 		} else {
 			const { title, message } = displayError(result)
 			toastManager.add({ title, description: message, type: "error" })
 		}
-	}
+	})
+	const busy = restarting || resolving
 
 	/**
 	 * The docked composer doesn't own a chat session. Lifting `useMapleChat` out

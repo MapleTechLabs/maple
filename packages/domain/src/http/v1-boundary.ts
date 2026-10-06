@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApiMiddleware } from "effect/unstable/httpapi"
+import { HttpApiMiddleware } from "effect/http-api"
 
 /**
  * Uniform request-decode failure for the legacy `/api` HttpApi.

@@ -3,7 +3,7 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { McpServicesLive } from "../../runtime/mcp-service-graph"
 import { Env } from "@maple/backend/platform/Env"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { createTestDb } from "@maple/backend/platform/test-pglite"
+import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { FIXTURES } from "./utils"
@@ -28,6 +28,8 @@ export interface EvalRuntime {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	readonly runtime: ManagedRuntime.ManagedRuntime<any, never>
 	readonly tenant: TenantContext
+	/** The PGlite database behind the runtime, for seeding rows (`executeSql`). */
+	readonly testDb: TestDb
 	readonly dispose: () => Promise<void>
 }
 
@@ -66,6 +68,7 @@ export const makeEvalRuntime = (): EvalRuntime => {
 	return {
 		runtime,
 		tenant,
+		testDb,
 		dispose: async () => {
 			await runtime.dispose()
 			await testDb.close()

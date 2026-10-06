@@ -17,14 +17,14 @@ import {
 } from "@maple/domain/tinybird/db-query-shape-sql"
 import { deploymentEnvExpr, messagingDestinationExpr } from "@maple/domain/tinybird/semconv-renames"
 import { Schema, Effect } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
-import { defineCondFn, defineFn } from "@maple-dev/effect-clickhouse"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { defineCondFn, defineFn } from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: this overload takes a `CHQuery`, so the subquery
 // keeps its params, table names and column types checked.
-import { inSubquery } from "@maple-dev/effect-clickhouse"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, fromUnion } from "@maple-dev/effect-clickhouse"
+import { inSubquery } from "@maple-dev/effect-orm/clickhouse"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, fromUnion } from "@maple-dev/effect-orm/clickhouse"
 import {
 	ServiceAddressResolutionsHourly,
 	ServiceExternalEdgesHourly,
@@ -36,12 +36,14 @@ import {
 	ServicePlatformsHourly,
 	type StringMap,
 	Traces,
+	orgIdParam,
 } from "../tables"
-import { unionAll } from "@maple-dev/effect-clickhouse"
+import { unionAll } from "@maple-dev/effect-orm/clickhouse"
 import { edgeCondition, interiorConditions } from "./rollup-splice"
 import { CHNumber, CHNumberOrZero } from "../schema"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
+import type { OrgId } from "@maple/domain"
 
 // Local CH function declarations used by the live topology-join branch's
 // sample-weighting math. Kept here (not promoted to ch/functions/) because
@@ -162,7 +164,7 @@ function serviceMapEdgeJoinSource(opts: {
 			$.SpanKind.in_("Client", "Producer"),
 			$.Timestamp.gte(opts.rangeStart),
 			$.Timestamp.lt(opts.rangeEnd),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			envFilter($.DeploymentEnv),
 			edgeOnly,
 			opts.parentServiceName ? $.ServiceName.eq(opts.parentServiceName) : undefined,
@@ -180,7 +182,7 @@ function serviceMapEdgeJoinSource(opts: {
 		.where(($) => [
 			$.Timestamp.gte(opts.rangeStart),
 			$.Timestamp.lt(opts.rangeEnd),
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			envFilter($.DeploymentEnv),
 			edgeOnly,
 		])
@@ -249,7 +251,7 @@ export function serviceMapEdgeJoinQuery(opts: {
  */
 export function serviceDependenciesSQL(
 	opts: ServiceDependenciesOpts,
-	params: { orgId: string; startTime: string; endTime: string },
+	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceDependenciesOutput>, QueryBuilderError> {
 	return compile(
 		serviceDependenciesQueryBase({ deploymentEnv: opts.deploymentEnv }),
@@ -334,7 +336,7 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.SourceService.eq(opts.serviceName) : undefined,
 			...interiorConditions($.Hour),
 			envFilterMv($.DeploymentEnv),
@@ -456,7 +458,7 @@ const ServiceDbEdgesOutputSchema: CompiledQueryRowSchema<ServiceDbEdgesOutput> =
 
 export function serviceDbEdgesSQL(
 	opts: ServiceDbEdgesOpts,
-	params: { orgId: string; startTime: string; endTime: string },
+	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceDbEdgesOutput>, QueryBuilderError> {
 	return compile(serviceDbEdgesQueryBase(opts), params, {
 		rowSchema: ServiceDbEdgesOutputSchema,
@@ -548,7 +550,7 @@ function serviceDbEdgesQueryBase(opts: { serviceName?: string; deploymentEnv?: s
 			bucketDurationQuantiles: CH.rawExpr(EDGE_TDIGEST_MERGE_STATE_EXPR, EDGE_DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
 			...interiorConditions($.Hour),
 			$.DbSystem.neq(""),
@@ -580,7 +582,7 @@ function serviceDbEdgesQueryBase(opts: { serviceName?: string; deploymentEnv?: s
 			bucketDurationQuantiles: CH.rawExpr(EDGE_TDIGEST_RAW_STATE_EXPR, EDGE_DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Scoped to a service (implies non-empty) or, org-wide, require a named
 			// service — the hourly MV already filters `ServiceName != ''` at write
 			// time, so this keeps the raw in-progress-hour branch consistent and
@@ -648,7 +650,7 @@ export function serviceDbEdgesForServiceQuery(opts: ServiceDbEdgesForServiceOpts
 // with the rollup MV so a shape's key is stable across the sealed/live boundary.
 
 export interface ServiceDbQuerySummaryParams {
-	readonly orgId: string
+	readonly orgId: OrgId
 	readonly dbSystem: string
 	/**
 	 * Scope to one database identity (`DbNamespace`). `undefined` = unscoped
@@ -778,7 +780,7 @@ const signaturesHourlyFilters = (
 	},
 	params: ServiceDbQuerySummaryParams,
 ) => [
-	$.OrgId.eq(param.string("orgId")),
+	$.OrgId.eq(orgIdParam),
 	...interiorConditions($.Hour),
 	$.DbSystem.eq(params.dbSystem),
 	// `undefined` = unscoped; `''` is a real value (the legacy/unknown node).
@@ -809,7 +811,7 @@ const serviceDbRawFilters = (
 	params: ServiceDbQuerySummaryParams,
 	scope: "edge" | "fullWindow",
 ) => [
-	$.OrgId.eq(param.string("orgId")),
+	$.OrgId.eq(orgIdParam),
 	$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
 	$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
 	scope === "edge" ? edgeCondition("Timestamp") : undefined,
@@ -1119,7 +1121,7 @@ const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEd
 
 export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
-	params: { orgId: string; startTime: string; endTime: string },
+	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceExternalEdgesOutput>, QueryBuilderError> {
 	const startHour = CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))
 	const endHour = CH.toStartOfHour(CH.toDateTime(param.dateTimeString("endTime")))
@@ -1143,7 +1145,7 @@ export function serviceExternalEdgesSQL(
 			bucketDurationQuantiles: CH.rawExpr(EDGE_TDIGEST_MERGE_STATE_EXPR, EDGE_DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			...interiorConditions($.Hour),
 			$.TargetName.neq(""),
@@ -1199,7 +1201,7 @@ export function serviceExternalEdgesSQL(
 		.where(($) => {
 			const attr = (key: string) => $.SpanAttributes.get(key)
 			return [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.ServiceName.eq(opts.serviceName),
 				$.Timestamp.gte(param.dateTimeString("startTime")),
 				$.Timestamp.lte(param.dateTimeString("endTime")),
@@ -1230,7 +1232,7 @@ export function serviceExternalEdgesSQL(
 	const internalResolutions = from(ServiceAddressResolutionsHourly)
 		.select(($) => ({ ParentServerAddress: $.ParentServerAddress }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SourceService.eq(opts.serviceName),
 			$.Hour.gte(startHour),
 			$.Hour.lt(endHour),
@@ -1304,7 +1306,7 @@ export interface ServicePlatformsOutput {
 
 export function servicePlatformsSQL(
 	opts: ServicePlatformsOpts,
-	params: { orgId: string; startTime: string; endTime: string },
+	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServicePlatformsOutput>, QueryBuilderError> {
 	const query = from(ServicePlatformsHourly)
 		.select(($) => ({
@@ -1323,7 +1325,7 @@ export function servicePlatformsSQL(
 			processRuntimeName: CH.max_($.ProcessRuntimeName),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))),
 			$.Hour.lte(param.dateTimeSeconds("endTime")),
 			$.ServiceName.neq(""),
@@ -1338,4 +1340,135 @@ export function servicePlatformsSQL(
 		startTime: params.startTime,
 		endTime: params.endTime,
 	})
+}
+
+// DB query volume
+//
+// Query shapes across every service and database, not one db system's detail
+// panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,
+// keyed per (service, db system, namespace, shape). The raw edge mirrors the
+// MV's write filter (`DbSystem != ''`) so both tiers count the same spans.
+
+export interface DbQueryVolumeOpts {
+	readonly dbSystem?: string
+	readonly serviceName?: string
+	readonly deploymentEnv?: string
+	readonly limit?: number
+}
+
+export interface DbQueryVolumeOutput {
+	readonly serviceName: string
+	readonly dbSystem: string
+	readonly dbNamespace: string
+	readonly queryLabel: string
+	readonly queryCount: number
+	readonly estimatedQueryCount: number
+	readonly errorCount: number
+	readonly avgDurationMs: number
+	readonly p95DurationMs: number
+	readonly lastSeen: string
+}
+
+export const dbQueryVolumeRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	dbSystem: Schema.String,
+	dbNamespace: Schema.String,
+	queryLabel: Schema.String,
+	queryCount: CHNumber,
+	estimatedQueryCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumberOrZero,
+	p95DurationMs: CHNumber,
+	lastSeen: Schema.String,
+}) satisfies CompiledQueryRowSchema<DbQueryVolumeOutput>
+
+export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
+	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+		.select(($) => ({
+			bService: $.ServiceName,
+			bSystem: $.DbSystem,
+			bNamespace: collapseHyperdriveNs($.DbNamespace),
+			queryKey: $.QueryKey,
+			bLabel: CH.any_($.QueryLabel),
+			bStatement: CH.any_($.SampleStatement),
+			bCount: CH.sum($.CallCount),
+			bEst: CH.sum($.EstimatedCount),
+			bErr: CH.sum($.ErrorCount),
+			bWDur: CH.sum($.WeightedDurationSumMs),
+			bQ: CH.rawExpr(TDIGEST_MERGE_STATE_EXPR, DB_DURATION_STATE),
+			bLastSeen: CH.max_($.Hour),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			...interiorConditions($.Hour),
+			opts.dbSystem ? $.DbSystem.eq(opts.dbSystem) : undefined,
+			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
+			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
+		])
+		.groupBy("bService", "bSystem", "bNamespace", "queryKey")
+
+	const recent = from(Traces)
+		.select(($) => ({
+			bService: $.ServiceName,
+			bSystem: dbSystemExpr($),
+			bNamespace: dbNamespaceExpr($),
+			queryKey: CH.rawExpr(DB_QUERY_KEY_SQL, T.string),
+			bLabel: CH.rawExpr(`any(substring(${DB_QUERY_LABEL_SQL}, 1, 220))`, T.string),
+			bStatement: CH.rawExpr(`any(substring(${DB_STATEMENT_SQL}, 1, 1000))`, T.string),
+			bCount: CH.count(),
+			bEst: CH.sum($.SampleRate),
+			bErr: CH.countIf($.StatusCode.eq("Error")),
+			bWDur: CH.sum(_toFloat64($.Duration).mul($.SampleRate).div(1000000)),
+			bQ: CH.rawExpr(DB_DURATION_TDIGEST_STATE_EXPR, DB_DURATION_STATE),
+			bLastSeen: CH.max_(CH.toDateTime($.Timestamp)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			edgeCondition("Timestamp"),
+			$.SpanKind.in_("Client", "Producer"),
+			$.ServiceName.neq(""),
+			opts.dbSystem ? dbSystemExpr($).eq(opts.dbSystem) : dbSystemExpr($).neq(""),
+			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
+			opts.deploymentEnv ? deploymentEnvExpr($.ResourceAttributes).eq(opts.deploymentEnv) : undefined,
+		])
+		.groupBy("bService", "bSystem", "bNamespace", "queryKey")
+
+	const merged = fromUnion(unionAll(sealed, recent), "shapes")
+		.select(($) => ({
+			serviceName: $.bService,
+			dbSystem: $.bSystem,
+			dbNamespace: $.bNamespace,
+			queryKey: $.queryKey,
+			fallbackLabel: CH.any_($.bLabel),
+			sampleStatement: CH.anyIf($.bStatement, $.bStatement.neq("")),
+			queryCount: CH.sum($.bCount),
+			estimatedQueryCount: CH.sum($.bEst),
+			errorCount: CH.sum($.bErr),
+			avgDurationMs: CH.if_(CH.sum($.bEst).gt(0), CH.sum($.bWDur).div(CH.sum($.bEst)), CH.lit(0)),
+			p95DurationMs: mergedQuantileExpr(2),
+			lastSeen: CH.toString_(CH.max_($.bLastSeen)),
+		}))
+		.groupBy("serviceName", "dbSystem", "dbNamespace", "queryKey")
+
+	return fromQuery(merged, "shape")
+		.select(($) => ({
+			serviceName: $.serviceName,
+			dbSystem: $.dbSystem,
+			dbNamespace: $.dbNamespace,
+			queryLabel: CH.rawExpr(
+				`if(sampleStatement != '', substring(${presentableStatementSql("sampleStatement")}, 1, 220), fallbackLabel)`,
+				T.string,
+			),
+			queryCount: $.queryCount,
+			estimatedQueryCount: $.estimatedQueryCount,
+			errorCount: $.errorCount,
+			avgDurationMs: $.avgDurationMs,
+			p95DurationMs: $.p95DurationMs,
+			lastSeen: $.lastSeen,
+		}))
+		.orderBy(["estimatedQueryCount", "desc"])
+		.limit(opts.limit ?? 50)
+		.format("JSON")
 }

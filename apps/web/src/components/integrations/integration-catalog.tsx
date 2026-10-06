@@ -1,16 +1,16 @@
-import { useState } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	ChevronDownIcon,
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
+	RailwayIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
 import { Option, Schema } from "effect"
@@ -19,6 +19,7 @@ import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
+import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { docsUrl } from "@/lib/docs"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -37,6 +38,7 @@ export type IntegrationId =
 	| "cloudflare"
 	| "prometheus"
 	| "planetscale"
+	| "railway"
 	| "warpstream"
 	| "hazel"
 	| "github"
@@ -90,6 +92,7 @@ export const chatConnectorIcon = (
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
+export const RAILWAY_ACCENT = "#0B0D0E"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -106,7 +109,23 @@ export interface CatalogEntry {
 	/** `icon` in `currentColor`, for a multicolor mark on a surface that owns the color. */
 	readonly monoIcon?: React.ComponentType<{ size?: number; className?: string }>
 	readonly docsUrl?: string
+	/** Which shelf of the hub it sits on. */
+	readonly category: IntegrationCategory
+	/** Recently shipped: badged on the hub and /infra so it gets noticed. Drop it after a release or two. */
+	readonly isNew?: boolean
 }
+
+export type IntegrationCategory = "infrastructure" | "code" | "notifications"
+
+/** Hub shelves, in display order. */
+export const INTEGRATION_CATEGORIES: ReadonlyArray<{
+	readonly id: IntegrationCategory
+	readonly label: string
+}> = [
+	{ id: "infrastructure", label: "Infrastructure" },
+	{ id: "code", label: "Code & deploys" },
+	{ id: "notifications", label: "Chat & alerts" },
+]
 
 /**
  * Chat connectors, straight from their manifests: name, description, mark and
@@ -119,11 +138,13 @@ const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((ma
 	icon: chatConnectorIcon(manifest.icon),
 	monoIcon: chatConnectorIcon(manifest.icon, true),
 	accent: manifest.accent,
+	category: "notifications",
 }))
 
 const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
+		category: "infrastructure",
 		name: "Cloudflare",
 		description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
 		icon: CloudflareIcon,
@@ -132,6 +153,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "prometheus",
+		category: "infrastructure",
 		name: "Prometheus",
 		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
 		icon: PrometheusIcon,
@@ -140,6 +162,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "planetscale",
+		category: "infrastructure",
 		name: "PlanetScale",
 		description:
 			"Authorize your organization with one click. Maple tracks every database branch automatically.",
@@ -149,7 +172,20 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		docsUrl: docsUrl("planetscale"),
 	},
 	{
+		id: "railway",
+		category: "infrastructure",
+		isNew: true,
+		name: "Railway",
+		description:
+			"Paste a Railway token to collect CPU, memory, network and disk metrics for every service.",
+		icon: RailwayIcon,
+		accent: RAILWAY_ACCENT,
+		// Railway's mark is near-black — render it in the foreground token, like GitHub.
+		iconClassName: "text-foreground",
+	},
+	{
 		id: "warpstream",
+		category: "infrastructure",
 		name: "WarpStream",
 		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
 		icon: WarpStreamIcon,
@@ -159,6 +195,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "hazel",
+		category: "notifications",
 		name: "Hazel",
 		description:
 			"Forward Maple alerts into a Hazel workspace via OAuth. Pick destinations per notification.",
@@ -168,6 +205,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	{
 		id: "github",
+		category: "code",
 		name: "GitHub",
 		description: "Install the Maple GitHub App to sync repositories and commits from your org.",
 		icon: GithubIcon,
@@ -179,21 +217,13 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	...CHAT_ENTRIES,
 ]
 
-/**
- * The ones shown up front on an empty hub: Cloudflare, GitHub and every chat
- * connector. Every other entry serves a specific piece of infrastructure and only
- * matters to the orgs running it, so it waits behind "Discover more integrations"
- * rather than padding the first screen.
- *
- * Order is the order they appear in.
- */
-const RECOMMENDED: ReadonlyArray<IntegrationId> = [
-	"cloudflare",
-	"github",
-	...CHAT_ENTRIES.map((entry) => entry.id),
-]
-
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
+
+/** The catalog this org is shown, in catalog order. */
+export function useVisibleCatalog(): ReadonlyArray<CatalogEntry> {
+	const isVisible = useIsIntegrationVisible()
+	return CATALOG.filter((entry) => isVisible(entry.id))
+}
 
 /**
  * Whether a value names an integration in the catalog. External OAuth callbacks
@@ -218,7 +248,7 @@ export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
 
 interface CardStatus {
 	readonly label: string
-	readonly variant: "success" | "warning" | "error" | "outline"
+	readonly variant: "ok" | "warn" | "crit" | "outline"
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
@@ -254,13 +284,27 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
+		}),
+	)
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
+	const railway: CardStatus | null = Result.builder(railwayResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			if (status.authFailed) return { label: "Token rejected", variant: "crit" }
+			return { label: countLabel(status.environments.length, "environment"), variant: "ok" }
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
+
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
 		.onSuccess((status): CardStatus =>
-			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+			status.connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -274,8 +318,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 				const enabled = targets.filter((target) => target.enabled).length
 				const noun = targetType === "planetscale" ? "org" : "target"
 				return {
-					label: `${targets.length} ${noun}${targets.length === 1 ? "" : "s"} · ${enabled} enabled`,
-					variant: failing ? "warning" : "success",
+					label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
+					variant: failing ? "warn" : "ok",
 				}
 			})
 			.onInitial(() => null)
@@ -289,7 +333,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			const failing = status.scrape_target?.last_scrape_error != null
 			return {
 				label: status.organization ?? "Connected",
-				variant: failing ? "warning" : "success",
+				variant: failing ? "warn" : "ok",
 			}
 		})
 		.onInitial(() => null)
@@ -297,7 +341,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 
 	const hazel: CardStatus | null = Result.builder(hazelResult)
 		.onSuccess((status): CardStatus =>
-			status.connected ? { label: "Connected", variant: "success" } : NOT_CONNECTED,
+			status.connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED,
 		)
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -306,15 +350,15 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onSuccess((status): CardStatus => {
 			// Deactivated on GitHub's side (uninstalled / suspended) — the install row is
 			// kept, so flag it for attention rather than showing a bare "Not connected".
-			if (status.state === "disconnected") return { label: "Deactivated", variant: "warning" }
-			if (status.state === "suspended") return { label: "Suspended", variant: "warning" }
+			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
+			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
 			if (!status.connected) return NOT_CONNECTED
 			// Count only active repos; provider-removed ones are shown in the card
 			// with a re-enable/delete affordance, not as live synced repos.
 			const count = status.repositories.filter((r) => r.status === "active").length
 			return {
-				label: count > 0 ? `${count} repo${count === 1 ? "" : "s"}` : "Connected",
-				variant: "success",
+				label: count > 0 ? countLabel(count, "repo") : "Connected",
+				variant: "ok",
 			}
 		})
 		.onInitial(() => null)
@@ -337,7 +381,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 							workspaces.length === 1
 								? (workspaces[0]?.name ?? "Connected")
 								: `${workspaces.length} workspaces`,
-						variant: "success",
+						variant: "ok",
 					}
 				})
 				.onInitial((): CardStatus | null => null)
@@ -349,6 +393,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
 		planetscale,
+		railway,
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
@@ -449,8 +494,6 @@ const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
 const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
 const UNAVAILABLE: UnavailableOverview = { kind: "unavailable" }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
-
 const syncedLabel = (ms: number | null | undefined, verb = "synced"): string | null =>
 	ms == null ? null : `${verb} ${formatRelativeTime(new Date(ms).toISOString())}`
 
@@ -485,9 +528,36 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
+	const railwayResult = useAtomValue(
+		retainedQuery("integrations", "railwayStatus", {
+			reactivityKeys: ["railwayIntegrationStatus"],
+		}),
+	)
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+
+	const railway: IntegrationOverview = Result.builder(railwayResult)
+		.onSuccess((status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const failing = status.environments.filter((environment) => environment.lastError != null).length
+			const issue = status.authFailed
+				? "Token rejected"
+				: failing > 0
+					? `${countLabel(failing, "environment")} failing`
+					: null
+			return {
+				kind: "connected",
+				health: issue ? "attention" : "healthy",
+				stateLabel: issue ? "Needs attention" : "Healthy",
+				context: status.workspaceNames,
+				stat: `${countLabel(status.environments.length, "environment")} polled`,
+				lastSyncLabel: syncedLabel(status.lastSyncedAt),
+				issue,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
 
 	const cloudflare: IntegrationOverview = Result.builder(cloudflareResult)
 		.onSuccess((status): IntegrationOverview => {
@@ -499,12 +569,12 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const issue = !status.analyticsCapable
 				? "Update access"
 				: erroringZones > 0
-					? `${plural(erroringZones, "zone")} erroring`
+					? `${countLabel(erroringZones, "zone")} erroring`
 					: workersFailing
 						? "Workers sync failing"
 						: null
 			const statParts =
-				zones.length > 0 ? [`${enabledZones} of ${plural(zones.length, "zone")} streaming`] : []
+				zones.length > 0 ? [`${enabledZones} of ${countLabel(zones.length, "zone")} streaming`] : []
 			if (status.workers?.enabled) statParts.push("Workers")
 			return {
 				kind: "connected",
@@ -535,13 +605,13 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					kind: "connected",
 					health: failing > 0 ? "attention" : "healthy",
 					stateLabel: failing > 0 ? "Needs attention" : "Healthy",
-					context: plural(targets.length, `scrape ${noun}`),
+					context: countLabel(targets.length, `scrape ${noun}`),
 					stat: `${enabled} of ${targets.length} enabled`,
 					lastSyncLabel: syncedLabel(
 						maxMs(targets.map((t) => (t.last_scrape_at ? Date.parse(t.last_scrape_at) : null))),
 						"scraped",
 					),
-					issue: failing > 0 ? `${plural(failing, noun)} failing` : null,
+					issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
 				}
 			})
 			.onInitial(() => null)
@@ -572,7 +642,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				context: status.organization,
 				stat:
 					planetscaleDbCount != null && planetscaleDbCount > 0
-						? `${plural(planetscaleDbCount, "database")} tracked`
+						? `${countLabel(planetscaleDbCount, "database")} tracked`
 						: status.scrape_target?.enabled
 							? "Metrics scraping on"
 							: null,
@@ -635,16 +705,16 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const failing = active.filter((r) => r.lastSyncError != null).length
 			const issue =
 				failing > 0
-					? `${plural(failing, "repo")} failing`
+					? `${countLabel(failing, "repo")} failing`
 					: removed > 0
-						? `${plural(removed, "repo")} removed`
+						? `${countLabel(removed, "repo")} removed`
 						: null
 			return {
 				kind: "connected",
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context: status.accountLogin ? `@${status.accountLogin} · GitHub App` : "GitHub App",
-				stat: active.length > 0 ? `${plural(active.length, "repo")} synced` : null,
+				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
 				lastSyncLabel: syncedLabel(maxMs(active.map((r) => r.lastSyncedAt))),
 				issue,
 			}
@@ -667,7 +737,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 						context:
 							workspaces.length === 1
 								? (workspaces[0]?.name ?? null)
-								: plural(workspaces.length, "workspace"),
+								: countLabel(workspaces.length, "workspace"),
 						stat: "Alerts & agent ready",
 						// No sync loop — the bot is push-per-message.
 						lastSyncLabel: null,
@@ -683,6 +753,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
 		planetscale,
+		railway,
 		// WarpStream rides the generic Prometheus pipeline — always a set-up card.
 		warpstream: SET_UP,
 		hazel,
@@ -705,32 +776,23 @@ export function IntegrationsSummary() {
 	const attention = connected.filter((value) => value.health === "attention").length
 	return (
 		<div className="flex items-center gap-2">
-			<span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-0.5 text-xs text-muted-foreground">
-				<span className="size-1.5 rounded-full bg-success" aria-hidden />
+			<Badge variant="meta" pill className="gap-1.5 px-2.5 font-normal">
+				<StatusDot tone="ok" />
 				{connected.length} connected
-			</span>
+			</Badge>
 			{attention > 0 && (
-				<span className="inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning/10 px-2.5 py-0.5 text-xs text-warning-foreground">
-					<span className="size-1.5 rounded-full bg-warning" aria-hidden />
+				<Badge variant="warn" pill className="gap-1.5 px-2.5 font-normal">
+					<StatusDot tone="warn" />
 					{attention} need attention
-				</span>
+				</Badge>
 			)}
 		</div>
 	)
 }
 
 function HealthDot({ health }: { health: "healthy" | "attention" | "unavailable" }) {
-	return (
-		<span
-			aria-hidden
-			className={cn(
-				"size-1.5 shrink-0 rounded-full",
-				health === "healthy" && "bg-success",
-				health === "attention" && "bg-warning",
-				health === "unavailable" && "bg-muted-foreground",
-			)}
-		/>
-	)
+	if (health === "unavailable") return <StatusDot tone="neutral" />
+	return <StatusDot tone={health === "healthy" ? "ok" : "warn"} />
 }
 
 function ConnectedRow({
@@ -778,7 +840,7 @@ function ConnectedRow({
 					</span>
 				)}
 				{connected?.issue && (
-					<Badge variant="warning" size="sm" className="hidden sm:inline-flex">
+					<Badge variant="warn" size="sm" className="hidden sm:inline-flex">
 						{connected.issue}
 					</Badge>
 				)}
@@ -814,7 +876,10 @@ function AvailableCard({
 				size={20}
 			/>
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-				<span className="truncate text-sm font-semibold">{entry.name}</span>
+				<span className="flex min-w-0 items-center gap-2">
+					<span className="truncate text-sm font-semibold">{entry.name}</span>
+					{entry.isNew ? <NewBadge /> : null}
+				</span>
 				<span className="line-clamp-2 text-xs text-muted-foreground">{entry.description}</span>
 			</span>
 			{/* Styled as a button, but the whole card is the interactive element. */}
@@ -843,64 +908,17 @@ function SkeletonRow() {
 	)
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+export function NewBadge() {
 	return (
-		<span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-			{children}
-		</span>
-	)
-}
-
-/**
- * The collapsed shelf for everything not connected and not recommended. The
- * overlapping marks are the preview — they say which integrations are inside
- * without spending a row each.
- */
-function DiscoverMore({
-	entries,
-	onSelect,
-}: {
-	entries: ReadonlyArray<{ entry: CatalogEntry; overview: AvailableOverview }>
-	onSelect: (id: IntegrationId) => void
-}) {
-	const [open, setOpen] = useState(false)
-	return (
-		<Collapsible open={open} onOpenChange={setOpen}>
-			<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border/60 border-dashed bg-card/50 px-4 py-3 text-left outline-none transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 data-panel-open:border-solid">
-				<span className="flex shrink-0 items-center -space-x-2" aria-hidden>
-					{entries.map(({ entry }) => (
-						<IntegrationIconPlate
-							key={entry.id}
-							icon={entry.icon}
-							accent={entry.accent}
-							iconClassName={entry.iconClassName}
-							plateClassName="size-7 rounded-md"
-							size={14}
-						/>
-					))}
-				</span>
-				<span className="truncate text-sm font-medium">Discover more integrations</span>
-				<span className="hidden text-xs text-muted-foreground sm:inline">
-					{entries.length} available
-				</span>
-				<ChevronDownIcon
-					size={14}
-					className="ml-auto shrink-0 text-muted-foreground/70 transition-transform duration-200 group-hover:text-foreground group-data-panel-open:rotate-180 motion-reduce:transition-none"
-				/>
-			</CollapsibleTrigger>
-			<CollapsibleContent className="grid grid-cols-1 gap-3 pt-3 lg:grid-cols-2">
-				{entries.map(({ entry, overview }) => (
-					<AvailableCard key={entry.id} entry={entry} cta={overview.cta} onSelect={onSelect} />
-				))}
-			</CollapsibleContent>
-		</Collapsible>
+		<Badge variant="info" size="sm">
+			New
+		</Badge>
 	)
 }
 
 export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const overviews = useIntegrationOverviews()
-	const isVisible = useIsIntegrationVisible()
-	const catalog = CATALOG.filter((entry) => isVisible(entry.id))
+	const catalog = useVisibleCatalog()
 
 	const connected = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
@@ -914,20 +932,20 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 	})
 	const loading = catalog.filter((entry) => overviews[entry.id] === null)
 
-	// Nothing connected yet, and nothing still resolving that could change that:
-	// lead with the broadly useful integrations so the hub opens on a
-	// choice rather than a catalog. A partially loaded hub isn't empty — wait.
-	const showRecommended = connected.length === 0 && loading.length === 0
-	const recommended = showRecommended
-		? RECOMMENDED.flatMap((id) => available.filter(({ entry }) => entry.id === id))
-		: []
-	const more = available.filter(({ entry }) => !recommended.some((r) => r.entry.id === entry.id))
+	// Every provider is on screen: a shelf you have to expand is one most people never open, and
+	// grouping by what the integration feeds keeps the full list scannable. New ones lead their shelf.
+	const shelves = INTEGRATION_CATEGORIES.map((category) => ({
+		...category,
+		entries: available
+			.filter(({ entry }) => entry.category === category.id)
+			.sort((a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false)),
+	})).filter((shelf) => shelf.entries.length > 0)
 
 	return (
 		<div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none">
 			{(connected.length > 0 || loading.length > 0) && (
 				<section className="flex flex-col gap-2">
-					<SectionLabel>Connected</SectionLabel>
+					<Eyebrow variant="label">Connected</Eyebrow>
 					<div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
 						{connected.map(({ entry, overview }) => (
 							<ConnectedRow
@@ -943,11 +961,11 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 					</div>
 				</section>
 			)}
-			{recommended.length > 0 && (
-				<section className="flex flex-col gap-2">
-					<SectionLabel>Start here</SectionLabel>
+			{shelves.map((shelf) => (
+				<section key={shelf.id} className="flex flex-col gap-2">
+					<Eyebrow variant="label">{shelf.label}</Eyebrow>
 					<div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						{recommended.map(({ entry, overview }) => (
+						{shelf.entries.map(({ entry, overview }) => (
 							<AvailableCard
 								key={entry.id}
 								entry={entry}
@@ -957,8 +975,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 						))}
 					</div>
 				</section>
-			)}
-			{more.length > 0 && <DiscoverMore entries={more} onSelect={onSelect} />}
+			))}
 		</div>
 	)
 }

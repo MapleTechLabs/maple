@@ -3,7 +3,7 @@ import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { sha256File } from "../src/server/checkpoint-digest"
 import { Clock, Duration, Effect, Exit, Option } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
 	existsSync,

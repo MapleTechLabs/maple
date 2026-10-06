@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { IssueSeverity } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
@@ -46,13 +47,13 @@ export function InvestigationHeader({
 		<DashboardLayout.Header
 			titleContent={
 				<div className="min-w-0 space-y-2.5">
-					<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+					<Eyebrow as="div" className="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<span>Investigation</span>
 						<span aria-hidden className="text-muted-foreground/40">
 							·
 						</span>
 						<span>{investigationKindLabel(investigation.subject)}</span>
-					</div>
+					</Eyebrow>
 					<DashboardLayout.Title title={headline}>{headline}</DashboardLayout.Title>
 					<div className="flex flex-wrap items-center gap-2">
 						<InvestigationStatusBadge status={investigation.status} />

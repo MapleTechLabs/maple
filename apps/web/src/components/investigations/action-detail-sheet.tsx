@@ -13,18 +13,15 @@
  * report-level evidence as the reason for a specific action would be inventing a
  * link the data does not carry.
  */
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetPanel,
-	SheetTitle,
-} from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetPanel, SheetTitle } from "@maple/ui/components/ui/sheet"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 
+import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ArrowRightIcon } from "@/components/icons"
 import { CONFIDENCE_TONE } from "./confidence-meter"
 import { ACTION_GLYPH } from "./flow/flow-nodes"
@@ -58,8 +55,6 @@ export interface ActionReportContext {
 	readonly evidence: ReadonlyArray<ActionEvidenceItem>
 }
 
-const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
-
 /**
  * Trace ids and log patterns as chips. Lifted out of the diagnosis report card so
  * the investigation panel and the chat card render evidence identically.
@@ -73,18 +68,21 @@ export function EvidenceChips({ item }: { item: ActionEvidenceItem }) {
 					key={traceId}
 					to="/traces/$traceId"
 					params={{ traceId }}
-					className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground transition-colors hover:bg-muted/70"
+					title={traceId}
+					className="rounded"
 				>
-					{traceId.slice(0, 12)}…
+					<InlineCode className="px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-muted/70">
+						{shortId(traceId, "generic", { ellipsis: true })}
+					</InlineCode>
 				</Link>
 			))}
 			{item.logPatterns.map((pattern) => (
-				<span
+				<InlineCode
 					key={pattern}
-					className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+					className="bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
 				>
 					{pattern}
-				</span>
+				</InlineCode>
 			))}
 		</div>
 	)
@@ -113,24 +111,20 @@ export function ActionDetailSheet({
 			<SheetContent className="sm:max-w-lg">
 				{action && glyph ? (
 					<>
-						<SheetHeader>
-							<div className="flex items-center gap-2">
-								<glyph.Icon size={12} className="shrink-0 text-muted-foreground" />
-								<span className={EYEBROW}>
+						{/* The whole sentence, unclamped: the thing the canvas node cannot show. */}
+						<SheetDetailHeader
+							mono={false}
+							kind={
+								<span className="flex items-center gap-2">
+									<glyph.Icon size={12} className="shrink-0" />
 									Proposed action {String(action.index + 1).padStart(2, "0")}
+									<span className="text-muted-foreground/40">·</span>
+									{glyph.label}
 								</span>
-								<span className="text-muted-foreground/40">·</span>
-								<span className={EYEBROW}>{glyph.label}</span>
-							</div>
-							{/*
-							 * The whole sentence, unclamped — this is the thing the canvas
-							 * node cannot show and the reason this panel exists.
-							 */}
-							<SheetTitle className="text-base leading-snug">{action.text}</SheetTitle>
-							<SheetDescription className="sr-only">
-								What this proposed action asks for, and the diagnosis behind it.
-							</SheetDescription>
-						</SheetHeader>
+							}
+							title={action.text}
+							description="What this proposed action asks for, and the diagnosis behind it."
+						/>
 						<SheetPanel className="flex flex-col gap-6">
 							<div className="flex flex-wrap items-center gap-2">
 								{action.target ? (
@@ -155,7 +149,7 @@ export function ActionDetailSheet({
 
 							{report ? (
 								<section className="flex flex-col gap-2">
-									<h3 className={EYEBROW}>From the diagnosis</h3>
+									<Eyebrow as="h3">From the diagnosis</Eyebrow>
 									<p className="text-sm leading-relaxed text-foreground">
 										{report.suspectedCause}
 									</p>
@@ -180,7 +174,7 @@ export function ActionDetailSheet({
 
 							{evidence.length > 0 ? (
 								<section className="flex flex-col gap-2">
-									<h3 className={EYEBROW}>Evidence behind the diagnosis</h3>
+									<Eyebrow as="h3">Evidence behind the diagnosis</Eyebrow>
 									{evidence.map((item, index) => (
 										<div
 											key={index}

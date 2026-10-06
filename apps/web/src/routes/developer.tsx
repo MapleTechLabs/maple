@@ -24,12 +24,6 @@ function DeveloperPage() {
 			<DashboardLayout.Breadcrumbs items={[{ label: "Developer" }]} />
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Developer"
-							description="Manage API keys and ingestion credentials."
-						/>
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						<Tabs
 							value={search.tab ?? "ingestion"}

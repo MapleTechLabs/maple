@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as CH from "./index"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { tracesTimeseriesQuery, tracesBreakdownQuery, tracesListQuery } from "./queries/traces"
 import { logsFacetsQuery } from "./queries/logs"
 import { servicesFacetsQuery } from "./queries/services"
@@ -11,18 +11,23 @@ import {
 	spanHierarchyQuery,
 	spanDetailQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 } from "./queries/errors"
-import { unionAll } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import { unionAll } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
 
 // Core DSL tests
 
 describe("CH.from / select / where / compile", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
-		Attrs: CH.map(CH.string, CH.string),
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+			Attrs: CH.map(CH.string, CH.string),
+		},
 	})
 
 	it("compiles a basic select", () => {
@@ -50,7 +55,7 @@ describe("CH.from / select / where / compile", () => {
 			.where(($) => [$.Id.eq(CH.param.string("orgId")), $.Name.eq("test")])
 			.groupBy("id")
 
-		const { sql } = compileUnsafe(q, { orgId: "org_123" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_123") })
 		expect(sql).toContain("Id AS id")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("Id = 'org_123'")
@@ -89,7 +94,7 @@ describe("CH.from / select / where / compile", () => {
 		}))
 
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("avg(Value) / 1000000 AS avgMs")
+		expect(sql).toContain("avg(test_table.Value) / 1000000 AS avgMs")
 	})
 
 	it("compiles aggregate functions", () => {
@@ -101,8 +106,8 @@ describe("CH.from / select / where / compile", () => {
 
 		const { sql } = compileUnsafe(q, {})
 		expect(sql).toContain("count() AS cnt")
-		expect(sql).toContain("sum(Value) AS total")
-		expect(sql).toContain("quantile(0.95)(Value) AS p95")
+		expect(sql).toContain("sum(test_table.Value) AS total")
+		expect(sql).toContain("quantile(0.95)(test_table.Value) AS p95")
 	})
 
 	it("skips undefined WHERE conditions", () => {
@@ -153,8 +158,8 @@ describe("CH.from / select / where / compile", () => {
 
 		const { sql } = compileUnsafe(q, {})
 		expect(sql).toContain(
-			"Value - lagInFrame(Value, 1, Value) OVER (PARTITION BY Name, " +
-				"cityHash64(mapKeys(Attrs), mapValues(Attrs)) ORDER BY Value ASC " +
+			"test_table.Value - lagInFrame(test_table.Value, 1, test_table.Value) OVER (PARTITION BY test_table.Name, " +
+				"cityHash64(mapKeys(test_table.Attrs), mapValues(test_table.Attrs)) ORDER BY test_table.Value ASC " +
 				"ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS delta",
 		)
 	})
@@ -165,7 +170,7 @@ describe("CH.from / select / where / compile", () => {
 		}))
 
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("if(count() > 0, countIf(Name = 'Error'), 0) AS errorRate")
+		expect(sql).toContain("if(count() > 0, countIf(test_table.Name = 'Error'), 0) AS errorRate")
 	})
 
 	it("compiles inList conditions", () => {
@@ -200,7 +205,7 @@ describe("CH.from / select / where / compile", () => {
 		const q = CH.from(TestTable).select(($) => ({ names: CH.arrayOf($.Name) }))
 
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("[Name] AS names")
+		expect(sql).toContain("[test_table.Name] AS names")
 	})
 })
 
@@ -208,7 +213,7 @@ describe("CH.from / select / where / compile", () => {
 
 describe("tracesTimeseriesQuery", () => {
 	const baseParams = {
-		orgId: "org_123",
+		orgId: OrgId.make("org_123"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 		bucketSeconds: 3600,
@@ -222,7 +227,7 @@ describe("tracesTimeseriesQuery", () => {
 		// MV cannot answer — it reads raw traces.
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("sum(SampleRate) AS count")
+		expect(sql).toContain("sum(traces.SampleRate) AS count")
 		expect(sql).toContain("INTERVAL 3600 SECOND")
 		expect(sql).toContain("GROUP BY bucket, groupName")
 		expect(sql).toContain("ORDER BY bucket ASC, groupName ASC")
@@ -236,7 +241,7 @@ describe("tracesTimeseriesQuery", () => {
 		const q = tracesTimeseriesQuery({ metric: "apdex", needsSampling: false, apdexThresholdMs: 250 })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"countIf((NOT (StatusCode = 'Error') AND Duration / 1000000 < 250)) AS satisfiedCount",
+			"countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 250)) AS satisfiedCount",
 		)
 		expect(sql).toContain("toleratingCount")
 		expect(sql).toContain("apdexScore")
@@ -248,10 +253,10 @@ describe("tracesTimeseriesQuery", () => {
 		// A fast error must NOT inflate apdex: the non-error predicate gates both
 		// the satisfied and tolerating buckets, while count() still includes errors.
 		expect(sql).toContain(
-			"countIf((NOT (StatusCode = 'Error') AND Duration / 1000000 < 250)) AS satisfiedCount",
+			"countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 250)) AS satisfiedCount",
 		)
 		expect(sql).toContain(
-			"countIf((NOT (StatusCode = 'Error') AND (Duration / 1000000 >= 250 AND Duration / 1000000 < 1000))) AS toleratingCount",
+			"countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 250 AND traces.Duration / 1000000 < 1000))) AS toleratingCount",
 		)
 		// satisfied and tolerating are divided by the unfiltered count(), so errors drag the score down.
 		expect(sql).toContain("/ count()")
@@ -260,21 +265,23 @@ describe("tracesTimeseriesQuery", () => {
 	it("builds p95 duration timeseries", () => {
 		const q = tracesTimeseriesQuery({ metric: "p95_duration", needsSampling: false })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("quantile(0.5)(Duration) / 1000000 AS p50Duration")
-		expect(sql).toContain("quantile(0.95)(Duration) / 1000000 AS p95Duration")
-		expect(sql).toContain("quantile(0.99)(Duration) / 1000000 AS p99Duration")
+		expect(sql).toContain("quantile(0.5)(traces.Duration) / 1000000 AS p50Duration")
+		expect(sql).toContain("quantile(0.95)(traces.Duration) / 1000000 AS p95Duration")
+		expect(sql).toContain("quantile(0.99)(traces.Duration) / 1000000 AS p99Duration")
 	})
 
 	it("builds error_rate timeseries weighted on both sides of the ratio", () => {
 		const q = tracesTimeseriesQuery({ metric: "error_rate", needsSampling: false })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("sumIf(SampleRate, StatusCode = 'Error') / sum(SampleRate), 0) AS errorRate")
+		expect(sql).toContain(
+			"sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate",
+		)
 	})
 
 	it("emits sum(SampleRate) when needsSampling is true", () => {
 		const q = tracesTimeseriesQuery({ metric: "count", needsSampling: true })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("sum(SampleRate) AS estimatedSpanCount")
+		expect(sql).toContain("sum(traces.SampleRate) AS estimatedSpanCount")
 		// The old non-deterministic `anyIf(threshold)` is gone — it was the bug.
 		expect(sql).not.toContain("dominantThreshold")
 		expect(sql).not.toContain("anyIf")
@@ -289,14 +296,14 @@ describe("tracesTimeseriesQuery", () => {
 	it("groups by service", () => {
 		const q = tracesTimeseriesQuery({ metric: "count", needsSampling: false, groupBy: ["service"] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(ServiceName)")
+		expect(sql).toContain("toString(traces.ServiceName)")
 		expect(sql).toContain("AS groupName")
 	})
 
 	it("groups by span_name", () => {
 		const q = tracesTimeseriesQuery({ metric: "count", needsSampling: false, groupBy: ["span_name"] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(SpanName)")
+		expect(sql).toContain("toString(traces.SpanName)")
 	})
 
 	it("groups by multiple dimensions", () => {
@@ -511,7 +518,7 @@ describe("tracesTimeseriesQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production', 'staging')",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production', 'staging')",
 		)
 	})
 
@@ -688,7 +695,7 @@ describe("tracesTimeseriesQuery", () => {
 
 describe("tracesBreakdownQuery", () => {
 	const baseParams = {
-		orgId: "org_123",
+		orgId: OrgId.make("org_123"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 	}
@@ -700,7 +707,7 @@ describe("tracesBreakdownQuery", () => {
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM service_overview_spans")
 		expect(sql).toContain("ServiceName AS name")
-		expect(sql).toContain("sum(SampleRate) AS count")
+		expect(sql).toContain("sum(traces.SampleRate) AS count")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 10")
@@ -726,7 +733,7 @@ describe("tracesBreakdownQuery", () => {
 		const q = tracesBreakdownQuery({ metric: "count", groupBy: "service", rootOnly: true })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("sum(SampleRate) AS count")
+		expect(sql).toContain("sum(service_overview_spans.SampleRate) AS count")
 	})
 
 	it("groups by http_method", () => {
@@ -734,8 +741,78 @@ describe("tracesBreakdownQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM service_overview_spans")
-		expect(sql).toContain("SpanAttributes['http.method'] AS name")
+		expect(sql).toContain(
+			"if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']) AS name",
+		)
 	})
+
+	it("groups by environment under either semconv spelling on the raw path", () => {
+		const q = tracesBreakdownQuery({ metric: "count", groupBy: "environment" })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS name",
+		)
+	})
+
+	it("groups a timeseries by http_method under either semconv spelling", () => {
+		const q = tracesTimeseriesQuery({
+			metric: "count",
+			needsSampling: false,
+			groupBy: ["http_method"],
+			bucketSeconds: 300,
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 300 })
+		expect(sql).toContain(
+			"if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method'])",
+		)
+	})
+
+	it("ORs a filter with its alternatives, each under its own semconv aliases", () => {
+		const q = tracesListQuery({
+			attributeFilters: [
+				{
+					key: "messaging.system",
+					value: "kafka",
+					mode: "equals",
+					or: [{ key: "messaging.destination.name", mode: "exists", negated: true }],
+				},
+			],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("(SpanAttributes['messaging.system'] = 'kafka' OR NOT (")
+		expect(sql).toContain("mapContains(SpanAttributes, 'messaging.destination.name')")
+		expect(sql).toContain("mapContains(SpanAttributes, 'messaging.destination')")
+	})
+
+	it("matches every http target the service map names when filtering on server.address", () => {
+		const q = tracesListQuery({
+			attributeFilters: [{ key: "server.address", value: "x", mode: "equals" }],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain(
+			"if(SpanAttributes['server.address'] != '', SpanAttributes['server.address'], if(SpanAttributes['http.host'] != '', SpanAttributes['http.host'], SpanAttributes['url.authority'])) = 'x'",
+		)
+	})
+
+	// Dependency drilldowns and dashboard templates filter on these keys. The
+	// spelling the user typed is read first, so a saved legacy filter keeps its
+	// meaning on spans that dual-emit a different value under the new key.
+	for (const [key, first, second] of [
+		["db.system", "db.system", "db.system.name"],
+		["db.system.name", "db.system.name", "db.system"],
+		["messaging.destination.name", "messaging.destination.name", "messaging.destination"],
+		["rpc.system", "rpc.system", "rpc.system.name"],
+		["rpc.system.name", "rpc.system.name", "rpc.system"],
+	] as const) {
+		it(`matches both semconv spellings when filtering on ${key}`, () => {
+			const q = tracesListQuery({ attributeFilters: [{ key, value: "x", mode: "equals" }] })
+			const { sql } = compileUnsafe(q, baseParams)
+			expect(sql).toContain(
+				`if(SpanAttributes['${first}'] != '', SpanAttributes['${first}'], SpanAttributes['${second}']) = 'x'`,
+			)
+		})
+	}
 
 	it("groups by custom attribute", () => {
 		const q = tracesBreakdownQuery({
@@ -765,7 +842,7 @@ describe("tracesBreakdownQuery", () => {
 		const q = tracesBreakdownQuery({ metric: "apdex", groupBy: "service", apdexThresholdMs: 300 })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"countIf((NOT (StatusCode = 'Error') AND Duration / 1000000 < 300)) AS satisfiedCount",
+			"countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 300)) AS satisfiedCount",
 		)
 		expect(sql).toContain("apdexScore")
 	})
@@ -773,7 +850,7 @@ describe("tracesBreakdownQuery", () => {
 	it("includes quantile columns for p99 metric", () => {
 		const q = tracesBreakdownQuery({ metric: "p99_duration", groupBy: "service" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("quantile(0.99)(Duration) / 1000000 AS p99Duration")
+		expect(sql).toContain("quantile(0.99)(traces.Duration) / 1000000 AS p99Duration")
 	})
 
 	it("applies WHERE filters", () => {
@@ -819,7 +896,7 @@ describe("tracesBreakdownQuery", () => {
 
 describe("tracesListQuery", () => {
 	const baseParams = {
-		orgId: "org_123",
+		orgId: OrgId.make("org_123"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 	}
@@ -877,7 +954,7 @@ describe("tracesListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("SpanName IN ('GET /a', 'GET /b')")
 		// Display-name aware, same as the single-value path.
-		expect(sql).toContain("replaceOne(SpanName, 'http.server ', '')")
+		expect(sql).toContain("replaceOne(traces.SpanName, 'http.server ', '')")
 	})
 
 	it("emits IN for a multi-value http attribute filter", () => {
@@ -906,8 +983,8 @@ describe("tracesListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		// Display-name aware: excludes rows whose raw OR rewritten span name
 		// matches, so excluding a "Root Span" facet value ("GET /route") works.
-		expect(sql).toMatch(/NOT \(\(SpanName IN \('GET \/health'\) OR /)
-		expect(sql).toContain("replaceOne(SpanName, 'http.server ', '')")
+		expect(sql).toMatch(/NOT \(\(traces\.SpanName IN \('GET \/health'\) OR /)
+		expect(sql).toContain("replaceOne(traces.SpanName, 'http.server ', '')")
 	})
 
 	it("wraps a negated attribute filter in NOT (...)", () => {
@@ -931,9 +1008,12 @@ describe("tracesListQuery", () => {
 
 describe("unionAll", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+		},
 	})
 
 	it("compiles two queries with UNION ALL", () => {
@@ -989,9 +1069,12 @@ describe("unionAll", () => {
 
 describe("subquery support", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+		},
 	})
 
 	it("compiles inSubquery", () => {
@@ -1049,16 +1132,22 @@ describe("subquery support", () => {
 
 describe("type-safe joins", () => {
 	const Users = CH.table("users", {
-		Id: CH.string,
-		Name: CH.string,
-		OrgId: CH.string,
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			OrgId: CH.string,
+		},
 	})
 
 	const Orders = CH.table("orders", {
-		Id: CH.string,
-		UserId: CH.string,
-		Amount: CH.uint64,
-		Status: CH.string,
+		external: true,
+		columns: {
+			Id: CH.string,
+			UserId: CH.string,
+			Amount: CH.uint64,
+			Status: CH.string,
+		},
 	})
 
 	it("compiles innerJoin with Table", () => {
@@ -1162,7 +1251,10 @@ describe("type-safe joins", () => {
 	})
 
 	it("compiles multiple chained joins", () => {
-		const Tags = CH.table("tags", { Id: CH.string, UserId: CH.string, Label: CH.string })
+		const Tags = CH.table("tags", {
+			external: true,
+			columns: { Id: CH.string, UserId: CH.string, Label: CH.string },
+		})
 
 		const q = CH.from(Users)
 			.innerJoin(Orders, "o", (u, o) => u.Id.eq(o.UserId))
@@ -1198,46 +1290,49 @@ describe("type-safe joins", () => {
 
 describe("new expression functions", () => {
 	const TestTable = CH.table("test_table", {
-		Id: CH.string,
-		Name: CH.string,
-		Value: CH.uint64,
-		Attrs: CH.map(CH.string, CH.string),
+		external: true,
+		columns: {
+			Id: CH.string,
+			Name: CH.string,
+			Value: CH.uint64,
+			Attrs: CH.map(CH.string, CH.string),
+		},
 	})
 
 	it("compiles uniq()", () => {
 		const q = CH.from(TestTable).select(($) => ({ unique: CH.uniq($.Name) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("uniq(Name) AS unique")
+		expect(sql).toContain("uniq(test_table.Name) AS unique")
 	})
 
 	it("compiles sumIf()", () => {
 		const q = CH.from(TestTable).select(($) => ({ total: CH.sumIf($.Value, $.Name.eq("test")) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("sumIf(Value, Name = 'test') AS total")
+		expect(sql).toContain("sumIf(test_table.Value, test_table.Name = 'test') AS total")
 	})
 
 	it("compiles toJSONString()", () => {
 		const q = CH.from(TestTable).select(($) => ({ attrs: CH.toJSONString($.Attrs) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("toJSONString(Attrs) AS attrs")
+		expect(sql).toContain("toJSONString(test_table.Attrs) AS attrs")
 	})
 
 	it("compiles concat()", () => {
 		const q = CH.from(TestTable).select(($) => ({ full: CH.concat($.Id, CH.lit(" "), $.Name) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("concat(Id, ' ', Name) AS full")
+		expect(sql).toContain("concat(test_table.Id, ' ', test_table.Name) AS full")
 	})
 
 	it("compiles round()", () => {
 		const q = CH.from(TestTable).select(($) => ({ rounded: CH.round($.Value.div(100), 2) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("round(Value / 100, 2) AS rounded")
+		expect(sql).toContain("round(test_table.Value / 100, 2) AS rounded")
 	})
 
 	it("compiles intDiv()", () => {
 		const q = CH.from(TestTable).select(($) => ({ result: CH.intDiv($.Value, 1000) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("intDiv(Value, 1000) AS result")
+		expect(sql).toContain("intDiv(test_table.Value, 1000) AS result")
 	})
 
 	it("compiles ilike", () => {
@@ -1251,27 +1346,27 @@ describe("new expression functions", () => {
 	it("compiles groupUniqArray()", () => {
 		const q = CH.from(TestTable).select(($) => ({ names: CH.groupUniqArray($.Name) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("groupUniqArray(Name) AS names")
+		expect(sql).toContain("groupUniqArray(test_table.Name) AS names")
 	})
 
 	it("generalized min_/max_ accepts string columns", () => {
 		const q = CH.from(TestTable).select(($) => ({ first: CH.min($.Name), last: CH.max($.Name) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("min(Name) AS first")
-		expect(sql).toContain("max(Name) AS last")
+		expect(sql).toContain("min(test_table.Name) AS first")
+		expect(sql).toContain("max(test_table.Name) AS last")
 	})
 
 	it("generalized any_() accepts any column", () => {
 		const q = CH.from(TestTable).select(($) => ({ sample: CH.any($.Name) }))
 		const { sql } = compileUnsafe(q, {})
-		expect(sql).toContain("any(Name) AS sample")
+		expect(sql).toContain("any(test_table.Name) AS sample")
 	})
 })
 
 // Converted queries — smoke tests
 
 describe("converted queries", () => {
-	const baseParams = { orgId: "org_1", startTime: "2024-01-01", endTime: "2024-01-02" }
+	const baseParams = { orgId: OrgId.make("org_1"), startTime: "2024-01-01", endTime: "2024-01-02" }
 
 	it("logsFacetsQuery compiles UNION ALL", () => {
 		const q = logsFacetsQuery({})
@@ -1294,7 +1389,7 @@ describe("converted queries", () => {
 		const q = sessionReplaysFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		expect(sql).toContain("UNION ALL")
-		expect(sql).toContain("uniq(SessionId) AS count")
+		expect(sql).toContain("uniq(session_replays.SessionId) AS count")
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).toContain("'browser' AS facetType")
 		expect(sql).toContain("'country' AS facetType")
@@ -1322,7 +1417,7 @@ describe("converted queries", () => {
 		expect(sql).not.toContain("UNION ALL")
 		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("GROUP BY metricType")
-		expect(sql).toContain("uniq(MetricName)")
+		expect(sql).toContain("uniq(metric_catalog.MetricName)")
 	})
 
 	it("tracesDurationStatsQuery compiles with positionCaseInsensitive", () => {
@@ -1332,12 +1427,12 @@ describe("converted queries", () => {
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		// On both tiers: the trace_list_mv edges and the hourly interior.
-		expect(sql.match(/positionCaseInsensitive\(ServiceName, 'api'\) > 0/g)).toHaveLength(2)
+		expect(sql.match(/positionCaseInsensitive\((\w+\.)?ServiceName, 'api'\) > 0/g)).toHaveLength(2)
 	})
 
 	it("spanHierarchyQuery projects only the trimmed tree attribute keys", () => {
 		const q = spanHierarchyQuery({ traceId: "abc123" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		// Maps are trimmed to the keys the tree views render — never the full map.
 		expect(sql).not.toContain("toJSONString(SpanAttributes)")
 		expect(sql).not.toContain("toJSONString(ResourceAttributes)")
@@ -1355,14 +1450,14 @@ describe("converted queries", () => {
 
 	it("spanHierarchyQuery with spanId marks target", () => {
 		const q = spanHierarchyQuery({ traceId: "abc", spanId: "span1" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).toContain("'target'")
 		expect(sql).toContain("'related'")
 	})
 
 	it("spanHierarchyQuery without narrowByTime omits Timestamp filter", () => {
 		const q = spanHierarchyQuery({ traceId: "abc" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).not.toContain("Timestamp >=")
 		expect(sql).not.toContain("Timestamp <=")
 	})
@@ -1370,7 +1465,7 @@ describe("converted queries", () => {
 	it("spanHierarchyQuery with narrowByTime adds Timestamp BETWEEN filter", () => {
 		const q = spanHierarchyQuery({ traceId: "abc", narrowByTime: true })
 		const { sql } = compileUnsafe(q, {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-04-15 13:00:00",
 			endTime: "2026-04-15 15:00:00",
 		})
@@ -1380,9 +1475,9 @@ describe("converted queries", () => {
 
 	it("spanDetailQuery is a point lookup returning the full attribute maps", () => {
 		const q = spanDetailQuery({ traceId: "abc123", spanId: "span1" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
-		expect(sql).toContain("toJSONString(SpanAttributes) AS spanAttributes")
-		expect(sql).toContain("toJSONString(ResourceAttributes) AS resourceAttributes")
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
+		expect(sql).toContain("toJSONString(trace_detail_spans.SpanAttributes) AS spanAttributes")
+		expect(sql).toContain("toJSONString(trace_detail_spans.ResourceAttributes) AS resourceAttributes")
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
 		expect(sql).toContain("SpanId = 'span1'")
@@ -1395,7 +1490,7 @@ describe("converted queries", () => {
 	it("spanDetailQuery with narrowByTime adds Timestamp filters", () => {
 		const q = spanDetailQuery({ traceId: "abc", spanId: "s1", narrowByTime: true })
 		const { sql } = compileUnsafe(q, {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2026-04-15 13:00:00",
 			endTime: "2026-04-15 15:00:00",
 		})
@@ -1405,7 +1500,7 @@ describe("converted queries", () => {
 
 	it("traceTimeProbeQuery is a cheap LIMIT-1 timestamp seek with no ORDER BY", () => {
 		const q = traceTimeProbeQuery({ traceId: "abc123" })
-		const { sql } = compileUnsafe(q, { orgId: "org_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).toContain("Timestamp AS timestamp")
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
@@ -1418,9 +1513,9 @@ describe("converted queries", () => {
 		expect(sql).not.toContain("Timestamp >=")
 	})
 
-	it("traceTimeProbeQuery with narrowByTime adds a Timestamp lower bound for partition pruning", () => {
-		const q = traceTimeProbeQuery({ traceId: "abc123", narrowByTime: true })
-		const { sql } = compileUnsafe(q, { orgId: "org_1", startTime: "2026-04-15 13:00:00" })
+	it("recentTraceTimeProbeQuery adds a Timestamp lower bound for partition pruning", () => {
+		const q = recentTraceTimeProbeQuery({ traceId: "abc123" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1"), startTime: "2026-04-15 13:00:00" })
 		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
 		// Lower bound only — "recent" needs no upper bound.
 		expect(sql).not.toContain("Timestamp <=")

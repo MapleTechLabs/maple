@@ -11,6 +11,7 @@ import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorI
 export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "comment_on_error_issue",
+		title: "Comment on Error Issue",
 		description:
 			"Add a comment to an issue's timeline. Use `kind=agent_note` for automated reasoning steps: they stay in the audit log but the UI styles them apart from human comments. Commenting renews your lease if you hold one.",
 		parameters: Schema.Struct({

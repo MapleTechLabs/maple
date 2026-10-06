@@ -1,15 +1,19 @@
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
+import { SampledValue } from "./sampled-value"
 import type { DependencyKind } from "./dependency-type-badge"
-import { quoteWhereValue } from "@maple/domain/where-clause"
+import { dependencyDrillWhereClause } from "./dependency-drill"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 interface ServiceDependenciesTabProps {
 	serviceName: string
@@ -37,18 +41,6 @@ interface RawEdge {
 	p95DurationMs?: number
 	hasSampling?: boolean
 	samplingWeight?: number
-}
-
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
-
-function formatErrorRate(rate: number): string {
-	if (rate >= 0.01) return `${(rate * 100).toFixed(1)}%`
-	if (rate > 0) return "<1%"
-	return "0%"
 }
 
 export function ServiceDependenciesTab({
@@ -118,7 +110,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND server.address ILIKE ${quoteWhereValue(`%${target}%`)}`,
+				whereClause: dependencyDrillWhereClause("service", target, ""),
 			})
 		}
 
@@ -148,7 +140,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND db.system.name = ${quoteWhereValue(target)}`,
+				whereClause: dependencyDrillWhereClause("database", target, ""),
 			})
 		}
 
@@ -160,12 +152,7 @@ export function ServiceDependenciesTab({
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
 			const system = edge.targetSystem ? String(edge.targetSystem) : ""
-			const whereClause =
-				kind === "messaging"
-					? `SpanKind = 'Producer' AND messaging.destination = ${quoteWhereValue(target)}`
-					: kind === "rpc"
-						? `SpanKind = 'Client' AND rpc.service = ${quoteWhereValue(target)}`
-						: `SpanKind = 'Client' AND (server.address = ${quoteWhereValue(target)} OR http.host = ${quoteWhereValue(target)})`
+			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({
 				id: `${kind}:${target}`,
@@ -269,7 +256,10 @@ export function ServiceDependenciesTab({
 	}, [dedupedRows])
 
 	return (
-		<div className={cn("flex flex-col gap-3 transition-opacity", isWaiting && "opacity-60")}>
+		<div
+			className={cn("flex flex-col gap-3", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
+		>
 			{summary ? (
 				<div className="flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
 					<div className="flex items-baseline gap-x-3">
@@ -286,14 +276,19 @@ export function ServiceDependenciesTab({
 						<HeadlineFact
 							label="Busiest"
 							name={summary.topByCalls.name}
-							value={`${summary.topByCalls.hasSampling ? "~" : ""}${formatRate(summary.topByCalls.callsPerSec)}/s`}
+							value={
+								<SampledValue
+									estimated={summary.topByCalls.hasSampling}
+									value={formatThroughput(summary.topByCalls.callsPerSec, "/s")}
+								/>
+							}
 						/>
 						{summary.topByErrors ? (
 							<HeadlineFact
 								label="Most errors"
 								name={summary.topByErrors.name}
 								value={formatErrorRate(summary.topByErrors.errorRate)}
-								tone="error"
+								tone="crit"
 							/>
 						) : (
 							<HeadlineFact label="Errors" name="none" value="0%" />
@@ -328,8 +323,8 @@ export function ServiceDependenciesTab({
 interface HeadlineFactProps {
 	label: string
 	name: string
-	value: string
-	tone?: "error"
+	value: ReactNode
+	tone?: Tone
 	/** Overrides the default value color — e.g. a magnitude tone for latency. */
 	valueClassName?: string
 }
@@ -338,13 +333,13 @@ function HeadlineFact({ label, name, value, tone, valueClassName }: HeadlineFact
 	return (
 		<span className="flex w-full items-baseline justify-between gap-1.5 sm:inline-flex sm:w-auto sm:justify-start">
 			<span className="flex min-w-0 items-baseline gap-1.5">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+				<Eyebrow>{label}</Eyebrow>
 				<span className="max-w-[60vw] truncate text-foreground sm:max-w-[140px]">{name}</span>
 			</span>
 			<span
 				className={cn(
 					"shrink-0 tabular-nums font-mono",
-					tone === "error" ? "text-severity-error" : "text-foreground",
+					tone ? TONE_TEXT[tone] : "text-foreground",
 					valueClassName,
 				)}
 			>

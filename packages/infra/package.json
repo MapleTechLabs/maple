@@ -12,6 +12,8 @@
 		"./config-helpers": "./src/config-helpers.ts",
 		"./dev-urls": "./src/dev-urls.ts",
 		"./env": "./src/env.ts",
+		"./r2-credentials": "./src/cloudflare/r2-credentials.ts",
+		"./worker-build": "./src/cloudflare/worker-build.ts",
 		"./worker-runtime": "./src/cloudflare/worker-runtime.ts",
 		"./worker-telemetry": "./src/cloudflare/worker-telemetry.ts",
 		"./workers-cache": "./src/cloudflare/workers-cache.ts",
@@ -22,7 +24,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@distilled.cloud/aws": "1.0.0-rc.12",
+		"@distilled.cloud/aws": "1.0.0-rc.13",
+		"@distilled.cloud/cloudflare": "1.0.0-rc.13",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/alchemy-portless": "workspace:*",

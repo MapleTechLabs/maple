@@ -1,7 +1,8 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { countLabel } from "@maple/ui/lib/format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { cn } from "@maple/ui/lib/utils"
 
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { anomalyIncidentFromV2 } from "@/lib/services/anomalies"
@@ -43,7 +44,7 @@ export function RelatedAnomaliesSection({ issueId }: { issueId: ErrorIssueId }) 
 					Related anomalies
 				</h2>
 				<span className="text-sm text-muted-foreground">
-					{sorted.length} {sorted.length === 1 ? "detector incident" : "detector incidents"}
+					{countLabel(sorted.length, "detector incident")}
 				</span>
 			</div>
 			<div className="overflow-hidden rounded-md border border-border/60 divide-y divide-border/40">
@@ -75,15 +76,7 @@ export function OpenAnomalyBadge({ issueId }: { issueId: ErrorIssueId }) {
 	return (
 		<Badge variant="outline" className={tone.badge}>
 			<span className="flex items-center gap-1.5">
-				<span className="relative inline-flex size-1.5">
-					<span
-						className={cn(
-							"absolute inline-flex size-full animate-ping rounded-full opacity-60",
-							tone.accent,
-						)}
-					/>
-					<span className={cn("relative inline-flex size-full rounded-full", tone.accent)} />
-				</span>
+				<StatusDot tone={tone.tone} />
 				Anomaly open
 			</span>
 		</Badge>

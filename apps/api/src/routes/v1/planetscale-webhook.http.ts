@@ -1,4 +1,4 @@
-import { HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/unstable/http"
+import { HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
 import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import { planetscaleConnections } from "@maple/db"
 import { eq } from "drizzle-orm"

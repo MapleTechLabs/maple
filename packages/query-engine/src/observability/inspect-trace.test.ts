@@ -5,6 +5,7 @@ import { inspectTrace } from "./inspect-trace"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const NOW = Date.parse("2026-04-10T00:00:00Z")
@@ -19,6 +20,7 @@ const spanRow = {
 	spanId: "b7ad6b7169203331",
 	parentSpanId: "",
 	spanName: "GET /orders",
+	rawSpanName: "http.server GET",
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 12,
@@ -43,7 +45,7 @@ const makeExecutor = (
 	captured: Captured,
 	opts: { window?: { start: string; end: string }; probeTimestamp?: string },
 ): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)
@@ -115,6 +117,41 @@ describe("inspectTrace", () => {
 			assert.strictEqual(result.spanCount, 0)
 			assert.lengthOf(captured.probes, 1)
 			assert.lengthOf(hierarchyCalls(captured), 1)
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-03-11 00:00:00",
+				endTime: "2026-04-10 00:00:00",
+				widened: true,
+			})
+		}),
+	)
+
+	it.effect("widens when a timestamp hint misses the trace and reports what it scanned", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			const result = yield* run(
+				makeExecutor(captured, {
+					window: { start: "2026-03-20 08:00:00", end: "2026-03-20 08:00:00" },
+					probeTimestamp: "2026-03-20 08:00:00.250000000",
+				}),
+				{ timestampHint: new Date("2026-04-05T12:00:00Z") },
+			)
+			assert.strictEqual(result.spanCount, 1)
+			assert.lengthOf(captured.probes, 1)
+			assert.strictEqual(hierarchyCalls(captured)[0]?.params.start_time, "2026-04-05 11:00:00")
+			assert.deepStrictEqual(result.scanned, {
+				startTime: "2026-03-20 07:00:00",
+				endTime: "2026-03-20 09:00:00",
+				widened: true,
+			})
+		}),
+	)
+
+	it.effect("keeps the stored span name beside a rewritten display name", () =>
+		Effect.gen(function* () {
+			const window = { start: "2026-04-09 12:00:00", end: "2026-04-09 12:00:00" }
+			const result = yield* run(makeExecutor({ pipeCalls: [], probes: [] }, { window }))
+			assert.strictEqual(result.spans[0]?.spanName, "GET /orders")
+			assert.strictEqual(result.spans[0]?.rawSpanName, "http.server GET")
 		}),
 	)
 

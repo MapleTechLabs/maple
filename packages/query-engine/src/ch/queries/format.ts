@@ -4,9 +4,9 @@
 // PlanetScale, usage and alert-check queries format buckets the same way, and
 // the format string has to match what the frontend parses.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { defineFn, param } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { defineFn, param } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /**
  * ISO-8601 with a literal `Z`. ClickHouse `DateTime` has no zone, so the suffix

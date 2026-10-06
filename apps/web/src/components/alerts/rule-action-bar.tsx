@@ -4,13 +4,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
-import {
-	CheckIcon,
-	CircleWarningIcon,
-	FloppyDiskIcon,
-	LoaderIcon,
-	SquareTerminalIcon,
-} from "@/components/icons"
+import { CheckIcon, CircleWarningIcon, FloppyDiskIcon, SquareTerminalIcon } from "@/components/icons"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 
 interface RuleActionBarProps {
@@ -85,12 +79,8 @@ export function RuleActionBar({
 							Cancel
 						</Button>
 					)}
-					<Button type="button" onClick={onSave} disabled={!ready || saving}>
-						{saving ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : (
-							<FloppyDiskIcon size={14} />
-						)}
+					<Button type="button" onClick={onSave} disabled={!ready} loading={saving}>
+						<FloppyDiskIcon size={14} />
 						{editing ? "Save changes" : "Create rule"}
 					</Button>
 				</div>
@@ -112,7 +102,7 @@ function ValidationSummary({
 }) {
 	if (ready) {
 		return (
-			<span className="flex items-center gap-1.5 text-xs text-success-foreground">
+			<span className="flex items-center gap-1.5 text-xs text-severity-info">
 				<CheckIcon size={14} />
 				Ready to save
 			</span>
@@ -121,7 +111,7 @@ function ValidationSummary({
 	const summary = visibleIssues.join(", ") + (hiddenCount > 0 ? ` +${hiddenCount} more` : "")
 	return (
 		<span className={cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground")}>
-			<CircleWarningIcon size={14} className="shrink-0 text-warning" />
+			<CircleWarningIcon size={14} className="shrink-0 text-severity-warn" />
 			<span className="truncate">
 				Missing: <span className="text-foreground">{summary}</span>
 			</span>

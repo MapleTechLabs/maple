@@ -119,4 +119,30 @@ describe("resolveConfig", () => {
 		expect(warn).toHaveBeenCalledTimes(2)
 		warn.mockRestore()
 	})
+
+	it("drops credential headers from captureHeaders, lowercased", () => {
+		const config = resolveConfig({
+			ingestKey: "k",
+			serviceName: "s",
+			tracing: {
+				captureHeaders: {
+					request: ["Authorization", "X-Request-Id"],
+					response: ["Set-Cookie", "X-Cache"],
+				},
+			},
+		})
+		expect(config.captureHeaders).toEqual({ request: ["x-request-id"], response: ["x-cache"] })
+	})
+
+	it("caps network body length at what ingest keeps", () => {
+		const resolve = (maxLength?: number) =>
+			resolveConfig({
+				ingestKey: "k",
+				serviceName: "s",
+				replay: { networkBodies: { urls: ["/api"], maxLength } },
+			}).networkBodies?.maxLength
+		expect(resolve()).toBe(1_000)
+		expect(resolve(200)).toBe(200)
+		expect(resolve(50_000)).toBe(1_000)
+	})
 })

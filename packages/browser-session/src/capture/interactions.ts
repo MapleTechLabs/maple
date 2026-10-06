@@ -38,7 +38,7 @@ export function installInteractionCapture(emit: Emit, maskAllText: boolean): () 
 }
 
 /** A short, human-readable selector: tag + #id + .first-class. */
-function selectorOf(el: Element): string {
+export function selectorOf(el: Element): string {
 	const tag = el.tagName.toLowerCase()
 	const id = el.id ? `#${el.id}` : ""
 	const cls =

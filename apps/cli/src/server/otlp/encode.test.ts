@@ -255,6 +255,35 @@ describe("value-level spot checks", () => {
 			'["a","1"]',
 		)
 	})
+
+	it("decodes bytes attributes as text when they are valid UTF-8", () => {
+		expect(anyValueString({ bytesValue: btoa('{"messages":[]}') })).toBe('{"messages":[]}')
+		expect(anyValueString({ bytesValue: btoa("\xff\xfe\x01") })).toBe("fffe01")
+		// Valid UTF-8 that is really binary stays hex (all zero stays "").
+		expect(anyValueString({ bytesValue: btoa("\x01\x02\x7f") })).toBe("01027f")
+		expect(anyValueString({ bytesValue: btoa("\0\0\0\0") })).toBe("")
+		expect(anyValueString({ bytesValue: btoa("a\tb\r\nc") })).toBe("a\tb\r\nc")
+		// A leading BOM is kept, as the Rust encoder keeps it.
+		expect(anyValueString({ bytesValue: btoa("\xef\xbb\xbfa") })).toBe("﻿a")
+	})
+
+	it("keeps nested arrays and maps as JSON", () => {
+		expect(anyValueString({ kvlistValue: { values: [{ key: "n", value: { boolValue: true } }] } })).toBe(
+			'{"n":"true"}',
+		)
+		const part = { kvlistValue: { values: [{ key: "type", value: { stringValue: "text" } }] } }
+		const message = {
+			kvlistValue: {
+				values: [
+					{ key: "role", value: { stringValue: "user" } },
+					{ key: "parts", value: { arrayValue: { values: [part] } } },
+				],
+			},
+		}
+		expect(anyValueString({ arrayValue: { values: [message] } })).toBe(
+			'[{"role":"user","parts":[{"type":"text"}]}]',
+		)
+	})
 })
 
 describe("OTLP/JSON hex ids", () => {

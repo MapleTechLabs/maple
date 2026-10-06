@@ -125,7 +125,7 @@ export function IssueSidebar({
 			<DetailRail.Group label="Scope">
 				<DetailRail.Field label="Service" title={issue.serviceName}>
 					<span className="flex min-w-0 items-center gap-2">
-						<ServiceDot serviceName={issue.serviceName} className="size-1.5 shrink-0" />
+						<ServiceDot serviceName={issue.serviceName} size="sm" />
 						<span className="truncate text-sm text-foreground">{issue.serviceName}</span>
 					</span>
 				</DetailRail.Field>
@@ -163,7 +163,7 @@ export function IssueSidebar({
 								size="xs"
 								variant="ghost"
 								onClick={onHeartbeat}
-								disabled={busy === "heartbeat"}
+								loading={busy === "heartbeat"}
 							>
 								Extend
 							</Button>
@@ -171,7 +171,7 @@ export function IssueSidebar({
 								size="xs"
 								variant="ghost"
 								onClick={onRelease}
-								disabled={busy === "release"}
+								loading={busy === "release"}
 							>
 								Release
 							</Button>
@@ -185,7 +185,7 @@ export function IssueSidebar({
 								variant="outline"
 								className="-mr-0.5"
 								onClick={onClaim}
-								disabled={busy === "claim"}
+								loading={busy === "claim"}
 							>
 								Claim
 							</Button>
@@ -252,7 +252,7 @@ function IssueIdCopy({ id }: { id: string }) {
 			{shortIssueId(id)}
 			<CopyIndicator
 				status={status}
-				size={12}
+				iconSize={12}
 				className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100"
 			/>
 		</button>

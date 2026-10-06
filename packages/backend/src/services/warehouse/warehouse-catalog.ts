@@ -32,9 +32,9 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	ai_trace_index: [
 		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
 		"`SessionId` is '' on most rows: vendors stamp the session key only on turn-owning spans. Resolve a trace's session as `max(SessionId) GROUP BY TraceId`, and treat a trace whose max is '' as a sessionless single-trace session.",
-		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity, coalesced across dialects at insert (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `trace_detail_spans` attributes.",
-		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and reported usage; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the span's billed total under the reporter's own convention — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw attributes. Sum per session here for calls, failures, tokens and cost — but a wrapper span often repeats its children's usage, so subtract a child reporter's tokens from its parent (`ParentSpanId = SpanId`) before summing, or the total doubles.",
-		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens` — '' / 0 on rows materialized before migration 0031.",
+		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity; `Model`, `AgentName` and `ToolName` are stamped by the ingest gateway (`maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`), which reads every dialect (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `trace_detail_spans` attributes.",
+		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and usage as the ingest gateway stamped them (`maple_ai.llm_call`, `maple_ai.tool_call`, `maple_ai.error`, `maple_ai.usage.*`); a tool call paused for a human's approval is no call until it runs, so its paused copy has `IsToolCall` 0; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the sum of the five disjoint buckets the gateway normalised into `maple_ai.usage.*` — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw `gen_ai.usage.*` attributes. Only the model-call span carries usage, so sum per session here for calls, failures, tokens and cost. Rows materialized before migration 0035 keep the view's older figures, where a wrapper span could repeat its children's usage: net a child reporter's tokens off its parent (`ParentSpanId = SpanId`) on those rows only.",
+		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens`, read from the gateway's normalised `maple_ai.usage.*` — '' / 0 on rows materialized before migration 0031.",
 		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `trace_detail_spans` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
 		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read `trace_detail_spans` with `TraceId IN (…)` AND a `Timestamp` window.",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV, so windows predating the cluster's schema apply under-report.",
@@ -50,6 +50,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",
 		"`StatusCode` is Title Case: 'Ok', 'Error', 'Unset'.",
 		"Does NOT include `SpanAttributes`/`ResourceAttributes` — query `traces` if you need attribute access.",
+		"`SpanKind` ('Server', 'Consumer', or another kind for a root span) and `IsRoot` (UInt8) say why a row is an entry point; filter on them to split request traffic from consumers or background roots. Both are ''/0 on rows materialized before migration 0037 (the table keeps 30 days).",
 	],
 	error_events: [
 		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `Stacktrace`, and a stable `FingerprintHash` for grouping.",
@@ -57,12 +58,16 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	],
 	metrics_sum: [
 		"Cumulative or delta counter metrics. Use `rate(Value) OVER (PARTITION BY MetricName ORDER BY TimeUnix)` for rate-of-change when `IsMonotonic=1`.",
+		"Cumulative rows (temporality 2) carry a running total in every point, so never `sum(Value)` across points: take `max(Value) - min(Value)` per series, or the window function above.",
 		"`Attributes` is a Map — filter with `Attributes['service.name']`.",
 		"Check `AggregationTemporality` before choosing an aggregation: delta rows (temporality 1) already carry the per-interval increment, so `sum(Value)` per bucket is exact and a rate/lag reconstruction would double-difference them. Only cumulative rows (temporality 2) need the window function above.",
 		"`maple_ingest_org_bytes_total` / `maple_ingest_org_items_total` are delta counters written under Maple's internal org, carrying `Attributes['org_id']` (the *tenant* org whose data was ingested) and `Attributes['signal']` ('logs' | 'traces' | 'metrics'). Bytes are the real decoded payload size metered to billing — divide by 1e9 for GB. Sum them; never rate them.",
 		"An `Attributes['otel.metric.overflow'] = 'true'` datapoint means the SDK exceeded its per-interval series limit and collapsed the excess — per-org attribution is incomplete for that interval, so surface it rather than silently including it in a total.",
 	],
 	metrics_gauge: ["Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets."],
+	product_events: [
+		"Event properties live in `Attributes` (Map(String, String)), read with `Attributes['plan']`. There is no `Properties` column.",
+	],
 	metrics_histogram: [
 		"Pre-aggregated histograms (bucket counts + sum + count). Reconstruct percentiles with `quantilesExact`/`quantileBFloat16` if needed.",
 	],
@@ -83,6 +88,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`Hour` is a top-of-hour DateTime. Snap both range bounds to their hour floor (`toStartOfHour`) or sub-hour windows return no rows at all; this necessarily over-reports at the window edges.",
 		"The `*SizeBytes` columns are STORAGE ESTIMATES, not measured bytes — the materialized views compute them as `length(Body) + 200` (logs), `length(SpanName) + 300` (spans) and flat per-point constants (metrics). They will NOT reconcile with an Autumn invoice and must never be presented as billed usage.",
 		"For real billed bytes use `metrics_sum` / `maple_ingest_org_bytes_total`, which records the decoded payload size the gateway actually metered. Counts here are also post-sampling and post-drop, i.e. what was stored, not what was accepted.",
+		"`TraceCount` counts stored SPANS (not distinct traces) and `LogCount` log records; there is no `SpanCount` column.",
 		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",
 		"Has no `DeploymentEnv` dimension, so prod-vs-staging splits are impossible here; use `logs_aggregates_hourly` / `traces_aggregates_hourly` for that.",
 	],
@@ -98,6 +104,58 @@ export interface TableSummary {
 	readonly name: string
 	readonly description?: string
 	readonly columnCount: number
+	/** The column `$__timeFilter` belongs on; agents guess it wrong more than any other name. */
+	readonly timeColumn?: string
+}
+
+const TIME_COLUMN_PREFERENCE = ["Timestamp", "Hour", "Minute", "TimeUnix", "StartTime"] as const
+
+const timeColumnOf = (columnNames: ReadonlyArray<string>): string | undefined =>
+	TIME_COLUMN_PREFERENCE.find((name) => columnNames.includes(name))
+
+/** How to read each rollup engine; a plain read of one double counts or under-counts. */
+const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
+	[
+		"SummingMergeTree",
+		"SummingMergeTree: rows for one key may not be merged yet, so always `sum()` the count columns with GROUP BY rather than reading single rows.",
+	],
+	[
+		"AggregatingMergeTree",
+		"AggregatingMergeTree rollup: aggregate on read with GROUP BY, `sum()` for SimpleAggregateFunction(sum) columns and `-Merge` combinators (e.g. `quantilesMerge`) for AggregateFunction columns.",
+	],
+	[
+		"ReplacingMergeTree",
+		"ReplacingMergeTree: superseded versions of a row may still be present; read with `FINAL` or take `argMax(col, Version)` per key.",
+	],
+])
+
+// Names agents reach for from other OTel schemas, mapped to Maple's table.
+const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+	["otel_traces", ["traces"]],
+	["otel_spans", ["traces"]],
+	["spans", ["traces"]],
+	["span", ["traces"]],
+	["trace", ["traces"]],
+	["otel_logs", ["logs"]],
+	["log", ["logs"]],
+	["metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+	["otel_metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+	["errors", ["error_events"]],
+	["exceptions", ["error_events"]],
+	["sessions", ["session_replays"]],
+	["events", ["product_events"]],
+])
+
+/** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
+export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
+	const known = new Set(listWarehouseTables().map((t) => t.name))
+	const bare = name.replace(/[`"]/g, "").split(".").at(-1)?.toLowerCase() ?? ""
+	for (const candidate of [bare, bare.replace(/^otel_/, "")]) {
+		if (known.has(candidate)) return [candidate]
+		const aliased = TABLE_NAME_ALIASES.get(candidate)?.filter((t) => known.has(t))
+		if (aliased !== undefined && aliased.length > 0) return aliased
+	}
+	return []
 }
 
 export interface TableInfo extends TableSummary {
@@ -128,11 +186,15 @@ function collectDatasources() {
 
 export function listWarehouseTables(): ReadonlyArray<TableSummary> {
 	return collectDatasources()
-		.map((ds) => ({
-			name: ds._name,
-			description: ds.options.description,
-			columnCount: Object.keys(ds._schema).length,
-		}))
+		.map((ds) => {
+			const timeColumn = timeColumnOf(Object.keys(ds._schema))
+			return {
+				name: ds._name,
+				description: ds.options.description,
+				columnCount: Object.keys(ds._schema).length,
+				...(timeColumn === undefined ? undefined : { timeColumn }),
+			}
+		})
 		.sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -162,15 +224,25 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 	})
 
 	const engine = ds.options.engine as
-		| { sortingKey?: ReadonlyArray<string> | string; partitionKey?: string }
+		| { type?: string; sortingKey?: ReadonlyArray<string> | string; partitionKey?: string }
 		| undefined
+	const timeColumn = timeColumnOf(columns.map((c) => c.name))
+	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES.get(engine.type)
+	const notes = [
+		...(timeColumn === undefined
+			? []
+			: [`Time column: \`${timeColumn}\`. Filter with \`$__timeFilter(${timeColumn})\`.`]),
+		...(engineNote === undefined ? [] : [engineNote]),
+		...(TABLE_NOTES[ds._name] ?? []),
+	]
 
 	return {
 		name: ds._name,
 		description: ds.options.description,
 		columnCount: columns.length,
+		...(timeColumn === undefined ? undefined : { timeColumn }),
 		columns,
-		notes: TABLE_NOTES[ds._name],
+		notes: notes.length > 0 ? notes : undefined,
 		sortingKey: engine?.sortingKey,
 		partitionKey: engine?.partitionKey,
 	}

@@ -1,5 +1,5 @@
 import { Cause } from "effect"
-import { HttpClientError, HttpClientRequest } from "effect/unstable/http"
+import { HttpClientError, HttpClientRequest } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { QueryEngineExecutionError, WarehouseQuotaExceededError } from "@maple/domain"
 import { BillingConflictError, BillingPaymentRequiredError } from "@maple/domain/http"

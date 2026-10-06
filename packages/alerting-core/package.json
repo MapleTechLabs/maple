@@ -14,7 +14,7 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
-		"@typeonce/effect-machine": "0.38.1",
+		"@typeonce/effect-machine": "0.40.0",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

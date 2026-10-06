@@ -7,7 +7,7 @@ import {
 } from "./org-clickhouse-settings-errors"
 
 // Pure error definitions for warehouse queries. This module imports only
-// Effect Schema and other error-only modules — never `effect/unstable/httpapi` — so non-HTTP consumers
+// Effect Schema and other error-only modules — never `effect/http-api` — so non-HTTP consumers
 // (`@maple/query-engine/observability`, the CLI executors) can import these
 // classes without pulling the HttpApi AST builder into their bundles.
 // `warehouse.ts` re-exports everything here and owns the `WarehouseApiGroup`.

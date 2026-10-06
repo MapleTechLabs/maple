@@ -138,6 +138,9 @@ export const ExploreAttributesOutput = Schema.Struct({
 	environments: Schema.optionalKey(Schema.Array(CountedName)),
 	commitShas: Schema.optionalKey(Schema.Array(CountedName)),
 	service: Schema.optionalKey(Schema.String),
+	/** source=metrics: the metric the keys/values were scoped to, and its type. */
+	metricName: Schema.optionalKey(Schema.String),
+	metricType: Schema.optionalKey(Schema.String),
 })
 
 // compare_periods
@@ -147,6 +150,7 @@ const PeriodServiceStats = Schema.Struct({
 	errorRate: Schema.Number,
 	p95Ms: Schema.Number,
 })
+/** Summed over the same per-service entry-span rows, scoped to `service` when set. */
 const PeriodOverallStats = Schema.Struct({
 	totalSpans: Schema.Number,
 	totalErrors: Schema.Number,
@@ -220,6 +224,8 @@ export const QueryDataOutput = Schema.Struct({
 	groupBy: Schema.optionalKey(Schema.String),
 	/** Defaults the tool applied, one line each. */
 	decisions: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Caveats that change how the numbers read (e.g. sum over a cumulative counter). */
+	warnings: Schema.optionalKey(Schema.Array(Schema.String)),
 	queryContext: QueryDataQueryContextSchema,
 	unit: QueryDataUnitSchema,
 	result: Schema.Union([
@@ -234,13 +240,13 @@ export const QueryDataOutput = Schema.Struct({
 			data: Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.Number })),
 		}),
 	]),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 // run_sql
 
 export const RunSqlOutput = Schema.Struct({
-	/** The fully macro-expanded SQL that was executed (org filter and time bounds inlined). */
-	expandedSql: Schema.String,
 	rowCount: Schema.Number,
 	columns: Schema.Array(Schema.String),
 	/** Returned rows, capped for the response. */
@@ -248,6 +254,12 @@ export const RunSqlOutput = Schema.Struct({
 	/** True when `rows` was cut below the full result set. */
 	truncated: Schema.Boolean,
 	timeRange: OutputTimeRange,
+	/** Character cap the rendered table clips each cell to. */
+	maxCellChars: Schema.optionalKey(Schema.Number),
+	/** False when the SQL used no time macro and so picked its own range. */
+	windowApplied: Schema.optionalKey(Schema.Boolean),
+	/** The fully macro-expanded SQL that was executed, only when asked for (`show_sql`). */
+	expandedSql: Schema.optionalKey(Schema.String),
 })
 
 // describe_warehouse_tables
@@ -260,6 +272,8 @@ export const DescribeWarehouseTablesOutput = Schema.Struct({
 				name: Schema.String,
 				description: Schema.optionalKey(Schema.String),
 				columnCount: Schema.Number,
+				/** The column `$__timeFilter` belongs on. */
+				timeColumn: Schema.optionalKey(Schema.String),
 			}),
 		),
 	),

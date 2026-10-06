@@ -32,7 +32,6 @@ import {
 	listMetrics,
 } from "@/api/warehouse/metrics"
 import {
-	fleetUtilizationTimeseries,
 	getNodeFacets,
 	getPodFacets,
 	getContainerFacets,
@@ -85,6 +84,7 @@ import {
 	getPlanetScaleInfraTimeseries,
 	getPlanetScaleQueryInsights,
 } from "@/api/warehouse/planetscale-infra"
+import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
@@ -585,10 +585,6 @@ export const hostInfraTimeseriesResultAtom = makeQueryAtomFamily(hostInfraTimese
 	staleTime: 30_000,
 })
 
-export const fleetUtilizationTimeseriesResultAtom = makeQueryAtomFamily(fleetUtilizationTimeseries, {
-	staleTime: 30_000,
-})
-
 export const listPodsResultAtom = makeQueryAtomFamily(listPods, {
 	staleTime: 30_000,
 })
@@ -781,6 +777,14 @@ export const getServiceMapPlanetScaleResultAtom = makeQueryAtomFamily(getService
 })
 
 export const planetscaleInfraTimeseriesResultAtom = makeQueryAtomFamily(getPlanetScaleInfraTimeseries, {
+	staleTime: 15_000,
+})
+
+export const railwayServicesResultAtom = makeQueryAtomFamily(getRailwayServices, {
+	staleTime: 15_000,
+})
+
+export const railwayServiceTimeseriesResultAtom = makeQueryAtomFamily(getRailwayServiceTimeseries, {
 	staleTime: 15_000,
 })
 

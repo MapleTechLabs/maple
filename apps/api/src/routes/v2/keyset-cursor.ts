@@ -1,4 +1,5 @@
-import { Effect, Encoding, Result, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { V2CursorInvalid } from "@maple/domain/http/v2"
 import { WarehouseDateTime } from "@maple/query-engine"
 
@@ -13,7 +14,9 @@ import { WarehouseDateTime } from "@maple/query-engine"
  * previous page already showed.
  */
 export const encodeKeysetCursor = (prefix: string, parts: ReadonlyArray<string>) =>
-	`${prefix}_${Encoding.encodeBase64Url(JSON.stringify(parts))}`
+	`${prefix}_${Base64Url.encode(JSON.stringify(parts))}`
+
+const decodeCursorParts = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Schema.String)))
 
 /**
  * Decode a keyset cursor into its parts.
@@ -30,21 +33,12 @@ export const decodeKeysetCursor = (value: string | undefined, prefix: string, le
 	const invalid = Effect.fail(V2CursorInvalid.make(undefined, { param: "cursor" }))
 	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
 	if (!value.startsWith(`${prefix}_`)) return invalid
-	const decoded = Encoding.decodeBase64UrlString(value.slice(prefix.length + 1))
+	const decoded = Base64Url.decodeString(value.slice(prefix.length + 1))
 	if (Result.isFailure(decoded)) return invalid
-	const parsed = Result.try({
-		try: () => JSON.parse(decoded.success) as unknown,
-		catch: () => undefined,
-	})
+	const parsed = decodeCursorParts(decoded.success)
 	if (Result.isFailure(parsed)) return invalid
 	const parts = parsed.success
-	if (
-		!Array.isArray(parts) ||
-		parts.length !== length ||
-		!parts.every((part) => typeof part === "string")
-	) {
-		return invalid
-	}
+	if (parts.length !== length) return invalid
 	if (Result.isFailure(Schema.decodeUnknownResult(WarehouseDateTime)(parts[0]))) return invalid
-	return Effect.succeed(parts as ReadonlyArray<string>)
+	return Effect.succeed<ReadonlyArray<string> | undefined>(parts)
 }

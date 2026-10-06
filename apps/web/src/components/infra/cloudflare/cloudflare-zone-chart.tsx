@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -18,7 +19,7 @@ import {
 	usePlotChromeColors,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
-import { cn } from "@maple/ui/lib/utils"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
@@ -82,7 +83,7 @@ export function CloudflareZoneChart({
 	buckets,
 	metric,
 	topZones,
-	waiting,
+	waiting = false,
 	syncId,
 }: CloudflareZoneChartProps) {
 	const { data, series } = useMemo(() => {
@@ -213,16 +214,15 @@ export function CloudflareZoneChart({
 	}, [data, series, axis, colors, chromeColors, yDomain, metric, focusStore])
 
 	return (
-		<div
-			className={cn("rounded-md border bg-card transition-opacity", waiting && "opacity-60")}
+		<Panel
+			className={refreshingClass(waiting)}
+			aria-busy={waiting || undefined}
 			// `syncId` used to be handed to Recharts' hover-sync event bus. The linked
 			// cursor replaced that (CSS variables on a container, no React state), so
 			// it now names this chart within its group.
 			{...linkedCursorChartProps(syncId != null ? `cf-zone-${metric}` : undefined)}
 		>
-			<div className="flex items-center justify-between px-3 pt-2.5">
-				<span className="text-[11px] font-medium text-muted-foreground">{METRIC_LABELS[metric]}</span>
-			</div>
+			<PanelHeader title={METRIC_LABELS[metric]} divided={false} className="px-3 pt-2.5" />
 			{data.length === 0 ? (
 				<ChartCardMessage>{CHART_EMPTY_MESSAGE}</ChartCardMessage>
 			) : (
@@ -242,6 +242,6 @@ export function CloudflareZoneChart({
 					/>
 				</div>
 			)}
-		</div>
+		</Panel>
 	)
 }

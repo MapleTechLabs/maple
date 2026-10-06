@@ -30,6 +30,9 @@ export interface EncodedBatch {
 
 type AttrMap = Record<string, string>
 
+/** An attribute value as JSON: scalars in their string form, arrays and maps nested. */
+type AttrJson = string | readonly AttrJson[] | { readonly [key: string]: AttrJson }
+
 export interface AnyValue {
 	stringValue?: string
 	boolValue?: boolean
@@ -58,6 +61,26 @@ export function bytesHex(b64: string | undefined): string {
 		return ""
 	}
 	return hexFromBytes(base64ToBytes(b64))
+}
+
+// `ignoreBOM` keeps a leading U+FEFF, as Rust's `from_utf8` does.
+const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+// Rust's `char::is_control` (C0, DEL, C1) less tab, LF and CR.
+const BINARY_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/
+
+/**
+ * Port of the Rust `BytesValue` arm of `any_value_string`: the bytes as text
+ * when they are valid UTF-8 without control characters, else hex.
+ */
+function bytesText(b64: string): string {
+	const bytes = base64ToBytes(b64)
+	try {
+		const text = UTF8.decode(bytes)
+		if (!BINARY_CONTROL.test(text)) return text
+	} catch {
+		// Not UTF-8: binary.
+	}
+	return hexFromBytes(bytes)
 }
 
 /** Lowercase hex for `bytes`, or `""` when it is empty or all zero. */
@@ -227,17 +250,28 @@ export function anyValueString(value: AnyValue | undefined | null): string {
 		return parsed === undefined ? String(value.doubleValue) : formatDouble(parsed)
 	}
 	if (value.bytesValue !== undefined) {
-		return bytesHex(value.bytesValue)
+		return bytesText(value.bytesValue)
 	}
-	if (value.arrayValue !== undefined) {
-		const values = (value.arrayValue.values ?? []).map(anyValueString)
-		return JSON.stringify(values)
-	}
-	if (value.kvlistValue !== undefined) {
-		const attrs = attrMap(value.kvlistValue.values ?? [])
-		return JSON.stringify(attrs)
+	if (value.arrayValue !== undefined || value.kvlistValue !== undefined) {
+		return JSON.stringify(anyValueJson(value))
 	}
 	return ""
+}
+
+/**
+ * Port of Rust `any_value_json`: an array or map as JSON, scalars in their
+ * string form, nested arrays and maps kept as JSON.
+ */
+function anyValueJson(value: AnyValue | undefined): AttrJson {
+	if (value?.arrayValue !== undefined) {
+		return (value.arrayValue.values ?? []).map(anyValueJson)
+	}
+	if (value?.kvlistValue !== undefined) {
+		return Object.fromEntries(
+			(value.kvlistValue.values ?? []).map((kv) => [kv.key ?? "", anyValueJson(kv.value)]),
+		)
+	}
+	return anyValueString(value)
 }
 
 /**

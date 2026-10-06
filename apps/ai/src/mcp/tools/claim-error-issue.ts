@@ -20,6 +20,7 @@ const MAX_LEASE_SECONDS = 7200
 export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "claim_error_issue",
+		title: "Claim Error Issue",
 		description:
 			"Take a lease on an error issue so other agents do not duplicate the work. Issues in `triage`, `regressed` or `todo` move to `in_progress` on claim. The lease renews whenever you act on the issue (transition it, comment, set its severity, propose a fix) and ends when the issue reaches `done` or `cancelled` or you call release_error_issue. Claiming an issue another agent holds fails.",
 		parameters: Schema.Struct({

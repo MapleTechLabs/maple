@@ -1,28 +1,11 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { Context, Effect, Layer, Option } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
-import { safeFetch, UrlValidationError } from "@maple/safe-fetch"
+import { describeHttpClientError, guard } from "@maple/safe-fetch"
+import { classifyTargetStatus } from "./policy"
+import { scrapeError, type ScrapeError } from "./ScrapeError"
 
-/**
- * Why the upstream request produced no usable response. `timeout` and
- * `transport` are the target's fault (unreachable, slow, connection reset) and
- * back off like an upstream 5xx; `invalid_url` is a configuration fault — the
- * scrape URL or one of its redirects failed SSRF validation — that no retry
- * cadence will clear.
- */
-export const TargetFetchReason = Schema.Literals(["timeout", "transport", "invalid_url"])
-export type TargetFetchReason = typeof TargetFetchReason.Type
-
-export class TargetFetchError extends Schema.TaggedError<TargetFetchError>()(
-	"@maple/scraper/TargetFetchError",
-	{
-		message: Schema.String,
-		reason: TargetFetchReason,
-	},
-) {}
-
-export interface TargetResponse {
-	/** The target's own HTTP status; a non-2xx is classified by the scheduler. */
+interface TargetResponse {
 	readonly status: number
 	readonly body: string
 	/** Upstream `Retry-After` in seconds (delta-seconds form), or `null` when absent. */
@@ -30,8 +13,11 @@ export interface TargetResponse {
 }
 
 export interface TargetFetcherApi {
-	/** GET a target's exposition text from `target.scrapeUrl` with `target.authHeaders`. */
-	readonly fetch: (target: InternalScrapeTarget) => Effect.Effect<TargetResponse, TargetFetchError>
+	/**
+	 * GET a target's exposition text from `target.scrapeUrl` with `target.authHeaders`.
+	 * Failure messages are fragments; the scraper prefixes the target's identity.
+	 */
+	readonly fetch: (target: InternalScrapeTarget) => Effect.Effect<string, ScrapeError>
 }
 
 /**
@@ -58,6 +44,10 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 	"@maple/scraper/TargetFetcher",
 	{
 		make: Effect.gen(function* () {
+			// `guard` supplies the SSRF protection + per-hop redirect re-validation.
+			// `Effect.timeout` interrupts the request, which aborts the in-flight fetch.
+			const client = guard(yield* HttpClient.HttpClient)
+
 			// `server.address` + `url.path`, never `url.full`: PlanetScale authenticates
 			// its metrics data plane with `?sig=&exp=` query params, i.e. credentials.
 			// `pathname` drops the query, so the signed URL cannot leak into telemetry.
@@ -68,7 +58,6 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			const fetchTarget = Effect.fn("scraper.fetch_target", { kind: "client" })(function* (
 				target: InternalScrapeTarget,
 			) {
-				const fetchFn = yield* FetchHttpClient.Fetch
 				const parsed = Option.liftThrowable(() => new URL(target.scrapeUrl))()
 				// Annotated before the fetch so a failed or timed-out scrape still
 				// draws its service-map edge.
@@ -82,43 +71,46 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 						: undefined),
 				})
 
-				// `safeFetch` supplies the SSRF protection + per-hop redirect re-validation
-				// the Effect HttpClient transport lacks. The interruption-aware signal from
-				// `Effect.tryPromise` plus `Effect.timeout` aborts the in-flight request
-				// when the ceiling passes.
-				const result = yield* Effect.tryPromise({
-					try: async (signal) => {
-						const response = await safeFetch(target.scrapeUrl, {
-							method: "GET",
+				const result = yield* client
+					.execute(
+						HttpClientRequest.get(target.scrapeUrl, {
 							headers: { ...DEFAULT_HEADERS, ...target.authHeaders },
-							signal,
-							fetchFn,
-						})
-						return {
-							status: response.status,
-							body: await response.text(),
-							retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("retry-after")),
-						} satisfies TargetResponse
-					},
-					// Messages are fragments: the scheduler prefixes the target's identity.
-					catch: (cause) =>
-						cause instanceof UrlValidationError
-							? new TargetFetchError({
-									message: `url rejected: ${cause.message}`,
-									reason: "invalid_url",
-								})
-							: new TargetFetchError({
-									message: `request failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-									reason: "transport",
-								}),
-				}).pipe(
-					Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
-					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(
-							new TargetFetchError({ message: "request timed out", reason: "timeout" }),
+						}),
+					)
+					.pipe(
+						Effect.flatMap((response) =>
+							Effect.map(response.text, (body): TargetResponse => ({
+								status: response.status,
+								body,
+								retryAfterSeconds: parseRetryAfterSeconds(
+									response.headers["retry-after"] ?? null,
+								),
+							})),
 						),
-					),
-				)
+						Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
+						// A URL failing SSRF validation is a config fault no cadence clears; an
+						// unreachable or stalled target backs off like an upstream 5xx.
+						Effect.catchTags({
+							"@maple/safe-fetch/UrlValidationError": (cause) =>
+								Effect.fail(
+									scrapeError({
+										message: `url rejected: ${cause.message}`,
+										reason: "scrape_failed",
+									}),
+								),
+							HttpClientError: (cause) =>
+								Effect.fail(
+									scrapeError({
+										message: `request failed: ${describeHttpClientError(cause)}`,
+										reason: "target_error",
+									}),
+								),
+							TimeoutError: () =>
+								Effect.fail(
+									scrapeError({ message: "request timed out", reason: "target_error" }),
+								),
+						}),
+					)
 
 				yield* Effect.annotateCurrentSpan({
 					"http.response.status_code": result.status,
@@ -129,7 +121,28 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 				return result
 			})
 
-			return { fetch: fetchTarget } satisfies TargetFetcherApi
+			// Classified outside the client span: a target's 4xx/5xx answer leaves
+			// `scraper.fetch_target` Ok, the scrape span carries the failure.
+			const fetch = (target: InternalScrapeTarget) =>
+				fetchTarget(target).pipe(
+					Effect.flatMap((response) =>
+						response.status >= 200 && response.status < 300
+							? Effect.succeed(response.body)
+							: Effect.fail(
+									scrapeError({
+										message: `returned HTTP ${response.status}`,
+										reason: classifyTargetStatus(response.status),
+										statusCode: response.status,
+										retryAfterMs:
+											response.retryAfterSeconds === null
+												? null
+												: response.retryAfterSeconds * 1000,
+									}),
+								),
+					),
+				)
+
+			return { fetch } satisfies TargetFetcherApi
 		}),
 	},
 ) {

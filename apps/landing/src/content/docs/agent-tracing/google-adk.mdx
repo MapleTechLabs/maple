@@ -1,0 +1,422 @@
+---
+title: "Trace Google ADK agents with OpenTelemetry"
+description: "Send Google Agent Development Kit (ADK) traces to Maple with the transcript, tool calls and tokens, one session per ADK session."
+group: "AI Agents"
+order: 22
+navLabel: "Google ADK"
+icon: "googleadk"
+---
+
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
+Google's Agent Development Kit (ADK) emits OpenTelemetry spans on its own, in Python (`google-adk`) and TypeScript (`@google/adk`), so you need no instrumentation package. You register a tracer provider and add a few lines that put the transcript and tool calls in the format Maple reads.
+
+## Quick setup with a coding agent
+
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-google-adk](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-google-adk) skill and follows it.
+
+```text
+Set up Maple agent tracing for Google ADK in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-google-adk -y`, then follow it.
+
+My Maple ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+
+## Install ADK and the OTLP exporter
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+```bash
+pip install "google-adk>=2.10" litellm opentelemetry-exporter-otlp-proto-http
+```
+
+`litellm` is only needed for non-Gemini models. Don't pin a newer OpenTelemetry version: ADK 2.10 caps `opentelemetry-sdk` at 1.42.1.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+```bash
+npm install @google/adk@^2.1 zod @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-proto
+```
+
+`zod` is for the tool in the example below.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Configure the export
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+```bash
+export OTEL_SERVICE_NAME=support-agent
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+# Put prompts, replies and tool calls on span attributes, in the format Maple reads
+export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
+# Drop ADK's own copies of the same content, which Maple doesn't read
+export ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false
+```
+
+EU organizations use `https://ingest.eu.maple.dev`. Use `SPAN_ONLY` exactly, because `true` leaves the transcript empty.
+
+These settings store every prompt and tool result in Maple. To keep structure and tokens without content, leave `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` unset and delete the two `gen_ai.tool.call.*` lines from the plugin below.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+```bash
+export OTEL_SERVICE_NAME="support-agent"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+```
+
+EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself.
+
+These settings store every prompt and tool result in Maple. To keep structure and tokens without content, set `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false`.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Register a tracer provider
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+A `Runner` in your own app, worker or script exports nothing until you register a tracer provider. Add a `telemetry.py`:
+
+```py
+# telemetry.py
+import json
+
+from google.adk.plugins.base_plugin import BasePlugin
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+
+class SkipDuplicateToolSpans(BatchSpanProcessor):
+    """Drops two ADK tool spans that would count a call twice: the
+    `execute_tool (merged)` summary of parallel calls, and the span of a call
+    paused for confirmation (it runs again, in its own span, once approved)."""
+
+    def on_end(self, span):
+        if span.name != "execute_tool (merged)" and not span.attributes.get("adk.awaiting_confirmation"):
+            super().on_end(span)
+
+
+class ToolCallAttributes(BasePlugin):
+    """Records each tool call's arguments and result on its `execute_tool` span,
+    and marks the span of a call that is waiting for confirmation."""
+
+    def __init__(self):
+        super().__init__(name="tool_call_attributes")
+
+    async def before_tool_callback(self, *, tool, tool_args, tool_context):
+        trace.get_current_span().set_attribute("gen_ai.tool.call.arguments", json.dumps(tool_args, default=str))
+
+    async def after_tool_callback(self, *, tool, tool_args, tool_context, result):
+        span = trace.get_current_span()
+        if tool_context.actions.requested_tool_confirmations:
+            span.set_attribute("adk.awaiting_confirmation", True)
+        span.set_attribute("gen_ai.tool.call.result", json.dumps(result, default=str))
+
+
+# Reads OTEL_SERVICE_NAME, OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
+provider = TracerProvider(resource=Resource.create())
+provider.add_span_processor(SkipDuplicateToolSpans(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+```
+
+Import `telemetry` as the first line of your entry point and register the plugin on the runner:
+
+```py
+# main.py
+import telemetry  # first, so the provider exists before ADK runs
+
+from google.adk.agents import LlmAgent
+from google.adk.models.lite_llm import LiteLlm
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+
+def get_weather(city: str) -> dict:
+    """Get the current weather for a city."""
+    return {"city": city, "temperature_c": 21, "condition": "partly cloudy"}
+
+
+agent = LlmAgent(
+    name="assistant",
+    model=LiteLlm(model="openrouter/openai/gpt-4o-mini"),
+    instruction="You are a concise assistant.",
+    tools=[get_weather],
+)
+
+runner = Runner(
+    app_name="support",
+    agent=agent,
+    session_service=InMemorySessionService(),
+    plugins=[telemetry.ToolCallAttributes()],
+    auto_create_session=True,
+)
+```
+
+If your app already sets up OpenTelemetry (Logfire, Sentry, a platform agent), add the `SkipDuplicateToolSpans(OTLPSpanExporter())` processor to that provider instead.
+
+`adk web` and `adk api_server` create the provider themselves. There, skip it and register the plugin on your `App`: `App(name="support", root_agent=agent, plugins=[ToolCallAttributes()])`.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+ADK records each model request, reply and tool call on its spans in its own format. The span processor below rewrites them into the attributes Maple reads. Create an `instrumentation.ts` and import it as the first line of your entry point (`import "./instrumentation"`):
+
+```ts
+// instrumentation.ts
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { NodeSDK, tracing } from "@opentelemetry/sdk-node"
+
+type Part = {
+	text?: string
+	thought?: boolean
+	functionCall?: { id?: string; name?: string; args?: unknown }
+	functionResponse?: { id?: string; response?: unknown }
+}
+type Content = { role?: string; parts?: Part[] }
+
+const parse = (value: unknown) => (typeof value === "string" ? JSON.parse(value) : {})
+
+// Gemini content -> the GenAI message format Maple reads
+const toParts = (parts: Part[] = []) =>
+	parts.flatMap((part): object[] => {
+		if (part.functionCall) {
+			const { id, name, args } = part.functionCall
+			return [{ type: "tool_call", id, name, arguments: args }]
+		}
+		if (part.functionResponse) {
+			const { id, response } = part.functionResponse
+			return [{ type: "tool_call_response", id, response }]
+		}
+		if (typeof part.text !== "string") return []
+		return [{ type: part.thought ? "reasoning" : "text", content: part.text }]
+	})
+
+const toMessage = ({ role, parts }: Content) => ({
+	role: parts?.some((part) => part.functionResponse) ? "tool" : role === "model" ? "assistant" : "user",
+	parts: toParts(parts),
+})
+
+/** Copies what ADK records on its spans into the GenAI attributes Maple reads. */
+class AdkSpanProcessor extends tracing.BatchSpanProcessor {
+	override onEnd(span: tracing.ReadableSpan) {
+		// ADK's summary of parallel tool calls, which are also traced one by one
+		if (span.name === "execute_tool (merged)") return
+		const attributes = span.attributes
+
+		if (span.name === "call_llm") {
+			const request = parse(attributes["gcp.vertex.agent.llm_request"])
+			const response = parse(attributes["gcp.vertex.agent.llm_response"])
+			const usage = response.usageMetadata ?? {}
+			const system = request.config?.systemInstruction
+			attributes["gen_ai.operation.name"] = "chat"
+			attributes["gen_ai.provider.name"] = "gcp.gemini"
+			if (usage.thoughtsTokenCount) {
+				attributes["gen_ai.usage.reasoning.output_tokens"] = usage.thoughtsTokenCount
+			}
+			if (usage.cachedContentTokenCount) attributes["gen_ai.usage.cache_read.input_tokens"] = usage.cachedContentTokenCount
+			if (request.contents) attributes["gen_ai.input.messages"] = JSON.stringify(request.contents.map(toMessage))
+			if (response.content?.parts?.length) {
+				const finish_reason = response.finishReason?.toLowerCase()
+				attributes["gen_ai.output.messages"] = JSON.stringify([{ ...toMessage(response.content), finish_reason }])
+			}
+			if (system) {
+				const parts = typeof system === "string" ? [{ type: "text", content: system }] : toParts(system.parts)
+				attributes["gen_ai.system_instructions"] = JSON.stringify(parts)
+			}
+		} else if (span.name.startsWith("execute_tool ")) {
+			if (attributes["gen_ai.operation.name"] === undefined) {
+				// ADK leaves the span bare when the tool threw or doesn't exist
+				attributes["gen_ai.operation.name"] = "execute_tool"
+				attributes["gen_ai.tool.name"] = span.name.slice("execute_tool ".length)
+				attributes["error.type"] = "tool_error"
+			} else {
+				const result = attributes["gcp.vertex.agent.tool_response"]
+				attributes["gen_ai.tool.call.arguments"] = attributes["gcp.vertex.agent.tool_call_args"]
+				attributes["gen_ai.tool.call.result"] = result
+				if (parse(result).error) attributes["error.type"] = "tool_error"
+			}
+		}
+
+		// ADK's own copies of the same content, which Maple doesn't read
+		for (const key of ["llm_request", "llm_response", "tool_call_args", "tool_response"]) {
+			delete attributes[`gcp.vertex.agent.${key}`]
+		}
+		super.onEnd(span)
+	}
+}
+
+// Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
+export const spanProcessor = new AdkSpanProcessor(new OTLPTraceExporter())
+
+// Reads OTEL_SERVICE_NAME
+export const sdk = new NodeSDK({ spanProcessors: [spanProcessor] })
+sdk.start()
+```
+
+If your app already starts OpenTelemetry (Sentry, auto-instrumentation, your own `NodeTracerProvider`), skip the `NodeSDK` lines and add `spanProcessor` to that provider's span processors instead.
+
+`npx adk web` and `npx adk api_server` create their own provider without this processor, so sessions traced there show no transcript. Trace your own `Runner` instead.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Use one ADK session per conversation
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Each `runner.run_async()` call is one turn. Pass your conversation id as `session_id` on every turn:
+
+```py
+async def chat(conversation_id: str, user_id: str, text: str) -> str:
+    reply = ""
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=conversation_id,  # the same id on every turn of this conversation
+        new_message=types.Content(role="user", parts=[types.Part(text=text)]),
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            reply = "".join(part.text or "" for part in event.content.parts)
+    return reply
+```
+
+With `auto_create_session=True`, the runner creates the session on the first turn. Don't call `create_session()` without a `session_id`, or every message becomes its own session.
+
+To call an agent like a tool, add it to `sub_agents` with `mode="single_turn"` instead of using `AgentTool`, which can move the turn into a separate session.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+Each `runner.runAsync()` call is one turn. Pass your conversation id as `sessionId` on every turn:
+
+```ts
+// agent.ts
+import { FunctionTool, InMemorySessionService, LlmAgent, Runner } from "@google/adk"
+import { z } from "zod"
+
+const getWeather = new FunctionTool({
+	name: "get_weather",
+	description: "Get the current weather for a city.",
+	parameters: z.object({ city: z.string() }),
+	execute: async ({ city }) => ({ city, temperature_c: 21, condition: "partly cloudy" }),
+})
+
+const agent = new LlmAgent({
+	name: "assistant",
+	model: "gemini-2.5-flash",
+	instruction: "You are a concise assistant.",
+	tools: [getWeather],
+})
+
+const sessionService = new InMemorySessionService()
+const runner = new Runner({ appName: "support", agent, sessionService })
+
+export async function chat(conversationId: string, userId: string, text: string) {
+	// The same id on every turn of this conversation
+	await sessionService.getOrCreateSession({ appName: "support", userId, sessionId: conversationId })
+
+	let reply = ""
+	for await (const event of runner.runAsync({
+		userId,
+		sessionId: conversationId,
+		newMessage: { role: "user", parts: [{ text }] },
+	})) {
+		if (event.content?.parts && !event.partial) {
+			reply = event.content.parts.map((part) => part.text ?? "").join("")
+		}
+	}
+	return reply
+}
+```
+
+`getOrCreateSession()` creates the session under your id on the first turn. Don't call `createSession()` without a `sessionId`, or every message becomes its own session.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Flush before a short-lived process exits
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+A script, notebook cell or job that exits within 5 seconds of its last turn loses that turn. Flush when the work ends:
+
+```py
+# script.py
+import telemetry  # first
+
+import asyncio
+
+from main import chat
+
+
+async def main():
+    try:
+        await chat("support-4821", "user-17", "What's the weather in Berlin?")
+    finally:
+        telemetry.provider.force_flush()
+        telemetry.provider.shutdown()
+
+
+asyncio.run(main())
+```
+
+In a server, call `provider.shutdown()` from your shutdown hook. On Cloud Run or another platform that freezes the CPU between requests, call `provider.force_flush()` before each response returns.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+A script or job that exits right after its last turn loses that turn. Shut the SDK down when the work ends:
+
+```ts
+// script.ts
+import { sdk } from "./instrumentation"
+import { chat } from "./agent"
+
+try {
+	console.log(await chat("support-4821", "user-17", "What's the weather in Berlin?"))
+} finally {
+	await sdk.shutdown()
+}
+```
+
+In a server, call `await sdk.shutdown()` from your shutdown hook. In a serverless handler, or on a platform that freezes the CPU between requests, call `await spanProcessor.forceFlush()` before each response returns.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Check that it works
+
+Run a conversation of two or three turns, one calling a tool, then open **Agent Sessions**. You should see one session with the framework **Google ADK**, one turn per run, tool calls with their arguments and results, and tokens on each model call. Cost shows as unpriced.
+
+## Troubleshooting
+
+- **No spans at all.** No tracer provider is registered when the runner runs. Import `telemetry.py` or `instrumentation.ts` first.
+- **Tokens but an empty transcript.** In Python, `OTEL_SEMCONV_STABILITY_OPT_IN` or `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` is missing, or the capture variable is `true`. In TypeScript, `AdkSpanProcessor` isn't on the provider, or `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` is `false`.
+- **Every message is its own session.** Pass the same conversation id as the session id on every turn.
+- **A failing tool shows as successful.** It returned `{"status": "error", ...}`. Return an object with an `"error"` key, or raise an error.
+- **Every model call appears twice.** Another instrumentor wraps the same calls (`litellm.callbacks = ["otel"]`, `openinference-instrumentation-google-adk`), or a second OpenTelemetry SDK exports the same spans. Remove it.
+
+## Related
+
+- [Agent Sessions overview](/docs/agent-sessions/overview): how Maple builds sessions, turns and checks.
+- [ADK agent activity traces](https://google.github.io/adk-docs/observability/traces/): ADK's span reference and export setup.

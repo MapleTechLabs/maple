@@ -16,11 +16,12 @@
  * 2. **Each half fails alone.** A warehouse read that errors greys its own row.
  *    Neither can blank the card, and the card can never blank the page.
  */
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import { formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -203,7 +204,7 @@ function TracesRow({ service, window }: { service: string; window: SignalWindow 
 					<Figure value={formatNumber(row.spanCount)} unit="spans" />
 					<Figure value={formatLatency(row.p95LatencyMs)} unit="p95" />
 					<Figure
-						value={`${(row.errorRate * 100).toFixed(1)}%`}
+						value={formatErrorRate(row.errorRate)}
 						unit="error rate"
 						tone={row.errorRate > 0 ? "text-severity-error" : undefined}
 					/>
@@ -235,9 +236,7 @@ const Segment = ({ share, color }: { share: number; color: string }) =>
 	) : null
 
 const RowLabel = ({ children }: { children: string }) => (
-	<span className="w-14 shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-		{children}
-	</span>
+	<Eyebrow className="w-14 shrink-0">{children}</Eyebrow>
 )
 
 const Figure = ({ value, unit, tone }: { value: string; unit: string; tone?: string }) => (

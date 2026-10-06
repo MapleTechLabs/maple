@@ -10,6 +10,7 @@ import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { setSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
 import { AccountLayout } from "@/components/layout/account-layout"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 import { tracedFetch } from "@/lib/services/common/telemetry"
 
@@ -58,25 +59,21 @@ async function loginSelfHosted(password: string) {
 
 export function SelfHostedSignInPage() {
 	const [password, setPassword] = useState("")
-	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-	const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault()
-		if (isSubmitting) return
-
-		setIsSubmitting(true)
+	const [submit, isSubmitting] = useAsyncAction(async () => {
 		setErrorMessage(null)
+		await loginSelfHosted(password)
+			.then((result) => {
+				setSelfHostedSessionToken(result.token)
+				redirectToDashboard()
+			})
+			.catch((error: unknown) => setErrorMessage(getErrorMessage(error)))
+	})
 
-		try {
-			const result = await loginSelfHosted(password)
-			setSelfHostedSessionToken(result.token)
-			redirectToDashboard()
-		} catch (error) {
-			setErrorMessage(getErrorMessage(error))
-		} finally {
-			setIsSubmitting(false)
-		}
+	const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault()
+		if (!isSubmitting) void submit()
 	}
 
 	return (
@@ -117,8 +114,8 @@ export function SelfHostedSignInPage() {
 							</p>
 						) : null}
 					</div>
-					<Button type="submit" className="w-full" disabled={isSubmitting}>
-						{isSubmitting ? "Signing in\u2026" : "Sign in"}
+					<Button type="submit" className="w-full" loading={isSubmitting}>
+						Sign in
 					</Button>
 				</form>
 			</div>

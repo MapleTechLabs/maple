@@ -19,6 +19,7 @@
             "observed_value": 0.09,
             "sample_count": 132,
             "signal_type": "error_rate",
+            "skip_reason": null,
             "status": "breached",
             "threshold": 0.05,
             "threshold_upper": null,
@@ -78,6 +79,10 @@
           },
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "skip_reason": {
+            "$ref": "#/components/schemas/_maple_AlertSkipReason",
+            "description": "Why a `skipped` check skipped: `no_data` (the window had no data, e.g. a raw query returned no rows), `below_min_samples`, or `no_value`. `null` on other checks and on checks recorded before this field existed."
           },
           "status": {
             "$ref": "#/components/schemas/_maple_AlertCheckStatus"
@@ -477,6 +482,7 @@
         "description": "A monitor that evaluates a built-in signal, query-builder query, or raw SQL over a rolling window and opens incidents when the threshold condition holds for enough consecutive checks. Metrics use the same query-builder path as metric charts. Notifications are delivered to the referenced alert destinations.",
         "examples": [
           {
+            "alert_on_no_data": false,
             "apdex_threshold_ms": null,
             "comparator": "gt",
             "consecutive_breaches_required": 2,
@@ -522,6 +528,13 @@
           }
         ],
         "properties": {
+          "alert_on_no_data": {
+            "description": "Whether a window with no data counts as a breach (`no_data_behavior` is `alert`).",
+            "examples": [
+              false
+            ],
+            "type": "boolean"
+          },
           "apdex_threshold_ms": {
             "description": "For `apdex` rules: the satisfied-latency threshold in milliseconds.",
             "exclusiveMinimum": 0,
@@ -738,6 +751,7 @@
           "renotify_interval_minutes",
           "destination_ids",
           "no_data_behavior",
+          "alert_on_no_data",
           "created_at",
           "updated_at",
           "created_by",
@@ -3441,6 +3455,16 @@
         "title": "Alert Signal Type",
         "type": "string"
       },
+      "_maple_AlertSkipReason": {
+        "description": "Set on `skipped` points: `no_data` (the window had no data), `below_min_samples`, or `no_value`.",
+        "enum": [
+          "no_data",
+          "below_min_samples",
+          "no_value"
+        ],
+        "title": "Alert Skip Reason",
+        "type": "string"
+      },
       "_maple_AnomalyIncidentId": {
         "description": "Opaque, prefixed public object ID (e.g. `anom_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
         "examples": [
@@ -3626,10 +3650,11 @@
         "type": "string"
       },
       "_maple_QueryEngineNoDataBehavior": {
-        "description": "What the evaluator does when the window has no data: `skip` the check or treat the value as `zero`.",
+        "description": "What the evaluator does when the window has no data: `skip` the check, treat the value as `zero`, or `alert` (count it as a breach; set with `alert_on_no_data`).",
         "enum": [
           "skip",
-          "zero"
+          "zero",
+          "alert"
         ],
         "examples": [
           "skip"

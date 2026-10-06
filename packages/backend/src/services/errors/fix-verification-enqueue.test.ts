@@ -17,6 +17,8 @@ import {
 } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { enqueueFixVerification } from "./fix-verification-enqueue"
@@ -54,16 +56,13 @@ const makeLayer = () => {
 /** Stub `ChatSession` namespace: a start is one `beginTurn` on the investigation's session. */
 const fakeChatSession = () => {
 	const turns: Array<{ sessionId: string; text: string }> = []
-	const namespace = {
-		idFromName: (name: string) => name,
-		get: () => ({
-			beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
-				turns.push({ sessionId: input.sessionId, text: input.text })
-				return { cursor: 0, messageId: input.messageId }
-			},
-		}),
-	}
-	return { turns, env: { ChatSession: namespace } }
+	const chatSessions: ChatSessionsApi = fakeChatSessions(() => ({
+		beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
+			turns.push({ sessionId: input.sessionId, text: input.text })
+			return { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
+		},
+	}))
+	return { turns, chatSessions }
 }
 
 const enableAutomation = (maxRunsPerDay = 20, maxPassesPerDay = 200) =>
@@ -136,12 +135,12 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 		return { issueId, verification }
 	})
 
-const input = (verification: ErrorIssueVerificationRow, workerEnv?: Record<string, unknown>) => ({
+const input = (verification: ErrorIssueVerificationRow, chatSessions?: ChatSessionsApi) => ({
 	verification,
 	pullRequestUrl: PR_URL,
 	postMergeOccurrences: 0,
 	staleClientOccurrences: 3,
-	workerEnv,
+	chatSessions,
 })
 
 /**
@@ -157,7 +156,7 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification()
 			const chat = fakeChatSession()
 
-			const result = yield* enqueueFixVerification(input(verification, chat.env))
+			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))
 
 			assert.strictEqual(result.enqueued, true)
 			if (!result.enqueued) return
@@ -220,7 +219,7 @@ describe("enqueueFixVerification", () => {
 				}),
 			)
 
-			const result = yield* enqueueFixVerification(input(verification, chat.env))
+			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))
 
 			assert.strictEqual(result.enqueued, false)
 			if (result.enqueued) return
@@ -235,7 +234,7 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification({ withIssue: false })
 			const chat = fakeChatSession()
 
-			const result = yield* enqueueFixVerification(input(verification, chat.env))
+			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))
 
 			assert.strictEqual(result.enqueued, false)
 			if (result.enqueued) return

@@ -3,6 +3,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import type { ResolvedScale } from "@tanstack/charts"
 
 import { usePlotRect, usePlotScales, useSuppressChartTooltip, type PlotRect } from "@maple/ui/components/plot"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -356,9 +357,7 @@ function MarkerGroup({
 							: "border-border/60 bg-popover/85 text-muted-foreground hover:text-popover-foreground",
 					)}
 				>
-					<span className="min-w-0 truncate" title={group.label}>
-						{group.label}
-					</span>
+					<TruncatedText text={group.label}>{group.label}</TruncatedText>
 					{badge > 0 ? (
 						<span
 							className={cn(

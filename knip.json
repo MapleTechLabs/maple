@@ -85,11 +85,10 @@
 		},
 		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
 		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
-		"apps/clickhouse-builder-docs": {
-			"entry": ["press.config.tsx", "src/app.css"],
-			"ignoreDependencies": ["@base-ui/react"]
-		},
 		"lib/ai-model-catalog": {
+			"entry": ["scripts/**/*.ts"]
+		},
+		"lib/semconv": {
 			"entry": ["scripts/**/*.ts"]
 		},
 		"lib/alchemy-portless": {
@@ -100,7 +99,8 @@
 			"entry": ["src/drain/index.ts"]
 		},
 		"packages/browser": {
-			"ignoreDependencies": ["rrweb"]
+			// Imported by the private packages it bundles (browser-session, sdk-core); listed here so the build keeps them external.
+			"ignoreDependencies": ["rrweb", "web-vitals"]
 		}
 	},
 	"rules": {

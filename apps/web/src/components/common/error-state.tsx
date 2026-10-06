@@ -125,9 +125,8 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 }
 
 /**
- * The dropped-signal readout: a steady signal line that cuts out, a pulsing
- * destructive marker at the break, and a dashed trail where the data should
- * be. Pulse reuses `.infra-pulse` (carries its own reduced-motion guard).
+ * The dropped-signal readout: a steady signal line that cuts out, a static
+ * destructive marker at the break, and a dashed trail where the data should be.
  */
 function DroppedSignalGlyph({ compact = false }: { compact?: boolean }) {
 	return (
@@ -165,14 +164,7 @@ function DroppedSignalGlyph({ compact = false }: { compact?: boolean }) {
 				opacity="0.45"
 			/>
 			{/* The break point. */}
-			<circle
-				cx="118"
-				cy="30"
-				r="5.5"
-				className="infra-pulse fill-destructive"
-				style={{ transformBox: "fill-box", transformOrigin: "center" }}
-				opacity="0.35"
-			/>
+			<circle cx="118" cy="30" r="5.5" className="fill-destructive" opacity="0.35" />
 			<circle cx="118" cy="30" r="2.5" className="fill-destructive" />
 		</svg>
 	)

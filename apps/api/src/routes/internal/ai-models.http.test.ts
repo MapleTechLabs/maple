@@ -7,8 +7,8 @@ import {
 	V1UnexpectedErrors,
 } from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiModelsInternalLive } from "./ai-models.http"
 

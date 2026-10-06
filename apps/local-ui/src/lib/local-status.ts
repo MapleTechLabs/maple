@@ -3,7 +3,7 @@
 // and "refused" (nothing is listening) need different screens.
 
 import { Effect, Option, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 
 export const LocalServerStatus = Schema.Struct({
 	service: Schema.String,

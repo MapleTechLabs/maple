@@ -8,7 +8,7 @@
  */
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { APIRoute } from "astro"
-import { OpenApi } from "effect/unstable/httpapi"
+import { OpenApi } from "effect/http-api"
 
 export const openApiDocument = () => OpenApi.fromApi(MapleApiV2)
 

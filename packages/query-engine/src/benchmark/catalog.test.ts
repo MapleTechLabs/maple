@@ -340,6 +340,7 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 
 	// todo (dead export — removal tracked separately; zero consumers)
 	"errors/traceTimeProbeQuery",
+	"errors/recentTraceTimeProbeQuery",
 
 	// todo batch ② — alerting correctness (anomaly, alert-checks, setup-audit, activity, liveness, internal)
 	"alert-checks/listRuleChecksQuery",
@@ -359,7 +360,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	// todo batch ③ — infra + integrations (infra, cloudflare-*, planetscale-*, service-map, rollups)
 	"infra/listHostsQuery",
 	"infra/hostDetailSummaryQuery",
-	"infra/fleetUtilizationTimeseriesQuery",
 	"infra/hostNetworkTimeseriesQuery",
 	"infra/listPodsQuery",
 	"infra/listPodsSummaryQuery",

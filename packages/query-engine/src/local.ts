@@ -9,7 +9,14 @@
 // So callers POST `compiled.sql` verbatim.
 
 import { Effect, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { OrgId } from "@maple/domain/primitives"
+
+/**
+ * Local mode's single synthetic tenant. The ingest binary writes every span,
+ * log and metric under this `OrgId`, so every local query compiles with it.
+ */
+export const LOCAL_ORG_ID = OrgId.make("local")
 
 /**
  * The local server refused the query. Its own tag, and structured fields, so

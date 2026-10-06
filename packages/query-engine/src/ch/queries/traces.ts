@@ -3,11 +3,22 @@
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
 import type { TracesMetric } from "@maple/domain/query-engine"
-import { compileFnCall, subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-clickhouse"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromUnion, unionAll, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import type { Table } from "@maple-dev/effect-clickhouse"
+import {
+	compileFnCall,
+	subqueryCond,
+	subqueryExpr,
+	untypedSubqueryExpr,
+} from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromUnion,
+	unionAll,
+	type CHQuery,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
+import type { Table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	ServiceMapSpans,
 	ServiceOverviewSpans,
@@ -17,10 +28,16 @@ import {
 	TraceListMv,
 	Traces,
 	TracesAggregatesHourly,
+	orgIdParam,
 } from "../tables"
+import {
+	deploymentEnvExpr,
+	httpRequestMethodExpr,
+	httpResponseStatusCodeExpr,
+} from "@maple/domain/tinybird/semconv-renames"
 import { METRIC_NEEDS } from "../../traces-shared"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "./series-cap"
 import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
 import {
@@ -154,6 +171,7 @@ function buildGroupNameExpr(
 	$: ColumnAccessor<typeof Traces.columns>,
 	groupBy: readonly string[] | undefined,
 	groupByAttributeKeys: readonly string[] | undefined,
+	groupByResourceAttributeKey?: string,
 ): CH.Expr<string> {
 	if (!groupBy || groupBy.length === 0) {
 		return CH.lit("all")
@@ -172,10 +190,12 @@ function buildGroupNameExpr(
 				parts.push(CH.toString_($.StatusCode))
 				break
 			case "http_method":
-				parts.push(CH.toString_($.SpanAttributes.get("http.method")))
+				parts.push(CH.toString_(httpRequestMethodExpr($.SpanAttributes)))
 				break
 			case "attribute":
-				if (groupByAttributeKeys?.length) {
+				if (groupByResourceAttributeKey) {
+					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
+				} else if (groupByAttributeKeys?.length) {
 					const keys: CH.Expr<string>[] = groupByAttributeKeys.map((k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
@@ -272,6 +292,7 @@ function buildBreakdownGroupExpr(
 	$: ColumnAccessor<typeof Traces.columns>,
 	groupBy: string,
 	groupByAttributeKey: string | undefined,
+	groupByResourceAttributeKey?: string,
 ): CH.Expr<string> {
 	switch (groupBy) {
 		// One row for the whole window — the same "no dimension" shape the
@@ -289,14 +310,15 @@ function buildBreakdownGroupExpr(
 		case "namespace":
 			return $.ResourceAttributes.get("service.namespace")
 		case "environment":
-			return $.ResourceAttributes.get("deployment.environment")
+			return deploymentEnvExpr($.ResourceAttributes)
 		case "span_name":
 			return $.SpanName
 		case "status_code":
 			return $.StatusCode
 		case "http_method":
-			return $.SpanAttributes.get("http.method")
+			return httpRequestMethodExpr($.SpanAttributes)
 		case "attribute":
+			if (groupByResourceAttributeKey) return $.ResourceAttributes.get(groupByResourceAttributeKey)
 			return groupByAttributeKey ? $.SpanAttributes.get(groupByAttributeKey) : $.ServiceName
 		default:
 			return $.ServiceName
@@ -343,6 +365,7 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	needsSampling: boolean
 	groupBy?: readonly string[]
 	groupByAttributeKeys?: readonly string[]
+	groupByResourceAttributeKey?: string
 	bucketSeconds?: number
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
@@ -533,7 +556,7 @@ export function tracesTimeseriesQuery(
 		>(
 			$: A,
 		) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
 			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
 			opts.namespaces?.length ? CH.inList($.ServiceNamespace, opts.namespaces) : undefined,
@@ -831,7 +854,12 @@ export function tracesTimeseriesQuery(
 	const raw = from(Traces)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
-			groupName: buildGroupNameExpr($, opts.groupBy, opts.groupByAttributeKeys),
+			groupName: buildGroupNameExpr(
+				$,
+				opts.groupBy,
+				opts.groupByAttributeKeys,
+				opts.groupByResourceAttributeKey,
+			),
 			...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 		}))
 		.where(($) => buildWhereConditions($, opts))
@@ -850,6 +878,7 @@ export interface TracesBreakdownOpts extends TracesQueryOpts {
 	metric: TracesMetric
 	groupBy: string
 	groupByAttributeKey?: string
+	groupByResourceAttributeKey?: string
 	limit?: number
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
@@ -908,7 +937,12 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 				opts.allMetrics,
 			)
 			return {
-				name: buildBreakdownGroupExpr($, opts.groupBy, opts.groupByAttributeKey),
+				name: buildBreakdownGroupExpr(
+					$,
+					opts.groupBy,
+					opts.groupByAttributeKey,
+					opts.groupByResourceAttributeKey,
+				),
 				...metrics,
 			}
 		})
@@ -1117,7 +1151,7 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			timestamp: CH.toString_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
@@ -1270,6 +1304,9 @@ export interface TracesRootListOutput {
 	 * destination (`host/path`) instead of falling back to `http.client GET`.
 	 */
 	readonly rootSpanAttributes: string
+	/** Root span's deployment environment and service.version ('' when unset). */
+	readonly rootDeploymentEnv?: string
+	readonly rootServiceVersion?: string
 	readonly hasError: number
 }
 
@@ -1367,7 +1404,7 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 			httpStatusCode: argMin($.HttpStatusCode, $.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
@@ -1452,10 +1489,12 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootSpanKind: $.SpanKind,
 			rootSpanStatusCode: $.StatusCode,
 			rootSpanStatusMessage: $.StatusMessage,
-			rootHttpMethod: $.SpanAttributes.get("http.method"),
+			rootHttpMethod: httpRequestMethodExpr($.SpanAttributes),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
-			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
+			rootHttpStatusCode: httpResponseStatusCodeExpr($.SpanAttributes),
 			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
+			rootDeploymentEnv: deploymentEnvExpr($.ResourceAttributes),
+			rootServiceVersion: $.ResourceAttributes.get("service.version"),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
 		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])
@@ -1525,7 +1564,7 @@ export interface TraceListOutput {
 // `compileFnCall`) did not, which cost every query selecting one its row schema.
 
 const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
-	CH.compileTypedFnCall<string>("fromUnixTimestamp64Nano", T.dateTime64String.schema, nanos)
+	CH.compileTypedFnCall("fromUnixTimestamp64Nano", T.dateTime64String.schema, nanos)
 
 const subtractHours = (d: CH.Expr<string>, hours: CH.Expr<number>): CH.Expr<string> =>
 	compileFnCall<string>("subtractHours", d, hours)
@@ -1560,6 +1599,7 @@ export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
 	if (opts.resourceAttributeFilters?.length) return false
 	if (opts.commitShas?.length) return false
 	for (const af of opts.attributeFilters ?? []) {
+		if (af.or?.length) return false
 		if (!TRACE_LIST_MV_ATTR_COLUMNS.has(af.key)) return false
 		const expressible =
 			(af.mode === "equals" && af.value !== undefined) || (af.mode === "in" && !!af.values?.length)
@@ -1582,7 +1622,7 @@ function traceListMvWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 		CH.when(services, (v: readonly string[]) =>
@@ -1752,9 +1792,9 @@ function traceListAggregate(
 				rootSpanName: argMin($.SpanName, rootOrder),
 				rootSpanKind: argMin($.SpanKind, rootOrder),
 				rootSpanStatusCode: argMin($.StatusCode, rootOrder),
-				rootHttpMethod: argMin($.SpanAttributes.get("http.method"), rootOrder),
+				rootHttpMethod: argMin(httpRequestMethodExpr($.SpanAttributes), rootOrder),
 				rootHttpRoute: argMin($.SpanAttributes.get("http.route"), rootOrder),
-				rootHttpStatusCode: argMin($.SpanAttributes.get("http.status_code"), rootOrder),
+				rootHttpStatusCode: argMin(httpResponseStatusCodeExpr($.SpanAttributes), rootOrder),
 				rootSpanAttributes: argMin(
 					CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 					rootOrder,
@@ -1764,7 +1804,7 @@ function traceListAggregate(
 				hasError: CH.if_(argMin($.StatusCode, rootOrder).eq("Error"), CH.lit(1), CH.lit(0)),
 			}
 		})
-		.where(($) => [$.OrgId.eq(param.string("orgId")), ...where($)])
+		.where(($) => [$.OrgId.eq(orgIdParam), ...where($)])
 		.groupBy("traceId")
 }
 
@@ -1889,7 +1929,7 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
@@ -1933,7 +1973,7 @@ export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
 			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
 			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),

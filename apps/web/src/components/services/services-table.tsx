@@ -10,6 +10,7 @@ import { useAlertIncidentsList } from "@/hooks/use-alerts-list"
 import {
 	buildBaselineMap,
 	baselineKey,
+	HEALTH_TONE,
 	type LatencyBaselineSignal,
 	type ServiceHealth,
 } from "@/components/dashboard/service-health"
@@ -22,12 +23,16 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { SampledValue } from "./sampled-value"
+import { shortId } from "@maple/ui/lib/ids"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import {
 	CommitShaHoverCard,
 	commitsQueryAtom,
@@ -35,7 +40,7 @@ import {
 	firstLine,
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
 import {
 	type CommitBreakdown,
@@ -51,25 +56,9 @@ import { openAnomalyServiceCountsAtom } from "@/lib/services/atoms/anomaly-atoms
 import type { ServicesSearchParams } from "@/routes/services/index"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LatencyValue } from "@maple/ui/components/latency-value"
-
-function formatThroughput(rate: number): string {
-	if (rate == null || Number.isNaN(rate) || rate === 0) {
-		return "0/s"
-	}
-	if (rate >= 1000) {
-		return `${(rate / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k/s`
-	}
-	if (rate >= 1) {
-		return `${rate.toLocaleString(undefined, { maximumFractionDigits: 1 })}/s`
-	}
-	return `${rate.toLocaleString(undefined, { maximumFractionDigits: 3 })}/s`
-}
-
-function errorRateToneClass(rate: number): string {
-	if (rate > 0.05) return "text-severity-error"
-	if (rate > 0) return "text-severity-warn"
-	return "text-muted-foreground"
-}
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { TONE_COLOR } from "@maple/ui/lib/tone"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 /**
  * Search params for the per-service detail link. Carries the row's environment
@@ -152,7 +141,7 @@ function resolveGroupBy(
 	return services.some((service) => service.serviceNamespace !== "") ? "namespace" : "environment"
 }
 
-const serviceCountLabel = (count: number) => `${count} ${count === 1 ? "service" : "services"}`
+const serviceCountLabel = (count: number) => countLabel(count, "service")
 
 function NamespaceHeaderLabel({ namespace }: { namespace: string }) {
 	return namespace === NO_NAMESPACE ? (
@@ -164,31 +153,16 @@ function NamespaceHeaderLabel({ namespace }: { namespace: string }) {
 	)
 }
 
-function truncateCommitSha(sha: string, length = 7): string {
-	if (sha === "N/A" || sha === "unknown" || !sha) {
-		return "N/A"
-	}
-	if (sha.length <= length) return sha
-	return sha.slice(0, length)
+function truncateCommitSha(sha: string): string {
+	if (sha === "N/A" || sha === "unknown" || !sha) return "N/A"
+	return shortId(sha, "sha")
 }
-
-const HEALTH_DOT_CLASS: Record<ServiceHealth, string> = {
-	healthy: "bg-success",
-	degraded: "bg-severity-warn",
-	unhealthy: "bg-destructive",
-} satisfies Record<ServiceHealth, string>
 
 /** Quiet health marker next to the service name — rendered only when there is
  *  something to say (degraded/unhealthy); healthy rows stay unadorned. */
 function HealthDot({ health }: { health: ServiceHealth | undefined }) {
 	if (health === undefined || health === "healthy") return null
-	return (
-		<span
-			aria-label={health}
-			title={health}
-			className={cn("size-1.5 shrink-0 rounded-full", HEALTH_DOT_CLASS[health])}
-		/>
-	)
+	return <StatusDot tone={HEALTH_TONE[health]} aria-hidden={false} aria-label={health} title={health} />
 }
 
 // Withhold the delta when the baseline has too few spans to be meaningful.
@@ -482,7 +456,7 @@ const ServiceRow = React.memo(function ServiceRow({
 		<TableRow
 			className={cn(
 				"cursor-pointer border-l-2 border-l-transparent hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				health === "unhealthy" && "border-l-destructive",
+				health === "unhealthy" && "border-l-severity-error",
 			)}
 			tabIndex={0}
 			onClick={goToDetail}
@@ -531,7 +505,7 @@ const ServiceRow = React.memo(function ServiceRow({
 				>
 					<Sparkline
 						data={errorRateData}
-						color="var(--color-destructive, #ef4444)"
+						color={TONE_COLOR.crit}
 						className="absolute inset-0 h-full w-full"
 					/>
 					<div className="absolute inset-0 flex items-center justify-center">
@@ -545,7 +519,7 @@ const ServiceRow = React.memo(function ServiceRow({
 				<Tooltip>
 					<TooltipTrigger
 						className="relative block h-8 w-full max-w-[120px]"
-						aria-label={`Throughput: ${formatThroughput(service.throughput)}`}
+						aria-label={`Throughput: ${formatThroughput(service.throughput, "/s")}`}
 					>
 						<Sparkline
 							data={throughputData}
@@ -554,12 +528,14 @@ const ServiceRow = React.memo(function ServiceRow({
 						/>
 						<div className="absolute inset-0 flex flex-col items-center justify-center">
 							<span className="font-mono text-xs font-semibold [text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]">
-								{service.hasSampling ? "~" : ""}
-								{formatThroughput(service.throughput)}
+								<SampledValue
+									estimated={service.hasSampling}
+									value={formatThroughput(service.throughput, "/s")}
+								/>
 							</span>
 							{service.hasSampling && (
 								<span className="font-mono text-[9px] text-muted-foreground [text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]">
-									~{formatThroughput(service.tracedThroughput)} traced
+									~{formatThroughput(service.tracedThroughput, "/s")} traced
 								</span>
 							)}
 						</div>
@@ -626,20 +602,19 @@ function LoadingState() {
 				tableClassName="w-full table-fixed"
 				className="hidden overflow-auto md:block"
 			/>
-			<div className="overflow-hidden rounded-md border md:hidden">
-				{Array.from({ length: 5 }).map((_, i) => (
-					<div
-						key={i}
-						className="flex items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0"
-					>
+			<SkeletonList
+				rows={5}
+				className="gap-0 overflow-hidden rounded-md border md:hidden"
+				renderRow={() => (
+					<div className="flex items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0">
 						<div className="min-w-0 flex-1 space-y-1.5">
 							<Skeleton className="h-4 w-32" />
 							<Skeleton className="h-3 w-24" />
 						</div>
 						<Skeleton className="h-4 w-12" />
 					</div>
-				))}
-			</div>
+				)}
+			/>
 		</div>
 	)
 }
@@ -735,7 +710,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 
 	return Result.builder(Result.all([overviewResult, timeSeriesResult, anomaliesResult, incidentsResult]))
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess(([overviewResponse, timeSeriesResponse], combinedResult) => {
 			const timeSeriesMap = timeSeriesResponse.data
 			const healthFor = (service: ServiceOverview) =>
@@ -791,7 +766,8 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 			return (
 				<CommitMessagesProvider services={services}>
 					<div
-						className={`space-y-4 transition-opacity ${combinedResult.waiting ? "opacity-60" : ""}`}
+						className={cn("space-y-4", refreshingClass(combinedResult.waiting))}
+						aria-busy={combinedResult.waiting || undefined}
 					>
 						{/* Offered only when the org actually emits `service.namespace` —
 						    without namespaces the environment grouping is the only one
@@ -951,8 +927,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 												>
 													<EnvironmentBadge environment={environment} />
 													<span className="text-xs text-muted-foreground">
-														{envServices.length}{" "}
-														{envServices.length === 1 ? "service" : "services"}
+														{serviceCountLabel(envServices.length)}
 													</span>
 												</div>
 												{envServices.map((service: ServiceOverview) => {
@@ -1000,27 +975,23 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																		<span className="text-muted-foreground/60">
 																			Thru{" "}
 																		</span>
-																		<span className="text-foreground">
-																			{service.hasSampling ? "~" : ""}
-																			{formatThroughput(
+																		<SampledValue
+																			className="text-foreground"
+																			estimated={service.hasSampling}
+																			value={formatThroughput(
 																				service.throughput,
+																				"/s",
 																			)}
-																		</span>
+																		/>
 																	</span>
 																</div>
 															</div>
 															<div className="shrink-0 text-right">
-																<div
-																	className={cn(
-																		"font-mono text-sm font-semibold tabular-nums",
-																		errorRateToneClass(service.errorRate),
-																	)}
-																>
-																	{formatErrorRate(service.errorRate)}
-																</div>
-																<div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-																	err
-																</div>
+																<ErrorRateValue
+																	rate={service.errorRate}
+																	className="block text-sm font-semibold"
+																/>
+																<Eyebrow as="div">err</Eyebrow>
 															</div>
 														</Link>
 													)
@@ -1035,7 +1006,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 						<div className="flex items-center justify-between text-sm text-muted-foreground">
 							<span>
 								Showing {services.length} {healthFilter ?? ""}{" "}
-								{services.length === 1 ? "service" : "services"}
+								{pluralize(services.length, "service")}
 							</span>
 							{(unhealthyCount > 0 || degradedCount > 0) && (
 								<span className="text-xs">

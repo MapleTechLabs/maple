@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Card } from "@maple/ui/components/ui/card"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { AiTriageResult } from "@maple/domain/http"
 import { ChevronRightIcon, PulseIcon } from "@/components/icons"
 import {
@@ -39,9 +40,7 @@ export function DiagnosisReportCard({ report }: { report: AiTriageResult }) {
 			<header className="space-y-1.5">
 				<div className="flex items-center gap-1.5">
 					<PulseIcon className="size-3.5 text-muted-foreground" />
-					<span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-						AI Diagnosis
-					</span>
+					<Eyebrow variant="label">AI Diagnosis</Eyebrow>
 					<span className="text-muted-foreground/40">·</span>
 					<span
 						className={`text-[11px] font-medium capitalize ${CONFIDENCE_TONE[report.confidence] ?? ""}`}
@@ -63,9 +62,9 @@ export function DiagnosisReportCard({ report }: { report: AiTriageResult }) {
 
 			{evidence.length > 0 ? (
 				<section className="space-y-2">
-					<h4 className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+					<Eyebrow variant="label" as="h4">
 						Evidence
-					</h4>
+					</Eyebrow>
 					{evidence.map((item, index) => (
 						<div key={index} className="space-y-1.5 rounded-md bg-muted/40 p-3">
 							{item.note ? (
@@ -79,9 +78,9 @@ export function DiagnosisReportCard({ report }: { report: AiTriageResult }) {
 
 			{actions.length > 0 ? (
 				<section className="space-y-2">
-					<h4 className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+					<Eyebrow variant="label" as="h4">
 						Recommended actions
-					</h4>
+					</Eyebrow>
 					<ol className="space-y-1">
 						{actions.map((action) => {
 							const { Icon, label } = ACTION_GLYPH[action.kind]

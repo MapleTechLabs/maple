@@ -33,7 +33,6 @@ import {
 import { EdgeCacheService } from "@maple/cache"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
 import { and, eq, inArray, lt, notInArray, or } from "drizzle-orm"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import {
 	Array as Arr,
 	Clock,
@@ -47,13 +46,14 @@ import {
 	Schedule,
 	Schema,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
 	parseBase64Aes256GcmKey,
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
+import { SchemaApplyWorkflow } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
@@ -403,10 +403,6 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "Org ClickHouse settings persistence failed",
 	})
 
-// Cloudflare Workflow binding that runs the actual (chunked, long-running)
-// schema apply. Resolved off the worker env at runtime — see `apply-schema`.
-const SCHEMA_APPLY_WORKFLOW_BINDING = "ClickHouseSchemaApplyWorkflow"
-
 /**
  * A queued/running apply-run row whose `updatedAt` is older than this is
  * treated as abandoned and may be reclaimed by a new applySchema call. The
@@ -414,18 +410,6 @@ const SCHEMA_APPLY_WORKFLOW_BINDING = "ClickHouseSchemaApplyWorkflow"
  * means the instance died somewhere its catch could not reach.
  */
 const STALE_APPLY_RUN_MS = 30 * 60_000
-
-interface WorkflowBinding {
-	readonly create: (options?: {
-		readonly id?: string
-		readonly params?: { readonly orgId: string }
-	}) => Promise<unknown>
-}
-
-const isWorkflowBinding = (value: unknown): value is WorkflowBinding =>
-	typeof value === "object" &&
-	value !== null &&
-	typeof (value as { create?: unknown }).create === "function"
 
 const toEncryptionError = (message: string) => new OrgClickHouseSettingsEncryptionError({ message })
 
@@ -869,26 +853,23 @@ const execClickHouseWithClient = (client: HttpClient.HttpClient, config: ClickHo
 export const execClickHouse = (config: ClickHouseExecConfig, sql: string) =>
 	HttpClient.HttpClient.use((client) => execClickHouseWithClient(client, config, sql))
 
-interface ClickHouseTableRow {
-	readonly name: string
-	readonly engine: string
-}
-interface ClickHouseColumnRow {
-	readonly table: string
-	readonly name: string
-	readonly type: string
-}
+const decodeTableRow = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ name: Schema.String, engine: Schema.String })),
+)
+const decodeColumnRow = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ table: Schema.String, name: Schema.String, type: Schema.String })),
+)
 
 const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExecConfig) =>
 	Effect.gen(function* () {
 		// Tables: name + engine. Engine="MaterializedView" → MV; everything else → table.
 		const tablesSql = `SELECT name, engine FROM system.tables WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
 		const tablesText = yield* execClickHouseWithClient(client, config, tablesSql)
-		const tableRows = parseJsonEachRow<ClickHouseTableRow>(tablesText)
+		const tableRows = parseJsonEachRow(tablesText, decodeTableRow)
 
 		const columnsSql = `SELECT table, name, type FROM system.columns WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
 		const columnsText = yield* execClickHouseWithClient(client, config, columnsSql)
-		const columnRows = parseJsonEachRow<ClickHouseColumnRow>(columnsText)
+		const columnRows = parseJsonEachRow(columnsText, decodeColumnRow)
 
 		const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
 		for (const row of columnRows) {
@@ -908,20 +889,13 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 		return result
 	})
 
-const parseJsonEachRow = <T>(text: string): ReadonlyArray<T> => {
-	const out: T[] = []
-	for (const line of text.split("\n")) {
-		const trimmed = line.trim()
-		if (trimmed.length === 0) continue
-		try {
-			out.push(JSON.parse(trimmed) as T)
-		} catch {
-			// Skip malformed rows — the entire response is from us-controlled
-			// queries against system.* tables, so this is defence-in-depth.
-		}
-	}
-	return out
-}
+// Malformed rows are skipped: the response comes from our own queries against system.* tables.
+const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
+	text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.flatMap((line) => Option.toArray(decode(line)))
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),
@@ -938,13 +912,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
 		// Dev-only way past a per-org BYO row; the environment gate keeps it off deploys.
-		const ignoreOrgClickHouse =
-			env.MAPLE_ENVIRONMENT === "development" &&
-			(env.MAPLE_IGNORE_ORG_CLICKHOUSE === "1" || env.MAPLE_IGNORE_ORG_CLICKHOUSE === "true")
-		// Optional: present only inside a Worker isolate. Used to kick off the
-		// background schema-apply Workflow. Read optionally so non-worker/test
-		// contexts (where the binding is absent) still construct the service.
-		const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+		const ignoreOrgClickHouse = env.MAPLE_ENVIRONMENT === "development" && env.MAPLE_IGNORE_ORG_CLICKHOUSE
+		// The background schema-apply Workflow, bound only by the api Worker that hosts it.
+		// Read optionally so other hosts and tests still construct the service.
+		const schemaApplyWorkflow = yield* Effect.serviceOption(SchemaApplyWorkflow)
 		const edgeCache = yield* EdgeCacheService
 
 		// Memoize the parsed desired-schema snapshot per service instance. The
@@ -1313,17 +1284,14 @@ export class OrgClickHouseSettingsService extends Context.Service<
 
 			// Resolve the binding BEFORE claiming: a missing binding must not leave
 			// a queued row behind that every later attempt reads as already_running.
-			const binding = Option.match(workerEnv, {
-				onNone: () => undefined,
-				onSome: (e) => e[SCHEMA_APPLY_WORKFLOW_BINDING],
-			})
-			if (!isWorkflowBinding(binding)) {
+			if (Option.isNone(schemaApplyWorkflow)) {
 				return yield* Effect.fail(
 					new OrgClickHouseSettingsPersistenceError({
-						message: `Schema-apply workflow binding (${SCHEMA_APPLY_WORKFLOW_BINDING}) unavailable`,
+						message: "Schema-apply workflow binding unavailable",
 					}),
 				)
 			}
+			const workflow = schemaApplyWorkflow.value
 
 			// Atomic claim: the conflict-update is gated so exactly one of two
 			// concurrent applySchema calls wins (interleaved workflow instances
@@ -1382,13 +1350,13 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				return new OrgClickHouseApplySchemaStarted({ status: "already_running" })
 			}
 
-			yield* Effect.tryPromise({
-				try: () => binding.create({ params: { orgId } }),
-				catch: (error) =>
-					new OrgClickHouseSettingsPersistenceError({
-						message: `Failed to start schema-apply workflow: ${error instanceof Error ? error.message : String(error)}`,
-					}),
-			}).pipe(
+			yield* workflow.create({ orgId }).pipe(
+				Effect.mapError(
+					(error) =>
+						new OrgClickHouseSettingsPersistenceError({
+							message: `Failed to start schema-apply workflow: ${error.message}`,
+						}),
+				),
 				// No workflow exists to move the claim off "queued", so release it
 				// here (best-effort) — otherwise the org is wedged on already_running
 				// until manual database repair.

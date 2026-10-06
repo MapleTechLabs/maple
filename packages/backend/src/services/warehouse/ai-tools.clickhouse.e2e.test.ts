@@ -29,11 +29,12 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "@maple/domain/gen-ai"
 import * as Integrations from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
+	aiGatewayStamps,
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
@@ -95,6 +96,9 @@ const TRACE_IDS_AT_1 = missingKey('["evidence"][1]["traceIds"]')
 const LOG_PATTERNS_AT_0 = missingKey('["evidence"][0]["logPatterns"]')
 /** A failure that says why in its status message alone. */
 const REFUSED = "sandbox refused the command"
+/** `flaky_tool`'s parameter schema. */
+const FLAKY_SCHEMA =
+	'{"properties": {"retries": {"type": "integer"}}, "required": ["retries"], "type": "object"}'
 
 interface SeedSpan {
 	readonly traceId: string
@@ -133,6 +137,7 @@ const submitCandidate = (
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "submit_candidate",
 		"gen_ai.tool.call.arguments": "{}",
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_candidate" }),
 		...attrs,
 	}),
 })
@@ -152,6 +157,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 			"gen_ai.operation.name": "invoke_agent",
 			"gen_ai.agent.name": "slack-agent",
+			...aiGatewayStamps({ agentName: "slack-agent" }),
 		}),
 	},
 	{
@@ -162,7 +168,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 100,
 		durationNs: 4_000_000,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "chat", "gen_ai.response.model": GPT }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.model": GPT,
+			...aiGatewayStamps({ llmCall: true, model: GPT }),
+		}),
 	},
 	// Parent IS the model call: attributed to gpt-5 by the join.
 	{
@@ -178,6 +188,12 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.tool.name": "search_traces",
 			"gen_ai.tool.description": "Search traces.",
 			"gen_ai.agent.name": "slack-agent",
+			...aiGatewayStamps({
+				toolCall: true,
+				toolName: "search_traces",
+				toolDescription: "Search traces.",
+				agentName: "slack-agent",
+			}),
 		}),
 	},
 	// Parent is the TURN span, which carries no model — so this one can only be
@@ -191,7 +207,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 300,
 		durationNs: 5_000_000,
 		status: "Error",
-		attrs: agentSpan({ "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "run_sql" }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "run_sql",
+			...aiGatewayStamps({ toolCall: true, error: true, toolName: "run_sql" }),
+		}),
 	},
 	// TRACE_FALLBACK — no session id anywhere, so the whole trace is one
 	// `trace:` session, and its tool call is attributed through its parent.
@@ -202,7 +222,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 400,
 		durationNs: 6_000_000,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "chat", "gen_ai.response.model": CLAUDE }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.model": CLAUDE,
+			...aiGatewayStamps({ llmCall: true, model: CLAUDE }),
+		}),
 	},
 	{
 		traceId: TRACE_FALLBACK,
@@ -216,6 +240,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "search_traces",
 			"gen_ai.tool.description": "Search traces by attribute.",
+			...aiGatewayStamps({
+				toolCall: true,
+				toolName: "search_traces",
+				toolDescription: "Search traces by attribute.",
+			}),
 		}),
 	},
 	// TRACE_FLAKY_* — one tool, two failures, one per calendar day, both outside
@@ -238,6 +267,12 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"error.type": "TimeoutError",
 			"gen_ai.tool.call.arguments": '{"retries":3}',
 			"gen_ai.tool.call.result": "",
+			...aiGatewayStamps({
+				toolCall: true,
+				error: true,
+				toolName: "flaky_tool",
+				toolDescription: "Calls the flaky upstream.",
+			}),
 		}),
 	},
 	{
@@ -248,11 +283,24 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		durationNs: 8_000_000,
 		status: "Error",
 		statusMessage: "upstream returned 503",
+		// An OpenInference tool span whose GenAI dual-write copied the parameter
+		// schema into the arguments slot: the payload read shows `input.value`,
+		// as the session page does.
 		attrs: agentSpan({
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openai_agents_sdk",
+			"openinference.span.kind": "TOOL",
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "flaky_tool",
-			"gen_ai.tool.call.arguments": '{"retries":1}',
+			"tool.parameters": FLAKY_SCHEMA,
+			"gen_ai.tool.call.arguments": FLAKY_SCHEMA,
+			"input.value": '{"retries":1}',
 			"gen_ai.tool.call.result": '{"error":"503"}',
+			...aiGatewayStamps({
+				toolCall: true,
+				error: true,
+				toolName: "flaky_tool",
+				toolErrorResult: '{"error":"503"}',
+			}),
 		}),
 	},
 	// TRACE_GROUPS — `[0]` and `[1]` of one missing key, a missing key at another
@@ -262,16 +310,43 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		[MAPLE_AI_SESSION_ID_ATTR]: GROUPS_SESSION_ID,
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": TRACE_IDS_AT_0,
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_candidate",
+			toolErrorResult: TRACE_IDS_AT_0,
+		}),
 	}),
 	submitCandidate("tools-groups-2", 60_000, "Error", {
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": TRACE_IDS_AT_1,
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_candidate",
+			toolErrorResult: TRACE_IDS_AT_1,
+		}),
 	}),
 	submitCandidate("tools-groups-3", 120_000, "Error", {
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": LOG_PATTERNS_AT_0,
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_candidate",
+			toolErrorResult: LOG_PATTERNS_AT_0,
+		}),
 	}),
-	submitCandidate("tools-groups-4", 180_000, "Error", { "error.type": "ToolCallFailed" }, REFUSED),
+	submitCandidate(
+		"tools-groups-4",
+		180_000,
+		"Error",
+		{
+			"error.type": "ToolCallFailed",
+			...aiGatewayStamps({ toolCall: true, error: true, toolName: "submit_candidate" }),
+		},
+		REFUSED,
+	),
 	submitCandidate("tools-groups-5", 240_000, "Ok", { "gen_ai.tool.call.result": '{"accepted":true}' }),
 	// TRACE_UNATTRIBUTED — a tool call with no model anywhere in its trace, at a
 	// zero duration (the structured-output pseudo-tool shape). It is a call: it
@@ -283,7 +358,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: LATER_MS,
 		durationNs: 0,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "search_traces" }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "search_traces",
+			...aiGatewayStamps({ toolCall: true, toolName: "search_traces" }),
+		}),
 	},
 ]
 
@@ -299,6 +378,11 @@ const FOREIGN_SPAN: SeedSpan = {
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "search_traces",
 		"gen_ai.tool.description": "Another org's search.",
+		...aiGatewayStamps({
+			toolCall: true,
+			toolName: "search_traces",
+			toolDescription: "Another org's search.",
+		}),
 	}),
 }
 
@@ -751,13 +835,15 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		assert.isFalse(payloads.sql.includes(flakyWindow.startTime))
 		assert.deepStrictEqual(
-			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map((row) => ({
-				spanId: row.spanId,
-				statusCode: row.statusCode,
-				arguments: row.arguments,
-				argumentsBytes: row.argumentsBytes,
-				resultBytes: row.resultBytes,
-			})),
+			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+				.map(Integrations.aiToolErrorPayload)
+				.map((row) => ({
+					spanId: row.spanId,
+					statusCode: row.statusCode,
+					arguments: row.arguments,
+					argumentsBytes: row.argumentsBytes,
+					resultBytes: row.resultBytes,
+				})),
 			[
 				{
 					spanId: "tools-flaky-1",
@@ -796,7 +882,9 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ orgId: ORG_ID, ...slice },
 			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
 		)
-		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map(
+			Integrations.aiToolErrorPayload,
+		)
 		assert.deepStrictEqual(
 			[...rows]
 				.sort((a, b) => a.spanId.localeCompare(b.spanId))

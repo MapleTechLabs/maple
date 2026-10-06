@@ -9,6 +9,7 @@ import {
 	type AlertContext,
 } from "@/components/chat/alert-context"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
@@ -69,9 +70,6 @@ function AlertIncidentPage() {
 				<DashboardLayout.Breadcrumbs items={[{ label: "Alerts", href: "/alerts" }, { label: "…" }]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Investigation" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="mx-auto w-full max-w-3xl space-y-4">
 								<Skeleton className="h-4 w-32" />
@@ -94,21 +92,13 @@ function AlertIncidentPage() {
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Investigation" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
-							<Empty>
-								<EmptyHeader>
-									<EmptyTitle>Incident not found</EmptyTitle>
-									<EmptyDescription>
-										It may have been resolved and pruned, or the link is stale.
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" render={<Link to="/alerts" />}>
-									Back to alerts
-								</Button>
-							</Empty>
+							<ResourceNotFound
+								title="Incident not found"
+								description="It may have been resolved and pruned, or the link is stale."
+								backLink={<Link to="/alerts" />}
+								backLabel="Back to alerts"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -198,9 +188,6 @@ function AlertInvestigationRedirect({
 				/>
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Could not open investigation" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<Empty>
 								<EmptyHeader>
@@ -226,9 +213,6 @@ function AlertInvestigationRedirect({
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Opening investigation…" />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						<div className="mx-auto w-full max-w-3xl space-y-4">
 							<Skeleton className="h-4 w-32" />

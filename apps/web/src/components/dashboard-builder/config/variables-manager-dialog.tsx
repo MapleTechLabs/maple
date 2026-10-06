@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useState } from "react"
 import {
 	Dialog,
@@ -10,7 +11,9 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@maple/ui/components/ui/item"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -187,8 +190,8 @@ function VariablesEditor({
 			<DialogHeader>
 				<DialogTitle>Dashboard variables</DialogTitle>
 				<DialogDescription>
-					Reference variables as <code className="text-[11px]">$name</code> in widget filters and
-					raw SQL. Selectors appear in the dashboard toolbar.
+					Reference variables as <InlineCode>$name</InlineCode> in widget filters and raw SQL.
+					Selectors appear in the dashboard toolbar.
 				</DialogDescription>
 			</DialogHeader>
 			<DialogPanel className="flex flex-col gap-3">
@@ -215,57 +218,59 @@ function VariablesEditor({
 				)}
 				{drafts.map((draft, index) => (
 					<div key={index} className="rounded-md border border-border">
-						<div className="flex items-center gap-2 px-3 py-2">
-							<div className="flex min-w-0 flex-1 flex-col">
-								<span className="truncate font-mono text-xs font-medium text-foreground">
+						<Item size="xs" variant="flush" className="px-3">
+							<ItemContent>
+								<ItemTitle className="block truncate font-mono text-foreground">
 									${draft.name || "…"}
 									<span className="ml-2 font-sans font-normal text-muted-foreground">
 										{TYPE_LABELS[draft.type]}
 									</span>
-								</span>
-								<span className="truncate text-[11px] text-muted-foreground">
+								</ItemTitle>
+								<ItemDescription className="block truncate text-[11px]">
 									{errors[index] !== null && editingIndex !== index ? (
 										<span className="text-destructive">{errors[index]}</span>
 									) : (
 										sourceSummary(draft)
 									)}
-								</span>
-							</div>
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								aria-label="Move up"
-								disabled={index === 0}
-								onClick={() => move(index, -1)}
-							>
-								<ArrowUpIcon size={13} />
-							</Button>
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								aria-label="Move down"
-								disabled={index === drafts.length - 1}
-								onClick={() => move(index, 1)}
-							>
-								<ArrowDownIcon size={13} />
-							</Button>
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								aria-label="Edit variable"
-								onClick={() => setEditingIndex(editingIndex === index ? null : index)}
-							>
-								<PencilIcon size={13} />
-							</Button>
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								aria-label="Delete variable"
-								onClick={() => remove(index)}
-							>
-								<TrashIcon size={13} />
-							</Button>
-						</div>
+								</ItemDescription>
+							</ItemContent>
+							<ItemActions>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									aria-label="Move up"
+									disabled={index === 0}
+									onClick={() => move(index, -1)}
+								>
+									<ArrowUpIcon size={13} />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									aria-label="Move down"
+									disabled={index === drafts.length - 1}
+									onClick={() => move(index, 1)}
+								>
+									<ArrowDownIcon size={13} />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									aria-label="Edit variable"
+									onClick={() => setEditingIndex(editingIndex === index ? null : index)}
+								>
+									<PencilIcon size={13} />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									aria-label="Delete variable"
+									onClick={() => remove(index)}
+								>
+									<TrashIcon size={13} />
+								</Button>
+							</ItemActions>
+						</Item>
 						{editingIndex === index && (
 							<div className="border-t border-border px-3 py-3">
 								<VariableForm
@@ -306,8 +311,8 @@ function VariableForm({
 	return (
 		<div className="flex flex-col gap-3">
 			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Name</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Name</FieldLabel>
 					<Input
 						size="sm"
 						autoFocus={variable.name === ""}
@@ -317,18 +322,20 @@ function VariableForm({
 						onChange={(event) => onChange({ ...variable, name: event.target.value })}
 					/>
 					{error !== null ? (
-						<span className="text-[11px] text-destructive">{error}</span>
+						<FieldError match className="text-[11px] text-destructive">
+							{error}
+						</FieldError>
 					) : (
 						variable.name !== "" && (
-							<span className="text-[11px] text-muted-foreground">
-								Reference it as <code className="text-foreground">${variable.name}</code> in
-								widget filters and SQL.
-							</span>
+							<FieldDescription className="text-[11px]">
+								Reference it as <InlineCode>${variable.name}</InlineCode> in widget filters
+								and SQL.
+							</FieldDescription>
 						)
 					)}
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Label</Label>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Label</FieldLabel>
 					<Input
 						size="sm"
 						value={variable.label ?? ""}
@@ -340,12 +347,12 @@ function VariableForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 			</div>
 
 			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Type</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Type</FieldLabel>
 					<Select
 						items={TYPE_OPTIONS}
 						value={variable.type}
@@ -366,9 +373,9 @@ function VariableForm({
 							))}
 						</SelectContent>
 					</Select>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Default value</Label>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Default value</FieldLabel>
 					<Input
 						size="sm"
 						value={variable.defaultValue ?? ""}
@@ -382,14 +389,14 @@ function VariableForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 			</div>
 
 			{variable.type === "query" && <QuerySourceFields variable={variable} onChange={onChange} />}
 
 			{variable.type === "custom" && (
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Options (comma-separated)</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Options (comma-separated)</FieldLabel>
 					<Textarea
 						className="min-h-16 text-xs"
 						value={variable.options.map((option) => option.value).join(", ")}
@@ -405,25 +412,23 @@ function VariableForm({
 							})
 						}
 					/>
-				</div>
+				</Field>
 			)}
 
 			{variable.type !== "textbox" && (
-				<div className="flex items-center justify-between">
-					<div className="flex flex-col">
-						<span className="text-xs font-medium">Include "All" option</span>
-						<span className="text-[11px] text-muted-foreground">
-							All drops the filter in query builders and expands to every value in SQL.
-						</span>
-					</div>
-					<Switch
-						checked={variable.includeAll === true}
-						onCheckedChange={(checked) => {
-							const { includeAll: _includeAll, ...rest } = variable
-							onChange(checked ? { ...rest, includeAll: true } : rest)
-						}}
-					/>
-				</div>
+				<SettingRow
+					label={<span className="text-xs">Include "All" option</span>}
+					description="All drops the filter in query builders and expands to every value in SQL."
+					control={
+						<Switch
+							checked={variable.includeAll === true}
+							onCheckedChange={(checked) => {
+								const { includeAll: _includeAll, ...rest } = variable
+								onChange(checked ? { ...rest, includeAll: true } : rest)
+							}}
+						/>
+					}
+				/>
 			)}
 		</div>
 	)
@@ -439,8 +444,8 @@ function QuerySourceFields({
 	const source = variable.source
 	return (
 		<div className="grid grid-cols-2 gap-3">
-			<div className="flex flex-col gap-1.5">
-				<Label className="text-xs">Values from</Label>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel className="text-xs">Values from</FieldLabel>
 				<Select
 					items={{
 						...Object.fromEntries(
@@ -486,10 +491,10 @@ function QuerySourceFields({
 						<SelectItem value="attribute:resource">Resource attribute…</SelectItem>
 					</SelectContent>
 				</Select>
-			</div>
+			</Field>
 			{source.kind === "attribute" && (
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Attribute key</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Attribute key</FieldLabel>
 					<Input
 						size="sm"
 						value={source.attributeKey}
@@ -501,7 +506,7 @@ function QuerySourceFields({
 							})
 						}
 					/>
-				</div>
+				</Field>
 			)}
 		</div>
 	)

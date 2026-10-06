@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { AlertDeliveryStatus, AlertDestinationType, AlertEventType, AlertPersistenceError } from "../alerts"
 import { AuthorizationV2 } from "./auth"

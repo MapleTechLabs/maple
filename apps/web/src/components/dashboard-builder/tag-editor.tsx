@@ -13,6 +13,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { PlusIcon, XmarkIcon } from "@/components/icons"
 
@@ -114,10 +115,10 @@ function TagEditor({
 				</DialogDescription>
 			</DialogHeader>
 			<DialogPanel className="flex flex-col gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs" htmlFor="tag-editor-input">
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs" htmlFor="tag-editor-input">
 						Add a tag
-					</Label>
+					</FieldLabel>
 					<div className="flex items-center gap-1.5">
 						<Input
 							id="tag-editor-input"
@@ -155,7 +156,7 @@ function TagEditor({
 							<PlusIcon size={14} />
 						</Button>
 					</div>
-				</div>
+				</Field>
 
 				<div className="flex flex-col gap-1.5">
 					<Label className="text-xs">On this dashboard</Label>

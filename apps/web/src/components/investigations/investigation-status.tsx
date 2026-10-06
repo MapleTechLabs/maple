@@ -2,6 +2,7 @@ import type { ComponentType } from "react"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import {
 	BellIcon,
@@ -23,13 +24,13 @@ type InvestigationStatus = V2Investigation["status"]
  */
 const STATUS: Record<InvestigationStatus, { label: string; tone: string }> = {
 	investigating: { label: "In progress", tone: "bg-primary/10 text-primary" },
-	diagnosed: { label: "Diagnosed", tone: "bg-success/10 text-success" },
+	diagnosed: { label: "Diagnosed", tone: TONE_SOFT.ok },
 	// Warn, not destructive. The run worked and reached "not established"; the
 	// destructive tone belongs to `failed`, where the machinery actually broke,
 	// and using it here is what made every honest partial read as a defect.
-	inconclusive: { label: "Inconclusive", tone: "bg-severity-warn/10 text-severity-warn" },
-	resolved: { label: "Resolved", tone: "bg-muted text-muted-foreground" },
-	failed: { label: "Failed", tone: "bg-destructive/10 text-destructive" },
+	inconclusive: { label: "Inconclusive", tone: TONE_SOFT.warn },
+	resolved: { label: "Resolved", tone: TONE_SOFT.neutral },
+	failed: { label: "Failed", tone: TONE_SOFT.crit },
 } satisfies Record<InvestigationStatus, { label: string; tone: string }>
 
 export function InvestigationStatusBadge({

@@ -9,9 +9,10 @@ import {
 	RawSqlValidationError,
 } from "@maple/domain/http"
 import { makeExecuteRawSql, prepareRawSql } from "./raw-sql"
+import { OrgId } from "@maple/domain"
 
 const baseInput = {
-	orgId: "org_abc",
+	orgId: OrgId.make("org_abc"),
 	startTime: "2026-05-14 00:00:00",
 	endTime: "2026-05-14 06:00:00",
 	granularitySeconds: 60,
@@ -40,6 +41,25 @@ describe("prepareRawSql", () => {
 		Effect.gen(function* () {
 			const error = yield* prepareFail("SELECT 1 FROM Logs")
 			assert.strictEqual(error.code, "MissingOrgFilter")
+		}),
+	)
+
+	it.effect("expands every $__timeFilter across UNION branches with both comparisons", () =>
+		Effect.gen(function* () {
+			const branch = (t: string) =>
+				`SELECT ServiceName, count() n FROM ${t} WHERE $__orgFilter AND $__timeFilter(TimeUnix) GROUP BY 1`
+			const prepared = yield* prepareOk(
+				`${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} ORDER BY n DESC LIMIT 15`,
+			)
+			assert.strictEqual(
+				prepared.sql.match(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)?.length,
+				3,
+			)
+			assert.strictEqual(
+				prepared.sql.match(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)?.length,
+				3,
+			)
+			assert.include(prepared.sql, "FROM metrics_gauge")
 		}),
 	)
 
@@ -165,7 +185,7 @@ describe("prepareRawSql", () => {
 		Effect.gen(function* () {
 			const result = yield* prepareRawSql({
 				...baseInput,
-				orgId: "org'); DROP TABLE Logs --",
+				orgId: OrgId.make("org'); DROP TABLE Logs --"),
 				sql: "SELECT 1 FROM Logs WHERE $__orgFilter",
 			})
 			assert.include(result.sql, "OrgId = 'org\\')\\x3B DROP TABLE Logs --'")
@@ -236,10 +256,31 @@ it.effect("does not expand replacement patterns in interpolated values", () =>
 	Effect.gen(function* () {
 		const prepared = yield* prepareRawSql({
 			...baseInput,
-			orgId: "org_$'_$&",
+			orgId: OrgId.make("org_$'_$&"),
 			sql: "SELECT count() FROM Logs WHERE $__orgFilter AND Body = 'tail'",
 		})
 		assert.include(prepared.sql, "OrgId = 'org_$\\'_$&'")
+	}),
+)
+
+it.effect("expands $__orgFilter to a parenthesised predicate, alias-qualified when given one", () =>
+	Effect.gen(function* () {
+		const prepared = yield* prepareOk(
+			"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND $__orgFilter",
+		)
+		assert.include(
+			prepared.sql,
+			"AND (l.OrgId = 'org_abc') WHERE (t.OrgId = 'org_abc') AND (OrgId = 'org_abc')",
+		)
+	}),
+)
+
+it.effect("rejects an org filter a sibling OR escapes", () =>
+	Effect.gen(function* () {
+		const error = yield* prepareFail(
+			"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'Database.execute' OR (ServiceName = 'maple-api')",
+		)
+		assert.strictEqual(error.code, "InvalidMacro")
 	}),
 )
 

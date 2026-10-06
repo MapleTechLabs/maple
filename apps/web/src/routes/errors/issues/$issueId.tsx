@@ -5,16 +5,7 @@ import { Exit, Schema } from "effect"
 import { useMemo, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 
@@ -41,6 +32,8 @@ import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useAsyncAction, useMutationAction } from "@/hooks/use-mutation-action"
+import { ResultView } from "@/components/common/result-view"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
@@ -197,24 +190,33 @@ function IssueDetailContent() {
 	const escalationResult = useAtomValue(escalationQueryAtom)
 	const { result: destinationsResult } = useAlertDestinationsList()
 
-	const transitionIssue = useAtomSet(MapleApiAtomClient.mutation("errors", "transitionIssue"), {
-		mode: "promiseExit",
+	const [transitionIssue, transitioning] = useMutationAction(
+		MapleApiAtomClient.mutation("errors", "transitionIssue"),
+		{ error: "State change failed" },
+	)
+	const [claimIssue, claiming] = useMutationAction(MapleApiAtomClient.mutation("errors", "claimIssue"), {
+		success: "Claimed",
+		error: "Claim failed",
 	})
-	const claimIssue = useAtomSet(MapleApiAtomClient.mutation("errors", "claimIssue"), {
-		mode: "promiseExit",
-	})
-	const heartbeatIssue = useAtomSet(MapleApiAtomClient.mutation("errors", "heartbeatIssue"), {
-		mode: "promiseExit",
-	})
-	const releaseIssue = useAtomSet(MapleApiAtomClient.mutation("errors", "releaseIssue"), {
-		mode: "promiseExit",
-	})
-	const commentOnIssue = useAtomSet(MapleApiAtomClient.mutation("errors", "commentOnIssue"), {
-		mode: "promiseExit",
-	})
-	const setIssueSeverity = useAtomSet(MapleApiAtomClient.mutation("errors", "setIssueSeverity"), {
-		mode: "promiseExit",
-	})
+	const [heartbeatIssue, heartbeating] = useMutationAction(
+		MapleApiAtomClient.mutation("errors", "heartbeatIssue"),
+		{ success: "Lease extended", error: "Heartbeat failed" },
+	)
+	const [releaseIssue, releasing] = useMutationAction(
+		MapleApiAtomClient.mutation("errors", "releaseIssue"),
+		{
+			success: "Released",
+			error: "Release failed",
+		},
+	)
+	const [commentOnIssue, commenting] = useMutationAction(
+		MapleApiAtomClient.mutation("errors", "commentOnIssue"),
+		{ success: "Comment added", error: "Comment failed", onSuccess: () => setCommentDraft("") },
+	)
+	const [setIssueSeverity, settingSeverity] = useMutationAction(
+		MapleApiAtomClient.mutation("errors", "setIssueSeverity"),
+		{ error: "Severity change failed" },
+	)
 	const evaluateEscalation = useAtomSet(MapleApiAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
 		mode: "promiseExit",
 	})
@@ -224,23 +226,13 @@ function IssueDetailContent() {
 	const linkPullRequest = useAtomSet(MapleApiAtomClient.mutation("errors", "linkIssuePullRequest"), {
 		mode: "promiseExit",
 	})
-	const unlinkPullRequest = useAtomSet(MapleApiAtomClient.mutation("errors", "unlinkIssuePullRequest"), {
-		mode: "promiseExit",
-	})
+	const [unlinkPullRequest, detachingPullRequest] = useMutationAction(
+		MapleApiAtomClient.mutation("errors", "unlinkIssuePullRequest"),
+		{ success: "Pull request detached", error: "Could not detach the pull request" },
+	)
 
 	const [attachDialogOpen, setAttachDialogOpen] = useState(false)
 	const [commentDraft, setCommentDraft] = useState("")
-	const [busy, setBusy] = useState<
-		| "state"
-		| "claim"
-		| "release"
-		| "heartbeat"
-		| "comment"
-		| "severity"
-		| "investigation"
-		| "pull-request"
-		| null
-	>(null)
 	const [severityConfirmation, setSeverityConfirmation] = useState<{
 		readonly severity: IssueSeverity
 		readonly destinationNames: ReadonlyArray<string>
@@ -263,17 +255,12 @@ function IssueDetailContent() {
 	}
 
 	const transitionTo = async (next: WorkflowState) => {
-		setBusy("state")
 		const result = await transitionIssue({
 			params: { issueId },
 			payload: makeIssueTransitionPayload(next),
 			reactivityKeys: invalidateKeys,
 		})
-		setBusy(null)
-		if (!Exit.isSuccess(result)) {
-			toastManager.add({ title: "State change failed", type: "error" })
-			return
-		}
+		if (!Exit.isSuccess(result)) return
 		toastManager.add({ title: `Moved to ${next}`, type: "success" })
 		// "In review" with no pull request attached is the exact moment the link is
 		// worth asking for — it is what opens the verification window later. Offered
@@ -284,89 +271,58 @@ function IssueDetailContent() {
 		if (next === "in_review" && attached === 0) setAttachDialogOpen(true)
 	}
 
-	const claim = async () => {
-		setBusy("claim")
-		const result = await claimIssue({
+	const claim = () =>
+		void claimIssue({
 			params: { issueId },
 			payload: makeIssueClaimPayload(),
 			reactivityKeys: invalidateKeys,
 		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) toastManager.add({ title: "Claimed", type: "success" })
-		else toastManager.add({ title: "Claim failed", type: "error" })
-	}
 
-	const heartbeat = async () => {
-		setBusy("heartbeat")
-		const result = await heartbeatIssue({
-			params: { issueId },
-			reactivityKeys: invalidateKeys,
-		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) toastManager.add({ title: "Lease extended", type: "success" })
-		else toastManager.add({ title: "Heartbeat failed", type: "error" })
-	}
+	const heartbeat = () => void heartbeatIssue({ params: { issueId }, reactivityKeys: invalidateKeys })
 
-	const release = async () => {
-		setBusy("release")
-		const result = await releaseIssue({
+	const release = () =>
+		void releaseIssue({
 			params: { issueId },
 			payload: makeIssueReleasePayload(),
 			reactivityKeys: invalidateKeys,
 		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) toastManager.add({ title: "Released", type: "success" })
-		else toastManager.add({ title: "Release failed", type: "error" })
-	}
 
 	// Resolves to whether the link landed, so the dialog can stay open — with the
 	// URL the user pasted still in it — when it did not.
-	const attachPullRequest = async (url: string): Promise<boolean> => {
-		setBusy("pull-request")
-		const result = await linkPullRequest({
-			params: { issueId },
-			payload: new ErrorIssueLinkPullRequestRequest({ url }),
-			reactivityKeys: invalidateKeys,
-		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Pull request attached", type: "success" })
-			return true
-		}
-		// The endpoint fails three ways; only one of them is a bad URL. Telling a
-		// user their valid URL is malformed because Postgres was down sends them
-		// off to re-check a link that was fine.
-		const { title, message } = displayError(result)
-		toastManager.add({ title, description: message, type: "error" })
-		return false
-	}
+	const [attachPullRequest, attachingPullRequest] = useAsyncAction(
+		async (url: string): Promise<boolean> => {
+			const result = await linkPullRequest({
+				params: { issueId },
+				payload: new ErrorIssueLinkPullRequestRequest({ url }),
+				reactivityKeys: invalidateKeys,
+			})
+			if (Exit.isSuccess(result)) {
+				toastManager.add({ title: "Pull request attached", type: "success" })
+				return true
+			}
+			// The endpoint fails three ways; only one of them is a bad URL. Telling a
+			// user their valid URL is malformed because Postgres was down sends them
+			// off to re-check a link that was fine.
+			const { title, message } = displayError(result)
+			toastManager.add({ title, description: message, type: "error" })
+			return false
+		},
+	)
 
-	const detachPullRequest = async (pullRequestId: ErrorIssuePullRequestId) => {
-		setBusy("pull-request")
-		const result = await unlinkPullRequest({
-			params: { issueId, pullRequestId },
-			reactivityKeys: invalidateKeys,
-		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) toastManager.add({ title: "Pull request detached", type: "success" })
-		else toastManager.add({ title: "Could not detach the pull request", type: "error" })
-	}
+	const detachPullRequest = (pullRequestId: ErrorIssuePullRequestId) =>
+		void unlinkPullRequest({ params: { issueId, pullRequestId }, reactivityKeys: invalidateKeys })
 
 	const applySeverity = async (next: IssueSeverity | null) => {
-		setBusy("severity")
 		const result = await setIssueSeverity({
 			params: { issueId },
 			payload: new ErrorIssueSetSeverityRequest({ severity: next }),
 			reactivityKeys: invalidateKeys,
 		})
-		setBusy(null)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({
 				title: next === null ? "Severity cleared" : `Severity set to ${next}`,
 				type: "success",
 			})
-		} else {
-			toastManager.add({ title: "Severity change failed", type: "error" })
 		}
 	}
 
@@ -418,91 +374,94 @@ function IssueDetailContent() {
 	// signature — title, serviceName, occurrences — is why the snapshot was so thin:
 	// adding a field meant threading a fourth parameter through two call sites, so
 	// nobody did, and the agent got a title and a service name.
-	const startInvestigation = async (params: {
-		issue: ErrorIssueDocument
-		kind: "error" | "alert"
-		incidentId: string | null
-	}) => {
-		setBusy("investigation")
-		const issue = params.issue
-		const title = issueHeadline(issue)
-		const subject =
-			params.incidentId === null
-				? {
-						type: "freeform" as const,
+	const [startInvestigation, startingInvestigation] = useAsyncAction(
+		async (params: { issue: ErrorIssueDocument; kind: "error" | "alert"; incidentId: string | null }) => {
+			const issue = params.issue
+			const title = issueHeadline(issue)
+			const subject =
+				params.incidentId === null
+					? {
+							type: "freeform" as const,
+							title,
+							prompt: `Investigate this issue: ${title}`,
+							context_refs: [{ issue_id: issueId }],
+						}
+					: {
+							type: "incident" as const,
+							incident_kind: params.kind,
+							incident_id: params.incidentId,
+							issue_id: issueId,
+						}
+			const result = await createInvestigation({
+				payload: {
+					subject: subject as never,
+					snapshot: {
 						title,
-						prompt: `Investigate this issue: ${title}`,
-						context_refs: [{ issue_id: issueId }],
-					}
-				: {
-						type: "incident" as const,
-						incident_kind: params.kind,
-						incident_id: params.incidentId,
-						issue_id: issueId,
-					}
-		const result = await createInvestigation({
-			payload: {
-				subject: subject as never,
-				snapshot: {
-					title,
-					scope: issue.serviceName || null,
-					status: "open",
-					severity: issue.severity,
-					facts: [
-						{ label: "Service", value: issue.serviceName || "unknown" },
-						{ label: "Occurrences", value: String(issue.occurrenceCount) },
-						...(issue.exceptionType ? [{ label: "Exception", value: issue.exceptionType }] : []),
-						...(issue.topFrame ? [{ label: "Top frame", value: issue.topFrame }] : []),
-					],
-					references: [{ label: "Issue", url: `/errors/issues/${issueId}` }],
-					// The agent is told to scope every query to the incident interval. It
-					// could not, because both of these were hardcoded null while the row
-					// carried them.
-					incidentStartedAt: issue.firstSeenAt,
-					incidentEndedAt: issue.lastSeenAt,
-					// The identifiers the agent needs to *call tools with*, as opposed to
-					// the display facts above. `error_detail` takes a fingerprint and there
-					// was no way for the agent to learn one.
-					fingerprintHash: issue.fingerprintHash || null,
-					exceptionType: issue.exceptionType || null,
-					exceptionMessage: issue.exceptionMessage || null,
-					topFrame: issue.topFrame || null,
-					errorLabel: issue.errorLabel || null,
-					occurrenceCount: issue.occurrenceCount,
-					serviceName: issue.serviceName || null,
+						scope: issue.serviceName || null,
+						status: "open",
+						severity: issue.severity,
+						facts: [
+							{ label: "Service", value: issue.serviceName || "unknown" },
+							{ label: "Occurrences", value: String(issue.occurrenceCount) },
+							...(issue.exceptionType
+								? [{ label: "Exception", value: issue.exceptionType }]
+								: []),
+							...(issue.topFrame ? [{ label: "Top frame", value: issue.topFrame }] : []),
+						],
+						references: [{ label: "Issue", url: `/errors/issues/${issueId}` }],
+						// The agent is told to scope every query to the incident interval. It
+						// could not, because both of these were hardcoded null while the row
+						// carried them.
+						incidentStartedAt: issue.firstSeenAt,
+						incidentEndedAt: issue.lastSeenAt,
+						// The identifiers the agent needs to *call tools with*, as opposed to
+						// the display facts above. `error_detail` takes a fingerprint and there
+						// was no way for the agent to learn one.
+						fingerprintHash: issue.fingerprintHash || null,
+						exceptionType: issue.exceptionType || null,
+						exceptionMessage: issue.exceptionMessage || null,
+						topFrame: issue.topFrame || null,
+						errorLabel: issue.errorLabel || null,
+						occurrenceCount: issue.occurrenceCount,
+						serviceName: issue.serviceName || null,
+					},
 				},
-			},
-			reactivityKeys: ["investigations", `errorIssue:${issueId}:investigations`],
-		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) {
-			void navigate({
-				to: "/investigations/$id",
-				params: { id: result.value.id },
+				reactivityKeys: ["investigations", `errorIssue:${issueId}:investigations`],
 			})
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-		}
-	}
+			if (Exit.isSuccess(result)) {
+				void navigate({
+					to: "/investigations/$id",
+					params: { id: result.value.id },
+				})
+			} else {
+				const { title, message } = displayError(result)
+				toastManager.add({ title, description: message, type: "error" })
+			}
+		},
+	)
 
-	const submitComment = async () => {
+	const submitComment = () => {
 		const body = commentDraft.trim()
 		if (body.length === 0) return
-		setBusy("comment")
-		const result = await commentOnIssue({
+		void commentOnIssue({
 			params: { issueId },
 			payload: makeIssueCommentPayload(body),
 			reactivityKeys: invalidateKeys,
 		})
-		setBusy(null)
-		if (Exit.isSuccess(result)) {
-			setCommentDraft("")
-			toastManager.add({ title: "Comment added", type: "success" })
-		} else {
-			toastManager.add({ title: "Comment failed", type: "error" })
-		}
 	}
+
+	const pullRequestBusy = attachingPullRequest || detachingPullRequest
+	const sidebarBusy = transitioning
+		? "state"
+		: settingSeverity
+			? "severity"
+			: heartbeating
+				? "heartbeat"
+				: releasing
+					? "release"
+					: claiming
+						? "claim"
+						: null
 
 	return (
 		Result.builder(detailResult)
@@ -591,7 +550,7 @@ function IssueDetailContent() {
 										search={search}
 										onTimeChange={handleTimeChange}
 										onStartInvestigation={investigate}
-										startingInvestigation={busy === "investigation"}
+										startingInvestigation={startingInvestigation}
 									/>
 									<IssueTabs
 										issueId={issueId}
@@ -623,7 +582,7 @@ function IssueDetailContent() {
 												investigation={linkedInvestigation}
 												escalation={linkedEscalation}
 												onStart={investigate}
-												starting={busy === "investigation"}
+												starting={startingInvestigation}
 											/>
 											{issue.kind === "error" ? (
 												<BodySection
@@ -654,27 +613,23 @@ function IssueDetailContent() {
 										</BodySection>
 									) : (
 										<BodySection id="activity" title="Activity">
-											{Result.builder(eventsResult)
-												.onError((error) => (
-													<ErrorState
-														error={error}
-														title="Failed to load the activity timeline"
-														onRetry={refreshEvents}
-														variant="inline"
-													/>
-												))
-												.onSuccess((value) => (
+											<ResultView
+												result={eventsResult}
+												loading={<Skeleton className="h-20 w-full" />}
+												errorTitle="Failed to load the activity timeline"
+												onRetry={refreshEvents}
+												errorVariant="inline"
+											>
+												{(value) => (
 													<IssueTimeline
 														events={value.events}
 														escalations={escalationAttempts}
 													/>
-												))
-												.orElse(() => (
-													<Skeleton className="h-20 w-full" />
-												))}
+												)}
+											</ResultView>
 											<IssueCommentComposer
 												className="mt-6"
-												disabled={busy === "comment"}
+												disabled={commenting}
 												onChange={setCommentDraft}
 												onSubmit={submitComment}
 												participants={participants}
@@ -682,38 +637,29 @@ function IssueDetailContent() {
 											/>
 										</BodySection>
 									)}
-									<AlertDialog
+									<ConfirmDialog
 										open={severityConfirmation !== null}
 										onOpenChange={(open) => {
 											if (!open) setSeverityConfirmation(null)
 										}}
-									>
-										<AlertDialogContent>
-											<AlertDialogHeader>
-												<AlertDialogTitle>
-													Notify escalation destinations?
-												</AlertDialogTitle>
-												<AlertDialogDescription>
-													Changing severity to {severityConfirmation?.severity} will
-													notify {severityConfirmation?.destinationNames.join(", ")}
-													. Manual severity changes represent explicit human intent
-													and bypass AI confidence gates.
-												</AlertDialogDescription>
-											</AlertDialogHeader>
-											<AlertDialogFooter>
-												<AlertDialogCancel>Cancel</AlertDialogCancel>
-												<AlertDialogAction
-													onClick={() => {
-														const pending = severityConfirmation
-														setSeverityConfirmation(null)
-														if (pending) void applySeverity(pending.severity)
-													}}
-												>
-													Change severity and notify
-												</AlertDialogAction>
-											</AlertDialogFooter>
-										</AlertDialogContent>
-									</AlertDialog>
+										tone="default"
+										icon={null}
+										title="Notify escalation destinations?"
+										description={
+											<>
+												Changing severity to {severityConfirmation?.severity} will
+												notify {severityConfirmation?.destinationNames.join(", ")}.
+												Manual severity changes represent explicit human intent and
+												bypass AI confidence gates.
+											</>
+										}
+										confirmLabel="Change severity and notify"
+										onConfirm={() => {
+											const pending = severityConfirmation
+											setSeverityConfirmation(null)
+											if (pending) void applySeverity(pending.severity)
+										}}
+									/>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>
 							<DashboardLayout.RightPanel>
@@ -721,7 +667,7 @@ function IssueDetailContent() {
 									<IssueSidebar
 										issue={issue}
 										environments={environments}
-										busy={busy}
+										busy={sidebarBusy}
 										onTransition={transitionTo}
 										onClaim={claim}
 										onHeartbeat={heartbeat}
@@ -770,7 +716,7 @@ function IssueDetailContent() {
 											suggestedRepository={suggestedRepository}
 											onLink={attachPullRequest}
 											onUnlink={detachPullRequest}
-											busy={busy === "pull-request"}
+											busy={pullRequestBusy}
 											open={attachDialogOpen}
 											onOpenChange={setAttachDialogOpen}
 										/>
@@ -804,9 +750,6 @@ function IssueShell({
 			<DashboardLayout.Breadcrumbs items={breadcrumbs} />
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Issue" />
-					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>

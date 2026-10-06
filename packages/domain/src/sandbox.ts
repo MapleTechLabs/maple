@@ -6,7 +6,7 @@
  * decision to run anything at all. Everything below crosses a service binding
  * as JSON, so it is data only.
  *
- * The `SandboxRun*` names are deliberate: `effect-agent/sandbox` has its own
+ * The `SandboxRun*` names are deliberate: `@yielded/agent/sandbox` has its own
  * `SandboxExited` and friends, and both sets meet in the api's port. Distinct
  * names keep a `switch` on one from silently reading like the other.
  */
@@ -95,7 +95,7 @@ const BoundedMessage = Schema.String.check(Schema.isMaxLength(4 * 1024))
  * checkout's git config immediately afterwards, so no token is left on disk.
  */
 /** A commit, as the only thing the sandbox will check out. */
-export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
+export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u))
 
 /**
  * A checkout-relative directory. Validated here as well as at the api's own

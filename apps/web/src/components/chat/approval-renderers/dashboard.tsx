@@ -1,4 +1,6 @@
 import { Badge } from "@maple/ui/components/ui/badge"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	ChartLineIcon,
 	GridIcon,
@@ -57,7 +59,7 @@ function WidgetRow({ widget }: { widget: NormalizedWidget }) {
 				<span className="truncate text-[11px] text-muted-foreground">{widget.source}</span>
 			) : null}
 			{widget.groupBy ? (
-				<Badge variant="outline" className="ml-auto h-4 px-1.5 text-[10px]">
+				<Badge variant="outline" size="xs" className="ml-auto px-1.5">
 					{widget.groupBy}
 				</Badge>
 			) : null}
@@ -84,9 +86,7 @@ function WidgetList({ widgets, max = 8 }: { widgets: NormalizedWidget[]; max?: n
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
 		<div className="space-y-1.5">
-			<div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-				{title}
-			</div>
+			<Eyebrow as="div">{title}</Eyebrow>
 			{children}
 		</div>
 	)
@@ -183,7 +183,7 @@ export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 			<div className="flex items-center gap-2">
 				<PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="text-sm font-semibold">Update dashboard</span>
-				<Badge variant="outline" className="ml-auto font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}
 				</Badge>
 			</div>
@@ -221,7 +221,7 @@ export function UpdateDashboardSummary({ input }: ApprovalRendererProps) {
 					}
 				>
 					<div className="mb-1.5">
-						<Badge variant="destructive" className="text-[10px]">
+						<Badge variant="destructive" size="xs">
 							Replaces entire dashboard
 						</Badge>
 					</div>
@@ -273,7 +273,7 @@ export function AddDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 			<div className="flex items-center gap-2">
 				<PlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="text-sm font-semibold">Add widget</span>
-				<Badge variant="outline" className="ml-auto font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}
 				</Badge>
 			</div>
@@ -373,9 +373,8 @@ export function RemoveDashboardWidgetSummary({ input }: ApprovalRendererProps) {
 		<div className="flex items-start gap-2">
 			<TrashIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
 			<div className="text-xs leading-relaxed">
-				Remove widget <span className="rounded bg-muted px-1 font-mono text-[11px]">{widgetId}</span>{" "}
-				from dashboard{" "}
-				<span className="rounded bg-muted px-1 font-mono text-[11px]">{dashboardId}</span>.
+				Remove widget <InlineCode>{widgetId}</InlineCode> from dashboard{" "}
+				<InlineCode>{dashboardId}</InlineCode>.
 			</div>
 		</div>
 	)
@@ -400,19 +399,16 @@ export function ReorderDashboardWidgetsSummary({ input }: ApprovalRendererProps)
 				<span className="text-sm font-semibold">
 					Reorder {ids.length || ""} widget{ids.length === 1 ? "" : "s"}
 				</span>
-				<Badge variant="outline" className="ml-auto font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono className="ml-auto">
 					{dashboardId}
 				</Badge>
 			</div>
 			{previewIds.length > 0 ? (
 				<div className="flex flex-wrap gap-1">
 					{previewIds.map((id) => (
-						<span
-							key={id}
-							className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-						>
+						<InlineCode key={id} className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
 							{id}
-						</span>
+						</InlineCode>
 					))}
 					{overflow > 0 ? (
 						<span className="text-[10px] text-muted-foreground">+ {overflow} more</span>

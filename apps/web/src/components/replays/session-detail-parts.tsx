@@ -1,10 +1,15 @@
 import type { ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { GlobeIcon, ClockIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { formatSessionDuration, gradientFor, hostFromUrl } from "./replay-format"
 import { parseChTimestampMs } from "./replay-timeline"
+import { ErrorCountPill, LivePill } from "./session-pills"
 
 // Presentational building blocks for the session-replay detail page.
 
@@ -23,21 +28,13 @@ export function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: n
 function StatusPill({ active }: { active: boolean }) {
 	if (!active) {
 		return (
-			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-				<span className="size-1.5 rounded-full bg-muted-foreground/50" />
+			<Badge variant="muted" pill className="gap-1.5">
+				<StatusDot />
 				Ended
-			</span>
+			</Badge>
 		)
 	}
-	return (
-		<span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-			<span className="relative flex size-1.5">
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-			Live
-		</span>
-	)
+	return <LivePill />
 }
 
 /**
@@ -85,16 +82,13 @@ export function SessionIdentityBar({
 					<span className="truncate">{hostFromUrl(urlInitial)}</span>
 				</a>
 				{startedValid && (
-					<span
-						className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex"
-						title={new Date(startedEpoch).toLocaleString()}
-					>
+					<span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
 						<ClockIcon className="size-3 shrink-0 opacity-70" />
-						started {formatRelativeFrom(startedEpoch)}
+						<RelativeTime value={startedEpoch} prefix="started" tooltip="title" />
 					</span>
 				)}
 				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground xl:inline-flex">
-					{sessionId.slice(0, 8)}
+					{shortId(sessionId, "session", { length: 8 })}
 					<CopyButton
 						value={sessionId}
 						label="Session ID"
@@ -109,16 +103,9 @@ export function SessionIdentityBar({
 					<span className="font-mono text-[15px] font-semibold tabular-nums">
 						{formatSessionDuration(durationMs)}
 					</span>
-					<span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-						duration
-					</span>
+					<Eyebrow>duration</Eyebrow>
 				</span>
-				{errorCount > 0 && (
-					<span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-destructive">
-						<span className="size-1 rounded-full bg-destructive" aria-hidden />
-						{errorCount} error{errorCount === 1 ? "" : "s"}
-					</span>
-				)}
+				{errorCount > 0 && <ErrorCountPill count={errorCount} />}
 			</div>
 		</div>
 	)

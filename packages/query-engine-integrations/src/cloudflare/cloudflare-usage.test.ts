@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { cloudflareUsageQuery, cloudflareUsageStatsQuery } from "./cloudflare-usage"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	bucketSeconds: 3600,
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -16,10 +17,12 @@ describe("cloudflareUsageQuery", () => {
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("MetricName IN ('cloudflare.http.requests', 'cloudflare.worker.requests')")
-		expect(sql).toContain("toStartOfInterval(TimeUnix, INTERVAL 3600 SECOND)")
-		expect(sql).toContain("sum(Value) AS requests")
+		expect(sql).toContain("toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 3600 SECOND)")
+		expect(sql).toContain("sum(metrics_sum.Value) AS requests")
 		expect(sql).toContain("count() AS datapoints")
-		expect(sql).toContain("formatDateTime(max(TimeUnix), '%Y-%m-%dT%H:%i:%S.%fZ') AS lastTimeUnix")
+		expect(sql).toContain(
+			"formatDateTime(max(metrics_sum.TimeUnix), '%Y-%m-%dT%H:%i:%S.%fZ') AS lastTimeUnix",
+		)
 		expect(sql).toContain("TimeUnix >= '2026-07-02 00:00:00.000'")
 		expect(sql).toContain("TimeUnix <= '2026-07-03 00:00:00.000'")
 		expect(sql).toContain("GROUP BY serviceName, bucket")
@@ -28,13 +31,16 @@ describe("cloudflareUsageQuery", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareUsageQuery(), { ...baseParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareUsageQuery(), {
+			...baseParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 })
 
 const statsParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	prevStartTime: "2026-07-01 00:00:00.000",
 	currentStartTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -53,7 +59,7 @@ describe("cloudflareUsageStatsQuery", () => {
 		expect(sql).toContain("TimeUnix <= '2026-07-03 00:00:00.000'")
 		// Previous window: usage metrics strictly before the current window start.
 		expect(sql).toContain(
-			"sumIf(Value, (MetricName IN ('cloudflare.http.requests', 'cloudflare.worker.requests') AND TimeUnix < '2026-07-02 00:00:00.000')) AS previousRequests",
+			"sumIf(metrics_sum.Value, (metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.worker.requests') AND metrics_sum.TimeUnix < '2026-07-02 00:00:00.000')) AS previousRequests",
 		)
 		// Current window: mitigating firewall actions only (no skip/log).
 		expect(sql).toContain("MetricName = 'cloudflare.firewall.events'")
@@ -66,7 +72,10 @@ describe("cloudflareUsageStatsQuery", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareUsageStatsQuery(), { ...statsParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareUsageStatsQuery(), {
+			...statsParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 

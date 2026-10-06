@@ -1,0 +1,56 @@
+---
+title: "Trace your AI agent"
+description: "Setup guides for sending each supported agent framework and LLM gateway to Maple as one Agent Session per conversation."
+group: "AI Agents"
+order: 0
+navLabel: "Overview"
+---
+
+import GuideGrid from "../../components/docs/GuideGrid.astro"
+import { AGENT_GUIDE_CATEGORIES } from "../../lib/agent-tracing-guides"
+
+Each guide sets up one framework so every conversation shows up in Maple as one [Agent Session](/docs/agent-sessions/overview). You turn on the framework's own OpenTelemetry instrumentation and point it at Maple; there is no Maple SDK.
+
+## Quick setup with a coding agent
+
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing) skill, which detects your framework and installs the matching skill.
+
+```text
+Set up Maple agent tracing in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing -y`, then follow it.
+
+My Maple ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+
+## Choose your framework
+
+{AGENT_GUIDE_CATEGORIES.map((category) => (
+	<>
+		<h3 id={category.id}>{category.title}</h3>
+		<GuideGrid cards={category.cards} />
+	</>
+))}
+
+If you use a gateway like OpenRouter or LiteLLM together with a framework, instrument only the framework, or every model call is recorded twice. The [OpenRouter guide](/docs/agent-tracing/openrouter) covers the one exception.
+
+## Connection details
+
+Every guide exports OTLP over HTTP with an ingest key from **Settings → Ingestion**:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # https://ingest.eu.maple.dev for EU organizations
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_SERVICE_NAME="support-agent"
+```
+
+Maple doesn't accept gRPC, so set the protocol to `http/protobuf` if your exporter defaults to it. A traces endpoint passed in code or through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must end in `/v1/traces`.
+
+Keep agent traffic at 100% sampling, or sampled-out turns leave gaps in the session. See [Sampling and throughput](/docs/concepts/sampling-throughput).
+
+## Not listed?
+
+Anything that emits the OpenTelemetry GenAI conventions works; [Any language](/docs/agent-tracing/opentelemetry) lists what Maple reads. OpenInference and OpenLLMetry instrumentations also work, shown as **Unidentified**. Tell us what you run at [support@maple.dev](mailto:support@maple.dev) or on [Discord](https://discord.gg/BnXjKuwJqP) and we'll add a guide.

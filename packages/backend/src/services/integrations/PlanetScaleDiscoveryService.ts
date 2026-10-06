@@ -22,11 +22,11 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { buildScrapeAuthHeaders } from "@maple/backend/services/auth/scrape-auth"
-import { validateExternalUrlSync } from "@maple/safe-fetch"
+import { parseExternalUrl } from "@maple/safe-fetch"
 import { decodeDiscoveryConfig } from "./planetscale/discovery-config"
 import {
 	PlanetScaleOAuthService,
@@ -143,9 +143,7 @@ export const subTargetsFromGroup = (group: {
 	const dropped: Array<string> = []
 	for (const hostPort of group.targets) {
 		const url = `${scheme}://${hostPort}${path}`
-		try {
-			validateExternalUrlSync(url)
-		} catch {
+		if (Result.isFailure(parseExternalUrl(url))) {
 			dropped.push(url)
 			continue
 		}

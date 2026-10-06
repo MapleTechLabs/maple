@@ -7,16 +7,18 @@ import {
 	EnvelopeIcon,
 	SlackIcon,
 	GearIcon,
+	GridIcon,
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
 	LogoutIcon,
-	CompassIcon,
 	MagnifierIcon,
 	UserIcon,
 } from "@/components/icons"
 import {
 	isNavItemActive,
 	isPathActive,
+	matchSubItem,
+	NAV_PREVIEW_MAX_GLYPHS,
 	navGroups,
 	partitionInfraSubItems,
 	type NavGroup,
@@ -248,41 +250,27 @@ function NavRow({
 
 	// Applied to every section, not just Infrastructure: a section whose children
 	// carry no `surface` comes back whole, so there is nothing to special-case.
-	const discoverTo = item.discoverTo
-	const { shown, suggested, hidden } = useMemo(
+	const { shown, hidden } = useMemo(
 		() =>
 			item.subItems
 				? partitionInfraSubItems(item.subItems, surfaces, currentPath)
-				: { shown: [], suggested: [], hidden: [] },
+				: { shown: [], hidden: [] },
 		[item.subItems, surfaces, currentPath],
 	)
-	// Suggestions are rows like any other for activity and layout; only their
-	// ink differs, so the split is a Set the renderer consults rather than a
-	// second list it has to keep in step.
-	const subItems = useMemo(
-		() => (item.subItems ? [...shown, ...suggested] : undefined),
-		[item.subItems, shown, suggested],
-	)
-	const isSuggested = useMemo(() => new Set(suggested), [suggested])
+	const subItems = item.subItems ? shown : undefined
 
-	// Longest match wins: Infrastructure's Hosts child is `/infra`, which
-	// prefixes every one of its siblings, so a plain match would light up two
-	// rows on /infra/kubernetes/pods.
-	// The discover page lives under the section's own href, so it would otherwise
-	// light up the child that owns the section root — Hosts is `/infra`, and
-	// `/infra/discover` prefixes it. It's a sibling row here, not a child, so it
-	// takes the selection off them entirely.
-	const discoverActive = discoverTo ? isPathActive(currentPath, discoverTo) : false
-
+	// Longest match wins, views included: Overview is `/infra`, which prefixes
+	// every sibling, and Hosts owns `/infra/containers` as a folded view.
 	const activeSubHref = useMemo(() => {
-		if (discoverActive) return undefined
-		let best: string | undefined
+		let best: { href: string; length: number } | undefined
 		for (const sub of subItems ?? []) {
-			if (!isPathActive(currentPath, sub.href)) continue
-			if (best === undefined || sub.href.length > best.length) best = sub.href
+			const matched = matchSubItem(currentPath, sub)
+			if (matched === undefined) continue
+			if (best === undefined || matched.length > best.length)
+				best = { href: sub.href, length: matched.length }
 		}
-		return best
-	}, [subItems, currentPath, discoverActive])
+		return best?.href
+	}, [subItems, currentPath])
 
 	// While a section is open the rail belongs to the child you're actually on,
 	// not the parent — otherwise two amber bars compete and neither points at
@@ -316,9 +304,9 @@ function NavRow({
 		}
 		// Truncating by position would silently drop whichever brand lands last
 		// — the same partial-run problem as the every-child guard above — so the
-		// preview is all or nothing. Five fits both sections we ship (Explore
+		// preview is all or nothing. Six fits both sections we ship (Explore
 		// with Agent Sessions on, Infrastructure) at the tightened gap below.
-		return unique.length > 5 ? undefined : unique
+		return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
 	}, [isOpen, item.subItems])
 
 	// The sub-list can't render at 48px, so the rail turns the row into a menu.
@@ -338,11 +326,7 @@ function NavRow({
 						<DropdownMenuGroup>
 							<DropdownMenuLabel>{item.title}</DropdownMenuLabel>
 							{subItems.map((sub) => (
-								<DropdownMenuItem
-									className={isSuggested.has(sub) ? "text-muted-foreground" : undefined}
-									key={sub.title}
-									render={<Link to={sub.href} />}
-								>
+								<DropdownMenuItem key={sub.title} render={<Link to={sub.href} />}>
 									{sub.icon ? (
 										<sub.icon size={16} style={{ color: sub.iconColor }} />
 									) : null}
@@ -367,12 +351,6 @@ function NavRow({
 											{sub.title}
 										</DropdownMenuItem>
 									))}
-									{discoverTo ? (
-										<DropdownMenuItem render={<Link to={discoverTo} />}>
-											<CompassIcon size={16} />
-											Discover more
-										</DropdownMenuItem>
-									) : null}
 								</DropdownMenuGroup>
 							</>
 						) : null}
@@ -396,8 +374,9 @@ function NavRow({
 					// Brand marks keep their own color here — Kubernetes blue and
 					// Cloudflare orange hardcode their fill, PlanetScale takes the tint —
 					// so the cluster is recognisable at 12px instead of four grey smudges.
-					// Non-brand children (Explore's signals, Hosts) stay muted.
-					<span className="flex shrink-0 items-center gap-1 text-muted-foreground group-data-[collapsible=icon]:hidden">
+					// Non-brand children (Explore's signals, Hosts) stay muted. The 2px gap
+					// is what fits six marks beside "Infrastructure" without truncating it.
+					<span className="flex shrink-0 items-center gap-0.5 text-muted-foreground group-data-[collapsible=icon]:hidden">
 						{preview.map((sub) =>
 							sub.icon ? (
 								<sub.icon
@@ -431,17 +410,8 @@ function NavRow({
 							}
 							key={sub.title}
 						>
-							{/* A suggested row wears the same muted ink as "Discover more"
-							    below it: it is an offer, not a page that has data, and
-							    the two kinds of row must not read as one list of things
-							    you have. Brand marks keep their own color either way —
-							    a greyed Kubernetes wheel is not a recognisable one. */}
 							<SidebarMenuSubButton
-								className={
-									isSuggested.has(sub)
-										? "translate-x-0 text-muted-foreground data-[active=true]:text-sidebar-primary hover:text-foreground [&>svg]:text-current"
-										: "translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current"
-								}
+								className="translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current"
 								isActive={sub.href === activeSubHref}
 								render={<Link to={sub.href} />}
 							>
@@ -452,31 +422,6 @@ function NavRow({
 							</SidebarMenuSubButton>
 						</SidebarMenuSubItem>
 					))}
-					{discoverTo && hidden.length > 0 ? (
-						<SidebarMenuSubItem
-							className={
-								discoverActive
-									? "border-sidebar-primary border-l-2 ps-2.5"
-									: "border-sidebar-border border-l-2 ps-2.5"
-							}
-						>
-							<SidebarMenuSubButton
-								className="translate-x-0 text-muted-foreground data-[active=true]:text-sidebar-primary hover:text-foreground"
-								isActive={discoverActive}
-								render={<Link to={discoverTo} />}
-							>
-								{/* One neutral mark in the same slot the sibling rows use,
-								    so the row sits on their rhythm instead of breaking it.
-								    A stack of the missing sources' own logos was the first
-								    idea and the wrong one: three brand marks at 14px collide
-								    into a smudge, and the column already carries one mark per
-								    child. A compass says "go look" where a plus says "add
-								    one" — the page behind this row is both. */}
-								<CompassIcon className="size-3.5" />
-								<span className="text-xs">Discover more</span>
-							</SidebarMenuSubButton>
-						</SidebarMenuSubItem>
-					) : null}
 				</SidebarMenuSub>
 			) : null}
 		</SidebarMenuItem>
@@ -584,14 +529,29 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 }
 
 /**
- * A full nav row rather than a 32px glyph beside the avatar: Settings is a
+ * Full nav rows rather than 32px glyphs beside the avatar: Settings is a
  * destination like any other section, and pairing it with the user menu read as
- * "account settings" when it is org- and project-wide. It stays in the footer so
- * it never scrolls away behind a long Pinned list.
+ * "account settings" when it is org- and project-wide. They stay in the footer so
+ * they never scroll away behind a long Pinned list.
+ *
+ * Integrations sits here rather than only inside Settings: connecting a provider
+ * is how most data arrives, and a page you can only find through Settings is one
+ * nobody finds.
  */
-function SettingsRow({ currentPath }: { currentPath: string }) {
+function FooterNavRows({ currentPath }: { currentPath: string }) {
 	return (
 		<SidebarMenu>
+			<SidebarMenuItem>
+				<SidebarMenuButton
+					className={ACTIVE_RAIL}
+					isActive={isPathActive(currentPath, "/integrations")}
+					render={<Link to="/integrations" />}
+					tooltip="Integrations"
+				>
+					<GridIcon size={18} />
+					<span>Integrations</span>
+				</SidebarMenuButton>
+			</SidebarMenuItem>
 			<SidebarMenuItem>
 				<SidebarMenuButton
 					className={ACTIVE_RAIL}
@@ -734,7 +694,7 @@ export const AppSidebar = memo(function AppSidebar() {
 			    both: Settings is the last nav row, so a line above it would cut it
 			    off from the nav it belongs to. */}
 			<SidebarFooter>
-				<SettingsRow currentPath={currentPath} />
+				<FooterNavRows currentPath={currentPath} />
 				<div className="-mx-2 border-sidebar-border border-t px-2 pt-2">
 					<FooterCluster />
 				</div>

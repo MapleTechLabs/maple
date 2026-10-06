@@ -11,8 +11,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Exit, Layer, Schema } from "effect"
 import * as Effect from "effect/Effect"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { vi } from "vitest"
 
 import { AlertRuleDocument } from "@maple/domain/http"

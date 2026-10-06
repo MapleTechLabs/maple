@@ -1,0 +1,326 @@
+import { useState } from "react"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Schema } from "effect"
+import type { CodeReviewListItem } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
+
+import { formatCount, outcomeOf, SKIP_LABELS } from "@/components/code-review/code-review-format"
+import {
+	CodeReviewFilters,
+	CodeReviewLayout,
+	NothingInWindow,
+} from "@/components/code-review/code-review-layout"
+import {
+	CODE_REVIEW_DEFAULT_PRESET,
+	CodeReviewListSearchFields,
+	type CodeReviewSearch,
+} from "@/components/code-review/code-review-search"
+import { AuthorLabel } from "@/components/code-review/author-avatar"
+import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
+import { ResultView } from "@/components/common/result-view"
+import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/components/icons"
+import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { retainedQuery } from "@/lib/services/common/atom-client"
+
+const searchSchema = Schema.Struct(CodeReviewListSearchFields)
+type Status = NonNullable<Schema.Schema.Type<typeof searchSchema>["status"]>
+
+export const Route = createFileRoute("/code-review/pull-requests")({
+	component: CodeReviewPullRequestsPage,
+	validateSearch: Schema.toStandardSchemaV1(searchSchema),
+})
+
+const PAGE = 50
+const MAX_ROWS = 200
+/** How often the list refetches while a review is queued or running. */
+const POLL_MS = 5_000
+
+const STATUS_LABELS = {
+	all: "All statuses",
+	completed: "Completed",
+	running: "Reviewing",
+	queued: "Queued",
+	failed: "Failed",
+	skipped: "Skipped",
+}
+const isStatus = (value: unknown): value is Status =>
+	value === "completed" ||
+	value === "failed" ||
+	value === "skipped" ||
+	value === "running" ||
+	value === "queued"
+
+function CodeReviewPullRequestsPage() {
+	const search = Route.useSearch()
+	const navigate = useNavigate({ from: Route.fullPath })
+	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET
+	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
+	// The resolved window, shared by the page's query and the filters' author list.
+	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
+	const [limit, setLimit] = useState(PAGE)
+
+	const query = retainedQuery("codeReview", "listReviews", {
+		query: {
+			...window,
+			repositoryId: search.repo,
+			author: search.author,
+			status: search.status,
+			limit,
+		},
+	})
+	const result = useAtomValue(query)
+	const refresh = useAtomRefresh(query)
+	const active = Result.builder(result)
+		.onSuccess((response) =>
+			response.reviews.some((review) => review.status === "queued" || review.status === "running"),
+		)
+		.orElse(() => false)
+	useIntervalRefresh(refresh, { intervalMs: POLL_MS, enabled: active })
+
+	const onChange = (
+		patch: Partial<CodeReviewSearch> & { status?: Status; review?: typeof search.review },
+	) => {
+		// Opening or closing a review keeps the rows already loaded; a filter change starts over.
+		if (Object.keys(patch).some((key) => key !== "review")) setLimit(PAGE)
+		void navigate({ search: (prev) => ({ ...prev, ...patch }) })
+	}
+	const filtered = search.repo !== undefined || search.author !== undefined || search.status !== undefined
+
+	return (
+		<CodeReviewLayout
+			active="pull-requests"
+			search={search}
+			toolbar={<CodeReviewFilters search={search} window={window} onChange={onChange} />}
+		>
+			<div className="flex items-center justify-between gap-3">
+				<Select
+					items={STATUS_LABELS}
+					value={search.status ?? "all"}
+					onValueChange={(value) => onChange({ status: isStatus(value) ? value : undefined })}
+				>
+					<SelectTrigger size="sm" className="w-40" aria-label="Status">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{Object.entries(STATUS_LABELS).map(([value, label]) => (
+							<SelectItem key={value} value={value}>
+								{label}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+			<ResultView
+				result={result}
+				loading={<SkeletonList rows={6} rowClassName="h-14" gap="2" />}
+				errorTitle="Failed to load reviews"
+				onRetry={refresh}
+				isEmpty={(response) => response.reviews.length === 0}
+				empty={
+					<NothingInWindow
+						title="No reviews in this window"
+						description={
+							filtered
+								? "Nothing matches these filters."
+								: "Reviews appear here once a pull request is opened on a reviewed repository."
+						}
+						onClear={
+							filtered
+								? () =>
+										onChange({
+											repo: undefined,
+											author: undefined,
+											status: undefined,
+										})
+								: undefined
+						}
+					/>
+				}
+			>
+				{(response) => (
+					<div className="flex flex-col gap-3">
+						<ReviewTable
+							reviews={response.reviews}
+							selected={search.review}
+							onOpen={(review) => onChange({ review: review.id })}
+						/>
+						{response.nextCursor !== null ? (
+							<ListFooter
+								shown={response.reviews.length}
+								noun="reviews"
+								hasMore={limit < MAX_ROWS}
+								capped={limit >= MAX_ROWS}
+								loading={result.waiting}
+								onLoadMore={() => setLimit((current) => Math.min(current + PAGE, MAX_ROWS))}
+							/>
+						) : null}
+					</div>
+				)}
+			</ResultView>
+			<ReviewDetailSheet
+				reviewId={search.review}
+				onClose={() => onChange({ review: undefined })}
+				onSelect={(review) => onChange({ review })}
+			/>
+		</CodeReviewLayout>
+	)
+}
+
+const OUTCOME_ICONS = {
+	queued: ClockIcon,
+	running: LoaderIcon,
+	failed: CircleWarningIcon,
+	skipped: ClockIcon,
+	issues: CircleWarningIcon,
+	clean: CircleCheckIcon,
+	neutral: CircleCheckIcon,
+}
+
+function ReviewTable({
+	reviews,
+	selected,
+	onOpen,
+}: {
+	reviews: ReadonlyArray<CodeReviewListItem>
+	selected: string | undefined
+	onOpen: (review: CodeReviewListItem) => void
+}) {
+	return (
+		<div className="overflow-hidden rounded-xl border bg-card">
+			<Table size="sm" className="table-fixed">
+				<TableHeader className="bg-muted/30">
+					<TableRow>
+						<TableHead className="px-4 font-normal">Pull request</TableHead>
+						<TableHead className="hidden w-40 px-3 font-normal md:table-cell">Outcome</TableHead>
+						<TableHead className="hidden w-28 px-3 text-right font-normal lg:table-cell">
+							Confidence
+						</TableHead>
+						<TableHead className="hidden w-24 px-3 text-right font-normal lg:table-cell">
+							Quality
+						</TableHead>
+						<TableHead className="w-24 px-3 text-right font-normal">Issues</TableHead>
+						<TableHead className="hidden w-28 px-4 text-right font-normal sm:table-cell">
+							Reviewed
+						</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{reviews.map((review) => {
+						const outcome = outcomeOf(review)
+						const Icon = OUTCOME_ICONS[outcome.kind]
+						return (
+							<TableRow
+								key={review.id}
+								onClick={() => onOpen(review)}
+								className={cn(
+									"cursor-pointer transition-colors hover:bg-muted/40",
+									selected === review.id && "bg-muted/60",
+								)}
+							>
+								<TableCell className="px-4 py-2.5 leading-normal">
+									<button
+										type="button"
+										onClick={(event) => {
+											event.stopPropagation()
+											onOpen(review)
+										}}
+										className="flex w-full min-w-0 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:underline"
+									>
+										<span className="shrink-0 text-muted-foreground">
+											#{review.number}
+										</span>
+										<span className="truncate font-medium">
+											{review.title ?? "Untitled pull request"}
+										</span>
+									</button>
+									<div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+										<span className="truncate">{review.repositoryFullName}</span>
+										{review.authorLogin ? (
+											<>
+												<span className="shrink-0">·</span>
+												<AuthorLabel
+													login={review.authorLogin}
+													className="shrink-0"
+												/>
+											</>
+										) : null}
+										<span className={cn("shrink-0 md:hidden", outcome.tone)}>
+											· {outcome.label}
+										</span>
+									</div>
+								</TableCell>
+								<TableCell className="hidden px-3 py-2.5 leading-normal md:table-cell">
+									<span className={cn("inline-flex items-center gap-1.5", outcome.tone)}>
+										<Icon
+											size={14}
+											className={
+												outcome.kind === "running" ? "animate-spin" : undefined
+											}
+										/>
+										{outcome.label}
+									</span>
+									{review.status === "skipped" && review.skipReason !== null ? (
+										<div className="text-xs text-muted-foreground">
+											{SKIP_LABELS[review.skipReason]}
+										</div>
+									) : null}
+								</TableCell>
+								<TableCell className="hidden px-3 text-right tabular-nums lg:table-cell">
+									{review.confidence === null ? (
+										<span className="text-muted-foreground">–</span>
+									) : (
+										<>
+											{review.confidence}
+											<span className="text-muted-foreground">/5</span>
+										</>
+									)}
+								</TableCell>
+								<TableCell className="hidden px-3 text-right tabular-nums lg:table-cell">
+									{review.score === null ? (
+										<span className="text-muted-foreground">–</span>
+									) : (
+										<>
+											{review.score}
+											<span className="text-muted-foreground">/100</span>
+										</>
+									)}
+								</TableCell>
+								<TableCell className="px-3 text-right tabular-nums">
+									{review.status !== "completed" ? (
+										<span className="text-muted-foreground">–</span>
+									) : (
+										<span className="inline-flex items-center gap-1.5">
+											{review.criticalFindings > 0 ? (
+												<Badge
+													size="xs"
+													mono
+													className={TONE_SOFT.crit}
+													title="Critical"
+												>
+													{review.criticalFindings}
+												</Badge>
+											) : null}
+											{formatCount(review.findings)}
+										</span>
+									)}
+								</TableCell>
+								<TableCell className="hidden px-4 text-right text-muted-foreground sm:table-cell">
+									{formatRelativeFrom(review.createdAt)}
+								</TableCell>
+							</TableRow>
+						)
+					})}
+				</TableBody>
+			</Table>
+		</div>
+	)
+}

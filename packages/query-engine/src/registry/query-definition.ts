@@ -1,6 +1,6 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import type { Effect } from "effect"
-import type { CompiledQuery, QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import type { CompiledQuery, QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { WarehouseCapabilities } from "../capabilities"
 import type { QueryProfileName, WarehouseQuerySettings } from "../profiles/query-profile"
 import {
@@ -8,6 +8,7 @@ import {
 	type DirectRouteCachePolicy,
 	type DirectRouteCachePolicyInput,
 } from "../runtime/cache-policy"
+import type { OrgId } from "@maple/domain"
 
 /** Range-independent identity lets overlapping windows reuse stored buckets. */
 export interface TimeBucketQueryCachePolicy<Payload> {
@@ -42,7 +43,7 @@ export interface QueryDefinition<Payload, Row> {
 	 */
 	readonly compile: (
 		payload: Payload,
-		orgId: string,
+		orgId: OrgId,
 		capabilities: WarehouseCapabilities,
 	) => Effect.Effect<CompiledQuery<Row>, QueryBuilderError>
 }

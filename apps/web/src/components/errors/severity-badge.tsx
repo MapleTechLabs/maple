@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { IssueSeverity } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
@@ -5,33 +6,30 @@ import { cn } from "@maple/ui/lib/utils"
 import { PixelTriangleWarningIcon } from "@/components/icons"
 
 export const SEVERITY_TONE: Record<IssueSeverity, string> = {
-	critical: "bg-destructive/10 text-destructive",
-	high: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-	medium: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	// Sky rather than muted grey. Grey is what "unset" looks like, so a grey
-	// `low` made the two indistinguishable wherever they sit next to each other
-	// — most obviously in the severity filter menu, which lists both.
-	low: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+	critical: "bg-severity-fatal/12 text-severity-fatal",
+	high: "bg-severity-error/12 text-severity-error",
+	medium: "bg-severity-warn/12 text-severity-warn",
+	// Debug blue rather than muted grey: grey is what "unset" looks like.
+	low: "bg-severity-debug/12 text-severity-debug",
 } satisfies Record<IssueSeverity, string>
 
 /**
- * Solid fills for the same four levels, for dots and chart marks where a 10%
- * tint would disappear. One source, so the badge, the filter menu and the row
- * sparkline cannot drift into three different reds.
+ * Solid fills for the same four levels, for dots and chart marks where a tint
+ * would disappear. One source, so badge, filter menu and sparkline cannot drift.
  */
 export const SEVERITY_FILL: Record<IssueSeverity, string> = {
-	critical: "bg-destructive",
-	high: "bg-orange-500",
-	medium: "bg-amber-500",
-	low: "bg-sky-500",
+	critical: "bg-severity-fatal",
+	high: "bg-severity-error",
+	medium: "bg-severity-warn",
+	low: "bg-severity-debug",
 } satisfies Record<IssueSeverity, string>
 
 /** `text-*` counterpart of {@link SEVERITY_FILL}, for `currentColor` SVG marks. */
 export const SEVERITY_TEXT: Record<IssueSeverity, string> = {
-	critical: "text-destructive",
-	high: "text-orange-500 dark:text-orange-400",
-	medium: "text-amber-500 dark:text-amber-400",
-	low: "text-sky-500 dark:text-sky-400",
+	critical: "text-severity-fatal",
+	high: "text-severity-error",
+	medium: "text-severity-warn",
+	low: "text-severity-debug",
 } satisfies Record<IssueSeverity, string>
 
 /**
@@ -41,10 +39,10 @@ export const SEVERITY_TEXT: Record<IssueSeverity, string> = {
  */
 export function SeverityDot({ severity, className }: { severity: IssueSeverity | null; className?: string }) {
 	return (
-		<span
-			aria-hidden="true"
+		<StatusDot
+			tone="custom"
+			size="lg"
 			className={cn(
-				"size-2 shrink-0 rounded-full",
 				severity === null ? "border border-muted-foreground/50" : SEVERITY_FILL[severity],
 				className,
 			)}

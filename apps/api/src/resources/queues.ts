@@ -1,9 +1,4 @@
-/**
- * The api Worker's queues, declared once at module scope and inert until a
- * Worker yields them: the init consumes them (`worker/consumers.ts`) and the
- * props bind them for the producers. Under `alchemy dev` both halves are
- * emulated in-process from these same declarations.
- */
+/** The api Worker's queues, inert until yielded (consumers in `worker/consumers.ts`). */
 import { stageNamed } from "@maple/infra/cloudflare"
 import * as Cloudflare from "alchemy/Cloudflare"
 
@@ -19,9 +14,5 @@ export const PlanetScaleWebhookQueue = Cloudflare.Queues.Queue(
 /** Org audit-log entries on their way to the warehouse. */
 export const AuditEventsQueue = Cloudflare.Queues.Queue("audit-events", stageNamed("audit-events"))
 
-/**
- * Parking lot for audit entries that exhausted their retries. Deliberately
- * has no consumer: an entry landing here is a lost audit record, and the
- * point is that it survives for inspection instead of being dropped.
- */
+/** Audit entries that exhausted retries. No consumer on purpose: kept for inspection. */
 export const AuditEventsDlq = Cloudflare.Queues.Queue("audit-events-dlq", stageNamed("audit-events-dlq"))

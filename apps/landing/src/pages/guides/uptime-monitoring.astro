@@ -1,0 +1,443 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+
+const pageTitle = "Uptime monitoring with OpenTelemetry: alerts from traces and HTTP checks";
+const pageDescription =
+    "Monitor uptime with the telemetry you already send. Alert on error rate, throughput and Apdex from traces, add OpenTelemetry Collector HTTP checks for endpoints and certificates, and learn which failures each one catches.";
+const published = "2026-10-04";
+const updatedLabel = "October 4, 2026";
+
+const toc = [
+    ["definition", "Definition"],
+    ["probe-coverage", "Coverage of a probe"],
+    ["real-traffic", "Traffic as the check"],
+    ["probe-cases", "Cases for a probe"],
+    ["trace-alerts", "Alerts from traces"],
+    ["http-checks", "Collector HTTP checks"],
+] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+
+const faqs = [
+    {
+        question: "Does Maple have uptime monitoring?",
+        answer:
+            "Maple does not run hosted uptime probes. It alerts on error rate, throughput and Apdex computed from the traces your services send, and it stores the results of the OpenTelemetry Collector's http_check receiver as metrics you can chart and alert on. For probes from several regions or a public status page, run a dedicated uptime product next to Maple.",
+    },
+    {
+        question: "Do I need an uptime monitor if I already have APM or tracing?",
+        answer:
+            "For a service with steady traffic, alerts on error rate and throughput cover most of what an uptime monitor is bought for, and they catch partial failures a probe samples past. You still need an outside probe for endpoints with little traffic, for certificate and DNS problems, for failures at the CDN or load balancer, and when availability has to be measured by a third party.",
+    },
+    {
+        question: "What is the difference between uptime and availability?",
+        answer:
+            "Uptime is the share of time a system was running and reachable. Availability is the share of time, or of requests, in which it did its job for users. A process can be up while every checkout request fails, so availability measured on real requests is the stricter of the two numbers.",
+    },
+    {
+        question: "How often should an uptime check run?",
+        answer:
+            "Every 60 seconds is the usual default, including for the OpenTelemetry Collector's http_check receiver. Time to detect an outage is the interval multiplied by the number of failed checks required before alerting, so a 60 second interval with two required failures takes up to two minutes. Shorter intervals detect faster and add load on the endpoint.",
+    },
+    {
+        question: "Can OpenTelemetry do uptime checks?",
+        answer:
+            "Yes. The Collector Contrib distribution includes the http_check receiver, which requests a list of URLs on an interval and reports status, duration, errors and TLS certificate expiry as metrics. It checks from wherever the Collector runs, so one Collector gives you one vantage point.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Uptime monitoring with traces and HTTP checks",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Organization", name: "Maple" },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/uptime-monitoring`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Uptime monitoring" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-24 md:pt-28">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Availability</span>
+                        <span>7 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[20ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        Uptime monitoring with traces and HTTP checks
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        Find out within minutes when a service stops answering or starts failing requests. Alert on the traces your services already send, then add OpenTelemetry Collector HTTP checks for the endpoints and certificates that real traffic cannot cover.
+                    </p>
+                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <span>By Maple</span>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+            </aside>
+
+            <article class="uptime-guide min-w-0">
+                <section id="definition" class="scroll-mt-24">
+                    <p class="guide-eyebrow">01 · Definition</p>
+                    <h2>Uptime monitoring probes an endpoint from outside on a schedule</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            <strong>Uptime monitoring</strong> sends a scheduled request to a public endpoint from outside your infrastructure and records whether it answered. A check asserts an HTTP status and usually a response time limit. When enough consecutive checks fail, it notifies someone.
+                        </p>
+                    </div>
+
+                    <p>
+                        The same tools watch the days left until the TLS certificate expires and whether the DNS record resolves. Hosted products run each check from several regions, so a network problem near one prober does not page you.
+                    </p>
+
+                    <h3>Availability as a number</h3>
+                    <p>
+                        The result is reported as availability: the time the endpoint answered, divided by the total time. Each added nine cuts the downtime you are allowed by a factor of ten.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Availability</th><th>Downtime allowed in 30 days</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>99%</td><td>7 h 12 min</td></tr>
+                                <tr><td>99.9%</td><td>43 min 12 s</td></tr>
+                                <tr><td>99.95%</td><td>21 min 36 s</td></tr>
+                                <tr><td>99.99%</td><td>4 min 19 s</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Detection time comes out of that allowance. A probe that runs every 60 seconds and needs two failed checks before it alerts takes up to two minutes to notice an outage. Against a 99.99% target, that is close to half the month's allowance spent before anyone is paged.
+                    </p>
+                </section>
+
+                <section id="probe-coverage" class="scroll-mt-24">
+                    <p class="guide-eyebrow">02 · Coverage</p>
+                    <h2>A passing uptime check covers one URL once a minute</h2>
+                    <p>
+                        A probe proves that a single request to a single URL succeeded. Most teams point it at <code>/health</code>, which returns 200 for as long as the process is running.
+                    </p>
+                    <p>
+                        Take a service that handles 10 requests per second. A deploy makes 2% of them fail. Over a day the service fails 17,280 real requests, while the probe on <code>/health</code> sends 1,440 requests and every one of them passes.
+                    </p>
+                    <p>
+                        Pointing the probe at the broken route does not change much. Each check has a 2% chance of failing, so two consecutive failures come up about once in 2,500 pairs of checks. At one check a minute, the alert fires roughly every 42 hours while the incident fails 12 requests a minute.
+                    </p>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">A healthy status code from an unhealthy service</p>
+                        <p>
+                            A health endpoint that returns 200 while the database is unreachable passes every check. Asserting on the response body narrows that gap, and the probe still tests only the path you scripted.
+                        </p>
+                    </div>
+                </section>
+
+                <section id="real-traffic" class="scroll-mt-24">
+                    <p class="guide-eyebrow">03 · Real traffic</p>
+                    <h2>Traces turn every real request into an availability check</h2>
+                    <p>
+                        A service instrumented with <a href="/opentelemetry">OpenTelemetry</a> records a span for every request it handles, with a duration and a status. That is the same pass or fail result a probe produces, recorded for every route and every real user.
+                    </p>
+                    <h3>Signals to alert on</h3>
+
+                    <div class="guide-signal-list">
+                        <div><span>Error rate</span><p>The share of requests that ended in an error. It catches the partial failure a probe samples past.</p></div>
+                        <div><span>Throughput</span><p>The number of requests in the window. When a service stops answering, its spans stop, and a drop to zero is the outage alert.</p></div>
+                        <div><span>Apdex</span><p>The share of requests that were fast enough and succeeded. It catches the outage where every response is still a 200 and takes four seconds. See <a href="/guides/what-is-apdex">What is Apdex?</a></p></div>
+                    </div>
+
+                    <p>
+                        Because the alert is computed from spans, the failing traces are already stored when it fires. A failed probe gives you a URL and a timestamp.
+                    </p>
+
+                    <h3>Failures compared: outside probe and trace alerts</h3>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Failure</th><th>Probe on /health</th><th>Alerts on traces</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>2% of checkout requests return 500 after a deploy</td><td>Passes</td><td>Error rate fires</td></tr>
+                                <tr><td>A dependency slows every request to 4 s</td><td>Passes, unless it has a latency limit</td><td>Apdex and p95 fire</td></tr>
+                                <tr><td>The process crashes and the load balancer returns 502</td><td>Fails</td><td>Throughput drops to zero and fires</td></tr>
+                                <tr><td>The TLS certificate expires</td><td>Fails, and can warn weeks ahead</td><td>Throughput drops after expiry and an alert fires</td></tr>
+                                <tr><td>A DNS change points the domain nowhere</td><td>Fails</td><td>Throughput drops and an alert fires</td></tr>
+                                <tr><td>An outage at 3am on a service with no night traffic</td><td>Fails</td><td>Nothing to measure</td></tr>
+                                <tr><td>Users in one region cannot reach you</td><td>Fails only from a prober in that region</td><td>A partial dip, often under the threshold</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        A probe misses the common incidents: partial errors and slowdowns inside the application.
+                    </p>
+                    <p>
+                        Traces have a narrower gap. They cannot see a failure that happens before the request reaches your code, and they have nothing to measure when no requests arrive.
+                    </p>
+
+                    <div class="uptime-path" role="img" aria-label="The path of a request: user, DNS, CDN and TLS, load balancer, service, database. An outside probe exercises the whole path with one request per interval. Traces start at the service and cover every real request.">
+                        <svg viewBox="0 0 900 132" class="h-auto w-full">
+                            <text x="0" y="14" style="fill: var(--muted-foreground); font-size: 12px">Outside probe: the whole path, one request per interval</text>
+                            <line x1="0" y1="24" x2="900" y2="24" style="stroke: var(--muted-foreground); stroke-width: 1.5; stroke-dasharray: 4 4" />
+                            {["User", "DNS", "CDN and TLS", "Load balancer", "Service", "Database"].map((label, index) => (
+                                <g>
+                                    <rect
+                                        x={index * 154}
+                                        y="40"
+                                        width="130"
+                                        height="40"
+                                        rx="4"
+                                        style={index >= 4
+                                            ? "fill: color-mix(in oklab, var(--primary) 14%, transparent); stroke: color-mix(in oklab, var(--primary) 60%, transparent)"
+                                            : "fill: var(--bg-deep); stroke: var(--border)"}
+                                    />
+                                    <text x={index * 154 + 65} y="65" text-anchor="middle" style="fill: var(--foreground); font-size: 13px; font-weight: 500">{label}</text>
+                                    {index < 5 && <line x1={index * 154 + 130} y1="60" x2={index * 154 + 154} y2="60" style="stroke: var(--border); stroke-width: 1.5" />}
+                                </g>
+                            ))}
+                            <line x1="616" y1="96" x2="900" y2="96" style="stroke: var(--primary); stroke-width: 2" />
+                            <text x="900" y="116" text-anchor="end" style="fill: var(--primary); font-size: 12px">Traces: every real request, from the service onward</text>
+                        </svg>
+                    </div>
+                </section>
+
+                <section id="probe-cases" class="scroll-mt-24">
+                    <p class="guide-eyebrow">04 · Outside probes</p>
+                    <h2>Failures only an outside uptime probe can see</h2>
+                    <p>
+                        Our position is that uptime monitoring is a narrow tool that gets bought by default. It is often the first monitoring a team sets up, because it takes a URL and five minutes. It then stays in place long after the service has outgrown what one request a minute can describe.
+                    </p>
+                    <p>
+                        The cost is a false sense of security. A status board that shows 100% for the month proves that <code>/health</code> answered 43,200 times. It is easy to read that as proof the service was healthy, and the 2% of failed requests from the earlier example never appear on it. A team that relies on the board alone hears about that incident from its users.
+                    </p>
+                    <p>
+                        A probe is the right addition when one of these applies:
+                    </p>
+
+                    <div class="guide-checklist">
+                        {[
+                            ["Traffic is low or stops overnight", "With no requests there are no spans. A probe generates the traffic the alert needs."],
+                            ["Certificates and DNS", "An expiry date is known weeks ahead, and only something that reads the certificate can warn you before it passes."],
+                            ["Edge, CDN and load balancer failures", "A request rejected in front of your service never produces a span."],
+                            ["Reachability by region", "A routing or resolver problem in one region takes probers in several regions to see, each with its own DNS resolution."],
+                            ["Evidence for an SLA", "Customers and contracts often expect an availability figure measured by a third party, or a public status page."],
+                            ["Endpoints you do not instrument", "A vendor API or a legacy service with no telemetry can still be probed."],
+                        ].map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="trace-alerts" class="scroll-mt-24">
+                    <p class="guide-eyebrow">05 · In Maple</p>
+                    <h2>Availability alerts from traces in Maple</h2>
+                    <p>
+                        Maple alerts on the traces your services already send, and it accepts check results from the OpenTelemetry Collector as metrics. It does not run hosted probes of its own.
+                    </p>
+                    <p>
+                        The <a href="/docs/alerting/uptime-monitoring#alert-on-real-traffic">uptime monitoring docs</a> walk through each rule below with screenshots.
+                    </p>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h3>Alert on traffic stopping</h3><p>A <strong>Throughput drop</strong> rule scoped to a service fires when its request count falls below a threshold. A window with no requests counts as zero, so a full outage fires it.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h3>Alert on failing requests</h3><p>A <strong>High error rate</strong> rule fires above 5% over five minutes, and opens one incident per failing service.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h3>Alert on slow requests</h3><p>A <strong>Low Apdex score</strong> rule scores errors and slow requests together against a 500ms target.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h3>Replay the rule against last week</h3><p>The rule form replays a rule over a past range and shades the periods where it would have held an incident open. A threshold that would have fired on a normal Tuesday needs to move.</p></div>
+                        </li>
+                    </ol>
+
+                    <figure class="guide-figure">
+                        <img src="/screenshots/docs/uptime-monitoring-02-throughput-preview.webp" data-zoomable alt="The rule preview chart over the last hour: throughput near 200 requests per window, a drop to zero for about 15 minutes, and a shaded band marked Would have fired 1 time, longest 25 minutes." width="2248" height="878" loading="lazy" />
+                        <figcaption>A Throughput drop rule replayed over the last hour. Requests stopped for about 15 minutes, and the shaded band marks the period the rule would have held an incident open.</figcaption>
+                    </figure>
+
+                    <p>
+                        A throughput rule needs traffic to drop from. For a service that sits idle for hours, use an HTTP check instead.
+                    </p>
+                </section>
+
+                <section id="http-checks" class="scroll-mt-24">
+                    <p class="guide-eyebrow">06 · HTTP checks</p>
+                    <h2>HTTP uptime checks with the OpenTelemetry Collector</h2>
+                    <p>
+                        For the endpoints that need a probe, the Collector's <code>http_check</code> receiver requests a list of URLs on an interval and reports each result as metrics: the status class of the response, the request duration, connection errors, and the seconds left on the TLS certificate. Maple stores them like any other metric, so you can chart them and alert on them.
+                    </p>
+                    <p>
+                        The Collector config and the settings for each rule are in the <a href="/docs/alerting/uptime-monitoring#add-http-checks">uptime monitoring docs</a>.
+                    </p>
+
+                    <h3>Rules to build on the check metrics</h3>
+                    <div class="guide-signal-list">
+                        <div><span>Endpoint down</span><p>No check of a URL returned a 2xx in the last two minutes. One incident per URL, about three minutes into an outage.</p></div>
+                        <div><span>Checks stopped</span><p>No check results arrived at all, which means the Collector itself is down.</p></div>
+                        <div><span>Certificate</span><p>Fewer than 14 days are left before a certificate expires.</p></div>
+                    </div>
+
+                    <figure class="guide-figure">
+                        <img src="/screenshots/docs/uptime-monitoring-05-httpcheck-preview.webp" data-zoomable alt="The rule preview chart over the last 30 minutes, grouped by URL. One URL drops from 1 to 0 for about five minutes inside a shaded band marked Would have fired 1 time, longest 8 minutes." width="2248" height="990" loading="lazy" />
+                        <figcaption>The endpoint rule replayed over 30 minutes of checks. One endpoint returned 503 for five checks, and the rule would have fired once.</figcaption>
+                    </figure>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">One Collector is one vantage point</p>
+                        <p>
+                            This setup probes from one place, through one DNS resolver. It cannot tell you that users in another region are cut off, and a network problem next to the Collector looks the same as an outage. It has no status page.
+                        </p>
+                        <p>
+                            If you need probes from several regions, a public status page, or an availability report for customers, run a dedicated uptime product next to Maple. Those products operate prober fleets in many regions, and a single Collector cannot stand in for that.
+                        </p>
+                    </div>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Collector config and alert rules, step by step</h3>
+                        <p>
+                            The docs page has the Collector config, the settings for each rule above, and screenshots of the rule forms.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/alerting/uptime-monitoring" class="guide-button guide-button--primary">Set up uptime monitoring</a>
+                            <a href="/docs/getting-started/introduction" class="guide-button">Instrument an application</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/httpcheckreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: HTTP Check Receiver</a></li>
+                        <li><a href="https://www.honeycomb.io/blog/availability-checks-honeycomb" target="_blank" rel="noopener noreferrer">Honeycomb: availability checks and what to use instead</a></li>
+                        <li><a href="/docs/alerting/uptime-monitoring">Maple docs: Uptime monitoring</a></li>
+                        <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a></li>
+                        <li><a href="/docs/explore/metrics">Maple docs: Metrics</a></li>
+                        <li><a href="/guides/what-is-apdex">Maple guide: What is Apdex?</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .uptime-guide { max-width: 46rem; }
+    .uptime-guide section + section { margin-top: 5.5rem; }
+    .uptime-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .uptime-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .uptime-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .uptime-guide > section > p:not(.guide-eyebrow, .guide-kicker), .uptime-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .uptime-guide strong { font-weight: 600; color: var(--foreground); }
+    .uptime-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .uptime-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .uptime-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .uptime-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .uptime-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .uptime-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .uptime-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .uptime-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .uptime-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .uptime-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .uptime-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .uptime-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .uptime-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .uptime-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .uptime-guide .guide-steps h3, .uptime-guide .guide-steps p { margin: 0; }
+    .uptime-guide .guide-steps h3 { font-size: 1rem; }
+    .uptime-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .uptime-guide .guide-signal-list { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .uptime-guide .guide-signal-list > div { display: grid; grid-template-columns: 6rem 1fr; gap: 1rem; background: var(--background); padding: 1.1rem 1.25rem; }
+    .uptime-guide .guide-signal-list span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); }
+    .uptime-guide .guide-signal-list p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .uptime-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .uptime-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .uptime-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
+    .uptime-guide .guide-checklist h3, .uptime-guide .guide-checklist p { margin: 0; }
+    .uptime-guide .guide-checklist h3 { font-size: 0.95rem; }
+    .uptime-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+    .uptime-guide .guide-figure { margin: 2rem 0; }
+    .uptime-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); }
+    .uptime-guide .guide-figure figcaption { margin-top: 0.6rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .uptime-path { margin: 2rem 0 0; overflow-x: auto; }
+    .uptime-path svg { min-width: 620px; }
+    .uptime-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .uptime-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .uptime-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .uptime-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .uptime-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .uptime-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .uptime-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .uptime-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .uptime-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .uptime-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .uptime-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .uptime-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .uptime-guide a, .uptime-guide .guide-button { transition: none; }
+    }
+</style>

@@ -68,15 +68,21 @@ const clipStrings = (value: unknown, chars: number): unknown => {
 	return value
 }
 
-/** The newest user message and the last one — the turn label the derivations
- *  read is that message, found by the reader `turnLabel` itself uses. */
+/** The first user message, the newest one and the last message — the turn label
+ *  the derivations read is the newest, found by the reader `turnLabel` itself
+ *  uses, and `turnLabel` checks an agent root's prompt against the first. */
 const keptMessages = (messages: ReadonlyArray<unknown>): ReadonlyArray<unknown> => {
+	const hasUserText = (message: unknown) => lastUserMessageText([message]) !== undefined
 	const last = messages.length - 1
-	if (last < 0) return messages
+	let newest = -1
 	for (let i = last - 1; i >= 0; i--) {
-		if (lastUserMessageText([messages[i]]) !== undefined) return [messages[i], messages[last]]
+		if (hasUserText(messages[i])) {
+			newest = i
+			break
+		}
 	}
-	return [messages[last]]
+	const first = messages.findIndex(hasUserText)
+	return messages.filter((_, i) => i === first || i === newest || i === last)
 }
 
 /** A span's content cut to what a whole-session read retains; a tool needing

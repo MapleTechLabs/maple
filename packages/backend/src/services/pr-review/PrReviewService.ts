@@ -26,12 +26,14 @@ import {
 	PrReviewPersistenceError,
 	PrReviewReport,
 	type PrReviewFeedbackScope,
+	type PrReviewModel,
 	type PrReviewRepositoryConfig,
 	type PrReviewSeverity,
 	type PrReviewSkipReason,
 	type PrReviewStatus,
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_FAILURE_COPY,
+	DEFAULT_REVIEWER_MENTION,
 	type PrReviewFailureReason,
 	prReviewFailureReason,
 	confidencePrReview,
@@ -46,7 +48,6 @@ import {
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
 import {
 	prReviewFindingEmbeddings,
@@ -55,9 +56,9 @@ import {
 	type PrReviewFindingRow,
 	type PrReviewRow,
 } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
@@ -149,6 +150,11 @@ export interface PrReviewServiceApi {
 		orgId: OrgId,
 		reviewId: PrReviewId,
 	) => Effect.Effect<Option.Option<PrReview>, PrReviewPersistenceError>
+	/**
+	 * The model the organization picked for its reviews and replies, or none for the deployment's
+	 * default. Never fails: an unreadable setting reviews on the default.
+	 */
+	readonly reviewModel: (orgId: OrgId) => Effect.Effect<Option.Option<PrReviewModel>>
 	/** The repository and commit a review reads, so its checkout can start before the agent asks. */
 	readonly reviewTarget: (
 		orgId: OrgId,
@@ -414,6 +420,7 @@ export const withReviewStatus = (
 	existing: string | undefined,
 	marker: string,
 	notice: PrReviewStatusNotice,
+	mention: string,
 ): string | undefined => {
 	if (
 		notice.kind !== "reviewing" &&
@@ -429,7 +436,7 @@ export const withReviewStatus = (
 		],
 		failed: [
 			"> [!WARNING]",
-			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`@maple review\` to try again.`,
+			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`${mention} review\` to try again.`,
 		],
 		superseded: [
 			"> [!NOTE]",
@@ -440,7 +447,7 @@ export const withReviewStatus = (
 }
 
 /** What the review's check run says before a result replaces it. */
-export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
+export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
 	switch (notice.kind) {
@@ -457,7 +464,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 				...run,
 				state: { status: "completed" as const, conclusion: "neutral" as const },
 				title: "Review could not finish",
-				summary: `${failedSentence(sha, notice.reason)} Comment \`@maple review\` on the pull request to try again.`,
+				summary: `${failedSentence(sha, notice.reason)} Comment \`${mention} review\` on the pull request to try again.`,
 			}
 		case "superseded":
 			return {
@@ -470,12 +477,12 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 }
 
 /** The check a push gets once its pull request has used the repository's automatic reviews. */
-const pausedCheckFor = (headSha: string, limit: number) => ({
+const pausedCheckFor = (headSha: string, limit: number, mention: string) => ({
 	name: PR_REVIEW_CHECK_NAME,
 	headSha,
 	state: { status: "completed" as const, conclusion: "skipped" as const },
 	title: "Automatic reviews paused",
-	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`@maple review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
+	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`${mention} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
 })
 
 const SEVERITY_LABEL = {
@@ -483,6 +490,23 @@ const SEVERITY_LABEL = {
 	warn: "Warning",
 	info: "Note",
 } as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** A colored marker per severity, so the level reads at a glance in a comment, a check, and a summary. */
+const SEVERITY_MARK = {
+	critical: "🔴",
+	warn: "🟠",
+	info: "🔵",
+} as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** The GitHub alert an inline comment sits in: red, orange, blue. */
+const SEVERITY_ALERT = {
+	critical: "CAUTION",
+	warn: "WARNING",
+	info: "NOTE",
+} as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** Green when safe, amber when it needs a look, red when risky. */
+const confidenceMark = (confidence: number) => (confidence >= 4 ? "🟢" : confidence === 3 ? "🟡" : "🔴")
 
 /** `observability · SPAN-03`, or the bare category for every other lens. */
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
@@ -497,6 +521,8 @@ export interface ReviewMarkdownInput {
 	/** The repository's web URL, for line links; GitHub Enterprise included. */
 	readonly repositoryUrl: string
 	readonly carried?: CarriedFindings
+	/** How the footer tells people to address the reviewer; the App's login. */
+	readonly mention?: string
 }
 
 const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings: ReadonlyArray<F>) =>
@@ -571,7 +597,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push("**Nothing to review**", "")
 	} else {
 		lines.push(
-			`**Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
+			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
 		)
 		// An early end is already the warning below; the reason would only say it again.
 		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
@@ -589,7 +615,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		for (const finding of bySeverity(report.findings)) {
 			const handle = finding.handle === undefined ? "" : `${finding.handle} · `
 			lines.push(
-				`<details><summary><b>${SEVERITY_LABEL[finding.severity]}</b> · ${escapeHtml(handle)}${summaryHtml(finding.title)}</summary>`,
+				`<details><summary>${SEVERITY_MARK[finding.severity]} <b>${SEVERITY_LABEL[finding.severity]}</b> · ${escapeHtml(handle)}${summaryHtml(finding.title)}</summary>`,
 				"",
 				`${categoryLabel(finding)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
 				"",
@@ -600,6 +626,17 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			if (fix) lines.push(...fenced(fix), "")
 			lines.push("</details>", "")
 		}
+		// Right under the findings, not at the bottom: handing them to a coding agent is the next step.
+		if (input.heading) {
+			lines.push(
+				`<details><summary>🤖 <b>Prompt to fix ${report.findings.length === 1 ? "this finding" : `all ${report.findings.length} findings`} with an AI agent</b></summary>`,
+				"",
+				...fenced(copyAllFindings(report.findings, input.headSha), "text"),
+				"",
+				"</details>",
+				"",
+			)
+		}
 	}
 	if (carried.open.length > 0) {
 		lines.push(
@@ -607,7 +644,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 			...bySeverity(carried.open).map(
 				(finding) =>
-					`- **${SEVERITY_LABEL[finding.severity]}** · ${finding.handle} · ${escapeCell(finding.title)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
+					`- ${SEVERITY_MARK[finding.severity]} **${SEVERITY_LABEL[finding.severity]}** · ${finding.handle} · ${escapeCell(finding.title)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
 			),
 			"",
 		)
@@ -616,7 +653,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push(
 			"### Fixed since the last review",
 			"",
-			...carried.resolved.map((finding) => `- ~~${finding.handle} · ${escapeCell(finding.title)}~~`),
+			...carried.resolved.map((finding) => `- ✅ ~~${finding.handle} · ${escapeCell(finding.title)}~~`),
 			"",
 		)
 	}
@@ -661,21 +698,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 		)
 	}
-	if (input.heading && report.findings.length > 0) {
-		lines.push(
-			`<details><summary>Copy all findings (${report.findings.length})</summary>`,
-			"",
-			...fenced(copyAllFindings(report.findings, input.headSha), "text"),
-			"",
-			"</details>",
-			"",
-		)
-	}
 	const auditNote = report.findings.some((finding) => finding.checkId !== undefined)
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
 	lines.push(
-		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention @maple to ask about one.${auditNote}</sub>`,
+		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention ${input.mention ?? DEFAULT_REVIEWER_MENTION} to ask about one.${auditNote}</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -723,16 +750,17 @@ const CHECK_SUMMARY_MAX_BYTES = 65_000
  */
 const renderComment = (finding: PrReviewFinding): string => {
 	const lines = [
-		`**${finding.title}**`,
-		"",
-		`<sub>${[finding.handle, SEVERITY_LABEL[finding.severity], categoryLabel(finding)].filter((part) => part !== undefined).join(" · ")}</sub>`,
+		`> [!${SEVERITY_ALERT[finding.severity]}]`,
+		`> **${finding.title}**`,
+		">",
+		`> <sub>${[finding.handle, SEVERITY_LABEL[finding.severity], categoryLabel(finding)].filter((part) => part !== undefined).join(" · ")}</sub>`,
 	]
 	if (finding.body) lines.push("", finding.body)
 	if (finding.suggestion) lines.push("", ...fenced(finding.suggestion))
 	if (finding.replacement !== undefined) lines.push("", ...fenced(finding.replacement, "suggestion"))
 	lines.push(
 		"",
-		"<details><summary>Prompt for an AI agent</summary>",
+		"<details><summary>🤖 <b>Prompt to fix with an AI agent</b></summary>",
 		"",
 		...fenced(agentPrompt(finding), "text"),
 		"",
@@ -781,6 +809,7 @@ export const buildPublication = (input: {
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
 	readonly commentAttempt?: number
+	readonly mention?: string
 }): PullRequestReviewPublication => {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
@@ -809,6 +838,7 @@ export const buildPublication = (input: {
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
 		carried,
+		...(input.mention === undefined ? undefined : { mention: input.mention }),
 	}
 	const hasIssues = [...report.findings, ...carried.open].some((finding) => finding.severity !== "info")
 	return {
@@ -847,7 +877,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const providers = yield* VcsProviderRegistry
 			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
-			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			// Present where webhooks are consumed; without it a push's review starts at once.
 			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
 			// Present where the agent runs; without it the feedback filter is off.
@@ -1158,11 +1188,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.writePullRequestSummaryComment(installation, ref, {
 									number,
 									marker,
-									body: (existing) => withReviewStatus(existing, marker, notice),
+									body: (existing) =>
+										withReviewStatus(existing, marker, notice, provider.reviewerMention),
 								})
 								.pipe(warn("comment")),
 							provider
-								.writePullRequestCheck(installation, ref, reviewCheckFor(notice))
+								.writePullRequestCheck(
+									installation,
+									ref,
+									reviewCheckFor(notice, provider.reviewerMention),
+								)
 								.pipe(warn("check run")),
 						],
 						{ concurrency: "unbounded", discard: true },
@@ -1189,7 +1224,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
-					yield* provider.writePullRequestCheck(installation, ref, pausedCheckFor(headSha, limit))
+					yield* provider.writePullRequestCheck(
+						installation,
+						ref,
+						pausedCheckFor(headSha, limit, provider.reviewerMention),
+					)
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.logWarning("[PrReview] could not post the paused check").pipe(
@@ -1337,20 +1376,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.pipe(Effect.mapError(toPersistence))
 				for (const row of rows) {
 					if (row.headSha === headSha) continue
-					if (row.sessionId !== null && workerEnv !== undefined) {
-						const stub = chatSessionStub(workerEnv, row.sessionId)
-						if (stub !== undefined) {
-							yield* Effect.tryPromise(() => stub.abort()).pipe(
-								Effect.catchCause((cause) =>
-									Effect.logWarning("Could not abort a superseded review turn").pipe(
-										Effect.annotateLogs({
-											reviewId: row.id,
-											cause: summarizeCause(cause),
-										}),
-									),
+					if (row.sessionId !== null && chatSessions !== undefined) {
+						const stub = chatSessions.session(row.sessionId)
+						yield* stub.abort().pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning("Could not abort a superseded review turn").pipe(
+									Effect.annotateLogs({
+										reviewId: row.id,
+										cause: summarizeCause(cause),
+									}),
 								),
-							)
-						}
+							),
+						)
 					}
 					yield* update(orgId, row.id, {
 						status: "skipped",
@@ -1446,7 +1483,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						...extra,
 					})
 
-				const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
+				const stub = chatSessions?.session(sessionId)
 				if (stub === undefined) {
 					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
@@ -1502,20 +1539,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
 				const claimed = yield* Effect.exit(
-					Effect.tryPromise(() =>
-						stub.beginTurn({
-							sessionId,
-							messageId: randomUUID(),
-							text,
-							origin: { kind: "autonomous" },
-							tenant: encodeChatTurnTenant({
-								orgId,
-								userId: internalServiceUserId,
-								roles: [],
-								authMode: "self_hosted",
-							}),
+					stub.beginTurn({
+						sessionId,
+						messageId: randomUUID(),
+						text,
+						origin: { kind: "autonomous" },
+						tenant: encodeChatTurnTenant({
+							orgId,
+							userId: internalServiceUserId,
+							roles: [],
+							authMode: "self_hosted",
 						}),
-					),
+					}),
 				)
 				if (Exit.isFailure(claimed) || claimed.value === undefined) {
 					if (Exit.isFailure(claimed)) {
@@ -1572,6 +1607,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.pipe(Effect.mapError(toPersistence))
 					if (Option.isSome(closedRepo)) {
 						const nowMs = yield* Clock.currentTimeMillis
+						if (job.merged) {
+							// Stamped on every review of the pull request, for time to merge.
+							const repositoryId = closedRepo.value.id
+							yield* database
+								.execute((db) =>
+									db
+										.update(prReviews)
+										.set({ mergedAt: msToDate(job.mergedAtMs ?? nowMs) })
+										.where(
+											and(
+												eq(prReviews.orgId, orgId),
+												eq(prReviews.repositoryId, repositoryId),
+												eq(prReviews.number, job.number),
+											),
+										),
+								)
+								.pipe(Effect.mapError(toPersistence))
+						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
 							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs)
@@ -1599,7 +1652,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("not_rolled_out")
 				}
 				const config = yield* repositories
-					.getPrReviewConfig(orgId, repo.id)
+					.getEffectivePrReviewConfig(orgId, repo.id)
 					.pipe(Effect.mapError(toPersistence))
 				if (job.draft === true && config.reviewDrafts !== true && !requested) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "draft" })
@@ -1736,6 +1789,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								baseSha: job.baseSha ?? null,
 								url: job.url,
 								title: job.title,
+								authorLogin: job.authorLogin,
 								status: "queued",
 								sessionId: prReviewSessionId(orgId, reviewId),
 								createdAt: msToDate(nowMs),
@@ -1863,7 +1917,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.getInstallationById(orgId, repository.value.installationId)
 							.pipe(Effect.mapError(toPersistence))
 				const config = yield* repositories
-					.getPrReviewConfig(orgId, review.repositoryId)
+					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
 				// Earlier findings: the ones this head fixes, and the ones still open.
@@ -2039,6 +2093,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
+				const ref = { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name }
+				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
+				if (Result.isFailure(provider)) {
+					yield* update(orgId, reviewId, {
+						publishError: provider.failure.message.slice(0, 500),
+						updatedAt: msToDate(nowMs),
+					})
+					return
+				}
 				const publication = buildPublication({
 					reviewId,
 					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
@@ -2049,19 +2112,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					partial: request.partial === true,
 					carried,
 					keys,
+					mention: provider.success.reviewerMention,
 					...(config.minInlineSeverity === undefined
 						? undefined
 						: { minInlineSeverity: config.minInlineSeverity }),
 				})
-				const ref = { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name }
-				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
-				if (Result.isFailure(provider)) {
-					yield* update(orgId, reviewId, {
-						publishError: provider.failure.message.slice(0, 500),
-						updatedAt: msToDate(nowMs),
-					})
-					return
-				}
 				const published = yield* provider.success
 					.publishPullRequestReview(installation.value, ref, publication)
 					.pipe(Effect.result)
@@ -2181,8 +2236,27 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}))
 			})
 
+			const reviewModel: PrReviewServiceApi["reviewModel"] = (orgId) =>
+				repositories.getPrReviewSettings(orgId).pipe(
+					Effect.map((settings) => Option.fromUndefinedOr(settings.model)),
+					Effect.tap((model) =>
+						Effect.annotateCurrentSpan(
+							"maple.pr_review.model",
+							Option.getOrElse(model, () => "default"),
+						),
+					),
+					Effect.catch((error) =>
+						Effect.logWarning("Could not read the review model; using the default").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+							Effect.as(Option.none()),
+						),
+					),
+					Effect.withSpan("PrReviewService.reviewModel"),
+				)
+
 			return {
 				reviewTarget,
+				reviewModel,
 				onPullRequestEvent,
 				reviewNow,
 				getReview,

@@ -1,23 +1,9 @@
 import { Effect, Exit } from "effect"
 
 /**
- * `Effect.cached`, except a failed run is forgotten: `cached` pins its exit,
- * failure included, for the lifetime of the isolate, and a build that failed
- * on a transient cause (a binding briefly unavailable) must be retried by a
- * later event rather than answer with the same failure until the isolate is
- * replaced.
- *
- * Single-flight: callers arriving while a run is in flight wait on that run
- * and observe its exit, whatever it is — the failed generation is evicted in
- * the same step that settles its waiters, so no waiter can find the slot
- * empty. The next caller after a failure starts a fresh run.
- *
- * Waiters await a promise, never the run's fiber: workerd delivers a promise's
- * continuations to the request that awaited it. Resumed by a `Deferred`
- * instead, every request that reached a cold isolate while the build ran
- * continued synchronously inside the FIRST request's I/O context — its body
- * unreadable, its response never delivered, and the runtime's own 500 (no
- * CORS headers) in its place.
+ * Single-flight `Effect.cached` that forgets failures, so a transient build failure is retried.
+ * Waiters await a Promise, not a `Deferred`: workerd resumes a promise in the awaiting request's
+ * I/O context, while a `Deferred` would resume it inside the first request's.
  */
 export const cachedRecoverable = <A, E, R>(
 	self: Effect.Effect<A, E, R>,

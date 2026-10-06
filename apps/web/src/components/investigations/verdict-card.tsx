@@ -1,5 +1,9 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ReactNode } from "react"
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -82,9 +86,7 @@ function Stat({ label, children, last }: { label: string; children: ReactNode; l
 				last ? null : "border-b max-lg:border-r",
 			)}
 		>
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<div className="text-sm">{children}</div>
 		</div>
 	)
@@ -99,19 +101,6 @@ function BigStat({ value, unit }: { value: string; unit: string }) {
 			</span>
 			<span className="text-sm text-muted-foreground">{unit}</span>
 		</span>
-	)
-}
-
-function Eyebrow({ children, tone }: { children: ReactNode; tone: string }) {
-	return (
-		<div
-			className={cn(
-				"flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em]",
-				tone,
-			)}
-		>
-			{children}
-		</div>
 	)
 }
 
@@ -132,7 +121,7 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 					</Stat>
 				}
 			>
-				<Eyebrow tone="text-muted-foreground">No diagnosis recorded</Eyebrow>
+				<Eyebrow as="div">No diagnosis recorded</Eyebrow>
 				<p className="text-sm text-muted-foreground">
 					The pass finished without attaching a report. Run it again to try for a cause.
 				</p>
@@ -154,7 +143,10 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 					<Stat label="AI severity">
 						{report.severityAssessment ? (
 							<span
-								className={cn("font-medium", SEVERITY_TEXT_TONE[report.severityAssessment])}
+								className={cn(
+									"font-medium",
+									TONE_TEXT[SEVERITY_TEXT_TONE[report.severityAssessment]],
+								)}
 							>
 								{SEVERITY_LABEL[report.severityAssessment]}
 							</span>
@@ -174,7 +166,9 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">Suspected cause</Eyebrow>
+			<Eyebrow as="div" className="text-primary">
+				Suspected cause
+			</Eyebrow>
 			{/* `headline` is the only field prompted to be one line; `reportHeadline` falls back for older reports. */}
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				{heading}
@@ -212,9 +206,7 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 	if (actions.length === 0) return null
 	return (
 		<div className="mt-2 flex flex-col gap-2.5 border-t pt-4">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				What to do
-			</span>
+			<Eyebrow>What to do</Eyebrow>
 			{/* Ordered, because the report is prompted for ordered steps. */}
 			<ol className="flex flex-col gap-2">
 				{actions.map((action, index) => (
@@ -231,13 +223,13 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 }
 
 /** The badge tones are backgrounds; the stat column wants the text colour alone. */
-const SEVERITY_TEXT_TONE: Record<string, string> = {
-	critical: "text-destructive",
-	high: "text-destructive",
-	medium: "text-severity-warn",
-	low: "text-muted-foreground",
-	unclassified: "text-muted-foreground",
-} satisfies Record<string, string>
+const SEVERITY_TEXT_TONE: Record<string, Tone> = {
+	critical: "crit",
+	high: "crit",
+	medium: "warn",
+	low: "neutral",
+	unclassified: "neutral",
+} satisfies Record<string, Tone>
 
 /* -------------------------------------------------------------------------------------------------
  * Investigating
@@ -258,9 +250,9 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">
+			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-primary">
 				<span className="flex items-center gap-1.5">
-					<span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary" />
+					<StatusDot tone="live" />
 					Investigating
 				</span>
 			</Eyebrow>
@@ -291,7 +283,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 
 	return (
 		<VerdictShell
-			accent="bg-destructive"
+			accent="bg-severity-error"
 			stats={
 				<>
 					<Stat label="Ran for">
@@ -307,7 +299,9 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 				</>
 			}
 		>
-			<Eyebrow tone="text-destructive">No diagnosis</Eyebrow>
+			<Eyebrow as="div" className="text-severity-error">
+				No diagnosis
+			</Eyebrow>
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				The pass ended without a diagnosis
 			</h2>
@@ -316,10 +310,10 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 			</p>
 			{/* The raw error was on the wire and rendered nowhere but a toast. */}
 			{investigation.error ? (
-				<div className="flex items-start gap-3 rounded-lg border border-destructive/25 bg-destructive/6 px-3 py-2.5">
-					<span className="shrink-0 rounded-sm bg-destructive/12 px-1.5 py-0.5 font-mono text-[11px] text-destructive">
+				<div className="flex items-start gap-3 rounded-lg border border-severity-error/25 bg-severity-error/6 px-3 py-2.5">
+					<Badge size="xs" mono className="mt-0.5 bg-severity-error/12 text-severity-error">
 						reason
-					</span>
+					</Badge>
 					<code className="min-w-0 break-words font-mono text-xs leading-5 text-foreground">
 						{investigation.error}
 					</code>
@@ -395,7 +389,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 				</>
 			}
 		>
-			<Eyebrow tone="text-severity-warn">
+			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-severity-warn">
 				Partial result
 				<span aria-hidden className="text-muted-foreground/40">
 					·
@@ -453,9 +447,7 @@ function PartialList({
 	const hidden = items.length - visible.length
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<ul className="flex flex-col gap-1.5">
 				{visible.map((item) => (
 					<li key={item} className={cn("flex gap-2 text-sm leading-6", tone)}>

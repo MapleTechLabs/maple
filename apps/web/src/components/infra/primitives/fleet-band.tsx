@@ -12,8 +12,13 @@
 // measure) and this draws it.
 
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import type { Tone } from "../severity-tokens"
+import { VALUE_TONE, type Tone } from "../severity-tokens"
+
+/** A band that stands alone on a page body rather than flush under a shell's header. */
+export const FLEET_BAND_BOXED = "overflow-hidden rounded-lg border"
 
 /** One slice of the proportional strip. */
 export interface FleetBandSegment {
@@ -31,7 +36,7 @@ export interface FleetBandCell<S extends string> {
 	readonly hint: string
 	readonly value: number
 	/** `info` is the freshness blue; the rest are the severity ramp. */
-	readonly tone: Tone | "info"
+	readonly tone: Tone
 }
 
 interface FleetBandProps<S extends string> {
@@ -48,14 +53,6 @@ interface FleetBandProps<S extends string> {
 	className?: string
 }
 
-const CELL_VALUE_TONE: Record<Tone | "info", string> = {
-	neutral: "text-foreground",
-	ok: "text-foreground",
-	info: "text-[var(--severity-info)]",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
-} satisfies Record<Tone | "info", string>
-
 export function FleetBand<S extends string>({
 	total,
 	noun,
@@ -64,7 +61,7 @@ export function FleetBand<S extends string>({
 	cells,
 	activeScope,
 	onScopeChange,
-	waiting,
+	waiting = false,
 	className,
 }: FleetBandProps<S>) {
 	const drawn = segments.filter((segment) => segment.count > 0)
@@ -73,9 +70,10 @@ export function FleetBand<S extends string>({
 		<div
 			className={cn(
 				"flex flex-col border-b bg-background md:flex-row md:items-stretch",
-				waiting && "opacity-60 transition-opacity",
+				refreshingClass(waiting),
 				className,
 			)}
+			aria-busy={waiting || undefined}
 		>
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<span className="flex items-baseline gap-1.5">
@@ -87,22 +85,19 @@ export function FleetBand<S extends string>({
 					</span>
 				</span>
 				{total > 0 ? (
-					<div
-						className="flex h-1.5 w-full gap-px overflow-hidden rounded-full"
-						role="img"
-						aria-label={segments.map((segment) => `${segment.count} ${segment.key}`).join(", ")}
-					>
-						{/* A single hot pod in a fleet of 600 is 0.2% of the width, which
-						    rounds to nothing — so any non-zero segment gets a floor wide
-						    enough to see. */}
-						{drawn.map((segment) => (
-							<div
-								key={segment.key}
-								className={segment.className}
-								style={{ width: `${Math.max((segment.count / total) * 100, 2)}%` }}
-							/>
-						))}
-					</div>
+					// A single hot pod in a fleet of 600 is 0.2% of the width, which
+					// rounds to nothing, so any non-zero segment gets a 2% floor.
+					<SegmentedBar
+						className="w-full gap-px bg-transparent"
+						total={total}
+						minVisible={2}
+						label={segments.map((segment) => `${segment.count} ${segment.key}`).join(", ")}
+						segments={drawn.map((segment) => ({
+							key: segment.key,
+							value: segment.count,
+							className: segment.className,
+						}))}
+					/>
 				) : (
 					<div className="h-1.5 w-full rounded-full bg-muted" />
 				)}
@@ -153,7 +148,7 @@ function ScopeCell<S extends string>({
 				<span
 					className={cn(
 						"font-mono text-xl font-semibold leading-none tabular-nums",
-						value === 0 ? "text-muted-foreground" : CELL_VALUE_TONE[tone],
+						value === 0 ? "text-muted-foreground" : VALUE_TONE[tone],
 					)}
 				>
 					{value}
@@ -164,9 +159,9 @@ function ScopeCell<S extends string>({
 	)
 }
 
-export function FleetBandLoading({ cells }: { cells: number }) {
+export function FleetBandLoading({ cells, className }: { cells: number; className?: string }) {
 	return (
-		<div className="flex flex-col border-b bg-background md:flex-row md:items-stretch">
+		<div className={cn("flex flex-col border-b bg-background md:flex-row md:items-stretch", className)}>
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<Skeleton className="h-4 w-28" />
 				<Skeleton className="h-1.5 w-full rounded-full" />

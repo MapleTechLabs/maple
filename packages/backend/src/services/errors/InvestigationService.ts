@@ -23,7 +23,6 @@ import {
 import { ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
 
 import { investigations, type InvestigationRow } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import {
@@ -37,6 +36,7 @@ import {
 	isInvestigationStale,
 	staleTimeoutMessage,
 } from "@maple/backend/services/errors/investigation-stale"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -147,7 +147,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
-			const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+			const chatSessions = yield* Effect.serviceOption(ChatSessions)
 
 			const dbExecute = makeDbExecute(database, "InvestigationService", makePersistenceError)
 
@@ -359,7 +359,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					investigationId: doc.id,
 					subject: doc.subject,
 					snapshot: doc.snapshot,
-					workerEnv: Option.getOrUndefined(workerEnv),
+					chatSessions: Option.getOrUndefined(chatSessions),
 					nowMs,
 				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
 				if (started.started) return

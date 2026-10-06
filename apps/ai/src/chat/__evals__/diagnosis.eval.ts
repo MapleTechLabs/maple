@@ -18,7 +18,7 @@
  */
 import { generateText, jsonSchema, Output } from "ai"
 import { describe, it } from "vitest"
-import { describeEval, type TaskResult } from "vitest-evals"
+import { describeEval, type TaskResult } from "vitest-evals/legacy"
 import { INVESTIGATE_SYSTEM_PROMPT } from "../prompts"
 import { createEvalModel, hasEvalCredentials } from "../../mcp/__evals__/model"
 import { DIAGNOSIS_FIXTURES, type DiagnosisFixture } from "./diagnosis-fixtures"

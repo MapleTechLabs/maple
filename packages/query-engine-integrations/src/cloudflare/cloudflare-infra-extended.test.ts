@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	cloudflareDurableObjectCountersSQL,
 	cloudflareQueueGaugesSQL,
@@ -9,9 +9,10 @@ import {
 	cloudflareZoneFirewallTimeseriesSQL,
 	cloudflareZoneFirewallTopSQL,
 } from "./cloudflare-infra-extended"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
 }
@@ -67,7 +68,9 @@ describe("cloudflareQueueGaugesSQL", () => {
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.queue.backlog.messages', 'cloudflare.queue.backlog.bytes', 'cloudflare.queue.consumer.concurrency')",
 		)
-		expect(sql).toContain("maxIf(Value, MetricName = 'cloudflare.queue.backlog.messages')")
+		expect(sql).toContain(
+			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.messages')",
+		)
 		// avgIf over an empty set is NaN → must be guarded.
 		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).toContain("GROUP BY serviceName")
@@ -80,7 +83,9 @@ describe("cloudflareDurableObjectCountersSQL", () => {
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.durable_object.requests', 'cloudflare.durable_object.errors')",
 		)
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.durable_object.requests')")
+		expect(sql).toContain(
+			"sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.requests')",
+		)
 		expect(sql).toContain("GROUP BY serviceName")
 	})
 })

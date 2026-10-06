@@ -1,8 +1,11 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useCallback, useMemo, useReducer, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 
 import type { ErrorIssueId, WorkflowState } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
@@ -42,7 +45,7 @@ import {
 	type RowPicker,
 } from "./error-signal-row"
 import { IssuesBulkBar } from "./issues-bulk-bar"
-import { SEVERITY_FILL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
+import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
 import { useIssueMutations } from "./use-issue-mutations"
 
 /**
@@ -121,10 +124,7 @@ const LOAD_MORE_SKELETON_ROWS = 3
 
 const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
 	all: "All severities",
-	critical: "Critical",
-	high: "High",
-	medium: "Medium",
-	low: "Low",
+	...SEVERITY_LABEL,
 	unset: "Unset",
 } satisfies Record<SeverityFilter, string>
 
@@ -136,12 +136,8 @@ const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
  * options rather than as a current state.
  */
 const SEVERITY_TRIGGER_LABEL: Record<SeverityFilter, string> = {
+	...SEVERITY_FILTER_LABEL,
 	all: "Severity",
-	critical: "Critical",
-	high: "High",
-	medium: "Medium",
-	low: "Low",
-	unset: "Unset",
 } satisfies Record<SeverityFilter, string>
 
 /** Base UI renders the raw value in the trigger unless it is given a renderer,
@@ -161,9 +157,11 @@ function SeverityFilterDot({ value }: { value: SeverityFilter }) {
 		return (
 			<span aria-hidden="true" className="flex shrink-0 -space-x-1">
 				{SEVERITY_ORDER.map((severity) => (
-					<span
+					<StatusDot
 						key={severity}
-						className={cn("size-2 rounded-full ring-1 ring-popover", SEVERITY_FILL[severity])}
+						tone="custom"
+						size="lg"
+						className={cn("ring-1 ring-popover", SEVERITY_FILL[severity])}
 					/>
 				))}
 			</span>
@@ -355,11 +353,11 @@ export function ErrorsHubView({
 				    known, it explains what is loading, and keeping it means the rows
 				    land in the columns the eye is already resting on. */}
 				<ErrorSignalHeader />
-				<div className="divide-y divide-border/40">
-					{Array.from({ length: SKELETON_ROWS }).map((_, index) => (
-						<ErrorSignalRowSkeleton key={index} index={index} />
-					))}
-				</div>
+				<SkeletonList
+					rows={SKELETON_ROWS}
+					renderRow={(index) => <ErrorSignalRowSkeleton index={index} />}
+					className="gap-0 divide-y divide-border/40"
+				/>
 			</div>
 		)
 	}
@@ -627,11 +625,11 @@ function HubPagingFooter({ paging }: { paging: HubPaging }) {
 
 	if (paging.state === "loading") {
 		return (
-			<div className="divide-y divide-border/40 border-t border-border/40" aria-busy="true">
-				{Array.from({ length: LOAD_MORE_SKELETON_ROWS }).map((_, index) => (
-					<ErrorSignalRowSkeleton key={index} index={index} />
-				))}
-			</div>
+			<SkeletonList
+				rows={LOAD_MORE_SKELETON_ROWS}
+				renderRow={(index) => <ErrorSignalRowSkeleton index={index} />}
+				className="gap-0 divide-y divide-border/40 border-t border-border/40"
+			/>
 		)
 	}
 
@@ -640,9 +638,10 @@ function HubPagingFooter({ paging }: { paging: HubPaging }) {
 			{paging.state === "failed" ? (
 				<span className="text-xs text-muted-foreground">More errors could not be loaded.</span>
 			) : null}
-			<Button variant="outline" size="sm" onClick={paging.onLoadMore}>
-				{paging.state === "failed" ? "Retry" : "Load more"}
-			</Button>
+			<LoadMoreButton
+				onClick={paging.onLoadMore}
+				label={paging.state === "failed" ? "Retry" : "Load more"}
+			/>
 		</div>
 	)
 }

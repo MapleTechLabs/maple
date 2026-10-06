@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect"
-import { HttpRouter, type HttpServerRequest } from "effect/unstable/http"
+import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	AUTUMN_BILLING_UPDATED,

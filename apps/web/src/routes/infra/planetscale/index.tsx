@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { ResultView } from "@/components/common/result-view"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -9,10 +10,10 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
-import { PageHero } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { PageHero } from "@/components/common/page-hero"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import {
 	PlanetScaleDatabaseTable,
 	PlanetScaleDatabaseTableLoading,
@@ -109,15 +110,16 @@ function PlanetScalePage() {
 									title="PlanetScale"
 									description="Database health from your PlanetScale organization: connections, CPU, memory, storage, and replication lag for every branch."
 								/>
-								{Result.builder(statusResult)
-									.onInitial(() => (
+								<ResultView
+									result={statusResult}
+									loading={
 										<div className="space-y-4">
 											<StatRailLoading />
 											<PlanetScaleDatabaseTableLoading />
 										</div>
-									))
-									.onError((err) => <QueryErrorState error={err} />)
-									.onSuccess((status) => {
+									}
+								>
+									{(status) => {
 										if (!status.connected) return <PlanetScaleNotConnected />
 										return (
 											<PlanetScaleData
@@ -130,8 +132,8 @@ function PlanetScalePage() {
 												lastInventoryError={status.last_inventory_error}
 											/>
 										)
-									})
-									.render()}
+									}}
+								</ResultView>
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
@@ -198,128 +200,136 @@ function PlanetScaleData({
 		return { connections, lagMax, lagOwner, storageMax, storageOwner }
 	}, [stats])
 
-	return Result.builder(inventoryResult)
-		.onInitial(() => (
-			<div className="space-y-4">
-				<StatRailLoading />
-				<PlanetScaleDatabaseTableLoading />
-			</div>
-		))
-		.onError((err) => <QueryErrorState error={err} />)
-		.onSuccess((inventory) => {
-			const branchTotal = inventory.databases.reduce((sum, db) => sum + db.branches.length, 0)
-			const showInventoryNotice =
-				lastInventoryError !== null || inventoryIsStale(inventory.last_inventory_at, Date.now())
-			return (
-				<div className="space-y-6">
-					{revoked ? <PlanetScaleRevokedNotice /> : null}
-					{/* Setup replaces the notice entirely while nothing has ever been
+	return (
+		<ResultView
+			result={inventoryResult}
+			loading={
+				<div className="space-y-4">
+					<StatRailLoading />
+					<PlanetScaleDatabaseTableLoading />
+				</div>
+			}
+		>
+			{(inventory) => {
+				const branchTotal = inventory.databases.reduce((sum, db) => sum + db.branches.length, 0)
+				const showInventoryNotice =
+					lastInventoryError !== null || inventoryIsStale(inventory.last_inventory_at, Date.now())
+				return (
+					<div className="space-y-6">
+						{revoked ? <PlanetScaleRevokedNotice /> : null}
+						{/* Setup replaces the notice entirely while nothing has ever been
 					    collected — one screen saying one thing, not a warning stacked
 					    on top of a page pretending to work. */}
-					{metricsPaused && !neverCollected ? <PlanetScaleMetricsNotice /> : null}
-					{showInventoryNotice ? (
-						<PlanetScaleInventoryNotice
-							lastInventoryAt={inventory.last_inventory_at}
-							lastInventoryError={lastInventoryError}
-						/>
-					) : null}
-					{Result.isFailure(statsResult) ? (
-						<QueryErrorState
-							error={statsResult.cause}
-							className="flex flex-col gap-1 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs"
-						/>
-					) : null}
-					{neverCollected ? <PlanetScaleSetupState steps={setupSteps} /> : null}
-					{/* Inventory counts have no time series, so no sparkline slot to reserve. */}
-					<StatRail>
-						<StatRailItem
-							compact
-							eyebrow="Databases"
-							value={String(inventory.databases.length)}
-						/>
-						<StatRailItem compact eyebrow="Branches" value={String(branchTotal)} />
-						{neverCollected ? null : (
-							<>
-								<StatRailItem
-									compact
-									eyebrow="Worst storage"
-									value={
-										totals.storageMax === null
-											? "—"
-											: formatStoragePercent(totals.storageMax)
-									}
-									tone={
-										totals.storageMax === null
-											? "neutral"
-											: utilizationTone(totals.storageMax)
-									}
-									subline={
-										metricsPaused
-											? METRICS_PAUSED_SHORT
-											: totals.storageOwner !== null
-												? totals.storageOwner
-												: undefined
-									}
-								/>
-								<StatRailItem
-									compact
-									eyebrow="Worst replica lag"
-									value={
-										metricsPaused && stats.length === 0 ? "—" : formatLag(totals.lagMax)
-									}
-									tone={lagTone(totals.lagMax)}
-									subline={
-										metricsPaused
-											? METRICS_PAUSED_SHORT
-											: totals.lagOwner !== null && totals.lagMax > 0
-												? totals.lagOwner
-												: `${formatNumber(totals.connections)} connections`
-									}
-								/>
-							</>
+						{metricsPaused && !neverCollected ? <PlanetScaleMetricsNotice /> : null}
+						{showInventoryNotice ? (
+							<PlanetScaleInventoryNotice
+								lastInventoryAt={inventory.last_inventory_at}
+								lastInventoryError={lastInventoryError}
+							/>
+						) : null}
+						{Result.isFailure(statsResult) ? (
+							<ErrorState
+								error={statsResult.cause}
+								className="flex flex-col gap-1 rounded-md border border-severity-error/20 bg-severity-error/5 px-3 py-2 text-xs"
+							/>
+						) : null}
+						{neverCollected ? <PlanetScaleSetupState steps={setupSteps} /> : null}
+						{/* Inventory counts have no time series, so no sparkline slot to reserve. */}
+						<StatRail>
+							<StatRailItem
+								compact
+								eyebrow="Databases"
+								value={String(inventory.databases.length)}
+							/>
+							<StatRailItem compact eyebrow="Branches" value={String(branchTotal)} />
+							{neverCollected ? null : (
+								<>
+									<StatRailItem
+										compact
+										eyebrow="Worst storage"
+										value={
+											totals.storageMax === null
+												? "—"
+												: formatStoragePercent(totals.storageMax)
+										}
+										tone={
+											totals.storageMax === null
+												? "neutral"
+												: utilizationTone(totals.storageMax)
+										}
+										subline={
+											metricsPaused
+												? METRICS_PAUSED_SHORT
+												: totals.storageOwner !== null
+													? totals.storageOwner
+													: undefined
+										}
+									/>
+									<StatRailItem
+										compact
+										eyebrow="Worst replica lag"
+										value={
+											metricsPaused && stats.length === 0
+												? "—"
+												: formatLag(totals.lagMax)
+										}
+										tone={lagTone(totals.lagMax)}
+										subline={
+											metricsPaused
+												? METRICS_PAUSED_SHORT
+												: totals.lagOwner !== null && totals.lagMax > 0
+													? totals.lagOwner
+													: `${formatNumber(totals.connections)} connections`
+										}
+									/>
+								</>
+							)}
+						</StatRail>
+						{inventory.databases.length === 0 ? (
+							<Empty className="py-16">
+								<EmptyHeader>
+									<EmptyMedia variant="icon">
+										<PlanetScaleIcon size={16} />
+									</EmptyMedia>
+									<EmptyTitle>No databases discovered yet</EmptyTitle>
+									<EmptyDescription>
+										Maple refreshes the database and branch list within a few minutes of
+										connecting. If this persists, check that the connection still has the
+										read_databases permission.
+									</EmptyDescription>
+								</EmptyHeader>
+								<EmptyActions>
+									<Button
+										variant="outline"
+										size="sm"
+										render={
+											<Link
+												to="/integrations"
+												search={{ integration: "planetscale" }}
+											/>
+										}
+									>
+										Check the connection
+									</Button>
+									<DocsLink page="planetscale" />
+								</EmptyActions>
+							</Empty>
+						) : (
+							<PlanetScaleDatabaseTable
+								databases={inventory.databases}
+								statsByName={statsByName}
+								waiting={Boolean(statsResult.waiting)}
+								metricsPaused={neverCollected}
+								emptyMessage={
+									metricsPaused ? METRICS_PAUSED_MESSAGE : "No databases in the inventory."
+								}
+							/>
 						)}
-					</StatRail>
-					{inventory.databases.length === 0 ? (
-						<Empty className="py-16">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<PlanetScaleIcon size={16} />
-								</EmptyMedia>
-								<EmptyTitle>No databases discovered yet</EmptyTitle>
-								<EmptyDescription>
-									Maple refreshes the database and branch list within a few minutes of
-									connecting. If this persists, check that the connection still has the
-									read_databases permission.
-								</EmptyDescription>
-							</EmptyHeader>
-							<EmptyActions>
-								<Button
-									variant="outline"
-									size="sm"
-									render={
-										<Link to="/integrations" search={{ integration: "planetscale" }} />
-									}
-								>
-									Check the connection
-								</Button>
-								<DocsLink page="planetscale" />
-							</EmptyActions>
-						</Empty>
-					) : (
-						<PlanetScaleDatabaseTable
-							databases={inventory.databases}
-							statsByName={statsByName}
-							waiting={Boolean(statsResult.waiting)}
-							metricsPaused={neverCollected}
-							emptyMessage={
-								metricsPaused ? METRICS_PAUSED_MESSAGE : "No databases in the inventory."
-							}
-						/>
-					)}
-				</div>
-			)
-		})
-		.render()
+					</div>
+				)
+			}}
+		</ResultView>
+	)
 }
 
 /** Stable empty fallback — a fresh `[]` per render would bust every downstream memo. */

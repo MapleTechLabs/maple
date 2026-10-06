@@ -25,6 +25,30 @@ const pass = (calls: number, outputChars: number) =>
 	})
 
 describe("withToolTranscript", () => {
+	it("renders a result's text without its UI payload", () => {
+		const message = new ChatMessage({
+			id: "pass",
+			role: "assistant",
+			text: "",
+			toolCalls: [
+				new ChatToolCall({
+					id: "c0",
+					name: "list_services",
+					input: {},
+					output: {
+						text: "## Services",
+						ui: { __maple_ui: true, tool: "list_services", data: {} },
+					},
+				}),
+			],
+			createdAt: 0,
+			startSeq: 1,
+		})
+		const [rendered] = withToolTranscript([message])
+		assert.include(rendered!.text, "## Services")
+		assert.notInclude(rendered!.text, "__maple_ui")
+	})
+
 	it("renders every call of a small pass", () => {
 		const [message] = withToolTranscript([pass(3, 100)])
 		assert.include(message!.text, "src/f0.ts")

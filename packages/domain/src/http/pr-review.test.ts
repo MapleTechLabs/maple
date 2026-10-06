@@ -11,6 +11,7 @@ import {
 	normalizePrReviewFinding,
 	normalizePrReviewSubmission,
 	parseReplyCommand,
+	reviewerMention,
 	prReviewFailureReason,
 	PrReviewReport,
 	scorePrReview,
@@ -282,6 +283,19 @@ describe("mentions", () => {
 		// A quoted fix request answered with a question is a question.
 		assert.equal(parseReplyCommand("> @maple fix it\n\n@maple why?").command, "ask")
 		assert.equal(parseReplyCommand("@maple fixture question").command, "ask")
+	})
+
+	it("recognises the install's own App login and reads its command", () => {
+		const mention = reviewerMention("maple-review-bot")
+		assert.equal(mention, "@maple-review-bot")
+		assert.equal(reviewerMention(undefined), "@maple")
+		assert.equal(reviewerMention(" "), "@maple")
+		assert.isTrue(mentionsReviewer("@maple-review-bot why?", mention))
+		assert.isFalse(mentionsReviewer("@maple-review-bot why?"))
+		assert.isFalse(mentionsReviewer("@maple-review-botx why?", mention))
+		assert.isTrue(mentionsReviewer("@maple why?", mention))
+		assert.equal(parseReplyCommand("@maple-review-bot fix it", mention).command, "fix")
+		assert.equal(parseReplyCommand("hey @Maple-Review-Bot review", mention).command, "review")
 	})
 })
 

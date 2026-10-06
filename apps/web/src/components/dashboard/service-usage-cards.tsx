@@ -1,27 +1,27 @@
 import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { Result } from "@/lib/effect-atom"
-import { FileIcon, GridSquareCirclePlusIcon, ChartLineIcon, DatabaseIcon } from "@/components/icons"
-
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResultView } from "@/components/common/result-view"
+import { Delta } from "@maple/ui/components/ui/delta"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { ServiceUsageResponse, ServiceUsageTotals } from "@/api/warehouse/service-usage"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+
 type CardKey = "logs" | "traces" | "metrics" | "dataSize"
 
 const cardConfig: Array<{
 	title: string
 	key: CardKey
-	icon: typeof FileIcon
 	format: (n: number) => string
 }> = [
-	{ title: "Total Logs", key: "logs", icon: FileIcon, format: formatNumber },
-	{ title: "Total Traces", key: "traces", icon: GridSquareCirclePlusIcon, format: formatNumber },
-	{ title: "Total Metrics", key: "metrics", icon: ChartLineIcon, format: formatNumber },
-	{ title: "Data Size", key: "dataSize", icon: DatabaseIcon, format: formatStorageBytes },
+	{ title: "Total Logs", key: "logs", format: formatNumber },
+	{ title: "Total Traces", key: "traces", format: formatNumber },
+	{ title: "Total Metrics", key: "metrics", format: formatNumber },
+	{ title: "Data Size", key: "dataSize", format: formatStorageBytes },
 ]
 
 interface ServiceUsageCardsProps {
@@ -29,7 +29,8 @@ interface ServiceUsageCardsProps {
 	endTime?: string
 }
 
-function sumTotals(response: ServiceUsageResponse) {
+/** Sums per-service usage into one total per signal. */
+export function sumTotals(response: ServiceUsageResponse): ServiceUsageTotals {
 	return response.data.reduce(
 		(acc, service) => ({
 			logs: acc.logs + service.totalLogs,
@@ -57,32 +58,6 @@ function shiftRangeBack(startTime?: string, endTime?: string) {
 	}
 }
 
-function DeltaChip({ current, previous }: { current: number; previous: number }) {
-	if (previous <= 0 || !Number.isFinite(previous)) {
-		return <span className="text-[10px] text-muted-foreground/60 tabular-nums">–</span>
-	}
-	const pct = ((current - previous) / previous) * 100
-	if (!Number.isFinite(pct)) {
-		return <span className="text-[10px] text-muted-foreground/60 tabular-nums">–</span>
-	}
-	const rounded = Math.abs(pct) < 0.05 ? 0 : pct
-	const up = rounded > 0
-	const neutral = rounded === 0
-	const arrow = neutral ? "·" : up ? "↑" : "↓"
-	const color = neutral
-		? "text-muted-foreground/70"
-		: up
-			? "text-[color:var(--severity-info)]"
-			: "text-[color:var(--severity-warn)]"
-	return (
-		<span className={`inline-flex items-center gap-1 text-[10px] tabular-nums ${color}`}>
-			<span className="font-medium">{arrow}</span>
-			<span>{Math.abs(rounded).toFixed(rounded === 0 ? 0 : 1)}%</span>
-			<span className="text-muted-foreground/50">vs prev</span>
-		</span>
-	)
-}
-
 export function ServiceUsageCards({ startTime, endTime }: ServiceUsageCardsProps = {}) {
 	// Current + previous totals come back in ONE request (sumIf over the union
 	// window) instead of two separate per-period queries.
@@ -97,85 +72,52 @@ export function ServiceUsageCards({ startTime, endTime }: ServiceUsageCardsProps
 		.onSuccess((r) => r.previousTotals ?? null)
 		.orElse(() => null as null | ServiceUsageTotals)
 
-	return Result.builder(responseResult)
-		.onInitial(() => (
-			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-				{cardConfig.map((card) => (
-					<Card key={card.title} className="overflow-hidden">
-						<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
-							<Skeleton className="h-4 w-24" />
-							<Skeleton className="size-4" />
-						</CardHeader>
-						<CardContent>
-							<Skeleton className="h-10 w-24" />
-						</CardContent>
-					</Card>
-				))}
-			</div>
-		))
-		.onError(() => (
-			// Quiet absence, not four more error blocks — the chart panels below
-			// already carry the full message. Keep the loaded state's card rhythm
-			// with an em-dash in the value slot.
-			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-				{cardConfig.map((card) => (
-					<Card key={card.title}>
-						<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-1">
-							<CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-								{card.title}
-							</CardTitle>
-							<card.icon size={14} className="text-muted-foreground/70" />
-						</CardHeader>
-						<CardContent className="pt-0 pb-4">
-							<div className="font-mono text-3xl font-semibold leading-none tracking-tight tabular-nums text-muted-foreground/40">
-								—
-							</div>
-							<div className="mt-2 flex h-[14px] items-center text-xs text-muted-foreground">
-								Couldn&apos;t load
-							</div>
-						</CardContent>
-					</Card>
-				))}
-			</div>
-		))
-		.onSuccess((response) => {
-			const totals = sumTotals(response)
-
-			return (
-				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-					{cardConfig.map((card) => {
-						const current = totals[card.key]
-						const previous = previousTotals?.[card.key]
-						return (
-							<Card
-								key={card.title}
-								className="relative overflow-hidden transition-colors hover:border-foreground/20"
-							>
-								<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-1">
-									<CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-										{card.title}
-									</CardTitle>
-									<card.icon size={14} className="text-muted-foreground/70" />
-								</CardHeader>
-								<CardContent className="pt-0 pb-4">
-									<div className="flex items-baseline gap-3">
-										<div className="font-mono text-3xl font-semibold leading-none tracking-tight text-foreground tabular-nums">
-											{card.format(current)}
-										</div>
-									</div>
-									<div className="mt-2 h-[14px] flex items-center">
-										{previous !== undefined ? (
-											<DeltaChip current={current} previous={previous} />
+	return (
+		<ResultView
+			result={responseResult}
+			loading={<StatRailLoading />}
+			// Quiet absence, not four more error blocks: the chart panels below
+			// already carry the full message.
+			error={() => (
+				<StatRail>
+					{cardConfig.map((card) => (
+						<StatRailItem
+							key={card.key}
+							eyebrow={card.title}
+							value="—"
+							subline="Couldn't load"
+							compact
+						/>
+					))}
+				</StatRail>
+			)}
+		>
+			{(response) => {
+				const totals = sumTotals(response)
+				return (
+					<StatRail>
+						{cardConfig.map((card) => {
+							const current = totals[card.key]
+							const previous = previousTotals?.[card.key]
+							return (
+								<StatRailItem
+									key={card.key}
+									eyebrow={card.title}
+									value={card.format(current)}
+									compact
+									delta={
+										previous !== undefined ? (
+											<Delta current={current} previous={previous} suffix="vs prev" />
 										) : (
-											<Skeleton className="h-3 w-20" />
-										)}
-									</div>
-								</CardContent>
-							</Card>
-						)
-					})}
-				</div>
-			)
-		})
-		.render()
+											<Skeleton className="h-3 w-16" />
+										)
+									}
+								/>
+							)
+						})}
+					</StatRail>
+				)
+			}}
+		</ResultView>
+	)
 }

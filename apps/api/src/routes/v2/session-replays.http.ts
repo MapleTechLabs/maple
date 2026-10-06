@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, SessionId, TraceId } from "@maple/domain/http"
 import {
 	MAX_REPLAY_CHUNKS_PER_REQUEST,

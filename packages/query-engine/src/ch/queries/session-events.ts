@@ -7,10 +7,16 @@
 //
 // Plain MergeTree, immutable append; no ReplacingMergeTree dedup needed.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { SessionEvents } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromQuery,
+	type CHQuery,
+	type ColumnAccessor,
+	type InferOutput,
+} from "@maple-dev/effect-orm/clickhouse"
+import { SessionEvents, orgIdParam } from "../tables"
 
 // The builder's `count`, which knows the result is a `UInt64` — a local
 // `compileFnCall` copy shadowed it and decoded nothing.
@@ -83,7 +89,7 @@ export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 			attributes: CH.toJSONString($.Attributes),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
 			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
 			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
@@ -131,7 +137,7 @@ export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
 			matchCount: count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),
 			CH.when(opts.type, (v: string) => $.Type.eq(v)),
@@ -202,9 +208,22 @@ function sessionGapSelect($: ColumnAccessor<typeof SessionEvents.columns>) {
 	}
 }
 
+function sessionGaps() {
+	return from(SessionEvents).select(sessionGapSelect)
+}
+
+/** The per-event gap query, whatever params its WHERE binds. */
+type SessionGaps<P> = CHQuery<
+	typeof SessionEvents.columns,
+	InferOutput<ReturnType<typeof sessionGapSelect>>,
+	{},
+	undefined,
+	P
+>
+
 // Aggregate per-session gaps into active / idle totals. Generic over the inner
 // gap subquery so both variants share the threshold split.
-function activeIdleAggregate(inner: ReturnType<typeof sessionActivityGaps>) {
+function activeIdleAggregate<P>(inner: SessionGaps<P>) {
 	return fromQuery(inner, "g")
 		.select(($) => ({
 			sessionId: $.sessionId,
@@ -215,31 +234,16 @@ function activeIdleAggregate(inner: ReturnType<typeof sessionActivityGaps>) {
 		.groupBy("sessionId")
 }
 
-function sessionActivityGaps(opts: { single: boolean } & SessionActivityOpts) {
-	return from(SessionEvents)
-		.select(sessionGapSelect)
-		.where(($) =>
-			opts.single
-				? [
-						$.OrgId.eq(param.string("orgId")),
-						$.SessionId.eq(param.string("sessionId")),
-						CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-						CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
-					]
-				: [
-						$.OrgId.eq(param.string("orgId")),
-						$.Timestamp.gte(param.dateTimeString("startTime")),
-						$.Timestamp.lte(param.dateTimeString("endTime")),
-					],
-		)
-}
-
 // Single session (detail page + MCP get_session_traces). Binds `sessionId` as a
 // param; optional startTime/endTime hints prune daily partitions.
 export function sessionActivityQuery(opts: SessionActivityOpts = {}) {
-	return activeIdleAggregate(sessionActivityGaps({ single: true, ...opts }))
-		.limit(1)
-		.format("JSON")
+	const gaps = sessionGaps().where(($) => [
+		$.OrgId.eq(orgIdParam),
+		$.SessionId.eq(param.string("sessionId")),
+		CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
+		CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+	])
+	return activeIdleAggregate(gaps).limit(1).format("JSON")
 }
 
 // Every session in the org + time window, keyed by sessionId. Returned as an
@@ -247,5 +251,10 @@ export function sessionActivityQuery(opts: SessionActivityOpts = {}) {
 // active time. Binds the same `startTime`/`endTime` params as the list query, so
 // they resolve to the same window when compiled together.
 export function sessionActivityAggregateQuery() {
-	return activeIdleAggregate(sessionActivityGaps({ single: false }))
+	const gaps = sessionGaps().where(($) => [
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(param.dateTimeString("startTime")),
+		$.Timestamp.lte(param.dateTimeString("endTime")),
+	])
+	return activeIdleAggregate(gaps)
 }

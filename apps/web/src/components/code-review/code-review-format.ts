@@ -1,0 +1,94 @@
+import type {
+	CodeReviewListItem,
+	PrReviewCategory,
+	PrReviewFindingStatus,
+	PrReviewSeverity,
+	PrReviewSkipReason,
+} from "@maple/domain/http"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+
+export const CATEGORY_LABELS = {
+	correctness: "Correctness",
+	security: "Security",
+	performance: "Performance",
+	observability: "Observability",
+	convention: "Conventions",
+	tests: "Tests",
+	maintainability: "Maintainability",
+} satisfies Record<PrReviewCategory, string>
+
+export const SEVERITY_LABELS = {
+	critical: "Critical",
+	warn: "Warning",
+	info: "Note",
+} satisfies Record<PrReviewSeverity, string>
+
+/** Severity onto the shared tone scale; notes stay muted. */
+export const SEVERITY_TONE = {
+	critical: "crit",
+	warn: "warn",
+	info: "neutral",
+} satisfies Record<PrReviewSeverity, Tone>
+
+export const FINDING_STATUS_LABELS = {
+	open: "Open",
+	resolved: "Resolved",
+	dismissed: "Dismissed",
+} satisfies Record<PrReviewFindingStatus, string>
+
+export const SKIP_LABELS = {
+	disabled: "reviews off",
+	draft: "draft",
+	bot_author: "bot author",
+	action: "not reviewed for this event",
+	no_head_sha: "no head commit",
+	quota: "daily limit reached",
+	duplicate: "already reviewed",
+	superseded: "a newer push was reviewed",
+	agent_unavailable: "reviewer unavailable",
+	not_rolled_out: "not enabled for this organization",
+	automatic_limit: "pull request limit reached",
+} satisfies Record<PrReviewSkipReason, string>
+
+const COUNT = new Intl.NumberFormat("en-US")
+const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
+
+export const formatCount = (value: number) => (value >= 10_000 ? COMPACT.format(value) : COUNT.format(value))
+
+/** A span in the largest unit that keeps it readable: `42s`, `14m`, `5.2h`, `7.0d`. */
+export function formatSpan(seconds: number | null): string {
+	if (seconds === null || !Number.isFinite(seconds)) return "–"
+	if (seconds < 60) return `${Math.round(seconds)}s`
+	if (seconds < 3_600) return `${Math.round(seconds / 60)}m`
+	if (seconds < 86_400) return `${(seconds / 3_600).toFixed(1)}h`
+	return `${(seconds / 86_400).toFixed(1)}d`
+}
+
+export interface ReviewOutcome {
+	readonly label: string
+	/** Text class; a clean review paints the ok hue (TONE_TEXT.ok is plain foreground). */
+	readonly tone: string
+	readonly kind: "queued" | "running" | "failed" | "skipped" | "issues" | "clean" | "neutral"
+}
+
+export const outcomeOf = (review: Pick<CodeReviewListItem, "status" | "verdict">): ReviewOutcome => {
+	switch (review.status) {
+		case "queued":
+			return { label: "Queued", tone: "text-muted-foreground", kind: "queued" }
+		case "running":
+			return { label: "Reviewing", tone: TONE_TEXT.info, kind: "running" }
+		case "failed":
+			return { label: "Failed", tone: TONE_TEXT.crit, kind: "failed" }
+		case "skipped":
+			return { label: "Skipped", tone: "text-muted-foreground", kind: "skipped" }
+		case "completed":
+			return review.verdict === "issues"
+				? { label: "Issues found", tone: TONE_TEXT.warn, kind: "issues" }
+				: review.verdict === "not_applicable"
+					? { label: "Nothing to review", tone: "text-muted-foreground", kind: "neutral" }
+					: { label: "Clean", tone: "text-severity-info", kind: "clean" }
+	}
+}
+
+/** Bucket starts as the ISO strings the shared charts parse. */
+export const bucketIso = (bucketMs: number) => new Date(bucketMs).toISOString()

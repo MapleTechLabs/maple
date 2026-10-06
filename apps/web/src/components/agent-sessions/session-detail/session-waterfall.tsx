@@ -1,12 +1,18 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, type ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { Link } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ChevronDownIcon, ChevronRightIcon, CircleXmarkIcon } from "@/components/icons"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
@@ -33,7 +39,6 @@ import { filterSpans, isDelegation } from "@/lib/agent-sessions/span-filters"
 import { useDetectedModels, type DetectedModel } from "@/hooks/use-detected-models"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
 import { ModelLabel } from "../model-label"
-import { Pill } from "./pill"
 import type { SpanDetailTab } from "./span-expansion"
 import { SpanPopover } from "./span-popover"
 import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
@@ -234,7 +239,11 @@ export function SessionWaterfall({
 			{/* Stacks under the views' sticky control bar, whose height that bar
 			    publishes as a variable, so the ruler stays readable while scrolling. */}
 			<div className="sticky top-[var(--session-controls-height,0px)] z-10 bg-background">
-				<div className="flex h-7 items-center border-border border-b px-2.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
+				<Eyebrow
+					variant="label"
+					as="div"
+					className="flex h-7 items-center border-border border-b px-2.5"
+				>
 					<span className={COL_SPAN}>Span</span>
 					<span className={COL_MODEL}>Model / target</span>
 					<span className={COL_TOKENS}>Tokens</span>
@@ -264,7 +273,7 @@ export function SessionWaterfall({
 						))}
 					</span>
 					<span className={COL_DUR}>Dur</span>
-				</div>
+				</Eyebrow>
 
 				{axis.removedGapCount > 0 && (
 					<p className="border-border border-b px-2.5 py-1 text-[11px] text-muted-foreground">
@@ -276,9 +285,7 @@ export function SessionWaterfall({
 
 			<div ref={listRef}>
 				{rows.length === 0 ? (
-					<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
-						No spans match this filter.
-					</p>
+					<EmptyMessage>No spans match this filter.</EmptyMessage>
 				) : (
 					<div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
 						{virtualizer.getVirtualItems().map((item) => {
@@ -495,9 +502,7 @@ function TurnHeader({
 					) : (
 						<ChevronDownIcon size={12} className="shrink-0 text-muted-foreground" />
 					)}
-					<span className="shrink-0 font-medium text-[10px] text-primary uppercase tracking-wider">
-						{ordinal}
-					</span>
+					<Eyebrow className="shrink-0 text-primary">{ordinal}</Eyebrow>
 					{/* The label is the first prose line of a captured message, not a
 					    verbatim quote, so it is set as muted text rather than quoted. */}
 					<span className="min-w-0 truncate text-muted-foreground">
@@ -507,18 +512,18 @@ function TurnHeader({
 							turn.label
 						)}
 					</span>
-					{turn.failed && <Pill tone="error">Failed</Pill>}
+					{turn.failed && <FailedBadge />}
 					{collapsed && (
-						<span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground tabular-nums">
+						<Badge variant="muted" pill size="xs" className="tabular-nums">
 							{row.visibleCount} spans
-						</span>
+						</Badge>
 					)}
 				</button>
 				{traceId !== undefined && (
-					<span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+					<Eyebrow className="flex shrink-0 items-center gap-1">
 						<TraceLink traceId={traceId} timestamp={turn.anchor.timestamp} />
 						{turn.traceIds.length > 1 && <span>+{turn.traceIds.length - 1}</span>}
-					</span>
+					</Eyebrow>
 				)}
 			</span>
 			<span className={COL_MODEL}>{turn.agentName ?? "—"}</span>
@@ -550,7 +555,7 @@ function TraceLink({ traceId, timestamp }: { traceId: string; timestamp: string 
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 			)}
 		>
-			Trace {traceId.slice(0, 8)}
+			Trace {shortId(traceId, "trace")}
 		</Link>
 	)
 }
@@ -605,7 +610,7 @@ function SpanRow({
 			className={cn(
 				"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/40",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-				errored && "bg-destructive/6",
+				errored && "bg-severity-error/6",
 				focused && "bg-accent/60",
 				// Louder than the open row's mark on purpose: nothing is on screen
 				// saying which span the reader crossed views for except this row.
@@ -620,7 +625,7 @@ function SpanRow({
 				<Glyph
 					aria-hidden
 					size={13}
-					className={cn("shrink-0", errored ? "text-destructive" : CATEGORY_TEXT[category])}
+					className={cn("shrink-0", errored ? "text-severity-error" : CATEGORY_TEXT[category])}
 				/>
 				{heading.operation !== undefined && (
 					// Chrome, not the label: which operation ran is already the row's
@@ -636,11 +641,15 @@ function SpanRow({
 				{span.statusMessage !== "" && (
 					<span className="min-w-0 truncate text-muted-foreground">{span.statusMessage}</span>
 				)}
-				{errored && <Pill tone="error">{span.genAi.errorType ?? "Error"}</Pill>}
-				{isDelegation(span, spansById) && <Pill tone="outline">Subagent</Pill>}
+				{errored && <FailedBadge>{span.genAi.errorType ?? "Error"}</FailedBadge>}
+				{isDelegation(span, spansById) && (
+					<Badge variant="meta" pill size="xs" className="uppercase tracking-wide">
+						Subagent
+					</Badge>
+				)}
 			</span>
 			<span
-				className={cn(COL_MODEL, errored && "text-destructive")}
+				className={cn(COL_MODEL, errored && "text-severity-error")}
 				// The raw value the span carried, whichever way the cell draws it —
 				// `ModelLabel` fills the cell, so it is the one that has to hold it.
 				title={model === undefined ? target : undefined}
@@ -702,7 +711,7 @@ function SpanBar({
 				<span
 					className={cn(
 						"absolute inset-0",
-						errored ? "bg-destructive" : CATEGORY_FILL[category],
+						errored ? "bg-severity-error" : CATEGORY_FILL[category],
 						container && "opacity-35",
 					)}
 				/>
@@ -819,7 +828,7 @@ function clipTarget(value: string): string | undefined {
 function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined; errored?: boolean }) {
 	const drawn = tokens === undefined ? [] : TOKEN_BUCKETS.filter((bucket) => tokens[bucket.key] > 0)
 	if (tokens === undefined || tokens.total === 0 || drawn.length === 0) {
-		return <span className={cn(COL_TOKENS, errored && "text-destructive")}>—</span>
+		return <span className={cn(COL_TOKENS, errored && "text-severity-error")}>—</span>
 	}
 
 	const title = [
@@ -829,20 +838,32 @@ function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined
 
 	return (
 		<span className={COL_TOKENS_SPLIT} title={title}>
-			<span aria-hidden className="flex h-1.5 flex-1 gap-px overflow-hidden rounded-xs bg-muted">
-				{drawn.map((bucket) => (
-					<span
-						key={bucket.key}
-						className={bucket.fill}
-						style={{ width: `${(tokens[bucket.key] / tokens.total) * 100}%` }}
-					/>
-				))}
-			</span>
+			<SegmentedBar
+				segments={drawn.map((bucket) => ({
+					key: bucket.key,
+					value: tokens[bucket.key],
+					className: bucket.fill,
+				}))}
+				total={tokens.total}
+				className="flex-1 gap-px rounded-xs bg-muted"
+			/>
 			<span
-				className={cn("shrink-0 tabular-nums text-muted-foreground", errored && "text-destructive")}
+				className={cn(
+					"shrink-0 tabular-nums text-muted-foreground",
+					errored && "text-severity-error",
+				)}
 			>
 				{formatNumber(tokens.total)}
 			</span>
 		</span>
+	)
+}
+
+/** The crit-toned uppercase pill marking a failed turn or span. */
+export function FailedBadge({ children = "Failed" }: { children?: ReactNode }) {
+	return (
+		<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+			{children}
+		</Badge>
 	)
 }

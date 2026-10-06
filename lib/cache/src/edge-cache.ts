@@ -1,9 +1,9 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Config, Context, Effect, Layer, Option, Schema } from "effect"
-import { CacheBackend, type EdgeCacheBackend } from "./cache-backend"
+import { Clock, Config, Context, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { CacheBackend, type EdgeCacheBackend, type EdgeCacheBackendError } from "./cache-backend"
 import { isolateOutboundSlots, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
 
-export { CacheBackend, type EdgeCacheBackend } from "./cache-backend"
+export { CacheBackend, type EdgeCacheBackend, EdgeCacheBackendError } from "./cache-backend"
 
 export class EdgeCacheIOError extends Schema.TaggedError<EdgeCacheIOError>()(
 	"@maple/cache/EdgeCacheIOError",
@@ -18,6 +18,11 @@ export class EdgeCacheIOError extends Schema.TaggedError<EdgeCacheIOError>()(
 		return `Edge cache ${this.op} failed for ${this.bucket}/${this.key}: ${this.cause}`
 	}
 }
+
+const toIOError =
+	(bucket: string, key: string) =>
+	(error: EdgeCacheBackendError): EdgeCacheIOError =>
+		new EdgeCacheIOError({ op: error.op, bucket, key, cause: error.message })
 
 export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	readonly bucket: string
@@ -256,27 +261,35 @@ export const makeEdgeCacheService = (
 		key: string,
 		nowMs: number,
 		timeoutMs: number,
-	): Promise<{ readonly value: unknown | undefined; readonly timedOut: boolean }> => {
-		let timer: ReturnType<typeof setTimeout> | undefined
-		const deadline = new Promise<{ readonly value: undefined; readonly timedOut: true }>((resolve) => {
-			timer = setTimeout(() => resolve({ value: undefined, timedOut: true }), timeoutMs)
+	): Effect.Effect<
+		{ readonly value: unknown | undefined; readonly timedOut: boolean },
+		EdgeCacheBackendError
+	> =>
+		Effect.gen(function* () {
+			// The slot is held until the UNDERLYING read settles, not until the race
+			// does: an abandoned `cache.match()` cannot be cancelled and keeps its
+			// connection slot long after the deadline gave up on it. The read runs in
+			// a detached fiber that the deadline abandons rather than interrupts, so
+			// `slots.held()` reflects that zombie for exactly as long as it is real.
+			// Acquire and fork as one step, so an interrupt between them cannot leak the slot.
+			const read = yield* Effect.uninterruptible(
+				Effect.sync(() => slots.acquire()).pipe(
+					Effect.andThen(
+						Effect.interruptible(backend.get(bucket, key, nowMs)).pipe(
+							Effect.ensuring(Effect.sync(() => slots.release())),
+							Effect.forkDetach,
+						),
+					),
+				),
+			)
+			return yield* Fiber.join(read).pipe(
+				Effect.map((value) => ({ value, timedOut: false as const })),
+				Effect.timeoutOrElse({
+					duration: timeoutMs,
+					orElse: () => Effect.succeed({ value: undefined, timedOut: true as const }),
+				}),
+			)
 		})
-		// The slot is held until the UNDERLYING read settles, not until the race
-		// does: an abandoned `cache.match()` cannot be cancelled and keeps its
-		// connection slot long after the deadline gave up on it. Tying release to
-		// the backend promise makes `slots.held()` reflect that zombie for exactly
-		// as long as it is real.
-		slots.acquire()
-		const backendRead = Promise.resolve().then(() => backend.get(bucket, key, nowMs))
-		backendRead.then(
-			() => slots.release(),
-			() => slots.release(),
-		)
-		const read = backendRead.then((value) => ({ value, timedOut: false as const }))
-		return Promise.race([read, deadline]).finally(() => {
-			if (timer !== undefined) clearTimeout(timer)
-		})
-	}
 
 	const resolveReadTimeoutMs = (override: number | undefined): number =>
 		override !== undefined && Number.isFinite(override)
@@ -311,16 +324,9 @@ export const makeEdgeCacheService = (
 				typeof options.ttlSeconds === "function" ? options.ttlSeconds(value) : options.ttlSeconds
 			const writeNowMs = yield* Clock.currentTimeMillis
 			yield* trackOutboundSlot(
-				Effect.tryPromise({
-					try: () => backend.put(options.bucket, hash, stored, ttlSeconds, writeNowMs),
-					catch: (cause) =>
-						new EdgeCacheIOError({
-							op: "put",
-							bucket: options.bucket,
-							key: options.key,
-							cause: cause instanceof Error ? cause.message : String(cause),
-						}),
-				}),
+				backend
+					.put(options.bucket, hash, stored, ttlSeconds, writeNowMs)
+					.pipe(Effect.mapError(toIOError(options.bucket, options.key))),
 				slots,
 			).pipe(
 				Effect.tapError((error) =>
@@ -358,16 +364,8 @@ export const makeEdgeCacheService = (
 			}
 			const read = skipRead
 				? { value: undefined, timedOut: false as const }
-				: yield* Effect.tryPromise({
-						try: () => readBackend(options.bucket, hash, nowMs, timeoutMs),
-						catch: (cause) =>
-							new EdgeCacheIOError({
-								op: "get",
-								bucket: options.bucket,
-								key: options.key,
-								cause: cause instanceof Error ? cause.message : String(cause),
-							}),
-					}).pipe(
+				: yield* readBackend(options.bucket, hash, nowMs, timeoutMs).pipe(
+						Effect.mapError(toIOError(options.bucket, options.key)),
 						Effect.tapError((error) =>
 							Effect.logWarning("Edge cache get failed; treating as miss").pipe(
 								Effect.annotateLogs({
@@ -435,16 +433,8 @@ export const makeEdgeCacheService = (
 		options: EdgeCacheInvalidateOptions,
 	) {
 		const hash = yield* Effect.promise(() => sha256Hex(options.key))
-		yield* Effect.tryPromise({
-			try: () => backend.delete(options.bucket, hash),
-			catch: (cause) =>
-				new EdgeCacheIOError({
-					op: "delete",
-					bucket: options.bucket,
-					key: options.key,
-					cause: cause instanceof Error ? cause.message : String(cause),
-				}),
-		}).pipe(
+		yield* backend.delete(options.bucket, hash).pipe(
+			Effect.mapError(toIOError(options.bucket, options.key)),
 			Effect.tapError((error) =>
 				Effect.logWarning("Edge cache delete failed; entry will expire via TTL").pipe(
 					Effect.annotateLogs({
@@ -471,16 +461,9 @@ export const makeEdgeCacheService = (
 		const skipRead = shouldSkipRead(bucket, nowMs)
 		const read = skipRead
 			? { value: undefined, timedOut: false as const }
-			: yield* Effect.tryPromise({
-					try: () => readBackend(bucket, key, nowMs, boundedReadTimeoutMs),
-					catch: (cause) =>
-						new EdgeCacheIOError({
-							op: "get",
-							bucket,
-							key,
-							cause: cause instanceof Error ? cause.message : String(cause),
-						}),
-				})
+			: yield* readBackend(bucket, key, nowMs, boundedReadTimeoutMs).pipe(
+					Effect.mapError(toIOError(bucket, key)),
+				)
 		if (!skipRead) recordReadOutcome(bucket, read.timedOut, nowMs)
 		const value = read.value === undefined ? Option.none<A>() : Option.some(read.value as A)
 		const status: EdgeCacheReadStatus = skipRead
@@ -512,16 +495,7 @@ export const makeEdgeCacheService = (
 	) {
 		const nowMs = yield* Clock.currentTimeMillis
 		return yield* trackOutboundSlot(
-			Effect.tryPromise({
-				try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
-				catch: (cause) =>
-					new EdgeCacheIOError({
-						op: "put",
-						bucket,
-						key,
-						cause: cause instanceof Error ? cause.message : String(cause),
-					}),
-			}),
+			backend.put(bucket, key, value, ttlSeconds, nowMs).pipe(Effect.mapError(toIOError(bucket, key))),
 			slots,
 		)
 	})

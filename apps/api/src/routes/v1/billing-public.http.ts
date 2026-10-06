@@ -1,5 +1,5 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { HttpServerRequest } from "effect/http"
 import { Effect, Option, Schema } from "effect"
 import { CatalogPlan, CatalogPlansResponse, MapleApi } from "@maple/domain/http"
 import { decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"

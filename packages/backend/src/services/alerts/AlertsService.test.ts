@@ -8,6 +8,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, Clock, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import {
@@ -193,8 +194,12 @@ const defaultTestRuntime: AlertRuntimeApi = {
 	// TestClock.adjust. Real `fetch`/`Effect.timeout` settle on the live event loop.
 	now: Clock.currentTimeMillis,
 	makeUuid: () => crypto.randomUUID(),
-	fetch: globalThis.fetch,
 	deliveryTimeoutMs: () => 15_000,
+}
+
+interface TestOverrides extends Partial<AlertRuntimeApi> {
+	/** Provided as `FetchHttpClient.Fetch`, so every outbound call goes through it. */
+	readonly fetch?: typeof fetch
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -244,10 +249,11 @@ const stubOrgMembersService = (
 const makeLayer = (
 	testDb: TestDb,
 	warehouseStub: WarehouseQueryServiceApi,
-	runtimeOverrides?: Partial<AlertRuntimeApi>,
+	overrides: TestOverrides = {},
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
+	const { fetch: fetchImpl = globalThis.fetch, ...runtimeOverrides } = overrides
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -274,6 +280,7 @@ const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -287,6 +294,7 @@ const makeLayer = (
 	)
 
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
@@ -309,7 +317,9 @@ const makeLayer = (
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
 	)
-	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive)
+	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
+		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+	)
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -3469,6 +3479,7 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.strictEqual(errorChecks[0]?.ErrorMessage, "Unknown column FooBar in traces")
 			assert.strictEqual(errorChecks[0]?.ErrorCategory, "warehouse_query_failed")
 			assert.strictEqual(errorChecks[0]?.GroupKey, "__total__")
+			assert.strictEqual(errorChecks[0]?.SkipReason, "")
 
 			const stateAfterFirstFailure = yield* Effect.promise(() =>
 				queryFirstRow<{ updated_at: Date }>(
@@ -3501,6 +3512,119 @@ describe("AlertsService evaluation error persistence", () => {
 			yield* alerts.runSchedulerTick()
 			const rulesAfterRecovery = yield* alerts.listRules(orgId)
 			assert.isNull(rulesAfterRecovery.rules[0]?.lastEvaluationError)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("opens an incident on empty windows when the rule alerts on no data", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_on_no_data")
+			const userId = asUserId("user_alert_on_no_data")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout goes blind",
+					severity: "critical",
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					alertOnNoData: true,
+					destinationIds: [destination.id],
+				}),
+			)
+			assert.strictEqual(rule.noDataBehavior, "alert")
+
+			yield* alerts.runSchedulerTick()
+
+			const breached = state.ingested.filter((row) => row.Status === "breached")
+			assert.lengthOf(breached, 1)
+			assert.isNull(breached[0]?.ObservedValue)
+			assert.strictEqual(breached[0]?.IncidentTransition, "opened")
+			const incidents = yield* alerts.listIncidents(orgId)
+			assert.lengthOf(incidents.incidents, 1)
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("keeps alertOnNoData on a low-throughput rule and rejects it on a grouped one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_on_no_data_shapes")
+			const userId = asUserId("user_alert_on_no_data_shapes")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const request = (fields: Partial<ConstructorParameters<typeof AlertRuleUpsertRequest>[0]>) =>
+				new AlertRuleUpsertRequest({
+					name: "No data shapes",
+					severity: "critical",
+					signalType: "throughput",
+					comparator: "lt",
+					threshold: 10,
+					windowMinutes: 5,
+					minimumSampleCount: 50,
+					consecutiveBreachesRequired: 1,
+					alertOnNoData: true,
+					destinationIds: [destination.id],
+					...fields,
+				})
+
+			// Read as zero, an empty window would be skipped under the minimum; alert wins.
+			const throughput = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				request({ serviceNames: ["checkout"] }),
+			)
+			assert.strictEqual(throughput.noDataBehavior, "alert")
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf(
+				state.ingested.filter((row) => row.Status === "breached" && row.ObservedValue === null),
+				1,
+			)
+
+			const grouped = yield* alerts
+				.createRule(
+					orgId,
+					userId,
+					adminRoles,
+					request({ name: "Grouped", groupBy: ["service.name"] }),
+				)
+				.pipe(Effect.flip)
+			assert.instanceOf(grouped, AlertValidationError)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("records why a check skipped when the window has no data", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { failing: false, rows: [], ingested: [] as Array<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_skip_reason")
+			const userId = asUserId("user_alert_skip_reason")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+
+			const skipped = state.ingested.filter((row) => row.Status === "skipped")
+			assert.lengthOf(skipped, 1)
+			assert.strictEqual(skipped[0]?.SkipReason, "no_data")
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 })
@@ -3756,6 +3880,81 @@ describe("AlertsService.previewRule", () => {
 			const points = preview.series[0]?.points ?? []
 			assert.isAbove(points.length, 0)
 			assert.isTrue(points.some((p) => p.value === 42))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("charts a no-data series for a raw-SQL rule whose query matches nothing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { rawQueryRows: [] }
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Raw preview empty",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes: 5,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+			// The scheduler sees one no-data observation per tick here, so the preview must too.
+			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_empty"), adminRoles, request)
+			assert.lengthOf(preview.series, 1)
+			const points = preview.series[0]?.points ?? []
+			assert.lengthOf(points, 6)
+			assert.isTrue(points.every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("previews a grouped raw-SQL rule that alerts on no data the way the scheduler fires", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rawQueryRows: [
+				{ bucket: "2026-01-01 00:00:00", group: "a", value: 1, samples: 5 },
+				{ bucket: "2026-01-01 00:05:00", group: "a", value: 1, samples: 5 },
+			],
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Raw grouped no data",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT $__timeGroup(Timestamp) AS bucket, ServiceName AS group, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket, group",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes: 5,
+					consecutiveBreachesRequired: 1,
+					alertOnNoData: true,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_grouped"), adminRoles, request)
+			const byGroup = new Map(preview.series.map((series) => [series.groupKey, series.points]))
+			// A group missing from a tick is not evaluated by the scheduler, so it never breaches.
+			const a = byGroup.get("a") ?? []
+			assert.isTrue(a.slice(2).every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+			// Ticks where nothing reported at all breach under the empty-result key.
+			const empty = byGroup.get("all") ?? []
+			assert.deepStrictEqual(
+				empty.map((p) => p.status),
+				["healthy", "healthy", "breached", "breached", "breached", "breached"],
+			)
+			assert.isTrue(preview.wouldFire.every((span) => span.groupKey === "all"))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 

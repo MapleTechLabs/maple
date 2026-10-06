@@ -7,6 +7,8 @@ import {
 	type AlertDeliveryFailure,
 } from "@maple/domain/http"
 import { Duration, Effect, Result, Schema } from "effect"
+import { constTrue } from "effect/Function"
+import { HttpClient } from "effect/http"
 import { buildTelegramText, buildTelegramTextFromTemplate } from "../../AlertDeliveryDispatch"
 import { truncate } from "../../alert-formatting"
 import type { HttpTransport, ProviderAck, RenderInput, SecretConfigOf } from "../Transport"
@@ -34,6 +36,8 @@ const TelegramResponseSchema = Schema.Struct({
 	result: Schema.optionalKey(Schema.Struct({ message_id: Schema.optionalKey(Schema.Number) })),
 })
 const decodeTelegramResponse = Schema.decodeUnknownResult(TelegramResponseSchema)
+const decodeTelegramResponseJson = Schema.decodeUnknownResult(Schema.fromJsonString(TelegramResponseSchema))
+const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 
 const telegramError = (message: string) => new AlertDeliveryError({ message, destinationType: "telegram" })
 
@@ -99,11 +103,9 @@ export const telegramTransport: HttpTransport<Config> = {
 		}
 	},
 	interpret: (input, rawBody): Result.Result<ProviderAck, AlertDeliveryFailure> => {
-		const parsed = Result.try({
-			try: (): unknown => JSON.parse(rawBody),
-			catch: () => telegramError("Telegram returned a non-JSON response"),
-		})
-		if (Result.isFailure(parsed)) return Result.fail(parsed.failure)
+		const parsed = decodeJson(rawBody)
+		if (Result.isFailure(parsed))
+			return Result.fail(telegramError("Telegram returned a non-JSON response"))
 
 		const decoded = decodeTelegramResponse(parsed.success)
 		if (Result.isFailure(decoded)) {
@@ -141,32 +143,38 @@ export type TelegramCredentialVerification =
 	/** Network error / timeout / 429 / 5xx — can't conclude; caller should fail open. */
 	| { status: "unknown" }
 
-const telegramApiCall = (
-	url: string,
-	fetchFn: typeof fetch,
-): Effect.Effect<{ ok: boolean; status: number; description: string }> =>
-	Effect.tryPromise(() => fetchFn(url, { method: "GET" })).pipe(
+/**
+ * A Bot API GET with its body read as text (empty when unreadable). The bot
+ * token is in the URL path, so the client's own span, which records
+ * `url.full`, stays off.
+ */
+const telegramGet = (url: string) =>
+	HttpClient.get(url).pipe(
 		Effect.flatMap((response) =>
-			Effect.promise(() => response.text().catch(() => "")).pipe(
-				Effect.map((body) => {
-					const decoded = decodeTelegramResponse(
-						Result.getOrElse(
-							Result.try({ try: (): unknown => JSON.parse(body), catch: () => null }),
-							() => null,
-						),
-					)
-					const description = Result.getOrElse(
-						Result.map(decoded, (payload) => payload.description ?? ""),
-						() => "",
-					)
-					return {
-						ok: response.ok,
-						status: response.status,
-						description: truncate(description.replace(/\s+/g, " ").trim(), 300),
-					}
+			Effect.map(
+				Effect.orElseSucceed(response.text, () => ""),
+				(body) => ({
+					ok: response.status >= 200 && response.status < 300,
+					status: response.status,
+					body,
 				}),
 			),
 		),
+		Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+	)
+
+const telegramApiCall = (
+	url: string,
+): Effect.Effect<{ ok: boolean; status: number; description: string }, never, HttpClient.HttpClient> =>
+	telegramGet(url).pipe(
+		Effect.map(({ ok, status, body }) => {
+			const decoded = decodeTelegramResponseJson(body)
+			const description = Result.getOrElse(
+				Result.map(decoded, (payload) => payload.description ?? ""),
+				() => "",
+			)
+			return { ok, status, description: truncate(description.replace(/\s+/g, " ").trim(), 300) }
+		}),
 		Effect.orElseSucceed(() => ({ ok: false, status: 0, description: "" })),
 	)
 
@@ -184,18 +192,17 @@ const telegramApiCall = (
 export const verifyTelegramCredentials = (
 	botToken: string,
 	chatId: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
-): Effect.Effect<TelegramCredentialVerification> =>
+): Effect.Effect<TelegramCredentialVerification, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const base = `${TELEGRAM_API_ORIGIN}/bot${botToken}`
-		const me = yield* telegramApiCall(`${base}/getMe`, fetchFn)
+		const me = yield* telegramApiCall(`${base}/getMe`)
 		if (me.status === 401 || me.status === 404) {
 			return { status: "invalid", reason: "Telegram rejected the bot token" } as const
 		}
 		if (!me.ok) return { status: "unknown" } as const
 
-		const chat = yield* telegramApiCall(`${base}/getChat?chat_id=${encodeURIComponent(chatId)}`, fetchFn)
+		const chat = yield* telegramApiCall(`${base}/getChat?chat_id=${encodeURIComponent(chatId)}`)
 		if (chat.status === 400 || chat.status === 403 || chat.status === 404) {
 			return {
 				status: "invalid",
@@ -266,7 +273,7 @@ const GetUpdatesResponseSchema = Schema.Struct({
 	error_code: Schema.optionalKey(Schema.Number),
 	result: Schema.optionalKey(Schema.Array(TelegramUpdateSchema)),
 })
-const decodeGetUpdates = Schema.decodeUnknownResult(GetUpdatesResponseSchema)
+const decodeGetUpdates = Schema.decodeUnknownResult(Schema.fromJsonString(GetUpdatesResponseSchema))
 
 const CHAT_TYPES = ["private", "group", "supergroup", "channel"] as const
 
@@ -297,70 +304,61 @@ const narrowChatType = (raw: string): TelegramChat["type"] | null =>
  */
 export const fetchTelegramChats = (
 	botToken: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
-): Effect.Effect<TelegramChatDiscovery> =>
-	Effect.tryPromise(() =>
-		fetchFn(
-			`${TELEGRAM_API_ORIGIN}/bot${botToken}/getUpdates?limit=100&timeout=0&allowed_updates=${encodeURIComponent(
-				JSON.stringify(["message", "edited_message", "channel_post", "my_chat_member"]),
-			)}`,
-			{ method: "GET" },
-		),
+): Effect.Effect<TelegramChatDiscovery, never, HttpClient.HttpClient> =>
+	telegramGet(
+		`${TELEGRAM_API_ORIGIN}/bot${botToken}/getUpdates?limit=100&timeout=0&allowed_updates=${encodeURIComponent(
+			JSON.stringify(["message", "edited_message", "channel_post", "my_chat_member"]),
+		)}`,
 	).pipe(
-		Effect.flatMap((response) =>
-			Effect.promise(() => response.text().catch(() => "")).pipe(
-				Effect.map((raw): TelegramChatDiscovery => {
-					const parsed = Result.try({ try: (): unknown => JSON.parse(raw), catch: () => null })
-					const decoded = decodeGetUpdates(Result.getOrElse(parsed, () => null))
-					if (Result.isFailure(decoded)) {
-						return response.ok
-							? { status: "invalid", reason: "Telegram returned an unexpected response" }
-							: {
-									status: "invalid",
-									reason: `Telegram rejected the request (${response.status})`,
-								}
-					}
-					const payload = decoded.success
-					if (!payload.ok) {
-						const description = payload.description ?? ""
-						if (payload.error_code === 409 || description.includes("webhook is active")) {
-							return {
-								status: "invalid",
-								reason: "This bot has a webhook registered, so Maple cannot read its recent chats. Delete the webhook (or enter the chat ID by hand).",
-							}
-						}
-						if (payload.error_code === 401) {
-							return { status: "invalid", reason: "Telegram rejected the bot token" }
-						}
-						return {
+		Effect.map((response): TelegramChatDiscovery => {
+			const decoded = decodeGetUpdates(response.body)
+			if (Result.isFailure(decoded)) {
+				return response.ok
+					? { status: "invalid", reason: "Telegram returned an unexpected response" }
+					: {
 							status: "invalid",
-							reason:
-								truncate(description.replace(/\s+/g, " ").trim(), 300) ||
-								"Telegram rejected the request",
+							reason: `Telegram rejected the request (${response.status})`,
 						}
+			}
+			const payload = decoded.success
+			if (!payload.ok) {
+				const description = payload.description ?? ""
+				if (payload.error_code === 409 || description.includes("webhook is active")) {
+					return {
+						status: "invalid",
+						reason: "This bot has a webhook registered, so Maple cannot read its recent chats. Delete the webhook (or enter the chat ID by hand).",
 					}
+				}
+				if (payload.error_code === 401) {
+					return { status: "invalid", reason: "Telegram rejected the bot token" }
+				}
+				return {
+					status: "invalid",
+					reason:
+						truncate(description.replace(/\s+/g, " ").trim(), 300) ||
+						"Telegram rejected the request",
+				}
+			}
 
-					const byId = new Map<string, TelegramChat>()
-					// Newest first: `getUpdates` returns ascending `update_id`, and the
-					// chat someone just added the bot to is the one they are looking for.
-					for (const update of [...(payload.result ?? [])].reverse()) {
-						const chat = (
-							update.my_chat_member ??
-							update.message ??
-							update.channel_post ??
-							update.edited_message
-						)?.chat
-						if (chat === undefined) continue
-						const type = narrowChatType(chat.type)
-						if (type === null) continue
-						const id = String(chat.id)
-						if (!byId.has(id)) byId.set(id, { id, title: chatLabel(chat), type })
-					}
-					return { status: "ok", chats: [...byId.values()] }
-				}),
-			),
-		),
+			const byId = new Map<string, TelegramChat>()
+			// Newest first: `getUpdates` returns ascending `update_id`, and the
+			// chat someone just added the bot to is the one they are looking for.
+			for (const update of [...(payload.result ?? [])].reverse()) {
+				const chat = (
+					update.my_chat_member ??
+					update.message ??
+					update.channel_post ??
+					update.edited_message
+				)?.chat
+				if (chat === undefined) continue
+				const type = narrowChatType(chat.type)
+				if (type === null) continue
+				const id = String(chat.id)
+				if (!byId.has(id)) byId.set(id, { id, title: chatLabel(chat), type })
+			}
+			return { status: "ok", chats: [...byId.values()] }
+		}),
 		Effect.timeoutOrElse({
 			duration: Duration.millis(timeoutMs),
 			orElse: () =>

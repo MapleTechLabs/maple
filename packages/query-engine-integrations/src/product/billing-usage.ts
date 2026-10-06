@@ -19,9 +19,9 @@
 // schemas are built from `CHNumber`.
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
-import { ProductEvents, ServiceUsage, SessionReplays } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { hourFloor } from "@maple/query-engine/ch/query-helpers"
 
@@ -58,7 +58,7 @@ export function dailySignalVolumeQuery() {
 				.add(CH.sum($.ExpHistogramMetricSizeBytes)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(hourFloor("startTime")),
 			$.Hour.lte(hourFloor("endTime")),
 		])
@@ -90,7 +90,7 @@ export function dailySessionCountQuery() {
 			sessions: CH.uniqExact($.SessionId),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.StartTime.gte(CH.toDateTime(param.dateTimeString("startTime"))),
 			$.StartTime.lte(CH.toDateTime(param.dateTimeString("endTime"))),
 		])
@@ -127,7 +127,7 @@ export function dailyProductEventCountQuery() {
 			events: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
 			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
 			$.Kind.neq("navigation"),

@@ -1,6 +1,7 @@
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { countLabel } from "@maple/ui/lib/format"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useAtomSet } from "@/lib/effect-atom"
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import type { V2ApiKey } from "@maple/domain/http/v2"
@@ -9,19 +10,16 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@maple/ui/components/ui/card"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -37,10 +35,13 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
+import { RelativeTime } from "@/components/common/relative-time"
 import {
-	AlertWarningIcon,
 	ArrowPathIcon,
 	CodeIcon,
 	DotsVerticalIcon,
@@ -51,6 +52,8 @@ import {
 } from "@/components/icons"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
+import { SyncUnavailable } from "@/components/common/sync-unavailable"
+import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { displayError } from "@/lib/error-messages"
@@ -123,7 +126,6 @@ export function ApiKeysSection() {
 	const [createOpen, setCreateOpen] = useState(false)
 	const [revokeOpen, setRevokeOpen] = useState(false)
 	const [revokingKey, setRevokingKey] = useState<ApiKey | null>(null)
-	const [isRevoking, setIsRevoking] = useState(false)
 	const [rollOpen, setRollOpen] = useState(false)
 	const [rollingKey, setRollingKey] = useState<ApiKey | null>(null)
 
@@ -143,22 +145,20 @@ export function ApiKeysSection() {
 		setRollOpen(true)
 	}
 
-	async function handleRevoke() {
-		if (!revokingKey) return
-		setIsRevoking(true)
+	async function handleRevoke(): Promise<boolean> {
+		if (!revokingKey) return false
 		prepareForMutation()
 		const result = await revokeMutation({ params: { id: revokingKey.id } })
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "API key revoked", type: "success" })
 			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
+			// ConfirmDialog closes on `true`. `revokingKey` stays set so the copy doesn't swap mid-animation.
+			return true
 		}
-		setIsRevoking(false)
-		setRevokeOpen(false)
-		// Keep `revokingKey` set so the dialog copy doesn't swap to the generic
-		// fallback while the close animation plays; the next open overwrites it.
+		const { title, message } = displayError(result)
+		toastManager.add({ title, description: message, type: "error" })
+		// `false` keeps the dialog open so the user can retry.
+		return false
 	}
 
 	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind
@@ -201,21 +201,20 @@ export function ApiKeysSection() {
 				<div className="flex flex-wrap items-center gap-3">
 					{keys.length > 0 && (
 						<>
-							<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
-								{(["active", "expired", "revoked"] as const).map((tab) =>
+							<SegmentedSelect
+								size="sm"
+								aria-label="Key status"
+								value={activeView}
+								onChange={setView}
+								options={(["active", "expired", "revoked"] as const)
 									// A tab for an empty bucket is a dead end. Active always shows, so
 									// there is something to fall back to.
-									tab === "active" || buckets[tab].length > 0 ? (
-										<FilterTab
-											key={tab}
-											active={activeView === tab}
-											onClick={() => setView(tab)}
-										>
-											{VIEW_LABELS[tab]} · {buckets[tab].length}
-										</FilterTab>
-									) : null,
-								)}
-							</div>
+									.filter((tab) => tab === "active" || buckets[tab].length > 0)
+									.map((tab) => ({
+										value: tab,
+										label: `${VIEW_LABELS[tab]} · ${buckets[tab].length}`,
+									}))}
+							/>
 							{buckets.active.length > 0 && (
 								<span className="text-muted-foreground font-mono text-[11px]">
 									<span className="text-success-foreground">{standardCount} standard</span>
@@ -240,25 +239,15 @@ export function ApiKeysSection() {
 					</Button>
 				</div>
 
-				<div className="bg-card rounded-lg border">
+				<div className="bg-card overflow-hidden rounded-lg border">
 					{isLoading ? (
-						<div className="space-y-2 p-4">
-							<Skeleton className="h-[52px] w-full" />
-							<Skeleton className="h-[52px] w-full" />
-						</div>
+						<SkeletonList rows={2} rowClassName="h-[52px]" gap="2" className="p-4" />
 					) : isError ? (
-						<Empty className="py-8">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<AlertWarningIcon size={16} />
-								</EmptyMedia>
-								<EmptyTitle>Couldn't load API keys</EmptyTitle>
-								<EmptyDescription>
-									Something went wrong while loading your keys. Reload the page to try
-									again.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+						<SyncUnavailable
+							title="Couldn't load API keys"
+							description="The key list couldn't be synced. Your keys are unaffected; this is a read problem."
+							onRetry={retryOrgCollections}
+						/>
 					) : keys.length === 0 ? (
 						<Empty className="py-8">
 							<EmptyHeader>
@@ -315,15 +304,20 @@ export function ApiKeysSection() {
 							)}
 						</Empty>
 					) : (
-						<div className="divide-border divide-y">
-							<div className="flex items-center gap-3 px-4 py-2">
-								<span className={cn(COL_HEADER, "min-w-0 flex-1")}>Key</span>
-								<span className={cn(COL_HEADER, COL.prefix)}>Prefix</span>
-								<span className={cn(COL_HEADER, COL.scopes)}>Scopes</span>
-								<span className={cn(COL_HEADER, COL.lastUsed)}>Last used</span>
-								<span className={cn(COL_HEADER, COL.expires)}>Expires</span>
-								<span className={cn(COL.menu)} />
-							</div>
+						// The card frame replaces DataTable's own top/bottom rule.
+						<DataTable.Root
+							ariaLabel="API keys"
+							stickySurfaceClass="bg-card"
+							className="border-y-0"
+						>
+							<DataTable.Head>
+								<ColumnHead label="Key" width="min-w-0 flex-1" />
+								<ColumnHead label="Prefix" width={COL.prefix} />
+								<ColumnHead label="Scopes" width={COL.scopes} />
+								<ColumnHead label="Last used" width={COL.lastUsed} />
+								<ColumnHead label="Expires" width={COL.expires} />
+								<span className={COL.menu} />
+							</DataTable.Head>
 							{visibleKeys.map((key) => (
 								<ApiKeyRow
 									key={key.id}
@@ -334,7 +328,7 @@ export function ApiKeysSection() {
 									onRevoke={key.revoked ? undefined : () => openRevokeDialog(key)}
 								/>
 							))}
-						</div>
+						</DataTable.Root>
 					)}
 				</div>
 			</div>
@@ -358,36 +352,27 @@ export function ApiKeysSection() {
 
 			<RollApiKeyDialog open={rollOpen} onOpenChange={setRollOpen} apiKey={rollingKey} />
 
-			<AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Revoke API key?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{revokingKey ? (
-								<>
-									<span className="text-foreground font-medium">{revokingKey.name}</span> (
-									<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will
-									stop working immediately. This action cannot be undone.
-								</>
-							) : (
-								<>
-									This action cannot be undone. Any integrations using this key will stop
-									working immediately.
-								</>
-							)}
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isRevoking}>Cancel</AlertDialogCancel>
-						<AlertDialogAction variant="destructive" onClick={handleRevoke} disabled={isRevoking}>
-							{isRevoking ? "Revoking..." : "Revoke key"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={revokeOpen}
+				onOpenChange={setRevokeOpen}
+				title="Revoke API key?"
+				description={
+					revokingKey ? (
+						<>
+							<span className="text-foreground font-medium">{revokingKey.name}</span> (
+							<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will stop
+							working immediately. This action cannot be undone.
+						</>
+					) : (
+						<>
+							This action cannot be undone. Any integrations using this key will stop working
+							immediately.
+						</>
+					)
+				}
+				confirmLabel="Revoke key"
+				onConfirm={handleRevoke}
+			/>
 		</div>
 	)
 }
@@ -455,14 +440,12 @@ function ApiReference() {
 		<div className="space-y-6">
 			<Card>
 				<CardHeader>
-					<div className="flex items-start justify-between gap-4">
-						<div className="space-y-1">
-							<CardTitle>API Reference</CardTitle>
-							<CardDescription>
-								The Maple v2 API is a resource-oriented REST interface — snake_case JSON,
-								prefixed object IDs, cursor-paginated lists, and scoped API keys.
-							</CardDescription>
-						</div>
+					<CardTitle>API Reference</CardTitle>
+					<CardDescription>
+						The Maple v2 API is a resource-oriented REST interface — snake_case JSON, prefixed
+						object IDs, cursor-paginated lists, and scoped API keys.
+					</CardDescription>
+					<CardAction>
 						<Button
 							size="sm"
 							render={
@@ -477,22 +460,22 @@ function ApiReference() {
 							<CodeIcon data-icon="inline-start" size={14} />
 							Open API reference
 						</Button>
-					</div>
+					</CardAction>
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="space-y-1.5">
-						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+						<Eyebrow variant="label" as="div">
 							Base URL
-						</div>
+						</Eyebrow>
 						<div className="bg-muted/50 flex items-center justify-between gap-2 rounded-md border px-3 py-2">
 							<code className="font-mono text-sm">{apiBaseUrl}/v2</code>
 							<CopyButton value={`${apiBaseUrl}/v2`} label="Base URL" size="icon-sm" />
 						</div>
 					</div>
 					<div className="space-y-1.5">
-						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+						<Eyebrow variant="label" as="div">
 							Quick start
-						</div>
+						</Eyebrow>
 						<div className="bg-muted/50 flex items-start justify-between gap-2 rounded-md border px-3 py-2">
 							<pre className="overflow-x-auto font-mono text-sm leading-6">{curlExample}</pre>
 							<CopyButton value={curlExample} label="curl example" size="icon-sm" />
@@ -505,11 +488,9 @@ function ApiReference() {
 				<CardHeader>
 					<CardTitle>Scopes</CardTitle>
 					<CardDescription>
-						Restricted keys grant <code className="font-mono text-xs">read</code> or{" "}
-						<code className="font-mono text-xs">write</code> access per resource family (
-						<code className="font-mono text-xs">write</code> implies{" "}
-						<code className="font-mono text-xs">read</code>). A key without scopes has full
-						access.
+						Restricted keys grant <InlineCode>read</InlineCode> or <InlineCode>write</InlineCode>{" "}
+						access per resource family (<InlineCode>write</InlineCode> implies{" "}
+						<InlineCode>read</InlineCode>). A key without scopes has full access.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -526,10 +507,10 @@ function ApiReference() {
 									</div>
 								</div>
 								<div className="flex shrink-0 items-center gap-1.5">
-									<Badge variant="outline" className="font-mono text-[11px]">
+									<Badge variant="outline" mono className="text-[11px]">
 										{family.id}:read
 									</Badge>
-									<Badge variant="outline" className="font-mono text-[11px]">
+									<Badge variant="outline" mono className="text-[11px]">
 										{family.id}:write
 									</Badge>
 								</div>
@@ -551,38 +532,12 @@ const COL = {
 	expires: "hidden w-[110px] shrink-0 md:block",
 	menu: "w-7 shrink-0",
 }
-const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
-
-function FilterTab({
-	active,
-	onClick,
-	children,
-}: {
-	active: boolean
-	onClick: () => void
-	children: ReactNode
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className={cn(
-				"rounded px-2.5 py-1 font-mono text-[11px] leading-4 transition-colors",
-				active
-					? "bg-accent text-foreground font-medium"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
-	)
-}
 
 /** "in 3 days" / "today" — the urgency, not the date. The Expires column carries the date. */
 function expiresInLabel(expiresAt: number, now: number): string {
 	const days = Math.floor((expiresAt - now) / 86_400_000)
 	if (days < 1) return "Expires today"
-	return `Expires in ${days} ${days === 1 ? "day" : "days"}`
+	return `Expires in ${countLabel(days, "day")}`
 }
 
 function ApiKeyRow({
@@ -601,7 +556,6 @@ function ApiKeyRow({
 }) {
 	const isMcp = apiKey.kind === "mcp"
 	const Icon = isMcp ? SquareTerminalIcon : KeyIcon
-	const relativeLastUsed = apiKey.last_used_at ? formatRelativeTime(apiKey.last_used_at) : null
 	const expiresAt = apiKey.expires_at === null ? null : Date.parse(apiKey.expires_at)
 	const expiresInPast = status === "expired"
 	const expiresSoon = status === "expiring"
@@ -625,7 +579,7 @@ function ApiKeyRow({
 	return (
 		<div
 			className={cn(
-				"flex items-center gap-3 px-4 py-3 transition-colors",
+				"flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0",
 				status === "revoked" || status === "expired" ? "opacity-60" : "hover:bg-muted/20",
 			)}
 		>
@@ -644,7 +598,7 @@ function ApiKeyRow({
 							</Badge>
 						)}
 						{status === "revoked" && (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Revoked
 							</Badge>
 						)}
@@ -656,7 +610,7 @@ function ApiKeyRow({
 						{/* The Expires column is hidden below `md`, so the one state that silently
 						    breaks a running integration rides in the name row instead. */}
 						{expiresSoon && expiresAt !== null && (
-							<Badge variant="warning" size="sm">
+							<Badge variant="warn" size="sm">
 								{expiresInLabel(expiresAt, now)}
 							</Badge>
 						)}
@@ -667,28 +621,26 @@ function ApiKeyRow({
 				</div>
 			</div>
 
-			<code
-				className={cn(COL.prefix, "text-foreground/55 truncate font-mono text-[11px] tracking-tight")}
+			<InlineCode
+				variant="plain"
+				className={cn(COL.prefix, "text-foreground/55 truncate text-[11px] tracking-tight")}
 			>
 				{apiKey.key_prefix}
-			</code>
+			</InlineCode>
 
 			<div className={cn(COL.scopes)}>
 				<ScopesCell apiKey={apiKey} />
 			</div>
 
-			<span
-				className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}
-				title={apiKey.last_used_at ? formatDate(apiKey.last_used_at) : undefined}
-			>
-				{apiKey.last_used_at ? (relativeLastUsed ?? formatDate(apiKey.last_used_at)) : "—"}
+			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}>
+				{apiKey.last_used_at ? <RelativeTime value={apiKey.last_used_at} tooltip="title" /> : "—"}
 			</span>
 
 			<span
 				className={cn(
 					COL.expires,
 					"truncate text-[11px]",
-					expiresSoon ? "text-warning-foreground" : "text-muted-foreground",
+					expiresSoon ? "text-severity-warn" : "text-muted-foreground",
 				)}
 			>
 				{apiKey.expires_at ? formatDate(apiKey.expires_at) : "Never"}

@@ -1,6 +1,6 @@
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Effect, Exit } from "effect"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import * as Reactivity from "effect/reactivity/Reactivity"
 
 /** Parallel calls per bulk action; the API serialises each issue's row anyway. */
 export const BULK_CONCURRENCY = 4

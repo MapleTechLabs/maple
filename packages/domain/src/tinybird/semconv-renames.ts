@@ -11,9 +11,9 @@
 // Renames whose keys are only ever surfaced (never keyed on) live in the
 // recommendation dictionary in `../recommendations.ts` instead.
 
-import type { Expr } from "@maple-dev/effect-clickhouse/expr"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import type { Expr } from "@maple-dev/effect-orm/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compile } from "@maple-dev/effect-orm/sql"
 
 /**
  * The shape every caller shares: a query builder's `$.ResourceAttributes` /
@@ -103,4 +103,29 @@ export function containerRuntimeExpr(resourceAttributes: MapColumnLike): Expr<st
 		CH.nullIf(resourceAttributes.get("container.runtime.name"), ""),
 		resourceAttributes.get("container.runtime"),
 	)
+}
+
+/**
+ * HTTP request method expression for read paths that group by it.
+ *
+ * Stable HTTP semconv renamed `http.method` to `http.request.method`; a group-by
+ * on the legacy key alone put every span from current instrumentation into the
+ * `""` bucket. The precedence is legacy-first on purpose: it must match
+ * `trace_list_mv`'s pre-extracted `HttpMethod` and the query engine's span filter
+ * aliases, so a group, its facet count and the filter it drills into agree on a
+ * span that carries both keys with different values.
+ */
+export function httpRequestMethodExpr(spanAttributes: MapColumnLike): Expr<string> {
+	const legacy = spanAttributes.get("http.method")
+	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.request.method"))
+}
+
+/**
+ * HTTP response status code expression, legacy-first for the same reason as
+ * {@link httpRequestMethodExpr}: it has to agree with `trace_list_mv`'s
+ * pre-extracted `HttpStatusCode`.
+ */
+export function httpResponseStatusCodeExpr(spanAttributes: MapColumnLike): Expr<string> {
+	const legacy = spanAttributes.get("http.status_code")
+	return CH.if_(legacy.neq(""), legacy, spanAttributes.get("http.response.status_code"))
 }

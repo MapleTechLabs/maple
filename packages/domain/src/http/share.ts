@@ -48,7 +48,7 @@ export type DashboardShareMode = Schema.Schema.Type<typeof DashboardShareMode>
 export const ShareToken = Schema.String.check(
 	Schema.isMinLength(8),
 	Schema.isMaxLength(128),
-	Schema.isPattern(/^[A-Za-z0-9_-]+$/),
+	Schema.isPattern(/^[A-Za-z0-9_-]+$/u),
 ).pipe(Schema.annotate({ identifier: "@maple/ShareToken", title: "Dashboard share token" }))
 export type ShareToken = Schema.Schema.Type<typeof ShareToken>
 

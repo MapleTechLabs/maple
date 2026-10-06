@@ -2,15 +2,18 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { truncate, formatNumber } from "../lib/format"
+import { truncate, formatNumber, toSecondTimestamp } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
 import { SearchLogsOutput, type LogSearchFilters } from "@maple/domain/mcp-outputs"
 import { searchLogs } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
+/** A trace or span lookup without a start_time: the trace may be older than the 6h default. */
+const TRACE_WINDOW = P.timeWindow({ defaultHours: MCP_SEARCH_MAX_HOURS, maxHours: MCP_SEARCH_MAX_HOURS })
 
 /** Severity levels a log filter takes. Matched across SDK spellings (`ERROR`, `Error`, `error`). */
 export const LOG_SEVERITIES = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
@@ -44,8 +47,9 @@ export const logFilterScope = (
 export function registerSearchLogsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_logs",
+		title: "Search Logs",
 		description:
-			"Individual log entries, newest first, filtered by service, severity, body text, trace or span. When the match is too large to read, use mine_log_patterns instead. inspect_trace shows the full trace behind an entry.",
+			"Individual log entries, newest first, filtered by service, severity, body text, trace or span. Cause-bearing attributes (log.error, error.*, exception.*) are shown under each entry. When the match is too large to read, use mine_log_patterns instead. inspect_trace shows the full trace behind an entry.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -54,7 +58,9 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				"Only logs at this severity level (matches every SDK spelling of it)",
 			),
 			search: P.optionalText("Substring of the log body"),
-			trace_id: P.optionalText("Only logs under this trace"),
+			trace_id: P.optionalText(
+				"Only logs under this trace. Without start_time, searches the last 7 days instead of 6 hours.",
+			),
 			span_id: P.optionalText("Only logs under this span"),
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 30, max: 200, noun: "logs" }),
@@ -64,7 +70,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Searching logs", "Reading through logs"],
 		handler: Effect.fn("McpTool.searchLogs")(function* (params) {
-			const { st, et } = yield* WINDOW.resolve(params, "search_logs")
+			const byTrace =
+				(params.trace_id !== undefined || params.span_id !== undefined) &&
+				params.start_time === undefined
+			const { st, et } = yield* (byTrace ? TRACE_WINDOW : WINDOW).resolve(params, "search_logs")
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -90,6 +99,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan("result.rowCount", result.logs.length)
 			const hasMore = result.pagination.hasMore
+			const emptyHints =
+				result.logs.length === 0 && params.offset === 0
+					? yield* emptyResultHints({ service: params.service }, { startTime: st, endTime: et })
+					: []
 
 			return {
 				timeRange: { start: st, end: et },
@@ -108,8 +121,12 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					body: l.body,
 					...(l.traceId ? { traceId: l.traceId } : undefined),
 					...(l.spanId ? { spanId: l.spanId } : undefined),
+					...(Object.keys(l.keyAttributes).length > 0
+						? { keyAttributes: l.keyAttributes }
+						: undefined),
 				})),
 				filters: logFilters(params),
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}
 		}),
 		render: (output) => {
@@ -126,6 +143,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					empty: {
 						message: "No logs found matching the filters in this window.",
 						hints: [
+							...(output.emptyHints ?? []),
 							"Widen start_time/end_time, or drop filters. `search` is a substring of the log body.",
 						],
 					},
@@ -135,18 +153,20 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				const time = log.timestamp.split(" ")[1] ?? log.timestamp
 				const sevUpper = log.severityText.toUpperCase()
 				const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
-				// Span ref is only useful once scoped to a trace; otherwise it's noise.
-				const span =
-					filters?.traceId !== undefined && log.spanId ? ` span:${log.spanId.slice(0, 8)}` : ""
-				const ref = log.traceId ? ` [trace:${log.traceId.slice(0, 8)}${span}]` : ""
-				return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}`
+				// Full ids: a prefix cannot be passed to inspect_trace / inspect_span.
+				const span = log.spanId ? ` span=${log.spanId}` : ""
+				const ref = log.traceId ? ` [trace=${log.traceId}${span}]` : ""
+				const attrs = Object.entries(log.keyAttributes ?? {})
+					.map(([k, v]) => `\n    ${k}: ${truncate(v, 300)}`)
+					.join("")
+				return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}${attrs}`
 			})
 			const pagination = output.pagination
 			const nextOffset = pagination?.nextOffset
-			const traceIds = [...new Set(output.logs.flatMap((l) => (l.traceId ? [l.traceId] : [])))].slice(
-				0,
-				3,
-			)
+			// One log per trace, so the hint carries a timestamp from inside that trace.
+			const traceLogs = [
+				...new Map(output.logs.flatMap((l) => (l.traceId ? [[l.traceId, l] as const] : []))).values(),
+			].slice(0, 3)
 			const spanPivot = output.logs.find((l) => l.spanId && l.traceId)
 			return {
 				title: `Logs (${formatNumber(output.totalCount)} total)`,
@@ -177,14 +197,22 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 							},
 						}),
 				next: [
-					...traceIds.map((traceId) =>
-						doc.next("inspect_trace", { trace_id: traceId }, "see full trace"),
+					...traceLogs.map((l) =>
+						doc.next(
+							"inspect_trace",
+							{ trace_id: l.traceId, timestamp: toSecondTimestamp(l.timestamp) },
+							"see full trace",
+						),
 					),
 					...(spanPivot?.traceId && spanPivot.spanId
 						? [
 								doc.next(
 									"inspect_span",
-									{ trace_id: spanPivot.traceId, span_id: spanPivot.spanId },
+									{
+										trace_id: spanPivot.traceId,
+										span_id: spanPivot.spanId,
+										timestamp: toSecondTimestamp(spanPivot.timestamp),
+									},
 									"full attributes for a span",
 								),
 							]

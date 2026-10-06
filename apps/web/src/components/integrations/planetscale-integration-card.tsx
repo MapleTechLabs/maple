@@ -1,5 +1,6 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { useMemo, useState } from "react"
-import { Exit } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -12,19 +13,21 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { LoaderIcon, PlanetScaleIcon } from "@/components/icons"
+import { PlanetScaleIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "@/components/infra/planetscale/branch-selection"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useMutationAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { showErrorToast } from "@/lib/error-toast"
 import { IntegrationIconPlate, catalogEntry } from "./integration-catalog"
-import { useIntegrationConnect } from "./integration-connect"
+import { useRequiredIntegrationConnect } from "./integration-connect"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -33,7 +36,7 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
-import { PlanetScaleMetricsHealth } from "./planetscale-metrics-health"
+import { PlanetScaleMetricsHealth, QUIET_LINK } from "./planetscale-metrics-health"
 import { PlanetScaleMetricsTokenForm } from "./planetscale-metrics-token-form"
 import { PlanetScaleSetupChecklist } from "./planetscale-setup-checklist"
 import { derivePlanetScaleSetup } from "./planetscale-setup-steps"
@@ -67,11 +70,14 @@ export function PlanetScaleIntegrationCard() {
 
 	// Connect flow (popup, busy, refresh-on-return) lives in IntegrationConnectProvider —
 	// shared with the drill-in header's Connect button.
-	const connectFlow = useIntegrationConnect()
-	if (connectFlow === null) {
-		throw new Error("PlanetScaleIntegrationCard must be rendered inside IntegrationConnectProvider")
-	}
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const connectFlow = useRequiredIntegrationConnect("PlanetScaleIntegrationCard")
+	const { disconnect: runDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["planetscaleIntegration", "scrapeTargets"] }),
+		{
+			success: "PlanetScale organization disconnected",
+			error: "Failed to disconnect PlanetScale organization",
+		},
+	)
 	const actionBusy = connectFlow.busy || disconnectBusy
 	const [pickerOpen, setPickerOpen] = useState(false)
 	const [rotateOpen, setRotateOpen] = useState(false)
@@ -97,17 +103,7 @@ export function PlanetScaleIntegrationCard() {
 	const watchedForMs = Date.now() - watchStartedAt
 
 	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({
-			reactivityKeys: ["planetscaleIntegration", "scrapeTargets"],
-		})
-		setDisconnectBusy(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "PlanetScale organization disconnected", type: "success" })
-			refreshStatus()
-		} else {
-			toastManager.add({ title: "Failed to disconnect PlanetScale organization", type: "error" })
-		}
+		if (await runDisconnect()) refreshStatus()
 	}
 
 	// Guard the first fetch so a connected org doesn't flash the "Connect" empty state.
@@ -119,15 +115,17 @@ export function PlanetScaleIntegrationCard() {
 	// over an org that may already be authorized.
 	if (Result.isFailure(statusResult)) {
 		return (
-			<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-				<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
-				<div className="flex flex-col gap-1">
+			<Item variant="card" className="items-start gap-4 p-4">
+				<ItemMedia>
+					<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
+				</ItemMedia>
+				<ItemContent>
 					<h3 className="text-sm font-semibold">PlanetScale</h3>
 					<p className="text-xs text-muted-foreground">
 						Couldn&apos;t load the PlanetScale connection status — refresh the page to try again.
 					</p>
-				</div>
-			</div>
+				</ItemContent>
+			</Item>
 		)
 	}
 
@@ -135,9 +133,11 @@ export function PlanetScaleIntegrationCard() {
 	if (!isConnected && pendingOrgSelection) {
 		return (
 			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="flex items-start gap-3 p-4">
-					<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
-					<div className="min-w-0">
+				<Item className="items-start gap-3 rounded-none p-4">
+					<ItemMedia>
+						<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
+					</ItemMedia>
+					<ItemContent className="gap-0">
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">PlanetScale</h3>
 							<Badge variant="secondary">Authorized</Badge>
@@ -146,8 +146,8 @@ export function PlanetScaleIntegrationCard() {
 							The authorization covers multiple PlanetScale organizations — choose which one to
 							connect.
 						</p>
-					</div>
-				</div>
+					</ItemContent>
+				</Item>
 				<div className="border-t border-border/60 p-4">
 					<PlanetScaleOrgPicker
 						onDone={() => refreshStatus()}
@@ -188,12 +188,8 @@ export function PlanetScaleIntegrationCard() {
 					<IntegrationEmptyHint>
 						Your databases and branches will appear here after connecting.
 					</IntegrationEmptyHint>
-					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<PlanetScaleIcon size={16} />
-						)}
+					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
+						<PlanetScaleIcon size={16} />
 						Connect PlanetScale
 					</Button>
 				</IntegrationEmptyCard>
@@ -204,44 +200,44 @@ export function PlanetScaleIntegrationCard() {
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="flex flex-wrap items-start justify-between gap-3 p-4">
-					<div className="flex min-w-0 items-start gap-3">
+				<Item className="items-start gap-3 rounded-none p-4">
+					<ItemMedia>
 						<IntegrationIconPlate icon={PlanetScaleIcon} accent={PLANETSCALE_ENTRY.accent} />
-						<div className="min-w-0">
-							<div className="flex items-center gap-2">
-								<h3 className="text-sm font-semibold">PlanetScale</h3>
-								{/* "Connected" while three of four steps are done overstates it —
-								    the badge tracks the checklist. */}
-								{setup !== null && !setup.complete ? (
-									<Badge variant="warning">
-										Step {setup.activeStepNumber} of {setup.steps.length}
-									</Badge>
-								) : (
-									<Badge variant="success">Connected</Badge>
-								)}
-							</div>
-							<p className="mt-1 text-xs text-muted-foreground">
-								{setup !== null && !setup.complete ? (
-									<>
-										Connected to{" "}
-										<span className="font-medium text-foreground">
-											{status?.organization}
-										</span>
-										{" — inventory, insights, and webhooks are live."}
-									</>
-								) : (
-									<>
-										Streaming branch metrics from{" "}
-										<span className="font-medium text-foreground">
-											{status?.organization}
-										</span>
-									</>
-								)}
-							</p>
+					</ItemMedia>
+					<ItemContent className="gap-0">
+						<div className="flex items-center gap-2">
+							<h3 className="text-sm font-semibold">PlanetScale</h3>
+							{/* "Connected" while three of four steps are done overstates it —
+							    the badge tracks the checklist. */}
+							{setup !== null && !setup.complete ? (
+								<Badge variant="warn">
+									Step {setup.activeStepNumber} of {setup.steps.length}
+								</Badge>
+							) : (
+								<Badge variant="ok">Connected</Badge>
+							)}
 						</div>
-					</div>
+						<p className="mt-1 text-xs text-muted-foreground">
+							{setup !== null && !setup.complete ? (
+								<>
+									Connected to{" "}
+									<span className="font-medium text-foreground">
+										{status?.organization}
+									</span>
+									{" — inventory, insights, and webhooks are live."}
+								</>
+							) : (
+								<>
+									Streaming branch metrics from{" "}
+									<span className="font-medium text-foreground">
+										{status?.organization}
+									</span>
+								</>
+							)}
+						</p>
+					</ItemContent>
 
-					<div className="flex shrink-0 items-center gap-1.5">
+					<ItemActions className="shrink-0 gap-1.5">
 						<Button
 							size="sm"
 							variant="outline"
@@ -250,12 +246,17 @@ export function PlanetScaleIntegrationCard() {
 						>
 							Change organization
 						</Button>
-						<Button size="sm" variant="outline" onClick={handleDisconnect} disabled={actionBusy}>
-							{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={handleDisconnect}
+							disabled={actionBusy}
+							loading={disconnectBusy}
+						>
 							Disconnect
 						</Button>
-					</div>
-				</div>
+					</ItemActions>
+				</Item>
 
 				{/* Setup is only shown while there is setup left. A finished
 				    connection collapses to the single health row it has always been. */}
@@ -265,18 +266,22 @@ export function PlanetScaleIntegrationCard() {
 							steps={setup.steps}
 							actions={{
 								connected: (
-									<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy}>
-										{connectFlow.busy ? (
-											<LoaderIcon size={14} className="animate-spin" />
-										) : null}
+									<Button
+										size="sm"
+										onClick={connectFlow.connect}
+										disabled={actionBusy}
+										loading={connectFlow.busy}
+									>
 										Reconnect
 									</Button>
 								),
 								permissions: (
-									<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy}>
-										{connectFlow.busy ? (
-											<LoaderIcon size={14} className="animate-spin" />
-										) : null}
+									<Button
+										size="sm"
+										onClick={connectFlow.connect}
+										disabled={actionBusy}
+										loading={connectFlow.busy}
+									>
 										Reauthorize with read_databases
 									</Button>
 								),
@@ -309,7 +314,7 @@ export function PlanetScaleIntegrationCard() {
 								<button
 									type="button"
 									onClick={() => setRotateOpen(true)}
-									className="text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
+									className={QUIET_LINK}
 								>
 									Rotate token
 								</button>
@@ -405,8 +410,8 @@ function FirstMetricsDetail({
 		<div className="space-y-2">
 			<p className="text-xs text-muted-foreground">
 				Still nothing after a few minutes. The most common cause is a token without the{" "}
-				<code className="font-mono text-[11px]">read_metrics_endpoints</code> permission — PlanetScale
-				accepts the token and then serves no metrics.
+				<InlineCode>read_metrics_endpoints</InlineCode> permission — PlanetScale accepts the token and
+				then serves no metrics.
 			</p>
 			<Button size="sm" variant="outline" onClick={onRotate}>
 				Rotate token
@@ -440,15 +445,18 @@ function PlanetScaleOrgPicker(props: {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
-	const selectOrganization = useAtomSet(
+	const [selected, setSelected] = useState<string | null>(props.initialOrganization ?? null)
+	const [selectOrganization, submitting] = useMutationAction(
 		MapleApiV2AtomClient.mutation("planetscaleIntegration", "selectOrganization"),
-		{ mode: "promiseExit" },
+		{
+			success: () => `PlanetScale organization ${selected} connected`,
+			error: "Failed to connect PlanetScale organization",
+			onSuccess: () => props.onDone(),
+		},
 	)
 
-	const [selected, setSelected] = useState<string | null>(props.initialOrganization ?? null)
 	const [includeBranches, setIncludeBranches] = useState(props.initialIncludeBranches ?? "")
 	const [excludeBranches, setExcludeBranches] = useState(props.initialExcludeBranches ?? "")
-	const [submitting, setSubmitting] = useState(false)
 
 	const branchNames = useMemo(
 		() =>
@@ -469,10 +477,9 @@ function PlanetScaleOrgPicker(props: {
 
 	async function handleSubmit() {
 		if (selected === null) return
-		setSubmitting(true)
 		const include = parsePatternList(includeBranches)
 		const exclude = parsePatternList(excludeBranches)
-		const result = await selectOrganization({
+		await selectOrganization({
 			payload: {
 				organization: selected,
 				...(include.length > 0 ? { include_branches: include } : undefined),
@@ -481,13 +488,6 @@ function PlanetScaleOrgPicker(props: {
 			// finalizeOrgSelection re-parents the managed scrape target — refresh the list below.
 			reactivityKeys: ["planetscaleIntegration", "scrapeTargets"],
 		})
-		setSubmitting(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: `PlanetScale organization ${selected} connected`, type: "success" })
-			props.onDone()
-		} else {
-			showErrorToast(result, { fallbackTitle: "Failed to connect PlanetScale organization" })
-		}
 	}
 
 	if (Result.isInitial(organizationsResult)) {
@@ -528,8 +528,8 @@ function PlanetScaleOrgPicker(props: {
 				))}
 			</div>
 			<div className="flex flex-col gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="ps-include-branches">Only these branches (optional)</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="ps-include-branches">Only these branches (optional)</FieldLabel>
 					<Input
 						id="ps-include-branches"
 						placeholder="main, staging"
@@ -537,13 +537,13 @@ function PlanetScaleOrgPicker(props: {
 						onChange={(event) => setIncludeBranches(event.target.value)}
 						autoComplete="off"
 					/>
-					<p className="text-xs text-muted-foreground">
+					<FieldDescription>
 						Leave blank to collect every branch. When set, only matching branches are collected —
 						exclusions still apply on top.
-					</p>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="ps-exclude-branches">Exclude branches (optional)</Label>
+					</FieldDescription>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="ps-exclude-branches">Exclude branches (optional)</FieldLabel>
 					<Input
 						id="ps-exclude-branches"
 						placeholder="pr-*, preview-*"
@@ -551,11 +551,11 @@ function PlanetScaleOrgPicker(props: {
 						onChange={(event) => setExcludeBranches(event.target.value)}
 						autoComplete="off"
 					/>
-					<p className="text-xs text-muted-foreground">
-						Glob patterns — <code className="font-mono text-[11px]">*</code> matches any run,{" "}
-						<code className="font-mono text-[11px]">?</code> exactly one character.
-					</p>
-				</div>
+					<FieldDescription>
+						Glob patterns — <InlineCode>*</InlineCode> matches any run, <InlineCode>?</InlineCode>{" "}
+						exactly one character.
+					</FieldDescription>
+				</Field>
 				{/* The preview shares its glob implementation with the scraper
 				    (@maple/domain/glob), so what it counts is what gets collected. */}
 				{preview !== null ? (
@@ -578,8 +578,7 @@ function PlanetScaleOrgPicker(props: {
 				<Button variant="outline" onClick={props.onCancel} disabled={submitting}>
 					{props.cancelLabel}
 				</Button>
-				<Button onClick={handleSubmit} disabled={submitting || selected === null}>
-					{submitting ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				<Button onClick={() => void handleSubmit()} disabled={selected === null} loading={submitting}>
 					Connect organization
 				</Button>
 			</DialogFooter>
@@ -596,20 +595,22 @@ function PlanetScaleWebhookSetup() {
 	const [revealed, setRevealed] = useState(false)
 	return (
 		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-			<div className="flex flex-wrap items-start justify-between gap-3 p-4">
-				<div className="min-w-0">
+			<Item className="items-start gap-3 rounded-none p-4">
+				<ItemContent className="gap-0">
 					<h3 className="text-sm font-semibold">Webhooks</h3>
 					<p className="mt-1 text-xs text-muted-foreground">
 						Register this endpoint in each database&apos;s webhook settings on PlanetScale — OOM
 						restarts, storage thresholds, and anomalies then open triage issues in Maple.
 					</p>
-				</div>
+				</ItemContent>
 				{!revealed ? (
-					<Button size="sm" variant="outline" onClick={() => setRevealed(true)}>
-						Show setup
-					</Button>
+					<ItemActions>
+						<Button size="sm" variant="outline" onClick={() => setRevealed(true)}>
+							Show setup
+						</Button>
+					</ItemActions>
 				) : null}
-			</div>
+			</Item>
 			{revealed ? <PlanetScaleWebhookConfig /> : null}
 		</div>
 	)
@@ -641,22 +642,18 @@ function PlanetScaleWebhookConfig() {
 	}
 	return (
 		<div className="space-y-3 border-t border-border/60 p-4">
-			<div className="space-y-1">
-				<span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-					Webhook URL
-				</span>
-				<p className="break-all font-mono text-xs text-foreground">{config.url}</p>
-			</div>
-			<div className="space-y-1">
-				<span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-					Secret
-				</span>
-				<p className="break-all font-mono text-xs text-foreground">{config.secret}</p>
-			</div>
+			<KeyValueList layout="stacked">
+				<KeyValue label={<Eyebrow>Webhook URL</Eyebrow>} mono wrap>
+					{config.url}
+				</KeyValue>
+				<KeyValue label={<Eyebrow>Secret</Eyebrow>} mono wrap>
+					{config.secret}
+				</KeyValue>
+			</KeyValueList>
 			<p className="text-[11px] text-muted-foreground">
 				PlanetScale signs each delivery with this secret (
-				<code className="font-mono">X-PlanetScale-Signature</code>); Maple rejects anything that
-				doesn&apos;t verify.
+				<InlineCode>X-PlanetScale-Signature</InlineCode>); Maple rejects anything that doesn&apos;t
+				verify.
 			</p>
 		</div>
 	)

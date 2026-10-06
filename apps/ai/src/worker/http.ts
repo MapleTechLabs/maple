@@ -7,14 +7,14 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
-import * as Cloudflare from "alchemy/Cloudflare"
 import { type Context, Effect, Exit, Layer } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import * as Etag from "effect/unstable/http/Etag"
-import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Etag from "effect/http/Etag"
+import * as HttpPlatform from "effect/http/HttpPlatform"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import type { AiPortsLayer } from "./bindings"
+import { healthResponse } from "../routes/health"
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -67,10 +67,7 @@ export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: AiPortsLa
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)
 		if (request.method === "GET" && path === "/health") {
-			const revision = (yield* Cloudflare.WorkerEnvironment).COMMIT_SHA
-			return HttpServerResponse.text("OK", {
-				headers: typeof revision === "string" ? { "x-maple-revision": revision } : undefined,
-			})
+			return yield* healthResponse
 		}
 
 		const built = yield* Effect.exit(app)

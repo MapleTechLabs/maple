@@ -1,5 +1,5 @@
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	CloudflareDisconnectResponse,
 	CloudflareHyperdrivesResponse,
@@ -16,6 +16,7 @@ import {
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewsResponse,
+	GithubPrReviewSettingsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -28,6 +29,7 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	MapleApi,
+	RailwayDisconnectResponse,
 	RoleName,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
@@ -60,6 +62,7 @@ import {
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import {
 	PLANETSCALE_CALLBACK_PATH,
 	PlanetScaleOAuthService,
@@ -160,6 +163,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 		const planetscale = yield* PlanetScaleConnectionService
 		const planetscaleOAuth = yield* PlanetScaleOAuthService
 		const planetscaleInventory = yield* PlanetScaleService
+		const railway = yield* RailwayMetricsService
 		const database = yield* Database
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -514,6 +518,34 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						})
 					}),
 				)
+				.handle("railwayStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* railway.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("railwayConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return yield* railway.connect(tenant.orgId, tenant.userId, payload.token)
+					}),
+				)
+				.handle("railwaySync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the org's per-token Railway quota, so it is an admin action like connect.
+						yield* requireAdmin(tenant.roles)
+						return yield* railway.sync(tenant.orgId)
+					}),
+				)
+				.handle("railwayDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+					}),
+				)
 				.handle("githubStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -598,6 +630,25 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 							payload.config,
 						)
 						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubGetPrReviewSettings", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const settings = yield* github.getPrReviewSettings(tenant.orgId)
+						return new GithubPrReviewSettingsResponse({ settings })
+					}),
+				)
+				.handle("githubSetPrReviewSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const settings = yield* github.setPrReviewSettings(
+							tenant.orgId,
+							payload.settings,
+							tenant.userId,
+						)
+						return new GithubPrReviewSettingsResponse({ settings })
 					}),
 				)
 				.handle("githubListPrReviews", ({ params }) =>

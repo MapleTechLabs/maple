@@ -2,11 +2,15 @@ import * as React from "react"
 
 import { ServiceSpectrumBar, computeServiceShares } from "@maple/ui/components/traces/service-spectrum-bar"
 import { ServiceDot } from "@maple/ui/components/service-dot"
-import { formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatDuration } from "@maple/ui/lib/format"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { shortId } from "@maple/ui/lib/ids"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
 import type { Span } from "@/api/warehouse/traces"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 interface TraceAnatomyStripProps {
 	spans: ReadonlyArray<Span>
@@ -18,11 +22,11 @@ interface TraceAnatomyStripProps {
 	commitSha?: string
 }
 
+// 4xx/5xx follow the shared status tone; 3xx keeps its own blue so redirects stand apart from 2xx.
 function httpStatusColor(code: number): string {
-	if (code >= 500) return "text-severity-error"
-	if (code >= 400) return "text-severity-warn"
-	if (code >= 300) return "text-chart-p50"
-	return "text-severity-info"
+	const tone = httpStatusTone(code)
+	if (tone !== "neutral") return TONE_TEXT[tone]
+	return code >= 300 ? "text-chart-p50" : TONE_TEXT.info
 }
 
 /**
@@ -49,8 +53,7 @@ export function TraceAnatomyStrip({
 						{formatDuration(totalDurationMs)}
 					</span>
 					<span className="text-xs text-muted-foreground">
-						{spans.length} span{spans.length !== 1 ? "s" : ""} · {shares.length} service
-						{shares.length !== 1 ? "s" : ""}
+						{countLabel(spans.length, "span")} · {countLabel(shares.length, "service")}
 					</span>
 				</div>
 
@@ -61,7 +64,7 @@ export function TraceAnatomyStrip({
 							hasError ? "text-severity-error" : "text-severity-info",
 						)}
 					>
-						<span aria-hidden className="size-1.5 rounded-full bg-current" />
+						<StatusDot tone={hasError ? "crit" : "ok"} />
 						{hasError ? "Error" : "OK"}
 					</span>
 
@@ -87,7 +90,7 @@ export function TraceAnatomyStrip({
 							copy={{ value: commitSha, label: "commit SHA" }}
 							className="font-mono text-xs text-muted-foreground hover:text-foreground"
 						>
-							{commitSha.slice(0, 7)}
+							{shortId(commitSha, "sha")}
 						</CommitShaHoverCard>
 					)}
 
@@ -100,7 +103,7 @@ export function TraceAnatomyStrip({
 			<div className="flex flex-wrap items-center gap-x-4 gap-y-1">
 				{shares.map((share) => (
 					<span key={share.serviceName} className="flex items-center gap-1.5 font-mono text-xs">
-						<ServiceDot serviceName={share.serviceName} className="size-1.5" />
+						<ServiceDot serviceName={share.serviceName} size="sm" />
 						<span>{share.serviceName}</span>
 						<span className="text-[10px] text-muted-foreground tabular-nums">
 							{share.percent.toFixed(share.percent < 10 ? 1 : 0)}%

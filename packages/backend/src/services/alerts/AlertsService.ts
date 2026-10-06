@@ -7,7 +7,12 @@ import {
 	planAlertLifecycle,
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
-import { formatWarehouseDateTime, snapAlertWindowEndMs, warehouseDateTime64 } from "@maple/query-engine"
+import {
+	ENGINE_UNGROUPED_GROUP_KEY,
+	formatWarehouseDateTime,
+	snapAlertWindowEndMs,
+	warehouseDateTime64,
+} from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertComparator,
@@ -86,6 +91,7 @@ import {
 	Schema,
 	Context,
 } from "effect"
+import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
 import { upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
 import {
@@ -95,7 +101,7 @@ import {
 	probeLiveness,
 } from "@maple/backend/services/alerts/telemetry-liveness"
 import { simulateFiringSpans } from "./alert-firing-spans"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
@@ -401,6 +407,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
+			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
@@ -412,6 +419,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				encryptionKey,
 				appBaseUrl: env.MAPLE_APP_BASE_URL,
 				runtime,
+				httpClient,
 				email,
 				postChatAlert: chatAlertPoster.post,
 			})
@@ -425,7 +433,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			} = destinationDelivery
 			// Optional: present only inside a Worker isolate. Used to kick off the
 			// AI triage Workflow for issues created from freshly opened incidents.
-			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			const now = runtime.now
 			const makeUuid = () => runtime.makeUuid()
 			const workerId = makeUuid()
@@ -647,6 +655,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					groupKey: toStorageGroupKey(plan, obs.groupKey),
 				}))
 			})
+
+			/** What an empty result observes: the engine's no-data fallback. */
+			const EMPTY_OBSERVATION = { value: null, sampleCount: 0, hasData: false } as const
 
 			const applyEvaluationLogic = (
 				rule: NormalizedRule,
@@ -1046,29 +1057,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							Effect.gen(function* () {
 								const observations = yield* evaluateRule(orgId, rule)
 								return (
-									observations[0]?.evaluation ?? {
-										status: "skipped" as const,
-										value: null,
-										sampleCount: 0,
-										threshold: normalized.threshold,
-										thresholdUpper: normalized.thresholdUpper,
-										comparator: normalized.comparator,
-										reason: "No data",
-									}
+									observations[0]?.evaluation ??
+									applyEvaluationLogic(rule, EMPTY_OBSERVATION)
 								)
 							}),
 						{ concurrency: 5 },
 					)
-					evaluation = results.find((r) => r.status === "breached") ??
-						results[0] ?? {
-							status: "skipped" as const,
-							value: null,
-							sampleCount: 0,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
-							comparator: normalized.comparator,
-							reason: "No data",
-						}
+					evaluation =
+						results.find((r) => r.status === "breached") ??
+						results[0] ??
+						applyEvaluationLogic(normalized, EMPTY_OBSERVATION)
 				} else {
 					// Uniform grouped/ungrouped path — mirrors runSchedulerTick: the
 					// compiled plan decides groupedness, and a breaching group (if any)
@@ -1079,16 +1077,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						? Arr.filter(allResults, (r) => !HashSet.has(excludeSet, r.groupKey))
 						: allResults
 					const breached = results.find((r) => r.evaluation.status === "breached")
-					evaluation = breached?.evaluation ??
-						results[0]?.evaluation ?? {
-							status: "skipped" as const,
-							value: null,
-							sampleCount: 0,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
-							comparator: normalized.comparator,
-							reason: "No data",
-						}
+					evaluation =
+						breached?.evaluation ??
+						results[0]?.evaluation ??
+						applyEvaluationLogic(normalized, EMPTY_OBSERVATION)
 				}
 
 				if (sendNotification) {
@@ -1296,14 +1288,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}
 				}
 
-				// Ungrouped rules always observe *something* per tick, so chart a series
-				// even when the whole range is empty.
-				if (
-					obsByGroup.size === 0 &&
-					!isGroupedPlan(normalized.compiledPlan) &&
-					normalized.serviceNames.length <= 1
-				) {
-					obsByGroup.set(UNGROUPED_GROUP_KEY, new Map())
+				// The scheduler observes *something* every tick: an empty result becomes one
+				// no-data observation (per service in multi-service mode), keyed as storage
+				// keys it. Chart that series too, or a query matching nothing previews as nothing.
+				if (normalized.serviceNames.length > 1) {
+					for (const serviceName of normalized.serviceNames) {
+						if (!obsByGroup.has(serviceName)) obsByGroup.set(serviceName, new Map())
+					}
+				} else if (obsByGroup.size === 0) {
+					obsByGroup.set(toStorageGroupKey(plan, ENGINE_UNGROUPED_GROUP_KEY), new Map())
 				}
 
 				const NO_DATA: PreviewObs = {
@@ -1313,18 +1306,52 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				const iso = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
+				// The scheduler never evaluates a group that is missing from a tick; with
+				// alert-on-no-data it breaches only when the whole result is empty, under the
+				// engine's ungrouped key. Model both so per-group gaps do not read as breaches.
+				const groupedAlert = isGroupedPlan(plan) && plan.noDataBehavior === "alert"
+				const skipGapsRule: NormalizedRule = {
+					...normalized,
+					compiledPlan: { ...plan, noDataBehavior: "skip" },
+				}
+				const emptyKey = toStorageGroupKey(plan, ENGINE_UNGROUPED_GROUP_KEY)
+				if (groupedAlert && !obsByGroup.has(emptyKey)) {
+					const emptyTicks = pointBuckets.filter(
+						(bucketMs) =>
+							![...obsByGroup.values()].some(
+								(buckets) => buckets.get(bucketMs)?.hasData === true,
+							),
+					)
+					if (emptyTicks.length > 0) obsByGroup.set(emptyKey, new Map())
+				}
+
 				const series: AlertRulePreviewSeries[] = []
 				const wouldFire: AlertRulePreviewFiringSpan[] = []
 				for (const [groupKey, buckets] of obsByGroup) {
+					const isEmptyResultSeries = groupedAlert && groupKey === emptyKey && buckets.size === 0
+					const tickHasData = (bucketMs: number) =>
+						[...obsByGroup.values()].some((other) => other.get(bucketMs)?.hasData === true)
 					// Every window in the grid, judged by the same `applyEvaluationLogic`
 					// the scheduler runs per tick — no-data windows included, filled from
 					// `NO_DATA` so a gap is an evaluated skip rather than a missing point.
 					const evaluations = pointBuckets.map((bucketMs) => {
 						const obs = buckets.get(bucketMs) ?? NO_DATA
-						const evaluation = applyEvaluationLogic(normalized, obs)
+						const evaluation: EvaluatedRule = isEmptyResultSeries
+							? tickHasData(bucketMs)
+								? // Groups reported this tick: the empty-result incident resolves.
+									{
+										...applyEvaluationLogic(skipGapsRule, NO_DATA),
+										status: "healthy",
+										skipReason: undefined,
+									}
+								: applyEvaluationLogic(normalized, NO_DATA)
+							: groupedAlert && !buckets.has(bucketMs)
+								? applyEvaluationLogic(skipGapsRule, NO_DATA)
+								: applyEvaluationLogic(normalized, obs)
 						return {
 							bucketMs,
 							status: evaluation.status,
+							skipReason: evaluation.skipReason,
 							value: evaluation.value,
 							sampleCount: obs.sampleCount,
 							provisional: hasPartialBucket && bucketMs === endMs,
@@ -1335,12 +1362,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						new AlertRulePreviewSeries({
 							groupKey,
 							points: evaluations.map(
-								({ bucketMs, status, value, sampleCount, provisional }) =>
+								({ bucketMs, status, skipReason, value, sampleCount, provisional }) =>
 									new AlertRulePreviewPoint({
 										bucket: iso(bucketMs),
 										value,
 										sampleCount,
 										status,
+										...(skipReason === undefined ? undefined : { skipReason }),
 										...(provisional ? { provisional } : undefined),
 									}),
 							),
@@ -2026,7 +2054,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						} else {
 							heldForMs = gate.heldForMs
 							resolveEvaluation =
-								evaluation.skippedForNoData === true
+								evaluation.skipReason === "no_data"
 									? makeSyntheticResolveEvaluation(
 											normalized,
 											gate.reason ??
@@ -2282,7 +2310,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									? groupKey
 									: (normalized.serviceNames[0] ?? ""),
 							timestamp,
-							workerEnv,
+							chatSessions,
 						}).pipe(Effect.provideService(Database, database))
 					} else {
 						yield* Effect.logWarning(
@@ -2299,6 +2327,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					GroupKey: groupKey,
 					Timestamp: toIngestDateTime64(timestamp),
 					Status: evaluation.status,
+					SkipReason: evaluation.skipReason ?? "",
 					SignalType: normalized.signalType,
 					Comparator: normalized.comparator,
 					Threshold: normalized.threshold,
@@ -2376,6 +2405,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const ruleStructureChanged = (oldRule: NormalizedRule, newRule: NormalizedRule): boolean => {
 				if (!groupByEqual(effectiveGroupByKeys(oldRule), effectiveGroupByKeys(newRule))) return true
 				if (oldRule.signalType !== newRule.signalType) return true
+				// An incident opened on an empty window cannot resolve once empty windows are skipped again.
+				if (oldRule.compiledPlan.noDataBehavior !== newRule.compiledPlan.noDataBehavior) return true
 				const mode = (r: NormalizedRule) =>
 					isGroupedPlan(r.compiledPlan) ? "grouped" : r.serviceNames.length > 1 ? "multi" : "single"
 				return mode(oldRule) !== mode(newRule)
@@ -2943,9 +2974,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 
 				const selfHealOrgIds = Arr.dedupe(Arr.map(selfHeal, (t) => t.orgId))
-				// One pass: `partition` returns [excluded, satisfying], so the `Result`
-				// failure arm carries the ungrouped ids and the success arm the grouped.
-				const [ungroupedRuleIds, groupedRuleIds] = Arr.partition(selfHeal, (t) =>
+				// One pass: since Effect 4.0.0 `partition` returns [passes, fails], so the
+				// `Result` success arm carries the grouped ids and the failure arm the ungrouped.
+				const [groupedRuleIds, ungroupedRuleIds] = Arr.partition(selfHeal, (t) =>
 					t.grouped ? Result.succeed(t.ruleId) : Result.fail(t.ruleId),
 				)
 
@@ -3120,6 +3151,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							GroupKey: UNGROUPED_GROUP_KEY,
 							Timestamp: toIngestDateTime64(failedAt),
 							Status: "error",
+							SkipReason: "",
 							SignalType: row.signalType,
 							Comparator: row.comparator,
 							Threshold: row.threshold,

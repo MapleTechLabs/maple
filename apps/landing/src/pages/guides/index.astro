@@ -42,6 +42,13 @@ const coreGuides = [
         description: "Read the score that turns response times into one satisfaction number, choose the target T behind it, and know when it beats a p95 alert.",
         read: "10 min",
     },
+    {
+        href: "/guides/uptime-monitoring",
+        label: "Availability",
+        title: "Uptime monitoring with traces and HTTP checks",
+        description: "Alert on error rate, throughput and Apdex from the traces you already send, add Collector HTTP checks for endpoints and certificates, and see which failures each one catches.",
+        read: "7 min",
+    },
 ];
 
 const investigationGuides = [
@@ -190,11 +197,15 @@ const itemListJsonLd = {
                     </p>
                 </div>
 
-                <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2 xl:grid-cols-4">
+                <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2 xl:grid-cols-3">
                     {coreGuides.map((guide, index) => (
                         <a
                             href={guide.href}
-                            class="group flex min-h-[280px] flex-col bg-bg p-6 transition-colors hover:bg-bg-deep focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring md:p-8"
+                            class:list={[
+                                "group flex min-h-[280px] flex-col bg-bg p-6 transition-colors hover:bg-bg-deep focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring md:p-8",
+                                // An odd count leaves a hole in the last row; the last card fills it.
+                                index === coreGuides.length - 1 && coreGuides.length % 2 === 1 && "md:col-span-2",
+                            ]}
                         >
                             <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
                                 <span>{guide.label}</span>

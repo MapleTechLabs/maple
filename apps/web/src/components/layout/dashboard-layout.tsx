@@ -185,26 +185,15 @@ function Sticky({ children, className }: { children: React.ReactNode; className?
 }
 
 /**
- * Page title/description, with `children` as the right-aligned actions.
+ * The page header row, with `children` as the right-aligned actions.
  *
- * `titleContent` is the one remaining slot prop, and deliberately so: a handful
- * of pages need a heading that isn't a plain string (a service dot beside the
- * name, a status badge). Put a `DashboardLayout.Title` inside it rather than a
- * hand-rolled `<h1>` — that's how six different title typographies accumulated.
+ * There is no plain title or description: the breadcrumb trail already names the
+ * page. `titleContent` is for headers that carry more than a name (an issue's
+ * status strip, a service dot, an editable dashboard name, view tabs).
  */
-function Header({
-	title,
-	titleContent,
-	description,
-	children,
-}: {
-	title?: string
-	titleContent?: React.ReactNode
-	description?: string
-	children?: React.ReactNode
-}) {
+function Header({ titleContent, children }: { titleContent?: React.ReactNode; children?: React.ReactNode }) {
 	return (
-		<PageLayout.Header title={title} titleContent={titleContent} description={description}>
+		<PageLayout.Header titleContent={titleContent}>
 			{children && <PageLayout.HeaderActions>{children}</PageLayout.HeaderActions>}
 		</PageLayout.Header>
 	)

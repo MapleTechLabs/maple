@@ -1,5 +1,6 @@
 import type { InlineErrorData } from "@maple/domain/chat-annotations"
 import { formatNumber } from "@maple/ui/lib/format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { CircleWarningIcon } from "@/components/icons"
 import {
 	INLINE_CARD_META,
@@ -21,9 +22,9 @@ export function InlineError({ data }: { data: InlineErrorData }) {
 				<CircleWarningIcon className="size-3.5 shrink-0 text-severity-error" />
 				{/* Truncation is the browser's job. Cutting the string at 80 characters put an
 				    ellipsis mid-word regardless of how much room the card actually had. */}
-				<span className="min-w-0 flex-1 truncate text-xs text-foreground" title={data.errorType}>
+				<TruncatedText text={data.errorType} className="flex-1 text-xs text-foreground">
 					{data.errorType}
-				</span>
+				</TruncatedText>
 				{data.count != null && (
 					<InlineMetric width="min-w-12" unit="events" tone="text-severity-error">
 						{formatNumber(data.count)}

@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	planetscaleBranchConnectionsSQL,
 	planetscaleBranchGaugesSQL,
 	planetscaleConnectionsSQL,
 	planetscaleGaugesSQL,
 } from "./planetscale-map"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
 }
@@ -19,14 +20,18 @@ describe("planetscaleGaugesSQL", () => {
 		const { sql } = compileUnsafe(planetscaleGaugesSQL(), baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("maxIf(Value, MetricName IN ('planetscale_pods_cpu_util_percentages'))")
-		expect(sql).toContain("maxIf(Value, MetricName IN ('planetscale_pods_mem_util_percentages'))")
+		expect(sql).toContain(
+			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages'))",
+		)
+		expect(sql).toContain(
+			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages'))",
+		)
 		// Both products' replica-lag spellings are covered.
 		expect(sql).toContain("planetscale_mysql_replica_lag_seconds")
 		expect(sql).toContain("planetscale_postgres_replica_lag_seconds")
 		// Rows without the discovery label can't be attributed to a database.
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) != ''",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) != ''",
 		)
 		expect(sql).toContain("GROUP BY database")
 		expect(sql).not.toContain("planetscale_branch_name")
@@ -39,16 +44,19 @@ describe("planetscaleGaugesSQL", () => {
 			database: "main-db",
 		})
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_branch_name'], ''), Attributes['planetscale_branch'])",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch'])",
 		)
 		expect(sql).toContain("GROUP BY database, branch")
 		expect(sql).toContain(
-			"coalesce(nullIf(Attributes['planetscale_database_name'], ''), Attributes['planetscale_database']) = 'main-db'",
+			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'main-db'",
 		)
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(planetscaleGaugesSQL(), { ...baseParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(planetscaleGaugesSQL(), {
+			...baseParams,
+			orgId: OrgId.make("org'evil"),
+		})
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 })
@@ -61,8 +69,8 @@ describe("planetscaleConnectionsSQL", () => {
 		expect(sql).toContain("planetscale_edge_postgres_active_connections")
 		// Inner grouping by (database, timestamp), outer avg/max of the totals.
 		expect(sql).toContain("GROUP BY database, t")
-		expect(sql).toContain("avg(totalConnections)")
-		expect(sql).toContain("max(totalConnections)")
+		expect(sql).toContain("avg(conn.totalConnections)")
+		expect(sql).toContain("max(conn.totalConnections)")
 		expect(sql).toContain("FORMAT JSON")
 	})
 

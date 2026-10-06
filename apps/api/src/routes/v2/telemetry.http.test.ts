@@ -3,8 +3,8 @@ import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -78,6 +78,7 @@ const hierarchyRow = {
 	spanId: SPAN_ID,
 	parentSpanId: "",
 	spanName: "GET /checkout",
+	rawSpanName: "http.server GET",
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 42.5,
@@ -126,7 +127,10 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		return sql.includes("TraceId <") ? rows.slice(1) : rows
 	}
 	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
-	if (sql.includes("FROM trace_detail_spans") && sql.includes("toJSONString(SpanAttributes)")) {
+	if (
+		sql.includes("FROM trace_detail_spans") &&
+		sql.includes("toJSONString(trace_detail_spans.SpanAttributes)")
+	) {
 		return [
 			{
 				...hierarchyRow,

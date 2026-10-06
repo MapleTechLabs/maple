@@ -41,7 +41,6 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const runtime: AlertRuntimeApi = {
 	now: Effect.succeed(NOW),
 	makeUuid: () => RULE,
-	fetch: globalThis.fetch,
 	deliveryTimeoutMs: () => 15_000,
 }
 

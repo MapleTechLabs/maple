@@ -1,34 +1,35 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { Exit, Option } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import {
+	Item,
+	ItemActions,
+	ItemContent,
+	ItemDescription,
+	ItemMedia,
+	ItemTitle,
+} from "@maple/ui/components/ui/item"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 
 import { ErrorState } from "@/components/common/error-state"
-import { LoaderIcon } from "@/components/icons"
+import { RelativeTime } from "@/components/common/relative-time"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
-import { getExitErrorMessage } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { catalogEntry, chatIntegrationId, IntegrationIconPlate } from "./integration-catalog"
 import {
 	IntegrationEmpty,
@@ -106,10 +107,10 @@ function WorkspaceSettings({
 	return (
 		<div className="flex flex-col gap-3 border-t border-border/60 pt-3">
 			{fields.map((field) => (
-				<div key={field.key} className="flex flex-col gap-1.5">
-					<Label htmlFor={`${workspaceId}-${field.key}`} className="text-xs">
+				<Field key={field.key} className="items-stretch gap-1.5">
+					<FieldLabel htmlFor={`${workspaceId}-${field.key}`} className="text-xs">
 						{field.label}
-					</Label>
+					</FieldLabel>
 					<Input
 						id={`${workspaceId}-${field.key}`}
 						value={draft[field.key] ?? ""}
@@ -118,12 +119,17 @@ function WorkspaceSettings({
 							setDraft((current) => ({ ...current, [field.key]: event.target.value }))
 						}
 					/>
-					<p className="text-[11px] text-muted-foreground">{field.help}</p>
-				</div>
+					<FieldDescription className="text-[11px]">{field.help}</FieldDescription>
+				</Field>
 			))}
 			<div>
-				<Button size="sm" variant="outline" onClick={handleSave} disabled={disabled || !dirty}>
-					{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={handleSave}
+					disabled={disabled || !dirty}
+					loading={saving}
+				>
 					Save settings
 				</Button>
 			</div>
@@ -153,27 +159,22 @@ function ChatIdentityRow({
 	const unlink = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "deleteChatIdentity"), {
 		mode: "promiseExit",
 	})
-	const [busy, setBusy] = useState(false)
-
-	async function handleLink() {
-		setBusy(true)
+	const [handleLink, linking] = useAsyncAction(async () => {
 		const result = await startLink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
 		if (Exit.isSuccess(result)) {
-			// Full-page redirect to the platform's consent screen, as the install does.
+			// Full-page redirect to the platform's consent screen, as the install does. Stay
+			// pending while the page navigates away.
 			window.location.href = result.value.url
-			return
+			return new Promise<never>(() => {})
 		}
-		setBusy(false)
 		toastManager.add({
 			title: getExitErrorMessage(result, "Failed to start the account link"),
 			type: "error",
 		})
-	}
+	})
 
-	async function handleUnlink() {
-		setBusy(true)
+	const [handleUnlink, unlinking] = useAsyncAction(async () => {
 		const result = await unlink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
-		setBusy(false)
 		toastManager.add(
 			Exit.isSuccess(result)
 				? { title: "Account unlinked", type: "success" }
@@ -182,28 +183,29 @@ function ChatIdentityRow({
 						type: "error",
 					},
 		)
-	}
+	})
 
 	return (
-		<div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-4 py-3">
-			<div className="flex min-w-0 flex-col gap-0.5">
-				<span className="text-xs font-medium">Your {platform} account</span>
-				<span className="truncate text-[11px] text-muted-foreground">
+		<Item variant="card" className="gap-3 px-4 py-3">
+			<ItemContent className="gap-0.5">
+				<ItemTitle>Your {platform} account</ItemTitle>
+				<ItemDescription className="truncate text-[11px]">
 					{identity === undefined
 						? `Link it so Maple knows it's you acting from ${platform}.`
 						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
-				</span>
-			</div>
-			<Button
-				size="sm"
-				variant="outline"
-				onClick={identity === undefined ? handleLink : handleUnlink}
-				disabled={busy}
-			>
-				{busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
-				{identity === undefined ? "Link your account" : "Unlink"}
-			</Button>
-		</div>
+				</ItemDescription>
+			</ItemContent>
+			<ItemActions>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => void (identity === undefined ? handleLink() : handleUnlink())}
+					loading={linking || unlinking}
+				>
+					{identity === undefined ? "Link your account" : "Unlink"}
+				</Button>
+			</ItemActions>
+		</Item>
 	)
 }
 
@@ -235,18 +237,12 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 
 	// A refetch that fails must not wipe a card that already loaded — the list is
 	// refetched after every save and disconnect.
-	const status = Result.builder(listResult)
-		.onSuccess((response) => response.data.find((entry) => entry.id === connector) ?? null)
-		.orElse(() =>
-			Result.isFailure(listResult)
-				? Option.getOrNull(
-						Option.map(
-							listResult.previousSuccess,
-							(previous) => previous.value.data.find((entry) => entry.id === connector) ?? null,
-						),
-					)
-				: null,
-		)
+	const status = Option.getOrNull(
+		Option.map(
+			AsyncResult.value(listResult),
+			(response) => response.data.find((entry) => entry.id === connector) ?? null,
+		),
+	)
 
 	if (manifest === undefined) return null
 	// Bound once for the handlers below: a function declaration is hoisted, so
@@ -323,12 +319,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				<IntegrationEmptyCard>
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
-					<Button onClick={handleInstall} disabled={connectDisabled}>
-						{busy === "install" ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<MonoIcon size={16} />
-						)}
+					<Button onClick={handleInstall} disabled={connectDisabled} loading={busy === "install"}>
+						<MonoIcon size={16} />
 						Add to {manifest.name}
 					</Button>
 					<IntegrationEmptyFooter>
@@ -346,16 +338,15 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 	return (
 		<div className="flex flex-col gap-4">
 			{workspaces.map((workspace) => (
-				<div
-					key={workspace.id}
-					className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4"
-				>
-					<IntegrationIconPlate icon={Icon} accent={entry.accent} />
-					<div className="flex flex-1 flex-col gap-2">
+				<Item key={workspace.id} variant="card" className="items-start gap-4 p-4">
+					<ItemMedia>
+						<IntegrationIconPlate icon={Icon} accent={entry.accent} />
+					</ItemMedia>
+					<ItemContent className="gap-2">
 						<div className="flex items-center gap-2">
 							<h3 className="text-sm font-semibold">{workspace.name}</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-								<span className="size-2 shrink-0 rounded-full bg-success" aria-hidden />
+								<StatusDot tone="ok" size="lg" />
 								Connected
 							</span>
 						</div>
@@ -363,9 +354,11 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 							Linked to your organization, for everyone in this workspace — no {manifest.name}{" "}
 							account is tied to an individual Maple user.
 						</p>
-						<div className="text-[11px] text-muted-foreground">
-							Connected {formatRelativeTime(workspace.created_at)}
-						</div>
+						<RelativeTime
+							value={workspace.created_at}
+							prefix="Connected"
+							className="text-[11px] text-muted-foreground"
+						/>
 						{/* Keyed by the stored settings so a save reseeds the form from what
 						    the server actually kept. */}
 						<WorkspaceSettings
@@ -387,15 +380,20 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 								Disconnect
 							</Button>
 						</div>
-					</div>
-				</div>
+					</ItemContent>
+				</Item>
 			))}
 			{status?.supports_identity === true ? (
 				<ChatIdentityRow connector={connector} platform={platform} identity={status.identity} />
 			) : null}
 			<div>
-				<Button size="sm" variant="outline" onClick={handleInstall} disabled={connectDisabled}>
-					{busy === "install" ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={handleInstall}
+					disabled={connectDisabled}
+					loading={busy === "install"}
+				>
 					Add another workspace
 				</Button>
 			</div>
@@ -405,28 +403,17 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				</p>
 			) : null}
 
-			<AlertDialog open={confirmId !== null} onOpenChange={(open) => !open && setConfirmId(null)}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Disconnect workspace</AlertDialogTitle>
-						<AlertDialogDescription>
-							This workspace is unlinked from your organization immediately. Removing the bot
-							from the workspace itself is done in {manifest.name}.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => confirmId !== null && handleDisconnect(confirmId)}
-							disabled={busy !== null}
-						>
-							{busy === confirmId ? <LoaderIcon size={14} className="animate-spin" /> : null}
-							Disconnect
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={confirmId !== null}
+				onOpenChange={(open) => {
+					if (!open) setConfirmId(null)
+				}}
+				title="Disconnect workspace"
+				description={`This workspace is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`}
+				confirmLabel="Disconnect"
+				onConfirm={() => (confirmId !== null ? handleDisconnect(confirmId) : undefined)}
+				pending={busy !== null && busy === confirmId}
+			/>
 		</div>
 	)
 }

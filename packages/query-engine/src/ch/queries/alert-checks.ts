@@ -3,12 +3,12 @@
 // DSL-based query definitions for listing historical alert rule check rows
 // from the `alert_checks` datasource.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from } from "@maple-dev/effect-clickhouse"
-import { AlertChecks } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from } from "@maple-dev/effect-orm/clickhouse"
+import { AlertChecks, orgIdParam } from "../tables"
 import { ISO_Z_FORMAT } from "./format"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface ListRuleChecksOpts {
 	readonly groupKey?: string
@@ -39,6 +39,7 @@ export interface ListRuleChecksOutput {
 	readonly evaluationDurationMs: number
 	readonly errorMessage: string | null
 	readonly errorCategory: string
+	readonly skipReason: string
 }
 
 export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
@@ -63,23 +64,24 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 				evaluationDurationMs: $.EvaluationDurationMs,
 				errorMessage: $.ErrorMessage,
 				errorCategory: $.ErrorCategory,
+				skipReason: $.SkipReason,
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.RuleId.eq(param.string("ruleId")),
-				opts.groupKey != null && opts.groupKey !== ""
-					? $.GroupKey.eq(param.string("groupKey"))
-					: undefined,
-				opts.status != null ? $.Status.eq(param.string("status")) : undefined,
-				opts.since != null ? $.Timestamp.gte(param.dateTimeString("since")) : undefined,
-				opts.until != null ? $.Timestamp.lte(param.dateTimeString("until")) : undefined,
-				opts.beforeTimestamp != null
-					? $.Timestamp.lt(param.dateTimeString("beforeTimestamp")).or(
-							$.Timestamp.eq(param.dateTimeString("beforeTimestamp")).and(
-								$.GroupKey.gt(param.string("beforeGroupKey")),
-							),
-						)
-					: undefined,
+				CH.whenTrue(opts.groupKey != null && opts.groupKey !== "", () =>
+					$.GroupKey.eq(param.string("groupKey")),
+				),
+				CH.whenTrue(opts.status != null, () => $.Status.eq(param.string("status"))),
+				CH.whenTrue(opts.since != null, () => $.Timestamp.gte(param.dateTimeString("since"))),
+				CH.whenTrue(opts.until != null, () => $.Timestamp.lte(param.dateTimeString("until"))),
+				CH.whenTrue(opts.beforeTimestamp != null, () =>
+					$.Timestamp.lt(param.dateTimeString("beforeTimestamp")).or(
+						$.Timestamp.eq(param.dateTimeString("beforeTimestamp")).and(
+							$.GroupKey.gt(param.string("beforeGroupKey")),
+						),
+					),
+				),
 			])
 			.orderBy(["timestamp", "desc"], ["groupKey", "asc"])
 			.limit(opts.limit)
@@ -109,7 +111,7 @@ export function alertCheckGroupTotalsQuery(opts: AlertCheckGroupTotalsOpts) {
 			totalCount: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.RuleId.eq(param.string("ruleId")),
 			$.Timestamp.gte(param.dateTimeString("since")),
 			$.Timestamp.lte(param.dateTimeString("until")),
@@ -156,7 +158,7 @@ export function alertChecksSummaryQuery(opts: AlertChecksSummaryOpts) {
 			threshold: CH.avg($.Threshold),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.RuleId.eq(param.string("ruleId")),
 			$.Timestamp.gte(param.dateTimeString("since")),
 			$.Timestamp.lte(param.dateTimeString("until")),

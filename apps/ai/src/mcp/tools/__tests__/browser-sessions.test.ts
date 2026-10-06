@@ -93,6 +93,11 @@ const fixtures: FixtureRule[] = [
 			}),
 		],
 	},
+	// An event-refined list: the replay row's ErrorCount is 0, as most SDKs leave it.
+	{
+		match: (sql) => sql.includes("session_replays") && sql.includes("matchCount"),
+		rows: [{ ...replayRow, errorCount: "0", matchCount: "5" }],
+	},
 	{
 		match: (sql) => sql.includes("session_events"),
 		rows: [{ sessionId: SESSION_ID, activeTimeMs: "4000", idleTimeMs: "1000", eventCount: "2" }],
@@ -135,7 +140,8 @@ describe("search_sessions", () => {
 	it("returns typed rows and renders the identified user", async () => {
 		const result = await call("search_sessions", { has_errors: "true" })
 		const output = Schema.decodeUnknownSync(SearchSessionsOutput)(result.structuredContent)
-		expect(output.sessions[0]?.errorCount).toBe(2)
+		// has_errors reads recorded error events, so the 0 ErrorCount column yields to their count.
+		expect(output.sessions[0]?.errorCount).toBe(5)
 		expect(output.filters).toEqual({ hasErrors: true })
 		const text = markdown(result)
 		expect(text).toContain(`| ${SESSION_ID} | Ada |`)

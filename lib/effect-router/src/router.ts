@@ -6,7 +6,7 @@ import type {
 } from "@tanstack/react-router"
 import { createRouter } from "@tanstack/react-router"
 import { Clock, Effect, Exit, type ManagedRuntime, type Tracer } from "effect"
-import type { Atom, AtomRegistry } from "effect/unstable/reactivity"
+import type { Atom, AtomRegistry } from "effect/reactivity"
 
 // Internal type aliases (centralizes `any` for runtime types)
 
@@ -85,7 +85,7 @@ export type EffectRouterOptions<
  *
  * @example
  * ```ts
- * import { Atom, AtomRegistry } from "effect/unstable/reactivity"
+ * import { Atom, AtomRegistry } from "effect/reactivity"
  *
  * const atomRuntime = Atom.runtime(myServiceLayer)
  * const managedRuntime = ManagedRuntime.make(myServiceLayer, { memoMap: Atom.defaultMemoMap })

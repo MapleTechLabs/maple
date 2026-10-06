@@ -2,7 +2,7 @@ import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollecto
 import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Cause, Clock, Context, Effect, Result, Schema } from "effect"
-import { SqlError } from "effect/unstable/sql/SqlError"
+import { SqlError } from "effect/sql/SqlError"
 import {
 	driverRootError,
 	driverSqlError,

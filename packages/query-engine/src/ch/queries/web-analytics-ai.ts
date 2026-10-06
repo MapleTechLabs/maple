@@ -4,19 +4,19 @@
 // - crawls: `ai_crawler_requests`, Server spans from AI fetchers, which never
 //   run the browser SDK. Only `host` / `pagePath` narrow them.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import { Schema } from "effect"
-import { param, from, compileFnCall, compileTypedFnCall } from "@maple-dev/effect-clickhouse"
-import type { CHQuery, ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import { param, from, compileFnCall, compileTypedFnCall } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { AI_PRODUCTS } from "@maple/domain/ai-traffic"
-import { AiCrawlerRequests, SessionReplays } from "../tables"
+import { AiCrawlerRequests, SessionReplays, orgIdParam } from "../tables"
 import { replaysWhere, type WebAnalyticsFilters } from "./web-analytics"
 
 const stringArray = (values: ReadonlyArray<string>) => CH.arrayOf(...values.map((value) => CH.lit(value)))
 
 /** `transform(value, from, to, '')`: an exact-match lookup table. */
 function lookup(value: CH.Expr<string>, pairs: ReadonlyArray<readonly [string, string]>): CH.Expr<string> {
-	return compileTypedFnCall<string>(
+	return compileTypedFnCall(
 		"transform",
 		Schema.String,
 		value,
@@ -101,7 +101,7 @@ export type WebAnalyticsAiCrawlerFilters = Pick<WebAnalyticsFilters, "host" | "p
 
 function crawlerWhere($: CrawlerAccessor, filters: WebAnalyticsAiCrawlerFilters) {
 	return [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTimeString("startTime")),
 		$.Timestamp.lte(param.dateTimeString("endTime")),
 		CH.when(filters.host, (v: string) => $.Host.eq(v)),

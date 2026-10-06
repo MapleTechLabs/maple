@@ -1,8 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -67,9 +68,10 @@ const makeStub = (turns: Array<BeginTurnInput>): ChatSessionStub => ({
  */
 const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
 	const base = Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config)))
-	const workerEnv = Layer.succeed(WorkerEnvironment, {
-		ChatSession: { idFromName: (name: string) => name, get: () => makeStub(turns) },
-	})
+	const workerEnv = Layer.merge(
+		envPorts({}),
+		fakeChatSessionsLayer(() => makeStub(turns)),
+	)
 	return ChatSessionsRouter.pipe(
 		Layer.provide(
 			Layer.mergeAll(

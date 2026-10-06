@@ -1,7 +1,7 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Cause, Option } from "effect"
-import { SqlError } from "effect/unstable/sql/SqlError"
+import { SqlError } from "effect/sql/SqlError"
 import type { DatabaseError } from "./DatabaseLive"
 
 const RETRYABLE_CONTENTION_CODES: ReadonlySet<string> = new Set(["40001", "40P01"])

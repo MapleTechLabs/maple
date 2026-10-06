@@ -1,6 +1,6 @@
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, paramPlaceholder } from "@maple-dev/effect-clickhouse"
-import { AuditLog } from "../tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
+import { AuditLog, orgIdParam } from "../tables"
 
 /**
  * Which optional filters a listing applies. Every set flag binds a parameter of
@@ -56,24 +56,24 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 			originCountry: $.OriginCountry,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			opts.actorType ? $.ActorType.eq(param.string("actorType")) : undefined,
-			opts.userId ? $.UserId.eq(param.string("userId")) : undefined,
-			opts.apiKeyId ? $.ApiKeyId.eq(param.string("apiKeyId")) : undefined,
-			opts.actorId ? $.ActorId.eq(param.string("actorId")) : undefined,
-			opts.affectedUserId ? $.AffectedUserId.eq(param.string("affectedUserId")) : undefined,
-			opts.action ? $.Action.eq(param.string("action")) : undefined,
-			opts.outcome ? $.Outcome.eq(param.string("outcome")) : undefined,
-			opts.resourceType ? $.ResourceType.eq(param.string("resourceType")) : undefined,
-			opts.resourceId ? $.ResourceId.eq(param.string("resourceId")) : undefined,
+			$.OrgId.eq(orgIdParam),
+			CH.whenTrue(!!opts.actorType, () => $.ActorType.eq(param.string("actorType"))),
+			CH.whenTrue(!!opts.userId, () => $.UserId.eq(param.string("userId"))),
+			CH.whenTrue(!!opts.apiKeyId, () => $.ApiKeyId.eq(param.string("apiKeyId"))),
+			CH.whenTrue(!!opts.actorId, () => $.ActorId.eq(param.string("actorId"))),
+			CH.whenTrue(!!opts.affectedUserId, () => $.AffectedUserId.eq(param.string("affectedUserId"))),
+			CH.whenTrue(!!opts.action, () => $.Action.eq(param.string("action"))),
+			CH.whenTrue(!!opts.outcome, () => $.Outcome.eq(param.string("outcome"))),
+			CH.whenTrue(!!opts.resourceType, () => $.ResourceType.eq(param.string("resourceType"))),
+			CH.whenTrue(!!opts.resourceId, () => $.ResourceId.eq(param.string("resourceId"))),
 			// Array membership has no builder verb yet; the placeholder keeps the
 			// value parameterised exactly like the typed comparisons above.
 			opts.changedField
 				? CH.rawCond(`has(ChangedFields, ${paramPlaceholder("string", "changedField")})`)
 				: undefined,
-			opts.requestId ? $.RequestId.eq(param.string("requestId")) : undefined,
-			opts.since ? $.OccurredAt.gte(param.dateTimeString("since")) : undefined,
-			opts.until ? $.OccurredAt.lte(param.dateTimeString("until")) : undefined,
+			CH.whenTrue(!!opts.requestId, () => $.RequestId.eq(param.string("requestId"))),
+			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTimeString("since"))),
+			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTimeString("until"))),
 		])
 		.orderBy(["occurredAt", "desc"], ["id", "desc"])
 		.limit(opts.limit)

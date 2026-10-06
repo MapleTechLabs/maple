@@ -1,23 +1,30 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { formatRate } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import {
 	BarCell,
-	SortableHead,
-	errorTone,
-	formatErrorRate,
-	formatRate,
-	type SortDir,
+	HeadLabel,
+	MobileListRow,
+	MobileSortBar,
+	MobileStat,
+	MobileStatLine,
+	SortColumnHead,
+	TABLE_CARD_CLASS,
 } from "./service-table-cells"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SampledValue } from "./sampled-value"
+import { useTableSort } from "@/hooks/use-table-sort"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { LatencyValue } from "@maple/ui/components/latency-value"
-import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceOperationsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import type { ServiceOperation } from "@/api/warehouse/service-operations"
 import {
 	callsPerSecond,
@@ -38,20 +45,7 @@ interface ServiceOperationsTabProps {
 	timePreset?: string
 }
 
-type SortKey = "calls" | "errorRate" | "p50" | "p95"
-
-const sortValue = (op: ServiceOperation, key: SortKey): number => {
-	switch (key) {
-		case "calls":
-			return op.estimatedSpanCount
-		case "errorRate":
-			return op.errorRate
-		case "p50":
-			return op.p50DurationMs
-		case "p95":
-			return op.p95DurationMs
-	}
-}
+type SortKey = "estimatedSpanCount" | "errorRate" | "p50DurationMs" | "p95DurationMs"
 
 export function ServiceOperationsTab({
 	serviceName,
@@ -63,8 +57,6 @@ export function ServiceOperationsTab({
 	timePreset,
 }: ServiceOperationsTabProps) {
 	const navigate = useNavigate()
-	const [sortKey, setSortKey] = useState<SortKey>("calls")
-	const [sortDir, setSortDir] = useState<SortDir>("desc")
 
 	const result = useRefreshableAtomValue(
 		getServiceOperationsResultAtom({
@@ -94,12 +86,9 @@ export function ServiceOperationsTab({
 		[result],
 	)
 
-	const sorted = useMemo(() => {
-		return operations.toSorted((a, b) => {
-			const diff = sortValue(b, sortKey) - sortValue(a, sortKey)
-			return sortDir === "desc" ? diff : -diff
-		})
-	}, [operations, sortKey, sortDir])
+	const { sorted, sortKey, sortDir, handleSort } = useTableSort<ServiceOperation, SortKey>(operations, {
+		initialKey: "estimatedSpanCount",
+	})
 
 	// Column-relative maxima drive the inline throughput/latency bars, mirroring
 	// the Dependencies tab so both tables read as one system.
@@ -114,15 +103,6 @@ export function ServiceOperationsTab({
 			),
 		[operations],
 	)
-
-	const toggleSort = (key: SortKey) => {
-		if (key === sortKey) {
-			setSortDir(sortDir === "desc" ? "asc" : "desc")
-		} else {
-			setSortKey(key)
-			setSortDir("desc")
-		}
-	}
 
 	const handleRowClick = (op: ServiceOperation) => {
 		navigate({
@@ -140,14 +120,17 @@ export function ServiceOperationsTab({
 
 	if (!Result.isSuccess(result)) {
 		return Result.builder(result)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <OperationsLoadingState />)
 	}
 
 	const isWaiting = Result.isSuccess(result) && result.waiting
 
 	return (
-		<div className={cn("flex flex-col gap-2 transition-opacity", isWaiting && "opacity-60")}>
+		<div
+			className={cn("flex flex-col gap-2", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
+		>
 			{traceDetailLimited && (
 				<p className="text-xs text-muted-foreground">
 					Operation summaries cover the selected range; individual trace drill-downs show the latest
@@ -155,59 +138,51 @@ export function ServiceOperationsTab({
 				</p>
 			)}
 			{/* Desktop: dense sortable table with inline distribution bars. */}
-			<div className="hidden overflow-hidden rounded-lg border bg-card md:block">
+			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
 				<Table>
 					<TableHeader>
 						<TableRow className="hover:bg-transparent border-b">
-							<TableHead className="h-8 pl-3 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
-								Operation
-							</TableHead>
-							<SortableHead
+							<HeadLabel className="pl-3">Operation</HeadLabel>
+							<SortColumnHead
 								label="Calls /s"
-								align="right"
-								active={sortKey === "calls"}
+								sortKey="estimatedSpanCount"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("calls")}
+								onSort={handleSort}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="Errors"
-								align="right"
-								active={sortKey === "errorRate"}
+								sortKey="errorRate"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("errorRate")}
+								onSort={handleSort}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="p50"
-								align="right"
-								active={sortKey === "p50"}
+								sortKey="p50DurationMs"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("p50")}
+								onSort={handleSort}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="p95"
-								align="right"
-								active={sortKey === "p95"}
+								sortKey="p95DurationMs"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("p95")}
+								onSort={handleSort}
 							/>
-							<TableHead className="h-8 w-[140px] pr-3 text-right text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
-								Activity
-							</TableHead>
+							<HeadLabel className="w-[140px] pr-3 text-right">Activity</HeadLabel>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{sorted.length === 0 ? (
 							<TableRow>
-								<TableCell
-									colSpan={6}
-									className="py-12 text-center text-xs text-muted-foreground"
-								>
-									No operations recorded in this window.
+								<TableCell colSpan={6} className="p-0">
+									<EmptyMessage>No operations recorded in this window.</EmptyMessage>
 								</TableCell>
 							</TableRow>
 						) : (
 							sorted.map((op) => {
-								const tone = errorTone(op.errorRate)
 								return (
 									<TableRow
 										key={op.spanName}
@@ -227,10 +202,13 @@ export function ServiceOperationsTab({
 											max={maxima.calls}
 											tone="calls"
 										>
-											<span className="tabular-nums font-mono text-[12.5px] text-foreground">
-												{op.estimatedSpanCount > op.spanCount ? "~" : ""}
-												{formatRate(callsPerSecond(op.estimatedSpanCount, seconds))}
-											</span>
+											<SampledValue
+												className="tabular-nums font-mono text-[12.5px] text-foreground"
+												estimated={op.estimatedSpanCount > op.spanCount}
+												value={formatRate(
+													callsPerSecond(op.estimatedSpanCount, seconds),
+												)}
+											/>
 										</BarCell>
 										<BarCell
 											value={op.errorRate > 0 ? op.errorRate : 0}
@@ -239,16 +217,7 @@ export function ServiceOperationsTab({
 											max={0.05}
 											tone="errors"
 										>
-											<span
-												className={cn(
-													"tabular-nums font-mono text-[12.5px]",
-													tone === "error" && "text-severity-error",
-													tone === "warn" && "text-severity-warn",
-													tone === "default" && "text-muted-foreground/80",
-												)}
-											>
-												{formatErrorRate(op.errorRate)}
-											</span>
+											<ErrorRateValue rate={op.errorRate} className="text-[12.5px]" />
 										</BarCell>
 										<TableCell className="py-2 text-right align-middle">
 											<LatencyValue
@@ -280,86 +249,46 @@ export function ServiceOperationsTab({
 
 			{/* Mobile: tap-to-trace list with a compact sort control. */}
 			<div className="space-y-2 md:hidden">
-				<div className="flex items-center gap-1.5 text-[11px]">
-					<span className="uppercase tracking-wider text-muted-foreground/60">Sort</span>
-					{(
+				<MobileSortBar
+					options={
 						[
-							["calls", "Calls"],
+							["estimatedSpanCount", "Calls"],
 							["errorRate", "Errors"],
-							["p95", "p95"],
+							["p95DurationMs", "p95"],
 						] as const
-					).map(([key, label]) => {
-						const active = sortKey === key
-						const Icon = active
-							? sortDir === "desc"
-								? ChevronDownIcon
-								: ChevronUpIcon
-							: ChevronExpandYIcon
-						return (
-							<button
-								key={key}
-								type="button"
-								onClick={() => toggleSort(key)}
-								className={cn(
-									"inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono transition-colors",
-									active
-										? "border-border bg-muted text-foreground"
-										: "border-transparent text-muted-foreground hover:text-foreground",
-								)}
-							>
-								{label}
-								<Icon
-									size={11}
-									className={active ? "text-foreground" : "text-muted-foreground/40"}
-								/>
-							</button>
-						)
-					})}
-				</div>
-				<div className="overflow-hidden rounded-lg border bg-card">
+					}
+					sortKey={sortKey}
+					sortDir={sortDir}
+					onSort={handleSort}
+				/>
+				<div className={TABLE_CARD_CLASS}>
 					{sorted.length === 0 ? (
-						<div className="py-12 text-center text-xs text-muted-foreground">
-							No operations recorded in this window.
-						</div>
+						<EmptyMessage>No operations recorded in this window.</EmptyMessage>
 					) : (
 						sorted.map((op) => {
-							const tone = errorTone(op.errorRate)
 							return (
-								<button
-									key={op.spanName}
-									type="button"
-									onClick={() => handleRowClick(op)}
-									className="flex w-full flex-col gap-1 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-								>
+								<MobileListRow key={op.spanName} onClick={() => handleRowClick(op)}>
 									<span className="truncate font-mono text-[13px] text-foreground">
 										{op.spanName}
 									</span>
-									<div className="flex items-center gap-3 font-mono text-xs tabular-nums">
-										<span>
-											<span className="text-muted-foreground/60">calls </span>
-											<span className="text-foreground">
-												{op.estimatedSpanCount > op.spanCount ? "~" : ""}
-												{formatRate(callsPerSecond(op.estimatedSpanCount, seconds))}
-											</span>
-										</span>
-										<span>
-											<span className="text-muted-foreground/60">err </span>
-											<span
-												className={cn(
-													tone === "error" && "text-severity-error",
-													tone === "warn" && "text-severity-warn",
-													tone === "default" && "text-muted-foreground/80",
+									<MobileStatLine>
+										<MobileStat label="calls">
+											<SampledValue
+												className="text-foreground"
+												estimated={op.estimatedSpanCount > op.spanCount}
+												value={formatRate(
+													callsPerSecond(op.estimatedSpanCount, seconds),
 												)}
-											>
-												{formatErrorRate(op.errorRate)}
-											</span>
-										</span>
-										<span>
-											<span className="text-muted-foreground/60">p95 </span>
+											/>
+										</MobileStat>
+										<MobileStat label="err">
+											<ErrorRateValue rate={op.errorRate} />
+										</MobileStat>
+										<MobileStat label="p95">
 											<LatencyValue ms={op.p95DurationMs} scale="p95" />
-										</span>
-									</div>
-								</button>
+										</MobileStat>
+									</MobileStatLine>
+								</MobileListRow>
 							)
 						})
 					)}
@@ -371,16 +300,18 @@ export function ServiceOperationsTab({
 
 function OperationsLoadingState() {
 	return (
-		<div className="overflow-hidden rounded-lg border bg-card">
-			{Array.from({ length: 10 }).map((_, i) => (
-				<div key={i} className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
+		<SkeletonList
+			rows={10}
+			className={cn("gap-0", TABLE_CARD_CLASS)}
+			renderRow={() => (
+				<div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
 					<Skeleton className="h-3 flex-1" />
 					<Skeleton className="h-3 w-12" />
 					<Skeleton className="h-3 w-10" />
 					<Skeleton className="h-3 w-12" />
 					<Skeleton className="hidden h-5 w-[120px] md:block" />
 				</div>
-			))}
-		</div>
+			)}
+		/>
 	)
 }

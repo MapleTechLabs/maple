@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -40,9 +41,9 @@ export function LabIndex() {
 								const entries = LAB_ENTRIES.filter((entry) => entry.kind === section.kind)
 								return (
 									<section key={section.kind} className="border-b px-4 py-4">
-										<h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										<Eyebrow variant="label" as="h2">
 											{section.title}
-										</h2>
+										</Eyebrow>
 										<p className="mt-1 text-xs text-muted-foreground">{section.blurb}</p>
 										<ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
 											{entries.map((entry) => (

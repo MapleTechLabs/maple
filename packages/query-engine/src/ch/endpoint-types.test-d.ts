@@ -34,7 +34,7 @@ import type {
 	SpanHierarchyOutput,
 	TracesDurationStatsOutput,
 } from "@maple/domain/tinybird"
-import type { InferQueryOutput } from "@maple-dev/effect-clickhouse"
+import type { InferQueryOutput } from "@maple-dev/effect-orm/clickhouse"
 import { resourceAttributeValuesQuery, spanAttributeValuesQuery } from "./queries/attribute-keys"
 import {
 	errorDetailTracesQuery,

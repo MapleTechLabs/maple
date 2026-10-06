@@ -4,6 +4,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
 import { MetricTypeBadge } from "./metric-type-badge"
 import type { MetricSparklinePoint } from "@/api/warehouse/metrics"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 export interface MetricPreviewEntry {
 	metricName: string
@@ -55,9 +56,7 @@ export function MetricPreviewCard({ entry, points, loading, onOpen }: MetricPrev
 			className="group flex flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40"
 		>
 			<div className="flex w-full items-start justify-between gap-2">
-				<span className="min-w-0 truncate font-mono text-xs font-medium" title={entry.metricName}>
-					{entry.metricName}
-				</span>
+				<TruncatedText text={entry.metricName} mono className="text-xs font-medium" />
 				<MetricTypeBadge type={entry.metricType} />
 			</div>
 
@@ -83,7 +82,7 @@ export function MetricPreviewCard({ entry, points, loading, onOpen }: MetricPrev
 				</span>
 				<span className="flex shrink-0 items-center gap-1.5">
 					{entry.metricUnit && (
-						<Badge variant="outline" className="px-1 py-0 font-mono text-[9px]">
+						<Badge variant="outline" size="xs" mono className="text-[9px]">
 							{entry.metricUnit}
 						</Badge>
 					)}

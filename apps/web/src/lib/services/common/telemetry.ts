@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { noteReachable, noteUnreachable, PEER_OUTAGE_GRACE_MS } from "./peer-reachability"
 import { mapleRuntime } from "@/lib/registry"
 
@@ -144,7 +144,7 @@ export const tracedFetch = (
 						})
 						return outcome
 					}
-					const unreachableMs = noteUnreachable(parsed.origin, Date.now())
+					const unreachableMs = noteUnreachable(parsed.origin, yield* Clock.currentTimeMillis)
 					yield* Effect.annotateCurrentSpan({
 						"error.type": causeName(outcome.cause) ?? "TracedFetchError",
 						"maple.http.unreachable_ms": unreachableMs,

@@ -16,6 +16,7 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+import { ResultView } from "@/components/common/result-view"
 import { percentilePresets, toLogBuckets } from "@/components/filters/range-distribution"
 import {
 	RangeFilterSection,
@@ -174,160 +175,166 @@ export function AgentSessionsFilterSidebar({
 		})
 	}
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={4} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((value, result) => {
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader
-						canClear={hasAgentSessionsFilters(search)}
-						onClear={clearAllFilters}
-					/>
-					<FilterSidebarBody>
-						{/* Counted facets first — they answer "what is in here" before you
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={4} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(value, result) => {
+				return (
+					<FilterSidebarFrame waiting={result.waiting}>
+						<FilterSidebarHeader
+							canClear={hasAgentSessionsFilters(search)}
+							onClear={clearAllFilters}
+						/>
+						<FilterSidebarBody>
+							{/* Counted facets first — they answer "what is in here" before you
 						    know anything. The measured ranges follow, then the one structural
 						    toggle. "With errors" is deliberately absent: the toolbar chip is
 						    that filter, and two controls for one boolean read as a question
 						    about whether they agree. */}
-						{/* Sections with nothing to offer hide themselves, and a selected
+							{/* Sections with nothing to offer hide themselves, and a selected
 						    value the window no longer offers stays checkable at count 0 —
 						    both the shared section's doing. Most orgs never set an
 						    environment, and a framework that names no agents or tools would
 						    leave an empty list that reads as broken. */}
-						<SearchableFilterSection
-							title="Agent"
-							description="Sessions where any agent span carries this agent name."
-							options={value.agents}
-							selected={search.agents ?? []}
-							onChange={(vals) => setList("agents", vals)}
-						/>
+							<SearchableFilterSection
+								title="Agent"
+								description="Sessions where any agent span carries this agent name."
+								options={value.agents}
+								selected={search.agents ?? []}
+								onChange={(vals) => setList("agents", vals)}
+							/>
 
-						<SearchableFilterSection
-							title="Tool"
-							description="Sessions that called this tool at least once."
-							options={value.tools}
-							selected={search.tools ?? []}
-							onChange={(vals) => setList("tools", vals)}
-						/>
+							<SearchableFilterSection
+								title="Tool"
+								description="Sessions that called this tool at least once."
+								options={value.tools}
+								selected={search.tools ?? []}
+								onChange={(vals) => setList("tools", vals)}
+							/>
 
-						<SearchableFilterSection
-							title="Service"
-							options={value.services}
-							selected={search.services ?? []}
-							onChange={(vals) => setList("services", vals)}
-							colorMap={swatches(value.services, search.services, getServiceColor)}
-						/>
+							<SearchableFilterSection
+								title="Service"
+								options={value.services}
+								selected={search.services ?? []}
+								onChange={(vals) => setList("services", vals)}
+								colorMap={swatches(value.services, search.services, getServiceColor)}
+							/>
 
-						<FilterSection
-							title="Framework"
-							description="The agent framework that ran the session, recognised at ingest from the attributes its instrumentation writes. Unidentified is AI telemetry no known framework matched."
-							options={value.vendors}
-							selected={search.vendors ?? []}
-							onChange={(vals) => setList("vendors", vals)}
-							getOptionLabel={vendorLabel}
-							getOptionIcon={vendorIcon}
-							getOptionIconColor={vendorColor}
-						/>
+							<FilterSection
+								title="Framework"
+								description="The agent framework that ran the session, recognised at ingest from the attributes its instrumentation writes. Unidentified is AI telemetry no known framework matched."
+								options={value.vendors}
+								selected={search.vendors ?? []}
+								onChange={(vals) => setList("vendors", vals)}
+								getOptionLabel={vendorLabel}
+								getOptionIcon={vendorIcon}
+								getOptionIconColor={vendorColor}
+							/>
 
-						<SearchableFilterSection
-							title="Model"
-							description="Sessions where any agent span ran on this model."
-							options={value.models}
-							selected={search.models ?? []}
-							onChange={(vals) => setList("models", vals)}
-							getOptionLabel={(name) => detectModel(name).displayName}
-							getOptionIcon={(name) => modelVendorIcon(detectModel(name))}
-							getOptionIconColor={(name) => modelVendorColor(detectModel(name))}
-						/>
+							<SearchableFilterSection
+								title="Model"
+								description="Sessions where any agent span ran on this model."
+								options={value.models}
+								selected={search.models ?? []}
+								onChange={(vals) => setList("models", vals)}
+								getOptionLabel={(name) => detectModel(name).displayName}
+								getOptionIcon={(name) => modelVendorIcon(detectModel(name))}
+								getOptionIconColor={(name) => modelVendorColor(detectModel(name))}
+							/>
 
-						<FilterSection
-							title="Environment"
-							options={value.environments}
-							selected={search.environments ?? []}
-							onChange={(vals) => setList("environments", vals)}
-						/>
+							<FilterSection
+								title="Environment"
+								options={value.environments}
+								selected={search.environments ?? []}
+								onChange={(vals) => setList("environments", vals)}
+							/>
 
-						<Separator className="my-2" />
+							<Separator className="my-2" />
 
-						{/* Each histogram counts the sessions where its measure is above
+							{/* Each histogram counts the sessions where its measure is above
 						    zero — a log axis has no place for none — so the readouts that
 						    would otherwise overstate what they hold say who they count. */}
-						<RangeFilterSection
-							title="Session length"
-							unit="s"
-							minValue={search.durationMin}
-							maxValue={search.durationMax}
-							onRangeChange={setRange("durationMin", "durationMax")}
-							histogram={duration.histogram}
-							presets={duration.presets}
-						/>
+							<RangeFilterSection
+								title="Session length"
+								unit="s"
+								minValue={search.durationMin}
+								maxValue={search.durationMax}
+								onRangeChange={setRange("durationMin", "durationMax")}
+								histogram={duration.histogram}
+								presets={duration.presets}
+							/>
 
-						<RangeFilterSection
-							title="Cost"
-							hint="As priced by the instrumentation"
-							unit="usd"
-							minValue={search.costMin}
-							maxValue={search.costMax}
-							onRangeChange={setRange("costMin", "costMax")}
-							histogram={cost.histogram}
-							histogramUnitLabel="priced sessions"
-							presets={cost.presets}
-						/>
+							<RangeFilterSection
+								title="Cost"
+								hint="As priced by the instrumentation"
+								unit="usd"
+								minValue={search.costMin}
+								maxValue={search.costMax}
+								onRangeChange={setRange("costMin", "costMax")}
+								histogram={cost.histogram}
+								histogramUnitLabel="priced sessions"
+								presets={cost.presets}
+							/>
 
-						<RangeFilterSection
-							title="Tokens"
-							unit="count"
-							minValue={search.tokensMin}
-							maxValue={search.tokensMax}
-							onRangeChange={setRange("tokensMin", "tokensMax")}
-							histogram={tokens.histogram}
-							presets={tokens.presets}
-						/>
+							<RangeFilterSection
+								title="Tokens"
+								unit="count"
+								minValue={search.tokensMin}
+								maxValue={search.tokensMax}
+								onRangeChange={setRange("tokensMin", "tokensMax")}
+								histogram={tokens.histogram}
+								presets={tokens.presets}
+							/>
 
-						<RangeFilterSection
-							title="LLM calls"
-							unit="count"
-							minValue={search.llmCallsMin}
-							maxValue={search.llmCallsMax}
-							onRangeChange={setRange("llmCallsMin", "llmCallsMax")}
-							histogram={llmCalls.histogram}
-							presets={llmCalls.presets}
-						/>
+							<RangeFilterSection
+								title="LLM calls"
+								unit="count"
+								minValue={search.llmCallsMin}
+								maxValue={search.llmCallsMax}
+								onRangeChange={setRange("llmCallsMin", "llmCallsMax")}
+								histogram={llmCalls.histogram}
+								presets={llmCalls.presets}
+							/>
 
-						<RangeFilterSection
-							title="Tool calls"
-							unit="count"
-							minValue={search.toolCallsMin}
-							maxValue={search.toolCallsMax}
-							onRangeChange={setRange("toolCallsMin", "toolCallsMax")}
-							histogram={toolCalls.histogram}
-							histogramUnitLabel="sessions with tools"
-							presets={toolCalls.presets}
-						/>
+							<RangeFilterSection
+								title="Tool calls"
+								unit="count"
+								minValue={search.toolCallsMin}
+								maxValue={search.toolCallsMax}
+								onRangeChange={setRange("toolCallsMin", "toolCallsMax")}
+								histogram={toolCalls.histogram}
+								histogramUnitLabel="sessions with tools"
+								presets={toolCalls.presets}
+							/>
 
-						<Separator className="my-2" />
+							<Separator className="my-2" />
 
-						{/* A framework with no session key files every trace as its own
+							{/* A framework with no session key files every trace as its own
 						    session; for an org running one of those this is the difference
 						    between a list of conversations and a list of requests. */}
-						<SingleCheckboxFilter
-							title="Hide single-trace sessions"
-							description="A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans."
-							checked={search.grouped === true}
-							onChange={(checked) =>
-								navigate({ search: (prev) => ({ ...prev, grouped: checked || undefined }) })
-							}
-						/>
+							<SingleCheckboxFilter
+								title="Hide single-trace sessions"
+								description="A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans."
+								checked={search.grouped === true}
+								onChange={(checked) =>
+									navigate({
+										search: (prev) => ({ ...prev, grouped: checked || undefined }),
+									})
+								}
+							/>
 
-						{value.vendors.length === 0 && value.services.length === 0 && (
-							<p className="py-4 text-sm text-muted-foreground">
-								No sessions in the last 7 days
-							</p>
-						)}
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+							{value.vendors.length === 0 && value.services.length === 0 && (
+								<p className="py-4 text-sm text-muted-foreground">
+									No sessions in the last 7 days
+								</p>
+							)}
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }

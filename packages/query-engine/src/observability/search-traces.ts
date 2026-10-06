@@ -86,12 +86,16 @@ const spanLevelSearch = (
 		...(input.service && { service: input.service }),
 		...(input.spanName && { span_name: input.spanName }),
 		...(input.spanNameMatchMode === "contains" && { span_name_match_mode: "contains" }),
+		...(input.environment && { deployment_env: input.environment }),
 		...(input.hasError && { has_error: true }),
 		...(input.minDurationMs != null && { min_duration_ms: input.minDurationMs }),
 		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
 		...(input.httpMethod && { http_method: input.httpMethod }),
 		...(input.traceId && { trace_id: input.traceId }),
 		...(input.attributeFilters?.length && { attribute_filters: input.attributeFilters }),
+		...(input.resourceAttributeFilter && {
+			resource_attribute_filters: [{ ...input.resourceAttributeFilter, mode: "equals" }],
+		}),
 	} satisfies Record<string, unknown>
 
 	return Effect.map(
@@ -126,6 +130,7 @@ const rootLevelSearch = (
 		...(input.service && { service: input.service }),
 		...(input.spanName && { span_name: input.spanName }),
 		...(input.spanNameMatchMode === "contains" && { span_name_match_mode: "contains" }),
+		...(input.environment && { deployment_env: input.environment }),
 		...(input.hasError && { has_error: true }),
 		...(input.minDurationMs != null && { min_duration_ms: input.minDurationMs }),
 		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
@@ -134,6 +139,10 @@ const rootLevelSearch = (
 		...(input.attributeFilters?.[0]?.key && { attribute_filter_key: input.attributeFilters[0].key }),
 		...(input.attributeFilters?.[0]?.value && {
 			attribute_filter_value: input.attributeFilters[0].value,
+		}),
+		...(input.resourceAttributeFilter && {
+			resource_filter_key: input.resourceAttributeFilter.key,
+			resource_filter_value: input.resourceAttributeFilter.value,
 		}),
 	} satisfies Record<string, unknown>
 

@@ -18,7 +18,7 @@ export function ServicePills({ services }: { services: ReadonlyArray<string> }) 
 			<TooltipTrigger render={<div />} className="flex min-w-0 flex-wrap gap-1">
 				{services.slice(0, VISIBLE_SERVICES).map((service) => (
 					<Badge key={service} variant="outline" className="max-w-full font-mono text-[10px]">
-						<ServiceDot serviceName={service} className="size-1.5" />
+						<ServiceDot serviceName={service} size="sm" />
 						<span className="truncate">{service}</span>
 					</Badge>
 				))}

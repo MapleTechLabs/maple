@@ -29,12 +29,13 @@ import { runMapleApiV2 } from "@/lib/collections/api-runner"
 import { anomalyIncidentFromV2 } from "@/lib/services/anomalies"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { ConnectionIcon } from "@/components/icons"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import type { AnomalyIncidentDocument, AnomalyIncidentId } from "@maple/domain/http"
 
 const LIVE_REFRESH_INTERVAL_MS = 15_000
@@ -80,9 +81,6 @@ export const Route = createFileRoute("/anomalies/")({
 	component: AnomaliesPage,
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
 })
-
-const PAGE_DESCRIPTION =
-	"Baseline deviations detected automatically across your services — no rules required."
 
 function AnomaliesPage() {
 	const search = Route.useSearch()
@@ -265,7 +263,7 @@ function AnomaliesPage() {
 				</DashboardLayout.Filters>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Anomalies" description={PAGE_DESCRIPTION}>
+						<DashboardLayout.Header>
 							<AnomalyLiveIndicator
 								live={live}
 								onToggle={(next) =>
@@ -290,11 +288,7 @@ function AnomaliesPage() {
 			<AnomaliesShell>
 				<div>
 					{toolbar}
-					<div className="space-y-px p-2">
-						{Array.from({ length: 5 }).map((_, i) => (
-							<Skeleton key={i} className="h-9 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={5} rowClassName="h-9" className="p-2" />
 				</div>
 			</AnomaliesShell>
 		))
@@ -493,16 +487,7 @@ function AnomaliesPageBody({
 							/>
 						))}
 						{hasMore ? (
-							<div className="flex justify-center p-4">
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={onLoadMore}
-									disabled={loadingMore}
-								>
-									{loadingMore ? "Loading…" : "Load more"}
-								</Button>
-							</div>
+							<ListFooter hasMore loading={loadingMore} onLoadMore={onLoadMore} className="p-4" />
 						) : null}
 					</div>
 				)}

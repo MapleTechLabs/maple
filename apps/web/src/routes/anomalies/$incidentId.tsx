@@ -1,3 +1,5 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -26,21 +28,13 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { anomalyIncidentFromV2, anomalyTimeseriesFromV2 } from "@/lib/services/anomalies"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { ResultView } from "@/components/common/result-view"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { cn } from "@maple/ui/lib/utils"
 import { AnomalyIncidentId, type AnomalyIncidentDocument, type ErrorIssueId } from "@maple/domain/http"
 
 const decodeIncidentId = Schema.decodeSync(AnomalyIncidentId)
@@ -86,9 +80,6 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[...ANOMALY_LOADING_BREADCRUMBS]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Anomaly" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-4">
 								<Skeleton className="h-24 w-full" />
@@ -105,28 +96,19 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Breadcrumbs items={[...ANOMALY_LOADING_BREADCRUMBS]} />
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Anomaly" />
-						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
-							<Empty>
-								<EmptyHeader>
-									<EmptyTitle>
-										{isIncidentNotFound(error)
-											? "Anomaly not found"
-											: "Failed to load anomaly"}
-									</EmptyTitle>
-									<EmptyDescription>
-										{isIncidentNotFound(error)
-											? "It may have been pruned, or the link is stale."
-											: (displayError(error).message ??
-												"Try refreshing or check API logs.")}
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" render={<Link to="/anomalies" />}>
-									Back to anomalies
-								</Button>
-							</Empty>
+							<ResourceNotFound
+								title={
+									isIncidentNotFound(error) ? "Anomaly not found" : "Failed to load anomaly"
+								}
+								description={
+									isIncidentNotFound(error)
+										? "It may have been pruned, or the link is stale."
+										: (displayError(error).message ?? "Try refreshing or check API logs.")
+								}
+								backLink={<Link to="/anomalies" />}
+								backLabel="Back to anomalies"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -148,7 +130,6 @@ function AnomalyDetailBody({
 	const mutations = useAnomalyMutations()
 	const [linkDialogOpen, setLinkDialogOpen] = useState(false)
 	const [resolveConfirmOpen, setResolveConfirmOpen] = useState(false)
-	const [busy, setBusy] = useState(false)
 	const navigate = useNavigate()
 	const createInvestigation = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
@@ -171,91 +152,78 @@ function AnomalyDetailBody({
 		enabled: isOpen,
 	})
 
-	const resolve = async () => {
-		setBusy(true)
-		try {
-			await mutations.resolveIncident(incidentId)
-			setResolveConfirmOpen(false)
-		} finally {
-			setBusy(false)
-		}
-	}
+	const [resolve, resolving] = useAsyncAction(async () => {
+		await mutations.resolveIncident(incidentId)
+		setResolveConfirmOpen(false)
+	})
 
-	const linkTo = async (issueId: ErrorIssueId) => {
-		setBusy(true)
-		try {
-			const result = await mutations.linkIssue(incidentId, issueId, incident.errorIssueId)
-			if (Exit.isSuccess(result)) setLinkDialogOpen(false)
-		} finally {
-			setBusy(false)
-		}
-	}
+	const [linkTo, linking] = useAsyncAction(async (issueId: ErrorIssueId) => {
+		const result = await mutations.linkIssue(incidentId, issueId, incident.errorIssueId)
+		if (Exit.isSuccess(result)) setLinkDialogOpen(false)
+	})
 
-	const unlink = async () => {
-		setBusy(true)
-		try {
-			await mutations.linkIssue(incidentId, null, incident.errorIssueId)
-		} finally {
-			setBusy(false)
-		}
-	}
+	const [unlink, unlinking] = useAsyncAction(async () => {
+		await mutations.linkIssue(incidentId, null, incident.errorIssueId)
+	})
 
-	const investigate = async () => {
-		setBusy(true)
-		try {
-			const result = await createInvestigation({
-				payload: {
-					subject: {
-						type: "incident",
-						incident_kind: "anomaly",
-						incident_id: incidentId,
-						...(incident.errorIssueId ? { issue_id: incident.errorIssueId } : undefined),
-					} as never,
-					snapshot: {
-						title: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
-						scope: incident.deploymentEnv || incident.serviceName,
-						status: incident.status,
-						severity: incident.severity === "critical" ? "critical" : "medium",
-						facts: [
-							{ label: "Signal", value: incident.signalType },
-							{ label: "Service", value: incident.serviceName },
-							{ label: "Last observed", value: String(incident.lastObservedValue) },
-						],
-						references: incident.errorIssueId
-							? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
-							: [],
-						incidentStartedAt: incident.firstTriggeredAt,
-						incidentEndedAt: incident.resolvedAt,
-					},
+	const [investigate, investigating] = useAsyncAction(async () => {
+		const result = await createInvestigation({
+			payload: {
+				subject: {
+					type: "incident",
+					incident_kind: "anomaly",
+					incident_id: incidentId,
+					...(incident.errorIssueId ? { issue_id: incident.errorIssueId } : undefined),
+				} as never,
+				snapshot: {
+					title: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
+					scope: incident.deploymentEnv || incident.serviceName,
+					status: incident.status,
+					severity: incident.severity === "critical" ? "critical" : "medium",
+					facts: [
+						{ label: "Signal", value: incident.signalType },
+						{ label: "Service", value: incident.serviceName },
+						{ label: "Last observed", value: String(incident.lastObservedValue) },
+					],
+					references: incident.errorIssueId
+						? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
+						: [],
+					incidentStartedAt: incident.firstTriggeredAt,
+					incidentEndedAt: incident.resolvedAt,
 				},
-				reactivityKeys: ["investigations"],
-			})
-			if (Exit.isSuccess(result)) {
-				await navigate({ to: "/investigations/$id", params: { id: result.value.id } })
-				return
-			}
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-		} finally {
-			setBusy(false)
+			},
+			reactivityKeys: ["investigations"],
+		})
+		if (Exit.isSuccess(result)) {
+			await navigate({ to: "/investigations/$id", params: { id: result.value.id } })
+			return
 		}
-	}
+		const { title, message } = displayError(result)
+		toastManager.add({ title, description: message, type: "error" })
+	})
+
+	const busy = resolving || linking || unlinking || investigating
 
 	return (
 		<DashboardLayout.Root>
 			<DashboardLayout.Breadcrumbs
 				items={[
 					{ label: "Anomalies", href: "/anomalies" },
-					{ label: `${incident.serviceName} · ${SIGNAL_LABEL[incident.signalType]}` },
+					{
+						label: [
+							incident.serviceName,
+							SIGNAL_LABEL[incident.signalType],
+							incident.deploymentEnv,
+						]
+							.filter(Boolean)
+							.join(" · "),
+					},
 				]}
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title={`${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`}
-							description={incident.deploymentEnv || undefined}
-						>
+						<DashboardLayout.Header>
 							<div className="flex items-center gap-2">
 								<Badge
 									variant="outline"
@@ -263,20 +231,7 @@ function AnomalyDetailBody({
 								>
 									{isOpen && !isStale ? (
 										<span className="flex items-center gap-1.5">
-											<span className="relative inline-flex size-1.5">
-												<span
-													className={cn(
-														"absolute inline-flex size-full animate-ping rounded-full opacity-60",
-														tone.accent,
-													)}
-												/>
-												<span
-													className={cn(
-														"relative inline-flex size-full rounded-full",
-														tone.accent,
-													)}
-												/>
-											</span>
+											<StatusDot tone={tone.tone} />
 											{incident.severity}
 										</span>
 									) : isStale ? (
@@ -292,9 +247,10 @@ function AnomalyDetailBody({
 									variant="outline"
 									onClick={() => void investigate()}
 									disabled={busy}
+									loading={investigating}
 								>
 									<PulseIcon className="size-3.5" />
-									{busy ? "Opening…" : "Open investigation"}
+									Open investigation
 								</Button>
 								{isOpen ? (
 									<Button
@@ -313,20 +269,25 @@ function AnomalyDetailBody({
 						<div className="space-y-8">
 							<section className="space-y-4">
 								<AnomalyHero incident={incident} />
-								{Result.builder(timeseriesResult)
-									.onInitial(() => <Skeleton className="h-64 w-full" />)
-									.onError(() => (
-										<div className="flex h-64 w-full items-center justify-center rounded-md border border-dashed border-border/50 text-xs text-muted-foreground">
+								<ResultView
+									result={timeseriesResult}
+									loading={<Skeleton className="h-64 w-full" />}
+									error={() => (
+										<EmptyMessage
+											dashed
+											className="flex h-64 w-full items-center justify-center border-border/50 py-0 text-xs"
+										>
 											Failed to load signal data.
-										</div>
-									))
-									.onSuccess((timeseries) => (
+										</EmptyMessage>
+									)}
+								>
+									{(timeseries) => (
 										<AnomalyTimeseriesChart
 											incident={incident}
 											timeseries={anomalyTimeseriesFromV2(timeseries)}
 										/>
-									))
-									.render()}
+									)}
+								</ResultView>
 							</section>
 
 							<section aria-labelledby="linked-issue-heading">
@@ -347,27 +308,26 @@ function AnomalyDetailBody({
 							onSelect={linkTo}
 						/>
 
-						<AlertDialog open={resolveConfirmOpen} onOpenChange={setResolveConfirmOpen}>
-							<AlertDialogContent>
-								<AlertDialogHeader>
-									<AlertDialogTitle>Resolve this anomaly?</AlertDialogTitle>
-									<AlertDialogDescription>
-										The incident is marked resolved manually
-										{incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
-											? ", including every error fingerprint grouped into it"
-											: ""}
-										. If the signal keeps deviating, the detector waits out a one-hour
-										cooldown before re-opening it.
-									</AlertDialogDescription>
-								</AlertDialogHeader>
-								<AlertDialogFooter>
-									<AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-									<AlertDialogAction onClick={resolve} disabled={busy}>
-										Resolve
-									</AlertDialogAction>
-								</AlertDialogFooter>
-							</AlertDialogContent>
-						</AlertDialog>
+						<ConfirmDialog
+							open={resolveConfirmOpen}
+							onOpenChange={setResolveConfirmOpen}
+							tone="default"
+							icon={null}
+							title="Resolve this anomaly?"
+							description={
+								<>
+									The incident is marked resolved manually
+									{incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
+										? ", including every error fingerprint grouped into it"
+										: ""}
+									. If the signal keeps deviating, the detector waits out a one-hour
+									cooldown before re-opening it.
+								</>
+							}
+							confirmLabel="Resolve"
+							pending={busy}
+							onConfirm={resolve}
+						/>
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 				<DashboardLayout.RightPanel>

@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 // Note (markdown) widget content editor.
@@ -16,7 +17,7 @@ export function MarkdownEditorPanel({ content, onChange }: MarkdownEditorPanelPr
 	return (
 		<div className="space-y-2">
 			<div className="flex items-baseline justify-between">
-				<p className="text-[10px] uppercase tracking-wider text-muted-foreground">Content</p>
+				<Eyebrow as="p">Content</Eyebrow>
 				<p className="text-[11px] text-muted-foreground">
 					Markdown: <code># heading</code>, <code>**bold**</code>, <code>- list</code>,{" "}
 					<code>[link](url)</code>

@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -21,7 +23,6 @@ import { DocsLink } from "@/components/common/docs-link"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
-import { CircleWarningIcon } from "@/components/icons"
 import type { WhereClauseAutocompleteValues } from "@/lib/query-builder/where-clause-autocomplete"
 import {
 	AGGREGATIONS_BY_SOURCE,
@@ -33,6 +34,7 @@ import {
 	type QueryBuilderMetricType,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
+import { WarningList } from "./warning-list"
 
 // Types
 
@@ -188,16 +190,7 @@ export function QueryPanel({
 
 			{query.dataSource === "product_events" && <ProductEventsAbsentHint />}
 
-			{warnings.length > 0 && (
-				<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-					<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-					<ul className="space-y-1">
-						{warnings.map((warning) => (
-							<li key={warning}>{warning}</li>
-						))}
-					</ul>
-				</div>
-			)}
+			<WarningList warnings={warnings} />
 
 			{/* Add-on toggle bar */}
 			<AddOnToggleBar
@@ -232,7 +225,7 @@ function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
 	const presence = useSignalPresence("metrics")
 	const term = searchTerm.trim()
 	return (
-		<div className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-muted-foreground">
+		<EmptyMessage className="flex flex-col items-center gap-2 px-3 py-4">
 			{term !== "" ? (
 				<span>No metric name contains "{term}".</span>
 			) : presence.status === "absent" ? (
@@ -245,7 +238,7 @@ function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
 			) : (
 				<span>No metrics found.</span>
 			)}
-		</div>
+		</EmptyMessage>
 	)
 }
 
@@ -486,9 +479,7 @@ function MetricsBody({
 
 			{/* Row 3: AGGREGATE WITHIN TIME SERIES */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
-					Aggregate within time series
-				</span>
+				<Eyebrow className="shrink-0">Aggregate within time series</Eyebrow>
 				<Select
 					items={aggregateOptions}
 					value={query.aggregation}
@@ -526,9 +517,7 @@ function MetricsBody({
 
 			{/* Row 4: AGGREGATE ACROSS TIME SERIES */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
-					Aggregate across time series
-				</span>
+				<Eyebrow className="shrink-0">Aggregate across time series</Eyebrow>
 
 				<Select
 					items={aggregateOptions}

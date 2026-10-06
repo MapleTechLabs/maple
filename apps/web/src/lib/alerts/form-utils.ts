@@ -34,14 +34,14 @@ import type {
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Exit, Schema } from "effect"
-import { errorMessage } from "@/lib/error-toast"
+import { Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import type { Tone } from "@maple/ui/lib/tone"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
 const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
@@ -79,6 +79,8 @@ export type RuleFormState = {
 	thresholdUpper: string
 	windowMinutes: string
 	minimumSampleCount: string
+	/** Count an empty window as a breach instead of skipping it. */
+	alertOnNoData: boolean
 	consecutiveBreachesRequired: string
 	consecutiveHealthyRequired: string
 	renotifyIntervalMinutes: string
@@ -142,13 +144,6 @@ export const comparatorLabels: Record<AlertComparator, string> = {
 /** Returns true for comparators that need a second (upper) threshold. */
 export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
 	c === "between" || c === "not_between"
-
-export { destinationTypeLabels } from "@/components/alerts/destination-provider"
-
-export function getExitErrorMessage(exit: unknown, fallback: string): string {
-	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
-	return errorMessage(exit, fallback)
-}
 
 export function formatSignalValue(signalType: AlertSignalType, value: number | null): string {
 	if (value == null || Number.isNaN(value)) return "n/a"
@@ -250,6 +245,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		thresholdUpper: "",
 		windowMinutes: "5",
 		minimumSampleCount: "50",
+		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
 		consecutiveHealthyRequired: "2",
 		renotifyIntervalMinutes: "30",
@@ -261,6 +257,15 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		notificationTitle: "",
 		notificationBody: "",
 	}
+}
+
+/** Grouped rules cannot alert on no data: a group that stops reporting is held by its incident. */
+export function ruleFormIsGrouped(form: RuleFormState): boolean {
+	if (form.signalType === "raw_query") return false
+	if (form.signalType === "builder_query") {
+		return form.queryBuilderDraft.groupBy.some((token) => token !== "none" && token.length > 0)
+	}
+	return form.groupBy.length > 0
 }
 
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
@@ -282,6 +287,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
+		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
 		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
 		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
@@ -364,6 +370,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 			: null,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
+		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
@@ -463,6 +470,49 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		chatConnector: "",
 		chatChannelId: "",
 		chatChannelName: "",
+	}
+}
+
+/** The enabled destination most rules already notify, or the only enabled one. */
+export function pickDefaultDestination(
+	destinations: ReadonlyArray<Pick<AlertDestinationDocument, "id" | "enabled" | "disabledAt">>,
+	rules: ReadonlyArray<Pick<AlertRuleDocument, "destinationIds">>,
+): AlertDestinationDocument["id"] | null {
+	const usable = destinations.filter((d) => d.enabled && !d.disabledAt)
+	if (usable.length === 1) return usable[0]!.id
+	const uses = new Map<string, number>()
+	for (const id of rules.flatMap((rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
+	const ranked = usable
+		.filter((d) => (uses.get(d.id) ?? 0) > 0)
+		.sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0))
+	return ranked[0]?.id ?? null
+}
+
+/** A new `chat` destination posting through one linked workspace; the channel is still to pick. */
+export function chatDestinationForm(
+	connector: string,
+	workspaceId: DestinationFormState["chatWorkspaceId"],
+): DestinationFormState {
+	return { ...defaultDestinationForm("chat"), chatWorkspaceId: workspaceId, chatConnector: connector }
+}
+
+/** The name a destination gets when the user leaves Name blank: where it delivers, not what it is. */
+export function suggestedDestinationName(form: DestinationFormState): string {
+	switch (form.type) {
+		case "chat":
+			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
+		case "hazel-oauth":
+			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
+		case "webhook":
+			return URL.canParse(form.url.trim()) ? new URL(form.url.trim()).host : "Webhook"
+		case "pagerduty":
+			return "PagerDuty"
+		case "discord":
+			return "Discord"
+		case "telegram":
+			return "Telegram"
+		case "email":
+			return "Email"
 	}
 }
 
@@ -688,6 +738,9 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								value: point.value,
 								sampleCount: point.sample_count,
 								status: point.status,
+								...(point.skip_reason !== undefined
+									? { skipReason: point.skip_reason }
+									: undefined),
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
 									: undefined),
@@ -711,6 +764,7 @@ export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
 		timestamp: asIso(check.timestamp),
 		groupKey: check.group_key,
 		status: check.status,
+		skipReason: check.skip_reason,
 		signalType: check.signal_type,
 		comparator: check.comparator,
 		threshold: check.threshold,
@@ -853,23 +907,23 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined): str
  * the recent-activity table, and the chat attachment card. Color is always
  * paired with the label — never the only signal.
  */
-export const eventTypeMeta: Record<AlertEventType, { label: string; dot: string; text: string }> = {
-	trigger: { label: "Triggered", dot: "bg-destructive", text: "text-destructive" },
-	resolve: { label: "Resolved", dot: "bg-success", text: "text-success" },
-	renotify: { label: "Re-notified", dot: "bg-warning", text: "text-warning" },
-	test: { label: "Test", dot: "bg-info", text: "text-info" },
-} satisfies Record<AlertEventType, { label: string; dot: string; text: string }>
+export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }> = {
+	trigger: { label: "Triggered", tone: "crit" },
+	resolve: { label: "Resolved", tone: "ok" },
+	renotify: { label: "Re-notified", tone: "warn" },
+	test: { label: "Test", tone: "info" },
+} satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
-export type DeliveryStatusVariant = "success" | "error" | "warning" | "outline"
+export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"
 
 /** Delivery status → Badge variant + human label. */
 export const deliveryStatusMeta: Record<
 	AlertDeliveryStatus,
 	{ label: string; variant: DeliveryStatusVariant }
 > = {
-	success: { label: "Delivered", variant: "success" },
-	failed: { label: "Failed", variant: "error" },
-	processing: { label: "Sending", variant: "warning" },
+	success: { label: "Delivered", variant: "ok" },
+	failed: { label: "Failed", variant: "crit" },
+	processing: { label: "Sending", variant: "warn" },
 	queued: { label: "Queued", variant: "outline" },
 } satisfies Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }>
 

@@ -1,4 +1,4 @@
-import { McpQueryError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { formatNumber, truncate } from "../lib/format"
 import { Effect, Schema } from "effect"
 import { ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
@@ -7,8 +7,13 @@ import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { actorLabel } from "./error-issue-shared"
+import { emptyResultHints } from "../lib/empty-result-hints"
+import { resolveTimeRange } from "../lib/time"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
-import { IssueKind, IssueSeverity, WorkflowState } from "@maple/domain/http"
+import { IssueKind, IssueListCursor, IssueSeverity, WorkflowState } from "@maple/domain/http"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { isUnlabelledError, labelExceptionlessFingerprints } from "@maple/query-engine/observability"
+import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 type Output = typeof ListErrorIssuesOutput.Type
 type AnyRow = Output["issues"][number]
@@ -95,6 +100,37 @@ const issueTable = (output: Output) => {
 	)
 }
 
+const decodeCursor = Schema.decodeUnknownEffect(IssueListCursor)
+
+const LABEL_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * Span-derived labels ("GET 404 /api/org") for error issues stored as "Unknown Error".
+ * Cosmetic: a failed lookup keeps the stored label instead of failing the list.
+ */
+const spanLabelsFor = (
+	tenant: typeof CurrentMcpTenant.Service,
+	issues: ReadonlyArray<{
+		readonly kind: string
+		readonly errorLabel: string
+		readonly fingerprintHash: string
+		readonly lastSeenAt: string
+	}>,
+) => {
+	const unlabelled = issues.filter((i) => i.kind === "error" && isUnlabelledError(i.errorLabel))
+	const seen = unlabelled.map((i) => Date.parse(i.lastSeenAt)).filter((ms) => !Number.isNaN(ms))
+	if (seen.length === 0) return Effect.succeed(new Map<string, string>())
+	const endMs = Math.max(...seen) + 60_000
+	const startMs = Math.max(Math.min(...seen) - 60 * 60_000, endMs - LABEL_LOOKBACK_MS)
+	return labelExceptionlessFingerprints({
+		fingerprintHashes: unlabelled.map((i) => i.fingerprintHash),
+		timeRange: { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) },
+	}).pipe(
+		provideWarehouseExecutorFromTenant(tenant),
+		Effect.orElseSucceed(() => new Map<string, string>()),
+	)
+}
+
 const MAX_LIMIT = 200
 
 /** The call's filters as arguments, to repeat it with a bigger page. */
@@ -103,8 +139,10 @@ const filterArgs = (output: Output) => ({
 	severity: output.filters.severity,
 	kind: output.filters.kind,
 	service: output.filters.service,
+	exception_type: output.filters.exceptionType,
+	search: output.filters.search,
 	last_seen_after: output.filters.lastSeenAfter,
-	compact: output.compact ? true : undefined,
+	compact: output.compact ? undefined : false,
 	include_archived: output.filters.includeArchived ? true : undefined,
 })
 
@@ -144,6 +182,7 @@ const nextCalls = (output: Output): ReadonlyArray<NextCall> => {
 export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_error_issues",
+		title: "List Error Issues",
 		description:
 			"List persistent error issues (one per exception fingerprint, plus alert and integration issues) with workflow state, counts, assignment and lease holder. An issue survives new occurrences, so its state, notes and assignee persist. The `Issue ID` is what the issue tools take; the `Fingerprint` column is what error_detail takes. A `regressed` issue was fixed before and started firing again: read its events before investigating it as new.",
 		parameters: Schema.Struct({
@@ -163,9 +202,14 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			last_seen_after: P.optionalTimestamp(
 				'Only issues with an occurrence after this time, the way to ask "what fired recently" without paging the whole backlog',
 			),
-			compact: P.optionalFlag(
-				"Narrow table: id, state, severity, service, exception, events, last seen, fingerprint. Omits assignment, lease and notes",
+			exception_type: P.optionalText("Only issues with this exact exception type or error label"),
+			search: P.optionalText(
+				"Case-insensitive substring of the exception type, message, label or service name",
 			),
+			compact: P.optionalFlag(
+				"Default true: narrow rows (id, state, severity, service, exception, events, last seen, fingerprint). Pass false for priority, assignment, lease and notes",
+			),
+			cursor: P.optionalText("The `nextCursor` from a previous page, to read the next one"),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "issues" }),
 			include_archived: P.optionalFlag("Also return archived issues"),
 		}),
@@ -175,7 +219,8 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 		phrases: ["Listing error issues", "Checking open issues"],
 		handler: Effect.fn("McpTool.listErrorIssues")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const compact = params.compact === true
+			// Compact by default: a full page of 50 wide rows ran past 100k characters.
+			const compact = params.compact !== false
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				workflowState: params.workflow_state ?? "all",
@@ -187,33 +232,56 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			})
 			const readModels = yield* ErrorIssueReadModelsService
 			const includeArchived = params.include_archived === true
-
-			const result = yield* readModels
-				.listIssues(tenant.orgId, {
-					workflowState: params.workflow_state,
-					severity: params.severity,
-					kind: params.kind,
-					service: params.service,
-					startTime: params.last_seen_after,
-					limit: params.limit,
-					includeArchived,
-				})
-				.pipe(
-					Effect.catchTags({
-						"@maple/http/errors/ErrorPersistenceError": (error) =>
-							Effect.fail(
-								new McpQueryError({
-									message: error.message,
-									pipeName: "list_error_issues",
-									cause: error,
-								}),
+			const cursor =
+				params.cursor === undefined
+					? undefined
+					: yield* decodeCursor(params.cursor).pipe(
+							Effect.mapError(
+								() =>
+									new McpInvalidInputError({
+										message:
+											"Invalid cursor: pass the `nextCursor` value from a previous list_error_issues page unchanged.",
+										parameter: "cursor",
+									}),
 							),
-						...warehouseReadToMcpHandlers("list_error_issues"),
-					}),
-				)
+						)
+			const filterOpts = {
+				workflowState: params.workflow_state,
+				severity: params.severity,
+				kind: params.kind,
+				service: params.service,
+				exceptionType: params.exception_type,
+				search: params.search,
+				startTime: params.last_seen_after,
+				includeArchived,
+			}
+
+			const [result, totalMatching] = yield* Effect.all(
+				[
+					readModels.listIssues(tenant.orgId, { ...filterOpts, limit: params.limit, cursor }),
+					readModels.countIssues(tenant.orgId, filterOpts),
+				],
+				{ concurrency: "unbounded" },
+			).pipe(
+				Effect.catchTags({
+					"@maple/http/errors/ErrorPersistenceError": (error) =>
+						Effect.fail(
+							new McpQueryError({
+								message: error.message,
+								pipeName: "list_error_issues",
+								cause: error,
+							}),
+						),
+					...warehouseReadToMcpHandlers("list_error_issues"),
+				}),
+			)
 
 			yield* Effect.annotateCurrentSpan("result.rowCount", result.issues.length)
 			const issues = result.issues
+			const labels = yield* spanLabelsFor(tenant, issues)
+			// Alert and integration issues keep their title in exceptionType, not the label.
+			const labelOf = (i: (typeof issues)[number]) =>
+				labels.get(i.fingerprintHash) ?? (i.errorLabel || i.exceptionType)
 
 			const filters: Output["filters"] = {
 				...(params.workflow_state === undefined
@@ -222,6 +290,10 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				...(params.severity === undefined ? undefined : { severity: params.severity }),
 				...(params.kind === undefined ? undefined : { kind: params.kind }),
 				...(params.service === undefined ? undefined : { service: params.service }),
+				...(params.exception_type === undefined
+					? undefined
+					: { exceptionType: params.exception_type }),
+				...(params.search === undefined ? undefined : { search: params.search }),
 				...(params.last_seen_after === undefined
 					? undefined
 					: { lastSeenAfter: params.last_seen_after }),
@@ -229,10 +301,23 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				limit: params.limit,
 			}
 
+			// Issues have no window; check the service name against the last 7 days of telemetry.
+			const lastWeek = resolveTimeRange(undefined, undefined, 24 * 7)
+			const emptyHints =
+				issues.length === 0 && params.service !== undefined
+					? yield* emptyResultHints(
+							{ service: params.service },
+							{ startTime: lastWeek.st, endTime: lastWeek.et },
+						)
+					: []
+
 			return {
 				compact,
 				filters,
+				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 				total: issues.length,
+				totalMatching,
+				...(result.nextCursor === undefined ? undefined : { nextCursor: result.nextCursor }),
 				issues: compact
 					? issues.map((i) => ({
 							id: i.id,
@@ -241,7 +326,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 							workflowState: i.workflowState,
 							severity: i.severity,
 							serviceName: i.serviceName,
-							errorLabel: i.errorLabel,
+							errorLabel: labelOf(i),
 							occurrenceCount: i.occurrenceCount,
 							firstSeenAt: i.firstSeenAt,
 							lastSeenAt: i.lastSeenAt,
@@ -258,7 +343,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 							severity: i.severity,
 							severitySource: i.severitySource,
 							serviceName: i.serviceName,
-							errorLabel: i.errorLabel,
+							errorLabel: labelOf(i),
 							exceptionType: i.exceptionType,
 							exceptionMessage: i.exceptionMessage,
 							topFrame: i.topFrame,
@@ -308,31 +393,42 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 						empty: {
 							message: "No error issues found.",
 							hints: [
+								...(output.emptyHints ?? []),
 								"Drop the workflow_state, severity, kind or service filters, or move last_seen_after earlier.",
 								"Pass include_archived=true to include archived issues.",
 							],
 						},
 					}
 				: undefined),
-			blocks: output.total === 0 ? [] : [doc.text(`Total: ${output.total}`), issueTable(output)],
-			// A full page means the backlog may hold more; the service has no cursor here.
-			...(output.total >= output.filters.limit
-				? {
+			blocks:
+				output.total === 0
+					? []
+					: [
+							// With more pages, the truncation line carries the shown-of-total count.
+							...(output.nextCursor === undefined ? [doc.text(`Total: ${output.total}`)] : []),
+							issueTable(output),
+						],
+			// Keyset paging: the cursor continues from this page's last row.
+			...(output.nextCursor === undefined
+				? undefined
+				: {
 						truncation: {
 							shown: output.total,
+							...(output.totalMatching === undefined
+								? undefined
+								: { total: output.totalMatching }),
 							noun: "issues",
-							...(output.filters.limit < MAX_LIMIT
-								? {
-										next: doc.next(
-											"list_error_issues",
-											{ ...filterArgs(output), limit: MAX_LIMIT },
-											"a bigger page",
-										),
-									}
-								: undefined),
+							next: doc.next(
+								"list_error_issues",
+								{
+									...filterArgs(output),
+									limit: output.filters.limit,
+									cursor: output.nextCursor,
+								},
+								"the next page",
+							),
 						},
-					}
-				: undefined),
+					}),
 			next: nextCalls(output),
 		}),
 	})

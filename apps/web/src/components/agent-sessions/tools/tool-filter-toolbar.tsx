@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
 
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
@@ -74,10 +76,8 @@ export function ToolFilterToolbar({
 			) : null}
 
 			<div
-				className={cn(
-					"flex flex-wrap items-center gap-2 transition-opacity",
-					waiting && "opacity-60",
-				)}
+				aria-busy={waiting || undefined}
+				className={cn("flex flex-wrap items-center gap-2", refreshingClass(waiting))}
 			>
 				<FacetSelect
 					label="service"
@@ -95,7 +95,7 @@ export function ToolFilterToolbar({
 					className={cn(
 						"inline-flex h-[30px] items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors",
 						failingOnly
-							? "border-[var(--severity-error)]/50 bg-[var(--severity-error)]/10 text-foreground"
+							? "border-severity-error/50 bg-severity-error/10 text-foreground"
 							: "border-border bg-card text-muted-foreground hover:text-foreground",
 					)}
 				>
@@ -103,7 +103,7 @@ export function ToolFilterToolbar({
 						aria-hidden
 						className={cn(
 							"size-[5px] rounded-full",
-							failingOnly ? "bg-[var(--severity-error)]" : "bg-[var(--severity-error)]/40",
+							failingOnly ? TONE_FILL.crit : "bg-severity-error/40",
 						)}
 					/>
 					Failing only

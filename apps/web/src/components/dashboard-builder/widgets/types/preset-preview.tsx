@@ -1,4 +1,5 @@
 import { getChartById } from "@maple/ui/components/charts/registry"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 
 import { ChartPreview } from "@/components/dashboard-builder/widgets/chart-preview"
 import { formatCellValue } from "@/components/dashboard-builder/widgets/table-widget"
@@ -51,37 +52,37 @@ export function rowsPresetPreview(sampleRows: Record<string, Record<string, unkn
 
 		return (
 			<PreviewFrame title={preset.display.title} className="flex flex-col overflow-hidden">
-				<table className="w-full text-[9px]">
-					<thead>
-						<tr className="border-b border-border">
+				<Table size="xs" variant="bare" scroll={false}>
+					<TableHeader>
+						<TableRow className="border-b border-border">
 							{columns.map((column) => (
-								<th
+								<TableHead
 									key={column.field}
-									className="px-1 py-0.5 font-medium text-muted-foreground"
+									className="px-1 py-0.5 text-[9px]"
 									style={{ textAlign: column.align ?? "left" }}
 								>
 									{column.header}
-								</th>
+								</TableHead>
 							))}
-						</tr>
-					</thead>
-					<tbody>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{rows.map((row, index) => (
 							// eslint-disable-next-line react/no-array-index-key -- fixed sample data
-							<tr key={index} className="border-b border-border/50">
+							<TableRow key={index}>
 								{columns.map((column) => (
-									<td
+									<TableCell
 										key={column.field}
-										className="px-1 py-0.5 truncate max-w-[80px]"
+										className="max-w-[80px] truncate px-1 py-0.5 text-[9px]"
 										style={{ textAlign: column.align ?? "left" }}
 									>
 										{formatCellValue(row[column.field], column.unit)}
-									</td>
+									</TableCell>
 								))}
-							</tr>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</PreviewFrame>
 		)
 	}

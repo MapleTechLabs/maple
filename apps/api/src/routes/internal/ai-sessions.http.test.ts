@@ -12,8 +12,8 @@ import {
 
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
@@ -470,13 +470,11 @@ describe("POST /internal/ai-sessions/list", () => {
 		pageRow(`trace:${TRACE_ID}`, "2026-08-19 09:50:00.000000000", "2026-08-19 10:00:00.000000000"),
 	]
 
-	it("answers from one index read over the caller's window, never touching trace_detail_spans", async () => {
-		const contexts: Array<string | undefined> = []
-		let pageSql: string | undefined
+	it("ranks the page over the caller's window, then reads its rows over the page's extent, never touching trace_detail_spans", async () => {
+		const reads: Array<{ context: string | undefined; sql: string }> = []
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled, options) => {
-				contexts.push(options?.context)
-				pageSql = compiledQueryOf(compiled).sql
+				reads.push({ context: options?.context, sql: compiledQueryOf(compiled).sql })
 				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
 			},
 		})
@@ -487,12 +485,43 @@ describe("POST /internal/ai-sessions/list", () => {
 			// The fan-out over `trace_detail_spans` is seconds on a cold partition,
 			// which is why it is the client's second request (`/details`) and not
 			// part of this one.
+			expect(reads.map((read) => read.context)).toEqual(["aiSessionsRank", "aiSessionsPage"])
+			const [rank, page] = reads.map((read) => read.sql)
+			for (const sql of [rank, page]) {
+				expect(sql).toContain("FROM ai_trace_index")
+				expect(sql).not.toContain("trace_detail_spans")
+				expect(sql).not.toContain("__PARAM_")
+			}
+			expect(rank).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+			expect(rank).toContain("LIMIT 3")
+			// The rows: the ranked sessions, between the earliest start and the
+			// latest end among them.
+			expect(page).toContain("IN ('wrun_beta', 'wrun_alpha', 'trace:")
+			expect(page).toContain("Timestamp >= '2026-08-19 09:50:00.000000000'")
+			expect(page).toContain("Timestamp <= '2026-08-19 10:40:00.000000000'")
+			expect(page).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+			expect(page).not.toContain("LIMIT")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reads a page sorted on usage in one read, which nets every session of the window", async () => {
+		const contexts: Array<string | undefined> = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/list", {
+				...LIST_BODY,
+				sortBy: "cost",
+			})
+			expect(response.status).toBe(200)
 			expect(contexts).toEqual(["aiSessionsPage"])
-			expect(pageSql).toContain("FROM ai_trace_index")
-			expect(pageSql).not.toContain("trace_detail_spans")
-			expect(pageSql).toContain(`Timestamp <= '${WINDOW.endTime}'`)
-			expect(pageSql).toContain("LIMIT 3")
-			expect(pageSql).not.toContain("__PARAM_")
 		} finally {
 			await harness.dispose()
 		}
@@ -618,7 +647,7 @@ describe("POST /internal/ai-sessions/details", () => {
 			// Exactly the page's ids, and the page's counted filters, so a trace
 			// resolves to the session it was ranked into.
 			for (const sessionId of DETAILS_BODY.sessionIds) expect(sql).toContain(`'${sessionId}'`)
-			expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
+			expect(sql).toContain("countIf(ai_trace_index.VendorId IN ('eve')) > 0")
 			expect(sql).not.toContain("__PARAM_")
 			// The rows as the fan-out returned them; the client merges by id.
 			expect(response.body).toEqual({
@@ -642,9 +671,10 @@ describe("POST /internal/ai-sessions/details", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) => {
 				const { sql } = compiledQueryOf(compiled)
-				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(
-					sql,
-				)
+				const start =
+					/trace_detail_spans\.Timestamp >= '([^']+)'\n\s+AND trace_detail_spans\.Timestamp <= '([^']+)'\n\s+AND trace_detail_spans\.TraceId IN/.exec(
+						sql,
+					)
 				spansBounds.push([start?.[1] ?? "", start?.[2] ?? ""])
 				// The first read (the earlier day) sees the session's first spans, the
 				// second its last; only one of them sees the `trace:` session at all.
@@ -814,13 +844,15 @@ describe("POST /internal/ai-sessions/list", () => {
 			expect(response.status).toBe(200)
 			expect(response.body).toEqual({ data: [] })
 			for (const fragment of [
-				"countIf(VendorId IN ('eve')) > 0",
-				"countIf(ServiceName IN ('agent-runner')) > 0",
-				"countIf(DeploymentEnv IN ('production')) > 0",
-				"countIf(Model IN ('claude-sonnet-5')) > 0",
-				"countIf(AgentName IN ('slack-agent')) > 0",
-				"countIf(ToolName IN ('search_traces')) > 0",
-				"SessionId LIKE 'wrun01%'",
+				"countIf(ai_trace_index.VendorId IN ('eve')) > 0",
+				"countIf(ai_trace_index.ServiceName IN ('agent-runner')) > 0",
+				"countIf(ai_trace_index.DeploymentEnv IN ('production')) > 0",
+				"countIf(ai_trace_index.Model IN ('claude-sonnet-5')) > 0",
+				"countIf(ai_trace_index.AgentName IN ('slack-agent')) > 0",
+				"countIf(ai_trace_index.ToolName IN ('search_traces')) > 0",
+				// Session ids match as a substring (their key sits mid-string); trace ids as a prefix.
+				"SessionId LIKE '%wrun01%'",
+				"TraceId LIKE 'wrun01%'",
 				"errorAgentSpans > 0",
 				"NOT (sessionId LIKE 'trace:%')",
 				"agentDurationMs >= 1000",
@@ -905,7 +937,7 @@ describe("POST /internal/ai-sessions/spans — pages and scopes", () => {
 			expect(response.status).toBe(200)
 			expect(sql()).toContain("SpanAttributes['maple_ai.vendor.id'] != ''")
 			expect(sql()).toContain(
-				`(Timestamp > '${after.timestamp}' OR (Timestamp = '${after.timestamp}' AND SpanId > '${after.spanId}'))`,
+				`(trace_detail_spans.Timestamp > '${after.timestamp}' OR (trace_detail_spans.Timestamp = '${after.timestamp}' AND trace_detail_spans.SpanId > '${after.spanId}'))`,
 			)
 			expect(sql()).toContain("LIMIT 501")
 		} finally {
@@ -1668,10 +1700,12 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 										traceId: occurrence.traceId,
 										spanId: occurrence.spanId,
 										statusCode: "Ok",
-										arguments: "{}",
-										argumentsBytes: 2,
-										result: occurrence.message,
-										resultBytes: 58,
+										spanAttributes: {
+											"maple_ai.vendor.id": "maple",
+											"gen_ai.tool.call.arguments": "{}",
+											"gen_ai.tool.call.result": occurrence.message,
+										},
+										cutAttributeBytes: {},
 									},
 								],
 					)
@@ -1708,7 +1742,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 						arguments: "{}",
 						argumentsBytes: 2,
 						result: occurrence.message,
-						resultBytes: 58,
+						resultBytes: occurrence.message.length,
 					},
 				],
 			})

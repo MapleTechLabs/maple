@@ -457,7 +457,6 @@
 	height: 6px;
 	border-radius: 999px;
 	background: var(--primary);
-	animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -712,9 +711,6 @@
 	letter-spacing: 0.02em;
 	fill: var(--foreground);
 }
-.svc-map-node-halo {
-	animation: pulse-dot 2.4s ease-in-out infinite;
-}
 .svc-map-node-label {
 	font-family: var(--font-display);
 	font-size: 12px;
@@ -781,21 +777,6 @@
 	animation: mcp-caret-blink 1.05s steps(1) infinite;
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Live indicator pulse (reused from prior design).
-   ────────────────────────────────────────────────────────────── */
-@keyframes pulse-dot {
-	0%,
-	100% {
-		opacity: 1;
-	}
-	50% {
-		opacity: 0.35;
-	}
-}
-.animate-pulse-dot {
-	animation: pulse-dot 2s ease-in-out infinite;
-}
 
 /* ──────────────────────────────────────────────────────────────
    Roadmap board.
@@ -1161,10 +1142,7 @@
 	.log-stream__belt,
 	.logo-marquee__belt,
 	.svc-map-flow,
-	.svc-map-node-halo,
 	.mcp-caret,
-	.animate-pulse-dot,
-	.live-frame__live-dot,
 	.waterfall-row.is-slowest::after {
 		animation: none !important;
 	}
@@ -1318,6 +1296,78 @@
 .docs-content .code-copy.is-done {
 	color: var(--chart-3);
 	border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border));
+}
+
+/* Docs tab groups: <LanguageTabs> and the package-manager switchers that
+   remark-install-tabs.mjs renders over install blocks. Behavior: lib/docs-tabs.ts. */
+.lt {
+	margin: 16px 0 24px;
+}
+
+.lt__rail {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+.lt__tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 32px;
+	padding: 0 11px 0 9px;
+	border-radius: 8px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--muted-foreground);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+	transition:
+		color 150ms ease,
+		background-color 150ms ease,
+		border-color 150ms ease;
+}
+
+.lt__tab:hover {
+	color: var(--foreground);
+	border-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+}
+
+.lt__tab[aria-selected="true"] {
+	color: var(--foreground);
+	background: var(--bg-elevated);
+	border-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+}
+
+.lt__tab:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.lt__icon {
+	width: 15px;
+	height: 15px;
+	flex: none;
+}
+
+/* Before the script runs (or without it), only the first panel shows. */
+.lt:not([data-ready]) > .lt__panels > [data-lang-panel]:not(:first-child) {
+	display: none;
+}
+
+/* A switcher over a single code block: the block sits right under the rail. */
+.lt--code {
+	margin: 24px 0;
+}
+
+.lt--code .lt__rail {
+	margin-bottom: 8px;
+}
+
+.docs-content .lt--code pre {
+	margin: 0;
 }
 
 /* Blockquotes are notes ("Run this with Claude Code", the MAPLE_TEST placeholder…),

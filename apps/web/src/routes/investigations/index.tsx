@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { useMemo } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { Button, buttonVariants } from "@maple/ui/components/ui/button"
-import { cn } from "@maple/ui/lib/utils"
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
@@ -14,10 +16,12 @@ import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { DocsLink } from "@/components/common/docs-link"
-import { ErrorState } from "@/components/common/error-state"
+import { ResultView } from "@/components/common/result-view"
 import { ListToolbar } from "@/components/common/list-toolbar"
+import { PageHero } from "@/components/common/page-hero"
 import { ConnectionIcon } from "@/components/icons"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 import {
 	investigationKindKey,
@@ -101,7 +105,6 @@ function InvestigationsHub() {
 	const query = search.q ?? ""
 	const isFiltered = query.trim().length > 0 || search.kind !== undefined
 
-	const [creating, setCreating] = useState(false)
 	const listQuery = retainedQueryV2("investigations", "list", {
 		query: { limit: PAGE_SIZE },
 		reactivityKeys: ["investigations"],
@@ -147,8 +150,7 @@ function InvestigationsHub() {
 		return sortInvestigations(filtered, sortKey, sortDirection)
 	}, [page, view, search.kind, query, sortKey, sortDirection])
 
-	const handleCreate = async (title: string) => {
-		setCreating(true)
+	const [handleCreate, creating] = useAsyncAction(async (title: string) => {
 		const created = await create({
 			payload: {
 				subject: { type: "freeform", title, prompt: title, context_refs: [] },
@@ -165,14 +167,13 @@ function InvestigationsHub() {
 			},
 			reactivityKeys: ["investigations"],
 		})
-		setCreating(false)
 		if (Exit.isSuccess(created)) {
 			void navigate({ to: "/investigations/$id", params: { id: created.value.id } })
 		} else {
 			const { title, message } = displayError(created)
 			toastManager.add({ title, description: message, type: "error" })
 		}
-	}
+	})
 
 	// Nothing at all — not "nothing matching your filters". The hero belongs to a
 	// workspace that has never run one, and it replaces the whole page rather than
@@ -290,35 +291,30 @@ function InvestigationsHub() {
 								    scroller then thinks it doesn't need to scroll to. */}
 								<div className="shrink-0 overflow-hidden rounded-xl border">
 									{toolbar}
-									{Result.builder(result)
-										.onInitial(() => <InvestigationTableSkeleton />)
-										.onError((error) => (
-											<ErrorState
-												error={error}
-												title="Investigations could not be loaded"
-												onRetry={refresh}
+									<ResultView
+										result={result}
+										loading={<InvestigationTableSkeleton />}
+										errorTitle="Investigations could not be loaded"
+										onRetry={refresh}
+										isEmpty={() => investigations.length === 0}
+										empty={
+											<HubEmptyState
+												view={view}
+												filtered={isFiltered}
+												onClear={() =>
+													void navigate({
+														search: (prev) => ({
+															...prev,
+															kind: undefined,
+															q: undefined,
+														}),
+													})
+												}
 											/>
-										))
-										.onSuccess(() =>
-											investigations.length === 0 ? (
-												<HubEmptyState
-													view={view}
-													filtered={isFiltered}
-													onClear={() =>
-														void navigate({
-															search: (prev) => ({
-																...prev,
-																kind: undefined,
-																q: undefined,
-															}),
-														})
-													}
-												/>
-											) : (
-												<InvestigationTable investigations={investigations} />
-											),
-										)
-										.render()}
+										}
+									>
+										{() => <InvestigationTable investigations={investigations} />}
+									</ResultView>
 								</div>
 							</DashboardLayout.Scroll>
 						</>
@@ -368,27 +364,31 @@ function BudgetExhaustedNotice({
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
 	return (
-		<div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
-			<span className="font-medium text-foreground">
+		<Alert variant="warn" className="mb-4 rounded-lg">
+			<AlertTitle className="text-foreground">
 				{priorityPaused ? "Automatic triage paused" : "Automatic triage paused for routine incidents"}
-			</span>
-			<span className="text-muted-foreground">
-				{spent}
-				{resets}{" "}
-				{priorityPaused
-					? "Nothing new will start until then."
-					: "High and critical incidents still start."}
-			</span>
+			</AlertTitle>
+			<AlertDescription>
+				<span>
+					{spent}
+					{resets}{" "}
+					{priorityPaused
+						? "Nothing new will start until then."
+						: "High and critical incidents still start."}
+				</span>
+			</AlertDescription>
 			{canEditSettings ? (
-				<Link
-					to="/settings"
-					search={{ tab: "automation" }}
-					className={cn(buttonVariants({ size: "sm", variant: "ghost" }), "ml-auto")}
-				>
-					Raise the limit
-				</Link>
+				<AlertAction>
+					<Button
+						size="sm"
+						variant="ghost"
+						render={<Link to="/settings" search={{ tab: "automation" }} />}
+					>
+						Raise the limit
+					</Button>
+				</AlertAction>
 			) : null}
-		</div>
+		</Alert>
 	)
 }
 
@@ -490,9 +490,7 @@ function TriageStat({
 		<div className="flex min-w-0 flex-col gap-2.5">
 			<div className="flex items-center gap-1.75">
 				<span aria-hidden className={`size-1.5 shrink-0 rounded-[3px] ${dot}`} />
-				<span className={`text-[10px] font-medium uppercase tracking-[0.12em] ${labelTone}`}>
-					{label}
-				</span>
+				<Eyebrow className={labelTone}>{label}</Eyebrow>
 			</div>
 			<div className="flex items-baseline gap-2.5">
 				<span
@@ -525,17 +523,11 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 	const tracePresence = useSignalPresence("traces")
 	return (
 		<div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-5 py-16">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
-				Investigations
-			</span>
-			<h1 className="font-display text-[28px] font-semibold leading-9 tracking-tight text-foreground">
-				Ask, and Maple goes and finds out.
-			</h1>
-			<p className="max-w-xl text-sm leading-6 text-muted-foreground">
-				One agent reads the traces, logs and metrics around it, tests the likely explanations
-				(deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it,
-				and what it ruled out.
-			</p>
+			<Eyebrow className="text-primary">Investigations</Eyebrow>
+			<PageHero
+				title="Ask, and Maple goes and finds out."
+				description="One agent reads the traces, logs and metrics around it, tests the likely explanations (deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it, and what it ruled out."
+			/>
 			{tracePresence.status === "absent" && (
 				<div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
 					<span>Investigations read your telemetry. Send traces first.</span>
@@ -575,10 +567,7 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 			</ul>
 			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-sm text-muted-foreground">
 				<p className="flex items-baseline gap-2">
-					<span
-						aria-hidden
-						className="size-1.5 shrink-0 translate-y-[-2px] rounded-full bg-primary"
-					/>
+					<StatusDot tone="custom" className="translate-y-[-2px] bg-primary" />
 					When an alert rule fires, Maple opens an investigation on its own. Those land here too.
 				</p>
 				<Link to="/alerts/create" className="text-foreground underline-offset-4 hover:underline">

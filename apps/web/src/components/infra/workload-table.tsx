@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListWorkloadsResponse } from "@maple/domain/http"
 import type { WorkloadKind } from "@/api/warehouse/infra"
@@ -9,8 +8,14 @@ import type { WorkloadKind } from "@/api/warehouse/infra"
 import { HostStatusBadge } from "./status-badge"
 import { MeterRows } from "./primitives/meter-rows"
 import { MetaLine } from "./primitives/meta-line"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import {
+	ColumnHead,
+	DataTable,
+	type SortControls,
+	ROW_LINK_CLASS,
+	useTableSort,
+} from "@/components/common/data-table"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type WorkloadRow = ListWorkloadsResponse["data"][number]
 
@@ -23,23 +28,55 @@ interface WorkloadTableProps {
 	referenceTime?: string
 }
 
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function WorkloadColumns({ sort }: { sort?: SortControls<SortKey> }) {
+	return (
+		<>
+			<ColumnHead<SortKey>
+				label="Workload"
+				sortKey="workloadName"
+				{...sort}
+				width="w-0 flex-1 min-w-[260px]"
+			/>
+			<ColumnHead<SortKey> label="Pods" sortKey="podCount" {...sort} align="right" width="w-[60px]" />
+			<ColumnHead<SortKey>
+				label="Avg CPU"
+				sortKey="avgCpuLimitPct"
+				{...sort}
+				align="right"
+				width="w-[160px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Avg memory"
+				sortKey="avgMemoryLimitPct"
+				{...sort}
+				align="right"
+				width="w-[160px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Last seen"
+				sortKey="lastSeen"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
+	)
+}
+
 export function WorkloadTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Workloads">
 			<DataTable.Head>
-				<ColumnHead label="Workload" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="Status" width="w-[88px]" />
-				<ColumnHead label="Pods" align="right" width="w-[60px]" />
-				<ColumnHead label="Avg CPU" align="right" width="w-[160px]" hidden="hidden md:flex" />
-				<ColumnHead label="Avg memory" align="right" width="w-[160px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
+				<WorkloadColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={4}>
 				<div className="w-0 min-w-[260px] flex-1">
 					<Skeleton className="h-4 w-48" />
 					<Skeleton className="mt-1.5 h-3 w-32" />
 				</div>
-				<Skeleton className="h-3 w-[88px]" />
 				<Skeleton className="h-3 w-[60px]" />
 				<Skeleton className="hidden h-3 w-[160px] md:block" />
 				<Skeleton className="hidden h-3 w-[160px] lg:block" />
@@ -58,53 +95,7 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 	return (
 		<DataTable.Root ariaLabel="Workloads" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead<SortKey>
-					label="Workload"
-					sortKey="workloadName"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					width="w-0 flex-1 min-w-[260px]"
-				/>
-				<ColumnHead label="Status" width="w-[88px]" />
-				<ColumnHead<SortKey>
-					label="Pods"
-					sortKey="podCount"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[60px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Avg CPU"
-					sortKey="avgCpuLimitPct"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[160px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Avg memory"
-					sortKey="avgMemoryLimitPct"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[160px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Last seen"
-					sortKey="lastSeen"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-				/>
+				<WorkloadColumns sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }} />
 			</DataTable.Head>
 			{sorted.length === 0 && <DataTable.Empty>No workloads match your filter.</DataTable.Empty>}
 
@@ -117,13 +108,13 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 					className={ROW_LINK_CLASS}
 				>
 					<div className="w-0 min-w-[260px] flex-1">
-						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
-							{wl.workloadName}
+						<div className="flex items-center gap-2">
+							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+								{wl.workloadName}
+							</span>
+							<HostStatusBadge quiet lastSeen={wl.lastSeen} referenceTime={referenceTime} />
 						</div>
 						<MetaLine items={[wl.namespace && `ns ${wl.namespace}`, `kind ${kind}`]} />
-					</div>
-					<div className="w-[88px]">
-						<HostStatusBadge lastSeen={wl.lastSeen} referenceTime={referenceTime} />
 					</div>
 					<div className="w-[60px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
 						{wl.podCount}
@@ -135,15 +126,11 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 						<MeterRows hideLabels meters={[{ label: "MEM", fraction: wl.avgMemoryLimitPct }]} />
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(wl.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{wl.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={wl.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

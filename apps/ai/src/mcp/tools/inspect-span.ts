@@ -64,6 +64,7 @@ const aiBlocks = (output: Output): Array<DocBlock> => {
 export function registerInspectSpanTool(server: McpToolRegistrar) {
 	server.define({
 		name: "inspect_span",
+		title: "Inspect Span",
 		description:
 			"Full attribute set for one span; `inspect_trace` shows only a trimmed set per span. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the captured messages and the tool calls it made or executed, with each call's result resolved from the rest of the trace.",
 		parameters: Schema.Struct({
@@ -121,6 +122,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				resourceAttributes: result.resourceAttributes,
 				...(ai === undefined ? undefined : { ai }),
 				...(timestamp === undefined ? undefined : { timestamp }),
+				...(result.widened === true ? { widened: true } : undefined),
 			}
 		}),
 		render: (output) => {
@@ -130,18 +132,18 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 					title,
 					blocks: [],
 					empty: {
-						message: `Span ${output.spanId} not found in trace ${output.traceId}.`,
-						hints:
-							output.timestamp === undefined
-								? [
-										"Pass `timestamp` from the trace if the span is older than the default scan window.",
-									]
-								: ["Check the span id against `inspect_trace` output."],
+						message: `Span ${output.spanId} not found in trace ${output.traceId} (searched all retention${output.widened === true ? `, after the hour around ${output.timestamp} missed` : ""}).`,
+						hints: [
+							"Check that span_id is a 16-hex span id from an `inspect_trace` `span=` suffix, not a trace id, and that it belongs to this trace.",
+						],
 					},
 					next: [
 						doc.next(
 							"inspect_trace",
-							{ trace_id: output.traceId, timestamp: output.timestamp },
+							{
+								trace_id: output.traceId,
+								timestamp: output.widened === true ? undefined : output.timestamp,
+							},
 							"see the full span tree",
 						),
 					],
@@ -153,7 +155,15 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 			const ai = output.ai
 			return {
 				title,
-				...(output.timestamp === undefined ? undefined : { scope: [["Around", output.timestamp]] }),
+				scope: [
+					["Around", output.timestamp],
+					[
+						"Note",
+						output.widened === true
+							? "not within an hour of `timestamp`; found unbounded"
+							: undefined,
+					],
+				],
 				blocks: [
 					...aiBlocks(output),
 					...attributeBlocks("Span attributes", output.attributes),
@@ -163,7 +173,10 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				next: [
 					doc.next(
 						"inspect_trace",
-						{ trace_id: output.traceId, timestamp: output.timestamp },
+						{
+							trace_id: output.traceId,
+							timestamp: output.widened === true ? undefined : output.timestamp,
+						},
 						"see the full span tree",
 					),
 					doc.next(

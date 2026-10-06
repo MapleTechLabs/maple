@@ -1,33 +1,19 @@
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	AlertWarningIcon,
-	ArrowPathIcon,
-	ArrowRightIcon,
-	EyeIcon,
-	PaperPlaneIcon,
-	PulseIcon,
-} from "@/components/icons"
+import { ArrowPathIcon, ArrowRightIcon, EyeIcon, PaperPlaneIcon, PulseIcon } from "@/components/icons"
 import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { docsUrl } from "@/lib/docs"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -40,8 +26,6 @@ import {
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
-
-const LANE_BADGE = "w-14 shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em]"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
 function StatusBanner({ connection }: { connection: IngestConnection }) {
@@ -70,12 +54,9 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 	return (
 		<div className="bg-card flex items-center gap-3 rounded-lg border px-4 py-2.5">
 			{connected ? (
-				<span className="bg-severity-info size-2 shrink-0 rounded-full" />
+				<StatusDot tone="ok" size="lg" />
 			) : (
-				<PulseIcon
-					size={12}
-					className="text-primary shrink-0 animate-pulse motion-reduce:animate-none"
-				/>
+				<PulseIcon size={12} className="text-primary shrink-0" />
 			)}
 			<span className="text-sm font-medium whitespace-nowrap">
 				{connected ? "Receiving telemetry" : "Waiting for telemetry"}
@@ -83,7 +64,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 			<span className="text-muted-foreground truncate font-mono text-xs">
 				{connected
 					? [
-							`${connection.serviceCount} ${connection.serviceCount === 1 ? "service" : "services"}`,
+							countLabel(connection.serviceCount, "service"),
 							spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
 						]
 							.filter(Boolean)
@@ -153,7 +134,9 @@ function CredentialRow({
 	return (
 		<div className="flex items-center gap-3 border-t px-4 py-3">
 			<span className="w-[120px] shrink-0 text-sm">{label}</span>
-			<span className={cn(LANE_BADGE, badgeClass)}>{badge}</span>
+			<Eyebrow variant="mono" className={cn("w-14 shrink-0", badgeClass)}>
+				{badge}
+			</Eyebrow>
 			<div className="flex min-w-0 grow flex-col items-start gap-0.5">
 				<button
 					type="button"
@@ -165,7 +148,7 @@ function CredentialRow({
 					<span className="truncate">{masked && !isVisible ? maskKey(value) : value}</span>
 					<CopyIndicator
 						status={status}
-						size={12}
+						iconSize={12}
 						className={cn(
 							"transition-opacity group-hover/value:opacity-100",
 							status === "idle" && "opacity-0",
@@ -200,7 +183,7 @@ function CredentialRow({
 					title={status === "copied" ? "Copied!" : "Copy"}
 					disabled={disabled}
 				>
-					<CopyIndicator status={status} size={13} />
+					<CopyIndicator status={status} iconSize={13} />
 				</Button>
 				{onRegenerate && (
 					<Button
@@ -286,24 +269,25 @@ export function IngestionSection() {
 			<div className="space-y-5">
 				<StatusBanner connection={connection} />
 
-				<div className="bg-card flex flex-col rounded-lg border">
-					<div className="flex items-start gap-3 px-4 pt-4 pb-3">
-						<div className="flex flex-col gap-1">
-							<h3 className="text-sm font-medium">Endpoint &amp; keys</h3>
-							<p className="text-muted-foreground text-xs">
-								Point your OTLP exporter at the endpoint and authenticate with an ingest key.
-							</p>
-						</div>
-						<div className="grow" />
-						<a
-							href={docsUrl("instrumentation")}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="text-muted-foreground hover:text-foreground font-mono text-[11px] whitespace-nowrap transition-colors"
-						>
-							Docs ↗
-						</a>
-					</div>
+				<Card className="overflow-hidden">
+					<CardHeader className="px-4 pt-4 pb-3">
+						<CardTitle render={<h3 />} className="text-sm font-medium">
+							Endpoint &amp; keys
+						</CardTitle>
+						<CardDescription className="text-xs">
+							Point your OTLP exporter at the endpoint and authenticate with an ingest key.
+						</CardDescription>
+						<CardAction>
+							<a
+								href={docsUrl("instrumentation")}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-muted-foreground hover:text-foreground font-mono text-[11px] whitespace-nowrap transition-colors"
+							>
+								Docs ↗
+							</a>
+						</CardAction>
+					</CardHeader>
 					<CredentialRow
 						label="OTLP endpoint"
 						badge="HTTP"
@@ -336,9 +320,9 @@ export function IngestionSection() {
 						onRegenerate={() => openRegenerateDialog("private")}
 						disabled={isBusy}
 					/>
-				</div>
+				</Card>
 
-				<div className="bg-card flex flex-col rounded-lg border">
+				<Card className="overflow-hidden">
 					<div className="flex flex-wrap items-start gap-x-6 gap-y-3 px-4 pt-4 pb-3">
 						<div className="flex min-w-[260px] flex-col gap-1">
 							<h3 className="text-sm font-medium whitespace-nowrap">
@@ -353,41 +337,29 @@ export function IngestionSection() {
 						</div>
 					</div>
 					<ConnectInstructions framework={framework} apiKey={connection.apiKey} variant="flush" />
-				</div>
+				</Card>
 
 				<RecommendedMappingsSection />
 
 				<AttributeMappingsSection />
 			</div>
 
-			<AlertDialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>
-							Regenerate {regenerateKeyType === "public" ? "public" : "private"} key?
-						</AlertDialogTitle>
-						<AlertDialogDescription>
-							This action cannot be undone. All existing integrations using this key will stop
-							working immediately. You will need to update your{" "}
-							{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"}{" "}
-							with the new key.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={submittingKeyType !== null}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleRegenerate}
-							disabled={submittingKeyType !== null}
-						>
-							Regenerate key
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={regenerateDialogOpen}
+				onOpenChange={setRegenerateDialogOpen}
+				title={`Regenerate ${regenerateKeyType === "public" ? "public" : "private"} key?`}
+				description={
+					<>
+						This action cannot be undone. All existing integrations using this key will stop
+						working immediately. You will need to update your{" "}
+						{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"} with
+						the new key.
+					</>
+				}
+				confirmLabel="Regenerate key"
+				onConfirm={handleRegenerate}
+				pending={submittingKeyType !== null}
+			/>
 		</>
 	)
 }

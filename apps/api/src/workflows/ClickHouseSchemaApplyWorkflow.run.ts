@@ -32,7 +32,8 @@ import {
 import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { eq } from "drizzle-orm"
-import { Cause, Clock, Effect, Option, Schema } from "effect"
+import { Cause, Clock, Config, Effect, Option, Redacted, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { EdgeCacheService } from "@maple/cache"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Database, type DatabaseApi, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -80,8 +81,8 @@ export interface SchemaApplyWorkflowResult {
 	readonly appliedVersions: ReadonlyArray<number>
 }
 
-/** The one secret the run needs, read off alchemy's untyped Worker env. */
-const SchemaApplyEnv = Schema.Struct({ MAPLE_INGEST_KEY_ENCRYPTION_KEY: Schema.String })
+/** The one secret the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
+const ENCRYPTION_KEY_CONFIG = "MAPLE_INGEST_KEY_ENCRYPTION_KEY"
 
 interface LoadOptionalFeatureStateOptions<R> {
 	readonly ensureBookkeeping: Effect.Effect<void, unknown, R>
@@ -148,51 +149,58 @@ const toClickHouseExecError = (cause: unknown): ClickHouseExecError =>
 		? cause
 		: new ClickHouseExecError({ message: cause instanceof Error ? cause.message : String(cause) })
 
-/**
- * The one ClickHouse HTTP implementation, Promise-shaped because
- * `expandMigrationToSteps` takes a Promise `exec`; `execClickHouse` lifts it.
- */
-const execClickHousePromise = (cfg: ChConfig, sql: string): Promise<string> => {
-	const url = `${cfg.url.replace(/\/$/, "")}/?database=${encodeURIComponent(cfg.database)}`
-	const headers = new Headers({
-		"Content-Type": "text/plain",
-		"X-ClickHouse-User": cfg.user,
-		"X-ClickHouse-Database": cfg.database,
-	})
-	if (cfg.password.length > 0) headers.set("X-ClickHouse-Key", cfg.password)
-	return fetch(url, { method: "POST", headers, body: sql, redirect: "manual" }).then((response) =>
-		response.text().then((text) => {
-			if (response.status >= 300 && response.status < 400) {
-				return Promise.reject(
-					new ClickHouseExecError({
-						status: response.status,
-						message: `ClickHouse redirect responses are not allowed (${response.status})`,
-					}),
-				)
-			}
-			if (!response.ok) {
-				return Promise.reject(
-					new ClickHouseExecError({
-						status: response.status,
-						message: `ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`,
-					}),
-				)
-			}
-			return text
-		}),
-	)
-}
+/** The one ClickHouse HTTP implementation; redirects are refused, never followed. */
+const execClickHouse = (
+	cfg: ChConfig,
+	sql: string,
+): Effect.Effect<string, ClickHouseExecError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient
+		const url = `${cfg.url.replace(/\/$/, "")}/?database=${encodeURIComponent(cfg.database)}`
+		const base = HttpClientRequest.post(url, {
+			headers: {
+				"Content-Type": "text/plain",
+				"X-ClickHouse-User": cfg.user,
+				"X-ClickHouse-Database": cfg.database,
+			},
+		}).pipe(HttpClientRequest.bodyText(sql))
+		const request =
+			cfg.password.length > 0
+				? HttpClientRequest.setHeader(base, "X-ClickHouse-Key", cfg.password)
+				: base
+		const response = yield* client
+			.execute(request)
+			.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }))
+		const text = yield* response.text
+		if (response.status >= 300 && response.status < 400) {
+			return yield* new ClickHouseExecError({
+				status: response.status,
+				message: `ClickHouse redirect responses are not allowed (${response.status})`,
+			})
+		}
+		if (response.status < 200 || response.status >= 300) {
+			return yield* new ClickHouseExecError({
+				status: response.status,
+				message: `ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`,
+			})
+		}
+		return text
+	}).pipe(Effect.catchTag("HttpClientError", (error) => Effect.fail(toClickHouseExecError(error))))
 
-const execClickHouse = (cfg: ChConfig, sql: string): Effect.Effect<string, ClickHouseExecError> =>
-	Effect.tryPromise({ try: () => execClickHousePromise(cfg, sql), catch: toClickHouseExecError })
-
+/** `expandMigrationToSteps` takes a Promise `exec`, so each call runs back through `execClickHouse`. */
 const planMigrationSteps = (
 	cfg: ChConfig,
 	migration: (typeof clickHouseMigrations)[number],
-): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError> =>
-	Effect.tryPromise({
-		try: () => expandMigrationToSteps(migration, cfg.database, (sql) => execClickHousePromise(cfg, sql)),
-		catch: toClickHouseExecError,
+): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const run = Effect.runPromiseWith(yield* Effect.context<HttpClient.HttpClient>())
+		return yield* Effect.tryPromise({
+			try: (signal) =>
+				expandMigrationToSteps(migration, cfg.database, (sql) =>
+					run(execClickHouse(cfg, sql), { signal }),
+				),
+			catch: toClickHouseExecError,
+		})
 	})
 
 /**
@@ -249,7 +257,9 @@ const ensureFeaturesTable = (cfg: ChConfig) =>
 ) ENGINE = ReplacingMergeTree(revision) ORDER BY id`,
 	).pipe(Effect.asVoid)
 
-const readAppliedVersions = (cfg: ChConfig): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError> =>
+const readAppliedVersions = (
+	cfg: ChConfig,
+): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError, HttpClient.HttpClient> =>
 	execClickHouse(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`).pipe(
 		Effect.map((text) => [...new Set(parseVersionRows(text).map((r) => r.version))]),
 	)
@@ -263,7 +273,7 @@ const recordVersion = (cfg: ChConfig, version: number, description: string) =>
 /** Entries rather than a Map: a step's value must survive Cloudflare's JSON persistence. */
 const readAppliedFeatureRevisions = (
 	cfg: ChConfig,
-): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError> =>
+): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError, HttpClient.HttpClient> =>
 	execClickHouse(
 		cfg,
 		`SELECT id, max(revision) AS revision FROM ${quote(FEATURES_TABLE)} GROUP BY id FORMAT JSONEachRow`,
@@ -279,6 +289,12 @@ const normalizeExpression = (value: string): string =>
 	value.replace(/`/g, "").replace(/\s+/g, "").toLowerCase()
 
 // --- config load + decrypt (mirror of the service helper) -------------------
+
+/** The Workflow was started with an `orgId` that is not one. */
+export class SchemaApplyPayloadError extends Schema.TaggedError<SchemaApplyPayloadError>()(
+	"@maple/api/workflows/SchemaApplyPayloadError",
+	{ message: Schema.String, rawOrgId: Schema.String },
+) {}
 
 /** A settings row that cannot be turned into a usable ClickHouse target. */
 export class SchemaApplyConfigError extends Schema.TaggedError<SchemaApplyConfigError>()(
@@ -403,7 +419,9 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	return out
 }
 
-const fetchActualSchema = (cfg: ChConfig): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError> =>
+const fetchActualSchema = (
+	cfg: ChConfig,
+): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const dbLit = cfg.database.replace(/'/g, "''")
 		const tableRows = parseTableRows(
@@ -435,7 +453,9 @@ const fetchActualSchema = (cfg: ChConfig): Effect.Effect<Map<string, ActualTable
 		return result
 	})
 
-const reconcileSchemaSnapshot = (cfg: ChConfig): Effect.Effect<void, ClickHouseExecError> =>
+const reconcileSchemaSnapshot = (
+	cfg: ChConfig,
+): Effect.Effect<void, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const desired = parseDesiredTables()
 		const desiredByName = new Map(desired.map((t) => [t.name, t]))
@@ -472,17 +492,25 @@ interface SkippedFeature {
 	readonly reason: string
 }
 
+/**
+ * Typed failures (a bad payload, a missing encryption key) propagate rather than
+ * die: alchemy's bridge rejects the run with either, and steps already retry on their own.
+ */
 export const runClickHouseSchemaApply = (
 	payload: SchemaApplyWorkflowPayload,
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
-	never,
-	Database | Cloudflare.WorkflowStep | Cloudflare.WorkerEnvironment
+	SchemaApplyPayloadError | SchemaApplyConfigError,
+	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
+			Effect.mapError(
+				(error) =>
+					new SchemaApplyPayloadError({ message: error.message, rawOrgId: String(payload.orgId) }),
+			),
+		)
 		const database = yield* Database
-		const env = yield* Cloudflare.WorkerEnvironment
 
 		// Inside the protected region below: a config-load failure (settings row
 		// deleted, missing encryption key, decrypt failure, invalid URL) must still
@@ -512,15 +540,28 @@ export const runClickHouseSchemaApply = (
 				yield* bustRuntimeConfigCache(orgId)
 			})
 
-		return yield* applySchema(database, env, orgId).pipe(
+		return yield* applySchema(database, orgId).pipe(
 			Effect.catchCause((cause) => markFailed(cause).pipe(Effect.andThen(Effect.failCause(cause)))),
 		)
-	}).pipe(Effect.orDie)
+	})
 
-const applySchema = (database: DatabaseApi, env: Record<string, unknown>, orgId: OrgId) =>
+const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 	Effect.gen(function* () {
-		const { MAPLE_INGEST_KEY_ENCRYPTION_KEY } = yield* Schema.decodeUnknownEffect(SchemaApplyEnv)(env)
-		const encryptionKey = Buffer.from(MAPLE_INGEST_KEY_ENCRYPTION_KEY.trim(), "base64")
+		const encryptionKeyText = yield* Config.Redacted(ENCRYPTION_KEY_CONFIG).pipe(
+			Effect.mapError(
+				(error) =>
+					new SchemaApplyConfigError({
+						message: `${ENCRYPTION_KEY_CONFIG} is not configured: ${error.message}`,
+					}),
+			),
+		)
+		const encryptionKey = Buffer.from(Redacted.value(encryptionKeyText).trim(), "base64")
+		// AES-256-GCM: anything else fails later as a misleading password-decryption error.
+		if (encryptionKey.length !== 32) {
+			return yield* new SchemaApplyConfigError({
+				message: `${ENCRYPTION_KEY_CONFIG} must be base64 for exactly 32 bytes`,
+			})
+		}
 		const appliedVersions: number[] = []
 		const skippedFeatures: SkippedFeature[] = []
 

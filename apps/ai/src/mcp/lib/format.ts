@@ -76,3 +76,8 @@ export function fencedBlock(text: string): string {
 	const fence = "`".repeat(Math.max(3, ...runs.map((length) => length + 1)))
 	return `${fence}\n${text}\n${fence}`
 }
+
+/** A UTC timestamp cut to whole seconds (`YYYY-MM-DD HH:mm:ss`), for `timestamp` hints and Start columns. */
+export function toSecondTimestamp(value: string): string {
+	return value.slice(0, 19).replace("T", " ")
+}

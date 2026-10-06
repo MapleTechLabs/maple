@@ -1,7 +1,9 @@
 import * as React from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Meter } from "@maple/ui/components/ui/meter"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import {
 	Combobox,
 	ComboboxContent,
@@ -16,6 +18,7 @@ import {
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { displayError } from "@/lib/error-messages"
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const SERVICE_KEY = "service.name"
 const BREAKDOWN_LIMIT = 10
@@ -103,33 +106,30 @@ export function MetricBreakdown({
 	)
 
 	return (
-		<div className="rounded-md border bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-				<span className="text-xs font-medium">
-					Top values{" "}
-					<span className="text-muted-foreground">
-						· {breakdownAggregation(draft.aggregation)} per value
-					</span>
-				</span>
-				<Combobox
-					value={effectiveKey}
-					onValueChange={(value) => {
-						if (value) onBreakdownKeyChange(value)
-					}}
-				>
-					<ComboboxInput placeholder="Break down by..." className="h-7 w-52 text-xs" />
-					<ComboboxContent>
-						<ComboboxList>
-							<ComboboxItem value={SERVICE_KEY}>{SERVICE_KEY}</ComboboxItem>
-							{attributeKeys.map((key) => (
-								<ComboboxItem key={key} value={key}>
-									{key}
-								</ComboboxItem>
-							))}
-						</ComboboxList>
-					</ComboboxContent>
-				</Combobox>
-			</div>
+		<Panel>
+			<PanelHeader
+				title={`Top values · ${breakdownAggregation(draft.aggregation)} per value`}
+				action={
+					<Combobox
+						value={effectiveKey}
+						onValueChange={(value) => {
+							if (value) onBreakdownKeyChange(value)
+						}}
+					>
+						<ComboboxInput placeholder="Break down by..." className="h-7 w-52 text-xs" />
+						<ComboboxContent>
+							<ComboboxList>
+								<ComboboxItem value={SERVICE_KEY}>{SERVICE_KEY}</ComboboxItem>
+								{attributeKeys.map((key) => (
+									<ComboboxItem key={key} value={key}>
+										{key}
+									</ComboboxItem>
+								))}
+							</ComboboxList>
+						</ComboboxContent>
+					</Combobox>
+				}
+			/>
 			<div className="p-3">
 				<BreakdownBars
 					draft={breakdownDraft}
@@ -139,7 +139,7 @@ export function MetricBreakdown({
 					onAddFilter={(value) => onAddFilter(groupBy, value)}
 				/>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -164,11 +164,7 @@ function BreakdownBars({
 
 	return Result.builder(result)
 		.onInitial(() => (
-			<div className="space-y-2">
-				{Array.from({ length: 5 }).map((_, i) => (
-					<Skeleton key={i} className="h-6 w-full" />
-				))}
-			</div>
+			<SkeletonList rows={5} rowClassName="h-6" gap="2" />
 		))
 		.onError((error) => (
 			<p className="py-4 text-center text-xs text-muted-foreground">{displayError(error).message}</p>
@@ -182,11 +178,7 @@ function BreakdownBars({
 				.filter((row) => row.name.length > 0)
 
 			if (rows.length === 0) {
-				return (
-					<p className="py-4 text-center text-xs text-muted-foreground">
-						No values for this attribute in the selected range.
-					</p>
-				)
+				return <EmptyMessage>No values for this attribute in the selected range.</EmptyMessage>
 			}
 
 			const max = Math.max(...rows.map((row) => row.value), 1)
@@ -201,9 +193,11 @@ function BreakdownBars({
 							title={`Filter to ${filterKey} = "${row.name}"`}
 							className="group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left transition-colors hover:bg-accent"
 						>
-							<div
-								className="absolute inset-y-0.5 left-0 rounded-sm bg-primary/10 transition-colors group-hover:bg-primary/15"
-								style={{ width: `${Math.max((row.value / max) * 100, 1.5)}%` }}
+							<Meter
+								value={row.value}
+								max={max}
+								className="absolute inset-x-0 inset-y-0.5 h-auto rounded-sm bg-transparent"
+								fillClassName="bg-primary/10 transition-colors group-hover:bg-primary/15"
 							/>
 							<span className="relative z-10 truncate font-mono text-xs">{row.name}</span>
 							<span className="relative z-10 shrink-0 font-mono text-xs text-muted-foreground">

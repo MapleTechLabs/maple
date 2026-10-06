@@ -26,7 +26,7 @@
  */
 import type { Effect } from "effect"
 import { Option, Schema } from "effect"
-import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ChatConnectorId } from "./connector.ts"
 
 // Configuration

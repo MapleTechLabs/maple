@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useAuth } from "@clerk/clerk-react"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
@@ -145,9 +147,7 @@ export function FrameworkPicker({
 
 	return (
 		<div className="space-y-2">
-			<span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-				Pick your stack
-			</span>
+			<Eyebrow variant="label">Pick your stack</Eyebrow>
 			{chips}
 		</div>
 	)
@@ -212,9 +212,8 @@ export function ConnectInstructions({
 				>
 					<p className="text-xs text-muted-foreground">
 						Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
-						<code className="rounded bg-muted px-1">maple-onboard</code> skill walks every service
-						in the repo, installs OpenTelemetry, wires traces / logs / metrics, and verifies the
-						bootstrap end-to-end.
+						<InlineCode>maple-onboard</InlineCode> skill walks every service in the repo, installs
+						OpenTelemetry, wires traces / logs / metrics, and verifies the bootstrap end-to-end.
 					</p>
 					<CodeBlock code={ONBOARD_SKILL_COMMAND} language="shell" />
 					<CodeBlock
@@ -232,9 +231,7 @@ export function ConnectInstructions({
 	return (
 		<div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
 			<div className="space-y-3">
-				<span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-					Credentials
-				</span>
+				<Eyebrow variant="label">Credentials</Eyebrow>
 				<CopyableField value={ingestUrl} label="Ingest endpoint" />
 				<CopyableField value={apiKey || "Loading…"} label="API key" masked />
 			</div>

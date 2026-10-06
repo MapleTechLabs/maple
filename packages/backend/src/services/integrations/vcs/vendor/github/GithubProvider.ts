@@ -7,6 +7,7 @@ import {
 	type PullRequestHead,
 	type PullRequestReviewThread,
 	mentionsReviewer,
+	reviewerMention as reviewerMentionFor,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -273,6 +274,8 @@ const toVcsCommitError = (
 
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 
+const decodeJsonBody = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
+
 // GitHub serves a stable avatar for any login at `<host>/<login>.png`, redirecting
 // to that user's current avatar. Derive one from a login so commits whose ingestion
 // path carries no avatar URL still resolve to a picture. The host is taken from the
@@ -282,11 +285,9 @@ const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 // dashboard renders with an initials fallback.
 const githubAvatarUrl = (htmlUrl: string, login: string | null): string | null => {
 	if (!login) return null
-	try {
-		return new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href
-	} catch {
-		return null
-	}
+	return Option.liftThrowable(
+		() => new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href,
+	)().pipe(Option.getOrNull)
 }
 
 const installationReason = (action: string): VcsInstallationSyncReason | null => {
@@ -340,6 +341,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const client = yield* GithubAppClient
+			const reviewerMention = reviewerMentionFor(Option.getOrUndefined(env.GITHUB_APP_SLUG))
 
 			// Stamp the (low-cardinality) signature *result* on the active span. NEVER
 			// records the signature value or the secret — only the outcome enum. The
@@ -689,7 +691,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						return yield* commentSkip("issue_comment_not_pull_request")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.issue.number,
@@ -721,7 +724,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.pull_request.number,
@@ -773,10 +777,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const webhookToJobs = (input: VcsWebhookRequest) =>
 				Effect.gen(function* () {
 					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
-					const parsed = yield* Effect.try({
-						try: () => JSON.parse(input.rawBody) as unknown,
-						catch: () => parseError("Invalid JSON body"),
-					}).pipe(
+					const parsed = yield* decodeJsonBody(input.rawBody).pipe(
+						Effect.mapError(() => parseError("Invalid JSON body")),
 						Effect.tapError(() =>
 							Effect.annotateCurrentSpan({
 								"vcs.webhook.outcome": "rejected",
@@ -1468,6 +1470,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			return {
 				id: PROVIDER,
+				reviewerMention,
 				webhookToJobs,
 				fetchRepositories,
 				fetchCommits,

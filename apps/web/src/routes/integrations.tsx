@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useEffect } from "react"
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
@@ -11,6 +12,7 @@ import {
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
+import { RailwayIntegrationCard } from "@/components/integrations/railway-integration-card"
 import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
 	IntegrationCatalog,
@@ -33,9 +35,9 @@ import { SettingsNav, useVisibleSettingsSections } from "@/components/settings/s
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { cn } from "@maple/ui/lib/utils"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { docsUrl } from "@/lib/docs"
-import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon, LoaderIcon } from "@/components/icons"
+import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon } from "@/components/icons"
 
 // Deliberately a plain string rather than a literal union: this page is the
 // return target for external OAuth callbacks, which append their own
@@ -165,10 +167,7 @@ function IntegrationsPage() {
 					<DashboardLayout.Filters>{settingsSidebar}</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Integrations"
-								description="Connect external data sources and services to Maple."
-							>
+							<DashboardLayout.Header>
 								<IntegrationsSummary />
 							</DashboardLayout.Header>
 						</DashboardLayout.Sticky>
@@ -211,9 +210,8 @@ function IntegrationsPage() {
 										<CircleInfoIcon />
 										<AlertDescription>
 											Maple scrapes any public Prometheus{" "}
-											<code className="font-mono text-xs">/metrics</code> endpoint you
-											add as a target below and stores the samples as OpenTelemetry
-											metrics.{" "}
+											<InlineCode>/metrics</InlineCode> endpoint you add as a target
+											below and stores the samples as OpenTelemetry metrics.{" "}
 											<a
 												href={docsUrl("prometheus")}
 												target="_blank"
@@ -230,9 +228,8 @@ function IntegrationsPage() {
 										<CircleInfoIcon />
 										<AlertDescription>
 											WarpStream clusters are scraped as Prometheus targets. Point a
-											target at an agent&apos;s{" "}
-											<code className="font-mono text-xs">:8080/metrics</code> endpoint
-											or the hosted Prometheus endpoint with Basic auth.{" "}
+											target at an agent&apos;s <InlineCode>:8080/metrics</InlineCode>{" "}
+											endpoint or the hosted Prometheus endpoint with Basic auth.{" "}
 											<a
 												href={docsUrl("warpstream")}
 												target="_blank"
@@ -254,6 +251,8 @@ function IntegrationsPage() {
 									<GithubIntegrationCard />
 								) : integration === "planetscale" ? (
 									<PlanetScaleIntegrationCard />
+								) : integration === "railway" ? (
+									<RailwayIntegrationCard />
 								) : (
 									// prometheus + warpstream share the generic scrape-target flow
 									<ScrapeTargetsSection sourceFilter="prometheus" />
@@ -312,13 +311,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				</div>
 				{connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
-						<span
-							aria-hidden
-							className={cn(
-								"size-1.5 shrink-0 rounded-full",
-								connected.health === "healthy" ? "bg-success" : "bg-warning",
-							)}
-						/>
+						<StatusDot tone={connected.health === "healthy" ? "ok" : "warn"} />
 						<span className="truncate text-xs text-muted-foreground">{statusLine}</span>
 					</div>
 				) : null}
@@ -337,14 +330,9 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				) : null}
 				{integration === "cloudflare" && connected ? <CloudflareHeaderActions /> : null}
 				{showConnect ? (
-					<Button size="sm" onClick={connectFlow.connect} disabled={connectFlow.busy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : (
-							// No iconClassName here — the glyph inherits the button's text color,
-							// same as the in-card Connect buttons.
-							<EntryIcon size={14} />
-						)}
+					<Button size="sm" onClick={connectFlow.connect} loading={connectFlow.busy}>
+						{/* No iconClassName: the glyph inherits the button's text color, like the in-card buttons. */}
+						<EntryIcon size={14} />
 						Connect {entry.name}
 					</Button>
 				) : null}

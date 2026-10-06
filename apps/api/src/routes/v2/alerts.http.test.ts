@@ -5,8 +5,8 @@ import { MobilePushService } from "@maple/backend/services/push/MobilePushServic
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	AlertMemberDirectoryUnavailableError,
 	IntegrationsRevokedError,
@@ -97,7 +97,6 @@ const makeHarness = (
 	const runtimeLive = Layer.succeed(AlertRuntime, {
 		now: Effect.sync(() => Date.now()),
 		makeUuid: () => crypto.randomUUID(),
-		fetch: globalThis.fetch,
 		deliveryTimeoutMs: () => 15_000,
 	})
 	const hazelOAuthLive =
@@ -121,6 +120,7 @@ const makeHarness = (
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -133,6 +133,7 @@ const makeHarness = (
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
@@ -677,6 +678,7 @@ describe("v2 alerts over HTTP", () => {
 				evaluationDurationMs: 8,
 				errorMessage: null,
 				errorCategory: "",
+				skipReason: "",
 			}
 		})
 		const pagedWarehouse: WarehouseQueryServiceApi = {

@@ -263,6 +263,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 	Layer.succeed(ErrorIssueReadModelsService, {
 		listIssues: die,
 		countOpenIssuesByService: die,
+		countIssues: die,
 		getIssue: die,
 		listIssueIncidents: die,
 		listOpenIncidents: die,
@@ -374,6 +375,7 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 		startConnect: die,
 		completeConnect: die,
 		getValidAccessToken: die,
+		withAccessToken: die,
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,

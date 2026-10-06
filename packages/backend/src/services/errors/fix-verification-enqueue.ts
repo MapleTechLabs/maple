@@ -10,6 +10,7 @@ import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
 import { aiTriageSettings, errorIssues, investigations, type ErrorIssueVerificationRow } from "@maple/db"
 import { and, eq } from "drizzle-orm"
 import { Clock, Effect, Schema } from "effect"
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
@@ -27,8 +28,8 @@ export interface EnqueueFixVerificationInput {
 	readonly postMergeOccurrences: number
 	/** Occurrences since the merge from builds that were already running. */
 	readonly staleClientOccurrences: number
-	/** The Worker env, for the `ChatSession` binding. Absent outside a Worker isolate. */
-	readonly workerEnv?: Record<string, unknown>
+	/** The `ChatSession` port. Absent outside a Worker isolate. */
+	readonly chatSessions?: ChatSessionsApi
 }
 
 export type EnqueueFixVerificationResult =
@@ -193,7 +194,7 @@ export const enqueueFixVerification: (
 		investigationId,
 		subject,
 		snapshot,
-		workerEnv: input.workerEnv,
+		chatSessions: input.chatSessions,
 		nowMs,
 		// The tick reads this outcome back and can answer `no_binding` with a
 		// terminal `verified` verdict that auto-closes the issue. Without the id,

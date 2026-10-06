@@ -9,7 +9,7 @@ The **executable contract is the spec**: `MapleApiV2` in `packages/domain/src/ht
 | Tier             | Transport                                                       | Consumers                            | Docs                        | Stability                                    |
 | ---------------- | --------------------------------------------------------------- | ------------------------------------ | --------------------------- | -------------------------------------------- |
 | **Public API**   | `MapleApiV2` HttpApi at `/v2/...`                               | Customers, agents/MCP, the dashboard | `/v2/docs` (OpenAPI/Scalar) | Committed; changes are additive or versioned |
-| **Internal RPC** | Effect RPC (`effect/unstable/rpc`) `RpcGroup`s served at `/rpc` | The dashboard only                   | none (private)              | None; changes freely                         |
+| **Internal RPC** | Effect RPC (`effect/rpc`) `RpcGroup`s served at `/rpc` | The dashboard only                   | none (private)              | None; changes freely                         |
 
 Dashboard-only operations belong in the internal RPC tier: billing checkout/portal, onboarding state, demo seeding, AI chat apply, digest subscription, AI-triage settings, raw warehouse queries, and the error-agent claim/heartbeat/release loop. They use the same tenant resolution and org scoping but are **not** HTTP API groups and never appear in the public OpenAPI. Everything else is public API, and the dashboard consumes the same `/v2` endpoints customers do.
 

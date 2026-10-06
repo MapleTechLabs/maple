@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -160,31 +160,9 @@ export class ErrorsByTypeResponse extends Schema.Class<ErrorsByTypeResponse>("Er
 	),
 }) {}
 
-export class ErrorsTimeseriesRequest extends Schema.Class<ErrorsTimeseriesRequest>("ErrorsTimeseriesRequest")(
-	{
-		startTime: TinybirdDateTime,
-		endTime: TinybirdDateTime,
-		fingerprintHash: FingerprintHash,
-		services: OptionalServiceNames,
-		bucketSeconds: Schema.optional(BucketSeconds),
-	},
-) {}
-
-export class ErrorsTimeseriesResponse extends Schema.Class<ErrorsTimeseriesResponse>(
-	"ErrorsTimeseriesResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			bucket: Schema.String,
-			count: Schema.Number,
-		}),
-	),
-}) {}
-
 /**
  * Bucketed counts for MANY fingerprints at once — the trend shape drawn on
- * every row of the unified errors list. `ErrorsTimeseriesRequest` answers the
- * same question for a single fingerprint on its detail page.
+ * every row of the unified errors list.
  */
 export class ErrorsSparkRequest extends Schema.Class<ErrorsSparkRequest>("ErrorsSparkRequest")({
 	startTime: TinybirdDateTime,
@@ -446,6 +424,31 @@ export class PlanetScaleInfraTimeseriesRequest extends Schema.Class<PlanetScaleI
 
 export class PlanetScaleInfraTimeseriesResponse extends Schema.Class<PlanetScaleInfraTimeseriesResponse>(
 	"PlanetScaleInfraTimeseriesResponse",
+)({
+	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+}) {}
+
+// Railway infrastructure page (/infra/railway): `railway.*` gauges from the Railway poller.
+export class RailwayInfraServicesRequest extends Schema.Class<RailwayInfraServicesRequest>(
+	"RailwayInfraServicesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export class RailwayInfraServiceTimeseriesRequest extends Schema.Class<RailwayInfraServiceTimeseriesRequest>(
+	"RailwayInfraServiceTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Railway service ids are shared across a project's environments, so both are required. */
+	environmentId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+	serviceId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+}) {}
+
+export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsResponse>(
+	"RailwayInfraRowsResponse",
 )({
 	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
 }) {}
@@ -1269,27 +1272,6 @@ export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeserie
 	),
 	groupByAttributeKey: Schema.optional(Schema.String),
 	unit: Schema.Literals(["percent", "load", "bytes_per_second"]),
-}) {}
-
-export class FleetUtilizationTimeseriesRequest extends Schema.Class<FleetUtilizationTimeseriesRequest>(
-	"FleetUtilizationTimeseriesRequest",
-)({
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optional(BucketSeconds),
-}) {}
-
-export class FleetUtilizationTimeseriesResponse extends Schema.Class<FleetUtilizationTimeseriesResponse>(
-	"FleetUtilizationTimeseriesResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			bucket: Schema.String,
-			avgCpu: Schema.Number,
-			avgMemory: Schema.Number,
-			activeHosts: Schema.Number,
-		}),
-	),
 }) {}
 
 // Kubernetes (pods / nodes / workloads)
@@ -2546,13 +2528,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("errorsTimeseries", "/errors-timeseries", {
-			payload: ErrorsTimeseriesRequest,
-			success: ErrorsTimeseriesResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
 		HttpApiEndpoint.post("errorsSpark", "/errors-spark", {
 			payload: ErrorsSparkRequest,
 			success: ErrorsSparkResponse,
@@ -2626,6 +2601,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("planetscaleInfraTimeseries", "/planetscale-infra-timeseries", {
 			payload: PlanetScaleInfraTimeseriesRequest,
 			success: PlanetScaleInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("railwayInfraServices", "/railway-infra-services", {
+			payload: RailwayInfraServicesRequest,
+			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
+			payload: RailwayInfraServiceTimeseriesRequest,
+			success: RailwayInfraRowsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
@@ -2817,13 +2806,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("hostInfraTimeseries", "/host-infra-timeseries", {
 			payload: HostInfraTimeseriesRequest,
 			success: HostInfraTimeseriesResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.post("fleetUtilizationTimeseries", "/fleet-utilization-timeseries", {
-			payload: FleetUtilizationTimeseriesRequest,
-			success: FleetUtilizationTimeseriesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

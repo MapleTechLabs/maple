@@ -1,5 +1,5 @@
 import * as Layer from "effect/Layer"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import * as Provider from "alchemy/Provider"
 import { AlertDestination, AlertDestinationProvider } from "./AlertDestination"
 import { AlertRule, AlertRuleProvider } from "./AlertRule"

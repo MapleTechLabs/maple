@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { isRetryableResponse, isRetryableTransportError, withMapleRetryPolicy } from "./retry-policy"

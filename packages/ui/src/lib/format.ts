@@ -273,7 +273,21 @@ export function bucketIntervalLabel(seconds: number | undefined): string {
  * Format a throughput value with a rate suffix for chart axes.
  */
 export function formatThroughput(value: number, suffix: string): string {
-	return `${formatNumber(value)}${suffix}`
+	return `${formatRate(value)}${suffix}`
+}
+
+/**
+ * A per-second (or per-anything) rate at reading precision: compacted past 1K, whole above 100,
+ * one decimal above 1, two significant digits below. `formatNumber` keeps three decimals, which
+ * turns a request rate into "12.346".
+ */
+export function formatRate(value: number): string {
+	if (!Number.isFinite(value)) return "—"
+	const abs = Math.abs(value)
+	if (abs >= 1_000) return formatNumber(value)
+	if (abs >= 100) return Math.round(value).toLocaleString()
+	if (abs >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+	return value.toLocaleString(undefined, { maximumSignificantDigits: 2 })
 }
 
 /** Decimals a percentage may grow to before the number stops being readable. */
@@ -329,3 +343,29 @@ export const formatValueByUnit: (num: number, unit?: string) => string = (num, u
 		Match.when("bytes", () => formatStorageBytes(num)),
 		Match.orElse(() => formatNumber(num)),
 	)
+
+/**
+ * The noun for a count: `pluralize(1, "host")` is "host", `pluralize(3, "host")` is "hosts".
+ * Pass `plural` for irregular nouns (`pluralize(n, "query", "queries")`).
+ */
+export function pluralize(count: number, singular: string, plural: string = `${singular}s`): string {
+	return count === 1 ? singular : plural
+}
+
+/** A count with its noun: `countLabel(3, "host")` is "3 hosts". The number is not compacted. */
+export function countLabel(count: number, singular: string, plural?: string): string {
+	return `${count.toLocaleString()} ${pluralize(count, singular, plural)}`
+}
+
+/**
+ * A per-hour rate in whatever unit reads naturally. "0.02 times per hour" is
+ * technically right and useless; "3 times a week" is the same number said in a
+ * way a reader can picture.
+ */
+export function formatRatePerHour(perHour: number): string {
+	const round = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10)
+	if (perHour >= 1) return `${round(perHour)}× an hour`
+	const perDay = perHour * 24
+	if (perDay >= 1) return `${round(perDay)}× a day`
+	return `${round(perDay * 7)}× a week`
+}

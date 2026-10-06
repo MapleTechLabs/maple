@@ -1,17 +1,19 @@
 import { useMemo, useState } from "react"
 import { Reorder, useDragControls } from "motion/react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { cn } from "@maple/ui/lib/utils"
 import { WIDGET_UNITS } from "@maple/domain/http"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import type { ValueUnit } from "@/components/dashboard-builder/types"
 import { Switch } from "@maple/ui/components/ui/switch"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
-import { CircleWarningIcon, GripDotsIcon } from "@/components/icons"
+import { GripDotsIcon } from "@/components/icons"
 import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
 import {
@@ -21,6 +23,10 @@ import {
 	type ListColumnDraft,
 	type ListDataSource,
 } from "@/lib/query-builder/list-widget-config"
+import { WarningList } from "./warning-list"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+
+const DATA_SOURCE_OPTIONS = LIST_DATA_SOURCES.map((ds) => ({ value: ds, label: LIST_DATA_SOURCE_LABEL[ds] }))
 
 // Props interface removed — ListConfigPanel now reads from context
 
@@ -352,51 +358,38 @@ export function ListConfigPanel() {
 		<div className="space-y-5">
 			{/* Data source */}
 			<div className="space-y-1.5">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+				<Eyebrow variant="label" as="p">
 					Data Source
-				</p>
-				<div className="flex h-9 rounded-md border bg-muted/40 p-0.5 w-fit">
-					{LIST_DATA_SOURCES.map((ds) => (
-						<button
-							key={ds}
-							type="button"
-							onClick={() => handleDataSourceChange(ds)}
-							className={cn(
-								"px-4 text-xs rounded-sm transition-colors",
-								listDataSource === ds
-									? "bg-background text-foreground shadow-sm"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							{LIST_DATA_SOURCE_LABEL[ds]}
-						</button>
-					))}
-				</div>
+				</Eyebrow>
+				<SegmentedSelect
+					options={DATA_SOURCE_OPTIONS}
+					value={listDataSource}
+					onChange={handleDataSourceChange}
+					size="sm"
+					aria-label="Data source"
+					className="*:px-4 *:text-xs"
+				/>
 			</div>
 
 			{/* Root spans only (traces only) */}
 			{listDataSource === "traces" && (
-				<div className="flex items-center justify-between">
-					<div className="space-y-0.5">
-						<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
-							Root spans only
-						</p>
-						<p className="text-[10px] text-muted-foreground">
-							Uses pre-aggregated data for faster queries
-						</p>
-					</div>
-					<Switch
-						checked={rootOnly}
-						onCheckedChange={(checked) => onChange({ listRootOnly: checked })}
-					/>
-				</div>
+				<SettingRow
+					label="Root spans only"
+					description="Uses pre-aggregated data for faster queries"
+					control={
+						<Switch
+							checked={rootOnly}
+							onCheckedChange={(checked) => onChange({ listRootOnly: checked })}
+						/>
+					}
+				/>
 			)}
 
 			{/* Where clause */}
 			<div className="space-y-1.5">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+				<Eyebrow variant="label" as="p">
 					Filter
-				</p>
+				</Eyebrow>
 				<WhereClauseEditor
 					rows={1}
 					value={whereClause}
@@ -406,16 +399,7 @@ export function ListConfigPanel() {
 					textareaClassName="min-h-[32px] resize-y text-xs"
 					ariaLabel="List filter"
 				/>
-				{filterWarnings.length > 0 && (
-					<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-						<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-						<ul className="space-y-1">
-							{filterWarnings.map((warning) => (
-								<li key={warning}>{warning}</li>
-							))}
-						</ul>
-					</div>
-				)}
+				<WarningList warnings={filterWarnings} />
 				{(() => {
 					if (listDataSource !== "traces") return null
 					const parsedLimit = Number.parseInt(limit, 10)
@@ -430,22 +414,22 @@ export function ListConfigPanel() {
 					return (
 						<div className="mt-1.5 space-y-1.5">
 							{slow.length > 0 && (
-								<div className="space-y-1 rounded-md border border-warning/20 bg-warning/5 px-3 py-2">
-									{slow.map((h) => (
-										<p key={h.key} className="text-[11px] text-warning">
-											{h.reason}
-										</p>
-									))}
-								</div>
+								<Alert variant="warn" size="sm">
+									<AlertDescription className="gap-1 text-[11px] text-severity-warn">
+										{slow.map((h) => (
+											<p key={h.key}>{h.reason}</p>
+										))}
+									</AlertDescription>
+								</Alert>
 							)}
 							{fast.length > 0 && (
-								<div className="space-y-1 rounded-md border border-success/20 bg-success/5 px-3 py-2">
-									{fast.map((h) => (
-										<p key={h.key} className="text-[11px] text-success">
-											{h.reason}
-										</p>
-									))}
-								</div>
+								<Alert variant="ok" size="sm">
+									<AlertDescription className="gap-1 text-[11px] text-severity-info">
+										{fast.map((h) => (
+											<p key={h.key}>{h.reason}</p>
+										))}
+									</AlertDescription>
+								</Alert>
 							)}
 						</div>
 					)
@@ -454,7 +438,9 @@ export function ListConfigPanel() {
 
 			{/* Limit */}
 			<div className="space-y-1.5">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Limit</p>
+				<Eyebrow variant="label" as="p">
+					Limit
+				</Eyebrow>
 				<Input
 					value={limit}
 					onChange={(e) => onChange({ listLimit: e.target.value })}
@@ -471,9 +457,9 @@ export function ListConfigPanel() {
 
 			{/* Columns */}
 			<div className="space-y-2">
-				<p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+				<Eyebrow variant="label" as="p">
 					Columns
-				</p>
+				</Eyebrow>
 
 				<Reorder.Group
 					axis="y"

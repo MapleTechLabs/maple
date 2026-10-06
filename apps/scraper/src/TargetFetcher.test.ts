@@ -1,10 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Schema } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { InternalScrapeTarget } from "@maple/domain/http"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 import { parseRetryAfterSeconds, scrapeTimeoutMs, TargetFetcher } from "./TargetFetcher"
+
+/** The runtime provides the HTTP client; each test swaps its `fetch`. */
+const FetcherLive = TargetFetcher.layer.pipe(Layer.provide(FetchHttpClient.layer))
 
 const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
 
@@ -50,32 +53,64 @@ const stubFetch = (
 	}) as typeof globalThis.fetch
 
 describe("TargetFetcher", () => {
-	it.effect("GETs the scrape url with the target's auth headers and passes the status through", () =>
+	it.effect("GETs the scrape url with the target's auth headers and returns the body", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const fetcher = yield* TargetFetcher
-			const response = yield* fetcher
+			const body = yield* fetcher
 				.fetch(mkTarget({ authHeaders: { Authorization: "Bearer stored-token" } }))
 				.pipe(
 					Effect.provideService(
 						FetchHttpClient.Fetch,
-						stubFetch(
-							recorded,
-							() =>
-								new Response("# TYPE up gauge\nup 1\n", {
-									status: 503,
-									headers: { "retry-after": "120" },
-								}),
-						),
+						stubFetch(recorded, () => new Response("# TYPE up gauge\nup 1\n", { status: 200 })),
 					),
 				)
 
 			assert.strictEqual(recorded[0]?.url, "https://node.example.com/metrics")
 			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer stored-token")
-			assert.strictEqual(response.status, 503)
-			assert.include(response.body, "up 1")
-			assert.strictEqual(response.retryAfterSeconds, 120)
-		}).pipe(Effect.provide(TargetFetcher.layer)),
+			assert.include(body, "up 1")
+		}).pipe(Effect.provide(FetcherLive)),
+	)
+
+	it.effect("classifies a non-2xx answer by status and carries Retry-After", () =>
+		Effect.gen(function* () {
+			const fetcher = yield* TargetFetcher
+			const fetchStatus = (status: number, headers: Record<string, string> = {}) =>
+				fetcher.fetch(mkTarget()).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch([], () => new Response("nope", { status, headers })),
+					),
+					Effect.flip,
+				)
+
+			const limited = yield* fetchStatus(503, { "retry-after": "120" })
+			assert.strictEqual(limited.reason, "rate_limited")
+			assert.strictEqual(limited.statusCode, 503)
+			assert.strictEqual(limited.retryAfterMs, 120_000)
+			assert.strictEqual(limited.message, "returned HTTP 503")
+			assert.strictEqual((yield* fetchStatus(403)).reason, "auth_failed")
+			assert.strictEqual((yield* fetchStatus(500)).reason, "target_error")
+			assert.strictEqual((yield* fetchStatus(404)).reason, "scrape_failed")
+		}).pipe(Effect.provide(FetcherLive)),
+	)
+
+	it.effect("leaves the client span Ok when the target answers with an error status", () =>
+		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
+			const fetcher = yield* TargetFetcher
+			yield* fetcher.fetch(mkTarget()).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => new Response("", { status: 429 })),
+				),
+				Effect.provide(tracer.layer),
+				Effect.flip,
+			)
+			const [span] = endedSpansNamed(tracer.ended, "scraper.fetch_target")
+			assert.isTrue(Exit.isSuccess(span!.exit))
+			assert.strictEqual(span!.attributes.get("http.response.status_code"), 429)
+		}).pipe(Effect.provide(FetcherLive)),
 	)
 
 	it.effect("rejects a private-range scrape url before any request is made", () =>
@@ -92,17 +127,18 @@ describe("TargetFetcher", () => {
 					Effect.flip,
 				)
 
-			assert.strictEqual(error.reason, "invalid_url")
+			// A config fault no cadence clears: holds the interval rather than backing off.
+			assert.strictEqual(error.reason, "scrape_failed")
 			assert.include(error.message, "url rejected")
 			assert.lengthOf(recorded, 0)
-		}).pipe(Effect.provide(TargetFetcher.layer)),
+		}).pipe(Effect.provide(FetcherLive)),
 	)
 
 	it.effect("drops the Authorization header when a redirect leaves the origin", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const fetcher = yield* TargetFetcher
-			const response = yield* fetcher
+			const body = yield* fetcher
 				.fetch(mkTarget({ authHeaders: { Authorization: "Bearer stored-token" } }))
 				.pipe(
 					Effect.provideService(
@@ -118,14 +154,14 @@ describe("TargetFetcher", () => {
 					),
 				)
 
-			assert.strictEqual(response.status, 200)
+			assert.strictEqual(body, "up 1\n")
 			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer stored-token")
 			assert.strictEqual(recorded[1]?.url, "https://elsewhere.example.org/metrics")
 			assert.isUndefined(recorded[1]?.headers.authorization)
-		}).pipe(Effect.provide(TargetFetcher.layer)),
+		}).pipe(Effect.provide(FetcherLive)),
 	)
 
-	it.effect("classifies a transport failure without backing the failure's text out of the target", () =>
+	it.effect("classifies a transport failure as a target error", () =>
 		Effect.gen(function* () {
 			const fetcher = yield* TargetFetcher
 			const error = yield* fetcher.fetch(mkTarget()).pipe(
@@ -136,9 +172,9 @@ describe("TargetFetcher", () => {
 				Effect.flip,
 			)
 
-			assert.strictEqual(error.reason, "transport")
+			assert.strictEqual(error.reason, "target_error")
 			assert.strictEqual(error.message, "request failed: connection refused")
-		}).pipe(Effect.provide(TargetFetcher.layer)),
+		}).pipe(Effect.provide(FetcherLive)),
 	)
 
 	it.effect("times out at the interval-derived ceiling and aborts the request", () =>
@@ -173,7 +209,7 @@ describe("TargetFetcher", () => {
 			if (!Exit.isFailure(exit)) return
 			assert.isTrue(aborted)
 			assert.include(String(exit.cause), "request timed out")
-		}).pipe(Effect.provide(TargetFetcher.layer)),
+		}).pipe(Effect.provide(FetcherLive)),
 	)
 
 	it.effect("annotates the client span with host and path but never the signed query", () =>
@@ -206,7 +242,7 @@ describe("TargetFetcher", () => {
 			for (const value of span.attributes.values()) {
 				assert.notInclude(String(value), "SECRET")
 			}
-		}).pipe(Effect.provide(TargetFetcher.layer)),
+		}).pipe(Effect.provide(FetcherLive)),
 	)
 })
 

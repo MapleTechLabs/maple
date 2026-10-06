@@ -1,10 +1,13 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { formatUptime } from "@maple/ui/lib/format"
 
 import type { NodeInfraMetric } from "@/api/warehouse/infra"
@@ -13,9 +16,9 @@ import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { NodeDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -65,20 +68,12 @@ function NodeDetailPage() {
 		.orElse(() => null)
 
 	const rightPanel = summary ? (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<ServerIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-1">
-				<DetailRail.MetaRow label="k8s.node.name" value={summary.nodeName} />
-				<DetailRail.MetaRow label="k8s.node.uid" value={summary.nodeUid} />
-				<DetailRail.MetaRow label="k8s.kubelet.version" value={summary.kubeletVersion} />
-				<DetailRail.MetaRow label="container.runtime" value={summary.containerRuntime} />
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={ServerIcon}>
+			<DetailRail.MetaRow label="k8s.node.name" value={summary.nodeName} />
+			<DetailRail.MetaRow label="k8s.node.uid" value={summary.nodeUid} />
+			<DetailRail.MetaRow label="k8s.kubelet.version" value={summary.kubeletVersion} />
+			<DetailRail.MetaRow label="container.runtime" value={summary.containerRuntime} />
+		</ResourceAttributesCard>
 	) : null
 
 	return (
@@ -126,9 +121,7 @@ function NodeDetailPage() {
 						<StatRailItem eyebrow="Kubelet" value={summary.kubeletVersion || "—"} compact />
 					</StatRail>
 				) : (
-					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-						No metrics arrived for this node in the selected window.
-					</div>
+					<NoMetricsMessage noun="node" />
 				)}
 
 				<div className="space-y-3">
@@ -148,15 +141,15 @@ function NodeDetailPage() {
 				</div>
 
 				<div className="space-y-3">
-					<h3 className="text-sm font-medium">Pods on this node</h3>
+					<SectionHeading as="h3" title="Pods on this node" />
 					{Result.builder(podsResult)
 						.onSuccess((r) => {
 							const pods = r.data
 							if (pods.length === 0) {
 								return (
-									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<EmptyMessage dashed className="py-12">
 										No pods reporting on this node in the selected window.
-									</div>
+									</EmptyMessage>
 								)
 							}
 							return (

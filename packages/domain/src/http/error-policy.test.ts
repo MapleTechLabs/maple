@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, expect, it } from "@effect/vitest"
-import { OpenApi } from "effect/unstable/httpapi"
+import { OpenApi } from "effect/http-api"
 import * as Http from "./index"
 
 const prop = (value: unknown, key: string): unknown =>

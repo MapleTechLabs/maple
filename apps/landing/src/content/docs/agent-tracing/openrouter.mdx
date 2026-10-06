@@ -1,0 +1,182 @@
+---
+title: "Trace OpenRouter calls in Maple with Broadcast"
+description: "Send every OpenRouter model call to Maple with OpenRouter Broadcast, grouped into one Agent Session per conversation."
+group: "AI Agents"
+order: 41
+navLabel: "OpenRouter"
+icon: "openrouter"
+---
+
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
+OpenRouter Broadcast sends a trace of every request on your OpenRouter account to Maple, with tokens, cost, prompt and completion. You set it up once in the OpenRouter dashboard, then add a `session_id` to your requests. Without it, every model call is its own session.
+
+## Quick setup with a coding agent
+
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-openrouter](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openrouter) skill and follows it.
+
+```text
+Set up Maple agent tracing for OpenRouter in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openrouter -y`, then follow it.
+
+My Maple ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt. The agent prints the values for the OpenRouter dashboard, which you enter yourself as described in the next section.
+
+## Point Broadcast at Maple
+
+1. In OpenRouter, open [Settings → Observability](https://openrouter.ai/settings/observability) and turn on **Enable Broadcast**. In an organization account, only an admin can change this.
+2. Click the edit icon next to **OpenTelemetry Collector** and set **Endpoint** to the full traces URL. OpenRouter doesn't append `/v1/traces`. EU organizations use `https://ingest.eu.maple.dev/v1/traces`.
+
+   ```text
+   https://ingest.maple.dev/v1/traces
+   ```
+
+3. Set **Headers** to your Maple ingest key:
+
+   ```json
+   { "Authorization": "Bearer YOUR_INGEST_KEY" }
+   ```
+
+4. Click **Test Connection**. OpenRouter only saves the destination if the test passes.
+
+Leave the sampling rate at 1.0, since a lower rate drops whole conversations. Leave the API key filter empty. If your app calls `eu.openrouter.ai`, add the Europe data region.
+
+## Send a session id with every request
+
+Send a `session_id` field in the request body (or an `x-session-id` header). Use the same id on every request of a conversation, such as your chat thread id, and a new one for each conversation.
+
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
+
+With the `openai` SDK in TypeScript, the field isn't in the types, so it needs a `@ts-expect-error`:
+
+```ts
+import OpenAI from "openai"
+
+const client = new OpenAI({
+	baseURL: "https://openrouter.ai/api/v1",
+	apiKey: process.env.OPENROUTER_API_KEY,
+})
+
+const completion = await client.chat.completions.create({
+	model: "openai/gpt-4o-mini",
+	messages,
+	// @ts-expect-error OpenRouter-only field
+	session_id: conversationId,
+})
+```
+
+With the Vercel AI SDK, pass it under `providerOptions.openrouter`:
+
+```ts
+import { createOpenRouter } from "@openrouter/ai-sdk-provider"
+import { streamText } from "ai"
+
+const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
+
+const result = streamText({
+	model: openrouter("openai/gpt-4o-mini"),
+	messages,
+	providerOptions: { openrouter: { session_id: conversationId } },
+})
+```
+
+</LanguageTab>
+<LanguageTab id="python">
+
+In Python, use `extra_body`:
+
+```py
+import os
+
+from openai import OpenAI
+
+client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.environ["OPENROUTER_API_KEY"])
+
+completion = client.chat.completions.create(
+    model="openai/gpt-4o-mini",
+    messages=messages,
+    extra_body={"session_id": conversation_id},
+)
+```
+
+</LanguageTab>
+</LanguageTabs>
+
+OpenRouter's own SDKs have a typed field: `sessionId` in `@openrouter/sdk` and `session_id=` in the `openrouter` Python package.
+
+## Nest Broadcast under your own traces
+
+Skip this if OpenRouter is your only source of traces. If your app also sends its own traces to Maple, every model call is recorded twice. Pass the active span's ids in the `trace` field so OpenRouter places its spans inside your trace.
+
+<LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
+<LanguageTab id="typescript">
+
+In TypeScript, wrap `fetch` and pass it to the client (`new OpenAI({ baseURL, apiKey, fetch: openRouterFetch })` or `createOpenRouter({ apiKey, fetch: openRouterFetch })`):
+
+```ts
+import { trace } from "@opentelemetry/api"
+
+export const openRouterFetch: typeof fetch = (input, init) => {
+	const span = trace.getActiveSpan()?.spanContext()
+	if (span && typeof init?.body === "string") {
+		const body = JSON.parse(init.body)
+		body.trace = { ...body.trace, trace_id: span.traceId, parent_span_id: span.spanId }
+		init = { ...init, body: JSON.stringify(body) }
+	}
+	return fetch(input, init)
+}
+```
+
+</LanguageTab>
+<LanguageTab id="python">
+
+In Python, build the body next to `session_id`:
+
+```py
+from opentelemetry import trace
+
+
+def openrouter_extra_body(conversation_id: str) -> dict:
+    body = {"session_id": conversation_id}
+    ctx = trace.get_current_span().get_span_context()
+    if ctx.is_valid:
+        body["trace"] = {
+            "trace_id": format(ctx.trace_id, "032x"),
+            "parent_span_id": format(ctx.span_id, "016x"),
+        }
+    return body
+
+
+client.chat.completions.create(model=model, messages=messages, extra_body=openrouter_extra_body(conversation_id))
+```
+
+</LanguageTab>
+</LanguageTabs>
+
+Use the same value for `session_id` as your framework's conversation id.
+
+Broadcast has no tool calls or agent names. For those, trace your app with its [framework guide](/docs/agent-tracing) and nest Broadcast under it as shown here.
+
+## Check that it works
+
+Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent Sessions** and filter by service `openrouter`.
+
+You should see one session named after your `session_id`, with vendor **OpenRouter**, an `LLM Generation` span per model call, and tokens and cost in USD. To keep content out of Maple, turn on **Privacy Mode** on the destination.
+
+## Troubleshooting
+
+- **Test Connection fails.** Use the full `https://ingest.maple.dev/v1/traces` URL and valid JSON headers.
+- **Test Connection passes but nothing arrives.** Check the destination's API key filter and data regions against the key and endpoint your app uses, and that you're not using a placeholder key like `MAPLE_TEST`.
+- **Every call is its own session, named `trace:<id>`.** The request has no `session_id`. Log the outgoing body, since some wrappers drop unknown fields.
+- **Tokens or LLM calls are about double.** Your app and Broadcast both record each call. Nest Broadcast with the `trace` field as shown above.
+
+## Related
+
+- [Agent Sessions overview](/docs/agent-sessions/overview)
+- [OpenRouter Broadcast](https://openrouter.ai/docs/guides/features/broadcast)
+- [Vercel AI SDK](/docs/agent-tracing/vercel-ai-sdk), if you call OpenRouter through `@openrouter/ai-sdk-provider`

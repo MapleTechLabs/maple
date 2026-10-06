@@ -1,5 +1,5 @@
 /**
- * effect-agent's `Sandbox` port over Cloudflare's Sandbox container.
+ * @yielded/agent's `Sandbox` port over Cloudflare's Sandbox container.
  *
  * The contract asks an implementation to enforce each requested feature or
  * reject it, so this one is explicit about its posture. It provides: an isolated
@@ -34,7 +34,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "effect-agent/sandbox"
+} from "@yielded/agent/sandbox"
 import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {

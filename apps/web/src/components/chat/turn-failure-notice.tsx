@@ -1,4 +1,34 @@
+import type { ReactNode } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { Alert, AlertAction, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+
+/** The destructive notice above the composer: what failed, and one way to try again. */
+export function ChatFailureNotice({
+	children,
+	actionLabel,
+	onAction,
+	truncate = false,
+}: {
+	children: ReactNode
+	actionLabel: string
+	onAction: () => void
+	/** One line, for messages that can run long. */
+	truncate?: boolean
+}) {
+	return (
+		<Alert variant="crit" size="sm" className="mb-3 text-sm">
+			<AlertDescription className={cn("min-w-0 text-destructive", truncate && "block truncate")}>
+				{children}
+			</AlertDescription>
+			<AlertAction>
+				<Button type="button" size="sm" variant="outline" onClick={onAction}>
+					{actionLabel}
+				</Button>
+			</AlertAction>
+		</Alert>
+	)
+}
 
 interface TurnFailureNoticeProps {
 	readonly error: Error
@@ -8,14 +38,8 @@ interface TurnFailureNoticeProps {
 /** An admitted chat turn failed after the user's message reached the server. */
 export function TurnFailureNotice({ error, onContinue }: TurnFailureNoticeProps) {
 	return (
-		<div
-			role="alert"
-			className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
-		>
-			<span className="min-w-0 text-destructive">Response failed — {error.message}</span>
-			<Button type="button" size="sm" variant="outline" onClick={onContinue}>
-				Continue
-			</Button>
-		</div>
+		<ChatFailureNotice actionLabel="Continue" onAction={onContinue}>
+			Response failed: {error.message}
+		</ChatFailureNotice>
 	)
 }

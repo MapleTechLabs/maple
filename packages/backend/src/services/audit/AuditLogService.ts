@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import { AuditLogPersistenceError, CurrentTenant } from "@maple/domain/http"
 import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"

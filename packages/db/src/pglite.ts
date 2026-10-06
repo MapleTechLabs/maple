@@ -2,7 +2,7 @@ import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import type { PGliteInterface } from "@electric-sql/pglite"
 import * as PgliteDrizzle from "drizzle-orm/effect-pglite"
 import { Effect, Layer, type Scope } from "effect"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type { SqlError } from "effect/sql/SqlError"
 import { mapleDrizzleServices } from "./client"
 
 // Kept out of `./client` so the Workers do not bundle the embedded-Postgres driver.

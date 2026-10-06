@@ -39,6 +39,7 @@ import { CloudflareAnalyticsService } from "@maple/backend/services/integrations
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -68,6 +69,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
 export const HttpServicesLive = Layer.mergeAll(
@@ -105,6 +107,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ProductEventsService.layer,
 	DailySpendService.layer,
 	CloudflareAnalyticsService.layer,
+	RailwayMetricsService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
@@ -132,6 +135,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,
 	GithubConnectService.layer,
+	PrReviewAnalyticsService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

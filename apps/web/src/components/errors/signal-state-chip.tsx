@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useNavigate } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
@@ -45,12 +46,12 @@ export function SignalStateChip({
 		return (
 			<span
 				className={cn(
-					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-destructive",
+					"inline-flex max-w-full items-center gap-1.5 text-[11px] font-medium whitespace-nowrap text-severity-error",
 					className,
 				)}
 				title="An incident is open for this error"
 			>
-				<span className="size-1.5 shrink-0 rounded-full bg-destructive" />
+				<StatusDot tone="crit" />
 				<span className="truncate">Open incident</span>
 			</span>
 		)
@@ -107,7 +108,6 @@ export function InvestigationChip({
 }) {
 	const navigate = useNavigate()
 	const label = INVESTIGATION_LABEL[investigation.status]
-	const isLive = investigation.status === "investigating"
 
 	return (
 		// A button, not a link: the whole row is already an anchor to the issue,
@@ -133,12 +133,7 @@ export function InvestigationChip({
 					: `Maple ${label.toLowerCase()}`
 			}
 		>
-			<span
-				className={cn(
-					"size-1.5 shrink-0 rounded-full bg-current",
-					isLive && "motion-safe:animate-pulse",
-				)}
-			/>
+			<StatusDot tone="custom" className="bg-current" />
 			<span className={cn("truncate", compact && "hidden @xl/page:inline")}>{label}</span>
 			{withConfidence && investigation.confidence && investigation.status === "diagnosed" ? (
 				<span className="text-muted-foreground/60">· {investigation.confidence}</span>

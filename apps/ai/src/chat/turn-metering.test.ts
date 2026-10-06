@@ -18,7 +18,8 @@ import {
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { ConfigProvider, Effect, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
 
@@ -41,9 +42,9 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	displayName: "Ada",
 }
 
-const env = { AUTUMN_SECRET_KEY: "sk_test" }
+const config = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "sk_test" }))
 
-const turn = (sessionId: string, messageId: string) => ({ sessionId, messageId, env })
+const turn = (sessionId: string, messageId: string) => ({ sessionId, messageId })
 
 interface Tracked {
 	readonly featureId: string
@@ -68,7 +69,15 @@ beforeEach(() => {
 	tracked = []
 	realFetch = globalThis.fetch
 	globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-		tracked.push(trackedFrom(JSON.parse(typeof init?.body === "string" ? init.body : "{}")))
+		// The HttpClient sends the JSON body as bytes.
+		const body = init?.body
+		const text =
+			typeof body === "string"
+				? body
+				: body instanceof Uint8Array
+					? new TextDecoder().decode(body)
+					: "{}"
+		tracked.push(trackedFrom(JSON.parse(text)))
 		return new Response("{}", { status: 200 })
 	}
 })
@@ -83,7 +92,15 @@ const meter = (
 	input: number,
 	output: number,
 	origin: ChatTurnOrigin = { kind: "app" },
-) => Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }))
+	configLayer: typeof config = config,
+) =>
+	Effect.runPromise(
+		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }).pipe(
+			Effect.provide(configLayer),
+			// Read the global per call: the tests swap `globalThis.fetch`, and the default reference caches it.
+			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
+		),
+	)
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
@@ -188,6 +205,15 @@ describe("meterTurn", () => {
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:input`])
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:output`])
+	})
+
+	it("skips tracking when the secret key is set but blank", async () => {
+		// A blank key reads as unset, as an absent one does: no request with an empty bearer.
+		const blankKey = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "  " }))
+
+		await meter(`${ORG}:default`, "msg-1", 1000, 100, { kind: "app" }, blankKey)
+
+		assert.deepEqual(tracked, [])
 	})
 
 	it("survives a tracker that rejects, rather than failing a delivered answer", async () => {

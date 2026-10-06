@@ -1,16 +1,17 @@
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListContainersResponse } from "@maple/domain/http"
 import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS } from "./primitives/data-table"
+import { ColumnHead, DataTable, ROW_LINK_CLASS, type SortControls } from "@/components/common/data-table"
+import { AvgPeak } from "./primitives/avg-peak"
 import { MeterRows } from "./primitives/meter-rows"
+import { formatWholePercent } from "./format"
 import { MetaLine } from "./primitives/meta-line"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type ContainerRow = ListContainersResponse["data"][number]
 
@@ -27,16 +28,47 @@ interface ContainerTableProps {
 	referenceTime?: string
 }
 
-const formatPct = (fraction: number) => (Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : "—")
-
-/** avg → peak. One number can't distinguish a steady 60% from a spike to 100%. */
-function AvgPeak({ avg, peak, format }: { avg: number; peak: number; format: (n: number) => string }) {
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function ContainerColumns({ sort }: { sort?: Partial<SortControls<ContainerSortKey>> }) {
 	return (
-		<span className="font-mono text-[11px] tabular-nums text-foreground">
-			<span className="text-muted-foreground">{format(avg)}</span>
-			<span className="mx-1 text-foreground/30">→</span>
-			{format(peak)}
-		</span>
+		<>
+			<ColumnHead<ContainerSortKey>
+				label="Container"
+				sortKey="containerName"
+				{...sort}
+				width="w-0 flex-1 min-w-[260px]"
+			/>
+			<ColumnHead<ContainerSortKey>
+				label="Peak saturation"
+				sortKey="saturation"
+				{...sort}
+				width="w-[176px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<ContainerSortKey>
+				label="CPU"
+				sortKey="cpuPct"
+				{...sort}
+				align="right"
+				width="w-[132px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<ContainerSortKey>
+				label="Mem of limit"
+				sortKey="memoryPct"
+				{...sort}
+				align="right"
+				width="w-[120px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<ContainerSortKey>
+				label="Last seen"
+				sortKey="lastSeen"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
 	)
 }
 
@@ -44,11 +76,7 @@ export function ContainerTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Containers">
 			<DataTable.Head>
-				<ColumnHead label="Container" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="Peak saturation" width="w-[176px]" hidden="hidden md:flex" />
-				<ColumnHead label="CPU" align="right" width="w-[132px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Mem of limit" align="right" width="w-[120px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
+				<ContainerColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={6}>
 				<div className="w-0 min-w-[260px] flex-1">
@@ -78,52 +106,7 @@ export function ContainerTable({
 	return (
 		<DataTable.Root ariaLabel="Containers" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead<ContainerSortKey>
-					label="Container"
-					sortKey="containerName"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					width="w-0 flex-1 min-w-[260px]"
-				/>
-				<ColumnHead<ContainerSortKey>
-					label="Peak saturation"
-					sortKey="saturation"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					width="w-[176px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<ContainerSortKey>
-					label="CPU"
-					sortKey="cpuPct"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[132px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<ContainerSortKey>
-					label="Mem of limit"
-					sortKey="memoryPct"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[120px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<ContainerSortKey>
-					label="Last seen"
-					sortKey="lastSeen"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[100px]"
-				/>
+				<ContainerColumns sort={{ currentKey: sortBy, dir: sortDir, onSort: onSortChange }} />
 			</DataTable.Head>
 			{containers.length === 0 && <DataTable.Empty>No containers match your filter.</DataTable.Empty>}
 
@@ -163,25 +146,25 @@ export function ContainerTable({
 						/>
 					</div>
 					<div className="hidden w-[132px] text-right lg:block">
-						<AvgPeak avg={container.cpuPct} peak={container.cpuPctPeak} format={formatPct} />
+						<AvgPeak
+							avg={container.cpuPct}
+							peak={container.cpuPctPeak}
+							format={formatWholePercent}
+						/>
 					</div>
 					<div className="hidden w-[120px] text-right lg:block">
 						<AvgPeak
 							avg={container.memoryPct}
 							peak={container.memoryPctPeak}
-							format={formatPct}
+							format={formatWholePercent}
 						/>
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(container.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{container.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={container.lastSeen}
+							mono
+							className="cursor-default text-[11px] text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}

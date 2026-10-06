@@ -18,11 +18,11 @@
  * the wire and the mode is derived from it server-side. Every mode names an agent, by
  * construction; `agents.test.ts` fails if one is ever added without one.
  */
-import * as Agent from "effect-agent/agent"
-import { AgentPolicy } from "effect-agent/agent-policy"
-import * as Output from "effect-agent/output"
+import * as Agent from "@yielded/agent/agent"
+import { AgentPolicy } from "@yielded/agent/agent-policy"
+import * as Output from "@yielded/agent/output"
 import { Schema } from "effect"
-import type { Toolkit } from "effect/unstable/ai"
+import type { Toolkit } from "effect/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
@@ -33,6 +33,7 @@ import {
 	PR_REPLY_BUDGET,
 	PR_REVIEW_BUDGET,
 	liveContextLimit,
+	MODEL_RETRIES,
 	REPEATED_TOOL_CALLS,
 	TOOL_CONCURRENCY,
 } from "./budgets"
@@ -61,7 +62,14 @@ export interface AgentDefinition {
 	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
 	 */
 	readonly budget: AgentBudget
+	/**
+	 * Which model the agent runs on: `review` is the organization's pick for pull request work
+	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
+	 */
+	readonly model: AgentModel
 }
+
+export type AgentModel = "triage" | "review"
 
 /**
  * Keyed by `ChatMode`, not by `string`: a new mode is then a compile error here rather than an
@@ -74,6 +82,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	alert: {
 		name: "alert",
@@ -81,6 +90,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	"widget-fix": {
 		name: "widget-fix",
@@ -88,6 +98,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	investigate: {
 		name: "investigate",
@@ -97,6 +108,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// further by its origin — see `profileForTurn` in `./profiles`.
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
+		model: "triage",
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -107,6 +119,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// nothing else: every unoffered schema is prompt it does not pay for on each call.
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
+		model: "review",
 	},
 	"pr-reply": {
 		name: "pr-reply",
@@ -115,6 +128,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		permission: DEFAULT_RULESET,
 		autonomousPermission: PR_REPLY_RULESET,
 		budget: PR_REPLY_BUDGET,
+		model: "review",
 	},
 } as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 
@@ -148,6 +162,7 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		completionReserveTokens: budget.completionReserveTokens,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
+		modelRetries: MODEL_RETRIES,
 		// The closing step, as policy: a turn that runs out of turns, or out of tokens, gets one
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.

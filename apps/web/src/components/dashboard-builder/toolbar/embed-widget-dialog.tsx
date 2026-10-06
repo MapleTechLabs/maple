@@ -8,6 +8,8 @@
  * share list is the same atom the board dialog reads, so either side's changes
  * show up in the other.
  */
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useMemo, useState } from "react"
 import { useMountEffect } from "@maple/ui/hooks/use-mount-effect"
 import { Exit } from "effect"
@@ -35,6 +37,7 @@ import {
 import type { DashboardVariable } from "@/components/dashboard-builder/types"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { REFRESH_INTERVAL_OPTIONS } from "@/lib/dashboard-controls/search-params"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import {
@@ -76,7 +79,6 @@ export function EmbedWidgetDialog({
 		mode: "promiseExit",
 	})
 	const [error, setError] = useState<string | null>(null)
-	const [busy, setBusy] = useState(false)
 
 	const shares: ReadonlyArray<ShareRecord> = Result.isSuccess(sharesResult) ? sharesResult.value : []
 	// A list that failed to load must not read as "this board isn't shared":
@@ -92,10 +94,9 @@ export function EmbedWidgetDialog({
 	}
 
 	/** Runs the steps in order, stopping at the first failure. */
-	const run = async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
-		setError(null)
-		setBusy(true)
-		try {
+	const [run, busy] = useAsyncAction(
+		async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
+			setError(null)
 			for (const step of steps) {
 				const result = await step()
 				if (Exit.isFailure(result)) {
@@ -104,10 +105,8 @@ export function EmbedWidgetDialog({
 				}
 			}
 			refreshShares()
-		} finally {
-			setBusy(false)
-		}
-	}
+		},
+	)
 
 	const mintChartLink = () => upsert({ ...request, payload: { mode: "public" } })
 
@@ -158,7 +157,7 @@ export function EmbedWidgetDialog({
 							<EmbedUrlOptions />
 						</>
 					) : error ? null : (
-						<div className="h-8 animate-pulse rounded-lg bg-muted/60 sm:h-7" />
+						<Skeleton className="h-8 rounded-lg sm:h-7" />
 					)}
 					{(listError ?? error) ? (
 						<p className="text-destructive-foreground text-xs">{listError ?? error}</p>
@@ -382,9 +381,9 @@ function EmbedUrlOptions() {
 							{param}
 						</code>
 						<span className="text-muted-foreground">{description}</span>
-						<code className="col-start-3 w-fit max-w-full truncate rounded bg-muted px-1.5 font-mono text-[11px] text-muted-foreground">
+						<InlineCode className="col-start-3 w-fit max-w-full truncate px-1.5 text-[11px] text-muted-foreground">
 							{example}
-						</code>
+						</InlineCode>
 					</li>
 				))}
 			</ul>

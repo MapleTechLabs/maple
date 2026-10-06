@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { toInputSchema } from "../tools/registry"
 import { WarehouseTimeInput } from "@maple/query-engine"
-import { rangeExceededMessage, resolveTimeRange } from "./time"
+import { resolveTimeRange, resolveWindow } from "./time"
 
 const optionalTimeParam = (description: string) =>
 	Schema.optional(WarehouseTimeInput).annotate({ description })
@@ -135,18 +135,62 @@ describe("resolveTimeRange", () => {
 	})
 })
 
-describe("rangeExceededMessage", () => {
-	it("reports what was asked for, the cap, and the way forward", () => {
-		const text = rangeExceededMessage({ maxHours: 24 * 7, requestedHours: 24 * 30 }, "search_traces")
-		expect(text).toContain("search_traces")
-		expect(text).toContain("Requested 30 days")
-		expect(text).toContain("maximum supported range is 7 days")
-		expect(text).toContain("query_data")
+describe("resolveWindow", () => {
+	const NOW = Date.UTC(2026, 7, 20, 17, 4, 5)
+	const resolve = (start?: string, end?: string, maxHours?: number) =>
+		resolveWindow(
+			start === undefined ? undefined : bound(start),
+			end === undefined ? undefined : bound(end),
+			{
+				defaultHours: 6,
+				maxHours,
+				tool: "search_logs",
+			},
+			NOW,
+		)
+
+	it("clamps a future end_time to server now and says so", () => {
+		const result = resolve("2026-08-20 15:00:00", "2026-08-20 18:30:00")
+		expect(result).toMatchObject({
+			_tag: "Resolved",
+			st: "2026-08-20 15:00:00",
+			et: "2026-08-20 17:04:05",
+		})
+		expect(result._tag === "Resolved" && result.notices.join()).toContain("in the future")
 	})
 
-	it("formats sub-day caps as hours", () => {
-		const text = rangeExceededMessage({ maxHours: 6, requestedHours: 48 }, "mine_log_patterns")
-		expect(text).toContain("Requested 2 days")
-		expect(text).toContain("maximum supported range is 6 hours")
+	it("rejects a start_time that is not in the past, naming server now", () => {
+		const result = resolve("2026-08-20 18:00:00")
+		expect(result._tag).toBe("Rejected")
+		expect(result._tag === "Rejected" && result.message).toContain("2026-08-20 17:04:05")
+	})
+
+	it("rejects an inverted window", () => {
+		expect(resolve("2026-08-20 12:00:00", "2026-08-20 10:00:00")._tag).toBe("Rejected")
+	})
+
+	it("warns on a window shorter than a minute", () => {
+		const result = resolve("2026-08-20 15:00:00", "2026-08-20 15:00:14")
+		expect(result._tag === "Resolved" && result.notices.join()).toContain("only 14s wide")
+	})
+
+	it("defaults start_time relative to end_time, not to now", () => {
+		expect(resolve(undefined, "2026-08-19 12:00:00")).toMatchObject({ st: "2026-08-19 06:00:00" })
+	})
+
+	it("clamps an over-cap window to the cap, keeping end_time", () => {
+		const result = resolve("2026-08-07 00:00:00", "2026-08-14 23:59:59", 24 * 7)
+		expect(result).toMatchObject({
+			_tag: "Resolved",
+			st: "2026-08-07 23:59:59",
+			et: "2026-08-14 23:59:59",
+		})
+		const notice = result._tag === "Resolved" ? result.notices.join() : ""
+		expect(notice).toContain("at most 7 days")
+		expect(notice).not.toContain("query_data")
+	})
+
+	it("adds no notice to an ordinary window", () => {
+		expect(resolve("2026-08-20 10:00:00", "2026-08-20 16:00:00", 24)).toMatchObject({ notices: [] })
 	})
 })

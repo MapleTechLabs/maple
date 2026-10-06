@@ -11,6 +11,7 @@ import { LIST_LIMIT_MAX } from "@maple/domain/http/v2"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useDashboardMutationSync } from "@/hooks/use-dashboard-store"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { displayError } from "@/lib/error-messages"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { TemplateList, type ReadinessFilter } from "@/components/dashboard-builder/templates/template-list"
@@ -75,7 +76,6 @@ function TemplatesPage() {
 	})
 	const { prepareForMutation, reconcileTxid } = useDashboardMutationSync()
 
-	const [creating, setCreating] = useState(false)
 	const [query, setQuery] = useState("")
 	const [filter, setFilter] = useState<ReadinessFilter>("all")
 
@@ -113,27 +113,27 @@ function TemplatesPage() {
 		})
 	}
 
-	const createFromTemplate = async (templateId: string, parameters: Record<string, string>) => {
-		setCreating(true)
-		prepareForMutation()
-		const result = await instantiate({
-			params: { template_id: asTemplateId(templateId) },
-			payload: Object.keys(parameters).length > 0 ? { parameters } : {},
-			reactivityKeys: ["dashboards"],
-		})
-		setCreating(false)
+	const [createFromTemplate, creating] = useAsyncAction(
+		async (templateId: string, parameters: Record<string, string>) => {
+			prepareForMutation()
+			const result = await instantiate({
+				params: { template_id: asTemplateId(templateId) },
+				payload: Object.keys(parameters).length > 0 ? { parameters } : {},
+				reactivityKeys: ["dashboards"],
+			})
 
-		if (Exit.isFailure(result)) {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-			return
-		}
+			if (Exit.isFailure(result)) {
+				const { title, message } = displayError(result)
+				toastManager.add({ title, description: message, type: "error" })
+				return
+			}
 
-		const dashboard = result.value
-		void reconcileTxid(dashboard.txid)
-		toastManager.add({ title: `Dashboard "${dashboard.name}" created`, type: "success" })
-		void navigate({ to: "/dashboards/$dashboardId", params: { dashboardId: dashboard.id } })
-	}
+			const dashboard = result.value
+			void reconcileTxid(dashboard.txid)
+			toastManager.add({ title: `Dashboard "${dashboard.name}" created`, type: "success" })
+			void navigate({ to: "/dashboards/$dashboardId", params: { dashboardId: dashboard.id } })
+		},
+	)
 
 	const panel = selected ? (
 		<TemplateDetailPanel
@@ -158,30 +158,19 @@ function TemplatesPage() {
 					<DashboardLayout.Sticky>
 						<DashboardLayout.Header
 							titleContent={
-								<>
-									<DashboardLayout.Title title="Start from a template">
-										Start from a template
-									</DashboardLayout.Title>
-									{/* Lead with how many are usable right now — the catalogue
-									    size is the less interesting half. Readiness fails open,
-									    so until it resolves every template reads as ready;
-									    stating the count then would flash a wrong number. */}
-									{failed || loading || !readinessResolved ? (
-										<DashboardLayout.Description>
-											Pre-built dashboards for services, databases and infrastructure.
-										</DashboardLayout.Description>
-									) : (
-										<div className="mt-1 flex items-center gap-2 text-xs">
-											<span className="text-primary font-mono">
-												{readyCount} ready for your data
-											</span>
-											<span className="text-muted-foreground">·</span>
-											<span className="text-muted-foreground font-mono">
-												{catalogueCount} templates
-											</span>
-										</div>
-									)}
-								</>
+								// Readiness fails open, so until it resolves every template reads as
+								// ready; stating the count then would flash a wrong number.
+								failed || loading || !readinessResolved ? undefined : (
+									<div className="flex items-center gap-2 text-xs">
+										<span className="text-primary font-mono">
+											{readyCount} ready for your data
+										</span>
+										<span className="text-muted-foreground">·</span>
+										<span className="text-muted-foreground font-mono">
+											{catalogueCount} templates
+										</span>
+									</div>
+								)
 							}
 						>
 							<Button

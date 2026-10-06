@@ -16,6 +16,7 @@ import {
 	type QueryEngineExecuteRequest,
 	type QuerySpec,
 	type TimeseriesPoint,
+	type AttributeFilter,
 } from "@maple/domain/query-engine"
 import {
 	QueryEngineTimeoutError,
@@ -525,8 +526,14 @@ const validateTraceAttributeFilters = Effect.fn("QueryEngineService.validateTrac
 		if (query.kind !== "timeseries" && query.kind !== "breakdown") return
 
 		const details: string[] = []
-		if (query.groupBy?.includes("attribute") && !query.filters?.groupByAttributeKeys?.length) {
-			details.push("groupBy=attribute requires filters.groupByAttributeKeys")
+		if (
+			query.groupBy?.includes("attribute") &&
+			!query.filters?.groupByAttributeKeys?.length &&
+			!query.filters?.groupByResourceAttributeKey
+		) {
+			details.push(
+				"groupBy=attribute requires filters.groupByAttributeKeys or filters.groupByResourceAttributeKey",
+			)
 		}
 
 		if (details.length > 0) {
@@ -931,6 +938,9 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 		),
 	)
 
+/** A query `compile` accepts, for helpers generic over its output. */
+type SelectQuery<Output extends Record<string, unknown>> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
+
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.
  * The inner WarehouseQueryService.executeSql span carries the full SQL, fingerprint,
@@ -944,7 +954,7 @@ const executeCHQuery = Effect.fnUntraced(function* <
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHQuery<any, Output> | ((capabilities: WarehouseCapabilities) => CH.CHQuery<any, Output>),
+	query: SelectQuery<Output> | ((capabilities: WarehouseCapabilities) => SelectQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
@@ -1112,6 +1122,7 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 				...options,
 				metricName: query.filters.metricName,
 				metricNames: query.filters.metricNames,
+				metricType: query.filters.metricType,
 				bucketSeconds: range.bucketSeconds,
 			}),
 			params,
@@ -1128,6 +1139,97 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 		contexts.value,
 	)
 	return { kind: "value" as const, rows, groupByKey }
+})
+
+type MetricsBreakdownSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "breakdown" }>
+
+// Previous-sample lookback for a whole-window counter breakdown. A full-window
+// lookback would double the scan; 10 minutes covers common scrape intervals.
+const METRICS_BREAKDOWN_LOOKBACK_SECONDS = 600
+
+const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	tenant: T,
+	query: MetricsBreakdownSpec,
+	range: { readonly startTime: string; readonly endTime: string; readonly rangeSeconds: number },
+) {
+	const filters = query.filters
+	const groupByAttributeKey = query.groupBy === "attribute" ? filters.groupByAttributeKey : undefined
+	const groupByResourceAttributeKey =
+		query.groupBy === "resource_attribute" ? filters.groupByResourceAttributeKey : undefined
+	const attributeFilter = filters.attributeFilters?.[0]
+	const shared = {
+		serviceName: filters.serviceName,
+		environments: filters.environments,
+		groupByAttributeKey,
+		groupByResourceAttributeKey,
+		attributeKey: attributeFilter?.key,
+		attributeValue: attributeFilter?.value,
+		resourceAttributeFilters: filters.resourceAttributeFilters,
+	}
+	const params = {
+		orgId: tenant.orgId,
+		metricName: filters.metricName,
+		startTime: range.startTime,
+		endTime: range.endTime,
+	}
+
+	const metric = query.metric
+	if (metric === "rate" || metric === "increase") {
+		// One bucket spanning the window, then folded per group: the same
+		// per-series, reset-aware deltas as the timeseries.
+		const windowSeconds = Math.max(1, Math.ceil(range.rangeSeconds))
+		const rows = yield* executeCHQuery(
+			warehouse,
+			tenant,
+			CH.metricsTimeseriesRateQuery({
+				...shared,
+				metricName: filters.metricName,
+				metricNames: filters.metricNames,
+				metricType: filters.metricType,
+				bucketSeconds: windowSeconds,
+				lookbackSeconds: METRICS_BREAKDOWN_LOOKBACK_SECONDS,
+			}),
+			{ ...params, bucketSeconds: windowSeconds },
+			"metricsBreakdownRateIncrease",
+		)
+		const totals = new Map<string, number>()
+		for (const row of rows) {
+			const name =
+				groupByAttributeKey || groupByResourceAttributeKey ? row.attributeValue : row.serviceName
+			if (name === "") continue
+			totals.set(name, (totals.get(name) ?? 0) + Number(row.increaseValue))
+		}
+		return [...totals]
+			.map(([name, increase]) => ({
+				name,
+				value: metric === "rate" ? increase / windowSeconds : increase,
+			}))
+			.sort((a, b) => b.value - a.value)
+			.slice(0, query.limit ?? 10)
+	}
+
+	const rows = yield* executeCHQuery(
+		warehouse,
+		tenant,
+		CH.metricsBreakdownQuery({
+			...shared,
+			metricType: filters.metricType,
+			rankBy: metric,
+			limit: query.limit,
+		}),
+		params,
+		"metricsBreakdown",
+	)
+	const valueField = {
+		avg: "avgValue",
+		sum: "sumValue",
+		min: "minValue",
+		max: "maxValue",
+		count: "count",
+	} as const
+	const field = valueField[metric]
+	return rows.map((row) => ({ name: row.name, value: Number(row[field]) }))
 })
 
 /** Same as executeCHQuery but for union queries. */
@@ -1231,13 +1333,7 @@ function resolveAttributeScope(
 	return scope === "resource" ? "resource" : "span"
 }
 
-type AttrFilterArray = Array<{
-	key: string
-	value?: string
-	values?: readonly string[]
-	mode: "equals" | "exists" | "gt" | "gte" | "lt" | "lte" | "contains" | "in"
-	negated?: boolean
-}>
+type AttrFilterArray = Array<AttributeFilter>
 
 function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 	return {
@@ -1264,6 +1360,7 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 		attributeFilters: filters?.attributeFilters as AttrFilterArray | undefined,
 		resourceAttributeFilters: filters?.resourceAttributeFilters as AttrFilterArray | undefined,
 		groupByAttributeKeys: filters?.groupByAttributeKeys as string[] | undefined,
+		groupByResourceAttributeKey: filters?.groupByResourceAttributeKey as string | undefined,
 		excludedServiceNames: filters?.excludedServiceNames as readonly string[] | undefined,
 		excludedSpanNames: filters?.excludedSpanNames as readonly string[] | undefined,
 		excludedEnvironments: filters?.excludedEnvironments as readonly string[] | undefined,
@@ -1277,8 +1374,12 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
  * TracesFilters stores http filters as attributeFilters entries; facets opts want them as top-level fields.
  */
 function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): CH.TracesFacetsOpts {
-	const attrFilters = (filters?.attributeFilters ?? []) as AttrFilterArray
-	const resFilters = (filters?.resourceAttributeFilters ?? []) as AttrFilterArray
+	// Facet opts take single filters; an `(a OR b)` group has no such shape, so
+	// facet counts ignore it rather than read one member as the whole filter.
+	const attrFilters = ((filters?.attributeFilters ?? []) as AttrFilterArray).filter((f) => !f.or?.length)
+	const resFilters = ((filters?.resourceAttributeFilters ?? []) as AttrFilterArray).filter(
+		(f) => !f.or?.length,
+	)
 
 	// Positive http filters arrive either as a single `equals` or, when the user
 	// ticks several facet values, as one `in` carrying the whole set. Negated
@@ -1425,7 +1526,7 @@ const isMissingTraceFacetsRollup = (error: unknown): boolean => {
  * Only a read that actually included the rollup can be missing it.
  */
 const withTraceFacetsFallback = <A, E, R>(
-	orgId: string,
+	orgId: OrgId,
 	usesRollup: boolean,
 	run: (rawOnly: boolean) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -1780,6 +1881,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						groupBy: tracesQuery.groupBy,
 						groupByAttributeKey:
 							tracesQuery.groupBy === "attribute" ? opts.groupByAttributeKeys?.[0] : undefined,
+						groupByResourceAttributeKey:
+							tracesQuery.groupBy === "attribute"
+								? opts.groupByResourceAttributeKey
+								: undefined,
 						limit: tracesQuery.limit,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
@@ -1851,51 +1956,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		if (request.query.source === "metrics" && request.query.kind === "breakdown") {
-			const rows = yield* executeCHQuery(
-				warehouse,
-				tenant,
-				CH.metricsBreakdownQuery({
-					metricType: request.query.filters.metricType,
-					...(request.query.groupBy === "attribute" && request.query.filters.groupByAttributeKey
-						? {
-								groupByAttributeKey: request.query.filters.groupByAttributeKey,
-							}
-						: undefined),
-					...(request.query.groupBy === "resource_attribute" &&
-					request.query.filters.groupByResourceAttributeKey
-						? {
-								groupByResourceAttributeKey:
-									request.query.filters.groupByResourceAttributeKey,
-							}
-						: undefined),
-					resourceAttributeFilters: request.query.filters.resourceAttributeFilters,
-					limit: request.query.limit,
-				}),
-				{
-					orgId: tenant.orgId,
-					metricName: request.query.filters.metricName,
-					startTime: request.startTime,
-					endTime: request.endTime,
-				},
-				"metricsBreakdown",
-			)
-
-			const valueFieldMap = {
-				avg: "avgValue",
-				sum: "sumValue",
-				count: "count",
-			} as const
-			const valueField = valueFieldMap[request.query.metric]
-
+			const data = yield* executeMetricsBreakdownRows(warehouse, tenant, request.query, {
+				startTime: request.startTime,
+				endTime: request.endTime,
+				rangeSeconds: range.rangeSeconds,
+			})
 			return new QueryEngineExecuteResponse({
-				result: {
-					kind: "breakdown",
-					source: "metrics",
-					data: rows.map((row) => ({
-						name: row.name,
-						value: Number(row[valueField]),
-					})),
-				},
+				result: { kind: "breakdown", source: "metrics", data },
 			})
 		}
 

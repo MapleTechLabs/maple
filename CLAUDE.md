@@ -10,7 +10,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 - `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
   imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
-`@maple-dev/effect-clickhouse` lives in the separate effect-clickhouse repo; change it there.
+`@maple-dev/effect-orm` lives in the separate effect-orm repo; change it there.
 
 ## Commands
 
@@ -36,7 +36,7 @@ with `packageManager`.
   `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding; OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
   planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
-- LLM code (Effect AI + `effect-agent`) is only in `apps/ai`; Maple-specific wiring lives in
+- LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
 

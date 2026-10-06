@@ -17,8 +17,7 @@
  * close-event teardown is best-effort only (GitHub creates no `closed` run for
  * conflicted PRs; close runs execute the PR branch's own old workflow version;
  * post-close redeploys recreate resources) — the scheduled
- * cleanup-preview-orphans workflow runs `sweep` as the safety net, mirroring
- * scripts/planetscale-pr-branch.ts.
+ * cleanup-preview-orphans workflow runs `sweep` as the safety net.
  *
  * Auth: the PARENT (prod) workspace host+token arrive via the incoming
  * TINYBIRD_HOST / TINYBIRD_TOKEN (Infisical `dev` environment). They drive the
@@ -200,8 +199,7 @@ const down = (branchName: string): void => {
 /**
  * PR state via the GitHub REST API. Returns "unknown" when no token/repo is
  * available (local runs) or the API call fails — callers must treat "unknown"
- * as "don't block", never as "closed". Same contract as
- * scripts/planetscale-pr-branch.ts.
+ * as "don't block", never as "closed".
  */
 const fetchPrState = async (prNumber: string): Promise<"open" | "closed" | "unknown"> => {
 	const repo = process.env.GITHUB_REPOSITORY?.trim()

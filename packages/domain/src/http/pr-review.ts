@@ -63,6 +63,7 @@ export const PrReviewFailureReason = Schema.Literals([
 	"model_error",
 	"agent_error",
 	"no_report",
+	"interrupted",
 ]).annotate({ identifier: "@maple/PrReviewFailureReason", title: "Pull Request Review Failure Reason" })
 export type PrReviewFailureReason = Schema.Schema.Type<typeof PrReviewFailureReason>
 
@@ -77,6 +78,7 @@ export const PR_REVIEW_FAILURE_COPY = {
 	model_error: "The model provider returned an error.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
+	interrupted: "Maple was restarted while it ran, more than once. Ask again with @maple review.",
 } as const satisfies Record<PrReviewFailureReason, string>
 
 const isFailureReason = Schema.is(PrReviewFailureReason)
@@ -184,6 +186,26 @@ export const PrReviewFeedbackScope = Schema.Literals(["organization", "repositor
 export type PrReviewFeedbackScope = Schema.Schema.Type<typeof PrReviewFeedbackScope>
 
 /**
+ * The models an organization may pick for its reviews and replies, as OpenRouter ids. `eu` marks
+ * a model the EU instance serves; there, a pick without it reviews on the region's default.
+ */
+export const PR_REVIEW_MODELS = [
+	{ id: "deepseek/deepseek-v4.1-flash:nitro", label: "DeepSeek V4.1 Flash", eu: false },
+	{ id: "z-ai/glm-5.3-flash:nitro", label: "GLM 5.3 Flash", eu: false },
+	{ id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", eu: false },
+	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },
+	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", eu: true },
+	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", eu: true },
+	{ id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", eu: true },
+] as const
+
+export const PrReviewModel = Schema.Literals(PR_REVIEW_MODELS.map((model) => model.id)).annotate({
+	identifier: "@maple/PrReviewModel",
+	title: "Pull Request Review Model",
+})
+export type PrReviewModel = Schema.Schema.Type<typeof PrReviewModel>
+
+/**
  * Per-repository review settings. Every field is optional so a repository with none set reviews
  * with the defaults: every lens, no ignored paths, drafts skipped, notes posted.
  */
@@ -212,6 +234,49 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	 */
 	feedbackScope: Schema.optionalKey(PrReviewFeedbackScope),
 }) {}
+
+/** Organization-wide review settings; absent fields use the deployment's defaults. */
+export class PrReviewOrgSettings extends Schema.Class<PrReviewOrgSettings>("PrReviewOrgSettings")({
+	model: Schema.optionalKey(PrReviewModel),
+	/** Rules every repository starts from; a repository's own config overrides field by field. */
+	defaults: Schema.optionalKey(PrReviewRepositoryConfig),
+}) {}
+
+/**
+ * The config a review of one repository runs with: the repository's fields over the
+ * organization's. Instructions and ignored paths add up rather than replace, so a repository can
+ * only narrow what the organization asked for. Built unchecked: the sum can pass a single field's
+ * length cap, which bounds what one form saves, not what a review reads.
+ */
+export const mergePrReviewConfig = (
+	defaults: PrReviewRepositoryConfig | undefined,
+	repository: PrReviewRepositoryConfig,
+): PrReviewRepositoryConfig => {
+	if (defaults === undefined) return repository
+	const instructions = [defaults.instructions, repository.instructions]
+		.map((text) => text?.trim())
+		.filter((text): text is string => text !== undefined && text !== "")
+	const ignorePaths = [...new Set([...(defaults.ignorePaths ?? []), ...(repository.ignorePaths ?? [])])]
+	const pick = <K extends keyof PrReviewRepositoryConfig>(key: K) =>
+		repository[key] !== undefined
+			? { [key]: repository[key] }
+			: defaults[key] !== undefined
+				? { [key]: defaults[key] }
+				: undefined
+	return new PrReviewRepositoryConfig(
+		{
+			...(instructions.length > 0 ? { instructions: instructions.join("\n\n") } : undefined),
+			...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
+			...pick("categories"),
+			...pick("minInlineSeverity"),
+			...pick("reviewDrafts"),
+			...pick("dailyLimit"),
+			...pick("automaticReviewLimit"),
+			...pick("feedbackScope"),
+		},
+		{ disableChecks: true },
+	)
+}
 
 /** The stored review: the shape a reader can rely on. */
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({
@@ -706,11 +771,29 @@ export type PrReviewReplyCommand = Schema.Schema.Type<typeof PrReviewReplyComman
 export const PrReviewReplyStatus = Schema.Literals(["queued", "running", "completed", "failed", "skipped"])
 export type PrReviewReplyStatus = Schema.Schema.Type<typeof PrReviewReplyStatus>
 
+/** How copy addresses the reviewer when the install has no App slug configured. */
+export const DEFAULT_REVIEWER_MENTION = "@maple"
+
 /**
- * How a comment addresses the reviewer: `@maple`, or the hosted App's own login. Not `@maple-dev`
- * or `@maplefoo`, and not inside an email address or a path.
+ * The reviewer's handle as people should type it: the App's own login, which GitHub autocompletes,
+ * so each install names its own App rather than someone else's account.
  */
-const MENTION = /(^|[^\w@./-])@maple(?:labsapp)?(?![\w-])/i
+export const reviewerMention = (appSlug: string | undefined): string =>
+	appSlug === undefined || appSlug.trim() === "" ? DEFAULT_REVIEWER_MENTION : `@${appSlug.trim()}`
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/**
+ * How a comment addresses the reviewer: `@maple`, the hosted App's login, or this install's own
+ * (`mention`). Not `@maple-dev` or `@maplefoo`, and not inside an email address or a path.
+ */
+const mentionPattern = (mention: string | undefined): RegExp => {
+	const handles = ["maple", "maplelabsapp"]
+	const own = mention?.replace(/^@/, "")
+	if (own !== undefined && own !== "" && !handles.includes(own.toLowerCase()))
+		handles.push(escapeRegExp(own))
+	return new RegExp(`(^|[^\\w@./-])@(?:${handles.join("|")})(?![\\w-])`, "i")
+}
 
 /** The comment without quoted lines or fenced code: a quote-reply of `@maple fix` is not a new request. */
 const addressedText = (body: string): string =>
@@ -721,7 +804,8 @@ const addressedText = (body: string): string =>
 		.join("\n")
 
 /** Whether a comment mentions the reviewer at all, outside quotes and code. */
-export const mentionsReviewer = (body: string): boolean => MENTION.test(addressedText(body))
+export const mentionsReviewer = (body: string, mention?: string): boolean =>
+	mentionPattern(mention).test(addressedText(body))
 
 /**
  * The command a mention carries: the first word after it, `review` or `fix`, else a question.
@@ -729,9 +813,10 @@ export const mentionsReviewer = (body: string): boolean => MENTION.test(addresse
  */
 export const parseReplyCommand = (
 	body: string,
+	mention?: string,
 ): { readonly command: PrReviewReplyCommand; readonly text: string } => {
 	const cleaned = addressedText(body)
-	const match = MENTION.exec(cleaned)
+	const match = mentionPattern(mention).exec(cleaned)
 	const word =
 		match === null ? undefined : /^\s*([a-z]+)\b/i.exec(cleaned.slice(match.index + match[0].length))?.[1]
 	const command: PrReviewReplyCommand =

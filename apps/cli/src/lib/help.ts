@@ -5,7 +5,7 @@
 // one-line usage pointer on stderr.
 
 import type * as Console from "effect/Console"
-import * as CliOutput from "effect/unstable/cli/CliOutput"
+import * as CliOutput from "effect/cli/CliOutput"
 
 /** `error: <message>`, with the parser's "Did you mean this?" folded into a hint line. */
 export const formatParseError = (message: string): string => {

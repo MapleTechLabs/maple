@@ -1,14 +1,4 @@
-import { useState } from "react"
-
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
-import { EyeIcon } from "@/components/icons"
-import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { maskKey } from "@maple/ui/components/ui/copyable-field"
+import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 
 interface ApiKeySecretRevealProps {
 	secret: string
@@ -16,35 +6,13 @@ interface ApiKeySecretRevealProps {
 
 /**
  * Read-only reveal of a freshly minted API key secret, shown once at create/roll
- * time. Masked by default behind an eye toggle (same idiom as the ingest key
- * fields); copy always copies the full secret. Shared by the create and roll
- * dialogs so the "copy it now, you won't see it again" UX stays identical.
+ * time. Masked by default behind an eye toggle; copy always copies the full secret.
+ * Shared by the create and roll dialogs so the "copy it now" UX stays identical.
  */
 export function ApiKeySecretReveal({ secret }: ApiKeySecretRevealProps) {
-	const [isVisible, setIsVisible] = useState(false)
-
 	return (
 		<div className="space-y-3">
-			<InputGroup>
-				<InputGroupInput
-					readOnly
-					value={isVisible ? secret : maskKey(secret)}
-					className={
-						isVisible
-							? "font-mono text-xs tracking-wide select-all"
-							: "font-mono text-xs tracking-wide"
-					}
-				/>
-				<InputGroupAddon align="inline-end">
-					<InputGroupButton
-						onClick={() => setIsVisible((v) => !v)}
-						aria-label={isVisible ? "Hide key" : "Reveal key"}
-					>
-						<EyeIcon size={14} className={isVisible ? "text-foreground" : undefined} />
-					</InputGroupButton>
-					<CopyButton value={secret} label="API key" render={<InputGroupButton />} />
-				</InputGroupAddon>
-			</InputGroup>
+			<CopyableField value={secret} copyLabel="API key" masked />
 			<p className="text-muted-foreground text-xs">
 				Store this key in a secure location. It will not be shown again.
 			</p>

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Kbd } from "@maple/ui/components/ui/kbd"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
@@ -56,10 +57,7 @@ export function TimeRangeLab() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Time range picker"
-							description="Presets, shorthand, custom range, and the timezone selector, over local state."
-						>
+						<DashboardLayout.Header>
 							<TimeRangePicker
 								startTime={range.startTime}
 								endTime={range.endTime}
@@ -85,8 +83,8 @@ export function TimeRangeLab() {
 								))}
 							</dl>
 							<p className="mt-3 text-xs text-muted-foreground">
-								Press <kbd className="rounded border px-1 font-mono">D</kbd> to open the
-								picker. The timezone choice is stored in localStorage and applies app-wide.
+								Press <Kbd>D</Kbd> to open the picker. The timezone choice is stored in
+								localStorage and applies app-wide.
 							</p>
 						</div>
 					</DashboardLayout.Scroll>

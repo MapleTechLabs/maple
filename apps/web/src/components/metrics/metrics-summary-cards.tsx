@@ -1,36 +1,19 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatNumber } from "@maple/ui/lib/format"
-import { Result, useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
-import { PlusIcon, ChartLineIcon, ChartBarIcon, ChartBarTrendUpIcon } from "@/components/icons"
+import { useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import { ErrorState } from "@/components/common/error-state"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ResultView } from "@/components/common/result-view"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { type ListMetricsInput } from "@/api/warehouse/metrics"
 import { getMetricsSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 export type MetricType = ListMetricsInput["metricType"]
 
 const cardConfig = [
-	{
-		title: "Sum Metrics",
-		key: "sum" as const,
-		icon: PlusIcon,
-	},
-	{
-		title: "Gauge Metrics",
-		key: "gauge" as const,
-		icon: ChartLineIcon,
-	},
-	{
-		title: "Histogram",
-		key: "histogram" as const,
-		icon: ChartBarIcon,
-	},
-	{
-		title: "Exp Histogram",
-		key: "exponential_histogram" as const,
-		icon: ChartBarTrendUpIcon,
-	},
+	{ title: "Sum Metrics", key: "sum" as const },
+	{ title: "Gauge Metrics", key: "gauge" as const },
+	{ title: "Histogram", key: "histogram" as const },
+	{ title: "Exp Histogram", key: "exponential_histogram" as const },
 ]
 
 interface MetricsSummaryCardsProps {
@@ -50,75 +33,46 @@ export function MetricsSummaryCards({
 	const summaryResult = useAtomValue(summaryAtom)
 	const refreshSummary = useAtomRefresh(summaryAtom)
 
-	return Result.builder(summaryResult)
-		.onInitial(() => (
-			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-				{cardConfig.map((card) => (
-					<Card key={card.title}>
-						<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
-							<Skeleton className="h-4 w-24" />
-							<Skeleton className="size-4" />
-						</CardHeader>
-						<CardContent>
-							<Skeleton className="h-8 w-20" />
-						</CardContent>
-					</Card>
-				))}
-			</div>
-		))
-		.onError((error) => (
-			<ErrorState
-				variant="inline"
-				error={error}
-				title="Failed to load metrics summary"
-				onRetry={refreshSummary}
-			/>
-		))
-		.onSuccess((response, result) => {
-			const summaryByType = response.data.reduce(
-				(acc, item) => {
-					acc[item.metricType] = {
-						metricCount: item.metricCount,
-						dataPointCount: item.dataPointCount,
-					}
-					return acc
-				},
-				{} as Record<string, { metricCount: number; dataPointCount: number }>,
-			)
+	return (
+		<ResultView
+			result={summaryResult}
+			loading={<StatRailLoading />}
+			errorVariant="inline"
+			errorTitle="Failed to load metrics summary"
+			onRetry={refreshSummary}
+		>
+			{(response, { waiting }) => {
+				const summaryByType = response.data.reduce(
+					(acc, item) => {
+						acc[item.metricType] = {
+							metricCount: item.metricCount,
+							dataPointCount: item.dataPointCount,
+						}
+						return acc
+					},
+					{} as Record<string, { metricCount: number; dataPointCount: number }>,
+				)
 
-			return (
-				<div
-					className={`grid gap-4 md:grid-cols-2 lg:grid-cols-4 ${result.waiting ? "opacity-60" : ""}`}
-				>
-					{cardConfig.map((card) => {
-						const data = summaryByType[card.key]
-						const isSelected = selectedType === card.key
-
-						return (
-							<Card
-								key={card.title}
-								className={`cursor-pointer transition-colors ${
-									isSelected ? "ring-2 ring-primary" : "hover:bg-muted/50"
-								}`}
-								onClick={() => onSelectType(isSelected ? null : card.key)}
-							>
-								<CardHeader className="flex flex-row items-center justify-between gap-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">{card.title}</CardTitle>
-									<card.icon size={16} className="text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="text-2xl font-bold">
-										{formatNumber(data?.dataPointCount ?? 0)}
-									</div>
-									<p className="text-xs text-muted-foreground">
-										{data?.metricCount ?? 0} unique metrics
-									</p>
-								</CardContent>
-							</Card>
-						)
-					})}
-				</div>
-			)
-		})
-		.render()
+				return (
+					<StatRail className={refreshingClass(waiting)}>
+						{cardConfig.map((card) => {
+							const data = summaryByType[card.key]
+							const isSelected = selectedType === card.key
+							return (
+								<StatRailItem
+									key={card.key}
+									eyebrow={card.title}
+									value={formatNumber(data?.dataPointCount ?? 0)}
+									subline={`${data?.metricCount ?? 0} unique metrics`}
+									compact
+									selected={isSelected}
+									onSelect={() => onSelectType(isSelected ? null : card.key)}
+								/>
+							)
+						})}
+					</StatRail>
+				)
+			}}
+		</ResultView>
+	)
 }

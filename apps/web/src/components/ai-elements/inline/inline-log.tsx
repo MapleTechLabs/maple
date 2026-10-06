@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import type { InlineLogData } from "@maple/domain/chat-annotations"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { INLINE_CARD_ROW, inlineCardClass } from "./inline-card"
 
@@ -19,9 +20,9 @@ export function InlineLog({ data }: { data: InlineLogData }) {
 						{data.serviceName}
 					</span>
 				)}
-				<span className="min-w-0 flex-1 truncate text-xs text-foreground" title={data.body}>
+				<TruncatedText text={data.body} className="flex-1 text-xs text-foreground">
 					{data.body}
-				</span>
+				</TruncatedText>
 				{data.timestamp && (
 					<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
 						{new Date(normalizeTimestampInput(data.timestamp)).toLocaleTimeString()}

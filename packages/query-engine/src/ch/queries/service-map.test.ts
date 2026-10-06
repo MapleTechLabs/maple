@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
@@ -16,6 +16,7 @@ import {
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
 import { ServiceMapEdgesHourly } from "../tables"
 import { DB_NAMESPACE_ATTR_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
+import { OrgId } from "@maple/domain"
 
 // The read side must derive `DbNamespace` byte-identically to the write side's
 // `DB_NAMESPACE_ATTR_SQL` (Hyperdrive-collapsing coalesce) or the sealed-hour and
@@ -24,11 +25,16 @@ import { DB_NAMESPACE_ATTR_SQL } from "@maple/domain/tinybird/db-query-shape-sql
 //
 // Sealed rows already store the collapsed value, but pre-migration rows still hold
 // the raw Hyperdrive hex, so the sealed column is re-collapsed on read too:
-const SEALED_NAMESPACE_COLLAPSE =
-	"if(match(DbNamespace, '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', DbNamespace)"
+const sealedNamespaceCollapse = (table: string) =>
+	`if(match(${table}.DbNamespace, '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', ${table}.DbNamespace)`
+const SEALED_DB_EDGES = sealedNamespaceCollapse("service_map_db_edges_hourly")
+const SEALED_DB_QUERIES = sealedNamespaceCollapse("service_map_db_query_shapes_hourly")
+
+// The builder qualifies source columns; the shared write-side fragment does not.
+const RAW_NAMESPACE = DB_NAMESPACE_ATTR_SQL.replace(/(?<![\w.])SpanAttributes\b/g, "traces.SpanAttributes")
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -112,7 +118,7 @@ describe("serviceExternalEdgesSQL", () => {
 		)
 		expect(sql).toContain("DeploymentEnv = 'production'")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) = 'production'",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'",
 		)
 	})
 
@@ -126,7 +132,10 @@ describe("serviceExternalEdgesSQL", () => {
 
 	it("escapes single quotes in serviceName / orgId to prevent SQL injection", () => {
 		const { sql } = Effect.runSync(
-			serviceExternalEdgesSQL({ serviceName: "weird'service" }, { ...baseParams, orgId: "org'attack" }),
+			serviceExternalEdgesSQL(
+				{ serviceName: "weird'service" },
+				{ ...baseParams, orgId: OrgId.make("org'attack") },
+			),
 		)
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 		expect(sql).toContain("OrgId = 'org\\'attack'")
@@ -190,7 +199,7 @@ describe("serviceExternalEdgesSQL", () => {
 
 describe("serviceMapResolutionsRollupSQL", () => {
 	const hourParams = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		hourStart: "2024-01-01 00:00:00",
 		hourEnd: "2024-01-01 01:00:00",
 	}
@@ -256,7 +265,7 @@ describe("serviceDependenciesSQL", () => {
 			serviceDependenciesSQL(
 				{},
 				{
-					orgId: "org_1",
+					orgId: OrgId.make("org_1"),
 					startTime: "2024-01-01 10:15:00",
 					endTime: "2024-01-01 12:30:00",
 				},
@@ -345,7 +354,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 	const compiledRollup = () =>
 		Effect.runSync(
 			serviceMapEdgesRollupSQL({
-				orgId: "org_1",
+				orgId: OrgId.make("org_1"),
 				hourStart: "2024-01-01 10:00:00",
 				hourEnd: "2024-01-01 11:00:00",
 			}),
@@ -375,7 +384,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 				rangeEnd: toDateTime(param.dateTimeString("hourEnd")),
 				parentServiceName: "web",
 			}),
-			{ orgId: "org_1", hourStart: "2024-01-01 10:00:00", hourEnd: "2024-01-01 11:00:00" },
+			{ orgId: OrgId.make("org_1"), hourStart: "2024-01-01 10:00:00", hourEnd: "2024-01-01 11:00:00" },
 		)
 		// Inside the parent subquery — before the JOIN — so ClickHouse can skip
 		// the full Client/Producer scan rather than filtering after the join.
@@ -386,7 +395,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 describe("serviceDependenciesForServiceQuery", () => {
 	it("keeps partial start and end hours outside the hourly rollup", () => {
 		const { sql } = compileUnsafe(serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }), {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2024-01-01 10:15:00",
 			endTime: "2024-01-01 12:30:00",
 		})
@@ -503,9 +512,9 @@ describe("serviceDbEdgesForServiceQuery", () => {
 	it("splits database nodes by namespace on both branches, collapsing Hyperdrive (org-wide SQL)", () => {
 		const { sql } = Effect.runSync(serviceDbEdgesSQL({}, baseParams))
 		// hourly branch reads the rollup's stored dimension, re-collapsing pre-migration hex…
-		expect(sql).toContain(`${SEALED_NAMESPACE_COLLAPSE} AS dbNamespace`)
+		expect(sql).toContain(`${SEALED_DB_EDGES} AS dbNamespace`)
 		// …the raw branch derives the SAME identity via the shared write-side fragment
-		expect(sql).toContain(`${DB_NAMESPACE_ATTR_SQL} AS dbNamespace`)
+		expect(sql).toContain(`${RAW_NAMESPACE} AS dbNamespace`)
 		// …and every GROUP BY carries it so distinct databases stay distinct rows
 		const matches = sql.match(/GROUP BY sourceService, dbSystem, dbNamespace/g)
 		expect(matches?.length).toBe(3)
@@ -547,7 +556,7 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain("SpanKind IN ('Client', 'Producer')")
 		// Same stable→legacy coalesce as the MV write side (DB_SYSTEM_ATTR_SQL).
 		expect(sql).toContain(
-			"coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) != ''",
+			"coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''",
 		)
 	})
 
@@ -575,7 +584,7 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		)
 		expect(sql).toContain("DeploymentEnv = 'production'")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) = 'production'",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'",
 		)
 	})
 
@@ -628,10 +637,10 @@ describe("service-map database query summaries", () => {
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("ServiceName = 'artifacts-api'")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) = 'production'",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'",
 		)
 		expect(sql).toContain(
-			"coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = 'postgresql'",
+			"coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql'",
 		)
 	})
 
@@ -650,7 +659,9 @@ describe("service-map database query summaries", () => {
 
 	it("buckets sub-hour query activity from raw traces (rollup can't serve <1h buckets)", () => {
 		const { sql } = Effect.runSync(serviceDbQueryTimeseriesSQL(params)) // bucketSeconds: 300
-		expect(sql).toContain("toStartOfInterval(toDateTime(Timestamp), INTERVAL 300 SECOND) AS bucket")
+		expect(sql).toContain(
+			"toStartOfInterval(toDateTime(traces.Timestamp), INTERVAL 300 SECOND) AS bucket",
+		)
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("service_map_db_query_shapes_hourly")
 		expect(sql).toContain("GROUP BY bucket")
@@ -661,7 +672,9 @@ describe("service-map database query summaries", () => {
 	it("serves hour-aligned query activity from the rollup + raw union", () => {
 		const { sql } = Effect.runSync(serviceDbQueryTimeseriesSQL({ ...params, bucketSeconds: 3600 }))
 		expect(sql).toContain("FROM service_map_db_query_shapes_hourly")
-		expect(sql).toContain("toStartOfInterval(Hour, INTERVAL 3600 SECOND) AS bucket")
+		expect(sql).toContain(
+			"toStartOfInterval(service_map_db_query_shapes_hourly.Hour, INTERVAL 3600 SECOND) AS bucket",
+		)
 		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles)")
 	})
@@ -710,23 +723,23 @@ describe("service-map database query summaries", () => {
 	it("scopes to one database identity when dbNamespace is set (rollup + raw branches)", () => {
 		const { sql } = Effect.runSync(serviceDbQuerySummarySQL({ ...params, dbNamespace: "orders" }))
 		// sealed rollup branch filters the stored dimension (re-collapsed)…
-		expect(sql).toContain(`${SEALED_NAMESPACE_COLLAPSE} = 'orders'`)
+		expect(sql).toContain(`${SEALED_DB_QUERIES} = 'orders'`)
 		// …the raw branch filters via the shared identity fragment
-		expect(sql).toContain(`${DB_NAMESPACE_ATTR_SQL} = 'orders'`)
+		expect(sql).toContain(`${RAW_NAMESPACE} = 'orders'`)
 	})
 
 	it("treats dbNamespace='' as the legacy/unknown node and undefined as unscoped", () => {
 		const scoped = Effect.runSync(serviceDbQuerySummarySQL({ ...params, dbNamespace: "" })).sql
-		expect(scoped).toContain(`${SEALED_NAMESPACE_COLLAPSE} = ''`)
+		expect(scoped).toContain(`${SEALED_DB_QUERIES} = ''`)
 		const unscoped = Effect.runSync(serviceDbQuerySummarySQL(params)).sql
-		expect(unscoped).not.toContain(`${SEALED_NAMESPACE_COLLAPSE} = `)
+		expect(unscoped).not.toContain(`${SEALED_DB_QUERIES} = `)
 	})
 
 	it("scopes hour-aligned timeseries and top-queries to dbNamespace on both branches", () => {
 		// Both sibling builders must thread the same filter as the summary — a
 		// regression here silently widens the panel to every database of the system.
 		// (Sub-hour timeseries is raw-only, covered separately below.)
-		const namespaceCoalesce = `${DB_NAMESPACE_ATTR_SQL} = 'orders'`
+		const namespaceCoalesce = `${RAW_NAMESPACE} = 'orders'`
 		const timeseries = Effect.runSync(
 			serviceDbQueryTimeseriesSQL({
 				...params,
@@ -736,7 +749,7 @@ describe("service-map database query summaries", () => {
 		).sql
 		const topQueries = Effect.runSync(serviceDbTopQueriesSQL({ ...params, dbNamespace: "orders" })).sql
 		for (const sql of [timeseries, topQueries]) {
-			expect(sql).toContain(`${SEALED_NAMESPACE_COLLAPSE} = 'orders'`) // sealed rollup branch
+			expect(sql).toContain(`${SEALED_DB_QUERIES} = 'orders'`) // sealed rollup branch
 			expect(sql).toContain(namespaceCoalesce) // raw in-progress-hour branch
 		}
 	})
@@ -748,7 +761,7 @@ describe("service-map database query summaries", () => {
 			serviceDbQueryTimeseriesSQL({ ...params, dbNamespace: "orders", bucketSeconds: 300 }),
 		)
 		expect(sql).not.toContain("service_map_db_query_shapes_hourly")
-		expect(sql).toContain(`${DB_NAMESPACE_ATTR_SQL} = 'orders'`)
+		expect(sql).toContain(`${RAW_NAMESPACE} = 'orders'`)
 	})
 
 	it("escapes raw params in summary SQL", () => {
@@ -763,7 +776,7 @@ describe("service-map database query summaries", () => {
 		expect(sql).toContain("= 'post\\'gres'")
 		expect(sql).toContain("ServiceName = 'svc\\'one'")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) = 'prod\\'west'",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'prod\\'west'",
 		)
 	})
 

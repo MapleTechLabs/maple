@@ -139,8 +139,22 @@ adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id
 `publish_error`, `error`, `model`, token counts and timestamps. The prd deploy applies the
 migration. The table is registered with `OrganizationService`, so an organization purge removes it.
 
-`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`, and
-Integrations → GitHub shows a "Review PRs" switch per repository.
+`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
+their own section, **Code Review** (`/code-review`, a sidebar row behind the flag), with four tabs:
+
+- **Analytics**: pull requests reviewed, reviews, time to merge and issues caught against the
+  previous window, issues by severity over time, by category, by repository and by author.
+  `pr_reviews.author_login` and `merged_at` (stamped on every review of a pull request by its
+  merged `closed` event) feed the author filter and time to merge.
+- **Pull requests**: every review in the organization, with a sheet for one review's report, its
+  tracked findings and the other reviews of the same pull request.
+- **Issues**: the tracked findings (`pr_review_findings`), filterable by severity, category and state.
+- **Settings**: the review model, the organization's default review rules
+  (`pr_review_settings.defaults`), and per repository the switch and its overrides.
+
+A review runs with `mergePrReviewConfig(defaults, repository)`: a repository field overrides the
+organization's, and instructions and ignored paths add up. The reads are `GET /api/code-review/*`
+(`PrReviewAnalyticsService`); settings stay on the integrations endpoints.
 
 ### Observability of the reviewer
 
@@ -166,7 +180,7 @@ this in the Clerk dashboard under the organization's public metadata:
 Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
 off. The flag is enforced in three places:
 
-- **The switch.** Integrations → GitHub shows "Review PRs" on a repository only for a flagged
+- **The section.** Code Review, and its per-repository switch, appear only for a flagged
   organization.
 - **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
   organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always
@@ -249,7 +263,7 @@ open.
 - **Warehouse-grounded checks** (signal presence, attribute spelling, operation coverage) are
   prompt prose today; local runs cannot exercise them.
 - **Open work:** fingerprint dedupe of findings across pushes, an abandoned-row sweep next to
-  `sweepAbandonedInvestigations`, fan-out for large PRs through `effect-agent/subagent`
+  `sweepAbandonedInvestigations`, fan-out for large PRs through `@yielded/agent/subagent`
   `Subagent` once it is published at the engine's version, a reviews list, and per-repository
   config (path excludes, check-only, a required-check mode).
 
@@ -273,7 +287,7 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
   own comments excluded), and the head's checks, failing first.
 - **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
   related files, in parallel (`apps/ai/src/chat/review-fanout.ts`). Each group of up to 12 files
-  runs a child `pr-review-worker` agent through `effect-agent/subagent` `Subagent`: the parent's
+  runs a child `pr-review-worker` agent through `@yielded/agent/subagent` `Subagent`: the parent's
   own read-only toolkit (the grant is exactly those tools, depth one), 100 calls and 4 minutes
   each, at most 12 children and 4 at a time, reserved from the parent's budget. The child answers findings one per line; the parent verifies and files.
 - **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed

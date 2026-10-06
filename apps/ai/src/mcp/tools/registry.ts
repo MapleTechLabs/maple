@@ -6,6 +6,7 @@ import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
 import { registerCreateAlertRuleTool } from "./create-alert-rule"
+import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
 import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
 import { registerCreateDashboardTool } from "./create-dashboard"
@@ -21,6 +22,11 @@ import { registerGetIncidentTimelineTool } from "./get-incident-timeline"
 import { registerAuditSetupTool } from "./audit-setup"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
+import { registerServiceDeploymentsTool } from "./service-deployments"
+import { registerRouteUsageTool } from "./route-usage"
+import { registerIngestFreshnessTool } from "./ingest-freshness"
+import { registerDbQueryVolumeTool } from "./db-query-volume"
+import { registerIngestUsageTool } from "./ingest-usage"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
 import { registerInspectSpanTool } from "./inspect-span"
@@ -40,6 +46,7 @@ import { registerSendMapleFeedbackTool } from "./send-maple-feedback"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
 import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
+import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
 import { registerListDashboardsTool } from "./list-dashboards"
 import { registerListMetricsTool } from "./list-metrics"
@@ -81,7 +88,9 @@ import {
 	normalizeArguments,
 	type NormalizedArguments,
 } from "../lib/decode-issues"
-import { filterNextCalls, nextCallsOf, renderToolDoc, type NextCall, type ToolDoc } from "../lib/tool-doc"
+import { filterNextCalls, nextCallsOf, type NextCall, type ToolDoc } from "../lib/tool-doc"
+import { renderToolDocWithinBudget } from "./tool-output"
+import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
@@ -98,6 +107,7 @@ interface MapleToolDefinition extends MapleToolCatalogEntry {
 
 export interface MapleToolCatalogEntry {
 	readonly name: string
+	readonly title: string
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
@@ -319,6 +329,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 		const encode = Schema.encodeUnknownEffect(spec.output)
 		definitions.push({
 			name: spec.name,
+			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
 			outputSchema: spec.output,
@@ -376,6 +387,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetAlertRuleTool(registrar)
 	registerListAlertIncidentsTool(registrar)
 	registerListAlertChecksTool(registrar)
+	registerPreviewAlertRuleTool(registrar)
 	registerGetIncidentTimelineTool(registrar)
 	registerCreateAlertRuleTool(registrar)
 	registerUpdateAlertRuleTool(registrar)
@@ -396,6 +408,11 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerExploreAttributesTool(registrar)
 	registerListServicesTool(registrar)
 	registerGetServiceTopOperationsTool(registrar)
+	registerServiceDeploymentsTool(registrar)
+	registerRouteUsageTool(registrar)
+	registerIngestFreshnessTool(registrar)
+	registerDbQueryVolumeTool(registrar)
+	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
 	registerSourceCodeTools(registrar)
@@ -403,6 +420,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerPullRequestTools(registrar)
 	registerListErrorIssuesTool(registrar)
 	registerTransitionErrorIssueTool(registrar)
+	registerTransitionErrorIssuesTool(registrar)
 	registerSetIssueSeverityTool(registrar)
 	registerClaimErrorIssueTool(registrar)
 	registerReleaseErrorIssueTool(registrar)
@@ -501,7 +519,7 @@ const finish = Effect.fnUntraced(function* (
 		)
 	}
 	const doc = invalid.length === 0 ? run.doc : filterNextCalls(run.doc, (call) => !invalid.includes(call))
-	const text = renderToolDoc(
+	const text = renderToolDocWithinBudget(
 		notices.length === 0 ? doc : { ...doc, notices: [...notices, ...(doc.notices ?? [])] },
 	)
 	const result: McpToolResult = {
@@ -559,7 +577,13 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		),
 	)
 
-	const run = yield* definition.run(decoded)
+	const windowNotes = new WindowNotes()
+	const run = yield* definition.run(decoded).pipe(Effect.provideService(CurrentWindowNotes, windowNotes))
 	yield* Effect.logInfo("Tool completed")
-	return yield* finish(definition, run, argumentNotices(normalized, definition.name), surface)
+	return yield* finish(
+		definition,
+		{ ...run, doc: windowNotes.decorate(run.doc) },
+		argumentNotices(normalized, definition.name),
+		surface,
+	)
 })

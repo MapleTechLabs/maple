@@ -1,36 +1,26 @@
 import { useAtomSet } from "@/lib/effect-atom"
-import { useEffect, useRef, useState, type DragEvent } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useAuth, useOrganization, useOrganizationList } from "@clerk/clerk-react"
-import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { AlertWarningIcon, UploadIcon, UserIcon } from "@/components/icons"
+import { UserIcon } from "@/components/icons"
+import { ImageDropzone, TypeToConfirmField } from "@/components/common/image-dropzone"
+import { toastAccountError } from "@/components/account/account-errors"
+import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
+import { toastExit } from "@/lib/error-toast"
 import { OrgAvatar } from "@/components/dashboard/org-switcher-menu"
 import { RegionBadge } from "@/components/region/region-badge"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { MAPLE_REGION_LABELS } from "@/lib/region"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-
-const MAX_LOGO_BYTES = 10 * 1024 * 1024 // 10 MB
-const ACCEPTED_LOGO_TYPES = "image/png,image/jpeg,image/webp,image/gif"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 export function OrganizationSection() {
 	const { orgRole } = useAuth()
@@ -43,13 +33,11 @@ export function OrganizationSection() {
 	const isAdmin = orgRole === "org:admin"
 
 	const [name, setName] = useState("")
-	const [isSavingName, setIsSavingName] = useState(false)
-	const [isSavingLogo, setIsSavingLogo] = useState(false)
-	const [isDragging, setIsDragging] = useState(false)
-	const fileInputRef = useRef<HTMLInputElement>(null)
+	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<void>) => task())
+	const [withSavingLogo, isSavingLogo] = useAsyncAction((task: () => Promise<void>) => task())
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
-	const [isDeleting, setIsDeleting] = useState(false)
+	const [withDeleting, isDeleting] = useAsyncAction((task: () => Promise<void>) => task())
 
 	useEffect(() => {
 		setName(organization?.name ?? "")
@@ -59,21 +47,7 @@ export function OrganizationSection() {
 		mode: "promiseExit",
 	})
 
-	if (!isLoaded) {
-		return (
-			<div className="space-y-6">
-				<Card>
-					<CardHeader>
-						<Skeleton className="h-5 w-32" />
-						<Skeleton className="h-4 w-64" />
-					</CardHeader>
-					<CardContent>
-						<Skeleton className="h-9 w-full" />
-					</CardContent>
-				</Card>
-			</div>
-		)
-	}
+	if (!isLoaded) return <AccountSectionSkeleton />
 
 	if (!organization) {
 		return (
@@ -95,92 +69,62 @@ export function OrganizationSection() {
 	const nameDirty = trimmedName.length > 0 && trimmedName !== organization.name
 	const confirmMatches = confirmText.trim() === organization.name
 
-	async function handleRename() {
+	function handleRename() {
 		if (!organization || !nameDirty) return
-		setIsSavingName(true)
-		try {
-			await organization.update({ name: trimmedName })
-			toastManager.add({ title: "Organization renamed", type: "success" })
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to rename organization"
-			toastManager.add({ title: message, type: "error" })
-		} finally {
-			setIsSavingName(false)
-		}
-	}
-
-	async function handleLogoSelect(file: File | undefined | null) {
-		if (!organization || !isAdmin || isSavingLogo || !file) return
-		if (!file.type.startsWith("image/")) {
-			toastManager.add({ title: "Please choose an image file", type: "error" })
-			return
-		}
-		if (file.size > MAX_LOGO_BYTES) {
-			toastManager.add({ title: "Image must be 10 MB or smaller", type: "error" })
-			return
-		}
-		setIsSavingLogo(true)
-		try {
-			await organization.setLogo({ file })
-			toastManager.add({ title: "Organization logo updated", type: "success" })
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to update logo"
-			toastManager.add({ title: message, type: "error" })
-		} finally {
-			setIsSavingLogo(false)
-			if (fileInputRef.current) fileInputRef.current.value = ""
-		}
-	}
-
-	async function handleRemoveLogo() {
-		if (!organization || !isAdmin || isSavingLogo) return
-		setIsSavingLogo(true)
-		try {
-			await organization.setLogo({ file: null })
-			toastManager.add({ title: "Organization logo removed", type: "success" })
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to remove logo"
-			toastManager.add({ title: message, type: "error" })
-		} finally {
-			setIsSavingLogo(false)
-		}
-	}
-
-	function openFilePicker() {
-		if (!isAdmin || isSavingLogo) return
-		fileInputRef.current?.click()
-	}
-
-	function handleDrop(e: DragEvent<HTMLDivElement>) {
-		e.preventDefault()
-		setIsDragging(false)
-		if (!isAdmin || isSavingLogo) return
-		void handleLogoSelect(e.dataTransfer.files?.[0])
-	}
-
-	async function handleDelete() {
-		if (!organization || !confirmMatches) return
-		setIsDeleting(true)
-		const result = await deleteMutation({})
-		if (Exit.isSuccess(result)) {
-			const remaining = (userMemberships?.data ?? []).filter(
-				(m) => m.organization.id !== organization.id,
-			)
-			const next = remaining[0]?.organization.id ?? null
+		return withSavingName(async () => {
 			try {
-				if (setActive) await setActive({ organization: next })
-			} catch {
-				// fall through to navigation; Clerk session will refresh on next load
+				await organization.update({ name: trimmedName })
+				toastManager.add({ title: "Organization renamed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to rename organization")
 			}
-			toastManager.add({ title: "Organization deleted", type: "success" })
-			setIsDeleting(false)
-			setDeleteOpen(false)
-			setConfirmText("")
-			navigate({ to: "/" })
-			return
-		}
-		setIsDeleting(false)
-		toastManager.add({ title: "Failed to delete organization", type: "error" })
+		})
+	}
+
+	function handleLogoSelect(file: File) {
+		if (!organization || !isAdmin || isSavingLogo) return
+		return withSavingLogo(async () => {
+			try {
+				await organization.setLogo({ file })
+				toastManager.add({ title: "Organization logo updated", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to update logo")
+			}
+		})
+	}
+
+	function handleRemoveLogo() {
+		if (!organization || !isAdmin || isSavingLogo) return
+		return withSavingLogo(async () => {
+			try {
+				await organization.setLogo({ file: null })
+				toastManager.add({ title: "Organization logo removed", type: "success" })
+			} catch (err) {
+				toastAccountError(err, "Failed to remove logo")
+			}
+		})
+	}
+
+	function handleDelete() {
+		if (!organization || !confirmMatches) return
+		return withDeleting(async () => {
+			const result = await deleteMutation({})
+			if (toastExit(result, { error: "Failed to delete organization" })) {
+				const remaining = (userMemberships?.data ?? []).filter(
+					(m) => m.organization.id !== organization.id,
+				)
+				const next = remaining[0]?.organization.id ?? null
+				try {
+					if (setActive) await setActive({ organization: next })
+				} catch {
+					// fall through to navigation; Clerk session will refresh on next load
+				}
+				toastManager.add({ title: "Organization deleted", type: "success" })
+				setDeleteOpen(false)
+				setConfirmText("")
+				navigate({ to: "/" })
+			}
+		})
 	}
 
 	function handleDialogChange(open: boolean) {
@@ -201,82 +145,27 @@ export function OrganizationSection() {
 				</CardHeader>
 				<CardContent>
 					<div className="space-y-4 max-w-md">
-						<div className="space-y-1.5">
-							<Label>Logo</Label>
-							<div className="flex items-center gap-4">
-								<div
-									role="button"
-									tabIndex={isAdmin && !isSavingLogo ? 0 : -1}
-									aria-label="Change organization logo"
-									aria-disabled={!isAdmin || isSavingLogo}
-									onClick={openFilePicker}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											openFilePicker()
-										}
-									}}
-									onDragOver={(e) => {
-										e.preventDefault()
-										if (isAdmin && !isSavingLogo) setIsDragging(true)
-									}}
-									onDragLeave={() => setIsDragging(false)}
-									onDrop={handleDrop}
-									className={`relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none transition-colors ${
-										isAdmin && !isSavingLogo
-											? "cursor-pointer hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-											: "cursor-not-allowed opacity-60"
-									} ${isDragging ? "border-primary ring-2 ring-primary" : "border-border"}`}
-								>
+						<Field>
+							<FieldLabel>Logo</FieldLabel>
+							<ImageDropzone
+								preview={
 									<OrgAvatar
 										name={organization.name}
 										imageUrl={organization.imageUrl}
 										className="size-full"
 										fit="contain"
 									/>
-									{isDragging && (
-										<div className="absolute inset-0 flex items-center justify-center rounded-md bg-primary/10 text-center text-[10px] font-medium text-primary">
-											Drop image
-										</div>
-									)}
-								</div>
-								<div className="space-y-1.5">
-									<div className="flex items-center gap-2">
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={openFilePicker}
-											disabled={!isAdmin || isSavingLogo}
-										>
-											<UploadIcon size={14} className="mr-1.5" />
-											{isSavingLogo ? "Uploading..." : "Change logo"}
-										</Button>
-										{organization.hasImage && (
-											<Button
-												variant="ghost"
-												size="sm"
-												onClick={handleRemoveLogo}
-												disabled={!isAdmin || isSavingLogo}
-											>
-												Remove
-											</Button>
-										)}
-									</div>
-									<p className="text-xs text-muted-foreground">
-										Drop an image or click to upload. PNG, JPG, WEBP or GIF, up to 10 MB.
-									</p>
-								</div>
-							</div>
-							<input
-								ref={fileInputRef}
-								type="file"
-								accept={ACCEPTED_LOGO_TYPES}
-								className="hidden"
-								onChange={(e) => void handleLogoSelect(e.target.files?.[0])}
+								}
+								onFile={(file) => void handleLogoSelect(file)}
+								onRemove={organization.hasImage ? () => void handleRemoveLogo() : undefined}
+								uploading={isSavingLogo}
+								disabled={!isAdmin}
+								targetLabel="Change organization logo"
+								changeLabel="Change logo"
 							/>
-						</div>
-						<div className="space-y-1.5">
-							<Label htmlFor="org-name">Name</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="org-name">Name</FieldLabel>
 							<Input
 								id="org-name"
 								value={name}
@@ -284,14 +173,15 @@ export function OrganizationSection() {
 								disabled={!isAdmin || isSavingName}
 								placeholder="Organization name"
 							/>
-						</div>
+						</Field>
 						<div className="flex justify-end">
 							<Button
 								size="sm"
 								onClick={handleRename}
-								disabled={!isAdmin || !nameDirty || isSavingName}
+								loading={isSavingName}
+								disabled={!isAdmin || !nameDirty}
 							>
-								{isSavingName ? "Saving..." : "Save"}
+								Save
 							</Button>
 						</div>
 						<DataRegionRow metadata={organization.publicMetadata} />
@@ -327,44 +217,23 @@ export function OrganizationSection() {
 				</CardContent>
 			</Card>
 
-			<AlertDialog open={deleteOpen} onOpenChange={handleDialogChange}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Delete organization?</AlertDialogTitle>
-						<AlertDialogDescription>
-							All dashboards, alerts, API keys, ingest keys, and integrations for this org will
-							be permanently deleted. This cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
-					<div className="space-y-2 px-6 py-2">
-						<Label htmlFor="org-delete-confirm" className="text-xs">
-							Type <span className="font-mono font-semibold">{organization.name}</span> to
-							confirm.
-						</Label>
-						<Input
-							id="org-delete-confirm"
-							value={confirmText}
-							onChange={(e) => setConfirmText(e.target.value)}
-							placeholder={organization.name}
-							autoComplete="off"
-						/>
-					</div>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleDelete}
-							disabled={isDeleting || !confirmMatches}
-						>
-							{isDeleting ? "Deleting..." : "Delete organization"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={deleteOpen}
+				onOpenChange={handleDialogChange}
+				title="Delete organization?"
+				description="All dashboards, alerts, API keys, ingest keys, and integrations for this org will be permanently deleted. This cannot be undone."
+				confirmLabel="Delete organization"
+				pending={isDeleting}
+				confirmDisabled={!confirmMatches}
+				onConfirm={() => void handleDelete()}
+			>
+				<TypeToConfirmField
+					id="org-delete-confirm"
+					expected={organization.name}
+					value={confirmText}
+					onChange={setConfirmText}
+				/>
+			</ConfirmDialog>
 		</div>
 	)
 }
@@ -372,16 +241,16 @@ export function OrganizationSection() {
 function DataRegionRow({ metadata }: { metadata: unknown }) {
 	const region = organizationHomeRegion(metadata)
 	return (
-		<div className="space-y-1.5">
-			<Label>Data region</Label>
+		<Field>
+			<FieldLabel>Data region</FieldLabel>
 			<div className="flex items-center gap-2 text-sm">
 				<RegionBadge region={region} />
 				<span>{MAPLE_REGION_LABELS[region].name}</span>
 			</div>
-			<p className="text-xs text-muted-foreground">
+			<FieldDescription>
 				Chosen when the organization was created. All of its telemetry is stored and processed in this
 				region.
-			</p>
-		</div>
+			</FieldDescription>
+		</Field>
 	)
 }

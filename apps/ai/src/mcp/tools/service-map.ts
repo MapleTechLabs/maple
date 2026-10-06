@@ -17,6 +17,7 @@ const errorRateOf = (edge: { readonly callCount: number; readonly errorCount: nu
 export function registerServiceMapTool(server: McpToolRegistrar) {
 	server.define({
 		name: "service_map",
+		title: "Service Map",
 		description:
 			"Show service-to-service dependencies with call counts, error rates, and latency per edge. Use to understand system architecture and identify problematic inter-service calls.",
 		parameters: Schema.Struct({
@@ -93,6 +94,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 								message: `No service dependencies found${output.service === undefined ? "" : ` involving "${output.service}"`} in this window.`,
 								hints: [
 									"Widen start_time/end_time, or drop the service and environment filters.",
+									"An edge needs the callee's server span in the caller's trace. Calls to a service that does not continue the trace (no context propagation, or it reports elsewhere) only show as client spans whose server.address or url.full names its host: look for those with run_sql on traces.",
 								],
 							},
 						}

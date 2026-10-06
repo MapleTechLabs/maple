@@ -1,0 +1,272 @@
+---
+title: "Trace OpenAI Agents SDK runs with OpenTelemetry"
+description: "Send OpenAI Agents SDK runs to Maple as one Agent Session per conversation, with the transcript, tool calls and tokens."
+group: "AI Agents"
+order: 12
+navLabel: "OpenAI Agents SDK"
+icon: "openai"
+---
+
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
+OpenInference's OpenAI Agents bridge exports OpenAI Agents SDK runs to Maple, in Python (`openai-agents`) and TypeScript (`@openai/agents`). Pass the conversation id with every run, or every message shows up as its own session.
+
+## Quick setup with a coding agent
+
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-openai-agents](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-openai-agents) skill and follows it.
+
+```text
+Set up Maple agent tracing for the OpenAI Agents SDK in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openai-agents -y`, then follow it.
+
+My Maple ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+
+## Install the bridge
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+```bash
+pip install "openai-agents>=0.22" "openinference-instrumentation-openai-agents>=2.5" "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
+```
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+```bash
+npm install @openai/agents @arizeai/openinference-instrumentation-openai-agents @arizeai/openinference-core @opentelemetry/api @opentelemetry/sdk-node
+```
+
+</LanguageTab>
+</LanguageTabs>
+
+## Point the exporter at Maple
+
+```bash
+export OTEL_SERVICE_NAME=support-agent
+export OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+```
+
+EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself. If you pass the endpoint to an exporter in code instead, give the full URL ending in `/v1/traces`.
+
+## Register the bridge
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Add a `tracing.py` and import it at the top of your entry point, before the first `Runner.run`:
+
+```py
+# tracing.py
+import re
+
+from agents import set_trace_processors
+from agents.tracing import TracingProcessor
+from agents.tracing.span_data import GenerationSpanData, HandoffSpanData
+from openinference.instrumentation import TraceConfig
+from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+
+def _chat_message(response: dict) -> dict:
+    """The assistant message inside a Responses-shaped dict, as a Chat Completions message."""
+    text, calls = "", []
+    for item in response.get("output") or []:
+        if item.get("type") == "message":
+            text += "".join(c.get("text", "") for c in item.get("content") or [] if c.get("type") == "output_text")
+        elif item.get("type") == "function_call":
+            calls.append({"id": item["call_id"], "type": "function",
+                          "function": {"name": item["name"], "arguments": item["arguments"]}})
+    return {"role": "assistant", "content": text or None, "tool_calls": calls or None}
+
+
+class MapleSpanFixes(TracingProcessor):
+    """Fills two gaps in what OpenInference exports. Must run before the OpenInference processor."""
+
+    def on_span_end(self, span):
+        data = span.span_data
+        current = trace.get_current_span()  # the matching OpenTelemetry span, still open here
+        if isinstance(data, HandoffSpanData) and data.to_agent:
+            # Handoff spans carry no tool name.
+            current.set_attribute("gen_ai.tool.name", re.sub(r"[^a-zA-Z0-9_]", "_", f"transfer_to_{data.to_agent}").lower())
+        elif isinstance(data, GenerationSpanData) and data.output and data.output[0].get("object") == "response":
+            # Streamed Chat Completions calls record a Responses object OpenInference can't read.
+            data.output = [_chat_message(data.output[0])]
+
+    def on_trace_start(self, t): pass
+    def on_trace_end(self, t): pass
+    def on_span_start(self, span): pass
+    def shutdown(self): pass
+    def force_flush(self): pass
+
+
+provider = TracerProvider()  # reads OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+# Replaces the SDK's default processor (which uploads to OpenAI) with MapleSpanFixes,
+# then appends the OpenInference processor after it.
+set_trace_processors([MapleSpanFixes()])
+OpenAIAgentsInstrumentor().instrument(
+    tracer_provider=provider,
+    config=TraceConfig(enable_genai_semconv=True),
+    exclusive_processor=False,
+)
+```
+
+`MapleSpanFixes` fixes handoff tool names and streamed replies. It has to run before the OpenInference processor, so keep the order shown.
+
+`set_trace_processors` already stops the upload to OpenAI. Don't use `set_tracing_disabled(True)` or `OPENAI_AGENTS_DISABLE_TRACING=1` for that, or you get no spans.
+
+If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or another library), add the OTLP exporter to it and pass it to `instrument()` instead of creating a second one.
+
+If an agent uses `OpenAIChatCompletionsModel` with a non-OpenAI base URL (OpenRouter, LiteLLM, vLLM, Ollama), give it `model_settings=ModelSettings(include_usage=True)`. Otherwise streamed turns report zero tokens.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+Create an `instrumentation.ts` and import it as the first line of your entry point (`import "./instrumentation"`):
+
+```ts
+// instrumentation.ts
+import * as agents from "@openai/agents"
+import { OpenAIAgentsInstrumentation } from "@arizeai/openinference-instrumentation-openai-agents"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+
+// Reads OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES and OTEL_EXPORTER_OTLP_*
+export const sdk = new NodeSDK()
+sdk.start()
+
+// Replaces the SDK's default processor, which uploads traces to OpenAI
+new OpenAIAgentsInstrumentation().manuallyInstrument(agents)
+```
+
+Don't use `setTracingDisabled(true)` or `OPENAI_AGENTS_DISABLE_TRACING=1` to stop the upload to OpenAI, or you get no spans.
+
+If the app already starts OpenTelemetry (auto-instrumentation, Sentry, your own `NodeTracerProvider`), skip the `NodeSDK` lines and keep the `manuallyInstrument` call. The bridge sends its spans to the global tracer provider.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Group each conversation into one session
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Wrap every run in `using_session` with the conversation's id:
+
+```py
+from agents import RunConfig, Runner, SQLiteSession
+from openinference.instrumentation import using_session
+
+
+async def handle_message(conversation_id: str, text: str) -> str:
+    with using_session(conversation_id):
+        result = await Runner.run(
+            agent,
+            text,
+            session=SQLiteSession(conversation_id, "chats.db"),
+            run_config=RunConfig(workflow_name="support workflow"),
+        )
+    return result.final_output
+```
+
+Use the id your app already stores the chat under, and give the SDK session the same one. A new UUID per request gives you one session per message.
+
+For streaming, call `Runner.run_streamed` inside the `with` block.
+
+Keep `tool` out of `workflow_name`, or Maple counts a phantom tool call per run.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+Run every call inside an OpenTelemetry context that carries the conversation id as `gen_ai.conversation.id`. The bridge copies it onto every span of the run:
+
+```ts
+import { setAttributes } from "@arizeai/openinference-core"
+import { run } from "@openai/agents"
+import { context } from "@opentelemetry/api"
+
+export async function handleMessage(conversationId: string, text: string) {
+	const ctx = setAttributes(context.active(), { "gen_ai.conversation.id": conversationId })
+	const result = await context.with(ctx, () => run(agent, text))
+	return result.finalOutput
+}
+```
+
+Use the id your app already stores the chat under. A new UUID per request gives you one session per message. If you pass a `session` to `run`, key it by the same id.
+
+For streaming, call `run(agent, text, { stream: true })` inside the `context.with` callback. You can read the stream after it returns.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Flush in short-lived processes
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+In serverless functions and notebooks, flush explicitly:
+
+```py
+from tracing import provider
+
+try:
+    asyncio.run(handle_message("conv-42", "What's the weather in Berlin?"))
+finally:
+    provider.force_flush()  # serverless: before returning; notebooks: after each run
+```
+
+The SDK's `flush_traces()` doesn't flush these spans.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+In a script, call `await sdk.shutdown()` in a `finally` block before exiting.
+
+A serverless handler has to flush after every invocation, so create the span processor yourself:
+
+```bash
+npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+```
+
+```ts
+// instrumentation.ts, replacing `new NodeSDK()`
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+
+export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
+export const sdk = new NodeSDK({ spanProcessors: [spanProcessor] })
+```
+
+Then call `await spanProcessor.forceFlush()` in a `finally` block before the handler returns. Read streamed runs to the end first.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Check that it works
+
+Send two or three messages with the same conversation id, one using a tool, then open **Agent Sessions**. You should see one session with one turn per run, the tool calls, and tokens on every model call. The framework shows as **OpenAI Agents SDK**. Cost shows as unpriced.
+
+## Troubleshooting
+
+- **No spans at all.** Tracing is disabled somewhere (`set_tracing_disabled` or `setTracingDisabled`, `OPENAI_AGENTS_DISABLE_TRACING`, or the run config), or the tracing setup ran after the first run. In TypeScript, `NODE_ENV=test` also turns tracing off; call `setTracingDisabled(false)` in tests.
+- **One session per message.** The run isn't inside `using_session(...)` or the `context.with` callback, or the id changes per request. Group ids and SDK session ids don't reach Maple.
+- **Streamed turns have zero tokens (Python).** Add `ModelSettings(include_usage=True)` to agents on a non-OpenAI base URL.
+- **Every model call appears twice.** Another instrumentation of the OpenAI client (OpenInference, Logfire, Langfuse, `@opentelemetry/instrumentation-openai`) is also active. Keep one.
+
+## Related
+
+- [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
+- [Tracing in the OpenAI Agents SDK](https://openai.github.io/openai-agents-python/tracing/) (Python) and [for TypeScript](https://openai.github.io/openai-agents-js/guides/tracing/): the switch that turns off prompt and reply capture.
+- [OpenRouter](/docs/agent-tracing/openrouter) and [LiteLLM](/docs/agent-tracing/litellm): if your models go through either gateway.

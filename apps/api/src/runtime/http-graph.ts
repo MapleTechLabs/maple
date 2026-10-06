@@ -1,8 +1,8 @@
 import { MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Effect, Layer } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
+import { HttpRouter, HttpServerResponse } from "effect/http"
+import { HttpApiBuilder, HttpApiScalar } from "effect/http-api"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
@@ -11,11 +11,13 @@ import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/v1/billing-public.http"
+import { HttpEmailPublicLive } from "@/routes/v1/email-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
+import { HttpCodeReviewLive } from "@/routes/v1/code-review.http"
 import { HttpErrorsLive } from "@/routes/v1/errors.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "@/routes/v1/integrations.http"
 import { OAuthDiscoveryRouter } from "@/routes/v1/oauth-discovery.http"
@@ -110,6 +112,8 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
 	Layer.provide(HttpBillingPublicLive),
+	Layer.provide(HttpCodeReviewLive),
+	Layer.provide(HttpEmailPublicLive),
 	Layer.provide(HttpErrorsLive),
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpOrgClickHouseSettingsLive),

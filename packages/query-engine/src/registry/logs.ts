@@ -4,6 +4,7 @@ import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import { timeRangeCache } from "../runtime/cache-policy"
 import { defineQuery, makeTimeBucketQueryCachePolicy } from "./query-definition"
+import type { OrgId } from "@maple/domain"
 
 export const logsQueryOptions = (filters: LogsFilters | undefined) => {
 	const deploymentEnv = filters?.deploymentEnvMatchMode
@@ -77,7 +78,7 @@ export const logsCount = defineQuery({
 	cache: timeRangeCache,
 	capabilityAware: true,
 	settings: (input: LogsCountInput) => (input.filters?.search ? LOGS_BODY_SEARCH_SETTINGS : undefined),
-	compile: (input: LogsCountInput, orgId: string, capabilities) =>
+	compile: (input: LogsCountInput, orgId: OrgId, capabilities) =>
 		CH.compile(
 			CH.logsCountQuery({
 				...logsQueryOptions(input.filters),
@@ -97,7 +98,7 @@ export const logsTimeseries = defineQuery({
 		fallback: 15,
 	}),
 	capabilityAware: true,
-	compile: (input: LogsTimeseriesInput, orgId: string, capabilities) =>
+	compile: (input: LogsTimeseriesInput, orgId: OrgId, capabilities) =>
 		CH.compile(
 			CH.logsTimeseriesQuery({
 				...logsQueryOptions(input.filters),

@@ -34,6 +34,12 @@ describe("toSpanResult", () => {
 		expect(span.serviceName).toBe("checkout")
 	})
 
+	it("surfaces the root's environment and service.version, omitting empty ones", () => {
+		expect(
+			toSpanResult(row({ rootDeploymentEnv: "production", rootServiceVersion: "" })).resourceAttributes,
+		).toEqual({ "deployment.environment": "production" })
+	})
+
 	it("carries an errored root's status message", () => {
 		const span = toSpanResult(
 			row({ rootSpanStatusCode: "Error", rootSpanStatusMessage: "upstream timeout", hasError: 1 }),

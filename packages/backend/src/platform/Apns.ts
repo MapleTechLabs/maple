@@ -1,5 +1,5 @@
 import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema, Semaphore } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { MobilePushEnvironment } from "@maple/domain/http"
 import { Env, type EnvConfig } from "./Env"
 
@@ -10,7 +10,7 @@ import { Env, type EnvConfig } from "./Env"
  * production, so this is a plain HTTP client; the known gap is *local*
  * `workerd`, which speaks HTTP/1.1 outbound and gets the connection dropped
  * — hence `ApnsUnavailable` rather than a hard failure when the send blows up
- * in dev. Do not route this through the SSRF-guarded `safeFetch`: the host is
+ * in dev. Do not route this through the SSRF `guard` client: the host is
  * ours, fixed, and must be reachable over HTTP/2.
  *
  * Auth is an ES256 JWT (`iss` = team id, `kid` = key id) minted at most once
@@ -196,7 +196,9 @@ const resolveConfig = (env: EnvConfig): ApnsConfig | null => {
 	return { teamId, keyId, privateKeyPem: Redacted.value(key) }
 }
 
-const decodeReason = Schema.decodeUnknownOption(Schema.Struct({ reason: Schema.String }))
+const decodeReason = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ reason: Schema.String })),
+)
 
 /**
  * TTL cache around `mint` with single-flight refresh. MobilePushService fans
@@ -417,13 +419,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 				}
 
 				const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-				const parsed = (() => {
-					try {
-						return decodeReason(JSON.parse(text))
-					} catch {
-						return Option.none()
-					}
-				})()
+				const parsed = decodeReason(text)
 				const reason = Option.map(parsed, (r) => r.reason).pipe(
 					Option.getOrElse(() => `HTTP ${response.status}`),
 				)

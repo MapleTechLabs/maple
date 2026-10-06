@@ -3,6 +3,7 @@ import { defineConfig } from "tsdown"
 export default defineConfig({
 	entry: {
 		index: "./src/index.ts",
+		react: "./src/react.ts",
 	},
 	format: "esm",
 	// Types are emitted by tsgo in one pass rooted at the tsconfig's directory,

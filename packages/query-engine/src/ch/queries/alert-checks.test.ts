@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { alertCheckGroupTotalsQuery, alertChecksSummaryQuery, listRuleChecksQuery } from "./alert-checks"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	ruleId: "rule_1",
 }
 
@@ -12,9 +13,11 @@ describe("listRuleChecksQuery", () => {
 		const q = listRuleChecksQuery({ limit: 500 })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM alert_checks")
-		expect(sql).toContain("formatDateTime(Timestamp, '%Y-%m-%dT%H:%i:%S.%fZ') AS timestamp")
-		expect(sql).toContain("formatDateTime(WindowStart, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowStart")
-		expect(sql).toContain("formatDateTime(WindowEnd, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowEnd")
+		expect(sql).toContain("formatDateTime(alert_checks.Timestamp, '%Y-%m-%dT%H:%i:%S.%fZ') AS timestamp")
+		expect(sql).toContain(
+			"formatDateTime(alert_checks.WindowStart, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowStart",
+		)
+		expect(sql).toContain("formatDateTime(alert_checks.WindowEnd, '%Y-%m-%dT%H:%i:%S.%fZ') AS windowEnd")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("RuleId = 'rule_1'")
 		expect(sql).toContain("ORDER BY timestamp DESC, groupKey ASC")
@@ -55,7 +58,7 @@ describe("listRuleChecksQuery", () => {
 
 	it("escapes single quotes in orgId", () => {
 		const q = listRuleChecksQuery({ limit: 10 })
-		const { sql } = compileUnsafe(q, { orgId: "org'evil", ruleId: "rule_1" })
+		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org'evil"), ruleId: "rule_1" })
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 

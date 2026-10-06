@@ -36,26 +36,39 @@ export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 
 // Attribute filter → typed Condition
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 // Semconv rename coalescing
 //
-// OpenTelemetry renamed several HTTP span attributes in the stable semconv:
-//   http.method      → http.request.method
-//   http.status_code → http.response.status_code
-// `trace_list_mv` coalesces both spellings when it pre-extracts its columns
-// (see materializations.ts), so the quick-filter facet counts cover spans that
-// use *either* key. Filters that read the raw `traces` table must coalesce the
-// same way — otherwise a facet shows a count while applying it matches zero
-// rows (the data carries the new key, the filter looked up the old one).
+// OpenTelemetry renamed several span attributes:
+//   http.method           → http.request.method
+//   http.status_code      → http.response.status_code
+//   db.system             → db.system.name
+//   messaging.destination → messaging.destination.name
+//   rpc.system            → rpc.system.name
+//   http.host             → server.address (and url.authority, the service map's last fallback)
+// A filter on either spelling matches spans that carry either key. The key the
+// user typed is read first, so a saved filter on a legacy key keeps matching a
+// span that dual-emits a different value under the new key (`db.system=mssql`
+// next to `db.system.name=microsoft.sql_server`). HTTP method and status are
+// legacy-first under both spellings because that is how `trace_list_mv`
+// pre-extracts them, and the facet counts must agree with the filter.
 
-const HTTP_SEMCONV_ALIASES: Record<string, readonly string[]> = {
+const SPAN_SEMCONV_ALIASES: Record<string, readonly string[]> = {
 	"http.method": ["http.method", "http.request.method"],
 	"http.request.method": ["http.method", "http.request.method"],
 	"http.status_code": ["http.status_code", "http.response.status_code"],
 	"http.response.status_code": ["http.status_code", "http.response.status_code"],
+	"db.system": ["db.system", "db.system.name"],
+	"db.system.name": ["db.system.name", "db.system"],
+	"messaging.destination": ["messaging.destination", "messaging.destination.name"],
+	"messaging.destination.name": ["messaging.destination.name", "messaging.destination"],
+	"rpc.system": ["rpc.system", "rpc.system.name"],
+	"rpc.system.name": ["rpc.system.name", "rpc.system"],
+	"server.address": ["server.address", "http.host", "url.authority"],
+	"http.host": ["http.host", "server.address", "url.authority"],
 } satisfies Record<string, readonly string[]>
 
 /**
@@ -109,6 +122,15 @@ export function buildAttrFilterCondition(
 	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes" | "Attributes",
 	requestedIndexMode: AttributeIndexMode = "none",
 ): CH.Condition {
+	// An `(a OR b)` group. Each member keeps its own exact predicate; the index
+	// prefilters are skipped, since an OR of per-member candidates is no narrower
+	// than the exact OR and only adds granule reads.
+	if (af.or?.length) {
+		const { or, ...first } = af
+		return [first, ...or]
+			.map((member) => buildAttrFilterCondition(member, mapName, "none"))
+			.reduce((acc, cond) => acc.or(cond))
+	}
 	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
 	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)
@@ -117,7 +139,7 @@ export function buildAttrFilterCondition(
 	// `DeploymentEnv` (resource attributes).
 	const aliasTable =
 		mapName === "SpanAttributes"
-			? HTTP_SEMCONV_ALIASES
+			? SPAN_SEMCONV_ALIASES
 			: mapName === "ResourceAttributes"
 				? RESOURCE_SEMCONV_ALIASES
 				: undefined

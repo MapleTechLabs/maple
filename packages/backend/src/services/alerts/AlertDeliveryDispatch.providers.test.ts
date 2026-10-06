@@ -4,8 +4,23 @@ import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
 import { Effect, Schema } from "effect"
 import type { DispatchContext } from "./AlertDeliveryDispatch"
-import { dispatchDelivery } from "./delivery/dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./delivery/Transport"
+
+type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
+
+/** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
+const dispatchDelivery = (
+	context: DispatchArgs[0],
+	payloadJson: DispatchArgs[1],
+	fetchFn: typeof fetch,
+	...rest: [DispatchArgs[2], DispatchArgs[3], DispatchArgs[4], DispatchArgs[5]]
+) =>
+	dispatchDeliveryRaw(context, payloadJson, ...rest).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+	)
 
 /**
  * Characterization tests: they pin what each provider ACTUALLY sends today,

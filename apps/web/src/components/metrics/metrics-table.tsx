@@ -1,18 +1,21 @@
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatNumber } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { MetricTypeBadge } from "./metric-type-badge"
 import { type Metric, type ListMetricsInput } from "@/api/warehouse/metrics"
 import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 interface MetricsTableProps {
@@ -102,7 +105,7 @@ export function MetricsTable({
 
 	if (Result.isFailure(metricsResult) || view === null) {
 		return Result.builder(metricsResult)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <LoadingState />)
 	}
 
@@ -116,7 +119,7 @@ export function MetricsTable({
 			onClearFilters={onClearFilters}
 		/>
 	) : (
-		<div className={`space-y-4 ${waiting ? "opacity-60" : ""}`}>
+		<div className={cn("space-y-4", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			<div className="rounded-md border overflow-auto">
 				<Table className="table-fixed">
 					<TableHeader>
@@ -138,12 +141,11 @@ export function MetricsTable({
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
-											<span
-												className="truncate font-mono text-xs"
-												title={metric.metricName}
-											>
-												{metric.metricName}
-											</span>
+											<TruncatedText
+												text={metric.metricName}
+												mono
+												className="text-xs"
+											/>
 											{metric.metricDescription && (
 												<span className="text-[10px] text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
@@ -156,11 +158,8 @@ export function MetricsTable({
 									</TableCell>
 									<TableCell className="hidden md:table-cell">
 										{metric.serviceName ? (
-											<Badge variant="outline" className="font-mono text-[10px]">
-												<ServiceDot
-													serviceName={metric.serviceName}
-													className="size-1.5"
-												/>
+											<Badge variant="outline" size="xs" mono>
+												<ServiceDot serviceName={metric.serviceName} size="sm" />
 												{metric.serviceName}
 											</Badge>
 										) : (
@@ -171,7 +170,7 @@ export function MetricsTable({
 										{formatNumber(metric.dataPointCount)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell text-xs text-muted-foreground">
-										{formatRelativeTime(metric.lastSeen)}
+										<RelativeTime value={metric.lastSeen} tooltip="title" />
 									</TableCell>
 								</TableRow>
 							)
@@ -180,22 +179,15 @@ export function MetricsTable({
 				</Table>
 			</div>
 
-			<div className="flex items-center gap-3 text-sm text-muted-foreground">
-				<span>
-					Showing {metrics.length} metrics
-					{hasMore ? " — more available" : ""}
-				</span>
-				{hasMore && (
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={waiting}
-						onClick={() => setLimit((current) => current + PAGE_SIZE)}
-					>
-						{waiting ? "Loading…" : "Load more"}
-					</Button>
-				)}
-			</div>
+			<ListFooter
+				shown={metrics.length}
+				noun="metrics"
+				hasMore={hasMore}
+				loading={waiting}
+				onLoadMore={() => setLimit((current) => current + PAGE_SIZE)}
+				align="start"
+				className="justify-start p-0 text-sm"
+			/>
 		</div>
 	)
 }

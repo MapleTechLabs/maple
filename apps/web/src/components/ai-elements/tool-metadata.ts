@@ -1,3 +1,4 @@
+import { humanize } from "@/lib/humanize"
 import {
 	AlertWarningIcon,
 	BellIcon,
@@ -38,15 +39,6 @@ export function normalizeToolName(toolName: string): string {
 	return toolName.replace(/^mcp__.+?__/, "")
 }
 
-/** snake_case → "Title Case" fallback for any tool we don't have an explicit label for. */
-function humanize(toolName: string): string {
-	return toolName
-		.split(/[_\s]+/)
-		.filter(Boolean)
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(" ")
-}
-
 /** Friendly label for a (possibly namespaced) tool name, with a humanized fallback. */
 export function toolLabel(toolName: string): string {
 	const name = normalizeToolName(toolName)
@@ -85,6 +77,7 @@ const toolLabels: Record<string, string> = {
 	claim_error_issue: "Claim Issue",
 	release_error_issue: "Release Issue",
 	transition_error_issue: "Transition Issue",
+	transition_error_issues: "Transition Issues",
 	comment_on_error_issue: "Comment on Issue",
 	set_issue_severity: "Set Issue Severity",
 	propose_fix: "Propose Fix",
@@ -112,6 +105,7 @@ const toolLabels: Record<string, string> = {
 	delete_alert_rule: "Delete Alert Rule",
 	list_alert_incidents: "List Alert Incidents",
 	list_alert_checks: "List Alert Checks",
+	preview_alert_rule: "Preview Alert Rule",
 	get_incident_timeline: "Incident Timeline",
 	update_error_notification_policy: "Notification Policy",
 	// sessions
@@ -153,6 +147,7 @@ const toolIcons: Record<string, IconComponent> = {
 	claim_error_issue: FireIcon,
 	release_error_issue: FireIcon,
 	transition_error_issue: FireIcon,
+	transition_error_issues: FireIcon,
 	comment_on_error_issue: ChatBubbleSparkleIcon,
 	set_issue_severity: AlertWarningIcon,
 	propose_fix: BoltIcon,
@@ -177,6 +172,7 @@ const toolIcons: Record<string, IconComponent> = {
 	delete_alert_rule: TrashIcon,
 	list_alert_incidents: AlertWarningIcon,
 	list_alert_checks: CircleCheckIcon,
+	preview_alert_rule: HistoryIcon,
 	get_incident_timeline: HistoryIcon,
 	update_error_notification_policy: BellIcon,
 	run_sql: DatabaseIcon,

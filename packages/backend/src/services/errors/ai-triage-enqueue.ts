@@ -19,6 +19,7 @@ import type { MapleDbLike } from "@maple/db/client"
 import { and, desc, eq, gte, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Clock, Effect, Option, Schema } from "effect"
 
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { dateToMs } from "@maple/backend/platform/time"
 
@@ -188,8 +189,8 @@ export interface MaybeEnqueueTriageInput {
 	readonly incidentId: string
 	readonly issueId?: ErrorIssueId
 	readonly context: Record<string, unknown>
-	/** The Worker env, for the `ChatSession` binding. Absent means the row records why it could not run. */
-	readonly workerEnv?: Record<string, unknown>
+	/** The `ChatSession` port. Absent means the row records why it could not run. */
+	readonly chatSessions?: ChatSessionsApi
 	/** Manual starts ignore the automation-enabled flag and the gates, but never the quota. */
 	readonly force?: boolean
 }
@@ -628,7 +629,7 @@ export const maybeEnqueueTriage: (
 			investigationId,
 			subject,
 			snapshot,
-			workerEnv: input.workerEnv,
+			chatSessions: input.chatSessions,
 			nowMs,
 		})
 		if (!started.started) {

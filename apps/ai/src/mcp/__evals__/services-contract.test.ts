@@ -113,6 +113,13 @@ describe("services, metrics and query tools on define", () => {
 		expect(output.decisions?.[0]).toMatch(/^start_time: defaulted to 6 hours before end_time/)
 	})
 
+	it("does not note defaults that cannot change a query_data answer", async () => {
+		const result = await call("query_data", { ...WINDOW, source: "logs", kind: "timeseries" })
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(output.decisions ?? []).toEqual([])
+		expect(markdown(result)).not.toContain("Defaults applied")
+	})
+
 	it("clamps the query_data breakdown limit", async () => {
 		const result = await call("query_data", {
 			...WINDOW,
@@ -138,6 +145,82 @@ describe("services, metrics and query tools on define", () => {
 		expect(text).toContain('group_by="attribute" attribute_key="http.method"')
 	})
 
+	const METRIC = { ...WINDOW, source: "metrics", metric_name: "jobs_processed_total" }
+
+	it("warns that metric=sum over a counter adds running totals", async () => {
+		const result = await call("query_data", {
+			...METRIC,
+			kind: "timeseries",
+			metric: "sum",
+			metric_type: "sum",
+		})
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(output.warnings?.[0]).toContain("metric=increase")
+		expect(markdown(result)).toContain("Warnings")
+	})
+
+	it("runs an increase breakdown per pod on a gauge-stored counter", async () => {
+		const result = await call("query_data", {
+			...METRIC,
+			kind: "breakdown",
+			metric: "increase",
+			metric_type: "gauge",
+			group_by: "resource_attribute",
+			attribute_key: "k8s.pod.name",
+			environments: ["production"],
+		})
+		expect(result.isError, markdown(result)).toBeUndefined()
+		const sql = issuedSql.join("\n")
+		expect(sql).toContain("FROM metrics_gauge")
+		expect(sql).toContain("with_deltas")
+		expect(sql).toContain("k8s.pod.name")
+		expect(sql).toContain("'production'")
+	})
+
+	it("rejects rate on a histogram with a pointer to count", async () => {
+		const result = await call("query_data", {
+			...METRIC,
+			kind: "timeseries",
+			metric: "rate",
+			metric_type: "histogram",
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("needs a counter")
+	})
+
+	it("lists one metric's own labels for explore_attributes source=metrics", async () => {
+		const result = await call("explore_attributes", {
+			...WINDOW,
+			source: "metrics",
+			metric_name: "worker_busy",
+			metric_type: "gauge",
+			service: "jobs",
+		})
+		expect(result.isError, markdown(result)).toBeUndefined()
+		const sql = issuedSql.join("\n")
+		expect(sql).toContain("FROM metrics_gauge")
+		expect(sql).toContain("'worker_busy'")
+		expect(sql).toContain("'jobs'")
+		const text = markdown(result)
+		expect(text).toContain("metrics (worker_busy)")
+		expect(text).not.toContain("(span)")
+	})
+
+	it("returns nothing, not the org-wide rollup, for a metric missing from the catalog", async () => {
+		const result = await call("explore_attributes", {
+			...WINDOW,
+			source: "metrics",
+			metric_name: "not_a_metric",
+			service: "jobs",
+		})
+		expect(result.isError, markdown(result)).toBeUndefined()
+		const sql = issuedSql.join("\n")
+		expect(sql).toContain("FROM metric_catalog")
+		expect(sql).toContain("'jobs'")
+		expect(sql).not.toContain("attribute_keys_hourly")
+		expect(markdown(result)).toContain("No attribute keys found for not_a_metric")
+	})
+
 	it("reports SQL without the org filter as invalid input on `sql`", async () => {
 		const result = await call("run_sql", { sql: "SELECT count() FROM traces" })
 		expect(result.isError).toBe(true)
@@ -150,7 +233,7 @@ describe("services, metrics and query tools on define", () => {
 		const result = await call("describe_warehouse_tables", { table: "otel_traces" })
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toMatch(
-			/^Invalid input \(`table`\): No table named "otel_traces"\. Available tables: /,
+			/^Invalid input \(`table`\): No table named "otel_traces"\. Did you mean "traces"\? Available tables: /,
 		)
 	})
 

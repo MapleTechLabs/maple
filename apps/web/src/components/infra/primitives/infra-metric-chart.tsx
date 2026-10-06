@@ -1,4 +1,5 @@
 import { areaY, d3Curve, defineChart, lineY, stack } from "@tanstack/charts"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { useMemo, type ReactNode } from "react"
@@ -338,7 +339,7 @@ export function InfraMetricChart({
 	}
 
 	return (
-		<div className={cn("transition-opacity", waiting && "opacity-60", className)}>
+		<div className={cn(refreshingClass(waiting), className)} aria-busy={waiting || undefined}>
 			{header?.({ series, colors, lastValues, labelFor, unit })}
 			<div className="relative" {...linkedCursorChartProps(linkedChartId)}>
 				{/*

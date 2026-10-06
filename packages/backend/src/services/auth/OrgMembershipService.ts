@@ -2,7 +2,7 @@ import { createClerkClient } from "@clerk/backend"
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -192,7 +192,7 @@ const make = Effect.gen(function* () {
 			.pipe(Effect.map((result) => result.value))
 
 	const load = Effect.fn("OrgMembershipService.load")(function* (userId: UserId) {
-		const now = Date.now()
+		const now = yield* Clock.currentTimeMillis
 		const memo = membershipMemo.get(userId)
 		if (memo && now < memo.freshUntil) {
 			yield* Effect.annotateCurrentSpan("cache.status", "memo")

@@ -221,7 +221,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -359,7 +359,7 @@ jobs:
             matrix: ${{ fromJSON(needs.changes.outputs.tests) }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -423,7 +423,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -468,7 +468,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -543,7 +543,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
 
             - uses: ./.github/actions/bun-install
 
@@ -646,7 +646,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
 
             - uses: ./.github/actions/bun-install
 
@@ -748,7 +748,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.

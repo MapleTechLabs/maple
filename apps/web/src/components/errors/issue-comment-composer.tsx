@@ -2,6 +2,7 @@ import type { ActorDocument } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd, KbdGroup } from "@maple/ui/components/ui/kbd"
 import { Textarea } from "@maple/ui/components/ui/textarea"
+import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import * as React from "react"
 
@@ -135,8 +136,8 @@ function ParticipantStrip({
 			</span>
 			{overflow > 0 ? <span className="tabular-nums">+{overflow}</span> : null}
 			<span>
-				{identities.length} participant{identities.length === 1 ? "" : "s"}
-				{agentCount > 0 ? ` · ${agentCount} agent${agentCount === 1 ? "" : "s"}` : ""}
+				{countLabel(identities.length, "participant")}
+				{agentCount > 0 ? ` · ${countLabel(agentCount, "agent")}` : ""}
 			</span>
 		</div>
 	)

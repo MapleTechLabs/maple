@@ -21,6 +21,7 @@ import {
 	AlertSeverity as AlertSeveritySchema,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertCheckStatus as AlertCheckStatusSchema,
+	AlertSkipReason,
 	AlertValidationError,
 	OrgId,
 	type AlertIncidentId,
@@ -35,7 +36,7 @@ import {
 	type AlertIncidentRow,
 } from "@maple/db"
 import { and, desc, eq } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
@@ -135,6 +136,8 @@ const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
 const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
 const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema)
 const decodeAlertCheckStatusSync = Schema.decodeUnknownSync(AlertCheckStatusSchema)
+// A reason this build does not know (a newer writer, or a rollback) reads as none rather than failing the page.
+const decodeAlertSkipReason = Schema.decodeUnknownOption(AlertSkipReason)
 const decodeAlertIncidentTransitionSync = Schema.decodeUnknownSync(AlertIncidentTransitionSchema)
 const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStatus)
 const decodeAlertIncidentHoldReasonSync = Schema.decodeUnknownSync(AlertIncidentHoldReason)
@@ -328,6 +331,7 @@ export class AlertReadModelsService extends Context.Service<
 							timestamp: decodeIsoDateTimeStringSync(String(r.timestamp)),
 							groupKey: String(r.groupKey ?? ""),
 							status: decodeAlertCheckStatusSync(String(r.status)),
+							skipReason: Option.getOrNull(decodeAlertSkipReason(r.skipReason)),
 							signalType: decodeAlertSignalTypeSync(String(r.signalType)),
 							comparator: decodeAlertComparatorSync(String(r.comparator)),
 							threshold: Number(r.threshold),

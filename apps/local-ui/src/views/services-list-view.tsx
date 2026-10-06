@@ -1,7 +1,8 @@
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { SearchableFilterSection } from "@maple/ui/components/filters/filter-section"
 import {
@@ -149,13 +150,13 @@ function ServiceRow({ entry, query }: { entry: ServiceCatalogEntry; query: URLSe
 				</RowLink>
 			</TableCell>
 			<TableCell className="text-right tabular-nums">{formatNumber(entry.spanCount)}</TableCell>
-			<TableCell className={cn("text-right tabular-nums", entry.errorCount > 0 && "text-destructive")}>
+			<TableCell
+				className={cn("text-right tabular-nums", entry.errorCount > 0 && "text-severity-error")}
+			>
 				{formatNumber(entry.errorCount)}
 			</TableCell>
-			<TableCell
-				className={cn("text-right tabular-nums", entry.errorRate > 0.05 && "text-destructive")}
-			>
-				{formatErrorRate(entry.errorRate)}
+			<TableCell className="text-right">
+				<ErrorRateValue rate={entry.errorRate} />
 			</TableCell>
 			<TableCell className="text-right">
 				<LatencyValue ms={entry.p50LatencyMs} scale="p50" />

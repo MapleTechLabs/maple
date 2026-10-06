@@ -8,20 +8,11 @@ import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { MaximizeIcon } from "@/components/icons"
 import { ensureStoredTab, loadSheetTab, saveSheetTab, useChatTabs } from "@/hooks/use-chat-tabs"
 import { QUICK_CHAT_TAB_ID } from "./global-chat-constants"
+import { ChatContentFallback } from "./chat-content-fallback"
 
 const GlobalChatContent = lazy(() =>
 	import("./global-chat-content").then((module) => ({ default: module.GlobalChatContent })),
 )
-
-function ChatConversationFallback() {
-	return (
-		<div className="flex flex-1 flex-col gap-3 p-4" aria-label="Loading chat conversation">
-			<div className="h-16 w-3/4 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
-			<div className="h-20 w-4/5 animate-pulse self-end rounded-md bg-muted motion-reduce:animate-none" />
-			<div className="mt-auto h-20 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
-		</div>
-	)
-}
 
 export function GlobalChatPanel({
 	orgId,
@@ -95,7 +86,7 @@ export function GlobalChatPanel({
 					</div>
 				</SheetHeader>
 				<div className="flex min-h-0 flex-1 flex-col">
-					<Suspense fallback={<ChatConversationFallback />}>
+					<Suspense fallback={<ChatContentFallback label="Loading chat conversation" />}>
 						<GlobalChatContent key={tabId} tabId={tabId} onFirstMessage={renameTab} />
 					</Suspense>
 				</div>

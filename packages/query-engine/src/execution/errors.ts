@@ -76,14 +76,21 @@ const redactWarehouseCredentials = (message: string): string =>
 		"[redacted]",
 	)
 
+// Only real HTML tags: warehouse errors echo the caller's SQL, and a generic
+// `<[^>]+>` ate everything between a `<=` and a later `>=` in it.
+const HTML_TAG =
+	/<!doctype[^>]*>|<\/?(?:html|head|body|center|h[1-6]|hr|title|p|br|div|span|pre|meta|a|b|i|strong|em)(?:\s+[\w:-]+=(?:"[^"]*"|'[^']*'|[^\s"'<>=]+))*\s*\/?>/gi
+
 /** Strip credentials, HTML error pages and whitespace noise before exposing an upstream failure. */
 export const cleanErrorMessage = (raw: string): string => {
 	const redacted = redactWarehouseCredentials(raw)
 	let cleaned = redacted
-	const htmlIndex = cleaned.search(/<\s*(html|head|body|center|h1|hr|title)\b/i)
+	const htmlIndex = cleaned.search(/<(!doctype|html|head|body|center|h1|hr|title)\b/i)
 	if (htmlIndex >= 0) cleaned = cleaned.slice(0, htmlIndex)
 	cleaned = cleaned
-		.replace(/<[^>]+>/g, " ")
+		.replace(HTML_TAG, " ")
+		// The vendor's upsell is not something an end user or agent can act on.
+		.replace(/\s*Upgrade your plan[^.\n]*\.?/gi, "")
 		.replace(/\s+/g, " ")
 		.trim()
 	if (cleaned.endsWith(":")) cleaned = cleaned.slice(0, -1).trim()

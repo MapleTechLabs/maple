@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Exit, Option } from "effect"
 import { Fragment, useState, type Dispatch, type SetStateAction } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -6,9 +7,11 @@ import type { AlertDestinationDocument, AlertDestinationId } from "@maple/domain
 
 import { DestinationCard } from "@/components/alerts/destination-card"
 import { ProviderLogo } from "@/components/alerts/destination-provider"
+import { TagGroupHeaderRow } from "@/components/alerts/overview/shared"
 import { Link } from "@tanstack/react-router"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { CircleWarningIcon, PaperPlaneIcon, PlusIcon, TruckIcon } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
+import { PaperPlaneIcon, PlusIcon, TruckIcon } from "@/components/icons"
 import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
@@ -18,14 +21,16 @@ import {
 	eventTypeMeta,
 	formatAlertDateTime,
 	formatAlertTime,
-	getExitErrorMessage,
 	groupDeliveryEventsByDay,
 	v2DeliveryToDocument,
+	suggestedDestinationName,
 	type DestinationFormState,
 } from "@/lib/alerts/form-utils"
+import { getExitErrorMessage } from "@/lib/error-toast"
 import { publicError } from "@/lib/error-messages"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -36,6 +41,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 /**
  * Destination CRUD state + handlers, lifted into a hook so the route header's
@@ -51,8 +57,14 @@ export interface DestinationManager {
 	saving: boolean
 	testingId: AlertDestinationDocument["id"] | null
 	deletingId: AlertDestinationDocument["id"] | null
-	openDialog: (destination?: AlertDestinationDocument) => void
+	/** True when the dialog opened on a provider picked elsewhere, so the provider grid starts folded. */
+	providerLocked: boolean
+	unlockProvider: () => void
+	/** Opens on an existing destination to edit it, or on a new one, optionally preset to a provider. */
+	openDialog: (destination?: AlertDestinationDocument, preset?: DestinationFormState) => void
 	save: () => Promise<void>
+	/** Creates a fully specified destination without the dialog. Resolves to whether it was created. */
+	quickCreate: (form: DestinationFormState) => Promise<boolean>
 	test: (destination: AlertDestinationDocument) => Promise<void>
 	toggle: (destination: AlertDestinationDocument) => Promise<void>
 	remove: (destination: AlertDestinationDocument) => Promise<void>
@@ -78,18 +90,36 @@ export function useDestinationManager(options?: {
 	const [dialogOpen, setDialogOpen] = useState(false)
 	const [form, setForm] = useState<DestinationFormState>(defaultDestinationForm())
 	const [editing, setEditing] = useState<AlertDestinationDocument | null>(null)
-	const [saving, setSaving] = useState(false)
+	const [providerLocked, setProviderLocked] = useState(false)
 	const [testingId, setTestingId] = useState<AlertDestinationDocument["id"] | null>(null)
 	const [deletingId, setDeletingId] = useState<AlertDestinationDocument["id"] | null>(null)
 
-	function openDialog(destination?: AlertDestinationDocument) {
+	function openDialog(destination?: AlertDestinationDocument, preset?: DestinationFormState) {
 		setEditing(destination ?? null)
-		setForm(destination ? destinationToFormState(destination) : defaultDestinationForm())
+		setForm(destination ? destinationToFormState(destination) : (preset ?? defaultDestinationForm()))
+		setProviderLocked(destination === undefined && preset !== undefined)
 		setDialogOpen(true)
 	}
 
-	async function save() {
-		setSaving(true)
+	async function create(next: DestinationFormState) {
+		const named = next.name.trim().length > 0 ? next : { ...next, name: suggestedDestinationName(next) }
+		const result = await createDestination({
+			// `as never`: see the union-payload note in `save`.
+			payload: buildDestinationCreateParamsV2(named) as never,
+			reactivityKeys: ["alertDestinations"],
+		})
+		if (Exit.isSuccess(result)) {
+			toastManager.add({ title: "Destination created", type: "success" })
+			options?.onCreated?.(result.value.id)
+			return true
+		}
+		toastManager.add({ title: getExitErrorMessage(result, "Failed to save destination"), type: "error" })
+		return false
+	}
+
+	const [quickCreate, quickCreating] = useAsyncAction(create)
+
+	const [save, savingDialog] = useAsyncAction(async () => {
 		if (editing) {
 			const result = await updateDestination({
 				params: { id: editing.id },
@@ -109,24 +139,10 @@ export function useDestinationManager(options?: {
 				})
 			}
 		} else {
-			const result = await createDestination({
-				// `as never`: see above.
-				payload: buildDestinationCreateParamsV2(form) as never,
-				reactivityKeys: ["alertDestinations"],
-			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Destination created", type: "success" })
-				setDialogOpen(false)
-				options?.onCreated?.(result.value.id)
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to save destination"),
-					type: "error",
-				})
-			}
+			if (await create(form)) setDialogOpen(false)
 		}
-		setSaving(false)
-	}
+	})
+	const saving = quickCreating || savingDialog
 
 	async function test(destination: AlertDestinationDocument) {
 		setTestingId(destination.id)
@@ -197,6 +213,9 @@ export function useDestinationManager(options?: {
 		form,
 		setForm,
 		isEditing: editing != null,
+		providerLocked,
+		unlockProvider: () => setProviderLocked(false),
+		quickCreate,
 		saving,
 		testingId,
 		deletingId,
@@ -249,18 +268,11 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<Skeleton className="h-24 w-full" />
 							<Skeleton className="h-24 w-full" />
 						</div>
-					) : !Result.isSuccess(destinationsResult) ? (
-						<Empty className="py-12">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<CircleWarningIcon size={18} />
-								</EmptyMedia>
-								<EmptyTitle>Failed to load alert destinations</EmptyTitle>
-								<EmptyDescription>
-									Refresh the page or check your connection.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+					) : Result.isFailure(destinationsResult) ? (
+						<ErrorState
+							error={destinationsResult.cause}
+							title="Failed to load alert destinations"
+						/>
 					) : destinations.length === 0 ? (
 						<Empty className="py-12">
 							<EmptyHeader>
@@ -320,18 +332,11 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<Skeleton className="h-10 w-full" />
 							<Skeleton className="h-10 w-full" />
 						</div>
-					) : !Result.isSuccess(deliveryEventsResult) ? (
-						<Empty className="py-12">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<CircleWarningIcon size={18} />
-								</EmptyMedia>
-								<EmptyTitle>Failed to load delivery history</EmptyTitle>
-								<EmptyDescription>
-									Refresh the page or check your connection.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+					) : Result.isFailure(deliveryEventsResult) ? (
+						<ErrorState
+							error={deliveryEventsResult.cause}
+							title="Failed to load delivery history"
+						/>
 					) : deliveryEvents.length === 0 ? (
 						<Empty className="py-12">
 							<EmptyHeader>
@@ -366,20 +371,12 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<TableBody>
 								{deliveryEventGroups.map((group) => (
 									<Fragment key={group.key}>
-										<TableRow>
-											<TableCell
-												colSpan={5}
-												className="bg-muted/30 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-											>
-												<span className="flex items-center gap-2">
-													{group.label}
-													<span className="tracking-normal normal-case text-muted-foreground/55">
-														{group.events.length}{" "}
-														{group.events.length === 1 ? "attempt" : "attempts"}
-													</span>
-												</span>
-											</TableCell>
-										</TableRow>
+										<TagGroupHeaderRow
+											label={group.label}
+											count={group.events.length}
+											noun="attempt"
+											colSpan={5}
+										/>
 										{group.events.map((event) => {
 											const ev = eventTypeMeta[event.eventType]
 											const status = deliveryStatusMeta[event.status]
@@ -392,7 +389,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 															</Badge>
 															{event.attemptNumber > 1 && (
 																<span
-																	className="text-warning tabular-nums text-[11px]"
+																	className="text-severity-warn tabular-nums text-[11px]"
 																	title={`Attempt ${event.attemptNumber}`}
 																>
 																	↻{event.attemptNumber}
@@ -404,15 +401,10 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 														<span
 															className={cn(
 																"flex items-center gap-1.5 text-xs font-medium",
-																ev.text,
+																TONE_TEXT[ev.tone],
 															)}
 														>
-															<span
-																className={cn(
-																	"size-1.5 rounded-full",
-																	ev.dot,
-																)}
-															/>
+															<StatusDot tone={ev.tone} />
 															{ev.label}
 														</span>
 													</TableCell>

@@ -38,7 +38,12 @@ const BROKEN_FLAGS: ReadonlySet<ChartFlag> = new Set<ChartFlag>([
 // Flags that describe data quirks (sparse/expected) rather than a broken chart.
 // They are reported as notes but never downgrade the verdict on their own —
 // otherwise low-traffic/bursty instances flag every widget as "suspicious".
-const INFORMATIONAL_FLAGS: ReadonlySet<ChartFlag> = new Set<ChartFlag>(["SUSPICIOUS_GAP"])
+// All-zero and flat series are usually correct (no errors, a steady gauge), so they are notes too.
+const INFORMATIONAL_FLAGS: ReadonlySet<ChartFlag> = new Set<ChartFlag>([
+	"SUSPICIOUS_GAP",
+	"ALL_ZEROS",
+	"FLAT_LINE",
+])
 
 const SAMPLE_HEAD = 3
 const SAMPLE_TAIL = 3

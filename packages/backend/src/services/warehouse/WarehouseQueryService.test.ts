@@ -16,10 +16,10 @@ import {
 	WarehouseScopeError,
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
-import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
+import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-orm/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import {
 	makeWarehouseExecutor,

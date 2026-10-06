@@ -11,6 +11,8 @@ import {
 import { aiTriageSettings, errorIssueEvents, errorIssues, investigations } from "@maple/db"
 import { and, eq } from "drizzle-orm"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { maybeEnqueueTriage } from "./ai-triage-enqueue"
@@ -63,12 +65,12 @@ const enableSettings = Effect.gen(function* () {
 })
 
 /** Every start needs the `ChatSession` binding; omitting it is the missing-binding failure. */
-const baseInput = (incidentId: string, workerEnv?: Record<string, unknown>) => ({
+const baseInput = (incidentId: string, chatSessions?: ChatSessionsApi) => ({
 	orgId: ORG,
 	incidentKind: "error" as const,
 	incidentId,
 	context: { kind: "error" },
-	workerEnv,
+	chatSessions,
 })
 
 /** Automation on, everything else default. */
@@ -111,25 +113,24 @@ const enableWithLimits = (maxRunsPerDay: number, maxPassesPerDay: number) =>
  */
 const fakeChatSession = (options?: { readonly busy?: boolean }) => {
 	const turns: Array<{ sessionId: string; text: string }> = []
-	const namespace = {
-		idFromName: (name: string) => name,
-		get: () => ({
-			beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
-				turns.push({ sessionId: input.sessionId, text: input.text })
-				return options?.busy === true ? undefined : { cursor: 0, messageId: input.messageId }
-			},
-		}),
-	}
-	return { turns, env: { ChatSession: namespace } }
+	const chatSessions: ChatSessionsApi = fakeChatSessions(() => ({
+		beginTurn: async (input: { sessionId: string; messageId: string; text: string }) => {
+			turns.push({ sessionId: input.sessionId, text: input.text })
+			return options?.busy === true
+				? undefined
+				: { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
+		},
+	}))
+	return { turns, chatSessions }
 }
 
 /** A critical incident. Severity decides which slice of the pass budget it may spend. */
-const criticalInput = (workerEnv: Record<string, unknown> | undefined, incidentId: string) => ({
+const criticalInput = (chatSessions: ChatSessionsApi | undefined, incidentId: string) => ({
 	orgId: ORG,
 	incidentKind: "error" as const,
 	incidentId,
 	context: { kind: "error", severity: "critical", serviceName: "checkout-api" },
-	workerEnv,
+	chatSessions,
 })
 
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
@@ -160,7 +161,7 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.
 const issueInput = (
 	incidentId: string,
 	issueId: ErrorIssueId,
-	workerEnv: Record<string, unknown> | undefined,
+	chatSessions: ChatSessionsApi | undefined,
 	overrides: Record<string, unknown> = {},
 ) => ({
 	orgId: ORG,
@@ -175,7 +176,7 @@ const issueInput = (
 		exceptionMessage: "checkpoint schema mismatch",
 		...overrides,
 	},
-	workerEnv,
+	chatSessions,
 })
 
 const noiseVerdict = (overrides?: Partial<IncidentTriageVerdict>) =>
@@ -186,7 +187,7 @@ const noiseVerdict = (overrides?: Partial<IncidentTriageVerdict>) =>
 		severityConfidence: 0.85,
 		userImpact: 0.05,
 		matchedPrior: null,
-		model: "~typesafe/jev-latest",
+		model: "@cf/cloudflare/clef",
 		...overrides,
 	})
 
@@ -209,7 +210,7 @@ describe("maybeEnqueueTriage", () => {
 			yield* enableAutomation
 			const chat = fakeChatSession()
 
-			const result = yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-critical"))
+			const result = yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-critical"))
 			assert.isTrue(result.enqueued)
 			assert.lengthOf(chat.turns, 1)
 			assert.strictEqual(chat.turns[0]!.sessionId, `${ORG}:inv-${result.investigationId}`)
@@ -243,7 +244,7 @@ describe("maybeEnqueueTriage", () => {
 	it.effect("does nothing when the org has not opted in", () =>
 		Effect.gen(function* () {
 			const chat = fakeChatSession()
-			const result = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const result = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.deepStrictEqual(result, { enqueued: false, reason: "disabled" })
 			assert.lengthOf(chat.turns, 0)
 		}).pipe(Effect.provide(makeLayer())),
@@ -254,11 +255,11 @@ describe("maybeEnqueueTriage", () => {
 			yield* enableSettings
 			const chat = fakeChatSession()
 
-			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			assert.lengthOf(chat.turns, 1)
 
-			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isFalse(second.enqueued)
 			assert.strictEqual(second.reason, "duplicate")
 			assert.strictEqual(second.investigationId, first.investigationId)
@@ -271,7 +272,7 @@ describe("maybeEnqueueTriage", () => {
 			yield* enableSettings
 			const chat = fakeChatSession({ busy: true })
 
-			const result = yield* maybeEnqueueTriage(baseInput("incident-busy", chat.env))
+			const result = yield* maybeEnqueueTriage(baseInput("incident-busy", chat.chatSessions))
 			assert.isFalse(result.enqueued)
 			assert.strictEqual(result.reason, "error")
 		}).pipe(Effect.provide(makeLayer())),
@@ -281,7 +282,7 @@ describe("maybeEnqueueTriage", () => {
 		Effect.gen(function* () {
 			yield* enableSettings
 			const chat = fakeChatSession()
-			const start = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
+			const start = (id: string) => maybeEnqueueTriage(baseInput(id, chat.chatSessions))
 
 			// `maxRunsPerDay` is 3 here and these starts carry no severity, so the
 			// ordinary slice of the runs ceiling is what bites, at two.
@@ -321,7 +322,7 @@ describe("maybeEnqueueTriage", () => {
 
 			// First start claims the slot, then we simulate a run that stopped making
 			// progress past the single pass's 15-minute budget.
-			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
 				db
@@ -334,7 +335,7 @@ describe("maybeEnqueueTriage", () => {
 					.where(eq(investigations.orgId, ORG)),
 			)
 
-			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isFalse(second.enqueued)
 			assert.strictEqual(second.reason, "duplicate")
 
@@ -354,7 +355,7 @@ describe("maybeEnqueueTriage", () => {
 			const database = yield* Database
 			const chat = fakeChatSession()
 
-			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
 				db
@@ -363,7 +364,7 @@ describe("maybeEnqueueTriage", () => {
 					.where(eq(investigations.orgId, ORG)),
 			)
 
-			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.env))
+			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isFalse(second.enqueued)
 			assert.strictEqual(second.reason, "duplicate")
 			assert.lengthOf(chat.turns, 1)
@@ -376,7 +377,7 @@ describe("maybeEnqueueTriage", () => {
 			// No settings row at all: an org that has never touched these settings
 			// still gets the full investigation, because how one runs is not a setting.
 			const result = yield* maybeEnqueueTriage({
-				...baseInput("incident-1", chat.env),
+				...baseInput("incident-1", chat.chatSessions),
 				force: true,
 			})
 			assert.isTrue(result.enqueued)
@@ -396,7 +397,7 @@ describe("maybeEnqueueTriage", () => {
 		Effect.gen(function* () {
 			yield* enableWithLimits(50, 4)
 			const chat = fakeChatSession()
-			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
+			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, chat.chatSessions))
 
 			assert.isTrue((yield* ordinary("incident-1")).enqueued) // 0 + 1 <= 2
 			assert.isTrue((yield* ordinary("incident-2")).enqueued) // 1 + 1 <= 2
@@ -406,7 +407,7 @@ describe("maybeEnqueueTriage", () => {
 			}) // 2 + 1 > 2
 
 			// Same instant, same usage, higher severity: the reserved slice is still there.
-			const critical = yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-4"))
+			const critical = yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-4"))
 			assert.isTrue(critical.enqueued) // 2 + 1 <= 4
 			assert.lengthOf(chat.turns, 3)
 		}).pipe(Effect.provide(makeLayer())),
@@ -416,11 +417,16 @@ describe("maybeEnqueueTriage", () => {
 		Effect.gen(function* () {
 			yield* enableWithLimits(50, 1)
 			const chat = fakeChatSession()
-			assert.isTrue((yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-1"))).enqueued)
-			assert.deepStrictEqual(yield* maybeEnqueueTriage(criticalInput(chat.env, "incident-2")), {
-				enqueued: false,
-				reason: "daily_cap",
-			})
+			assert.isTrue(
+				(yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-1"))).enqueued,
+			)
+			assert.deepStrictEqual(
+				yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-2")),
+				{
+					enqueued: false,
+					reason: "daily_cap",
+				},
+			)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -433,7 +439,7 @@ describe("maybeEnqueueTriage", () => {
 			// fresh diagnoses on every flare-up.
 			yield* seedIssue(issueId, { workflowState: "in_review" })
 
-			const result = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.env))
+			const result = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.chatSessions))
 			assert.deepStrictEqual(result, { enqueued: false, reason: "issue_handled" })
 			assert.lengthOf(chat.turns, 0)
 
@@ -454,7 +460,7 @@ describe("maybeEnqueueTriage", () => {
 			const issueId = asIssueId("00000000-0000-4000-8000-000000000002")
 			yield* seedIssue(issueId)
 
-			const first = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.env))
+			const first = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
 				db
@@ -465,7 +471,7 @@ describe("maybeEnqueueTriage", () => {
 
 			// The next incident under the same issue, half an hour later on the same
 			// retry cadence: the diagnosis on file still answers for it.
-			const second = yield* maybeEnqueueTriage(issueInput("incident-2", issueId, chat.env))
+			const second = yield* maybeEnqueueTriage(issueInput("incident-2", issueId, chat.chatSessions))
 			assert.deepStrictEqual(second, {
 				enqueued: false,
 				reason: "recently_diagnosed",
@@ -474,7 +480,7 @@ describe("maybeEnqueueTriage", () => {
 
 			// A regression is the one thing that makes that diagnosis stale on purpose.
 			const regressed = yield* maybeEnqueueTriage(
-				issueInput("incident-3", issueId, chat.env, { reason: "regression" }),
+				issueInput("incident-3", issueId, chat.chatSessions, { reason: "regression" }),
 			)
 			assert.isTrue(regressed.enqueued)
 			assert.lengthOf(chat.turns, 2)
@@ -491,7 +497,7 @@ describe("maybeEnqueueTriage", () => {
 			yield* seedIssue(issueId)
 
 			const result = yield* maybeEnqueueTriage(
-				issueInput("incident-1", issueId, chat.env, {
+				issueInput("incident-1", issueId, chat.chatSessions, {
 					exceptionMessage: "maple is already running (PID 1)",
 					occurrenceCount: 1_661_421,
 				}),
@@ -544,9 +550,9 @@ describe("maybeEnqueueTriage", () => {
 			const issueId = asIssueId("00000000-0000-4000-8000-000000000004")
 			yield* seedIssue(issueId, { severity: "high", severitySource: "manual" })
 
-			const result = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.env)).pipe(
-				Effect.provide(classifier.layer),
-			)
+			const result = yield* maybeEnqueueTriage(
+				issueInput("incident-1", issueId, chat.chatSessions),
+			).pipe(Effect.provide(classifier.layer))
 			assert.strictEqual(result.reason, "noise")
 			const issue = yield* database.execute((db) =>
 				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
@@ -568,7 +574,7 @@ describe("maybeEnqueueTriage", () => {
 			yield* seedIssue(lookalike, { fingerprintHash: "fp-other-store" })
 
 			// A diagnosed run on the first issue, with the headline the classifier is shown.
-			const first = yield* maybeEnqueueTriage(issueInput("incident-1", known, chat.env))
+			const first = yield* maybeEnqueueTriage(issueInput("incident-1", known, chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
 				db
@@ -602,9 +608,9 @@ describe("maybeEnqueueTriage", () => {
 					}),
 				}),
 			])
-			const result = yield* maybeEnqueueTriage(issueInput("incident-2", lookalike, chat.env)).pipe(
-				Effect.provide(classifier.layer),
-			)
+			const result = yield* maybeEnqueueTriage(
+				issueInput("incident-2", lookalike, chat.chatSessions),
+			).pipe(Effect.provide(classifier.layer))
 			assert.deepStrictEqual(result, {
 				enqueued: false,
 				reason: "covered_by_prior",
@@ -625,7 +631,7 @@ describe("maybeEnqueueTriage", () => {
 			yield* enableWithLimits(50, 4)
 			const chat = fakeChatSession()
 			const database = yield* Database
-			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
+			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, chat.chatSessions))
 			assert.isTrue((yield* ordinary("incident-1")).enqueued)
 			assert.isTrue((yield* ordinary("incident-2")).enqueued)
 			assert.strictEqual((yield* ordinary("incident-3")).reason, "daily_cap")

@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { Cause, Exit } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -19,10 +18,10 @@ import {
 	InputGroupInput,
 	InputGroupText,
 } from "@maple/ui/components/ui/input-group"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { useAtomSet } from "@/lib/effect-atom"
+import { useMutationAction } from "@/hooks/use-mutation-action"
 import { updateFeatureControls } from "@/lib/billing/controls"
 import { formatCurrency } from "@maple/domain/format"
 import {
@@ -32,26 +31,14 @@ import {
 	type FeatureSpend,
 	type SpendFeatureId,
 } from "@/lib/billing/spend"
-import { formatCount, formatUsage } from "@/lib/billing/usage"
+import { formatFeatureUsage } from "./format-feature-usage"
 import { BILLING_CUSTOMER_KEY, updateBillingControlsMutation } from "@/lib/services/atoms/billing-atoms"
-
-const formatUnits = (featureId: SpendFeatureId, value: number) =>
-	featureUnit(featureId) === "GB" ? formatUsage(value) : formatCount(value)
 
 /** The typed cap, or null while the field is empty or not yet a usable number. */
 const parseCap = (raw: string): number | null => {
 	if (raw.trim() === "") return null
 	const value = Number(raw)
 	return Number.isFinite(value) && value >= 0 ? value : null
-}
-
-function SummaryRow({ label, value }: { readonly label: string; readonly value: string }) {
-	return (
-		<div className="flex items-baseline justify-between gap-4">
-			<span className="text-xs text-muted-foreground">{label}</span>
-			<span className="font-mono text-xs tabular-nums">{value}</span>
-		</div>
-	)
 }
 
 /**
@@ -73,23 +60,28 @@ function CapSummary({
 	const rate = formatRateLabel(feature)
 
 	return (
-		<div className="mt-5 space-y-2 rounded-lg border border-border/60 bg-muted/32 px-3 py-2.5">
+		<KeyValueList className="mt-5 gap-2 rounded-lg border border-border/60 bg-muted/32 px-3 py-2.5">
 			{feature.included !== null && (
-				<SummaryRow label="Included this cycle" value={formatUnits(featureId, feature.included)} />
+				<KeyValue label="Included this cycle" mono>
+					{formatFeatureUsage(featureId, feature.included)}
+				</KeyValue>
 			)}
-			{rate !== null && <SummaryRow label="Overage rate" value={rate} />}
-			<SummaryRow
-				label="Adds at most"
-				value={
-					cap === null
-						? "Unlimited"
-						: formatCurrency(Math.round(cap * feature.ratePerUnit * 100) / 100, "usd")
-				}
-			/>
+			{rate !== null && (
+				<KeyValue label="Overage rate" mono>
+					{rate}
+				</KeyValue>
+			)}
+			<KeyValue label="Adds at most" mono>
+				{cap === null
+					? "Unlimited"
+					: formatCurrency(Math.round(cap * feature.ratePerUnit * 100) / 100, "usd")}
+			</KeyValue>
 			{cap !== null && feature.included !== null && (
-				<SummaryRow label="Usage stops at" value={formatUnits(featureId, feature.included + cap)} />
+				<KeyValue label="Usage stops at" mono>
+					{formatFeatureUsage(featureId, feature.included + cap)}
+				</KeyValue>
 			)}
-		</div>
+		</KeyValueList>
 	)
 }
 
@@ -106,9 +98,12 @@ export function BillingControlsDialog({
 	readonly open: boolean
 	readonly onOpenChange: (open: boolean) => void
 }) {
-	const save = useAtomSet(updateBillingControlsMutation, { mode: "promiseExit" })
+	const [save, saving] = useMutationAction(updateBillingControlsMutation, {
+		success: `${FEATURE_LABELS[featureId]} controls saved.`,
+		error: "Billing controls could not be saved.",
+		onSuccess: () => onOpenChange(false),
+	})
 	const [limit, setLimit] = useState(existingLimit === undefined ? "" : String(existingLimit))
-	const [saving, setSaving] = useState(false)
 
 	async function handleSave() {
 		const overageLimit = limit.trim() === "" ? null : Number(limit)
@@ -116,22 +111,9 @@ export function BillingControlsDialog({
 			toastManager.add({ title: "Paid overage cap must be zero or greater.", type: "error" })
 			return
 		}
-		setSaving(true)
-		const exit = await save({
+		await save({
 			payload: updateFeatureControls({ featureId, overageLimit }),
 			reactivityKeys: [BILLING_CUSTOMER_KEY],
-		})
-		setSaving(false)
-
-		if (Exit.isSuccess(exit)) {
-			toastManager.add({ title: `${FEATURE_LABELS[featureId]} controls saved.`, type: "success" })
-			onOpenChange(false)
-			return
-		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "Billing controls could not be saved.",
-			type: "error",
 		})
 	}
 
@@ -179,8 +161,8 @@ export function BillingControlsDialog({
 
 				<DialogFooter>
 					<DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-					<Button onClick={handleSave} disabled={saving}>
-						{saving ? <Spinner className="size-4" /> : "Save controls"}
+					<Button onClick={handleSave} loading={saving}>
+						Save controls
 					</Button>
 				</DialogFooter>
 			</DialogPopup>

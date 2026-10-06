@@ -1,4 +1,3 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 /**
  * Forwarding the agent surfaces to maple-ai.
  *
@@ -7,14 +6,13 @@
  * its RFC 8707 resource identifiers on this origin — moving them would
  * invalidate every registered MCP client.
  *
- * Its own module for two reasons: the path predicate is the contract between
- * the two Workers and is worth testing without building a route graph, and the
- * binding arrives as an unparsed `env` value that has to be narrowed rather
- * than asserted.
+ * Its own module because the path predicate is the contract between the two
+ * Workers and is worth testing without building a route graph. The binding
+ * itself arrives already narrowed, as the `AiWorkerFetcher` port.
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Option } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"
 
 /**
@@ -31,16 +29,6 @@ export const forwardsToAi = (path: string): boolean =>
 	path.startsWith("/mcp/") ||
 	path.startsWith("/api/chat/") ||
 	path.startsWith("/internal/chat/")
-
-/**
- * A service binding off `env`, narrowed rather than cast.
- *
- * Only `fetch` is checked, because that is all the forward calls; a binding
- * that is present but not a fetcher is then a logged 503 instead of a defect
- * inside alchemy's adapter.
- */
-export const isCloudflareFetcher = (value: unknown): value is Fetcher =>
-	typeof value === "object" && value !== null && typeof (value as { fetch?: unknown }).fetch === "function"
 
 /** maple-ai could not be reached. CORS headers included: the dashboard's chat calls this from a browser. */
 export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =>

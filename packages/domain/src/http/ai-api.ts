@@ -1,4 +1,4 @@
-import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, OpenApi } from "effect/http-api"
 import { ChatApiGroup } from "./chat"
 import { IncidentTriageApiGroup } from "./incident-triage"
 import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"

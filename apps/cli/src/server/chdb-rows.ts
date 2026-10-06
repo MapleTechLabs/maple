@@ -35,14 +35,14 @@ export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown, never
  */
 export const TableRowCountSchema = Schema.Struct({
 	table: Schema.String,
-	rowCount: Schema.String.check(Schema.isPattern(/^\d+$/)),
+	rowCount: Schema.String.check(Schema.isPattern(/^\d+$/u)),
 })
 
 export const decodeTableRowCounts = decodeJsonEachRow(TableRowCountSchema)
 
 /** A single `toString(count())`-style scalar, for the same UInt64 reason. */
 export const RowCountSchema = Schema.Struct({
-	rowCount: Schema.String.check(Schema.isPattern(/^\d+$/)),
+	rowCount: Schema.String.check(Schema.isPattern(/^\d+$/u)),
 })
 
 export const decodeRowCounts = decodeJsonEachRow(RowCountSchema)

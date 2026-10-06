@@ -267,7 +267,7 @@ const noEffectDie = {
 }
 
 const NO_RAW_TOOL_LAYER_MESSAGE =
-	"Do not register agent tool handlers with `toolkit.toLayer` directly. effect-agent's `execute_tool` span is content-free, so a raw registration renders in Agent Sessions as a tool call with no arguments and no result — which is how `submit_diagnosis` shipped for months. Use `toolHandlersWithContent(toolkit, handlers)` from `apps/ai/src/platform/genai-spans.ts`, which returns both the wrapped handler map and its layer."
+	"Do not register agent tool handlers with `toolkit.toLayer` directly. @yielded/agent's `execute_tool` span is content-free, so a raw registration renders in Agent Sessions as a tool call with no arguments and no result — which is how `submit_diagnosis` shipped for months. Use `toolHandlersWithContent(toolkit, handlers)` from `apps/ai/src/platform/genai-spans.ts`, which returns both the wrapped handler map and its layer."
 
 /**
  * `<toolkit>.toLayer(...)`, which is the Effect AI `Toolkit` registration seam.

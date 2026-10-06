@@ -1,0 +1,385 @@
+---
+title: "Trace LangChain and LangGraph agents with OpenTelemetry"
+description: "Send LangChain and LangGraph runs to Maple with OpenInference, one Agent Session per thread."
+group: "AI Agents"
+order: 13
+navLabel: "LangChain & LangGraph"
+icon: "langchain"
+---
+
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
+OpenInference's LangChain instrumentation sends LangChain and LangGraph runs to Maple, in Python (`langchain`, `langgraph`) and TypeScript (`langchain`, `@langchain/langgraph`). Pass the conversation's `thread_id` on every call so a chat becomes one session.
+
+You need Python 3.10 or later, or Node.js 20 or later with `@langchain/core` 1.x (Bun works too).
+
+## Quick setup with a coding agent
+
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-langchain](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-langchain) skill and follows it.
+
+```text
+Set up Maple agent tracing for LangChain & LangGraph in this project.
+
+Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-langchain -y`, then follow it.
+
+My Maple ingest key is maple_pk_... and my organization is in the US region.
+```
+
+Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+
+## Install the instrumentor
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+```bash
+pip install "langchain>=1.4" "langgraph>=1.2" "langchain-openai>=1.6" \
+  "openinference-instrumentation-langchain>=0.1.76" "openinference-instrumentation>=0.1.66" \
+  "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
+```
+
+Keep the explicit `openinference-instrumentation` pin. Older versions don't work with this setup.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+```bash
+npm install @arizeai/openinference-instrumentation-langchain @opentelemetry/sdk-node @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+```
+
+`@opentelemetry/sdk-node` has to be 0.209 or newer.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Point the exporter at Maple
+
+```bash
+export OTEL_SERVICE_NAME=support-agent
+export OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+```
+
+EU organizations use `https://ingest.eu.maple.dev`. The exporter appends `/v1/traces` itself. If you pass the endpoint to the exporter in code instead, it has to end in `/v1/traces`.
+
+## Initialize tracing
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Add a `tracing.py` and import it at the top of your entry point, before the first `invoke()`:
+
+```py
+# tracing.py
+from openinference.instrumentation import TraceConfig
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# The name= you gave create_agent(), and graph nodes that act as agents
+AGENT_NAMES = {"assistant"}
+# Your tool node
+STEP_NAMES = {"tools"}
+
+
+class AgentSpans(SpanProcessor):
+    def on_start(self, span, parent_context=None):
+        if span.instrumentation_scope.name != "openinference.instrumentation.langchain":
+            return
+        if span.name in AGENT_NAMES:
+            span.set_attribute("gen_ai.operation.name", "invoke_agent")
+            span.set_attribute("gen_ai.agent.name", span.name)
+        elif span.name in STEP_NAMES:
+            span.set_attribute("gen_ai.operation.name", "invoke_workflow")
+
+
+provider = TracerProvider()
+provider.add_span_processor(AgentSpans())
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+LangChainInstrumentor().instrument(
+    tracer_provider=provider,
+    config=TraceConfig(enable_genai_semconv=True),
+)
+```
+
+Put every agent's `name=` in `AGENT_NAMES`, sub-agents included, so each gets its own lane. If your tool node isn't called `tools`, add its name to `STEP_NAMES`.
+
+If the app already has a `TracerProvider` (from `opentelemetry-instrument`, Logfire or Sentry), add `AgentSpans()` and the exporter to it and pass it to `instrument()`.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+The TypeScript instrumentation only writes OpenInference attributes, so add a span processor that copies them into the GenAI attributes Maple reads. Save this file as `genai-spans.ts`:
+
+```ts
+// genai-spans.ts: adds the OpenTelemetry GenAI attributes Maple reads to OpenInference's LangChain spans
+import type { Span, SpanProcessor } from "@opentelemetry/sdk-trace-base"
+
+// Hand-built StateGraph agents, by compiled name. createAgent({ name }) is detected on its own.
+const AGENT_NAMES = new Set<string>()
+
+const ROLES: Record<string, string> = { human: "user", ai: "assistant" }
+
+function parse(value: unknown): any {
+	if (typeof value !== "string") return undefined
+	try {
+		return JSON.parse(value)
+	} catch {
+		return undefined
+	}
+}
+
+function text(content: unknown): string {
+	if (typeof content === "string") return content
+	if (!Array.isArray(content)) return ""
+	return content.map((block) => (block?.type === "text" ? block.text : "")).join("")
+}
+
+// LangChain messages are serialized as { lc, id: [..., "AIMessage"], kwargs }; plain inputs are { role, content }
+function toGenAiMessage(message: any) {
+	const fields = message?.lc ? message.kwargs : (message ?? {})
+	const type = message?.lc
+		? String(message.id.at(-1)).replace(/Message(Chunk)?$/, "").toLowerCase()
+		: String(fields.role ?? fields.type)
+	const role = ROLES[type] ?? type
+	const parts: object[] = []
+	if (role === "tool") {
+		parts.push({ type: "tool_call_response", id: fields.tool_call_id, response: text(fields.content) })
+	} else if (text(fields.content)) {
+		parts.push({ type: "text", content: text(fields.content) })
+	}
+	for (const call of fields.tool_calls ?? []) {
+		parts.push({ type: "tool_call", id: call.id, name: call.name, arguments: call.args })
+	}
+	return { role, parts }
+}
+
+export class GenAiSpans implements SpanProcessor {
+	// Tool call arguments by call id, from the model reply that requested them
+	private toolArgs = new Map<string, unknown>()
+
+	onEnding(span: Span) {
+		if (span.instrumentationScope.name !== "@arizeai/openinference-instrumentation-langchain") return
+		const attrs = span.attributes
+		const set = (key: string, value: unknown) => {
+			if (value === undefined || value === null || value === "") return
+			span.setAttribute(key, typeof value === "object" ? JSON.stringify(value) : (value as string | number))
+		}
+		const metadata = parse(attrs["metadata"]) ?? {}
+		const input = parse(attrs["input.value"])
+		const output = parse(attrs["output.value"])
+		const kind = attrs["openinference.span.kind"]
+
+		if (kind === "LLM") {
+			const generations = output?.generations?.[0] ?? []
+			const reply = generations[0]?.message?.kwargs ?? {}
+			const finish = generations[0]?.generationInfo?.finish_reason ?? reply.response_metadata?.finish_reason
+			if (this.toolArgs.size > 1000) this.toolArgs.clear() // calls whose tool never ran
+			for (const call of reply.tool_calls ?? []) this.toolArgs.set(call.id, call.args)
+			set("gen_ai.operation.name", "chat")
+			set("gen_ai.provider.name", metadata.ls_provider)
+			set("gen_ai.request.model", attrs["llm.model_name"])
+			set("gen_ai.response.model", reply.response_metadata?.model_name)
+			set("gen_ai.response.id", reply.id)
+			set("gen_ai.usage.input_tokens", attrs["llm.token_count.prompt"])
+			set("gen_ai.usage.output_tokens", attrs["llm.token_count.completion"])
+			if (finish) span.setAttribute("gen_ai.response.finish_reasons", [finish])
+			set("gen_ai.input.messages", (input?.messages?.[0] ?? []).map(toGenAiMessage))
+			set(
+				"gen_ai.output.messages",
+				generations.map((g: any) => ({ ...toGenAiMessage(g.message ?? { role: "assistant", content: g.text }), finish_reason: finish ?? "stop" })),
+			)
+		} else if (kind === "TOOL") {
+			// A tool called by the model returns a serialized ToolMessage
+			const message = output?.output?.lc ? output.output.kwargs : undefined
+			const content = message ? text(message.content) : attrs["output.value"]
+			const result = parse(content)
+			set("gen_ai.operation.name", "execute_tool")
+			set("gen_ai.tool.name", attrs["tool.name"])
+			set("gen_ai.tool.call.id", message?.tool_call_id)
+			set("gen_ai.tool.call.arguments", this.toolArgs.get(message?.tool_call_id))
+			this.toolArgs.delete(message?.tool_call_id)
+			if (content !== undefined) set("gen_ai.tool.call.result", typeof result === "object" && result !== null ? result : content)
+		} else if (span.name === metadata.lc_agent_name || AGENT_NAMES.has(span.name)) {
+			const messages = output?.messages ?? []
+			set("gen_ai.operation.name", "invoke_agent")
+			set("gen_ai.agent.name", span.name)
+			set("gen_ai.input.messages", (input?.messages ?? []).map(toGenAiMessage))
+			set("gen_ai.output.messages", messages.slice(-1).map(toGenAiMessage))
+		} else if (kind !== "RETRIEVER" && kind !== "EMBEDDING") {
+			// Graph nodes, prompts and other runnables: steps, not model or tool calls
+			set("gen_ai.operation.name", "invoke_workflow")
+		}
+	}
+
+	onStart() {}
+	onEnd() {}
+	forceFlush() {
+		return Promise.resolve()
+	}
+	shutdown() {
+		return Promise.resolve()
+	}
+}
+```
+
+Then create an `instrumentation.ts` and import it as the first line of your entry point (`import "./instrumentation"`):
+
+```ts
+// instrumentation.ts
+import { LangChainInstrumentation } from "@arizeai/openinference-instrumentation-langchain"
+import * as CallbackManagerModule from "@langchain/core/callbacks/manager"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { GenAiSpans } from "./genai-spans"
+
+// Reads OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES and OTEL_EXPORTER_OTLP_*
+export const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter())
+export const sdk = new NodeSDK({
+	spanProcessors: [new GenAiSpans(), spanProcessor],
+	// Room for long chats: OpenInference writes several attributes per message
+	spanLimits: { attributeCountLimit: 1000 },
+})
+sdk.start()
+
+new LangChainInstrumentation().manuallyInstrument(CallbackManagerModule)
+```
+
+Keep the `manuallyInstrument()` call. Without it, nothing from LangChain is traced.
+
+Give every `createAgent()` a `name`, sub-agents included, so each gets its own lane. For a graph you build with `StateGraph`, compile it with a name (`.compile({ name: "planner" })`) and add that name to `AGENT_NAMES`.
+
+If the app already starts a `NodeSDK` or another tracer provider (auto-instrumentations, Sentry), add `new GenAiSpans()` and the exporter's processor to its span processors instead of starting a second SDK.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Group a conversation with thread_id
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Pass your app's conversation id as `thread_id` on every `invoke()`, `stream()` and `Command(resume=...)`:
+
+```py
+import tracing  # first, before the first invoke()
+
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    ChatOpenAI(model="gpt-4o-mini", stream_usage=True),
+    tools=[get_weather, calculate],
+    name="assistant",
+    checkpointer=InMemorySaver(),
+)
+
+
+def handle_message(conversation_id: str, text: str) -> str:
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": text}]},
+        {"configurable": {"thread_id": conversation_id}},
+    )
+    return result["messages"][-1].content
+```
+
+Use the id your app stores the chat under. A new UUID per request gives you one session per message. A plain chain (`prompt | model`, no graph) ignores `configurable`, so pass `{"metadata": {"thread_id": conversation_id}}` instead.
+
+Keep `stream_usage=True` if `ChatOpenAI` uses a custom `base_url`, vLLM or a gateway. Without it, streamed replies have no tokens.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+Pass your app's conversation id as `thread_id` on every `invoke()`, `stream()` and `new Command({ resume })`:
+
+```ts
+import "./instrumentation" // first, before the first invoke()
+
+import { ChatOpenAI } from "@langchain/openai"
+import { MemorySaver } from "@langchain/langgraph"
+import { createAgent } from "langchain"
+
+const agent = createAgent({
+	model: new ChatOpenAI({ model: "gpt-4o-mini" }),
+	tools: [getWeather, calculate],
+	name: "assistant",
+	checkpointer: new MemorySaver(),
+})
+
+export async function handleMessage(conversationId: string, text: string) {
+	const result = await agent.invoke(
+		{ messages: [{ role: "user", content: text }] },
+		{ configurable: { thread_id: conversationId } },
+	)
+	return result.messages.at(-1)?.content
+}
+```
+
+Use the id your app stores the chat under. A new UUID per request gives you one session per message. A plain chain (`prompt.pipe(model)`, no graph) ignores `configurable`, so pass `{ metadata: { thread_id: conversationId } }` instead.
+
+</LanguageTab>
+</LanguageTabs>
+
+## Flush in short-lived processes
+
+<LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
+<LanguageTab id="python">
+
+Long-running servers need nothing. In serverless handlers, notebooks and task workers, flush after each run:
+
+```py
+from tracing import provider
+
+try:
+    handle_message("conv-42", "What's the weather in Berlin?")
+finally:
+    provider.force_flush()
+```
+
+On LangGraph Server (`langgraph dev` or self-hosted), import `tracing` at the top of the graph module that `langgraph.json` points to, and set the `OTEL_*` variables in the server's environment. Server threads group into sessions without extra code.
+
+</LanguageTab>
+<LanguageTab id="typescript">
+
+Long-running servers need nothing. At the end of a script, call `await sdk.shutdown()`. In serverless handlers and queue workers, flush after each run:
+
+```ts
+import { spanProcessor } from "./instrumentation"
+
+try {
+	await handleMessage("conv-42", "What's the weather in Berlin?")
+} finally {
+	await spanProcessor.forceFlush()
+}
+```
+
+</LanguageTab>
+</LanguageTabs>
+
+## Check that it works
+
+Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session with one turn per `invoke()`, a readable transcript, model calls with tokens, and tool calls named after your tools.
+
+Cost shows as **unpriced**, which is expected.
+
+## Troubleshooting
+
+- **No spans at all.** Load the tracing file before the first `invoke()`. In Python, pass `tracer_provider=provider`; in TypeScript, keep the `manuallyInstrument()` call. Then check the logs for exporter errors.
+- **One session per message.** The `thread_id` is missing or changes per request (plain chains need it in `metadata`).
+- **Streamed replies have no tokens.** In Python, set `stream_usage=True` on `ChatOpenAI`. In TypeScript, remove `streamUsage: false`.
+- **Every model call appears twice.** Remove `LANGSMITH_OTEL_ENABLED` and any provider instrumentor such as `openinference-instrumentation-openai`. Plain `LANGSMITH_TRACING=true` is fine.
+- **No agent lane, extra tool calls, or a tool shown as an agent.** In Python, fill `AGENT_NAMES` and `STEP_NAMES`, and don't put "agent" in tool names. In TypeScript, give every `createAgent()` a `name`.
+
+## Related
+
+- [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
+- [OpenRouter](/docs/agent-tracing/openrouter): if your models go through OpenRouter.
+- [LangChain docs](https://docs.langchain.com)

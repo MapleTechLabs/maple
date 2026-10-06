@@ -285,6 +285,14 @@ describe("mapWarehouseError", () => {
 })
 
 describe("cleanErrorMessage", () => {
+	it("drops the vendor's plan upsell", () => {
+		expect(
+			cleanErrorMessage(
+				"[Error] Memory limit exceeded. Upgrade your plan for higher capacity. (MEMORY_LIMIT_EXCEEDED)",
+			),
+		).toBe("[Error] Memory limit exceeded. (MEMORY_LIMIT_EXCEEDED)")
+	})
+
 	it("retains the authentication diagnostic without the echoed token", () => {
 		const message =
 			"invalid authentication token. Invalid token b'opaque-secret': Signature verification failed"
@@ -312,6 +320,33 @@ describe("cleanErrorMessage", () => {
 		)
 		expect(cleaned).not.toContain("<")
 		expect(cleaned).toBe("Request failed with status 503")
+	})
+
+	it("keeps comparison operators in echoed SQL across UNION branches", () => {
+		const branch = (t: string) =>
+			`SELECT count() FROM ${t} WHERE TimeUnix >= toDateTime('2026-10-01 12:00:00') AND TimeUnix <= toDateTime('2026-10-01 12:10:00')`
+		const sql = `${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} AND a < 5 AND b > 3`
+		const message = `Code: 47. DB::Exception: Unknown expression identifier 'n' in scope ${sql}. (UNKNOWN_IDENTIFIER)`
+		const cleaned = cleanErrorMessage(message)
+		expect(cleaned).toBe(message)
+		expect(cleaned.match(/TimeUnix <= /g)).toHaveLength(3)
+		expect(cleaned.match(/TimeUnix >= /g)).toHaveLength(3)
+	})
+
+	it("strips inline HTML tags outside a full page", () => {
+		expect(cleanErrorMessage('Bad gateway <b>upstream</b> <p class="x">down</p>')).toBe(
+			"Bad gateway upstream down",
+		)
+	})
+
+	it("strips a doctype and unquoted attributes but keeps tag-like SQL comparisons", () => {
+		expect(cleanErrorMessage("Request failed with status 503: <!DOCTYPE html>\n<html><head>")).toBe(
+			"Request failed with status 503",
+		)
+		expect(cleanErrorMessage("Bad gateway <p class=x>down</p>")).toBe("Bad gateway down")
+		expect(cleanErrorMessage("Syntax error near WHERE x<b AND y>3")).toBe(
+			"Syntax error near WHERE x<b AND y>3",
+		)
 	})
 
 	it("trims a trailing colon", () => {

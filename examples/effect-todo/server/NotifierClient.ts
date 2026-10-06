@@ -13,8 +13,8 @@
  *   `todo-api → todo-notifier` edge on Maple's service map.
  */
 import { Context, Effect, Layer } from "effect"
-import { HttpClient } from "effect/unstable/http"
-import { HttpApiClient } from "effect/unstable/httpapi"
+import { HttpClient } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
 import { NotifierApi } from "../shared/notifier-api.ts"
 
 export const notifierBaseUrl = process.env.NOTIFIER_URL ?? "http://127.0.0.1:4502"

@@ -60,9 +60,9 @@ export interface EnvConfig {
 	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
 	readonly MAPLE_REGION: MapleRegion
 	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
-	readonly MAPLE_EMAIL_ALLOW_NONPROD: string
+	readonly MAPLE_EMAIL_ALLOW_NONPROD: boolean
 	/** Route every org to the managed warehouse; honoured only in development. */
-	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: string
+	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: boolean
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
 	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
@@ -202,8 +202,12 @@ const envConfig = Config.all({
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
-	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false"),
-	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false"),
+	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false").pipe(
+		Config.map((value) => value === "true"),
+	),
+	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false").pipe(
+		Config.map((value) => value === "1" || value === "true"),
+	),
 	CLERK_SECRET_KEY: optionalRedacted("CLERK_SECRET_KEY"),
 	CLERK_PUBLISHABLE_KEY: optionalString("CLERK_PUBLISHABLE_KEY"),
 	CLERK_JWT_KEY: optionalRedacted("CLERK_JWT_KEY"),

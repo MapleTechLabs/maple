@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -149,7 +150,9 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 				</span>
 				<span className="font-medium text-sm">{template.title}</span>
 			</div>
-			<code className="font-mono text-[11px] text-muted-foreground">{template.summary}</code>
+			<InlineCode className="self-start text-[11px] text-muted-foreground">
+				{template.summary}
+			</InlineCode>
 		</Link>
 	)
 }
@@ -158,8 +161,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
  * The signature graphic: a live signal (muted, with a pulsing leading edge)
  * running steadily below a dashed amber threshold that hasn't been placed yet —
  * the exact thing a rule adds. The threshold reuses `.infra-ref-line` (dashed
- * draw-in) and the leading dot reuses `.infra-pulse`; both idioms already carry
- * their own `prefers-reduced-motion` guards from styles.css.
+ * draw-in, with its own `prefers-reduced-motion` guard in styles.css); the leading dot is static.
  */
 function QuietMonitor() {
 	return (
@@ -189,14 +191,7 @@ function QuietMonitor() {
 					opacity="0.7"
 				/>
 				{/* Pulsing leading edge — signals are flowing, nothing is watching them. */}
-				<circle
-					cx="290"
-					cy="59"
-					r="4"
-					className="infra-pulse fill-primary"
-					style={{ transformBox: "fill-box", transformOrigin: "center" }}
-					opacity="0.5"
-				/>
+				<circle cx="290" cy="59" r="4" className="fill-primary" opacity="0.5" />
 				<circle cx="290" cy="59" r="2.5" className="fill-primary" />
 			</svg>
 		</div>

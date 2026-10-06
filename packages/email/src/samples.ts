@@ -154,7 +154,7 @@ export const healthyDigestProps: WeeklyDigestProps = {
 	},
 	baseUrl: "https://app.maple.dev",
 	dashboardUrl: "https://app.maple.dev",
-	unsubscribeUrl: "https://app.maple.dev/settings/notifications",
+	unsubscribeUrl: "https://app.maple.dev/settings?tab=notifications",
 }
 
 /** Elevated error rate, errors and latency climbing week over week. */
@@ -475,7 +475,7 @@ export const webAnalyticsDigestProps: WebAnalyticsDigestProps = {
 	analyticsUrl:
 		"https://app.maple.dev/analytics?startTime=2026-09-21+00%3A00%3A00&endTime=2026-09-27+23%3A59%3A59",
 	aiUrl: "https://app.maple.dev/analytics?startTime=2026-09-21+00%3A00%3A00&endTime=2026-09-27+23%3A59%3A59&tab=ai",
-	unsubscribeUrl: "https://app.maple.dev/settings/notifications",
+	unsubscribeUrl: "https://app.maple.dev/settings?tab=notifications",
 }
 
 /** A small site with no AI traffic and a warehouse without the crawler table. */

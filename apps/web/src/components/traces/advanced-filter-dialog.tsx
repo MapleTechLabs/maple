@@ -9,6 +9,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@maple/ui/components/ui/dialog"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { CircleWarningIcon, MagnifierIcon } from "@/components/icons"
@@ -93,11 +94,8 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 				<DialogHeader>
 					<DialogTitle>Advanced Filter</DialogTitle>
 					<DialogDescription>
-						Write SQL-like queries to filter traces. Use{" "}
-						<kbd className="bg-muted px-1 py-0.5 rounded text-foreground">Ctrl+Space</kbd> for
-						autocomplete. Press{" "}
-						<kbd className="bg-muted px-1 py-0.5 rounded text-foreground">Cmd+Enter</kbd> to
-						apply.
+						Write SQL-like queries to filter traces. Use <Kbd>Ctrl+Space</Kbd> for autocomplete.
+						Press <Kbd>Cmd+Enter</Kbd> to apply.
 					</DialogDescription>
 				</DialogHeader>
 				<DialogPanel>
@@ -114,14 +112,16 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 						ariaLabel="Advanced traces where clause"
 					/>
 					{warnings.length > 0 && (
-						<div className="mt-2 flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-							<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-							<ul className="space-y-1">
-								{warnings.map((warning) => (
-									<li key={warning}>{warning}</li>
-								))}
-							</ul>
-						</div>
+						<Alert variant="warn" size="sm" className="mt-2">
+							<CircleWarningIcon size={14} />
+							<AlertDescription className="text-severity-warn">
+								<ul className="space-y-1">
+									{warnings.map((warning) => (
+										<li key={warning}>{warning}</li>
+									))}
+								</ul>
+							</AlertDescription>
+						</Alert>
 					)}
 				</DialogPanel>
 				<DialogFooter>

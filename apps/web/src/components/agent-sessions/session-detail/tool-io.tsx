@@ -1,11 +1,13 @@
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { ArrowDownIcon, ArrowUpIcon, CircleQuestionIcon } from "@/components/icons"
 import { ClampedText, type ClampLines } from "./clamped-text"
 import { disclosed, useJsonPayload, ViewSwitch } from "./payload-view"
-import { Pill } from "./pill"
 
 /**
  * One invocation, both halves, joined by a spine.
@@ -37,7 +39,6 @@ export interface ToolIoPayload {
 const IN_CLAMP: ClampLines = 8
 const OUT_CLAMP: ClampLines = 14
 
-const LABEL = "font-medium font-mono text-[10px] uppercase tracking-[0.1em]"
 const META = "font-mono text-[10px] text-muted-foreground"
 /** Fixed, so the two markers and every body below them share one lane. */
 const GUTTER = "flex w-8 shrink-0 flex-col items-center gap-1.5 pt-2.5"
@@ -177,7 +178,7 @@ function IoHalf({
 				// rather than a ground token — light mode paints card and background
 				// the same white, so a token swap would recess nothing there.
 				direction === "in" ? "bg-black/[0.06]" : "border-border/60 border-t",
-				direction === "out" && failed && "bg-destructive/5",
+				direction === "out" && failed && "bg-severity-error/5",
 			)}
 		>
 			<div className={GUTTER}>
@@ -188,18 +189,18 @@ function IoHalf({
 			</div>
 			<div className="flex min-w-0 grow flex-col gap-2 pt-2.5 pr-3 pb-3">
 				<div className="flex flex-wrap items-center gap-2">
-					<span className={cn(LABEL, failed ? "text-destructive" : "text-foreground")}>
+					<Eyebrow variant="mono" className={failed ? "text-severity-error" : "text-foreground"}>
 						{label}
-					</span>
+					</Eyebrow>
 					<span className={META}>
 						{[name, meta, sizeLine(payload)].filter(Boolean).join(" · ")}
 					</span>
 					{/* Emitter truncation, not the view's clamping — there is no "show
 					    full" that can recover what was never recorded. */}
 					{payload.truncatedByEmitter && (
-						<Pill tone="warn" className="rounded-sm font-mono normal-case tracking-normal">
+						<Badge size="xs" mono className={TONE_SOFT.warn}>
 							truncated by the emitter
-						</Pill>
+						</Badge>
 					)}
 					{/* Copies what is displayed: the pretty-printed JSON, or the raw text.
 					    The switch only appears where the two differ. */}
@@ -225,7 +226,7 @@ function IoHalf({
 						rendering={!raw && isJson ? "json" : "text"}
 						mono
 						clampLines={clampLines}
-						toneClass={failed ? "text-destructive/90" : undefined}
+						toneClass={failed ? "text-severity-error/90" : undefined}
 						expanded={disclosed(openRows, textKey, false)}
 						onToggleExpanded={() => onToggleRow(textKey)}
 					/>
@@ -250,7 +251,9 @@ function MissingHalf({ label, note }: { label: string; note: string }) {
 					<CircleQuestionIcon size={9} className="text-muted-foreground" />
 				</span>
 			</span>
-			<span className={cn(LABEL, "shrink-0 pr-2.5 text-muted-foreground")}>{label}</span>
+			<Eyebrow variant="mono" className="shrink-0 pr-2.5 text-muted-foreground">
+				{label}
+			</Eyebrow>
 			<span className="min-w-0 text-muted-foreground text-xs">{note}</span>
 		</div>
 	)
@@ -270,7 +273,7 @@ function Marker({ direction, failed }: { direction: "in" | "out"; failed: boolea
 		<span
 			className={cn(
 				"flex size-4 shrink-0 items-center justify-center rounded-full",
-				failed ? "bg-destructive" : "bg-chart-4",
+				failed ? "bg-severity-error" : "bg-chart-4",
 			)}
 		>
 			<ArrowUpIcon size={9} aria-hidden className="text-background" />

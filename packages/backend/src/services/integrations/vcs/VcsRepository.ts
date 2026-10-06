@@ -3,8 +3,11 @@ import {
 	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
+	mergePrReviewConfig,
 	type OrgId,
 	PrReviewListItem,
+	PrReviewModel,
+	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type RepoUpsertInput,
 	type UserId,
@@ -25,6 +28,7 @@ import {
 } from "@maple/domain/http"
 import {
 	prReviews,
+	prReviewSettings,
 	vcsCommits,
 	vcsInstallations,
 	vcsRepositoryBranches,
@@ -49,6 +53,7 @@ const decodeInstallation = Schema.decodeUnknownSync(VcsInstallation)
 const decodeRepo = Schema.decodeUnknownSync(VcsRepo)
 const decodeCommit = Schema.decodeUnknownSync(VcsCommit)
 const decodePrReviewConfig = Schema.decodeUnknownOption(PrReviewRepositoryConfig)
+const decodePrReviewModel = Schema.decodeUnknownOption(PrReviewModel)
 const decodePrReviewListItem = Schema.decodeUnknownSync(PrReviewListItem)
 const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
@@ -957,6 +962,59 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return rows.length > 0
 		})
 
+		const getPrReviewSettings = Effect.fn("VcsRepository.getPrReviewSettings")(function* (orgId: OrgId) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({ model: prReviewSettings.model, defaults: prReviewSettings.defaults })
+						.from(prReviewSettings)
+						.where(eq(prReviewSettings.orgId, orgId))
+						.limit(1),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			// Each field decodes on its own: a model dropped from the catalog keeps the defaults.
+			const model = decodePrReviewModel(rows[0]?.model)
+			const defaults = decodePrReviewConfig(rows[0]?.defaults ?? {})
+			return new PrReviewOrgSettings({
+				...(Option.isSome(model) ? { model: model.value } : undefined),
+				...(Option.isSome(defaults) ? { defaults: defaults.value } : undefined),
+			})
+		})
+
+		// What a review of the repository runs with: its own settings over the organization's.
+		const getEffectivePrReviewConfig = Effect.fn("VcsRepository.getEffectivePrReviewConfig")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+		) {
+			const [settings, config] = yield* Effect.all(
+				[getPrReviewSettings(orgId), getPrReviewConfig(orgId, repositoryId)],
+				{ concurrency: 2 },
+			)
+			return mergePrReviewConfig(settings.defaults, config)
+		})
+
+		const setPrReviewSettings = Effect.fn("VcsRepository.setPrReviewSettings")(function* (
+			orgId: OrgId,
+			settings: PrReviewOrgSettings,
+			updatedBy: UserId,
+		) {
+			const now = msToDate(yield* Clock.currentTimeMillis)
+			const values = {
+				model: settings.model ?? null,
+				defaults: settings.defaults ?? null,
+				updatedAt: now,
+				updatedBy,
+			}
+			yield* database
+				.execute((db) =>
+					db
+						.insert(prReviewSettings)
+						.values({ orgId, ...values })
+						.onConflictDoUpdate({ target: prReviewSettings.orgId, set: values }),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+		})
+
 		// A repository's most recent reviews, newest first, for the settings list.
 		const listPrReviews = Effect.fn("VcsRepository.listPrReviews")(function* (
 			orgId: OrgId,
@@ -1149,6 +1207,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			setPrReviewEnabled,
 			getPrReviewConfig,
 			setPrReviewConfig,
+			getEffectivePrReviewConfig,
+			getPrReviewSettings,
+			setPrReviewSettings,
 			listPrReviews,
 			reconcileBranchDeletions,
 			deleteBranch,

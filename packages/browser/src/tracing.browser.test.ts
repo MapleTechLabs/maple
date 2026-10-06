@@ -44,6 +44,12 @@ const CONFIG = {
 	tracingCaptureErrors: false,
 	replayEnabled: false,
 	replaySampleRate: 0,
+	replayOnErrorSampleRate: 0,
+	canvasFps: undefined,
+	networkBodies: undefined,
+	captureHeaders: { request: [], response: [] },
+	longFrames: false,
+	slowInteractions: false,
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
@@ -53,6 +59,15 @@ const CONFIG = {
 	captureUserEmail: true,
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
+	tracingSampleRate: 1,
+	tracingInstrumentXhr: false,
+	errorFilters: {},
+	webVitals: false,
+	breadcrumbs: false,
+	captureConsole: [],
+	reportCsp: false,
+	reportBrowser: false,
+	offlineQueue: false,
 	sanitizeUrl: undefined,
 }
 
@@ -200,6 +215,103 @@ describe("setupTracing unload flush", () => {
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 		expect(exported[0]?.attributes["url.full"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("spans an XMLHttpRequest and ends it on pagehide like a fetch", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0), poll)
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+		expect(exported[0]?.attributes["url.full"] ?? exported[0]?.attributes["http.url"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("records allowlisted headers as semconv attributes, never credentials", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({
+			...CONFIG,
+			tracingInstrumentFetch: true,
+			captureHeaders: { request: ["x-request-id"], response: ["content-type"] },
+		})
+		const url = URL.createObjectURL(new Blob(["ok"], { type: "text/plain" }))
+
+		await (
+			await fetch(url, { headers: { "x-request-id": "req-1", authorization: "Bearer secret" } })
+		).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		const attributes = exported[0]?.attributes ?? {}
+		expect(attributes["http.request.header.x-request-id"]).toEqual(["req-1"])
+		expect(attributes["http.response.header.content-type"]).toEqual(["text/plain"])
+		expect(Object.keys(attributes).some((key) => key.includes("authorization"))).toBe(false)
+		URL.revokeObjectURL(url)
+	})
+
+	it("marks a fetch that never got a response as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		await expect(fetch(url)).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("TypeError")
+		// error.message is deprecated in the conventions; error.type carries the class of failure.
+		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
+	})
+
+	it("counts a fetch that timed out through AbortSignal.timeout() as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["slow"]))
+		const signal = AbortSignal.abort(new DOMException("signal timed out", "TimeoutError"))
+
+		await expect(fetch(url, { signal })).rejects.toThrow("signal timed out")
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("TimeoutError")
+		URL.revokeObjectURL(url)
+	})
+
+	it("does not count a fetch aborted with a custom reason as a network failure", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+		const controller = new AbortController()
+		controller.abort(new Error("unmounted"))
+
+		await expect(fetch(url, { signal: controller.signal })).rejects.toThrow("unmounted")
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
 		URL.revokeObjectURL(url)
 	})
 

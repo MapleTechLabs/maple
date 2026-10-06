@@ -1,21 +1,20 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { DockerIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { ErrorState } from "@/components/common/error-state"
+import { DockerIcon, MagnifierIcon } from "@/components/icons"
+import { PageHero } from "@/components/common/page-hero"
+import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
+import { HostsViewTabs } from "@/components/infra/hosts-view-tabs"
 import { ContainerTable, ContainerTableLoading } from "@/components/infra/container-table"
 import {
 	ContainerSummaryBand,
@@ -217,7 +216,9 @@ function ContainersPage() {
 					</DashboardLayout.Filters>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
+							<DashboardLayout.Header
+								titleContent={<HostsViewTabs view="containers" timeSearch={search} />}
+							>
 								<TimeRangeHeaderControls
 									startTime={search.startTime ?? startTime}
 									endTime={search.endTime ?? endTime}
@@ -247,7 +248,9 @@ function ContainersPage() {
 								/>
 
 								{Result.builder(summaryResult)
-									.onInitial(() => <ContainerSummaryBandLoading />)
+									.onInitial(() => (
+										<ContainerSummaryBandLoading className={FLEET_BAND_BOXED} />
+									))
 									.onError(() => null)
 									.onSuccess((counts, result) => (
 										<ContainerSummaryBand
@@ -255,13 +258,14 @@ function ContainersPage() {
 											activeScope={scope}
 											onScopeChange={(next) => patchSearch({ scope: next })}
 											waiting={result.waiting}
+											className={FLEET_BAND_BOXED}
 										/>
 									))
 									.render()}
 
 								{Result.builder(containersResult)
 									.onInitial(() => <ContainerTableLoading />)
-									.onError((err) => <QueryErrorState error={err} />)
+									.onError((err) => <ErrorState error={err} />)
 									.onSuccess((response, result) => {
 										const containers = response.data
 										const total = response.totalCount
@@ -281,45 +285,21 @@ function ContainersPage() {
 
 										return (
 											<div
-												className={`space-y-4 transition-opacity ${
-													result.waiting ? "opacity-60" : ""
-												}`}
+												className={cn("space-y-4", refreshingClass(result.waiting))}
+												aria-busy={result.waiting || undefined}
 											>
-												<div className="flex flex-wrap items-center justify-between gap-3">
-													<InputGroup className="w-64">
-														<InputGroupAddon>
-															<MagnifierIcon />
-														</InputGroupAddon>
-														<InputGroupInput
-															size="sm"
-															placeholder="Search all containers…"
-															value={searchText}
-															onChange={(e) =>
-																patchSearch({
-																	q: e.target.value || undefined,
-																})
-															}
-														/>
-														{searchText && (
-															<InputGroupAddon align="inline-end">
-																<InputGroupButton
-																	aria-label="Clear search"
-																	onClick={() =>
-																		patchSearch({ q: undefined })
-																	}
-																>
-																	<XmarkIcon />
-																</InputGroupButton>
-															</InputGroupAddon>
-														)}
-													</InputGroup>
-													{/* The count is the truth, not the page size. */}
-													<span className="text-xs text-muted-foreground tabular-nums">
-														{total > containers.length
-															? `Top ${containers.length} of ${total.toLocaleString()} containers`
-															: `${total.toLocaleString()} ${total === 1 ? "container" : "containers"}`}
-													</span>
-												</div>
+												<SearchToolbar
+													value={searchText}
+													onChange={(value) =>
+														patchSearch({ q: value || undefined })
+													}
+													placeholder="Search all containers…"
+													trailing={countLabel(
+														containers.length,
+														total,
+														"container",
+													)}
+												/>
 
 												{containers.length === 0 ? (
 													<Empty className="py-12">

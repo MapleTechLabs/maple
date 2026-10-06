@@ -32,10 +32,10 @@ import {
 	originForTenant,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -70,21 +70,14 @@ class ChatSessionUnavailableError extends Schema.TaggedError<ChatSessionUnavaila
 	}
 }
 
-const sessionCall = <A>(operation: string, run: () => Promise<A>) =>
-	Effect.tryPromise({
-		try: run,
-		catch: () => new ChatSessionUnavailableError({ operation }),
-	})
+const sessionCall = <A>(operation: string, call: Effect.Effect<A, ChatSessionCallError>) =>
+	call.pipe(Effect.mapError(() => new ChatSessionUnavailableError({ operation })))
 
 /** `/api/chat/sessions/<encoded id>/<action>` — the id may itself contain `:` and `/`-unsafe bytes. */
 const sessionIdFromPath = (pathname: string): string | undefined => {
 	const match = /^\/api\/chat\/sessions\/([^/]+)\/[a-z]+$/.exec(pathname)
 	if (!match?.[1]) return undefined
-	try {
-		return decodeURIComponent(match[1])
-	} catch {
-		return undefined
-	}
+	return Option.getOrUndefined(Option.liftThrowable(decodeURIComponent)(match[1]))
 }
 
 /**
@@ -106,7 +99,7 @@ const toChatTurnTenant = (tenant: TenantContext): ChatTurnTenantEncoded =>
 interface ResolvedSession {
 	readonly sessionId: string
 	readonly tenant: TenantContext
-	readonly stub: ChatSessionStub
+	readonly stub: ChatSessionClient
 	readonly url: URL
 }
 
@@ -138,14 +131,7 @@ const resolveSession = Effect.fn("chat.resolveSession")(function* (
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
-	const env = yield* WorkerEnvironment
-	const stub = chatSessionStub(env, sessionId)
-	if (!stub) {
-		return {
-			ok: false,
-			failure: problem("Chat sessions are not configured on this deployment", 503),
-		} as const
-	}
+	const stub = (yield* ChatSessions).session(sessionId)
 
 	const session: ResolvedSession = { sessionId, tenant: tenant.value, stub, url }
 	return { ok: true, session } as const
@@ -163,8 +149,13 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const resolved = yield* resolveSession(request)
 				if (!resolved.ok) return resolved.failure
 				const { stub } = resolved.session
-				const result = yield* sessionCall("history", () =>
-					Promise.all([stub.history(), stub.cursor(), stub.running()]),
+				const result = yield* Effect.all(
+					[
+						sessionCall("history", stub.history()),
+						sessionCall("history", stub.cursor()),
+						sessionCall("history", stub.running()),
+					],
+					{ concurrency: "unbounded" },
 				).pipe(Effect.option)
 				if (Option.isNone(result)) return problem("The chat session is unavailable", 503)
 				const [messages, cursor, running] = result.value
@@ -201,7 +192,8 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// inside the Durable Object. This request answers in milliseconds and deliberately
 				// does not run the turn: anything forked off it here would be cancelled as soon as
 				// the response was written.
-				const claimed = yield* sessionCall("beginTurn", () =>
+				const claimed = yield* sessionCall(
+					"beginTurn",
 					stub.beginTurn({
 						sessionId,
 						messageId,
@@ -241,7 +233,7 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// The DO closes the stream on `turn-end` or after its idle window. Both are
 				// *reconnect* points, not the end of the conversation — the client resumes from the
 				// cursor it built out of the `id:` fields.
-				const body = yield* sessionCall("subscribe", () => stub.subscribe(start)).pipe(Effect.option)
+				const body = yield* sessionCall("subscribe", stub.subscribe(start)).pipe(Effect.option)
 				if (Option.isNone(body)) return problem("The chat session is unavailable", 503)
 
 				const events = Stream.fromReadableStream({
@@ -272,9 +264,7 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// turn, and a caller-supplied one named a message that never existed — so the
 				// `turn-end` it recorded matched nothing and no client ever cleared its streaming
 				// state.
-				const aborted = yield* sessionCall("abort", () => resolved.session.stub.abort()).pipe(
-					Effect.option,
-				)
+				const aborted = yield* sessionCall("abort", resolved.session.stub.abort()).pipe(Effect.option)
 				if (Option.isNone(aborted)) return problem("The chat session is unavailable", 503)
 				return HttpServerResponse.empty({ status: 204 })
 			}),
@@ -286,6 +276,6 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 	// these per request, so hand them over from the build — reading them inside a handler
 	// answered every chat request with a 500 ("Service not found") until 2026-09-08.
 	HttpRouter.provideRequest(
-		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | WorkerEnvironment>()),
+		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | ChatSessions>()),
 	),
 )
