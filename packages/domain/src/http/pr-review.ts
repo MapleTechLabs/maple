@@ -390,6 +390,8 @@ const MAX_SUMMARY = 800
 const MAX_KEY_CHANGES = 4
 const MAX_CHECKED = 3
 const MAX_BULLET = 200
+/** Removed names the reviewer may claim are still emitted; one per contract break is plenty. */
+const MAX_DISMISSALS = 20
 
 /** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
 const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM|TEL)-(\d{1,2}|[A-Z]+)$/
@@ -565,14 +567,24 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 					.filter((handle) => /^F\d{1,4}$/.test(handle)),
 			),
 		].slice(0, MAX_FINDINGS),
-		telemetryDismissals: listOf(submission.telemetryDismissals, decodeDismissals).flatMap((raw) => {
-			const name = raw.name?.trim()
-			const path = raw.path?.trim().replace(/^\/+/, "")
-			const line = toNumber(raw.line)
-			return name && path && line !== undefined && line >= 1
-				? [{ name, path, line: Math.round(line) }]
-				: []
-		}),
+		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
+		telemetryDismissals: listOf(submission.telemetryDismissals, decodeDismissals)
+			.flatMap((raw) => {
+				const name = raw.name?.trim()
+				const path = raw.path?.trim().replace(/^\/+/, "")
+				const line = toNumber(raw.line)
+				return name && path && line !== undefined && line >= 1
+					? [{ name, path, line: Math.round(line) }]
+					: []
+			})
+			.filter(
+				(item, i, all) =>
+					all.findIndex(
+						(other) =>
+							other.name === item.name && other.path === item.path && other.line === item.line,
+					) === i,
+			)
+			.slice(0, MAX_DISMISSALS),
 	}
 }
 

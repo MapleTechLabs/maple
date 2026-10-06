@@ -112,7 +112,9 @@ area and unobservable new work, and is capped by findings. The quality score is 
 
 1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/5 · <verdict>`.
    It concludes `success` only when the review finished, left nothing to address and did not
-   rate confidence 3 or lower; otherwise `neutral`, never `failure`. An installation that has not granted
+   rate confidence 3 or lower; otherwise `neutral`. It concludes `failure` only when the repository enables
+   `blockOnContractBreaks` and an undismissed contract break is open (see "Production telemetry").
+   An installation that has not granted
    `checks: write` answers 403, and the review is posted without the check run. A rate-limited
    403, which carries a retry time, fails the publish instead.
 2. **One summary comment per review**, always, authored by the App and found again by its hidden
@@ -235,6 +237,7 @@ minutes, and settles `failed` once the 48 h window passes. A review that finishe
 request merged schedules its own look, and a reviewed head that is reviewed again clears the old
 one.
 
+## Staged rollout
 
 Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout
 flag, in the same Clerk public metadata as the other rollout flags. To flag an organization, set

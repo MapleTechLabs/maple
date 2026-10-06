@@ -55,7 +55,10 @@ export const pickDeploy = (input: {
 	readonly exactOnly: boolean
 }): { readonly deploy: Deployment; readonly exact: boolean } | undefined => {
 	const merge = input.mergeCommitSha?.toLowerCase()
-	const exact = input.versions.find((version) => version.commitSha.toLowerCase() === merge)
+	// A version first seen before the merge is a revert or an earlier landing, not this one.
+	const exact = input.versions.find(
+		(version) => version.firstSeenAt >= input.mergedAtMs && version.commitSha.toLowerCase() === merge,
+	)
 	if (exact !== undefined) return { deploy: exact, exact: true }
 	if (input.exactOnly || input.nowMs - input.mergedAtMs < POST_MERGE_EXACT_WAIT_MS) return undefined
 	const first = input.versions
@@ -207,7 +210,7 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 			"| --- | ---: | ---: | ---: |",
 			...postMerge.operations.map(
 				(operation) =>
-					`| ${operation.regressed ? "⚠️ " : ""}\`${escapeCell(operation.spanName)}\` | ${formatCount(operation.before.perHour)} → ${formatCount(operation.after.perHour)} | ${pct(operation.before.errorRate)} → ${pct(operation.after.errorRate)} | ${operation.before.p95Ms} → ${operation.after.p95Ms} ms |`,
+					`| ${operation.regressed ? "⚠️ " : ""}\`${escapeCell(operation.spanName).replace(/`/g, "'")}\` | ${formatCount(operation.before.perHour)} → ${formatCount(operation.after.perHour)} | ${pct(operation.before.errorRate)} → ${pct(operation.after.errorRate)} | ${operation.before.p95Ms} → ${operation.after.p95Ms} ms |`,
 			),
 			"",
 		)

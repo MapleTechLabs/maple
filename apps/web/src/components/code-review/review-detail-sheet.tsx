@@ -325,7 +325,10 @@ function ProductionSection({ telemetry }: { telemetry: PrReviewTelemetry }) {
 			{breaks.length > 0 ? (
 				<ul className="flex flex-col gap-1.5 text-sm">
 					{breaks.map((item) => (
-						<li key={item.name} className={item.dismissed ? "text-muted-foreground" : undefined}>
+						<li
+							key={`${item.kind}:${item.name}`}
+							className={item.dismissed ? "text-muted-foreground" : undefined}
+						>
 							<span className={cn("font-medium", item.dismissed ? undefined : TONE_TEXT.crit)}>
 								{item.dismissed ? "Still emitted elsewhere" : "Stops arriving"}
 							</span>{" "}
