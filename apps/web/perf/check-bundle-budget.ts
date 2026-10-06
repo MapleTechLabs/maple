@@ -120,8 +120,11 @@ const forbidden = [...staticGraph].filter((key) =>
 console.log(
 	`Initial static JS: ${(gzipBytes / 1024).toFixed(1)} KB gzip across ${chunks.length} chunks (budget: ${budgetLabel})`,
 )
-for (const chunk of chunks.sort((a, b) => b.gzipBytes - a.gzipBytes).slice(0, 10)) {
-	console.log(`  ${(chunk.gzipBytes / 1024).toFixed(1).padStart(7)} KB  ${chunk.file}`)
+// Over budget, list every chunk with its source key so the culprit is in the CI log.
+const overBudget = gzipBytes > maxGzipBytes
+for (const chunk of chunks.sort((a, b) => b.gzipBytes - a.gzipBytes).slice(0, overBudget ? undefined : 10)) {
+	const label = overBudget ? `${chunk.file}  ${chunk.key}` : chunk.file
+	console.log(`  ${(chunk.gzipBytes / 1024).toFixed(1).padStart(7)} KB  ${label}`)
 }
 
 if (forbidden.length > 0) {
