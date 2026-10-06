@@ -710,6 +710,7 @@ function BranchSelector({
 		setTracked(repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null)
 	}, [repo.trackedBranch, repo.branches])
 
+	// Every hook runs before the early return: a new repo syncs in with zero branches.
 	const [commit, saving] = useAsyncAction(async (name: string) => {
 		const prev = tracked
 		setTracked(name)
