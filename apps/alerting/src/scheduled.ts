@@ -15,6 +15,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
+import { GoogleAnalyticsService } from "@maple/backend/services/integrations/GoogleAnalyticsService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
@@ -48,6 +49,7 @@ export const buildLayer = (
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
 		CloudflareAnalyticsService.layer,
+		GoogleAnalyticsService.layer,
 		PlanetScaleService.layer,
 		RailwayMetricsService.layer,
 		DigestService.layer,
@@ -249,6 +251,21 @@ const cloudflareAnalyticsTick = makeTick(
 	}),
 )
 
+/**
+ * Runs on the 15-minute cron, not Cloudflare's 5-minute one. GA4 does not update fast enough to
+ * reward a tighter cadence, and every tick spends Data API quota tokens per property.
+ */
+const googleAnalyticsTick = makeTick(
+	GoogleAnalyticsService.use((analytics) => analytics.pollAllOrgs()),
+	"google_analytics",
+	(result) => ({
+		properties: result.properties,
+		rowsIngested: result.rowsIngested,
+		skipped: result.skipped,
+		failures: result.failures,
+	}),
+)
+
 const planetScaleTick = makeTick(
 	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs()),
 	"planetscale",
@@ -301,6 +318,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly error: Effect.Effect<void, never, R>
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
+	readonly googleAnalytics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
@@ -329,7 +347,9 @@ export const selectScheduledProgram = <R>(
 				{ concurrency: 4, discard: true },
 			),
 		),
-		Match.when("*/15 * * * *", () => ticks.digest),
+		Match.when("*/15 * * * *", () =>
+			Effect.all([ticks.digest, ticks.googleAnalytics], { concurrency: 2, discard: true }),
+		),
 		Match.when("0 * * * *", () => ticks.serviceMapRollup),
 		Match.when("* * * * *", () =>
 			// `fixVerification` is chained onto `error` rather than listed beside it:
@@ -360,6 +380,7 @@ type ScheduledServices =
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
+	| GoogleAnalyticsService
 	| PlanetScaleService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
@@ -373,6 +394,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	error: errorTick,
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
+	googleAnalytics: googleAnalyticsTick,
 	planetScale: planetScaleTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,

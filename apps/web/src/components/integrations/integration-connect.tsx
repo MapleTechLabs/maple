@@ -10,7 +10,7 @@ import {
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { trackProduct } from "@/lib/analytics"
-import { useAtomRefresh, useAtomSet } from "@/lib/effect-atom"
+import { Result as AtomResult, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { showErrorToast } from "@/lib/error-toast"
@@ -66,6 +66,8 @@ export function IntegrationConnectProvider({
 			return <GithubConnectBoundary>{children}</GithubConnectBoundary>
 		case "planetscale":
 			return <PlanetscaleConnectBoundary>{children}</PlanetscaleConnectBoundary>
+		case "google-analytics":
+			return <GoogleAnalyticsConnectBoundary>{children}</GoogleAnalyticsConnectBoundary>
 		default:
 			return children
 	}
@@ -421,6 +423,88 @@ function PlanetscaleConnectBoundary({ children }: { children: React.ReactNode })
 			}).then(Exit.map(({ redirect_url }) => ({ redirectUrl: redirect_url }))),
 		startErrorTitle: "Failed to start PlanetScale connect flow",
 		onClosed: refreshStatus,
+	})
+
+	return <IntegrationConnectContext value={value}>{children}</IntegrationConnectContext>
+}
+
+function GoogleAnalyticsConnectBoundary({ children }: { children: React.ReactNode }) {
+	const statusAtom = retainedQueryV2("googleAnalyticsIntegration", "status", {
+		reactivityKeys: ["googleAnalyticsIntegration"],
+	})
+	const status = useAtomValue(statusAtom)
+	const refreshStatus = useAtomRefresh(statusAtom)
+	const startConnect = useAtomSet(
+		MapleApiV2AtomClient.mutation("googleAnalyticsIntegration", "connect"),
+		{ mode: "promiseExit" },
+	)
+	const prime = useAtomSet(MapleApiV2AtomClient.mutation("googleAnalyticsIntegration", "prime"), {
+		mode: "promiseExit",
+	})
+
+	// The callback deliberately does NOT run the first collection — it takes tens of seconds on a
+	// grant with several properties and the popup would sit blank for all of it. This tab is still
+	// open, so it runs it here.
+	//
+	// Two paths can reach it: the success message, and the popup simply closing (`postMessage` is
+	// lost under COOP, which `useOAuthPopupFlow` documents). Both are needed — without the close
+	// path, a COOP-blocked browser connects successfully and then waits up to fifteen minutes for
+	// the cron before showing a single number. The ref is what stops them running it twice.
+	const primed = useRef(false)
+	const primeOnce = useEffectEvent(() => {
+		if (primed.current) return
+		primed.current = true
+		void prime({ reactivityKeys: ["googleAnalyticsIntegration"] })
+			.then((exit) => {
+				// Under COOP the close path fires the moment the popup navigates, which is while
+				// the user is still on Google's consent screen — so this can run before the grant
+				// exists and come back `IntegrationsNotConnectedError`. A prime that did not land
+				// must not consume the attempt, or the success message that follows is a no-op and
+				// the org waits on cron for its first numbers.
+				if (Exit.isFailure(exit)) primed.current = false
+			})
+			.finally(refreshStatus)
+	})
+
+	useIntegrationMessage("maple:integration:google-analytics", (data) => {
+		if (data.status === "success") {
+			primeOnce()
+			refreshStatus()
+		} else if (data.status === "error") {
+			toastManager.add({ title: data.message ?? "Google Analytics connection failed", type: "error" })
+		}
+	})
+
+	const value = useOAuthPopupFlow({
+		windowName: "maple-google-analytics-connect",
+		label: "Google Analytics",
+		windowFeatures: "popup,width=520,height=680",
+		start: () => {
+			// Per ATTEMPT, not per mount: the card offers Reconnect on a revoked grant without
+			// unmounting this boundary, so a latched `primed` would skip the first collection on
+			// every attempt after the first and leave the reconnect waiting on cron.
+			primed.current = false
+			return startConnect({
+				payload: { return_to: currentReturnPath() },
+				reactivityKeys: ["googleAnalyticsIntegration"],
+			}).then(Exit.map(({ redirect_url }) => ({ redirectUrl: redirect_url })))
+		},
+		startErrorTitle: "Failed to start Google Analytics connect flow",
+		onClosed: () => {
+			refreshStatus()
+			primeOnce()
+		},
+		// The close path alone is not enough under COOP: it fires while the user is still on
+		// Google's consent screen, so its prime runs before the grant exists. Polling past the
+		// close is what retries it — the status read is what says the grant has landed, and
+		// `primeOnce` keeps it to a single collection.
+		onPoll: () => {
+			refreshStatus()
+			if (AtomResult.isSuccess(status) && status.value.connected && !status.value.revoked) {
+				primeOnce()
+			}
+		},
+		closeGraceMs: 30_000,
 	})
 
 	return <IntegrationConnectContext value={value}>{children}</IntegrationConnectContext>

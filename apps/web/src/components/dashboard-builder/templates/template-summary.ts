@@ -14,9 +14,18 @@ export const CATEGORY_LABELS: Record<string, string> = {
 	database: "Databases",
 	infrastructure: "Infrastructure",
 	messaging: "Messaging",
+	product: "Product",
 } satisfies Record<string, string>
 
-export const CATEGORY_ORDER = ["application", "database", "infrastructure", "messaging"] as const
+// Also the bucket order of the needs-setup section, so a category missing here
+// does not just lose its label: its templates never render at all.
+export const CATEGORY_ORDER = [
+	"application",
+	"database",
+	"infrastructure",
+	"messaging",
+	"product",
+] as const
 
 /**
  * "3 stats · 3 charts" from the template's preview metadata. Line, area and bar

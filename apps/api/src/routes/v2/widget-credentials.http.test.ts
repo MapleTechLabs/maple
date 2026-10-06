@@ -21,6 +21,7 @@ import {
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	Phase1ResourceStubsLayer,
+	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
@@ -74,6 +75,7 @@ const makeHarness = () => {
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
 		Layer.provideMerge(AuditLogService.layerMemory),

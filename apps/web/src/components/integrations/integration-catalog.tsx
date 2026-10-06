@@ -7,6 +7,7 @@ import {
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
+	GoogleAnalyticsIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
@@ -42,6 +43,7 @@ export type IntegrationId =
 	| "warpstream"
 	| "hazel"
 	| "github"
+	| "google-analytics"
 	| ChatIntegrationId
 
 const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
@@ -92,6 +94,9 @@ export const chatConnectorIcon = (
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
+/** Google Analytics 4 brand orange. */
+export const GOOGLE_ANALYTICS_ACCENT = "#E37400"
+
 export const RAILWAY_ACCENT = "#0B0D0E"
 
 export interface CatalogEntry {
@@ -214,6 +219,19 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		iconClassName: "text-foreground",
 		docsUrl: docsUrl("github"),
 	},
+	{
+		id: "google-analytics",
+		// Collected GA4 metrics chart beside the other collectors, so it shelves with them.
+		category: "infrastructure",
+		isNew: true,
+		name: "Google Analytics",
+		description:
+			"Connect a Google account to chart GA4 sessions, users and page views next to your traces and errors.",
+		icon: GoogleAnalyticsIcon,
+		accent: GOOGLE_ANALYTICS_ACCENT,
+		// No docsUrl until docs/integrations/google-analytics exists; `DOCS` is gated on the
+		// landing content collection, and a hardcoded link here would just 404.
+	},
 	...CHAT_ENTRIES,
 ]
 
@@ -282,6 +300,11 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const githubResult = useAtomValue(
 		retainedQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
+		}),
+	)
+	const googleAnalyticsResult = useAtomValue(
+		retainedQueryV2("googleAnalyticsIntegration", "status", {
+			reactivityKeys: ["googleAnalyticsIntegration"],
 		}),
 	)
 	const railwayResult = useAtomValue(
@@ -364,6 +387,21 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
+	const googleAnalytics: CardStatus | null = Result.builder(googleAnalyticsResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			// A revoked grant still has a connection row, so "Not connected" would be wrong and
+			// "Connected" would be a lie — collection has stopped until someone reconnects.
+			if (status.revoked) return { label: "Reconnect needed", variant: "warn" }
+			const collecting = status.properties.filter((property) => property.enabled).length
+			return {
+				label: collecting > 0 ? countLabel(collecting, "property", "properties") : "Connected",
+				variant: "ok",
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
+
 	const chat = Object.fromEntries(
 		chatConnectorManifests.map((manifest) => [
 			chatIntegrationId(manifest.id),
@@ -398,6 +436,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
 		github,
+		"google-analytics": googleAnalytics,
 		...chat,
 	}
 }
@@ -526,6 +565,11 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 	const githubResult = useAtomValue(
 		retainedQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
+		}),
+	)
+	const googleAnalyticsResult = useAtomValue(
+		retainedQueryV2("googleAnalyticsIntegration", "status", {
+			reactivityKeys: ["googleAnalyticsIntegration"],
 		}),
 	)
 	const railwayResult = useAtomValue(
@@ -722,6 +766,40 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)
 
+	const googleAnalytics: IntegrationOverview = Result.builder(googleAnalyticsResult)
+		.onSuccess((status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const collecting = status.properties.filter((property) => property.enabled)
+			const erroring = collecting.filter((property) => property.last_error !== null)
+			// A property with no timezone yet has never been collected — Google reports hourly
+			// data in the property's own zone, so nothing can be placed until it resolves.
+			const unresolved = collecting.filter((property) => property.time_zone === null)
+			const issue = status.revoked
+				? "authorization revoked"
+				: erroring.length > 0
+					? `${countLabel(erroring.length, "property", "properties")} erroring`
+					: unresolved.length > 0
+						? `${countLabel(unresolved.length, "property", "properties")} not started`
+						: null
+			return {
+				kind: "connected",
+				health: issue ? "attention" : "healthy",
+				stateLabel: status.revoked ? "Reconnect needed" : issue ? "Needs attention" : "Healthy",
+				context: status.connected_email,
+				stat: collecting.length > 0 ? `${countLabel(collecting.length, "property", "properties")} collected` : null,
+				lastSyncLabel: syncedLabel(
+					maxMs(
+						collecting.map((property) =>
+							property.last_synced_at ? Date.parse(property.last_synced_at) : null,
+						),
+					),
+				),
+				issue,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
+
 	const chat = Object.fromEntries(
 		chatConnectorManifests.map((manifest) => [
 			chatIntegrationId(manifest.id),
@@ -758,6 +836,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		warpstream: SET_UP,
 		hazel,
 		github,
+		"google-analytics": googleAnalytics,
 		...chat,
 	}
 }

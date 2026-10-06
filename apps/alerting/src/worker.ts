@@ -19,6 +19,7 @@ import {
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
+	googleAnalyticsOAuthEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -59,10 +60,12 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		optionalSecret("AUTUMN_SECRET_KEY"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		// Push for incidents, plus OAuth refresh for the Cloudflare and PlanetScale pollers.
+		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Google
+		// Analytics pollers.
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		googleAnalyticsOAuthEnv,
 		// Outbound config for `chat` destinations' connectors.
 		...chatConnectorOutboundConfigKeys.map((key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),

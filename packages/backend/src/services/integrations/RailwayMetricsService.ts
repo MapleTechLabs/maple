@@ -33,7 +33,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
+import { metricRowsToOtlp } from "./shared/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
 
