@@ -115,6 +115,9 @@ export function useOAuthPopupFlow({
 	const popupRef = useRef<Window | null>(null)
 	const closeGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 	const tickRef = useRef(0)
+	// Set by `closePopup`: the attempt ended on purpose, so the tick must not read the nulled popup
+	// as a user close and re-arm the grace (its `popupOpen` is still this render's stale `true`).
+	const closedDeliberatelyRef = useRef(false)
 	const [popupOpen, setPopupOpen] = useState(false)
 	const [inCloseGrace, setInCloseGrace] = useState(false)
 
@@ -123,6 +126,7 @@ export function useOAuthPopupFlow({
 			tickRef.current += 1
 			if (tickRef.current % POLL_EVERY_TICKS === 0) onPoll()
 		}
+		if (closedDeliberatelyRef.current) return
 		if (!popupOpen || !(popupRef.current?.closed ?? true)) return
 		popupRef.current = null
 		setPopupOpen(false)
@@ -157,6 +161,7 @@ export function useOAuthPopupFlow({
 		})
 
 	async function connect(shown: string) {
+		closedDeliberatelyRef.current = false
 		const popup = window.open("", windowName, windowFeatures)
 		popupRef.current = popup
 		if (popup) {
@@ -189,6 +194,7 @@ export function useOAuthPopupFlow({
 
 	/** Closes a popup that is still out, e.g. once polling has seen the grant land. */
 	const closePopup = () => {
+		closedDeliberatelyRef.current = true
 		popupRef.current?.close()
 		popupRef.current = null
 		setPopupOpen(false)
