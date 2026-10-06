@@ -8,6 +8,7 @@
  * is still found.
  */
 import {
+	openContractBreaks,
 	type OrgId,
 	type PrReviewId,
 	PrReviewPostMerge,
@@ -39,6 +40,8 @@ import {
 /** Rows one tick looks at; each costs a handful of warehouse reads. */
 const TICK_LIMIT = 10
 const WINDOW_MS = POST_MERGE_WINDOW_MINUTES * 60_000
+/** How long a tick holds a row it is examining; longer than one examination takes. */
+const CLAIM_MS = 10 * 60_000
 
 export interface PostMergeTickResult {
 	readonly examined: number
@@ -93,12 +96,28 @@ export class PrReviewPostMergeService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": row.id })
 			const facts = Option.getOrUndefined(decodeTelemetry(row.telemetryJson))
 			const services = facts === undefined ? [] : postMergeServices(facts)
-			if (facts === undefined || services.length === 0) {
+			// A review that only found a removed name has no service to narrow by: it reads every
+			// service's versions and waits for the merge commit itself.
+			const breaksOnly =
+				facts !== undefined && services.length === 0 && openContractBreaks(facts).length > 0
+			if (facts === undefined || (services.length === 0 && !breaksOnly)) {
 				yield* settle(orgId, row.id, "no_traffic", { postMergeAfter: null }, nowMs)
 				return "gave_up" satisfies Outcome
 			}
 			const versions = yield* telemetry.deploymentsSince(orgId, services, mergedAtMs, nowMs)
-			const picked = pickDeploy(versions, row.mergeCommitSha, mergedAtMs)
+			const commitTimes = yield* telemetry.commitTimes(
+				orgId,
+				row.repositoryId,
+				versions.map((version) => version.commitSha),
+			)
+			const picked = pickDeploy({
+				versions,
+				mergeCommitSha: row.mergeCommitSha,
+				mergedAtMs,
+				nowMs,
+				commitTimes,
+				exactOnly: breaksOnly,
+			})
 			if (picked === undefined) {
 				if (nowMs - mergedAtMs > POST_MERGE_GIVE_UP_MS) {
 					yield* settle(orgId, row.id, "no_deploy", { postMergeAfter: null }, nowMs)
@@ -167,7 +186,9 @@ export class PrReviewPostMergeService extends Context.Service<
 			// An empty key set means the read failed, not that every name stopped.
 			const missing = arriving.size === 0 ? [] : missingAfterDeploy(facts, arriving)
 			const regressed =
-				compared.some((operation) => operation.regressed) || newIssues.length > 0 || missing.length > 0
+				compared.some((operation) => operation.regressed) ||
+				newIssues.length > 0 ||
+				missing.length > 0
 			const report = new PrReviewPostMerge({
 				deploy: {
 					service: picked.deploy.service,
@@ -201,7 +222,10 @@ export class PrReviewPostMergeService extends Context.Service<
 			Effect.gen(function* () {
 				const repository = yield* repositories.getRepositoryById(orgId, row.repositoryId)
 				if (Option.isNone(repository)) return
-				const installation = yield* repositories.getInstallationById(orgId, repository.value.installationId)
+				const installation = yield* repositories.getInstallationById(
+					orgId,
+					repository.value.installationId,
+				)
 				if (Option.isNone(installation)) return
 				const provider = yield* providers.resolve(repository.value.provider)
 				const repo = repository.value
@@ -225,31 +249,72 @@ export class PrReviewPostMergeService extends Context.Service<
 					db
 						.select()
 						.from(prReviews)
-						.where(and(eq(prReviews.postMergeStatus, "waiting"), lte(prReviews.postMergeAfter, msToDate(nowMs))))
+						.where(
+							and(
+								eq(prReviews.postMergeStatus, "waiting"),
+								lte(prReviews.postMergeAfter, msToDate(nowMs)),
+							),
+						)
 						.orderBy(asc(prReviews.postMergeAfter))
 						.limit(TICK_LIMIT),
 				)
 				const outcomes = yield* Effect.forEach(
 					due,
 					(row) =>
-						examine(row, nowMs).pipe(
-							Effect.map((outcome): Outcome | "failed" => outcome),
-							Effect.catchCause((cause) =>
-								Effect.logWarning("[PrReviewPostMerge] could not examine a merged review").pipe(
-									Effect.annotateLogs({ orgId: row.orgId, reviewId: row.id, cause: summarizeCause(cause) }),
-									// Pushed back, so one bad row does not hold the head of the queue.
+						Effect.gen(function* () {
+							// Claimed first: an overlapping tick that read the same row finds it leased and
+							// skips it, so the follow-up is posted once.
+							const claimed = yield* database.execute((db) =>
+								db
+									.update(prReviews)
+									.set({ postMergeAfter: msToDate(nowMs + CLAIM_MS) })
+									.where(
+										and(
+											eq(prReviews.id, row.id),
+											eq(prReviews.postMergeStatus, "waiting"),
+											lte(prReviews.postMergeAfter, msToDate(nowMs)),
+										),
+									)
+									.returning({ id: prReviews.id }),
+							)
+							if (claimed.length === 0) return "skipped" as const
+							return yield* examine(row, nowMs)
+						}).pipe(
+							Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
+							Effect.catchCause((cause) => {
+								const mergedAtMs = dateToMs(row.mergedAt) ?? nowMs
+								// A read that keeps failing is given up with the rest, never read as clean.
+								const giveUp = nowMs - mergedAtMs > POST_MERGE_GIVE_UP_MS
+								return Effect.logWarning(
+									"[PrReviewPostMerge] could not examine a merged review",
+								).pipe(
+									Effect.annotateLogs({
+										orgId: row.orgId,
+										reviewId: row.id,
+										cause: summarizeCause(cause),
+									}),
 									Effect.andThen(
-										later(row.orgId, row.id, nowMs + POST_MERGE_RETRY_MS, nowMs).pipe(Effect.ignore),
+										(giveUp
+											? settle(
+													row.orgId,
+													row.id,
+													"failed",
+													{ postMergeAfter: null },
+													nowMs,
+												)
+											: later(row.orgId, row.id, nowMs + POST_MERGE_RETRY_MS, nowMs)
+										).pipe(Effect.ignore),
 									),
 									Effect.as("failed" as const),
-								),
-							),
+								)
+							}),
 						),
 					{ concurrency: 2 },
 				)
-				const count = (outcome: Outcome | "failed") => outcomes.filter((value) => value === outcome).length
+				const count = (outcome: Outcome | "failed" | "skipped") =>
+					outcomes.filter((value) => value === outcome).length
 				return {
-					examined: due.length,
+					examined: due.length - count("skipped"),
 					reported: count("reported"),
 					waiting: count("waiting"),
 					gaveUp: count("gave_up"),

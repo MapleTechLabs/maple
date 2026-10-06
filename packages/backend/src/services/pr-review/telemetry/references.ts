@@ -26,15 +26,16 @@ export const textsOf = (value: unknown, out: Array<string> = []): Array<string> 
 	return out
 }
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /**
- * The name as a whole token: not inside a longer name (`http.route` is not in `http.route.raw`),
- * but found behind the `attr.` and `resource.` prefixes query drafts use.
+ * The name as a whole token: not inside a longer name (`http.route` is not in `http.route.raw`,
+ * `/checkout` is not in `/checkout/confirm`), but found behind the `attr.` and `resource.`
+ * prefixes query drafts use.
  */
 const tokenPattern = (name: string) =>
 	new RegExp(
-		`(?:^|[^A-Za-z0-9_.]|(?:attr|resource)\\.)${escapeRegExp(name)}(?![A-Za-z0-9_]|\\.[A-Za-z0-9_])`,
+		`(?:^|[^A-Za-z0-9_.]|(?:attr|resource)\\.)${escapeRegExp(name)}(?![A-Za-z0-9_/]|\\.[A-Za-z0-9_])`,
 	)
 
 export const referencesFor = (

@@ -10,6 +10,7 @@ import {
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
 import { formatCount } from "./analyze"
+import { escapeCell } from "./render"
 
 /** The two windows compared around the deploy. */
 export const POST_MERGE_WINDOW_MINUTES = 60
@@ -19,6 +20,8 @@ export const POST_MERGE_GIVE_UP_MS = 48 * 3_600_000
 export const POST_MERGE_FIRST_LOOK_MS = 15 * 60_000
 /** How often a row with no deploy yet is looked at again. */
 export const POST_MERGE_RETRY_MS = 30 * 60_000
+/** How long the merge commit's own version is waited for before a later version stands in. */
+export const POST_MERGE_EXACT_WAIT_MS = 2 * 3_600_000
 
 /** Below this many calls in the hour after, a change in rate is noise. */
 const MIN_CALLS = 20
@@ -36,22 +39,33 @@ export interface Deployment {
 }
 
 /**
- * The deploy that shipped the merge: the version whose commit is the merge commit, or, when that
- * commit never reported (a pipeline that deploys a later commit, or squashes differently), the
- * first version any touched service reported after the merge.
+ * The deploy that shipped the merge: the version whose commit is the merge commit. When that commit
+ * has not reported within {@link POST_MERGE_EXACT_WAIT_MS} (a pipeline that deploys a later commit),
+ * the first version reported after the merge stands in, skipping any whose commit is known to be
+ * older than the merge, since that one cannot carry it. `exactOnly` waits for the merge commit
+ * alone, for a look that has no touched service to narrow the versions by.
  */
-export const pickDeploy = (
-	versions: ReadonlyArray<Deployment>,
-	mergeCommitSha: string | null,
-	mergedAtMs: number,
-): { readonly deploy: Deployment; readonly exact: boolean } | undefined => {
-	const after = versions.filter((version) => version.firstSeenAt >= mergedAtMs)
-	const exact =
-		mergeCommitSha === null
-			? undefined
-			: versions.find((version) => version.commitSha.toLowerCase() === mergeCommitSha.toLowerCase())
+export const pickDeploy = (input: {
+	readonly versions: ReadonlyArray<Deployment>
+	readonly mergeCommitSha: string | null
+	readonly mergedAtMs: number
+	readonly nowMs: number
+	/** Commit times by lower-cased SHA, where the repository's commits are known. */
+	readonly commitTimes: ReadonlyMap<string, number>
+	readonly exactOnly: boolean
+}): { readonly deploy: Deployment; readonly exact: boolean } | undefined => {
+	const merge = input.mergeCommitSha?.toLowerCase()
+	const exact = input.versions.find((version) => version.commitSha.toLowerCase() === merge)
 	if (exact !== undefined) return { deploy: exact, exact: true }
-	const first = [...after].sort((a, b) => a.firstSeenAt - b.firstSeenAt)[0]
+	if (input.exactOnly || input.nowMs - input.mergedAtMs < POST_MERGE_EXACT_WAIT_MS) return undefined
+	const first = input.versions
+		.filter((version) => version.firstSeenAt >= input.mergedAtMs)
+		.filter(
+			(version) =>
+				(input.commitTimes.get(version.commitSha.toLowerCase()) ?? input.mergedAtMs) >=
+				input.mergedAtMs,
+		)
+		.sort((a, b) => a.firstSeenAt - b.firstSeenAt)[0]
 	return first === undefined ? undefined : { deploy: first, exact: false }
 }
 
@@ -67,7 +81,10 @@ const rate = (stats: WindowStats | undefined) =>
 	stats === undefined || stats.count === 0 ? 0 : stats.errorCount / stats.count
 
 /** Whether the hour after is worse than the hour before, by error rate or by latency. */
-export const operationRegressed = (before: WindowStats | undefined, after: WindowStats | undefined): boolean => {
+export const operationRegressed = (
+	before: WindowStats | undefined,
+	after: WindowStats | undefined,
+): boolean => {
 	if (after === undefined || after.count < MIN_CALLS) return false
 	const errorsWorse = rate(after) - rate(before) >= ERROR_RATE_JUMP && rate(after) >= 2 * rate(before)
 	const slower =
@@ -112,7 +129,10 @@ export const compareOperations = (
 
 /** The operations worth comparing: every one the changed files named, busiest first. */
 export const comparedOperations = (telemetry: PrReviewTelemetry) => {
-	const seen = new Map<string, { readonly service: string; readonly spanName: string; readonly perDay: number }>()
+	const seen = new Map<
+		string,
+		{ readonly service: string; readonly spanName: string; readonly perDay: number }
+	>()
 	for (const file of telemetry.hotFiles) {
 		for (const operation of file.operations) {
 			const id = key(operation.service, operation.spanName)
@@ -187,7 +207,7 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 			"| --- | ---: | ---: | ---: |",
 			...postMerge.operations.map(
 				(operation) =>
-					`| ${operation.regressed ? "⚠️ " : ""}\`${operation.spanName.replace(/\|/g, "\\|")}\` | ${formatCount(operation.before.perHour)} → ${formatCount(operation.after.perHour)} | ${pct(operation.before.errorRate)} → ${pct(operation.after.errorRate)} | ${operation.before.p95Ms} → ${operation.after.p95Ms} ms |`,
+					`| ${operation.regressed ? "⚠️ " : ""}\`${escapeCell(operation.spanName)}\` | ${formatCount(operation.before.perHour)} → ${formatCount(operation.after.perHour)} | ${pct(operation.before.errorRate)} → ${pct(operation.after.errorRate)} | ${operation.before.p95Ms} → ${operation.after.p95Ms} ms |`,
 			),
 			"",
 		)

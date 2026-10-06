@@ -78,7 +78,7 @@ import {
 	findingText,
 } from "./feedback"
 import { FindingEmbedder } from "./FindingEmbedder"
-import { isRuntimeSource } from "./telemetry/diff"
+import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK_MS } from "./telemetry/post-merge"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
@@ -113,6 +113,9 @@ export const PR_REVIEW_CHECK_NAME = "Maple / review"
  * last head instead of a started and aborted turn per push.
  */
 export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
+
+/** Removed names the service searches the repository for before the review starts. */
+const MAX_CONFIRMED_BREAKS = 8
 
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
@@ -1145,14 +1148,53 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 * The diff read against the organization's telemetry, for the kickoff and the report. Best
 			 * effort, like the rules: a review that cannot read it reviews the diff alone.
 			 */
-			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number, headSha: GitCommitSha) =>
 				Effect.gen(function* () {
 					if (telemetryReader === undefined) return undefined
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value
 					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
-					return yield* telemetryReader.analyze(orgId, files)
+					const analyzed = yield* telemetryReader.analyze(orgId, files)
+					if (analyzed === undefined) return undefined
+					// The diff only shows changed lines: a name the pull request removes may still be emitted
+					// by code it did not touch. Search for each one and read the candidates at the head.
+					const breaks = openContractBreaks(analyzed).slice(0, MAX_CONFIRMED_BREAKS)
+					const stillEmitted = yield* Effect.forEach(
+						breaks,
+						(item) =>
+							Effect.gen(function* () {
+								const hits = yield* provider
+									.searchCode(installation, ref, `"${item.name}"`, { limit: 10 })
+									.pipe(Effect.catchCause(() => Effect.succeed([])))
+								const paths = [...new Set([item.path, ...hits.map((hit) => hit.path)])]
+									.filter(isRuntimeSource)
+									.slice(0, 6)
+								const lines = yield* Effect.forEach(
+									paths,
+									(path) =>
+										provider.fetchSourceFile(installation, ref, path, headSha).pipe(
+											Effect.map((file) => {
+												const line = Option.isSome(file)
+													? lineEmitting(file.value.content, item.name)
+													: undefined
+												return line === undefined
+													? []
+													: [{ name: item.name, path, line }]
+											}),
+											Effect.catchCause(() => Effect.succeed([])),
+										),
+									{ concurrency: 3 },
+								)
+								return lines.flat().slice(0, 1)
+							}),
+						{ concurrency: 2 },
+					)
+					yield* Effect.annotateCurrentSpan(
+						"maple.pr_review.telemetry.breaks_still_emitted",
+						stillEmitted.flat().length,
+					)
+					return withDismissals(analyzed, stillEmitted.flat())
 				}).pipe(
 					Effect.timeout("20 seconds"),
 					Effect.withSpan("PrReviewService.telemetryFor"),
@@ -1498,6 +1540,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								commentAttempt: sql`case when ${prReviews.status} in ('completed', 'skipped') then ${prReviews.commentAttempt} + 1 else ${prReviews.commentAttempt} end`,
 								reportJson: null,
 								score: null,
+								// The new review reads production again and earns its own post-merge look.
+								telemetryJson: null,
+								postMergeStatus: null,
+								postMergeAfter: null,
+								postMergeJson: null,
 								startedAt: null,
 								finishedAt: null,
 								updatedAt: msToDate(nowMs),
@@ -1573,7 +1620,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const [rules, telemetry] = yield* Effect.all(
 					[
 						repositoryRules(orgId, repo, job.baseSha ?? job.baseRef ?? repo.defaultBranch),
-						telemetryFor(orgId, repo, job.number),
+						telemetryFor(orgId, repo, job.number, headSha),
 					],
 					{ concurrency: "unbounded" },
 				)
@@ -1658,13 +1705,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 			/**
 			 * A merged pull request's last review with telemetry facts gets a look at production once
-			 * the merge ships (`PrReviewPostMergeService`). Once per pull request: a redelivered event
-			 * finds the row already scheduled.
+			 * the merge ships (`PrReviewPostMergeService`). Called by the merge, and by a review that
+			 * finishes after its pull request merged. Once per pull request: a redelivered event finds
+			 * the row already scheduled.
 			 */
 			const schedulePostMerge = (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
-				job: PullRequestEventJob,
+				merge: {
+					readonly number: number
+					readonly mergeCommitSha: string | null
+					readonly mergedAtMs: number
+				},
 				nowMs: number,
 			) =>
 				Effect.gen(function* () {
@@ -1678,7 +1730,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								and(
 									eq(prReviews.orgId, orgId),
 									eq(prReviews.repositoryId, repositoryId),
-									eq(prReviews.number, job.number),
+									eq(prReviews.number, merge.number),
 									eq(prReviews.status, "completed"),
 									isNotNull(prReviews.telemetryJson),
 								),
@@ -1692,11 +1744,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						db
 							.update(prReviews)
 							.set({
-								mergeCommitSha: job.mergeCommitSha,
+								mergeCommitSha: merge.mergeCommitSha,
 								postMergeStatus: "waiting",
-								postMergeAfter: msToDate(
-									(job.mergedAtMs ?? nowMs) + POST_MERGE_FIRST_LOOK_MS,
-								),
+								postMergeAfter: msToDate(merge.mergedAtMs + POST_MERGE_FIRST_LOOK_MS),
 								updatedAt: msToDate(nowMs),
 							})
 							.where(and(eq(prReviews.id, row.id), isNull(prReviews.postMergeStatus))),
@@ -1739,7 +1789,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.execute((db) =>
 									db
 										.update(prReviews)
-										.set({ mergedAt: msToDate(job.mergedAtMs ?? nowMs) })
+										.set({
+											mergedAt: msToDate(job.mergedAtMs ?? nowMs),
+											// Kept on every row, for a review still running to schedule its own look.
+											mergeCommitSha: job.mergeCommitSha,
+										})
 										.where(
 											and(
 												eq(prReviews.orgId, orgId),
@@ -1749,7 +1803,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										),
 								)
 								.pipe(Effect.mapError(toPersistence))
-							yield* schedulePostMerge(orgId, repositoryId, job, nowMs)
+							yield* schedulePostMerge(
+								orgId,
+								repositoryId,
+								{
+									number: job.number,
+									mergeCommitSha: job.mergeCommitSha,
+									mergedAtMs: job.mergedAtMs ?? nowMs,
+								},
+								nowMs,
+							)
 						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
@@ -2240,6 +2303,32 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						"[PrReview] submission for a review that is no longer active was dropped",
 					).pipe(Effect.annotateLogs({ orgId, reviewId, status: review.status }))
 					return
+				}
+				// The pull request merged while this review ran: the merge found nothing to schedule.
+				const merged = yield* database
+					.execute((db) =>
+						db
+							.select({
+								mergedAt: prReviews.mergedAt,
+								mergeCommitSha: prReviews.mergeCommitSha,
+							})
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(Effect.mapError(toPersistence))
+				const mergedAtMs = dateToMs(merged[0]?.mergedAt ?? null)
+				if (mergedAtMs !== null && mergedAtMs !== undefined) {
+					yield* schedulePostMerge(
+						orgId,
+						review.repositoryId,
+						{
+							number: review.number,
+							mergeCommitSha: merged[0]?.mergeCommitSha ?? null,
+							mergedAtMs,
+						},
+						nowMs,
+					)
 				}
 
 				const keys = new Map(findings.map((finding) => [finding.handle ?? "", randomUUID()] as const))

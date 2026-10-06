@@ -14,8 +14,16 @@ import {
 	type PrReviewTelemetryKind,
 	type PullRequestFile,
 } from "@maple/domain/http"
-import { type DiffLine, emittedNames, isLogCall, isRuntimeSource, literalsOf, parsePatch } from "./diff"
-import { referencesFor, type ReferenceSource } from "./references"
+import {
+	type DiffLine,
+	emittedNames,
+	isCommentLine,
+	isLogCall,
+	isRuntimeSource,
+	literalsOf,
+	parsePatch,
+} from "./diff"
+import { escapeRegExp, referencesFor, type ReferenceSource } from "./references"
 
 /** One production operation over the catalog window. */
 export interface CatalogOperation {
@@ -86,7 +94,11 @@ export const frameMatchesPath = (frame: string, path: string): boolean => {
 	if (name.length === 0) return false
 	const dir = segments.at(-2)
 	if (dir !== undefined && haystack.includes(`${dir}/${name}.`)) return true
-	return !GENERIC_BASENAME.test(name) && name.length >= 6 && new RegExp(`[/\\s(@]${name}\\.`).test(haystack)
+	return (
+		!GENERIC_BASENAME.test(name) &&
+		name.length >= 6 &&
+		new RegExp(`[/\\s(@]${escapeRegExp(name)}\\.`).test(haystack)
+	)
 }
 
 const perDay = (count: number, windowDays: number) => Math.round(count / Math.max(1, windowDays))
@@ -126,12 +138,18 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		.filter((file) => isRuntimeSource(file.path) && file.patch !== null)
 		.map((file) => ({ path: file.path, lines: parsePatch(file.patch) }))
 
-	// A name added anywhere in the pull request is moved, not removed.
+	// A name added anywhere in the pull request is moved, not removed. A comment or a log message
+	// that merely quotes it emits nothing, so it does not count as adding it back.
 	const addedValues = new Set<string>()
 	const removedValues = new Set<string>()
 	for (const file of files) {
 		for (const line of file.lines) {
-			const target = line.kind === "add" ? addedValues : line.kind === "del" ? removedValues : undefined
+			const target =
+				line.kind === "add" && !isCommentLine(line.text) && !isLogCall(line.text)
+					? addedValues
+					: line.kind === "del"
+						? removedValues
+						: undefined
 			if (target === undefined) continue
 			for (const literal of literalsOf(line.text)) target.add(literal.value)
 		}

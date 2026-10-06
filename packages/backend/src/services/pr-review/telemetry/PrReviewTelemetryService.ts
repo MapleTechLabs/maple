@@ -2,14 +2,21 @@
  * The organization's telemetry, read for one pull request: what it emits, which alerts and
  * dashboards read it, which errors are open, and how production behaved after the merge shipped.
  *
- * Every read is best effort and bounded. A review that cannot reach the warehouse reviews the diff
- * as before, without these facts; nothing here fails a review.
+ * The review's reads are best effort and bounded: a review that cannot reach the warehouse reviews
+ * the diff as before, without these facts. The post-merge reads fail instead, typed, because an
+ * empty answer there would read as a clean deploy.
  */
-import { type OrgId, type PrReviewTelemetry, type PullRequestFile } from "@maple/domain/http"
-import { alertRules, dashboards, errorIssues } from "@maple/db"
+import {
+	GitCommitSha,
+	type OrgId,
+	type PrReviewTelemetry,
+	type PullRequestFile,
+	type VcsRepositoryId,
+} from "@maple/domain/http"
+import { alertRules, dashboards, errorIssues, vcsCommits } from "@maple/db"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { and, desc, eq, gte, inArray, isNull, notInArray } from "drizzle-orm"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs } from "@maple/backend/platform/time"
@@ -34,6 +41,14 @@ const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
 const ISSUE_SCAN_LIMIT = 500
 const SOURCE_SCAN_LIMIT = 500
 
+export class PrReviewTelemetryReadError extends Schema.TaggedError<PrReviewTelemetryReadError>()(
+	"@maple/backend/services/pr-review/PrReviewTelemetryReadError",
+	{
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
+
 export interface OperationWindowStats {
 	readonly service: string
 	readonly spanName: string
@@ -56,13 +71,22 @@ export interface PrReviewTelemetryServiceApi {
 		orgId: OrgId,
 		files: ReadonlyArray<PullRequestFile>,
 	) => Effect.Effect<PrReviewTelemetry | undefined>
-	/** Versions of these services that first reported after `sinceMs`, oldest first. */
+	/**
+	 * Versions of these services that first reported after `sinceMs`, oldest first; with no services,
+	 * every service of the organization.
+	 */
 	readonly deploymentsSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
 		sinceMs: number,
 		nowMs: number,
-	) => Effect.Effect<ReadonlyArray<DeploymentVersion>>
+	) => Effect.Effect<ReadonlyArray<DeploymentVersion>, PrReviewTelemetryReadError>
+	/** When each known commit of a repository was made, for telling an older deploy from a newer one. */
+	readonly commitTimes: (
+		orgId: OrgId,
+		repositoryId: VcsRepositoryId,
+		shas: ReadonlyArray<string>,
+	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
 	/** Per-operation traffic in one window, minute-exact. */
 	readonly operationsIn: (
 		orgId: OrgId,
@@ -70,26 +94,26 @@ export interface PrReviewTelemetryServiceApi {
 		spanNames: ReadonlyArray<string>,
 		startMs: number,
 		endMs: number,
-	) => Effect.Effect<ReadonlyArray<OperationWindowStats>>
+	) => Effect.Effect<ReadonlyArray<OperationWindowStats>, PrReviewTelemetryReadError>
 	/** Occurrences per fingerprint in one window. */
 	readonly issueCountsIn: (
 		orgId: OrgId,
 		fingerprintHashes: ReadonlyArray<string>,
 		startMs: number,
 		endMs: number,
-	) => Effect.Effect<ReadonlyMap<string, number>>
+	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
 	/** Error issues first seen in these services since a moment. */
 	readonly issuesFirstSeenSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
 		sinceMs: number,
-	) => Effect.Effect<ReadonlyArray<CatalogIssue>>
+	) => Effect.Effect<ReadonlyArray<CatalogIssue>, PrReviewTelemetryReadError>
 	/** Attribute keys set at least once in a window. */
 	readonly attributeKeysIn: (
 		orgId: OrgId,
 		startMs: number,
 		endMs: number,
-	) => Effect.Effect<ReadonlySet<string>>
+	) => Effect.Effect<ReadonlySet<string>, PrReviewTelemetryReadError>
 }
 
 /** A failed read is logged and read as empty: the review goes on without that fact. */
@@ -103,6 +127,20 @@ const orEmpty =
 					Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
 					Effect.as(empty),
 				),
+			),
+		)
+
+/** A deployed version's commit as the commits table stores it; a placeholder or a tag is skipped. */
+const decodeSha = Schema.decodeUnknownOption(GitCommitSha)
+
+/** A post-merge read that failed, as a typed failure the tick retries rather than an empty answer. */
+const orFail =
+	(what: string) =>
+	<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, PrReviewTelemetryReadError, R> =>
+		effect.pipe(
+			Effect.timeout("15 seconds"),
+			Effect.mapError(
+				(cause) => new PrReviewTelemetryReadError({ message: `could not read ${what}`, cause }),
 			),
 		)
 
@@ -309,7 +347,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			nowMs,
 		) =>
 			Effect.forEach(
-				services,
+				services.length === 0 ? [undefined] : services,
 				(serviceName) =>
 					warehouse
 						.compiledQuery(
@@ -321,7 +359,7 @@ export class PrReviewTelemetryService extends Context.Service<
 							),
 							{ profile: "aggregation", context: "prReviewDeployments" },
 						)
-						.pipe(orEmpty([], "deployments", orgId)),
+						.pipe(orFail("deployments")),
 				{ concurrency: 4 },
 			).pipe(
 				Effect.map((perService) =>
@@ -369,7 +407,7 @@ export class PrReviewTelemetryService extends Context.Service<
 							p95Ms: row.p95DurationMs,
 						})),
 					),
-					orEmpty([], "operation window", orgId),
+					orFail("operation window"),
 				)
 
 		const issueCountsIn: PrReviewTelemetryServiceApi["issueCountsIn"] = (
@@ -394,7 +432,7 @@ export class PrReviewTelemetryService extends Context.Service<
 								(rows) =>
 									new Map(rows.map((row) => [row.fingerprintHash, row.count] as const)),
 							),
-							orEmpty(new Map<string, number>(), "issue counts", orgId),
+							orFail("issue counts"),
 						)
 
 		const issuesFirstSeenSince: PrReviewTelemetryServiceApi["issuesFirstSeenSince"] = (
@@ -432,7 +470,7 @@ export class PrReviewTelemetryService extends Context.Service<
 						)
 						.pipe(
 							Effect.map((rows) => rows.map(toCatalogIssue)),
-							orEmpty([], "new issues", orgId),
+							orFail("new issues"),
 						)
 
 		const attributeKeysIn: PrReviewTelemetryServiceApi["attributeKeysIn"] = (orgId, startMs, endMs) =>
@@ -450,11 +488,49 @@ export class PrReviewTelemetryService extends Context.Service<
 				{ concurrency: "unbounded" },
 			).pipe(
 				Effect.map((scopes) => new Set(scopes.flat().map((row) => row.attributeKey))),
-				orEmpty(new Set<string>(), "attribute keys", orgId),
+				orFail("attribute keys"),
 			)
+
+		const commitTimes: PrReviewTelemetryServiceApi["commitTimes"] = (orgId, repositoryId, shas) =>
+			shas.length === 0
+				? Effect.succeed(new Map())
+				: database
+						.execute((db) =>
+							db
+								.select({ sha: vcsCommits.sha, committedAt: vcsCommits.committedAt })
+								.from(vcsCommits)
+								.where(
+									and(
+										eq(vcsCommits.orgId, orgId),
+										eq(vcsCommits.repositoryId, repositoryId),
+										inArray(
+											vcsCommits.sha,
+											shas.flatMap((sha) =>
+												Option.toArray(decodeSha(sha.toLowerCase())),
+											),
+										),
+									),
+								),
+						)
+						.pipe(
+							Effect.map(
+								(rows) =>
+									new Map(
+										rows.map(
+											(row) =>
+												[
+													row.sha.toLowerCase(),
+													dateToMs(row.committedAt) ?? 0,
+												] as const,
+										),
+									),
+							),
+							orFail("commit times"),
+						)
 
 		return {
 			analyze,
+			commitTimes,
 			deploymentsSince,
 			operationsIn,
 			issueCountsIn,

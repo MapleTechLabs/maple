@@ -12,6 +12,7 @@ import {
 	type PrReviewTelemetryDismissal,
 } from "@maple/domain/http"
 import { formatCount, formatGb } from "./analyze"
+import { lineEmitting } from "./diff"
 
 /** Calls a day past which a file's gaps are worth a warning rather than a note. */
 export const HOT_PER_DAY = 10_000
@@ -41,7 +42,7 @@ const readers = (item: PrReviewContractBreak) => {
 export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined): ReadonlyArray<string> => {
 	if (telemetry === undefined) return []
 	const lines: Array<string> = []
-	const breaks = telemetry.contractBreaks
+	const breaks = openContractBreaks(telemetry)
 	if (breaks.length > 0) {
 		lines.push(
 			"Names this pull request removes that the organization's alerts or dashboards read (Maple files each as a finding itself; do not file your own):",
@@ -189,17 +190,16 @@ export const withDismissals = (
 
 /**
  * Whether a line at the head still emits a name: it holds the name as a string, and is code rather
- * than a comment or a test.
+ * than a comment or a log message.
  */
 export const lineStillEmits = (content: string, line: number, name: string): boolean => {
 	const text = content.split("\n")[line - 1]
-	if (text === undefined) return false
-	const trimmed = text.trim()
-	if (/^(\/\/|#|\*|\/\*|--)/.test(trimmed)) return false
-	return [`"${name}"`, `'${name}'`, `\`${name}\``].some((quoted) => text.includes(quoted))
+	return text !== undefined && lineEmitting(text, name) === 1
 }
 
-const escapeCell = (value: string) => value.replace(/\|/g, "\\|").replace(/\n/g, " ")
+/** Text for a markdown table cell: backslashes first, so an escaped pipe cannot be unescaped. */
+export const escapeCell = (value: string) =>
+	value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
 
 /**
  * The comment's section on production: what breaks, where the traffic is, which open errors live

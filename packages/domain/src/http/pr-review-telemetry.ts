@@ -158,6 +158,8 @@ export const PrReviewPostMergeStatus = Schema.Literals([
 	"reported",
 	"no_deploy",
 	"no_traffic",
+	// The reads kept failing until the look was given up.
+	"failed",
 ]).annotate({
 	identifier: "@maple/PrReviewPostMergeStatus",
 	title: "Pull Request Review Post-Merge Status",

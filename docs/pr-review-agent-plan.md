@@ -189,7 +189,13 @@ best effort with a 20 s ceiling, and stores its result on `pr_reviews.telemetry_
 | Linked issue | An open issue whose top frame ends in the changed file's directory and name (any extension) | Kickoff and comment section; compared again after the merge ships |
 | Cost note | A new log call in a hot file (calls/day × 30 × average record size), or a span name built from a template | `TEL-02` (≥ 1 GB/month, warn from 10 GB) and `TEL-03` findings |
 
-Tests, docs, fixtures and config files are never read for any of these.
+Tests, docs, fixtures and config files are never read for any of these. A name quoted on an
+added comment or log line does not count as adding it back.
+
+**Untouched emitters.** The diff only shows changed lines, so before the review starts the service
+code-searches the repository for each removed name (up to 8) and reads the candidate files at the
+head SHA. A file that still emits the name on a line of code (not a comment or a log message)
+dismisses the break before the agent sees it.
 
 **Dismissals.** The kickoff asks the agent to grep the head for each removed name. When the name is
 still emitted elsewhere, `submit_review` takes `telemetryDismissals: [{ name, path, line }]`, and
@@ -209,17 +215,25 @@ telemetry facts: `merge_commit_sha`, `post_merge_status = 'waiting'`, `post_merg
 15 min` (unless `postMergeCheck` is off). `PrReviewPostMergeService.runTick` runs on the alerting
 worker's 5-minute cron, at most 10 rows a tick:
 
-1. Find the deploy: the version (`vcs.ref.head.revision`) of a touched service equal to the merge
-   commit, else the first version any touched service reported after the merge (`exact: false`).
-   No deploy after 48 h settles `no_deploy`; otherwise it looks again in 30 minutes.
-2. Wait until an hour of traffic after the deploy has landed.
-3. Compare the hour before and after (`operationTrafficMinutelyQuery`) for the busiest operations
+1. Claim the row for 10 minutes, so overlapping ticks post once.
+2. Find the deploy: the version (`vcs.ref.head.revision`) of a touched service equal to the merge
+   commit. After 2 h without it, the first version reported after the merge stands in
+   (`exact: false`), skipping versions whose commit is known to predate the merge. A review that
+   only found removed names reads every service and waits for the merge commit itself. No deploy
+   after 48 h settles `no_deploy`; otherwise it looks again in 30 minutes.
+3. Wait until an hour of traffic after the deploy has landed.
+4. Compare the hour before and after (`operationTrafficMinutelyQuery`) for the busiest operations
    the review saw. A regression is at least 20 calls after and an error rate up 2 points and
    doubled, or p95 up 1.5× and 100 ms. Also: issues first seen after the deploy in those services,
    linked issues' rate before and after, and contract-break attributes that stopped arriving.
-4. Store `post_merge_json` (`PrReviewPostMerge`), mark it `reported`, and post one comment on the
+5. Store `post_merge_json` (`PrReviewPostMerge`), mark it `reported`, and post one comment on the
    pull request (`<!-- maple-pr-post-merge <reviewId> -->`). A refused post leaves the result
    stored; the Code Review sheet shows it either way.
+
+A failed read is a typed failure, never an empty answer: the row is looked at again in 30
+minutes, and settles `failed` once the 48 h window passes. A review that finishes after its pull
+request merged schedules its own look, and a reviewed head that is reviewed again clears the old
+one.
 
 
 Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout

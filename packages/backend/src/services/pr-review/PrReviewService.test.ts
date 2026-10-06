@@ -117,6 +117,8 @@ const layerFor = (
 		readonly telemetry?: PrReviewTelemetry
 		/** Files at the head, by path, for verifying a telemetry dismissal. */
 		readonly sourceFiles?: Readonly<Record<string, string>>
+		/** Paths code search returns for any query. */
+		readonly searchHits?: ReadonlyArray<string>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -146,7 +148,12 @@ const layerFor = (
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
 		commitFiles: unused,
-		searchCode: unused,
+		searchCode: () =>
+			options.searchHits === undefined
+				? unused()
+				: Effect.succeed(
+						options.searchHits.map((path) => ({ path, sha: "s", htmlUrl: "", snippets: [] })),
+					),
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
 		fetchSourceFile: (_installation, _repo, path) =>
@@ -1755,6 +1762,91 @@ describe("PrReviewService telemetry", () => {
 			assert.deepStrictEqual(rows, [
 				{ status: "waiting", after: new Date(1_000 + 15 * 60_000), sha: "ccc" },
 			])
+		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
+	})
+})
+
+describe("PrReviewService telemetry, unchanged code and late merges", () => {
+	it.effect("drops a break before the review when untouched code still emits the name", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ blockOnContractBreaks: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.notInclude(begun[0]!.text, "removed at src/pay.ts:12")
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			assert.notEqual(published[0]!.conclusion, "failure")
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepStrictEqual(stored.report?.telemetry?.contractBreaks[0]?.dismissed, {
+				path: "src/untouched.ts",
+				line: 3,
+			})
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					begun,
+					published,
+					telemetry: breakingTelemetry,
+					searchHits: ["src/untouched.ts", "docs/attributes.md"],
+					sourceFiles: { "src/untouched.ts": 'a\nb\nspan.setAttribute("payment.provider", p)' },
+				}),
+			),
+		)
+	})
+
+	it.effect("schedules the look when the pull request merged before its review finished", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 }),
+			)
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.equal(stored.postMergeStatus, "waiting")
+		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
+	})
+
+	it.effect("clears an earlier post-merge look when a reviewed head is reviewed again", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			const db = yield* Database
+			yield* db.execute((client) =>
+				client
+					.update(prReviews)
+					.set({ postMergeStatus: "reported" })
+					.where(eq(prReviews.id, started.reviewId!)),
+			)
+			yield* reviews.reviewNow(orgId, job())
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.isNull(stored.postMergeStatus ?? null)
 		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
 	})
 })

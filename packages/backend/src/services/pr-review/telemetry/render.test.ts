@@ -14,9 +14,11 @@ import {
 	missingAfterDeploy,
 	operationRegressed,
 	pickDeploy,
+	POST_MERGE_EXACT_WAIT_MS,
 	renderPostMergeComment,
 } from "./post-merge"
 import {
+	escapeCell,
 	fixedContractBreaks,
 	lineStillEmits,
 	renderTelemetryKickoff,
@@ -31,7 +33,9 @@ const alertBreak = new PrReviewContractBreak({
 	name: "payment.provider",
 	path: "src/pay.ts",
 	line: 12,
-	references: [new PrReviewTelemetryReference({ kind: "alert", id: "rule-1", name: "Checkout by provider" })],
+	references: [
+		new PrReviewTelemetryReference({ kind: "alert", id: "rule-1", name: "Checkout by provider" }),
+	],
 	perDay: 1_000,
 })
 const dashboardBreak = new PrReviewContractBreak({
@@ -87,7 +91,11 @@ describe("telemetryFindings", () => {
 		assert.deepStrictEqual(
 			findings.map((item) => [item.checkId, item.severity, item.title]),
 			[
-				["TEL-01", "critical", "Removes `payment.provider`, which alert “Checkout by provider” reads"],
+				[
+					"TEL-01",
+					"critical",
+					"Removes `payment.provider`, which alert “Checkout by provider” reads",
+				],
 				["TEL-01", "warn", "Removes `Payments.charge`, which dashboard “Payments” reads"],
 			],
 		)
@@ -114,7 +122,9 @@ describe("telemetryFindings", () => {
 	})
 
 	it("drops a break the reviewer proved is still emitted", () => {
-		const proved = withDismissals(telemetry(), [{ name: "payment.provider", path: "src/other.ts", line: 4 }])
+		const proved = withDismissals(telemetry(), [
+			{ name: "payment.provider", path: "src/other.ts", line: 4 },
+		])
 		assert.deepStrictEqual(
 			telemetryFindings(proved).map((item) => item.title.split(",")[0]),
 			["Removes `Payments.charge`"],
@@ -132,7 +142,14 @@ describe("weighByTraffic", () => {
 
 	it("leaves other lenses, quiet files and existing warnings alone", () => {
 		const kept = [
-			new PrReviewFinding({ path: "src/checkout.ts", line: 3, category: "correctness", severity: "info", title: "t", body: "b" }),
+			new PrReviewFinding({
+				path: "src/checkout.ts",
+				line: 3,
+				category: "correctness",
+				severity: "info",
+				title: "t",
+				body: "b",
+			}),
 			finding({ path: "src/quiet.ts" }),
 			finding({ severity: "warn" }),
 		]
@@ -141,11 +158,17 @@ describe("weighByTraffic", () => {
 })
 
 describe("lineStillEmits", () => {
-	it("accepts a quoted name on code and refuses comments", () => {
-		const content = 'a\nspan.setAttribute("payment.provider", p)\n// "payment.provider"'
+	it("accepts a quoted name on code and refuses comments and log messages", () => {
+		const content =
+			'a\nspan.setAttribute("payment.provider", p)\n// "payment.provider"\nconsole.log("payment.provider")'
 		assert.isTrue(lineStillEmits(content, 2, "payment.provider"))
 		assert.isFalse(lineStillEmits(content, 3, "payment.provider"))
+		assert.isFalse(lineStillEmits(content, 4, "payment.provider"))
 		assert.isFalse(lineStillEmits(content, 9, "payment.provider"))
+	})
+
+	it("escapes table cells so a backslash cannot unescape a pipe", () => {
+		assert.strictEqual(escapeCell("a\\|b\nc"), "a\\\\\\|b c")
 	})
 })
 
@@ -172,8 +195,14 @@ describe("rendering", () => {
 	})
 
 	it("says the check blocks only when the repository asked", () => {
-		assert.include(renderTelemetryMarkdown(telemetry(), { blocking: true }).join("\n"), "This check fails")
-		assert.notInclude(renderTelemetryMarkdown(telemetry(), { blocking: false }).join("\n"), "This check fails")
+		assert.include(
+			renderTelemetryMarkdown(telemetry(), { blocking: true }).join("\n"),
+			"This check fails",
+		)
+		assert.notInclude(
+			renderTelemetryMarkdown(telemetry(), { blocking: false }).join("\n"),
+			"This check fails",
+		)
 		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false }), [])
 	})
 })
@@ -184,10 +213,34 @@ describe("post-merge", () => {
 		{ service: "api", environment: "production", commitSha: "AAA", firstSeenAt: 3_000 },
 	]
 
+	const pick = (mergeCommitSha: string | null, overrides: Partial<Parameters<typeof pickDeploy>[0]> = {}) =>
+		pickDeploy({
+			versions,
+			mergeCommitSha,
+			mergedAtMs: 1_000,
+			nowMs: 1_000 + POST_MERGE_EXACT_WAIT_MS,
+			commitTimes: new Map(),
+			exactOnly: false,
+			...overrides,
+		})
+
 	it("prefers the merge commit's own version, else the first one after the merge", () => {
-		assert.deepStrictEqual(pickDeploy(versions, "aaa", 1_000), { deploy: versions[1], exact: true })
-		assert.deepStrictEqual(pickDeploy(versions, "ccc", 1_000), { deploy: versions[0], exact: false })
-		assert.isUndefined(pickDeploy(versions, null, 5_000))
+		assert.deepStrictEqual(pick("aaa"), { deploy: versions[1], exact: true })
+		assert.deepStrictEqual(pick("ccc"), { deploy: versions[0], exact: false })
+		assert.isUndefined(pick(null, { mergedAtMs: 5_000, nowMs: 5_000 + POST_MERGE_EXACT_WAIT_MS }))
+	})
+
+	it("waits for the merge commit before a later version stands in", () => {
+		assert.isUndefined(pick("ccc", { nowMs: 1_000 + POST_MERGE_EXACT_WAIT_MS - 1 }))
+		assert.deepStrictEqual(pick("aaa", { nowMs: 1_500 }), { deploy: versions[1], exact: true })
+	})
+
+	it("never stands in a version whose commit predates the merge, nor any when only the exact one will do", () => {
+		assert.deepStrictEqual(pick("ccc", { commitTimes: new Map([["bbb", 500]]) }), {
+			deploy: versions[1],
+			exact: false,
+		})
+		assert.isUndefined(pick("ccc", { exactOnly: true }))
 	})
 
 	it("calls a jump in error rate or latency a regression, never noise", () => {
@@ -210,7 +263,13 @@ describe("post-merge", () => {
 		const body = renderPostMergeComment(
 			"r-1",
 			new PrReviewPostMerge({
-				deploy: { service: "api", environment: "production", commitSha: "abcdef123", firstSeenAt: 0, exact: true },
+				deploy: {
+					service: "api",
+					environment: "production",
+					commitSha: "abcdef123",
+					firstSeenAt: 0,
+					exact: true,
+				},
 				windowMinutes: 60,
 				operations: [],
 				newIssues: [],
@@ -224,4 +283,3 @@ describe("post-merge", () => {
 		assert.include(body, "`abcdef1`")
 	})
 })
-

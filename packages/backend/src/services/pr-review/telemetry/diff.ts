@@ -111,3 +111,21 @@ export const emittedNames = (text: string, nearby: string): ReadonlyArray<Emitte
 }
 
 export const isLogCall = (text: string): boolean => LOG_CALL.test(text)
+
+/** A line that is only a comment, in the comment syntaxes runtime sources use. */
+export const isCommentLine = (text: string): boolean => /^\s*(\/\/|#|\*|\/\*|--)/.test(text)
+
+/**
+ * The first line of a file that still emits a name: code, not a comment or a log message, holding
+ * the name as a quoted string. 1-based; undefined when no line does.
+ */
+export const lineEmitting = (content: string, name: string): number | undefined => {
+	const quoted = [`"${name}"`, `'${name}'`, `\`${name}\``]
+	const index = content
+		.split("\n")
+		.findIndex(
+			(text) =>
+				!isCommentLine(text) && !isLogCall(text) && quoted.some((value) => text.includes(value)),
+		)
+	return index === -1 ? undefined : index + 1
+}

@@ -77,6 +77,17 @@ describe("emittedNames", () => {
 })
 
 describe("referencesFor", () => {
+	it("does not match a route inside a longer route", () => {
+		const routes: ReferenceSource = {
+			kind: "dashboard",
+			id: "d",
+			name: "d",
+			texts: ["GET /checkout/confirm"],
+		}
+		assert.lengthOf(referencesFor("/checkout", [routes]), 0)
+		assert.lengthOf(referencesFor("/checkout/confirm", [routes]), 1)
+	})
+
 	it("matches whole tokens, behind attr. prefixes, and not inside longer names", () => {
 		assert.lengthOf(referencesFor("payment.provider", [alert]), 1)
 		assert.lengthOf(referencesFor("payments.charged", [dashboard]), 0)
@@ -90,6 +101,12 @@ describe("referencesFor", () => {
 })
 
 describe("frameMatchesPath", () => {
+	it("reads a file name with regex characters literally", () => {
+		assert.isFalse(frameMatchesPath("at x (/s.js)", "apps/web/src/routes/[...slug].tsx"))
+		assert.isTrue(frameMatchesPath("at x (/app/[...slug].js)", "apps/web/src/routes/[...slug].tsx"))
+		assert.isFalse(frameMatchesPath("at x (/app/other.js)", "src/c++module.ts"))
+	})
+
 	it("ties a frame to a file by its directory and name, ignoring the extension", () => {
 		assert.isTrue(frameMatchesPath("at charge (/app/dist/payments/charge.js)", "src/payments/charge.ts"))
 		assert.isFalse(frameMatchesPath("at handler (/app/dist/users/index.js)", "src/payments/index.ts"))
@@ -136,6 +153,24 @@ describe("analyzeTelemetry", () => {
 		})
 		assert.lengthOf(telemetry.contractBreaks, 0)
 		assert.lengthOf(telemetry.removed, 0)
+	})
+
+	it("does not count a name quoted in a comment or a log message as added back", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/a.ts",
+					`@@ -1,1 +1,2 @@\n-span.setAttribute("payment.provider", p)\n+// was "payment.provider"\n+console.log("payment.provider", p)`,
+				),
+			],
+			catalog,
+			sources: [alert],
+			issues: [],
+		})
+		assert.deepStrictEqual(
+			telemetry.contractBreaks.map((item) => item.name),
+			["payment.provider"],
+		)
 	})
 
 	it("ignores tests and docs", () => {
