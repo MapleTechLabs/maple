@@ -1176,7 +1176,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										provider.fetchSourceFile(installation, ref, path, headSha).pipe(
 											Effect.map((file) => {
 												const line = Option.isSome(file)
-													? lineEmitting(file.value.content, item.name)
+													? lineEmitting(file.value.content, item.name, item.kind)
 													: undefined
 												return line === undefined
 													? []
@@ -2120,10 +2120,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Effect.option,
 				)
 				if (Option.isNone(telemetry)) return undefined
-				const open = new Set(openContractBreaks(telemetry.value).map((item) => item.name))
-				const candidates = dismissals.filter(
-					(item) => open.has(item.name) && isRuntimeSource(item.path),
+				// Each claim names the open break it answers, and is checked against that break's kind.
+				const kindOf = new Map(
+					openContractBreaks(telemetry.value).map((item) => [item.name, item.kind] as const),
 				)
+				const candidates = dismissals.flatMap((item) => {
+					const kind = kindOf.get(item.name)
+					return kind !== undefined && isRuntimeSource(item.path) ? [{ ...item, kind }] : []
+				})
 				if (candidates.length === 0 || Option.isNone(repository) || Option.isNone(installation))
 					return telemetry.value
 				const target = yield* providerFor(orgId, repository.value).pipe(
@@ -2138,8 +2142,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						provider.fetchSourceFile(installation.value, ref, item.path, headSha).pipe(
 							Effect.map((file) =>
 								Option.isSome(file) &&
-								lineStillEmits(file.value.content, item.line, item.name)
-									? [item]
+								lineStillEmits(file.value.content, item.line, item.name, item.kind)
+									? [{ name: item.name, path: item.path, line: item.line }]
 									: [],
 							),
 							Effect.catchCause(() => Effect.succeed([])),

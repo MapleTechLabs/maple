@@ -159,13 +159,23 @@ describe("weighByTraffic", () => {
 })
 
 describe("lineStillEmits", () => {
-	it("accepts a quoted name on code and refuses comments and log messages", () => {
-		const content =
-			'a\nspan.setAttribute("payment.provider", p)\n// "payment.provider"\nconsole.log("payment.provider")'
-		assert.isTrue(lineStillEmits(content, 2, "payment.provider"))
-		assert.isFalse(lineStillEmits(content, 3, "payment.provider"))
-		assert.isFalse(lineStillEmits(content, 4, "payment.provider"))
-		assert.isFalse(lineStillEmits(content, 9, "payment.provider"))
+	it("accepts only a telemetry call of the same kind, never a comment, log or plain string", () => {
+		const content = [
+			"a",
+			'span.setAttribute("payment.provider", p)',
+			'// "payment.provider"',
+			'console.log("payment.provider")',
+			'const note = "payment.provider"',
+			"Effect.annotateCurrentSpan({",
+			'	"payment.provider": p,',
+		].join("\n")
+		assert.isTrue(lineStillEmits(content, 2, "payment.provider", "attribute"))
+		assert.isFalse(lineStillEmits(content, 2, "payment.provider", "span"))
+		assert.isFalse(lineStillEmits(content, 3, "payment.provider", "attribute"))
+		assert.isFalse(lineStillEmits(content, 4, "payment.provider", "attribute"))
+		assert.isFalse(lineStillEmits(content, 5, "payment.provider", "attribute"))
+		assert.isTrue(lineStillEmits(content, 7, "payment.provider", "attribute"))
+		assert.isFalse(lineStillEmits(content, 99, "payment.provider", "attribute"))
 	})
 
 	it("escapes table cells so a backslash cannot unescape a pipe", () => {

@@ -10,9 +10,10 @@ import {
 	type PrReviewTelemetry,
 	PrReviewTelemetry as PrReviewTelemetryClass,
 	type PrReviewTelemetryDismissal,
+	type PrReviewTelemetryKind,
 } from "@maple/domain/http"
 import { formatCount, formatGb } from "./analyze"
-import { lineEmitting } from "./diff"
+import { lineEmitsAt } from "./diff"
 
 /** Calls a day past which a file's gaps are worth a warning rather than a note. */
 export const HOT_PER_DAY = 10_000
@@ -188,14 +189,13 @@ export const withDismissals = (
 				}),
 			})
 
-/**
- * Whether a line at the head still emits a name: it holds the name as a string, and is code rather
- * than a comment or a log message.
- */
-export const lineStillEmits = (content: string, line: number, name: string): boolean => {
-	const text = content.split("\n")[line - 1]
-	return text !== undefined && lineEmitting(text, name) === 1
-}
+/** Whether a line at the head still hands a removed name to the telemetry API, as the same kind. */
+export const lineStillEmits = (
+	content: string,
+	line: number,
+	name: string,
+	kind: PrReviewTelemetryKind,
+): boolean => lineEmitsAt(content, line, name, kind)
 
 /** Text for a markdown table cell: backslashes first, so an escaped pipe cannot be unescaped. */
 export const escapeCell = (value: string) =>

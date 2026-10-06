@@ -116,16 +116,39 @@ export const isLogCall = (text: string): boolean => LOG_CALL.test(text)
 export const isCommentLine = (text: string): boolean => /^\s*(\/\/|#|\*|\/\*|--)/.test(text)
 
 /**
- * The first line of a file that still emits a name: code, not a comment or a log message, holding
- * the name as a quoted string. 1-based; undefined when no line does.
+ * Whether line `index` hands `name` to the telemetry API as a `kind`: a span, attribute or metric
+ * call, read with the lines above it for an attribute object. A string that only holds the name
+ * (`const note = "payment.provider"`) emits nothing.
  */
-export const lineEmitting = (content: string, name: string): number | undefined => {
-	const quoted = [`"${name}"`, `'${name}'`, `\`${name}\``]
-	const index = content
-		.split("\n")
-		.findIndex(
-			(text) =>
-				!isCommentLine(text) && !isLogCall(text) && quoted.some((value) => text.includes(value)),
-		)
+const emitsAt = (
+	lines: ReadonlyArray<string>,
+	index: number,
+	name: string,
+	kind: EmittedName["kind"],
+): boolean => {
+	const text = lines[index]
+	if (text === undefined || isCommentLine(text)) return false
+	const nearby = lines.slice(Math.max(0, index - 4), index).join("\n")
+	return emittedNames(text, nearby).some(
+		(emitted) => emitted.kind === kind && emitted.value === name && !emitted.templated,
+	)
+}
+
+/** The first line of a file that still emits a name as a `kind`, 1-based; undefined when none does. */
+export const lineEmitting = (
+	content: string,
+	name: string,
+	kind: EmittedName["kind"],
+): number | undefined => {
+	const lines = content.split("\n")
+	const index = lines.findIndex((_, i) => emitsAt(lines, i, name, kind))
 	return index === -1 ? undefined : index + 1
 }
+
+/** Whether 1-based `line` of a file emits a name as a `kind`. */
+export const lineEmitsAt = (
+	content: string,
+	line: number,
+	name: string,
+	kind: EmittedName["kind"],
+): boolean => emitsAt(content.split("\n"), line - 1, name, kind)
