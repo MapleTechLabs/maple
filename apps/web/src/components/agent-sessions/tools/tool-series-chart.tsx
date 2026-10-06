@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 
@@ -199,9 +200,10 @@ export function ToolSeriesChart({
 
 	return (
 		<section
+			aria-busy={waiting || undefined}
 			className={cn(
 				"flex flex-col gap-4 border-b border-border px-6 pt-[22px] pb-5",
-				waiting && "opacity-60",
+				refreshingClass(waiting ?? false),
 			)}
 		>
 			<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 font-mono text-[12.5px]">

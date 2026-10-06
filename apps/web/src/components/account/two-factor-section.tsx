@@ -153,9 +153,9 @@ export function TwoFactorSection() {
 							</Button>
 						</div>
 					) : (
-						<Button size="sm" onClick={handleStartEnrollment} disabled={isBusy}>
+						<Button size="sm" onClick={handleStartEnrollment} loading={isBusy}>
 							<ShieldIcon size={14} className="mr-1.5" />
-							{isBusy ? "Preparing..." : "Set up authenticator"}
+							Set up authenticator
 						</Button>
 					)}
 				</CardContent>
@@ -178,13 +178,9 @@ export function TwoFactorSection() {
 							variant="outline"
 							size="sm"
 							onClick={handleRegenerateBackupCodes}
-							disabled={isBusy}
+							loading={isBusy}
 						>
-							{isBusy
-								? "Generating..."
-								: backupCodeEnabled
-									? "Regenerate codes"
-									: "Generate codes"}
+							{backupCodeEnabled ? "Regenerate codes" : "Generate codes"}
 						</Button>
 					</CardContent>
 				</Card>
@@ -274,9 +270,10 @@ export function TwoFactorSection() {
 								</Button>
 								<Button
 									onClick={() => void handleVerify(enroll.code)}
-									disabled={isBusy || enroll.code.length < 6}
+									loading={isBusy}
+									disabled={enroll.code.length < 6}
 								>
-									{isBusy ? "Verifying..." : "Verify"}
+									Verify
 								</Button>
 							</DialogFooter>
 						</>

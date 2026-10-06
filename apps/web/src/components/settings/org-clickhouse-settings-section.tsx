@@ -1,3 +1,4 @@
+import { countLabel } from "@maple/ui/lib/format"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Exit } from "effect"
@@ -33,6 +34,7 @@ import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-cl
 import { OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
 import { DataPlatformUsageSection } from "@/components/settings/data-platform-usage-section"
 import { getExitErrorMessage } from "@/lib/error-toast"
+import { ErrorState } from "@/components/common/error-state"
 
 const syncDateFormatter = new Intl.DateTimeFormat("en-US", {
 	month: "short",
@@ -257,12 +259,20 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 							snapshot to your cluster.
 						</CardDescription>
 						<CardAction>
-							{Result.isInitial(settingsResult) ? <Skeleton className="h-6 w-36" /> : statusBadge}
+							{Result.isInitial(settingsResult) ? (
+								<Skeleton className="h-6 w-36" />
+							) : (
+								statusBadge
+							)}
 						</CardAction>
 					</CardHeader>
 					<CardContent className="space-y-5">
-						{!Result.isSuccess(settingsResult) && !Result.isInitial(settingsResult) ? (
-							<p className="text-sm text-muted-foreground">Failed to load settings.</p>
+						{Result.isFailure(settingsResult) ? (
+							<ErrorState
+								error={settingsResult.cause}
+								title="Failed to load settings"
+								variant="inline"
+							/>
 						) : (
 							<>
 								<div className="grid gap-2">
@@ -323,6 +333,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 								<div className="flex flex-wrap gap-2">
 									<Button
 										onClick={() => void handleSave()}
+										loading={isSaving}
 										disabled={
 											isBusy ||
 											!isValidUrl ||
@@ -330,11 +341,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 											chDatabase.trim().length === 0
 										}
 									>
-										{isSaving
-											? "Saving..."
-											: configured
-												? "Update connection"
-												: "Save connection"}
+										{configured ? "Update connection" : "Save connection"}
 									</Button>
 									<Button
 										variant="destructive"
@@ -373,7 +380,11 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 									<p className="text-muted-foreground text-xs">Applied version</p>
 									<p className="font-mono text-xs">
 										{settings?.schemaVersion ? (
-											<TruncatedId value={settings.schemaVersion} kind="sha" length={10} />
+											<TruncatedId
+												value={settings.schemaVersion}
+												kind="sha"
+												length={10}
+											/>
 										) : (
 											"—"
 										)}
@@ -383,7 +394,11 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 									<p className="text-muted-foreground text-xs">Expected version</p>
 									<p className="font-mono text-xs">
 										{diff?.expectedSchemaVersion ? (
-											<TruncatedId value={diff.expectedSchemaVersion} kind="sha" length={10} />
+											<TruncatedId
+												value={diff.expectedSchemaVersion}
+												kind="sha"
+												length={10}
+											/>
 										) : (
 											"—"
 										)}
@@ -454,7 +469,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 																? "Missing — will be created"
 																: entry.status === "wrong_kind"
 																	? `Wrong kind: expected ${entry.kind === "materialized_view" ? "MV" : "table"}, found ${entry.actualKind === "materialized_view" ? "MV" : "table"} — resolve manually`
-																	: `Drift: ${entry.columnDrifts.length} mismatch${entry.columnDrifts.length === 1 ? "" : "es"}`}
+																	: `Drift: ${countLabel(entry.columnDrifts.length, "mismatch", "mismatches")}`}
 													</span>
 													{isDrifted ? (
 														isExpanded ? (
@@ -492,16 +507,10 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 								<Button
 									variant="outline"
 									onClick={() => void handleRefreshDiff()}
+									loading={isRefreshingDiff}
 									disabled={isBusy}
 								>
-									{isRefreshingDiff ? (
-										<>
-											<Spinner size={12} className="mr-1" />
-											Refreshing…
-										</>
-									) : (
-										"Refresh diff"
-									)}
+									Refresh diff
 								</Button>
 								<Button
 									onClick={() => void handleApply()}

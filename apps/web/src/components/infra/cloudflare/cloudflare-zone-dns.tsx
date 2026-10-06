@@ -4,6 +4,8 @@
 // else gets zero rows and the section hides itself.
 
 import { useMemo } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneDnsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -61,7 +63,10 @@ export function CloudflareZoneDnsSection({
 				value: bucket.queries,
 			}))
 			return (
-				<div className={`space-y-4 transition-opacity ${r.waiting ? "opacity-60" : ""}`}>
+				<div
+					className={cn("space-y-4", refreshingClass(r.waiting))}
+					aria-busy={r.waiting || undefined}
+				>
 					<StackedBreakdownChart
 						title="DNS queries by response code"
 						rows={rows}

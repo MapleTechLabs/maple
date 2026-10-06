@@ -1,5 +1,7 @@
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
-import { useCallback, useState } from "react"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
+import { useState } from "react"
+import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Badge, badgeVariants } from "@maple/ui/components/ui/badge"
@@ -7,7 +9,6 @@ import { ListFooter, LoadMoreButton, LoadingMoreRow } from "@maple/ui/components
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { ChevronRightIcon } from "@/components/icons"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -113,34 +114,6 @@ interface SessionsListProps {
 	 *  Either way it is sampled once per render, never per row: two rows in one
 	 *  frame must not disagree about what time it is. */
 	nowMs?: number
-}
-
-function observeReachEnd(element: HTMLDivElement, onReachEnd: () => void): () => void {
-	const observer = new IntersectionObserver(
-		(entries) => {
-			if (entries[0]?.isIntersecting) onReachEnd()
-		},
-		{ rootMargin: "400px 0px" },
-	)
-	observer.observe(element)
-	return () => observer.disconnect()
-}
-
-function SessionsSentinel({
-	onReachEnd,
-	loadingMore,
-}: Pick<SessionsListProps, "onReachEnd" | "loadingMore">) {
-	const elementRef = useCallback(
-		(element: HTMLDivElement | null) => {
-			if (!element) return
-			return observeReachEnd(element, () => {
-				if (!loadingMore) onReachEnd?.()
-			})
-		},
-		[loadingMore, onReachEnd],
-	)
-
-	return <div ref={elementRef} aria-hidden className="h-px w-full" />
 }
 
 export function SessionsList({
@@ -271,16 +244,14 @@ export function SessionsList({
 						/>
 					</div>
 				) : (
-					<SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />
+					<ReachEndSentinel onReachEnd={onReachEnd} loading={loadingMore} />
 				))}
 
 			{isCapped && (
 				<ListFooter shown={sessions.length} noun="sessions" capped align="start" className="px-0" />
 			)}
 
-			{loadingMore && (
-				<LoadingMoreRow label="Loading more sessions…" className="py-6" />
-			)}
+			{loadingMore && <LoadingMoreRow label="Loading more sessions…" className="py-6" />}
 		</div>
 	)
 }
@@ -534,12 +505,7 @@ function SessionBadges({ session }: { session: SessionRow }) {
 		<>
 			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
-				<Badge
-					pill
-					size="xs"
-					mono
-					className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-				>
+				<Badge pill size="xs" mono className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
 					{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
 				</Badge>
 			)}
@@ -590,11 +556,7 @@ function QuietRunRow({
 			</span>
 			<span className="ml-auto flex shrink-0 items-center gap-1">
 				{expanded ? "Hide" : "Show"}
-				<ChevronRightIcon
-					size={14}
-					aria-hidden
-					className={cn("transition-transform", expanded && "rotate-90")}
-				/>
+				<DisclosureChevron open={expanded} size={14} />
 			</span>
 		</button>
 	)

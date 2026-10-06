@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import type {
 	SessionCheck,
 	SessionCheckStatus,
@@ -9,7 +10,7 @@ import type {
 	SessionFinding,
 } from "@maple/agent-sessions"
 
-import { ArrowRightIcon, CheckIcon, ChevronRightIcon } from "@/components/icons"
+import { ArrowRightIcon, CheckIcon } from "@/components/icons"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
@@ -307,12 +308,11 @@ function Disclosure({
 	const expanded = disclosable && (choice ?? open)
 	const head = (
 		<>
-			<ChevronRightIcon
+			<DisclosureChevron
+				open={expanded}
 				size={12}
-				aria-hidden
 				className={cn(
-					"shrink-0 translate-y-px justify-self-center text-muted-foreground transition-transform",
-					expanded && "rotate-90",
+					"translate-y-px justify-self-center text-muted-foreground",
 					!disclosable && "invisible",
 				)}
 			/>

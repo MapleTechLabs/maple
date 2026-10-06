@@ -9,10 +9,10 @@ import { HostTable, type HostRow } from "@/components/infra/host-table"
 import {
 	FINDINGS_LIST_CLASS,
 	FindingRow,
-	SectionHeading,
 	SourceLink,
 	SourceRowBody,
 } from "@/components/infra/overview/infra-overview"
+import { SectionHeading } from "@/components/common/section-heading"
 import {
 	type SourceId,
 	type SourceSummary,

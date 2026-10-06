@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useMemo, useState, type ComponentProps } from "react"
-import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
+import { CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
 import type { StructuredToolOutput } from "@maple/domain"
@@ -289,12 +290,7 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 				)}
 				{status === "running" && live ? <RunningClock /> : null}
 				{hasContent ? (
-					<ChevronDownIcon
-						className={cn(
-							"size-3 shrink-0 text-muted-foreground/60 transition-transform",
-							open ? "rotate-0" : "-rotate-90",
-						)}
-					/>
+					<DisclosureChevron open={open} className="size-3 text-muted-foreground/60" />
 				) : null}
 			</TranscriptRowButton>
 

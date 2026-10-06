@@ -462,7 +462,7 @@ function CopyableSha({ sha }: { sha: string }) {
 			{shortId(sha, "sha")}
 			<CopyIndicator
 				status={status}
-				size={11}
+				iconSize={11}
 				className="text-muted-foreground transition-colors group-hover:text-foreground/80"
 			/>
 		</button>

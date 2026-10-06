@@ -1,3 +1,4 @@
+import { humanize } from "@/lib/humanize"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { asRecord } from "./parse"
 import {
@@ -27,10 +28,6 @@ export function ApprovalSummary({ toolName, input }: SummaryProps) {
 	const Renderer = RENDERERS[toolName]
 	if (Renderer) return <Renderer input={input} />
 	return <KeyValueFallback input={input} />
-}
-
-function humanize(key: string): string {
-	return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function formatValue(value: unknown): { kind: "scalar"; text: string } | { kind: "blob"; chars: number } {
@@ -77,7 +74,9 @@ function KeyValueFallback({ input }: { input: unknown }) {
 						{formatted.kind === "scalar" ? (
 							<span className="font-medium">{formatted.text}</span>
 						) : (
-							<span className="text-muted-foreground italic">JSON · {formatted.chars} chars</span>
+							<span className="text-muted-foreground italic">
+								JSON · {formatted.chars} chars
+							</span>
 						)}
 					</KeyValue>
 				)

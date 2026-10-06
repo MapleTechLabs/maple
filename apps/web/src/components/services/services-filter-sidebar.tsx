@@ -3,7 +3,7 @@ import { getRouteApi } from "@tanstack/react-router"
 
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { FilterSection, SearchableFilterSection } from "@/components/traces/filter-section"
+import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { isServiceHealth, useServiceHealthSummary } from "@/components/services/use-service-health-summary"
 import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"

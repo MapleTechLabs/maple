@@ -1,8 +1,7 @@
 import { useAtomSet } from "@/lib/effect-atom"
-import { useEffect, useRef, useState, type DragEvent } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useAuth, useOrganization, useOrganizationList } from "@clerk/clerk-react"
-import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -10,17 +9,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@mapl
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { UploadIcon, UserIcon } from "@/components/icons"
+import { UserIcon } from "@/components/icons"
+import { ImageDropzone, TypeToConfirmField } from "@/components/common/image-dropzone"
+import { toastAccountError } from "@/components/account/account-errors"
+import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
+import { toastExit } from "@/lib/error-toast"
 import { OrgAvatar } from "@/components/dashboard/org-switcher-menu"
 import { RegionBadge } from "@/components/region/region-badge"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { MAPLE_REGION_LABELS } from "@/lib/region"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-
-const MAX_LOGO_BYTES = 10 * 1024 * 1024 // 10 MB
-const ACCEPTED_LOGO_TYPES = "image/png,image/jpeg,image/webp,image/gif"
 
 export function OrganizationSection() {
 	const { orgRole } = useAuth()
@@ -35,8 +34,6 @@ export function OrganizationSection() {
 	const [name, setName] = useState("")
 	const [isSavingName, setIsSavingName] = useState(false)
 	const [isSavingLogo, setIsSavingLogo] = useState(false)
-	const [isDragging, setIsDragging] = useState(false)
-	const fileInputRef = useRef<HTMLInputElement>(null)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
 	const [isDeleting, setIsDeleting] = useState(false)
@@ -49,21 +46,7 @@ export function OrganizationSection() {
 		mode: "promiseExit",
 	})
 
-	if (!isLoaded) {
-		return (
-			<div className="space-y-6">
-				<Card>
-					<CardHeader>
-						<Skeleton className="h-5 w-32" />
-						<Skeleton className="h-4 w-64" />
-					</CardHeader>
-					<CardContent>
-						<Skeleton className="h-9 w-full" />
-					</CardContent>
-				</Card>
-			</div>
-		)
-	}
+	if (!isLoaded) return <AccountSectionSkeleton />
 
 	if (!organization) {
 		return (
@@ -92,33 +75,22 @@ export function OrganizationSection() {
 			await organization.update({ name: trimmedName })
 			toastManager.add({ title: "Organization renamed", type: "success" })
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to rename organization"
-			toastManager.add({ title: message, type: "error" })
+			toastAccountError(err, "Failed to rename organization")
 		} finally {
 			setIsSavingName(false)
 		}
 	}
 
-	async function handleLogoSelect(file: File | undefined | null) {
-		if (!organization || !isAdmin || isSavingLogo || !file) return
-		if (!file.type.startsWith("image/")) {
-			toastManager.add({ title: "Please choose an image file", type: "error" })
-			return
-		}
-		if (file.size > MAX_LOGO_BYTES) {
-			toastManager.add({ title: "Image must be 10 MB or smaller", type: "error" })
-			return
-		}
+	async function handleLogoSelect(file: File) {
+		if (!organization || !isAdmin || isSavingLogo) return
 		setIsSavingLogo(true)
 		try {
 			await organization.setLogo({ file })
 			toastManager.add({ title: "Organization logo updated", type: "success" })
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to update logo"
-			toastManager.add({ title: message, type: "error" })
+			toastAccountError(err, "Failed to update logo")
 		} finally {
 			setIsSavingLogo(false)
-			if (fileInputRef.current) fileInputRef.current.value = ""
 		}
 	}
 
@@ -129,30 +101,17 @@ export function OrganizationSection() {
 			await organization.setLogo({ file: null })
 			toastManager.add({ title: "Organization logo removed", type: "success" })
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to remove logo"
-			toastManager.add({ title: message, type: "error" })
+			toastAccountError(err, "Failed to remove logo")
 		} finally {
 			setIsSavingLogo(false)
 		}
-	}
-
-	function openFilePicker() {
-		if (!isAdmin || isSavingLogo) return
-		fileInputRef.current?.click()
-	}
-
-	function handleDrop(e: DragEvent<HTMLDivElement>) {
-		e.preventDefault()
-		setIsDragging(false)
-		if (!isAdmin || isSavingLogo) return
-		void handleLogoSelect(e.dataTransfer.files?.[0])
 	}
 
 	async function handleDelete() {
 		if (!organization || !confirmMatches) return
 		setIsDeleting(true)
 		const result = await deleteMutation({})
-		if (Exit.isSuccess(result)) {
+		if (toastExit(result, { error: "Failed to delete organization" })) {
 			const remaining = (userMemberships?.data ?? []).filter(
 				(m) => m.organization.id !== organization.id,
 			)
@@ -170,7 +129,6 @@ export function OrganizationSection() {
 			return
 		}
 		setIsDeleting(false)
-		toastManager.add({ title: "Failed to delete organization", type: "error" })
 	}
 
 	function handleDialogChange(open: boolean) {
@@ -193,76 +151,21 @@ export function OrganizationSection() {
 					<div className="space-y-4 max-w-md">
 						<div className="space-y-1.5">
 							<Label>Logo</Label>
-							<div className="flex items-center gap-4">
-								<div
-									role="button"
-									tabIndex={isAdmin && !isSavingLogo ? 0 : -1}
-									aria-label="Change organization logo"
-									aria-disabled={!isAdmin || isSavingLogo}
-									onClick={openFilePicker}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											openFilePicker()
-										}
-									}}
-									onDragOver={(e) => {
-										e.preventDefault()
-										if (isAdmin && !isSavingLogo) setIsDragging(true)
-									}}
-									onDragLeave={() => setIsDragging(false)}
-									onDrop={handleDrop}
-									className={`relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none transition-colors ${
-										isAdmin && !isSavingLogo
-											? "cursor-pointer hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-											: "cursor-not-allowed opacity-60"
-									} ${isDragging ? "border-primary ring-2 ring-primary" : "border-border"}`}
-								>
+							<ImageDropzone
+								preview={
 									<OrgAvatar
 										name={organization.name}
 										imageUrl={organization.imageUrl}
 										className="size-full"
 										fit="contain"
 									/>
-									{isDragging && (
-										<div className="absolute inset-0 flex items-center justify-center rounded-md bg-primary/10 text-center text-[10px] font-medium text-primary">
-											Drop image
-										</div>
-									)}
-								</div>
-								<div className="space-y-1.5">
-									<div className="flex items-center gap-2">
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={openFilePicker}
-											disabled={!isAdmin || isSavingLogo}
-										>
-											<UploadIcon size={14} className="mr-1.5" />
-											{isSavingLogo ? "Uploading..." : "Change logo"}
-										</Button>
-										{organization.hasImage && (
-											<Button
-												variant="ghost"
-												size="sm"
-												onClick={handleRemoveLogo}
-												disabled={!isAdmin || isSavingLogo}
-											>
-												Remove
-											</Button>
-										)}
-									</div>
-									<p className="text-xs text-muted-foreground">
-										Drop an image or click to upload. PNG, JPG, WEBP or GIF, up to 10 MB.
-									</p>
-								</div>
-							</div>
-							<input
-								ref={fileInputRef}
-								type="file"
-								accept={ACCEPTED_LOGO_TYPES}
-								className="hidden"
-								onChange={(e) => void handleLogoSelect(e.target.files?.[0])}
+								}
+								onFile={(file) => void handleLogoSelect(file)}
+								onRemove={organization.hasImage ? () => void handleRemoveLogo() : undefined}
+								uploading={isSavingLogo}
+								disabled={!isAdmin}
+								targetLabel="Change organization logo"
+								changeLabel="Change logo"
 							/>
 						</div>
 						<div className="space-y-1.5">
@@ -279,9 +182,10 @@ export function OrganizationSection() {
 							<Button
 								size="sm"
 								onClick={handleRename}
-								disabled={!isAdmin || !nameDirty || isSavingName}
+								loading={isSavingName}
+								disabled={!isAdmin || !nameDirty}
 							>
-								{isSavingName ? "Saving..." : "Save"}
+								Save
 							</Button>
 						</div>
 						<DataRegionRow metadata={organization.publicMetadata} />
@@ -327,19 +231,12 @@ export function OrganizationSection() {
 				confirmDisabled={!confirmMatches}
 				onConfirm={() => void handleDelete()}
 			>
-				{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
-				<div className="space-y-2">
-					<Label htmlFor="org-delete-confirm" className="text-xs">
-						Type <span className="font-mono font-semibold">{organization.name}</span> to confirm.
-					</Label>
-					<Input
-						id="org-delete-confirm"
-						value={confirmText}
-						onChange={(e) => setConfirmText(e.target.value)}
-						placeholder={organization.name}
-						autoComplete="off"
-					/>
-				</div>
+				<TypeToConfirmField
+					id="org-delete-confirm"
+					expected={organization.name}
+					value={confirmText}
+					onChange={setConfirmText}
+				/>
 			</ConfirmDialog>
 		</div>
 	)

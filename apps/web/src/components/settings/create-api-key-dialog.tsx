@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useId, useState } from "react"
 import { Exit } from "effect"
@@ -20,7 +21,7 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { useApiKeyMutationSync } from "@/hooks/use-api-keys"
 import { displayError } from "@/lib/error-messages"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -72,6 +73,12 @@ const SCOPE_FAMILIES = [
 ] as const
 
 type ScopeLevel = "none" | "read" | "write"
+
+const SCOPE_LEVEL_OPTIONS: ReadonlyArray<{ value: ScopeLevel; label: string }> = [
+	{ value: "none", label: "None" },
+	{ value: "read", label: "Read" },
+	{ value: "write", label: "Write" },
+]
 type AccessMode = "full" | "restricted"
 
 const defaultScopeLevels = (): Record<string, ScopeLevel> =>
@@ -173,9 +180,9 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 						<DialogPanel className="space-y-3">
 							<div className="flex flex-wrap items-center gap-1.5">
 								<span className="text-foreground text-sm font-medium">{createdKey.name}</span>
-								<code className="text-muted-foreground font-mono text-[11px] tracking-tight">
+								<InlineCode variant="plain" className="text-[11px] tracking-tight">
 									{createdKey.key_prefix}…
-								</code>
+								</InlineCode>
 								{createdKey.scopes !== null &&
 									createdKey.scopes.map((scope) => (
 										<Badge key={scope} variant="outline" size="sm" mono>
@@ -253,19 +260,16 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 							{!isMcp && (
 								<div className="space-y-2">
 									<Label id={accessLabelId}>Access</Label>
-									<ToggleGroup
-										aria-labelledby={accessLabelId}
-										value={[accessMode]}
-										onValueChange={(values) => {
-											const next = values[0]
-											if (next === "full" || next === "restricted") setAccessMode(next)
-										}}
-										variant="outline"
+									<SegmentedSelect
+										aria-label="Access"
+										value={accessMode}
+										onChange={setAccessMode}
 										size="sm"
-									>
-										<ToggleGroupItem value="full">Full access</ToggleGroupItem>
-										<ToggleGroupItem value="restricted">Restricted</ToggleGroupItem>
-									</ToggleGroup>
+										options={[
+											{ value: "full", label: "Full access" },
+											{ value: "restricted", label: "Restricted" },
+										]}
+									/>
 									{accessMode === "restricted" ? (
 										<div className="space-y-2 pt-1">
 											{/* Seventeen families times three levels is fifty-one clicks to
@@ -313,47 +317,26 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 												</p>
 											)}
 											{visibleFamilies.map((family) => {
-												const familyLabelId = `${accessLabelId}-${family.id}`
 												return (
 													<div
 														key={family.id}
 														className="flex items-center justify-between gap-3"
 													>
-														<span
-															id={familyLabelId}
-															className="text-foreground text-sm"
-														>
+														<span className="text-foreground text-sm">
 															{family.label}
 														</span>
-														<ToggleGroup
-															aria-labelledby={familyLabelId}
-															value={[scopeLevels[family.id] ?? "none"]}
-															onValueChange={(values) => {
-																const next = values[0]
-																if (
-																	next === "none" ||
-																	next === "read" ||
-																	next === "write"
-																) {
-																	setScopeLevels((current) => ({
-																		...current,
-																		[family.id]: next,
-																	}))
-																}
-															}}
-															variant="outline"
+														<SegmentedSelect
+															aria-label={`${family.label} access`}
+															value={scopeLevels[family.id] ?? "none"}
+															onChange={(next) =>
+																setScopeLevels((current) => ({
+																	...current,
+																	[family.id]: next,
+																}))
+															}
 															size="sm"
-														>
-															<ToggleGroupItem value="none">
-																None
-															</ToggleGroupItem>
-															<ToggleGroupItem value="read">
-																Read
-															</ToggleGroupItem>
-															<ToggleGroupItem value="write">
-																Write
-															</ToggleGroupItem>
-														</ToggleGroup>
+															options={SCOPE_LEVEL_OPTIONS}
+														/>
 													</div>
 												)
 											})}

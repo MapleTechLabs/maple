@@ -1,4 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { errorMessage } from "@/lib/error-toast"
 import * as React from "react"
 import type { ReactNode } from "react"
 import type { DashboardId } from "@maple/domain/http"
@@ -185,7 +186,7 @@ export function DashboardActionsProvider({
 					widget = store.addWidget(dashboardId, visualization, dataSource, display, target)
 				} catch (cause) {
 					toastManager.add({
-						title: cause instanceof Error ? cause.message : "Couldn’t add the widget",
+						title: errorMessage(cause, "Couldn’t add the widget"),
 						type: "error",
 					})
 					return undefined

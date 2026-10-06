@@ -5,7 +5,7 @@ import type { ErrorIssueId } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
@@ -81,7 +81,7 @@ function SignalActivity({
 			{commentCount > 0 ? (
 				<span
 					className="flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground"
-					title={`${commentCount} comment${commentCount === 1 ? "" : "s"} on the timeline`}
+					title={`${countLabel(commentCount, "comment")} on the timeline`}
 				>
 					<ChatBubbleIcon size={11} />
 					{commentCount}
@@ -95,8 +95,8 @@ function SignalActivity({
 					)}
 					title={
 						mergedPullRequestCount > 0
-							? `${prCount} pull request${prCount === 1 ? "" : "s"} · ${mergedPullRequestCount} merged`
-							: `${prCount} open pull request${prCount === 1 ? "" : "s"}`
+							? `${countLabel(prCount, "pull request")} · ${mergedPullRequestCount} merged`
+							: countLabel(prCount, "open pull request")
 					}
 				>
 					<BranchForkIcon size={11} />
@@ -430,7 +430,7 @@ export function ErrorSignalRow({
 					)}
 					title={signal.serviceName}
 				>
-					<ServiceDot serviceName={signal.serviceName} className="size-1.5" />
+					<ServiceDot serviceName={signal.serviceName} size="sm" />
 					<span className="truncate">{signal.serviceName}</span>
 				</span>
 

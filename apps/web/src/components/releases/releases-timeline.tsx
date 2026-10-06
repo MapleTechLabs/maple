@@ -4,6 +4,7 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { pluralize } from "@maple/ui/lib/format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -290,7 +291,7 @@ export function ReleasesTimeline({
 				{hidden > 0 ? (
 					<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 py-1 text-[10px] text-muted-foreground/70">
 						<span>
-							+{hidden} more {hidden === 1 ? "service" : "services"}
+							+{hidden} more {pluralize(hidden, "service")}
 						</span>
 					</div>
 				) : null}

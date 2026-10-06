@@ -6,7 +6,7 @@ import {
 	SearchableFilterSection,
 	SingleCheckboxFilter,
 	serviceColorMap,
-} from "./filter-section"
+} from "@/components/filters/filter-section"
 import { DurationRangeFilter } from "./duration-range-filter"
 import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"

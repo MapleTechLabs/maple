@@ -35,8 +35,11 @@ export const ERROR_RATE_COLOR: Record<ErrorRateLevel, string> = {
 	neutral: TONE_COLOR.neutral,
 } satisfies Record<ErrorRateLevel, string>
 
-export function errorRateClass(rate: number): string {
-	return ERROR_RATE_TEXT[errorRateLevel(rate)]
+/** `neutral` overrides the quiet-floor class, e.g. a panel that keeps calm values at full contrast. */
+export function errorRateClass(rate: number, options?: { readonly neutral?: string }): string {
+	const level = errorRateLevel(rate)
+	if (level === "neutral" && options?.neutral !== undefined) return options.neutral
+	return ERROR_RATE_TEXT[level]
 }
 
 export { formatErrorRate }

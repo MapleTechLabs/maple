@@ -2,9 +2,12 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { SectionHeading } from "@/components/common/section-heading"
+
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { VALUE_TONE } from "../severity-tokens"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -397,12 +400,6 @@ const SEGMENT_LABEL: Record<HealthSegment["key"], string> = {
 	unbounded: "no limit",
 } satisfies Record<HealthSegment["key"], string>
 
-const HEADLINE_TONE: Record<SourceSummary["headlineTone"], string> = {
-	neutral: "text-foreground",
-	warn: TONE_TEXT.warn,
-	crit: TONE_TEXT.crit,
-} satisfies Record<SourceSummary["headlineTone"], string>
-
 function HealthBar({ segments }: { segments: ReadonlyArray<HealthSegment> }) {
 	const drawn = segments.filter((segment) => segment.count > 0)
 	return (
@@ -506,7 +503,7 @@ export function SourceRowBody({ id, state }: { id: SourceId; state: SourceState 
 				className={cn(
 					"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
 					state.status === "ready"
-						? HEADLINE_TONE[state.summary.headlineTone]
+						? VALUE_TONE[state.summary.headlineTone]
 						: "text-muted-foreground",
 				)}
 			>
@@ -547,14 +544,5 @@ export function SourcesTable({
 				))}
 			</div>
 		</section>
-	)
-}
-
-export function SectionHeading({ title, hint }: { title: string; hint?: string }) {
-	return (
-		<div className="flex items-baseline gap-2.5">
-			<h2 className="text-sm font-medium text-foreground">{title}</h2>
-			{hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-		</div>
 	)
 }

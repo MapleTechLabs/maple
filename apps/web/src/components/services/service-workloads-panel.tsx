@@ -7,6 +7,7 @@ import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { MeterRows } from "@/components/infra/primitives/meter-rows"
 import { SectionCard } from "./section-card"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@maple/ui/components/ui/item"
+import { countLabel } from "@maple/ui/lib/format"
 
 interface ServiceWorkloadsPanelProps {
 	serviceName: string
@@ -89,7 +90,7 @@ export function ServiceWorkloadsPanel({
 							</ItemDescription>
 						</ItemContent>
 						<ItemActions className="shrink-0 font-mono text-[11.5px] tabular-nums text-muted-foreground">
-							{workload.podCount} {workload.podCount === 1 ? "pod" : "pods"}
+							{countLabel(workload.podCount, "pod")}
 						</ItemActions>
 						{(workload.avgCpuLimitUtilization != null ||
 							workload.avgMemoryLimitUtilization != null) && (

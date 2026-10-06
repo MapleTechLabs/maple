@@ -1,17 +1,21 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { formatRate } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import {
 	BarCell,
 	HeadLabel,
 	MobileListRow,
 	MobileSortBar,
-	SortableHead,
-	formatRate,
-	type SortDir,
+	MobileStat,
+	MobileStatLine,
+	SortColumnHead,
+	TABLE_CARD_CLASS,
 } from "./service-table-cells"
+import { SampledValue } from "./sampled-value"
+import { useTableSort } from "@/hooks/use-table-sort"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { DependencyTypeBadge, type DependencyKind } from "./dependency-type-badge"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -42,12 +46,10 @@ interface DependencyTableProps {
 	timePreset?: string
 }
 
-type SortKey = "calls" | "errorRate" | "p95"
+type SortKey = "callsPerSec" | "errorRate" | "p95DurationMs"
 
 export function DependencyTable({ serviceName, rows, startTime, endTime, timePreset }: DependencyTableProps) {
 	const navigate = useNavigate()
-	const [sortKey, setSortKey] = useState<SortKey>("calls")
-	const [sortDir, setSortDir] = useState<SortDir>("desc")
 
 	// Column-relative maxima drive the inline bars. Calls + p95 read as "more is
 	// more"; error rate as "any value is a problem", so its bar always tints red
@@ -62,26 +64,9 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 		)
 	}, [rows])
 
-	const sorted = useMemo(() => {
-		const out = [...rows]
-		out.sort((a, b) => {
-			const aV =
-				sortKey === "calls" ? a.callsPerSec : sortKey === "errorRate" ? a.errorRate : a.p95DurationMs
-			const bV =
-				sortKey === "calls" ? b.callsPerSec : sortKey === "errorRate" ? b.errorRate : b.p95DurationMs
-			return sortDir === "desc" ? bV - aV : aV - bV
-		})
-		return out
-	}, [rows, sortKey, sortDir])
-
-	const toggleSort = (key: SortKey) => {
-		if (key === sortKey) {
-			setSortDir(sortDir === "desc" ? "asc" : "desc")
-		} else {
-			setSortKey(key)
-			setSortDir("desc")
-		}
-	}
+	const { sorted, sortKey, sortDir, handleSort } = useTableSort<DependencyRow, SortKey>(rows, {
+		initialKey: "callsPerSec",
+	})
 
 	const handleRowClick = (row: DependencyRow) => {
 		navigate({
@@ -99,32 +84,32 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 	return (
 		<>
 			{/* Desktop: dense sortable table with inline distribution bars. */}
-			<div className="hidden overflow-hidden rounded-lg border bg-card md:block">
+			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
 				<Table>
 					<TableHeader>
 						<TableRow className="hover:bg-transparent border-b">
 							<HeadLabel className="pl-3">Target</HeadLabel>
-							<SortableHead
+							<SortColumnHead
 								label="Calls /s"
-								align="right"
-								active={sortKey === "calls"}
+								sortKey="callsPerSec"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("calls")}
+								onSort={handleSort}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="Errors"
-								align="right"
-								active={sortKey === "errorRate"}
+								sortKey="errorRate"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("errorRate")}
+								onSort={handleSort}
 							/>
 							<HeadLabel className="text-right">Avg</HeadLabel>
-							<SortableHead
+							<SortColumnHead
 								label="p95"
-								align="right"
-								active={sortKey === "p95"}
+								sortKey="p95DurationMs"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("p95")}
+								onSort={handleSort}
 							/>
 						</TableRow>
 					</TableHeader>
@@ -155,10 +140,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 												<div className="flex min-w-0 flex-col leading-tight">
 													<span className="flex items-center gap-1.5 truncate text-[12.5px] text-foreground">
 														{row.kind === "service" && (
-															<ServiceDot
-																serviceName={row.name}
-																className="size-1.5"
-															/>
+															<ServiceDot serviceName={row.name} size="sm" />
 														)}
 														<span className="truncate">{row.name}</span>
 													</span>
@@ -171,24 +153,12 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 											</div>
 										</TableCell>
 										<BarCell value={row.callsPerSec} max={maxima.calls} tone="calls">
-											{row.hasSampling ? (
-												<Tooltip>
-													<TooltipTrigger
-														render={<span />}
-														className="cursor-help tabular-nums font-mono text-[12.5px] text-foreground"
-													>
-														~{formatRate(row.callsPerSec)}
-													</TooltipTrigger>
-													<TooltipContent>
-														Estimated ×{row.samplingWeight.toFixed(0)} from{" "}
-														{formatRate(row.tracedCallsPerSec)} traced req/s
-													</TooltipContent>
-												</Tooltip>
-											) : (
-												<span className="tabular-nums font-mono text-[12.5px] text-foreground">
-													{formatRate(row.callsPerSec)}
-												</span>
-											)}
+											<SampledValue
+												className="tabular-nums font-mono text-[12.5px] text-foreground"
+												estimated={row.hasSampling}
+												value={formatRate(row.callsPerSec)}
+												tooltip={`Estimated ×${row.samplingWeight.toFixed(0)} from ${formatRate(row.tracedCallsPerSec)} traced req/s`}
+											/>
 										</BarCell>
 										<BarCell
 											value={row.errorRate > 0 ? row.errorRate : 0}
@@ -228,16 +198,16 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 				<MobileSortBar
 					options={
 						[
-							["calls", "Calls"],
+							["callsPerSec", "Calls"],
 							["errorRate", "Errors"],
-							["p95", "p95"],
+							["p95DurationMs", "p95"],
 						] as const
 					}
 					sortKey={sortKey}
 					sortDir={sortDir}
-					onSort={toggleSort}
+					onSort={handleSort}
 				/>
-				<div className="overflow-hidden rounded-lg border bg-card">
+				<div className={TABLE_CARD_CLASS}>
 					{sorted.length === 0 ? (
 						<EmptyMessage>
 							No downstream dependencies in this window.
@@ -262,23 +232,21 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 											) : null}
 										</div>
 									</div>
-									<div className="flex items-center gap-3 font-mono text-xs tabular-nums">
-										<span>
-											<span className="text-muted-foreground/60">calls </span>
-											<span className="text-foreground">
-												{row.hasSampling ? "~" : ""}
-												{formatRate(row.callsPerSec)}
-											</span>
-										</span>
-										<span>
-											<span className="text-muted-foreground/60">err </span>
+									<MobileStatLine>
+										<MobileStat label="calls">
+											<SampledValue
+												className="text-foreground"
+												estimated={row.hasSampling}
+												value={formatRate(row.callsPerSec)}
+											/>
+										</MobileStat>
+										<MobileStat label="err">
 											<ErrorRateValue rate={row.errorRate} />
-										</span>
-										<span>
-											<span className="text-muted-foreground/60">p95 </span>
+										</MobileStat>
+										<MobileStat label="p95">
 											<LatencyValue ms={row.p95DurationMs} scale="p95" />
-										</span>
-									</div>
+										</MobileStat>
+									</MobileStatLine>
 								</MobileListRow>
 							)
 						})

@@ -3,14 +3,13 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import { cn } from "@maple/ui/lib/utils"
+import { OptionCard } from "@/components/common/option-card"
 import {
 	ONBOARDING_ROLE_IDS,
 	ONBOARDING_ROLES,
 	ROLE_DETAIL_MAX_LENGTH,
 	type OnboardingRole,
 } from "@/lib/onboarding-role"
-import { DrawnCheck } from "./drawn-check"
 import { PixelGlyph, type PixelGlyphName } from "./pixel-glyph"
 
 const ROLE_GLYPH = {
@@ -57,36 +56,17 @@ export function StepRole({
 						const active = value === role
 						const option = ONBOARDING_ROLES[role]
 						return (
-							<label key={role} className="group relative cursor-pointer">
-								<input
-									type="radio"
-									name="onboarding-role"
-									className="peer sr-only"
-									checked={active}
-									aria-label={option.label}
-									onChange={() => onChange(role, role === "other" ? detail : "")}
-								/>
-								<div
-									className={cn(
-										"flex h-full items-start gap-3 rounded-xl border p-4 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-										active
-											? "border-primary bg-primary/5"
-											: "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]",
-									)}
-								>
-									<PixelGlyph name={ROLE_GLYPH[role]} selected={active} />
-									<div className="min-w-0 flex-1 pt-px">
-										<span className="block text-sm font-semibold">{option.label}</span>
-										<span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-											{option.title}
-										</span>
-									</div>
-									<DrawnCheck
-										checked={active}
-										className={cn("mt-0.5", !active && "opacity-0")}
-									/>
-								</div>
-							</label>
+							<OptionCard
+								key={role}
+								type="radio"
+								name="onboarding-role"
+								checked={active}
+								onChange={() => onChange(role, role === "other" ? detail : "")}
+								label={option.label}
+								title={option.label}
+								description={option.title}
+								media={<PixelGlyph name={ROLE_GLYPH[role]} selected={active} />}
+							/>
 						)
 					})}
 				</fieldset>

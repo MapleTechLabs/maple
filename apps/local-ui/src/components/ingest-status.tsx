@@ -5,6 +5,7 @@
 import type { ReactNode } from "react"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+import { StatusDot, type StatusDotProps } from "@maple/ui/components/ui/status-dot"
 import {
 	MISSES_BEFORE_DOWN,
 	useLocalServerStatus,
@@ -103,23 +104,13 @@ export function IngestStatus() {
 	)
 }
 
+const DOT_TONE = {
+	live: "success",
+	idle: "neutral",
+	warn: "warning",
+	down: "error",
+} satisfies Record<Tone, StatusDotProps["tone"]>
+
 function Dot({ tone }: { tone: Tone }): ReactNode {
-	if (tone === "live") {
-		return (
-			<span className="relative flex size-1.5 shrink-0">
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-		)
-	}
-	return (
-		<span
-			className={cn(
-				"size-1.5 shrink-0 rounded-full",
-				tone === "idle" && "bg-muted-foreground/40",
-				tone === "warn" && "bg-warning",
-				tone === "down" && "bg-destructive",
-			)}
-		/>
-	)
+	return <StatusDot tone={DOT_TONE[tone]} pulse={tone === "live"} />
 }

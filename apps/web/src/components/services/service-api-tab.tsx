@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { LatencyValue } from "@maple/ui/components/latency-value"
-import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { Result } from "@/lib/effect-atom"
@@ -18,10 +19,13 @@ import {
 	BarCell,
 	MobileListRow,
 	MobileSortBar,
-	SortableHead,
-	formatRate,
-	type SortDir,
+	MobileStat,
+	MobileStatLine,
+	SortColumnHead,
+	TABLE_CARD_CLASS,
 } from "./service-table-cells"
+import { SampledValue } from "./sampled-value"
+import { useSortState } from "@/hooks/use-table-sort"
 import { ENDPOINTS_LIMIT, isTruncated, serviceEndpointsQueryInput } from "./service-endpoints"
 import { callsPerSecond, operationTraceSearch, windowSeconds } from "./service-operations"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
@@ -76,8 +80,10 @@ export function ServiceApiTab({
 	timePreset,
 }: ServiceApiTabProps) {
 	const navigate = useNavigate()
-	const [sortKey, setSortKey] = useState<EndpointSort>("traffic")
-	const [sortDir, setSortDir] = useState<SortDir>("desc")
+	const { sortKey, sortDir, handleSort } = useSortState<EndpointSort>({
+		initialKey: "traffic",
+		stringKeys: ["path"],
+	})
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 
 	const result = useRefreshableAtomValue(
@@ -110,7 +116,10 @@ export function ServiceApiTab({
 		[result],
 	)
 
-	const groups = useMemo(() => groupEndpoints(endpoints, sortKey, sortDir), [endpoints, sortKey, sortDir])
+	const groups = useMemo(
+		() => groupEndpoints(endpoints, sortKey ?? "traffic", sortDir),
+		[endpoints, sortKey, sortDir],
+	)
 
 	// Column-relative maxima drive the inline bars, computed over real endpoints
 	// only — a scanner probe at 100% errors must not flatten every real bar.
@@ -133,15 +142,6 @@ export function ServiceApiTab({
 			),
 		}
 	}, [groups])
-
-	const toggleSort = (key: EndpointSort) => {
-		if (key === sortKey) {
-			setSortDir(sortDir === "desc" ? "asc" : "desc")
-		} else {
-			setSortKey(key)
-			setSortDir(key === "path" ? "asc" : "desc")
-		}
-	}
 
 	const toggleExpanded = (kind: string) =>
 		setExpanded((open) => {
@@ -187,7 +187,10 @@ export function ServiceApiTab({
 	}
 
 	return (
-		<div className={cn("flex flex-col gap-2 transition-opacity", isWaiting && "opacity-60")}>
+		<div
+			className={cn("flex flex-col gap-2", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
+		>
 			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-0.5 text-xs">
 				<Stat label="endpoints" value={served.count.toLocaleString()} />
 				<Stat label="req/s" value={formatRate(callsPerSecond(served.spanCount, seconds))} />
@@ -205,55 +208,57 @@ export function ServiceApiTab({
 			</div>
 
 			{/* Desktop: grouped, sortable table with inline distribution bars. */}
-			<div className="hidden overflow-hidden rounded-lg border bg-card md:block">
+			<div className={cn("hidden md:block", TABLE_CARD_CLASS)}>
 				<Table>
 					<TableHeader>
 						<TableRow className="border-b hover:bg-transparent">
-							<SortableHead
+							<SortColumnHead
 								label="Endpoint"
-								active={sortKey === "path"}
+								sortKey="path"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("path")}
+								onSort={handleSort}
+								align="left"
 								className="pl-3"
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="Req/s"
-								align="right"
-								active={sortKey === "traffic"}
+								sortKey="traffic"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("traffic")}
+								onSort={handleSort}
 								className={COLUMN.rate}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="Errors"
-								align="right"
-								active={sortKey === "errorRate"}
+								sortKey="errorRate"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("errorRate")}
+								onSort={handleSort}
 								className={COLUMN.err}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="p50"
-								align="right"
-								active={sortKey === "p50"}
+								sortKey="p50"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("p50")}
+								onSort={handleSort}
 								className={COLUMN.p50}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="p95"
-								align="right"
-								active={sortKey === "p95"}
+								sortKey="p95"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("p95")}
+								onSort={handleSort}
 								className={COLUMN.p95}
 							/>
-							<SortableHead
+							<SortColumnHead
 								label="p99"
-								align="right"
-								active={sortKey === "p99"}
+								sortKey="p99"
+								activeKey={sortKey}
 								dir={sortDir}
-								onClick={() => toggleSort("p99")}
+								onSort={handleSort}
 								className={cn(COLUMN.p99, "pr-3")}
 							/>
 						</TableRow>
@@ -287,9 +292,9 @@ export function ServiceApiTab({
 					}
 					sortKey={sortKey}
 					sortDir={sortDir}
-					onSort={toggleSort}
+					onSort={handleSort}
 				/>
-				<div className="overflow-hidden rounded-lg border bg-card">
+				<div className={TABLE_CARD_CLASS}>
 					{groups.map((group) => (
 						<MobileGroup
 							key={groupKey(group)}
@@ -364,7 +369,7 @@ function GroupRows({ group, seconds, maxima, expanded, onToggle, onSelect }: Gro
 			<>
 				<GroupHeaderRow
 					title={copy.label}
-					count={`${group.endpoints.length.toLocaleString()} path${group.endpoints.length === 1 ? "" : "s"}`}
+					count={countLabel(group.endpoints.length, "path")}
 					group={group}
 					seconds={seconds}
 					muted
@@ -405,7 +410,7 @@ function GroupRows({ group, seconds, maxima, expanded, onToggle, onSelect }: Gro
 			{group.kind === "stem" && (
 				<GroupHeaderRow
 					title={group.stem}
-					count={`${group.endpoints.length} endpoint${group.endpoints.length === 1 ? "" : "s"}`}
+					count={countLabel(group.endpoints.length, "endpoint")}
 					group={group}
 					seconds={seconds}
 				/>
@@ -467,7 +472,8 @@ function GroupHeaderRow({
 				className={cn(
 					numeric,
 					"pr-1.5",
-					errorRateLevel(group.totals.errorRate) !== "neutral" && errorRateClass(group.totals.errorRate),
+					errorRateLevel(group.totals.errorRate) !== "neutral" &&
+						errorRateClass(group.totals.errorRate),
 				)}
 			>
 				{formatErrorRate(group.totals.errorRate)}
@@ -512,10 +518,11 @@ function EndpointRow({
 				</div>
 			</TableCell>
 			<BarCell value={endpoint.estimatedSpanCount} max={maxima.calls} tone="calls">
-				<span className="font-mono text-[12.5px] tabular-nums text-foreground">
-					{endpoint.estimatedSpanCount > endpoint.spanCount ? "~" : ""}
-					{formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}
-				</span>
+				<SampledValue
+					className="font-mono text-[12.5px] tabular-nums text-foreground"
+					estimated={endpoint.estimatedSpanCount > endpoint.spanCount}
+					value={formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}
+				/>
 			</BarCell>
 			<BarCell
 				value={endpoint.errorRate > 0 ? endpoint.errorRate : 0}
@@ -611,22 +618,19 @@ function MobileGroup({
 										<span className="text-foreground">{tail}</span>
 									</span>
 								</span>
-								<div className="flex items-center gap-3 font-mono text-xs tabular-nums">
-									<span>
-										<span className="text-muted-foreground/60">req/s </span>
+								<MobileStatLine>
+									<MobileStat label="req/s">
 										<span className="text-foreground">
 											{formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}
 										</span>
-									</span>
-									<span>
-										<span className="text-muted-foreground/60">err </span>
+									</MobileStat>
+									<MobileStat label="err">
 										<ErrorRateValue rate={endpoint.errorRate} />
-									</span>
-									<span>
-										<span className="text-muted-foreground/60">p95 </span>
+									</MobileStat>
+									<MobileStat label="p95">
 										<LatencyValue ms={endpoint.p95DurationMs} scale="p95" />
-									</span>
-								</div>
+									</MobileStat>
+								</MobileStatLine>
 							</MobileListRow>
 						)
 					})
@@ -663,7 +667,7 @@ function ApiLoadingState() {
 					<Skeleton key={i} className="h-3" style={{ width: w }} />
 				))}
 			</div>
-			<div className="overflow-hidden rounded-lg border bg-card">
+			<div className={TABLE_CARD_CLASS}>
 				<div className="flex items-center gap-3 border-b px-3 py-2.5">
 					<Skeleton className="h-2.5 flex-1" />
 					{[COLUMN.rate, COLUMN.err, COLUMN.p50, COLUMN.p95, COLUMN.p99].map((w, i) => (
@@ -672,29 +676,32 @@ function ApiLoadingState() {
 						</div>
 					))}
 				</div>
-				{Array.from({ length: 10 }).map((_, i) => (
-					<div
-						key={i}
-						className={cn(
-							"flex items-center gap-3 border-b py-2.5 pr-3 last:border-b-0",
-							i % 4 === 0 ? "bg-muted/30 pl-3" : "pl-6",
-						)}
-					>
-						{i % 4 !== 0 && <Skeleton className="h-2.5 w-9 shrink-0" />}
-						<Skeleton
+				<SkeletonList
+					rows={10}
+					className="gap-0"
+					renderRow={(i) => (
+						<div
 							className={cn(
-								"h-2.5",
-								i % 3 === 0 ? "w-[220px]" : i % 3 === 1 ? "w-[150px]" : "w-[108px]",
+								"flex items-center gap-3 border-b py-2.5 pr-3 last:border-b-0",
+								i % 4 === 0 ? "bg-muted/30 pl-3" : "pl-6",
 							)}
-						/>
-						<span className="flex-1" />
-						{[COLUMN.rate, COLUMN.err, COLUMN.p50, COLUMN.p95, COLUMN.p99].map((w, j) => (
-							<div key={j} className={cn(w, "flex shrink-0 justify-end")}>
-								<Skeleton className="h-2.5 w-10" />
-							</div>
-						))}
-					</div>
-				))}
+						>
+							{i % 4 !== 0 && <Skeleton className="h-2.5 w-9 shrink-0" />}
+							<Skeleton
+								className={cn(
+									"h-2.5",
+									i % 3 === 0 ? "w-[220px]" : i % 3 === 1 ? "w-[150px]" : "w-[108px]",
+								)}
+							/>
+							<span className="flex-1" />
+							{[COLUMN.rate, COLUMN.err, COLUMN.p50, COLUMN.p95, COLUMN.p99].map((w, j) => (
+								<div key={j} className={cn(w, "flex shrink-0 justify-end")}>
+									<Skeleton className="h-2.5 w-10" />
+								</div>
+							))}
+						</div>
+					)}
+				/>
 			</div>
 		</div>
 	)

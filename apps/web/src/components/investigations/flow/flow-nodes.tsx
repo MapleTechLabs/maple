@@ -9,6 +9,7 @@ import { memo } from "react"
 import { Link } from "@tanstack/react-router"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 import { cn } from "@maple/ui/lib/utils"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -44,8 +45,6 @@ const GLYPH: Record<FlowGlyph, IconComponent> = {
 	verdict: CircleCheckIcon,
 } satisfies Record<FlowGlyph, IconComponent>
 
-/** The eyebrow strip: an icon in its tile, then the kind in caps. */
-const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.12em]"
 /** Both handles are hidden — this graph is read-only, nothing connects to anything. */
 const HANDLE = "!size-0 !min-h-0 !min-w-0 !border-0 !bg-transparent"
 
@@ -127,15 +126,14 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 						)}
 					/>
 				</span>
-				<span
+				<Eyebrow
 					className={cn(
-						EYEBROW,
 						"min-w-0 flex-1 truncate",
 						data.current ? "tracking-[0.06em] text-primary" : "text-muted-foreground",
 					)}
 				>
 					{data.eyebrow}
-				</span>
+				</Eyebrow>
 			</div>
 			<p
 				className={cn(
@@ -152,9 +150,9 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 * that *is* the running thing was the only one on the canvas not saying.
 			 */}
 			{data.phase ? (
-				<p className={cn(EYEBROW, "truncate text-[9px] leading-3 text-primary")} title={data.phase}>
+				<Eyebrow as="p" className="truncate text-[9px] leading-3 text-primary" title={data.phase}>
 					{data.phase}
-				</p>
+				</Eyebrow>
 			) : null}
 			{/*
 			 * Directly under the phase line, so the stage and the fact that it is
@@ -256,9 +254,9 @@ export const FlowPendingVerdictNode = memo(function FlowPendingVerdictNode({
 					 * 146px node on one line at the eyebrow's tracking, and the word IS
 					 * this node — a node reading "AWAITING VE…" says nothing at all.
 					 */}
-					<span className={cn(EYEBROW, "min-w-0 flex-1 leading-[1.3] text-muted-foreground")}>
+					<Eyebrow className="min-w-0 flex-1 leading-[1.3] text-muted-foreground">
 						{data.word}
-					</span>
+					</Eyebrow>
 				</div>
 				{data.note ? (
 					<p className="text-[10px] leading-[1.4] text-muted-foreground">{data.note}</p>
@@ -290,15 +288,9 @@ export const FlowHeadingNode = memo(function FlowHeadingNode({
 	data,
 }: NodeProps & { data: { text: string } }) {
 	return (
-		<span
-			className={cn(
-				EYEBROW,
-				"block whitespace-nowrap tracking-[0.1em] text-muted-foreground",
-				"pointer-events-none text-[9px] leading-3",
-			)}
-		>
+		<Eyebrow className="pointer-events-none block whitespace-nowrap text-[9px] leading-3 tracking-[0.1em] text-muted-foreground">
 			{data.text}
-		</span>
+		</Eyebrow>
 	)
 })
 

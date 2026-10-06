@@ -6,12 +6,13 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { DocsLink } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
@@ -146,17 +147,20 @@ export function SpanLogs({
 		<>
 			{Result.builder(logsResult)
 				.onInitial(() => (
-					<div className="space-y-2 p-2">
-						{Array.from({ length: 3 }).map((_, i) => (
-							<div key={i} className="space-y-1">
+					<SkeletonList
+						rows={3}
+						gap="2"
+						className="p-2"
+						renderRow={() => (
+							<div className="space-y-1">
 								<Skeleton className="h-3 w-24" />
 								<Skeleton className="h-4 w-full" />
 							</div>
-						))}
-					</div>
+						)}
+					/>
 				))
-				.onError(() => (
-					<div className="p-4 text-center text-sm text-destructive">Failed to load logs</div>
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load logs" variant="inline" className="px-4" />
 				))
 				.onSuccess((data) => {
 					const logs = data.data
@@ -255,7 +259,7 @@ export function SpanDetailPanel({
 						</div>
 					</CopyableValue>
 					<div className="flex items-center gap-1.5 mt-0.5">
-						<ServiceDot serviceName={span.serviceName} className="size-1.5" />
+						<ServiceDot serviceName={span.serviceName} size="sm" />
 						<CopyableValue value={span.serviceName}>
 							<span className="font-mono text-[10px]" style={{ color: serviceColor }}>
 								{span.serviceName}

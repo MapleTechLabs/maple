@@ -28,7 +28,7 @@ describe("ScrapeTargetChecksTable", () => {
 		expect(view.container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3)
 
 		view.rerender(<ScrapeTargetChecksTable result={Result.fail(new Error("unavailable"))} checks={[]} />)
-		expect(screen.getByText("Failed to load scheduled checks.")).toBeTruthy()
+		expect(screen.getByText("Failed to load scheduled checks")).toBeTruthy()
 
 		view.rerender(<ScrapeTargetChecksTable result={Result.success({ checks: [] })} checks={[]} />)
 		expect(

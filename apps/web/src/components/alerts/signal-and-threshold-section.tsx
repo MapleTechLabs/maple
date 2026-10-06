@@ -16,6 +16,7 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Switch } from "@maple/ui/components/ui/switch"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { cn } from "@maple/ui/lib/utils"
 
 import { SegmentedSelect } from "@/components/common/segmented-select"
@@ -386,24 +387,24 @@ export function SignalAndThresholdSection({
 									}))
 								}
 							/>
-							<div className="flex items-start gap-2.5 sm:col-span-2 lg:col-span-3">
-								<Switch
-									id="rule-alert-on-no-data"
-									checked={form.alertOnNoData && !grouped}
-									disabled={grouped}
-									onCheckedChange={(checked) =>
-										onChange((c) => ({ ...c, alertOnNoData: checked }))
-									}
-								/>
-								<div className="space-y-0.5">
-									<Label htmlFor="rule-alert-on-no-data">Alert when there is no data</Label>
-									<p className="text-muted-foreground text-xs">
-										{grouped
-											? "Not available on grouped rules: a group that stops reporting keeps its incident open until telemetry returns."
-											: "Count a window with no data as a breach. Off, those windows are skipped and the rule goes quiet when its query stops matching."}
-									</p>
-								</div>
-							</div>
+							<SettingRow
+								className="sm:col-span-2 lg:col-span-3"
+								label="Alert when there is no data"
+								description={
+									grouped
+										? "Not available on grouped rules: a group that stops reporting keeps its incident open until telemetry returns."
+										: "Count a window with no data as a breach. Off, those windows are skipped and the rule goes quiet when its query stops matching."
+								}
+								disabled={grouped}
+								control={
+									<Switch
+										checked={form.alertOnNoData && !grouped}
+										onCheckedChange={(checked) =>
+											onChange((c) => ({ ...c, alertOnNoData: checked }))
+										}
+									/>
+								}
+							/>
 						</div>
 					)}
 				</div>

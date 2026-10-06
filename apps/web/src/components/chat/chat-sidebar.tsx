@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useEffect, type KeyboardEvent } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ChatTab } from "@/hooks/use-chat-tabs"
 import { cn } from "@maple/ui/lib/utils"
 import { Button } from "@maple/ui/components/ui/button"
@@ -120,9 +121,9 @@ export function ChatSidebar({
 					) : (
 						groups.map((group) => (
 							<div key={group.label} className="mb-3">
-								<div className="px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+								<Eyebrow as="div" className="px-2 py-1 text-sidebar-foreground/60">
 									{group.label}
-								</div>
+								</Eyebrow>
 								<ul className="flex flex-col gap-0.5">
 									{group.tabs.map((tab) => (
 										<ChatSidebarRow

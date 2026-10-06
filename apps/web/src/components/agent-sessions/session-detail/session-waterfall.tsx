@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, type ReactNode } from "react"
 import { shortId } from "@maple/ui/lib/ids"
 import { Link } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
@@ -502,9 +502,7 @@ function TurnHeader({
 					) : (
 						<ChevronDownIcon size={12} className="shrink-0 text-muted-foreground" />
 					)}
-					<span className="shrink-0 font-medium text-[10px] text-primary uppercase tracking-wider">
-						{ordinal}
-					</span>
+					<Eyebrow className="shrink-0 text-primary">{ordinal}</Eyebrow>
 					{/* The label is the first prose line of a captured message, not a
 					    verbatim quote, so it is set as muted text rather than quoted. */}
 					<span className="min-w-0 truncate text-muted-foreground">
@@ -514,11 +512,7 @@ function TurnHeader({
 							turn.label
 						)}
 					</span>
-					{turn.failed && (
-						<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
-							Failed
-						</Badge>
-					)}
+					{turn.failed && <FailedBadge />}
 					{collapsed && (
 						<Badge variant="muted" pill size="xs" className="tabular-nums">
 							{row.visibleCount} spans
@@ -526,10 +520,10 @@ function TurnHeader({
 					)}
 				</button>
 				{traceId !== undefined && (
-					<span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+					<Eyebrow className="flex shrink-0 items-center gap-1">
 						<TraceLink traceId={traceId} timestamp={turn.anchor.timestamp} />
 						{turn.traceIds.length > 1 && <span>+{turn.traceIds.length - 1}</span>}
-					</span>
+					</Eyebrow>
 				)}
 			</span>
 			<span className={COL_MODEL}>{turn.agentName ?? "—"}</span>
@@ -647,11 +641,7 @@ function SpanRow({
 				{span.statusMessage !== "" && (
 					<span className="min-w-0 truncate text-muted-foreground">{span.statusMessage}</span>
 				)}
-				{errored && (
-					<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
-						{span.genAi.errorType ?? "Error"}
-					</Badge>
-				)}
+				{errored && <FailedBadge>{span.genAi.errorType ?? "Error"}</FailedBadge>}
 				{isDelegation(span, spansById) && (
 					<Badge variant="meta" pill size="xs" className="uppercase tracking-wide">
 						Subagent
@@ -863,5 +853,14 @@ function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined
 				{formatNumber(tokens.total)}
 			</span>
 		</span>
+	)
+}
+
+/** The crit-toned uppercase pill marking a failed turn or span. */
+export function FailedBadge({ children = "Failed" }: { children?: ReactNode }) {
+	return (
+		<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
+			{children}
+		</Badge>
 	)
 }

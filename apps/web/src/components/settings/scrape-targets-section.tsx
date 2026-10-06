@@ -5,7 +5,6 @@ import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { useState, type KeyboardEvent } from "react"
 import { Exit, Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -64,6 +63,7 @@ import { diagnoseScrapeError } from "@/lib/scrape-error-diagnosis"
 import { scheduledStatusFromChecks, scheduledStatusFromRollup } from "@/lib/scrape-target-status"
 import { catalogEntry } from "../integrations/integration-catalog"
 import { DocsLink } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -389,12 +389,11 @@ export function ScrapeTargetsSection({
 				{Result.isInitial(listResult) ? (
 					<SkeletonList rows={3} rowClassName="h-[60px]" gap="2" />
 				) : !Result.isSuccess(listResult) ? (
-					<div className="text-muted-foreground flex flex-col items-center gap-3 py-8 text-center text-sm">
-						Failed to load scrape targets.
-						<Button variant="outline" size="sm" onClick={() => refreshTargets()}>
-							Try again
-						</Button>
-					</div>
+					<ErrorState
+						error={listResult.cause}
+						title="Failed to load scrape targets"
+						onRetry={() => refreshTargets()}
+					/>
 				) : targets.length === 0 ? (
 					<IntegrationEmpty
 						icon={emptyEntry?.icon ?? FireIcon}
@@ -588,17 +587,8 @@ export function ScrapeTargetsSection({
 						<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
 							Cancel
 						</Button>
-						<Button onClick={handleSave} disabled={isSaving}>
-							{isSaving ? (
-								<>
-									<Spinner size={14} />
-									{editingTarget ? "Saving..." : "Adding..."}
-								</>
-							) : editingTarget ? (
-								"Save Changes"
-							) : (
-								"Add Target"
-							)}
+						<Button onClick={handleSave} loading={isSaving}>
+							{editingTarget ? "Save Changes" : "Add Target"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -613,8 +603,8 @@ export function ScrapeTargetsSection({
 				description={
 					<>
 						Are you sure you want to delete{" "}
-						<span className="font-medium text-foreground">{deleteConfirmTarget?.name}</span>?
-						This action cannot be undone.
+						<span className="font-medium text-foreground">{deleteConfirmTarget?.name}</span>? This
+						action cannot be undone.
 					</>
 				}
 				confirmLabel="Delete"
@@ -727,9 +717,9 @@ function ScrapeTargetRow({
 					event.stopPropagation()
 					onProbe(target)
 				}}
-				disabled={probing}
+				loading={probing}
 			>
-				{probing ? <Spinner size={14} /> : <BoltIcon size={14} />}
+				<BoltIcon size={14} />
 				Test
 			</Button>
 
@@ -816,8 +806,8 @@ function ScrapeTargetDetails({
 					<Badge variant={status.badgeVariant}>{status.label}</Badge>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<Button variant="outline" size="sm" onClick={() => onProbe(target)} disabled={probing}>
-						{probing ? <Spinner size={14} /> : <BoltIcon size={14} />}
+					<Button variant="outline" size="sm" onClick={() => onProbe(target)} loading={probing}>
+						<BoltIcon size={14} />
 						Test
 					</Button>
 					{/* Managed targets are edited/removed through the owning integration card. */}
@@ -904,7 +894,9 @@ function ScrapeTargetDetails({
 					<KeyValueList divided className="rounded-md border bg-background/35 px-3">
 						<KeyValue label="Service">{target.service_name ?? target.name}</KeyValue>
 						<KeyValue label="Instance">{hostnameFromUrl(target.url)}</KeyValue>
-						<KeyValue label="Auth">{AUTH_TYPE_LABELS[target.auth_type] ?? target.auth_type}</KeyValue>
+						<KeyValue label="Auth">
+							{AUTH_TYPE_LABELS[target.auth_type] ?? target.auth_type}
+						</KeyValue>
 						<KeyValue label="Target ID" mono>
 							{target.id}
 						</KeyValue>
@@ -962,16 +954,10 @@ export function ScrapeTargetChecksTable({
 	checks: ScrapeTargetCheck[]
 }) {
 	if (Result.isInitial(result)) {
-		return (
-			<SkeletonList rows={3} gap="2" />
-		)
+		return <SkeletonList rows={3} gap="2" />
 	}
 	if (!Result.isSuccess(result)) {
-		return (
-			<EmptyMessage className="rounded-md border bg-background/35 px-3 py-6">
-				Failed to load scheduled checks.
-			</EmptyMessage>
-		)
+		return <ErrorState error={result.cause} title="Failed to load scheduled checks" variant="row" />
 	}
 	if (checks.length === 0) {
 		return (
@@ -1022,8 +1008,12 @@ export function ScrapeTargetChecksTable({
 									<span>{check.success ? "up" : "down"}</span>
 								</span>
 							</TableCell>
-							<TableCell className="font-mono">{formatDurationSeconds(check.duration_seconds)}</TableCell>
-							<TableCell className="pr-3 font-mono">{formatOptionalCount(check.samples_scraped)}</TableCell>
+							<TableCell className="font-mono">
+								{formatDurationSeconds(check.duration_seconds)}
+							</TableCell>
+							<TableCell className="pr-3 font-mono">
+								{formatOptionalCount(check.samples_scraped)}
+							</TableCell>
 						</TableRow>
 					))}
 				</TableBody>

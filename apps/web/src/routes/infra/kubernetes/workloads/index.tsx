@@ -1,4 +1,7 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -245,7 +248,10 @@ function WorkloadsPage() {
 						.filter((workload) => !q || workload.workloadName.toLowerCase().includes(q))
 
 					return (
-						<div className={`space-y-5 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+						<div
+							className={cn("space-y-5", refreshingClass(result.waiting))}
+							aria-busy={result.waiting || undefined}
+						>
 							<FleetBand
 								total={workloads.length}
 								noun={kindOption.label.slice(0, -1).toLowerCase()}
@@ -285,26 +291,19 @@ function WorkloadsPage() {
 									/>
 								</SearchToolbar>
 								{(q || scope) && filtered.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No workloads match</EmptyTitle>
-											<EmptyDescription>
-												{q
-													? `Nothing named “${searchText}” in this scope.`
-													: "Nothing in this scope right now, which is good news."}
-											</EmptyDescription>
-										</EmptyHeader>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => patchSearch({ q: undefined, scope: undefined })}
-										>
-											{q ? "Clear search" : "Show all workloads"}
-										</Button>
-									</Empty>
+									<FilteredEmpty
+										noun="workloads"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										title="No workloads match"
+										description={
+											q
+												? `Nothing named “${searchText}” in this scope.`
+												: "Nothing in this scope right now, which is good news."
+										}
+										onClear={() => patchSearch({ q: undefined, scope: undefined })}
+										clearLabel={q ? "Clear search" : "Show all workloads"}
+									/>
 								) : (
 									<WorkloadTable
 										workloads={filtered}

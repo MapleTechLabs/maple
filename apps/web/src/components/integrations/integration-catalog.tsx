@@ -19,6 +19,7 @@ import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
+import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { docsUrl } from "@/lib/docs"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -296,7 +297,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onSuccess((status): CardStatus => {
 			if (!status.connected) return NOT_CONNECTED
 			if (status.authFailed) return { label: "Token rejected", variant: "error" }
-			return { label: plural(status.environments.length, "environment"), variant: "success" }
+			return { label: countLabel(status.environments.length, "environment"), variant: "success" }
 		})
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -317,7 +318,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 				const enabled = targets.filter((target) => target.enabled).length
 				const noun = targetType === "planetscale" ? "org" : "target"
 				return {
-					label: `${targets.length} ${noun}${targets.length === 1 ? "" : "s"} · ${enabled} enabled`,
+					label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
 					variant: failing ? "warning" : "success",
 				}
 			})
@@ -356,7 +357,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			// with a re-enable/delete affordance, not as live synced repos.
 			const count = status.repositories.filter((r) => r.status === "active").length
 			return {
-				label: count > 0 ? `${count} repo${count === 1 ? "" : "s"}` : "Connected",
+				label: count > 0 ? countLabel(count, "repo") : "Connected",
 				variant: "success",
 			}
 		})
@@ -493,8 +494,6 @@ const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
 const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
 const UNAVAILABLE: UnavailableOverview = { kind: "unavailable" }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
-
 const syncedLabel = (ms: number | null | undefined, verb = "synced"): string | null =>
 	ms == null ? null : `${verb} ${formatRelativeTime(new Date(ms).toISOString())}`
 
@@ -545,14 +544,14 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const issue = status.authFailed
 				? "Token rejected"
 				: failing > 0
-					? `${plural(failing, "environment")} failing`
+					? `${countLabel(failing, "environment")} failing`
 					: null
 			return {
 				kind: "connected",
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context: status.workspaceNames,
-				stat: `${plural(status.environments.length, "environment")} polled`,
+				stat: `${countLabel(status.environments.length, "environment")} polled`,
 				lastSyncLabel: syncedLabel(status.lastSyncedAt),
 				issue,
 			}
@@ -570,12 +569,12 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const issue = !status.analyticsCapable
 				? "Update access"
 				: erroringZones > 0
-					? `${plural(erroringZones, "zone")} erroring`
+					? `${countLabel(erroringZones, "zone")} erroring`
 					: workersFailing
 						? "Workers sync failing"
 						: null
 			const statParts =
-				zones.length > 0 ? [`${enabledZones} of ${plural(zones.length, "zone")} streaming`] : []
+				zones.length > 0 ? [`${enabledZones} of ${countLabel(zones.length, "zone")} streaming`] : []
 			if (status.workers?.enabled) statParts.push("Workers")
 			return {
 				kind: "connected",
@@ -606,13 +605,13 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					kind: "connected",
 					health: failing > 0 ? "attention" : "healthy",
 					stateLabel: failing > 0 ? "Needs attention" : "Healthy",
-					context: plural(targets.length, `scrape ${noun}`),
+					context: countLabel(targets.length, `scrape ${noun}`),
 					stat: `${enabled} of ${targets.length} enabled`,
 					lastSyncLabel: syncedLabel(
 						maxMs(targets.map((t) => (t.last_scrape_at ? Date.parse(t.last_scrape_at) : null))),
 						"scraped",
 					),
-					issue: failing > 0 ? `${plural(failing, noun)} failing` : null,
+					issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
 				}
 			})
 			.onInitial(() => null)
@@ -643,7 +642,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				context: status.organization,
 				stat:
 					planetscaleDbCount != null && planetscaleDbCount > 0
-						? `${plural(planetscaleDbCount, "database")} tracked`
+						? `${countLabel(planetscaleDbCount, "database")} tracked`
 						: status.scrape_target?.enabled
 							? "Metrics scraping on"
 							: null,
@@ -706,16 +705,16 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const failing = active.filter((r) => r.lastSyncError != null).length
 			const issue =
 				failing > 0
-					? `${plural(failing, "repo")} failing`
+					? `${countLabel(failing, "repo")} failing`
 					: removed > 0
-						? `${plural(removed, "repo")} removed`
+						? `${countLabel(removed, "repo")} removed`
 						: null
 			return {
 				kind: "connected",
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context: status.accountLogin ? `@${status.accountLogin} · GitHub App` : "GitHub App",
-				stat: active.length > 0 ? `${plural(active.length, "repo")} synced` : null,
+				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
 				lastSyncLabel: syncedLabel(maxMs(active.map((r) => r.lastSyncedAt))),
 				issue,
 			}
@@ -738,7 +737,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 						context:
 							workspaces.length === 1
 								? (workspaces[0]?.name ?? null)
-								: plural(workspaces.length, "workspace"),
+								: countLabel(workspaces.length, "workspace"),
 						stat: "Alerts & agent ready",
 						// No sync loop — the bot is push-per-message.
 						lastSyncLabel: null,

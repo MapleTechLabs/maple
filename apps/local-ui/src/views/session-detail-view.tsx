@@ -6,6 +6,7 @@ import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { shortId } from "@maple/ui/lib/ids"
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	ArrowLeftIcon,
 	ArrowRightIcon,
@@ -28,7 +29,8 @@ import {
 } from "../hooks/use-local-session-detail"
 import { hrefFor } from "../lib/router"
 import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, parseClickHouseDateTime } from "../lib/time"
-import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay-format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { ErrorState } from "../components/view-states"
 import { RefreshButton } from "../components/toolbar"
 
@@ -89,7 +91,12 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 									<StatusBadge active={isActive} />
 								</div>
 								<div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-									<TruncatedId value={sessionId} kind="session" length={8} className="text-xs" />
+									<TruncatedId
+										value={sessionId}
+										kind="session"
+										length={8}
+										className="text-xs"
+									/>
 									<span className="inline-flex items-center gap-1.5">
 										<DeviceIcon className="size-3.5 opacity-60" />
 										{session.browserName || "Unknown"}
@@ -134,7 +141,9 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 											</TruncatedText>
 										</KeyValue>
 										<KeyValue label="OS">
-											<TruncatedText text={session.osName}>{session.osName || "-"}</TruncatedText>
+											<TruncatedText text={session.osName}>
+												{session.osName || "-"}
+											</TruncatedText>
 										</KeyValue>
 										<KeyValue label="Device">
 											<TruncatedText text={session.deviceType}>
@@ -187,7 +196,9 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 														<span className="min-w-0 flex-1">
 															<span className="block truncate text-sm">
 																{trace.rootSpanName ||
-																	shortId(trace.traceId, "trace", { length: 12 })}
+																	shortId(trace.traceId, "trace", {
+																		length: 12,
+																	})}
 															</span>
 															<span className="block truncate text-xs text-muted-foreground">
 																{trace.rootServiceName || "unknown"} ·{" "}
@@ -359,10 +370,7 @@ function StatusBadge({ active }: { active: boolean }) {
 	if (active) {
 		return (
 			<Badge variant="success" pill className="gap-1.5">
-				<span className="relative flex size-1.5">
-					<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-					<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-				</span>
+				<StatusDot tone="success" pulse />
 				Active
 			</Badge>
 		)
@@ -398,4 +406,3 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 		</section>
 	)
 }
-

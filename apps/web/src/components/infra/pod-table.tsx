@@ -9,8 +9,10 @@ import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS } from "@/components/common/data-table"
+import { ColumnHead, DataTable, type SortControls, ROW_LINK_CLASS } from "@/components/common/data-table"
+import { AvgPeak } from "./primitives/avg-peak"
 import { MeterRows } from "./primitives/meter-rows"
+import { formatWholePercent } from "./format"
 import { MetaLine } from "./primitives/meta-line"
 import { RelativeTime } from "@/components/common/relative-time"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -58,8 +60,6 @@ function workloadOf(pod: PodRow): { kind: string; name: string } | null {
 	return null
 }
 
-const formatPct = (fraction: number) => (Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : "—")
-
 /** The meta line truncates to one line; this is what a hover recovers. */
 function metaTitle(pod: PodRow, workload: { kind: string; name: string } | null): string {
 	return [
@@ -81,14 +81,47 @@ const formatCores = (cores: number) => {
 	return cores.toFixed(3)
 }
 
-/** avg → peak. One number can't distinguish a steady 60% from a spike to 100%. */
-function AvgPeak({ avg, peak, format }: { avg: number; peak: number; format: (n: number) => string }) {
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function PodColumns({ sort }: { sort?: Partial<SortControls<PodSortKey>> }) {
 	return (
-		<span className="font-mono text-[11px] tabular-nums text-foreground">
-			<span className="text-muted-foreground">{format(avg)}</span>
-			<span className="mx-1 text-foreground/30">→</span>
-			{format(peak)}
-		</span>
+		<>
+			<ColumnHead<PodSortKey>
+				label="Pod"
+				sortKey="podName"
+				{...sort}
+				width="w-0 flex-1 min-w-[260px]"
+			/>
+			<ColumnHead<PodSortKey>
+				label="Peak saturation"
+				sortKey="saturation"
+				{...sort}
+				width="w-[176px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<PodSortKey>
+				label="CPU cores"
+				sortKey="cpuUsage"
+				{...sort}
+				align="right"
+				width="w-[132px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<PodSortKey>
+				label="Mem of limit"
+				sortKey="memoryLimitPct"
+				{...sort}
+				align="right"
+				width="w-[120px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<PodSortKey>
+				label="Last seen"
+				sortKey="lastSeen"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
 	)
 }
 
@@ -96,11 +129,7 @@ export function PodTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Pods">
 			<DataTable.Head>
-				<ColumnHead label="Pod" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="Peak saturation" width="w-[176px]" hidden="hidden md:flex" />
-				<ColumnHead label="CPU cores" align="right" width="w-[132px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Mem of limit" align="right" width="w-[120px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
+				<PodColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={6}>
 				<div className="w-0 min-w-[260px] flex-1">
@@ -133,52 +162,7 @@ export function PodTable({
 	return (
 		<DataTable.Root ariaLabel="Pods" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead<PodSortKey>
-					label="Pod"
-					sortKey="podName"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					width="w-0 flex-1 min-w-[260px]"
-				/>
-				<ColumnHead<PodSortKey>
-					label="Peak saturation"
-					sortKey="saturation"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					width="w-[176px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<PodSortKey>
-					label="CPU cores"
-					sortKey="cpuUsage"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[132px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<PodSortKey>
-					label="Mem of limit"
-					sortKey="memoryLimitPct"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[120px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<PodSortKey>
-					label="Last seen"
-					sortKey="lastSeen"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[100px]"
-				/>
+				<PodColumns sort={{ currentKey: sortBy, dir: sortDir, onSort: onSortChange }} />
 			</DataTable.Head>
 			{pods.length === 0 && <DataTable.Empty>No pods match your filter.</DataTable.Empty>}
 
@@ -246,7 +230,7 @@ export function PodTable({
 							<AvgPeak
 								avg={pod.memoryLimitPct}
 								peak={pod.memoryLimitPctPeak}
-								format={formatPct}
+								format={formatWholePercent}
 							/>
 						</div>
 						<div className="w-[100px] text-right">

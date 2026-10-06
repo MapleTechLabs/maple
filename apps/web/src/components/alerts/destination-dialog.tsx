@@ -718,14 +718,11 @@ function ChatDestinationFields({
 						variant="ghost"
 						className="-my-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
 						onClick={refreshChannels}
-						disabled={channelsLoading}
+						loading={channelsLoading}
 						title={`Re-fetch the channel list from ${connectorName}`}
 					>
-						<ArrowRotateClockwiseIcon
-							size={12}
-							className={cn(channelsLoading && "animate-spin")}
-						/>
-						{channelsLoading ? "Refreshing…" : "Refresh"}
+						<ArrowRotateClockwiseIcon size={12} />
+						Refresh
 					</Button>
 				</div>
 			</div>
@@ -898,7 +895,8 @@ function TelegramChatPicker({
 					variant="ghost"
 					size="sm"
 					className="h-6 px-2 text-[11px]"
-					disabled={!tokenReady || busy}
+					disabled={!tokenReady}
+					loading={busy}
 					onClick={() => void runDetect()}
 					title={
 						tokenReady
@@ -906,8 +904,7 @@ function TelegramChatPicker({
 							: "Enter the bot token first — detection reads the bot's chats."
 					}
 				>
-					{busy ? <Spinner size={12} className="mr-1" /> : null}
-					{busy ? "Detecting…" : "Detect chats"}
+					Detect chats
 				</Button>
 			</div>
 			{error !== null ? <p className="text-[11px] text-destructive">{error}</p> : null}

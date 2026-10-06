@@ -14,6 +14,7 @@ import type {
 	WorkloadKind,
 } from "@/api/warehouse/infra"
 import { formatValueWithUnit } from "./chart-utils"
+import { SeriesLegend } from "@/components/common/series-legend"
 import { InfraMetricChart, type InfraSeriesInfo } from "./primitives/infra-metric-chart"
 import { displayError } from "@/lib/error-messages"
 
@@ -76,25 +77,19 @@ interface K8sMetricChartViewProps {
  */
 function K8sSeriesSummary({ series, colors, lastValues, labelFor, unit }: InfraSeriesInfo) {
 	return (
-		<div className="mb-3 flex flex-wrap items-center gap-2">
-			{series.map((name) => {
+		<SeriesLegend
+			variant="chip"
+			className="mb-3"
+			items={series.map((name) => {
 				const value = lastValues[name]
-				return (
-					<div
-						key={name}
-						className="inline-flex items-center gap-1.5 rounded-full border bg-background px-2 py-0.5 text-[11px]"
-					>
-						<span className="size-2 rounded-full" style={{ background: colors.get(name) }} />
-						<span className="font-medium text-foreground/80">{labelFor(name)}</span>
-						{value !== undefined && (
-							<span className="font-mono text-muted-foreground tabular-nums">
-								{formatValueWithUnit(value, unit)}
-							</span>
-						)}
-					</div>
-				)
+				return {
+					key: name,
+					label: labelFor(name),
+					color: colors.get(name),
+					value: value === undefined ? undefined : formatValueWithUnit(value, unit),
+				}
 			})}
-		</div>
+		/>
 	)
 }
 

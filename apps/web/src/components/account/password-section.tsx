@@ -128,8 +128,8 @@ export function PasswordSection() {
 							}
 						/>
 						<div className="flex justify-end">
-							<Button size="sm" onClick={handleSubmit} disabled={!canSubmit || isSaving}>
-								{isSaving ? "Saving..." : hasPassword ? "Change password" : "Set password"}
+							<Button size="sm" onClick={handleSubmit} loading={isSaving} disabled={!canSubmit}>
+								{hasPassword ? "Change password" : "Set password"}
 							</Button>
 						</div>
 					</div>

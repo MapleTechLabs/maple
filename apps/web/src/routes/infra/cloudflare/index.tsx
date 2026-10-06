@@ -1,4 +1,7 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { SectionHeading } from "@/components/common/section-heading"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
@@ -232,7 +235,10 @@ function CloudflareData({
 				.onError((err) => <ErrorState error={err} />)
 				.onSuccess((response, result) => {
 					return (
-						<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+						<div
+							className={cn("space-y-6", refreshingClass(result.waiting))}
+							aria-busy={result.waiting || undefined}
+						>
 							{response.zones.length > 0 && (
 								<CloudflareKpiCards zones={response.zones} buckets={timeseries?.buckets} />
 							)}
@@ -322,16 +328,12 @@ function CloudflareData({
 				})
 				.render()}
 			<section className="space-y-3">
-				<h2 className="text-sm font-medium text-foreground">
-					Workers
-					{Result.builder(workersResult)
-						.onSuccess((r) => (
-							<span className="ml-2 font-mono text-xs text-muted-foreground">
-								{r.workers.length}
-							</span>
-						))
+				<SectionHeading
+					title="Workers"
+					count={Result.builder(workersResult)
+						.onSuccess((r) => r.workers.length)
 						.orElse(() => null)}
-				</h2>
+				/>
 				{Result.builder(workersResult)
 					.onInitial(() => <CloudflareWorkerTableLoading />)
 					.onError((err) => <ErrorState error={err} />)
@@ -368,17 +370,13 @@ function ZonesSection({
 
 	return (
 		<section className="space-y-3">
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-				<h2 className="text-sm font-medium text-foreground">
-					Zones
-					<span className="ml-2 font-mono text-xs text-muted-foreground">
-						{matches.length === zones.length
-							? zones.length
-							: `${matches.length} of ${zones.length}`}
-					</span>
-				</h2>
-				{zones.length > 1 ? children : null}
-			</div>
+			<SectionHeading
+				title="Zones"
+				count={
+					matches.length === zones.length ? zones.length : `${matches.length} of ${zones.length}`
+				}
+				actions={zones.length > 1 ? children : null}
+			/>
 			<CloudflareZoneTable
 				zones={matches}
 				waiting={waiting}

@@ -34,15 +34,10 @@ import {
 } from "@maple/ui/components/ui/dropdown-menu"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { toastAccountError } from "@/components/account/account-errors"
+import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import {
-	PlusIcon,
-	DotsVerticalIcon,
-	TrashIcon,
-	ShieldIcon,
-	UserIcon,
-	EnvelopeIcon,
-} from "@/components/icons"
+import { PlusIcon, DotsVerticalIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/components/icons"
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
 	const first = firstName?.[0] ?? ""
@@ -103,8 +98,7 @@ export function MembersSection() {
 			setInviteOpen(false)
 			invitations?.revalidate?.()
 		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : "Failed to send invitation"
-			toastManager.add({ title: message, type: "error" })
+			toastAccountError(err, "Failed to send invitation")
 		} finally {
 			setInviteLoading(false)
 		}
@@ -122,8 +116,8 @@ export function MembersSection() {
 				type: "success",
 			})
 			memberships?.revalidate?.()
-		} catch {
-			toastManager.add({ title: "Failed to update role", type: "error" })
+		} catch (err: unknown) {
+			toastAccountError(err, "Failed to update role")
 		}
 	}
 
@@ -134,8 +128,8 @@ export function MembersSection() {
 			await memberToRemove.destroy()
 			toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
 			memberships?.revalidate?.()
-		} catch {
-			toastManager.add({ title: "Failed to remove member", type: "error" })
+		} catch (err: unknown) {
+			toastAccountError(err, "Failed to remove member")
 		} finally {
 			setRemoveLoading(false)
 			setRemoveDialogOpen(false)
@@ -148,36 +142,28 @@ export function MembersSection() {
 			await revoke()
 			toastManager.add({ title: `Invitation to ${email} revoked`, type: "success" })
 			invitations?.revalidate?.()
-		} catch {
-			toastManager.add({ title: "Failed to revoke invitation", type: "error" })
+		} catch (err: unknown) {
+			toastAccountError(err, "Failed to revoke invitation")
 		}
 	}
 
 	if (!isLoaded) {
 		return (
-			<div className="space-y-6">
-				<Card>
-					<CardHeader>
-						<Skeleton className="h-5 w-32" />
-						<Skeleton className="h-4 w-64" />
-					</CardHeader>
-					<CardContent>
-						<SkeletonList
-							rows={3}
-							gap="3"
-							renderRow={() => (
-								<div className="flex items-center gap-3">
-									<Skeleton className="size-8 rounded-full" />
-									<div className="space-y-1.5">
-										<Skeleton className="h-3.5 w-32" />
-										<Skeleton className="h-3 w-48" />
-									</div>
-								</div>
-							)}
-						/>
-					</CardContent>
-				</Card>
-			</div>
+			<AccountSectionSkeleton>
+				<SkeletonList
+					rows={3}
+					gap="3"
+					renderRow={() => (
+						<div className="flex items-center gap-3">
+							<Skeleton className="size-8 rounded-full" />
+							<div className="space-y-1.5">
+								<Skeleton className="h-3.5 w-32" />
+								<Skeleton className="h-3 w-48" />
+							</div>
+						</div>
+					)}
+				/>
+			</AccountSectionSkeleton>
 		)
 	}
 
@@ -446,8 +432,8 @@ export function MembersSection() {
 						>
 							Cancel
 						</Button>
-						<Button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()}>
-							{inviteLoading ? "Sending..." : "Send invitation"}
+						<Button onClick={handleInvite} loading={inviteLoading} disabled={!inviteEmail.trim()}>
+							Send invitation
 						</Button>
 					</DialogFooter>
 				</DialogContent>

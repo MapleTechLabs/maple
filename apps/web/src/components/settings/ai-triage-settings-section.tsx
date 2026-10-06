@@ -13,6 +13,7 @@ import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { AiTriageSettingsUpdateRequest } from "@maple/domain/http"
+import { ErrorState } from "@/components/common/error-state"
 
 interface AiTriageSettingsSectionProps {
 	isAdmin: boolean
@@ -136,13 +137,13 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 			<CardContent className="space-y-6">
 				{Result.builder(settingsResult)
 					.onInitial(() => <Skeleton className="h-24 w-full" />)
-					.onError(() => (
-						<div className="flex items-center justify-between gap-4 py-2 text-sm text-muted-foreground">
-							<span>Failed to load AI triage settings.</span>
-							<Button size="sm" variant="outline" onClick={() => refreshSettings()}>
-								Retry
-							</Button>
-						</div>
+					.onError((error) => (
+						<ErrorState
+							error={error}
+							title="Failed to load AI triage settings"
+							variant="row"
+							onRetry={() => refreshSettings()}
+						/>
 					))
 					.onSuccess((current) => (
 						<>
@@ -156,7 +157,9 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 										onCheckedChange={(checked) =>
 											save(
 												new AiTriageSettingsUpdateRequest({ enabled: checked }),
-												checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
+												checked
+													? "AI auto-triage enabled"
+													: "AI auto-triage disabled",
 											)
 										}
 									/>

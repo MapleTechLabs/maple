@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -136,10 +136,14 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 						<TableRow className={cn(eyebrowVariants(), "hover:bg-transparent")}>
 							<TableHead className="pl-4" />
 							<TableHead className="text-right">
-								<span className="font-mono normal-case tracking-normal">{shortReleaseLabel(impact.commitSha)}</span>
+								<span className="font-mono normal-case tracking-normal">
+									{shortReleaseLabel(impact.commitSha)}
+								</span>
 							</TableHead>
 							<TableHead className="text-right">
-								<span className="font-mono normal-case tracking-normal">{shortReleaseLabel(baseline.commitSha)}</span>
+								<span className="font-mono normal-case tracking-normal">
+									{shortReleaseLabel(baseline.commitSha)}
+								</span>
 							</TableHead>
 							<TableHead className="pr-4 text-right">Change</TableHead>
 						</TableRow>
@@ -154,7 +158,9 @@ export function ReleaseComparison({ impact }: { impact: ReleaseServiceImpact }) 
 								<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
 									{row.baseline === undefined ? "—" : row.format(row.baseline)}
 								</TableCell>
-								<TableCell className={cn("pr-4 text-right font-mono tabular-nums", changeTone(row))}>
+								<TableCell
+									className={cn("pr-4 text-right font-mono tabular-nums", changeTone(row))}
+								>
 									{formatChange(row)}
 								</TableCell>
 							</TableRow>
@@ -195,7 +201,7 @@ export function ReleaseVersionsRail({
 			title="Versions in window"
 			action={
 				<span className="text-[11px] text-muted-foreground/70">
-					{sorted.length === 1 ? "1 version" : `${sorted.length} versions`}
+					{countLabel(sorted.length, "version")}
 				</span>
 			}
 		>

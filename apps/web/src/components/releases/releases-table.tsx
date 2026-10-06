@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import React, { Fragment, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -272,7 +273,10 @@ function ReleasesTableRows({
 	let lastDay: string | undefined
 
 	return (
-		<div className={cn("rounded-md border bg-card transition-opacity", waiting && "opacity-60")}>
+		<div
+			className={cn("rounded-md border bg-card", refreshingClass(waiting === true))}
+			aria-busy={waiting || undefined}
+		>
 			<Table>
 				<TableHeader>
 					<TableRow className="hover:bg-transparent">
@@ -340,7 +344,11 @@ function ReleasesTableRows({
 										<ServiceChips services={group.services} />
 									</TableCell>
 									<TableCell className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground">
-										<RelativeTime value={group.firstSeen} variant="orDate" tooltip="title" />
+										<RelativeTime
+											value={group.firstSeen}
+											variant="orDate"
+											tooltip="title"
+										/>
 									</TableCell>
 									<TableCell className="py-2 align-top">
 										<span className="inline-flex items-center gap-1.5">
@@ -411,7 +419,11 @@ function ReleasesTableRows({
 												</TableCell>
 												<TableCell className="py-1.5" />
 												<TableCell className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-													<RelativeTime value={service.firstSeen} variant="orDate" tooltip="title" />
+													<RelativeTime
+														value={service.firstSeen}
+														variant="orDate"
+														tooltip="title"
+													/>
 												</TableCell>
 												<TableCell className="py-1.5">
 													<Delta

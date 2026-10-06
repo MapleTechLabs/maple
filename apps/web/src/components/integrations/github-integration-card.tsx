@@ -2,7 +2,9 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
+import { countLabel } from "@maple/ui/lib/format"
 import { Exit, Option } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import {
 	GithubSetTrackedBranchRequest,
 	type GithubIntegrationStatus,
@@ -33,13 +35,14 @@ import {
 	LoaderIcon,
 	TrashIcon,
 } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
-import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
+import { useRequiredIntegrationConnect, type IntegrationConnect } from "./integration-connect"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -49,6 +52,7 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 
 /** How often to re-fetch status while the connect flow / background sync is active. */
 const POLL_INTERVAL_MS = 3_000
@@ -94,11 +98,11 @@ export function GithubIntegrationCard() {
 
 	// Connect flow (popup, busy, refresh-on-return, post-close grace window) lives in
 	// IntegrationConnectProvider — shared with the drill-in header's Connect button.
-	const connectFlow = useIntegrationConnect()
-	if (connectFlow === null) {
-		throw new Error("GithubIntegrationCard must be rendered inside IntegrationConnectProvider")
-	}
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const connectFlow = useRequiredIntegrationConnect("GithubIntegrationCard")
+	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["githubIntegrationStatus"] }),
+		{ success: "GitHub disconnected", error: "Failed to disconnect GitHub" },
+	)
 	// Separate from the query's `waiting` flag — only true on an explicit Refresh click, not background polls.
 	const [refreshing, setRefreshing] = useState(false)
 	// Repo awaiting delete confirmation; id of the repo currently being deleted (shows spinner).
@@ -108,15 +112,9 @@ export function GithubIntegrationCard() {
 	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 	const [forcePoll, setForcePoll] = useState(false)
 
-	const status = Result.builder(statusResult)
-		.onSuccess((s) => s)
-		.orElse(() =>
-			// Keep the last loaded status visible if a refresh/poll fails, so a transient error
-			// doesn't blow away the connected view.
-			Result.isFailure(statusResult)
-				? Option.getOrNull(Option.map(statusResult.previousSuccess, (prev) => prev.value))
-				: null,
-		)
+	// Keep the last loaded status visible if a refresh/poll fails, so a transient error
+	// doesn't blow away the connected view.
+	const status = Option.getOrNull(AsyncResult.value(statusResult))
 	const isLoading = Result.isInitial(statusResult) && status === null
 	// A genuine load failure with nothing to fall back on — surface a retry instead of silently
 	// rendering the first-run "Connect" screen (which is indistinguishable from "never connected").
@@ -150,17 +148,6 @@ export function GithubIntegrationCard() {
 		const id = setTimeout(() => setRefreshing(false), 700)
 		return () => clearTimeout(id)
 	}, [refreshing])
-
-	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({ reactivityKeys: ["githubIntegrationStatus"] })
-		setDisconnectBusy(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "GitHub disconnected", type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to disconnect GitHub", type: "error" })
-		}
-	}
 
 	async function handleDeleteRepository(repo: GithubRepoSummary) {
 		setRepoToDelete(null)
@@ -204,8 +191,12 @@ export function GithubIntegrationCard() {
 		<>
 			{isLoading ? (
 				<LoadingState />
-			) : loadFailed ? (
-				<LoadFailedState onRetry={handleManualRefresh} />
+			) : loadFailed && Result.isFailure(statusResult) ? (
+				<ErrorState
+					error={statusResult.cause}
+					title="Failed to load the GitHub integration"
+					onRetry={handleManualRefresh}
+				/>
 			) : status?.connected ? (
 				<ConnectedView
 					status={status}
@@ -276,18 +267,6 @@ function LoadingState() {
 	)
 }
 
-/** Shown when the status query fails outright (and there's no prior value to fall back on). */
-function LoadFailedState({ onRetry }: { onRetry: () => void }) {
-	return (
-		<div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-			Failed to load the GitHub integration.
-			<Button variant="outline" size="sm" onClick={onRetry}>
-				Try again
-			</Button>
-		</div>
-	)
-}
-
 /** First-run empty state: explains the value and offers the single connect action. */
 function NotConnectedState({ connectFlow }: { connectFlow: IntegrationConnect }) {
 	return (
@@ -314,8 +293,8 @@ function NotConnectedState({ connectFlow }: { connectFlow: IntegrationConnect })
 				<IntegrationEmptyHint>
 					Your repositories and commits will appear here after installing.
 				</IntegrationEmptyHint>
-				<Button onClick={connectFlow.connect} disabled={connectFlow.busy}>
-					{connectFlow.busy ? <Spinner size={16} /> : <GithubIcon size={16} />}
+				<Button onClick={connectFlow.connect} loading={connectFlow.busy}>
+					<GithubIcon size={16} />
 					Connect GitHub
 				</Button>
 				<IntegrationEmptyFooter>
@@ -386,14 +365,14 @@ function DeactivatedState({
 
 			{repoCount > 0 ? (
 				<p className="text-xs text-muted-foreground">
-					{repoCount} {repoCount === 1 ? "repository" : "repositories"} and their commit history are
+					{countLabel(repoCount, "repository", "repositories")} and their commit history are
 					preserved.
 				</p>
 			) : null}
 
 			<div className="flex flex-col items-center gap-2">
-				<Button onClick={onReconnect} disabled={busy}>
-					{busy ? <Spinner size={16} /> : <ArrowRotateClockwiseIcon size={16} />}
+				<Button onClick={onReconnect} loading={busy}>
+					<ArrowRotateClockwiseIcon size={16} />
 					Reconnect GitHub
 				</Button>
 				<p className="text-xs text-muted-foreground">
@@ -477,12 +456,22 @@ function ConnectedView({
 						<ArrowRotateClockwiseIcon size={14} className={refreshing ? "animate-spin" : ""} />
 						Refresh
 					</Button>
-					<Button size="sm" variant="outline" onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? <Spinner size={14} /> : null}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={connectFlow.connect}
+						disabled={actionBusy}
+						loading={connectFlow.busy}
+					>
 						Manage
 					</Button>
-					<Button size="sm" variant="outline" onClick={onRequestDisconnect} disabled={actionBusy}>
-						{disconnectBusy ? <Spinner size={14} /> : null}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={onRequestDisconnect}
+						disabled={actionBusy}
+						loading={disconnectBusy}
+					>
 						Disconnect
 					</Button>
 				</ItemActions>
@@ -527,7 +516,10 @@ function ConnectedView({
 								) : null}
 								{counts.failed > 0 ? (
 									<span className="flex items-center gap-1">
-										<CircleWarningIcon size={13} className="text-destructive-foreground" />
+										<CircleWarningIcon
+											size={13}
+											className="text-destructive-foreground"
+										/>
 										{counts.failed} failed
 									</span>
 								) : null}
@@ -604,12 +596,9 @@ function ConnectedView({
 									className="shrink-0"
 									onClick={() => onRequestDelete(repo)}
 									disabled={deletingRepoId !== null}
+									loading={deletingRepoId === repo.id}
 								>
-									{deletingRepoId === repo.id ? (
-										<Spinner size={13} />
-									) : (
-										<TrashIcon size={13} />
-									)}
+									<TrashIcon size={13} />
 									Delete
 								</Button>
 							</Item>
@@ -767,9 +756,8 @@ function BranchSelector({
 							size="sm"
 							variant="outline"
 							className="h-7 shrink-0 gap-1.5 px-2.5 font-normal"
-							disabled={saving}
+							loading={saving}
 						>
-							{saving ? <Spinner size={12} /> : null}
 							<span className="text-muted-foreground">branch</span>
 							<span className="max-w-[10rem] truncate font-medium">{tracked ?? "—"}</span>
 							<ChevronDownIcon size={12} className="text-muted-foreground" />

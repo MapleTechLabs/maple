@@ -1,22 +1,13 @@
-import { useState, type FormEvent } from "react"
+import { useState } from "react"
 import { useOrganizationList } from "@clerk/clerk-react"
 import { Cause, Exit, Option } from "effect"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import { Button } from "@maple/ui/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 
 import { CreateOrganizationRequest } from "@maple/domain/http"
-import { parseMapleRegion } from "@maple/domain/organization-regions"
+import { MapleRegion as MapleRegionSchema, parseMapleRegion } from "@maple/domain/organization-regions"
 import { RegionBadge } from "@/components/region/region-badge"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -27,8 +18,6 @@ import {
 	type MapleRegion,
 	regionAppUrl,
 } from "@/lib/region"
-
-const REGION_OPTIONS: ReadonlyArray<MapleRegion> = ["us", "eu"]
 
 /**
  * Creates an organization on the server, so it starts life with its region set. Where regions
@@ -59,8 +48,7 @@ export function CreateOrganizationDialog({
 		}
 	}
 
-	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault()
+	const handleSubmit = async () => {
 		if (isCreating || !setActive) return
 		setIsCreating(true)
 		setErrorMessage(null)
@@ -80,64 +68,58 @@ export function CreateOrganizationDialog({
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent className="sm:max-w-md" render={<form onSubmit={handleSubmit} />}>
-				<DialogHeader>
-					<DialogTitle>Create Organization</DialogTitle>
-					<DialogDescription>
-						Create a new organization to collaborate with your team.
-					</DialogDescription>
-				</DialogHeader>
-				<DialogPanel className="space-y-4">
-					<Input
-						placeholder="Organization name"
-						value={name}
-						maxLength={100}
-						onChange={(e) => setName(e.target.value)}
-						disabled={isCreating}
-						required
-						autoFocus
-					/>
-					{hasMultipleRegions && (
-						<div className="space-y-2">
-							<Label>Data region</Label>
-							<RadioGroup
-								value={region}
-								onValueChange={(value) => setRegion(parseMapleRegion(value))}
-								className="gap-0 divide-y divide-border overflow-hidden rounded-lg border"
+		<FormDialog
+			open={open}
+			onOpenChange={handleOpenChange}
+			title="Create Organization"
+			description="Create a new organization to collaborate with your team."
+			onSubmit={handleSubmit}
+			submitLabel="Create"
+			pending={isCreating}
+			submitDisabled={!name.trim()}
+			className="sm:max-w-md"
+		>
+			<Input
+				placeholder="Organization name"
+				value={name}
+				maxLength={100}
+				onChange={(e) => setName(e.target.value)}
+				disabled={isCreating}
+				required
+				autoFocus
+			/>
+			{hasMultipleRegions && (
+				<div className="space-y-2">
+					<Label>Data region</Label>
+					<RadioGroup
+						value={region}
+						onValueChange={(value) => setRegion(parseMapleRegion(value))}
+						className="gap-0 divide-y divide-border overflow-hidden rounded-lg border"
+					>
+						{MapleRegionSchema.literals.map((option) => (
+							<label
+								key={option}
+								htmlFor={`org-region-${option}`}
+								className="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-[[data-checked]]:bg-accent/64"
 							>
-								{REGION_OPTIONS.map((option) => (
-									<label
-										key={option}
-										htmlFor={`org-region-${option}`}
-										className="flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-[[data-checked]]:bg-accent/64"
-									>
-										<RegionBadge region={option} />
-										<span className="min-w-0 flex-1 text-sm">
-											{MAPLE_REGION_LABELS[option].name}
-										</span>
-										<RadioGroupItem
-											value={option}
-											id={`org-region-${option}`}
-											disabled={isCreating}
-										/>
-									</label>
-								))}
-							</RadioGroup>
-							<p className="text-xs text-muted-foreground">
-								Telemetry is stored and processed only in this region. It cannot be changed
-								later.
-							</p>
-						</div>
-					)}
-					{errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
-				</DialogPanel>
-				<DialogFooter>
-					<Button type="submit" disabled={isCreating || !name.trim()}>
-						{isCreating ? "Creating..." : "Create"}
-					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
+								<RegionBadge region={option} />
+								<span className="min-w-0 flex-1 text-sm">
+									{MAPLE_REGION_LABELS[option].name}
+								</span>
+								<RadioGroupItem
+									value={option}
+									id={`org-region-${option}`}
+									disabled={isCreating}
+								/>
+							</label>
+						))}
+					</RadioGroup>
+					<p className="text-xs text-muted-foreground">
+						Telemetry is stored and processed only in this region. It cannot be changed later.
+					</p>
+				</div>
+			)}
+			{errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+		</FormDialog>
 	)
 }

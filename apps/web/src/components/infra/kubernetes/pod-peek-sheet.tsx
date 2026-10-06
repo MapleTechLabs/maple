@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Link } from "@tanstack/react-router"
@@ -5,12 +6,7 @@ import { useHotkeys } from "@tanstack/react-hotkeys"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
-import {
-	Sheet,
-	SheetContent,
-	SheetFooter,
-	SheetPanel,
-} from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetFooter, SheetPanel } from "@maple/ui/components/ui/sheet"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
@@ -170,7 +166,11 @@ export function PodPeekSheet({
 							kind="Pod"
 							title={pod.podName}
 							adornment={
-								<HostStatusBadge quiet lastSeen={pod.lastSeen} referenceTime={referenceTime} />
+								<HostStatusBadge
+									quiet
+									lastSeen={pod.lastSeen}
+									referenceTime={referenceTime}
+								/>
 							}
 							description={`Peak utilization and metrics for ${pod.podName}`}
 							meta={
@@ -350,7 +350,7 @@ function PeekSummary({ pod, startTime, endTime }: { pod: PodRow; startTime: stri
 				return <EmptyMessage dashed>No metrics arrived for this pod in this window.</EmptyMessage>
 			}
 			return (
-				<StatRail className={holder.waiting ? "opacity-60 transition-opacity" : "transition-opacity"}>
+				<StatRail className={refreshingClass(holder.waiting)}>
 					<StatRailItem
 						eyebrow="CPU vs limit"
 						value={formatPercent(summary.cpuLimitPct)}

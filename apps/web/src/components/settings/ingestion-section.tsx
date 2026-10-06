@@ -1,3 +1,4 @@
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
@@ -9,16 +10,10 @@ import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	ArrowPathIcon,
-	ArrowRightIcon,
-	EyeIcon,
-	PaperPlaneIcon,
-	PulseIcon,
-} from "@/components/icons"
+import { ArrowPathIcon, ArrowRightIcon, EyeIcon, PaperPlaneIcon, PulseIcon } from "@/components/icons"
 import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { docsUrl } from "@/lib/docs"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -72,7 +67,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 			<span className="text-muted-foreground truncate font-mono text-xs">
 				{connected
 					? [
-							`${connection.serviceCount} ${connection.serviceCount === 1 ? "service" : "services"}`,
+							countLabel(connection.serviceCount, "service"),
 							spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
 						]
 							.filter(Boolean)
@@ -156,7 +151,7 @@ function CredentialRow({
 					<span className="truncate">{masked && !isVisible ? maskKey(value) : value}</span>
 					<CopyIndicator
 						status={status}
-						size={12}
+						iconSize={12}
 						className={cn(
 							"transition-opacity group-hover/value:opacity-100",
 							status === "idle" && "opacity-0",
@@ -191,7 +186,7 @@ function CredentialRow({
 					title={status === "copied" ? "Copied!" : "Copy"}
 					disabled={disabled}
 				>
-					<CopyIndicator status={status} size={13} />
+					<CopyIndicator status={status} iconSize={13} />
 				</Button>
 				{onRegenerate && (
 					<Button
@@ -277,24 +272,25 @@ export function IngestionSection() {
 			<div className="space-y-5">
 				<StatusBanner connection={connection} />
 
-				<div className="bg-card flex flex-col rounded-lg border">
-					<div className="flex items-start gap-3 px-4 pt-4 pb-3">
-						<div className="flex flex-col gap-1">
-							<h3 className="text-sm font-medium">Endpoint &amp; keys</h3>
-							<p className="text-muted-foreground text-xs">
-								Point your OTLP exporter at the endpoint and authenticate with an ingest key.
-							</p>
-						</div>
-						<div className="grow" />
-						<a
-							href={docsUrl("instrumentation")}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="text-muted-foreground hover:text-foreground font-mono text-[11px] whitespace-nowrap transition-colors"
-						>
-							Docs ↗
-						</a>
-					</div>
+				<Card className="overflow-hidden">
+					<CardHeader className="px-4 pt-4 pb-3">
+						<CardTitle render={<h3 />} className="text-sm font-medium">
+							Endpoint &amp; keys
+						</CardTitle>
+						<CardDescription className="text-xs">
+							Point your OTLP exporter at the endpoint and authenticate with an ingest key.
+						</CardDescription>
+						<CardAction>
+							<a
+								href={docsUrl("instrumentation")}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-muted-foreground hover:text-foreground font-mono text-[11px] whitespace-nowrap transition-colors"
+							>
+								Docs ↗
+							</a>
+						</CardAction>
+					</CardHeader>
 					<CredentialRow
 						label="OTLP endpoint"
 						badge="HTTP"
@@ -327,9 +323,9 @@ export function IngestionSection() {
 						onRegenerate={() => openRegenerateDialog("private")}
 						disabled={isBusy}
 					/>
-				</div>
+				</Card>
 
-				<div className="bg-card flex flex-col rounded-lg border">
+				<Card className="overflow-hidden">
 					<div className="flex flex-wrap items-start gap-x-6 gap-y-3 px-4 pt-4 pb-3">
 						<div className="flex min-w-[260px] flex-col gap-1">
 							<h3 className="text-sm font-medium whitespace-nowrap">
@@ -344,7 +340,7 @@ export function IngestionSection() {
 						</div>
 					</div>
 					<ConnectInstructions framework={framework} apiKey={connection.apiKey} variant="flush" />
-				</div>
+				</Card>
 
 				<RecommendedMappingsSection />
 
@@ -357,10 +353,10 @@ export function IngestionSection() {
 				title={`Regenerate ${regenerateKeyType === "public" ? "public" : "private"} key?`}
 				description={
 					<>
-						This action cannot be undone. All existing integrations using this key will stop working
-						immediately. You will need to update your{" "}
-						{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"} with the
-						new key.
+						This action cannot be undone. All existing integrations using this key will stop
+						working immediately. You will need to update your{" "}
+						{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"} with
+						the new key.
 					</>
 				}
 				confirmLabel="Regenerate key"

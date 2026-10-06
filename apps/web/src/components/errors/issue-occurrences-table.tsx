@@ -44,7 +44,7 @@ export function IssueOccurrencesTable({ traces }: IssueOccurrencesTableProps) {
 						</TableCell>
 						<TableCell>
 							<span className="inline-flex items-center gap-1.5">
-								<ServiceDot serviceName={trace.serviceName} className="size-1.5" />
+								<ServiceDot serviceName={trace.serviceName} size="sm" />
 								<span>{trace.serviceName}</span>
 							</span>
 						</TableCell>

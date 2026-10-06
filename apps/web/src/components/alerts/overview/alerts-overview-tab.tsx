@@ -17,7 +17,8 @@ import {
 	type AlertsStatusFilter,
 } from "@/components/alerts/overview/alerts-health-summary"
 import { RulesOverviewTable } from "@/components/alerts/overview/rules-overview-table"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
+import { MagnifierIcon } from "@/components/icons"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { getExitErrorMessage } from "@/lib/error-toast"
 import { needsAttention } from "@/lib/alerts/rule-status"
 import {
@@ -31,15 +32,8 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { AlertsOverviewModel, type AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
 import { unitflowRuntime } from "@/lib/models/runtime"
 import { retainedQuery } from "@/lib/services/common/atom-client"
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { ErrorState } from "@/components/common/error-state"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -285,26 +279,12 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 
 			<div className="space-y-4">
 				<div className="flex items-center gap-3">
-					<InputGroup className="flex-1 max-w-xs">
-						<InputGroupAddon>
-							<MagnifierIcon />
-						</InputGroupAddon>
-						<InputGroupInput
-							placeholder="Search rules..."
-							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
-						/>
-						{searchQuery && (
-							<InputGroupAddon align="inline-end">
-								<InputGroupButton
-									aria-label="Clear search"
-									onClick={() => setSearchQuery("")}
-								>
-									<XmarkIcon />
-								</InputGroupButton>
-							</InputGroupAddon>
-						)}
-					</InputGroup>
+					<SearchInput
+						className="flex-1 max-w-xs"
+						placeholder="Search rules..."
+						value={searchQuery}
+						onValueChange={setSearchQuery}
+					/>
 					{showCreatorFilter && (
 						<Select
 							items={creatorOptions}
@@ -346,34 +326,24 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 						serviceName={search.serviceName}
 					/>
 				) : filteredRules.length === 0 ? (
-					<Empty className="py-12">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<MagnifierIcon size={18} />
-							</EmptyMedia>
-							<EmptyTitle>No rules match your filters</EmptyTitle>
-							<EmptyDescription>
-								Try a different search term, creator, tag, or health filter.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								setSearchQuery("")
-								navigate({
-									search: (prev) => ({
-										...prev,
-										tags: undefined,
-										createdBy: undefined,
-										status: undefined,
-									}),
-								})
-							}}
-						>
-							Clear filters
-						</Button>
-					</Empty>
+					<FilteredEmpty
+						noun="rules"
+						title="No rules match your filters"
+						description="Try a different search term, creator, tag, or health filter."
+						icon={<MagnifierIcon size={18} />}
+						onClear={() => {
+							setSearchQuery("")
+							navigate({
+								search: (prev) => ({
+									...prev,
+									tags: undefined,
+									createdBy: undefined,
+									status: undefined,
+								}),
+							})
+						}}
+						className="py-12"
+					/>
 				) : (
 					<RulesOverviewTable
 						rules={filteredRules}

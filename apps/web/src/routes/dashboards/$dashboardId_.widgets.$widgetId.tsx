@@ -1,4 +1,5 @@
 import * as React from "react"
+import { errorMessage } from "@/lib/error-toast"
 import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router"
 import { Schema } from "effect"
 
@@ -79,7 +80,7 @@ function WidgetConfigurePage() {
 			// `onApply` is a fire-and-forget callback, so an uncaught rejection here
 			// would strand the user on the editor with no idea the save failed.
 			toastManager.add({
-				title: cause instanceof Error ? cause.message : "Couldn’t save this widget",
+				title: errorMessage(cause, "Couldn’t save this widget"),
 				type: "error",
 			})
 		} finally {

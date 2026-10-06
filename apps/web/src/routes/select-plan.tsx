@@ -10,6 +10,7 @@ import { hasLapsedPlan, hasSelectedPlan } from "@/lib/billing/plan-gating"
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
+import { previewLapsed } from "@/components/billing/subscription-ended-banner"
 
 const SelectPlanSearch = Schema.Struct({
 	redirect_url: Schema.optional(Schema.String),
@@ -21,14 +22,6 @@ export const Route = createFileRoute("/select-plan")({
 	component: SelectPlanPage,
 	validateSearch: Schema.toStandardSchemaV1(SelectPlanSearch),
 })
-
-// Dev-only escape hatch, mirroring `SubscriptionEndedBanner`'s: load the page
-// with `?subscription_ended_preview=1` to review the reactivation framing without
-// a lapsed Autumn customer. Compiled out of production builds.
-function previewLapsed(): boolean {
-	if (!import.meta.env.DEV || typeof window === "undefined") return false
-	return new URLSearchParams(window.location.search).get("subscription_ended_preview") === "1"
-}
 
 function resolveRedirectTarget(target: string | undefined): string {
 	if (!target) return "/"

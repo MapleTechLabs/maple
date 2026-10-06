@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { shortId } from "@maple/ui/lib/ids"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { GlobeIcon, ClockIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
@@ -27,10 +28,10 @@ export function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: n
 function StatusPill({ active }: { active: boolean }) {
 	if (!active) {
 		return (
-			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+			<Badge variant="muted" pill className="gap-1.5">
 				<StatusDot />
 				Ended
-			</span>
+			</Badge>
 		)
 	}
 	return <LivePill />

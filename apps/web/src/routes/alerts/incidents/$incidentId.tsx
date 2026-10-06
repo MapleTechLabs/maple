@@ -9,6 +9,7 @@ import {
 	type AlertContext,
 } from "@/components/chat/alert-context"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
@@ -92,17 +93,12 @@ function AlertIncidentPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<Empty>
-								<EmptyHeader>
-									<EmptyTitle>Incident not found</EmptyTitle>
-									<EmptyDescription>
-										It may have been resolved and pruned, or the link is stale.
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" render={<Link to="/alerts" />}>
-									Back to alerts
-								</Button>
-							</Empty>
+							<ResourceNotFound
+								title="Incident not found"
+								description="It may have been resolved and pruned, or the link is stale."
+								backLink={<Link to="/alerts" />}
+								backLabel="Back to alerts"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>

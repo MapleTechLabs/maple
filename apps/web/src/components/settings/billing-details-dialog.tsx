@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Cause, Exit } from "effect"
+import { toastExit } from "@/lib/error-toast"
 
 import { BillingAddress, type BillingProfile, UpdateBillingProfileRequest } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
@@ -21,7 +21,6 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { useAtomSet } from "@/lib/effect-atom"
 import { fieldOrNull } from "@/lib/billing/billing-profile"
@@ -78,16 +77,14 @@ export function BillingDetailsDialog({
 		})
 		setSaving(false)
 
-		if (Exit.isSuccess(exit)) {
-			toastManager.add({ title: "Billing details saved.", type: "success" })
+		if (
+			toastExit(exit, {
+				success: "Billing details saved.",
+				error: "Billing details could not be saved.",
+			})
+		) {
 			onOpenChange(false)
-			return
 		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "Billing details could not be saved.",
-			type: "error",
-		})
 	}
 
 	return (

@@ -1,4 +1,6 @@
-import { formatNumber } from "@maple/ui/lib/format"
+import { ErrorState } from "@/components/common/error-state"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -29,7 +31,7 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 	)
 
 	return (
-		<div className="flex flex-col gap-4 rounded-md border bg-card p-3">
+		<Panel className="gap-4 p-3">
 			<div className="space-y-2">
 				<div className="flex flex-wrap items-center gap-2">
 					<MetricTypeBadge type={summary.metricType} />
@@ -70,8 +72,7 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 			{summary.services.length > 0 && (
 				<div className="space-y-1.5">
 					<p className="text-xs text-muted-foreground">
-						Emitted by {summary.services.length} service
-						{summary.services.length !== 1 ? "s" : ""}
+						Emitted by {countLabel(summary.services.length, "service")}
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{summary.services.map((service) => (
@@ -87,8 +88,13 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 				<p className="text-xs text-muted-foreground">Attributes</p>
 				{Result.builder(keysResult)
 					.onInitial(() => <Skeleton className="h-12 w-full" />)
-					.onError(() => (
-						<p className="text-xs text-muted-foreground">Failed to load attribute keys.</p>
+					.onError((error) => (
+						<ErrorState
+							error={error}
+							title="Failed to load attribute keys"
+							variant="inline"
+							className="py-1"
+						/>
 					))
 					.onSuccess((response) =>
 						response.data.length === 0 ? (
@@ -113,6 +119,6 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 					)
 					.render()}
 			</div>
-		</div>
+		</Panel>
 	)
 }

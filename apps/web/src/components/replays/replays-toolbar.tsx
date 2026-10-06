@@ -1,4 +1,5 @@
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -49,10 +50,8 @@ export function ReplaysToolbar({
 			/>
 
 			<div
-				className={cn(
-					"flex flex-wrap items-center gap-2 transition-opacity",
-					waiting && "opacity-60",
-				)}
+				aria-busy={waiting || undefined}
+				className={cn("flex flex-wrap items-center gap-2", refreshingClass(waiting))}
 			>
 				<TriageChip
 					pressed={errorsOnly}

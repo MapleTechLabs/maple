@@ -4,10 +4,10 @@
 
 import { useCallback, useRef, useState, type ReactNode } from "react"
 
-import { ArrowRotateClockwiseIcon, ClockIcon, MagnifierIcon, XmarkIcon } from "./icons"
+import { ArrowRotateClockwiseIcon, ClockIcon } from "./icons"
 import { Button } from "./ui/button"
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "./ui/input-group"
 import { NativeSelect, NativeSelectOption } from "./ui/native-select"
+import { SearchInput } from "./ui/search-input"
 import { useDebouncedCallback } from "../hooks/use-debounced-callback"
 import { cn } from "../lib/utils"
 
@@ -101,23 +101,13 @@ export function ToolbarSearch({
 	)
 
 	return (
-		<InputGroup className={cn("max-w-sm", className)}>
-			<InputGroupAddon>
-				<MagnifierIcon />
-			</InputGroupAddon>
-			<InputGroupInput
-				value={value}
-				onChange={(e) => handleChange(e.target.value)}
-				placeholder={placeholder}
-			/>
-			{value && (
-				<InputGroupAddon align="inline-end">
-					<InputGroupButton aria-label="Clear search" onClick={() => handleChange("")}>
-						<XmarkIcon />
-					</InputGroupButton>
-				</InputGroupAddon>
-			)}
-		</InputGroup>
+		<SearchInput
+			size="default"
+			value={value}
+			onValueChange={handleChange}
+			placeholder={placeholder}
+			className={cn("max-w-sm", className)}
+		/>
 	)
 }
 

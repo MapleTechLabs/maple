@@ -1,10 +1,11 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { useMemo, useState } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -198,7 +199,7 @@ function HostList({
 	)
 
 	return (
-		<div className={cn("space-y-4 transition-opacity", waiting && "opacity-60")}>
+		<div className={cn("space-y-4", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			<HostSummaryBand
 				hosts={hosts}
 				referenceTime={referenceTime}
@@ -219,20 +220,15 @@ function HostList({
 				}
 			/>
 			{filtered.length === 0 ? (
-				<Empty className="py-12">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<MagnifierIcon size={16} />
-						</EmptyMedia>
-						<EmptyTitle>No hosts match</EmptyTitle>
-						<EmptyDescription>
-							Try a different name, or clear the search and scope to see every host.
-						</EmptyDescription>
-					</EmptyHeader>
-					<Button variant="outline" size="sm" onClick={onClear}>
-						Clear
-					</Button>
-				</Empty>
+				<FilteredEmpty
+					noun="hosts"
+					className="py-12"
+					icon={<MagnifierIcon size={16} />}
+					title="No hosts match"
+					description="Try a different name, or clear the search and scope to see every host."
+					onClear={onClear}
+					clearLabel="Clear"
+				/>
 			) : (
 				<HostTable hosts={filtered} waiting={waiting} />
 			)}

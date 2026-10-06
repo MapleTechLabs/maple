@@ -31,7 +31,7 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { AnomalyIncidentId, type AnomalyIncidentDocument, type ErrorIssueId } from "@maple/domain/http"
 
@@ -95,24 +95,18 @@ function AnomalyDetailPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<Empty>
-								<EmptyHeader>
-									<EmptyTitle>
-										{isIncidentNotFound(error)
-											? "Anomaly not found"
-											: "Failed to load anomaly"}
-									</EmptyTitle>
-									<EmptyDescription>
-										{isIncidentNotFound(error)
-											? "It may have been pruned, or the link is stale."
-											: (displayError(error).message ??
-												"Try refreshing or check API logs.")}
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" render={<Link to="/anomalies" />}>
-									Back to anomalies
-								</Button>
-							</Empty>
+							<ResourceNotFound
+								title={
+									isIncidentNotFound(error) ? "Anomaly not found" : "Failed to load anomaly"
+								}
+								description={
+									isIncidentNotFound(error)
+										? "It may have been pruned, or the link is stale."
+										: (displayError(error).message ?? "Try refreshing or check API logs.")
+								}
+								backLink={<Link to="/anomalies" />}
+								backLabel="Back to anomalies"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>

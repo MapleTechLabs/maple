@@ -1,4 +1,5 @@
 import { memo, useMemo, useRef } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	Handle,
 	Position,
@@ -521,7 +522,9 @@ interface LaneLabelData extends Record<string, unknown> {
 const LaneLabelNode = memo(function LaneLabelNode({ data }: NodeProps & { data: LaneLabelData }) {
 	return (
 		<div className="pointer-events-none w-[110px] text-xs">
-			<p className="font-medium text-[10px] text-primary uppercase tracking-wider">Turn {data.index}</p>
+			<Eyebrow as="p" className="text-primary">
+				Turn {data.index}
+			</Eyebrow>
 			<p className={cn("tabular-nums", data.failed ? "text-destructive" : "text-muted-foreground")}>
 				{formatDuration(data.durationMs)}
 			</p>

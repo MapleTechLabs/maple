@@ -3,6 +3,7 @@ import { useMemo } from "react"
 import type { VcsCommitRangeResponse } from "@maple/domain/http"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { pluralize } from "@maple/ui/lib/format"
 
 import { SectionCard } from "@/components/services/section-card"
 import { CommitAvatar, firstLine, isResolvableSha } from "@/components/vcs/commit-sha-hover-card"
@@ -157,7 +158,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 	const hidden = range.totalCount - range.commits.length
 	return (
 		<SectionCard
-			title={`What shipped · ${range.totalCount}${range.truncated ? "+" : ""} ${range.totalCount === 1 ? "commit" : "commits"}`}
+			title={`What shipped · ${range.totalCount}${range.truncated ? "+" : ""} ${pluralize(range.totalCount, "commit")}`}
 			action={action}
 		>
 			<div className="max-h-80 overflow-y-auto">
@@ -199,7 +200,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 				})}
 				{hidden > 0 ? (
 					<div className="border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground/70">
-						{hidden} older {hidden === 1 ? "commit" : "commits"} not shown
+						{hidden} older {pluralize(hidden, "commit")} not shown
 					</div>
 				) : null}
 			</div>

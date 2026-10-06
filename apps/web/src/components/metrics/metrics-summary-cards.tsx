@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatNumber } from "@maple/ui/lib/format"
 import { Result, useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
 
@@ -55,7 +56,7 @@ export function MetricsSummaryCards({
 			)
 
 			return (
-				<StatRail className={result.waiting ? "opacity-60" : undefined}>
+				<StatRail className={refreshingClass(result.waiting)}>
 					{cardConfig.map((card) => {
 						const data = summaryByType[card.key]
 						const isSelected = selectedType === card.key

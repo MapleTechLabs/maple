@@ -10,11 +10,10 @@ import type { ActionKind } from "./replay-player-context"
 export {
 	formatClock,
 	formatSessionDuration,
-	gradientFor,
-	hostFromUrl,
 	isSessionLive,
 	sessionDurationMs,
 } from "@maple/ui/lib/replay-format"
+export { gradientFor, hostFromUrl } from "@maple/ui/lib/replay"
 
 /** Marker dot colour by action kind, shared by the player and timeline tracks. */
 export const MARKER_STYLES: Record<ActionKind, string> = {

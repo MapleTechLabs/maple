@@ -9,7 +9,8 @@ import type { ServiceOperation } from "@/api/warehouse/service-operations"
 import { SectionCard } from "./section-card"
 import { callsPerSecond, serviceOperationsQueryInput, windowSeconds } from "./service-operations"
 import { ViewAllButton } from "./view-all-button"
-import { formatRate } from "./service-table-cells"
+import { formatThroughput } from "@maple/ui/lib/format"
+import { SampledValue } from "./sampled-value"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 
 const PANEL_LIMIT = 5
@@ -87,10 +88,14 @@ export function ServiceTopOperationsPanel({
 									{op.spanName}
 								</span>
 								<span className="relative flex shrink-0 items-center gap-3 font-mono text-[11.5px] tabular-nums">
-									<span className="text-foreground">
-										{op.estimatedSpanCount > op.spanCount ? "~" : ""}
-										{formatRate(callsPerSecond(op.estimatedSpanCount, seconds))}/s
-									</span>
+									<SampledValue
+										className="text-foreground"
+										estimated={op.estimatedSpanCount > op.spanCount}
+										value={formatThroughput(
+											callsPerSecond(op.estimatedSpanCount, seconds),
+											"/s",
+										)}
+									/>
 									<ErrorRateValue rate={op.errorRate} />
 									<LatencyValue ms={op.p95DurationMs} scale="p95" />
 								</span>

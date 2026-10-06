@@ -1,6 +1,7 @@
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option, Schema } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { Link } from "@tanstack/react-router"
 import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -11,6 +12,7 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { countLabel } from "@maple/ui/lib/format"
 
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { ErrorState } from "@/components/common/error-state"
@@ -30,6 +32,7 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 
 const TOKENS_URL = "https://railway.com/account/tokens"
 
@@ -61,15 +64,13 @@ function connectedToast(status: RailwayIntegrationStatus, mode: "connect" | "rot
 			status.environments.length === 0
 				? "This token can't see any projects yet."
 				: failed > 0
-					? `${plural(synced, "environment")} synced, ${failed} failed. The rows below say why.`
+					? `${countLabel(synced, "environment")} synced, ${failed} failed. The rows below say why.`
 					: queued === 0
-						? `Pulled the last hour of metrics for ${plural(synced, "environment")}.`
-						: `${plural(synced, "environment")} synced, ${queued} more within 5 minutes.`,
+						? `Pulled the last hour of metrics for ${countLabel(synced, "environment")}.`
+						: `${countLabel(synced, "environment")} synced, ${queued} more within 5 minutes.`,
 		type: "success" as const,
 	}
 }
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 function RailwayTokenForm({
 	mode,
@@ -130,9 +131,9 @@ function RailwayTokenForm({
 						Cancel
 					</Button>
 				) : null}
-				<Button type="submit" disabled={Option.isNone(request) || submitting}>
-					{submitting ? <Spinner size={14} /> : <RailwayIcon size={14} />}
-					{submitting ? "Connecting…" : mode === "rotate" ? "Update token" : "Connect Railway"}
+				<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
+					<RailwayIcon size={14} />
+					{mode === "rotate" ? "Update token" : "Connect Railway"}
 				</Button>
 			</div>
 			{submitting ? (
@@ -161,17 +162,15 @@ export function RailwayIntegrationCard() {
 	const sync = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwaySync"), {
 		mode: "promiseExit",
 	})
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["railwayIntegrationStatus"] }),
+		{ success: "Railway disconnected", error: "Failed to disconnect Railway" },
+	)
 	const [syncBusy, setSyncBusy] = useState(false)
 	const [rotating, setRotating] = useState(false)
 
-	const status = Result.builder(statusResult)
-		.onSuccess((s) => s)
-		.orElse(() =>
-			Result.isFailure(statusResult)
-				? Option.getOrNull(Option.map(statusResult.previousSuccess, (previous) => previous.value))
-				: null,
-		)
+	// Keep the last loaded status if a refetch fails.
+	const status = Option.getOrNull(AsyncResult.value(statusResult))
 
 	const queued = status?.connected && !status.authFailed ? unsyncedEnvironments(status) : 0
 	// Poll while environments are still waiting on their first sync so the rows land on their own.
@@ -187,17 +186,6 @@ export function RailwayIntegrationCard() {
 				title="Failed to load the Railway integration"
 				onRetry={refreshStatus}
 			/>
-		)
-	}
-
-	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({ reactivityKeys: ["railwayIntegrationStatus"] })
-		setDisconnectBusy(false)
-		toastManager.add(
-			Exit.isSuccess(result)
-				? { title: "Railway disconnected", type: "success" }
-				: { title: "Failed to disconnect Railway", type: "error" },
 		)
 	}
 
@@ -283,7 +271,7 @@ export function RailwayIntegrationCard() {
 					</div>
 					<p className="text-xs text-muted-foreground">
 						{status.workspaceNames ? `${status.workspaceNames} · ` : ""}
-						{plural(status.environments.length, "environment")}
+						{countLabel(status.environments.length, "environment")}
 						{status.lastSyncedAt !== null ? (
 							<>
 								{" · "}
@@ -309,8 +297,7 @@ export function RailwayIntegrationCard() {
 					) : (
 						<div className="flex flex-wrap gap-2">
 							<Button size="sm" render={<Link to="/infra/railway">View metrics</Link>} />
-							<Button size="sm" variant="outline" onClick={handleSync} disabled={syncBusy}>
-								{syncBusy ? <Spinner size={14} /> : null}
+							<Button size="sm" variant="outline" onClick={handleSync} loading={syncBusy}>
 								Sync now
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => setRotating(true)}>
@@ -320,9 +307,8 @@ export function RailwayIntegrationCard() {
 								size="sm"
 								variant="outline"
 								onClick={handleDisconnect}
-								disabled={disconnectBusy}
+								loading={disconnectBusy}
 							>
-								{disconnectBusy ? <Spinner size={14} /> : null}
 								Disconnect
 							</Button>
 						</div>

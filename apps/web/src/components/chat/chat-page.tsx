@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useState } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 import { useCopy } from "@maple/ui/hooks/use-copy"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
@@ -314,9 +315,9 @@ function SharedChatView({
 							<TruncatedText text={heading} className="text-sm font-medium leading-tight">
 								{heading}
 							</TruncatedText>
-							<span className="text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60 leading-tight">
+							<Eyebrow className="leading-tight text-sidebar-foreground/60">
 								Read-only · shared
-							</span>
+							</Eyebrow>
 						</div>
 						<Button
 							render={<Link to="/chat" search={{}} />}

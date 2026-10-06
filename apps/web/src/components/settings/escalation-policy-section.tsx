@@ -25,13 +25,11 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 
-import {
-	MultiSegmentedSelect,
-	type SegmentedOption,
-} from "@/components/common/segmented-select"
+import { MultiSegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
 import { DocsLink } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
 
 const CONFIDENCE_ANY = "any" as const
 
@@ -121,15 +119,13 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 		return (
 			<div className="max-w-2xl">
 				{Result.builder(policyResult)
-					.onError(() => (
-						<Card className="flex flex-row items-center justify-between gap-4 p-4">
-							<p className="text-muted-foreground text-sm">
-								Failed to load the escalation policy.
-							</p>
-							<Button size="sm" variant="outline" onClick={() => refreshPolicy()}>
-								Retry
-							</Button>
-						</Card>
+					.onError((error) => (
+						<ErrorState
+							error={error}
+							title="Failed to load the escalation policy"
+							variant="row"
+							onRetry={() => refreshPolicy()}
+						/>
 					))
 					.orElse(() => (
 						<Skeleton className="h-40 w-full rounded-lg" />
@@ -249,8 +245,8 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 					.render()}
 
 				<div className="flex justify-end border-t border-border/60 pt-3">
-					<Button size="sm" onClick={save} disabled={!isAdmin || isSaving}>
-						{isSaving ? "Saving…" : "Save policy"}
+					<Button size="sm" onClick={save} loading={isSaving} disabled={!isAdmin}>
+						Save policy
 					</Button>
 				</div>
 			</Card>

@@ -6,14 +6,13 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
+import { MapleRegion as MapleRegionSchema } from "@maple/domain/organization-regions"
 
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { OptionCard } from "@/components/common/option-card"
 import { RegionFlag } from "@/components/region/region-flag"
 import { currentRegion, type MapleRegion, regionAppUrl } from "@/lib/region"
-import { DrawnCheck } from "./drawn-check"
-
-const REGION_OPTIONS: ReadonlyArray<MapleRegion> = ["us", "eu"]
 
 /** Card copy and the colour a selected card takes, lifted from its flag so it reads on dark. */
 const REGION_CARDS = {
@@ -97,72 +96,51 @@ export function StepRegion() {
 
 				<fieldset className="grid min-w-0 gap-3 sm:grid-cols-2">
 					<legend className="sr-only">Data region</legend>
-					{REGION_OPTIONS.map((option) => {
+					{MapleRegionSchema.literals.map((option) => {
 						const active = region === option
 						const card = REGION_CARDS[option]
 						return (
-							<label key={option} className="group relative cursor-pointer">
-								<input
-									type="radio"
-									name="onboarding-region"
-									className="peer sr-only"
-									checked={active}
-									disabled={isSaving}
-									aria-label={card.name}
-									onChange={() => setRegion(option)}
-								/>
-								<div
-									style={{
-										borderColor: active ? card.accent : undefined,
-										backgroundColor: active ? `${card.accent}0F` : undefined,
-									}}
-									className={cn(
-										"flex h-full flex-col gap-5 rounded-xl border p-5 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-										!active &&
-											"border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]",
-									)}
-								>
-									<div className="flex items-start justify-between">
-										<RegionFlag
-											region={option}
-											className={cn(
-												"h-12 w-18 transition-[opacity,filter] duration-150 motion-reduce:transition-none",
-												!active &&
-													"opacity-70 saturate-50 group-hover:opacity-100 group-hover:saturate-100",
-											)}
-										/>
-										<DrawnCheck
-											checked={active}
-											className={active ? card.check : "opacity-0"}
-										/>
-									</div>
-									<div className="space-y-1">
-										<span className="block text-base font-semibold tracking-tight">
-											{card.name}
-										</span>
-										<span className="block text-sm text-muted-foreground">
-											{card.place}
-										</span>
-									</div>
-									<div className="mt-auto flex">
+							<OptionCard
+								key={option}
+								type="radio"
+								name="onboarding-region"
+								layout="stacked"
+								checked={active}
+								disabled={isSaving}
+								onChange={() => setRegion(option)}
+								label={card.name}
+								title={card.name}
+								description={card.place}
+								accent={card.accent}
+								checkClassName={card.check}
+								media={
+									<RegionFlag
+										region={option}
+										className={cn(
+											"h-12 w-18 transition-[opacity,filter] duration-150 motion-reduce:transition-none",
+											!active &&
+												"opacity-70 saturate-50 group-hover:opacity-100 group-hover:saturate-100",
+										)}
+									/>
+								}
+								footer={
+									<span
+										className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+										style={{
+											color: active ? card.accent : undefined,
+											borderColor: active ? `${card.accent}66` : undefined,
+											backgroundColor: active ? `${card.accent}14` : undefined,
+										}}
+									>
 										<span
-											className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-											style={{
-												color: active ? card.accent : undefined,
-												borderColor: active ? `${card.accent}66` : undefined,
-												backgroundColor: active ? `${card.accent}14` : undefined,
-											}}
-										>
-											<span
-												aria-hidden="true"
-												className="size-1.5 rounded-full"
-												style={{ backgroundColor: card.accent }}
-											/>
-											{card.residency}
-										</span>
-									</div>
-								</div>
-							</label>
+											aria-hidden="true"
+											className="size-1.5 rounded-full"
+											style={{ backgroundColor: card.accent }}
+										/>
+										{card.residency}
+									</span>
+								}
+							/>
 						)
 					})}
 				</fieldset>

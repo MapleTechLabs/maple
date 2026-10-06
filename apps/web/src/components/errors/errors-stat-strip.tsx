@@ -1,3 +1,5 @@
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -45,9 +47,11 @@ export function ErrorsStatStrip({ filters }: { filters: GetErrorsSummaryInput })
 
 				return (
 					<div
-						className={`flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs ${
-							result.waiting ? "opacity-60" : ""
-						}`}
+						className={cn(
+							"flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs",
+							refreshingClass(result.waiting),
+						)}
+						aria-busy={result.waiting || undefined}
 					>
 						{stats.map((stat) => (
 							<span key={stat.label} className="flex items-baseline gap-1.5">

@@ -1,4 +1,6 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
 
@@ -282,7 +284,10 @@ function ZoneDetailContent({
 			const errorRate = requests > 0 ? errors5xx / requests : 0
 
 			return (
-				<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+				<div
+					className={cn("space-y-6", refreshingClass(result.waiting))}
+					aria-busy={result.waiting || undefined}
+				>
 					<StatRail>
 						<StatRailItem eyebrow="Edge requests" value={formatNumber(requests)} compact />
 						<StatRailItem

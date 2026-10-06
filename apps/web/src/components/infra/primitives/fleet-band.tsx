@@ -12,9 +12,10 @@
 // measure) and this draws it.
 
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import type { Tone } from "../severity-tokens"
+import { VALUE_TONE, type Tone } from "../severity-tokens"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 /** A band that stands alone on a page body rather than flush under a shell's header. */
@@ -53,13 +54,7 @@ interface FleetBandProps<S extends string> {
 	className?: string
 }
 
-const CELL_VALUE_TONE: Record<Tone | "info", string> = {
-	neutral: "text-foreground",
-	ok: "text-foreground",
-	info: TONE_TEXT.info,
-	warn: TONE_TEXT.warn,
-	crit: TONE_TEXT.crit,
-} satisfies Record<Tone | "info", string>
+const CELL_VALUE_TONE = { ...VALUE_TONE, info: TONE_TEXT.info } satisfies Record<Tone | "info", string>
 
 export function FleetBand<S extends string>({
 	total,
@@ -69,7 +64,7 @@ export function FleetBand<S extends string>({
 	cells,
 	activeScope,
 	onScopeChange,
-	waiting,
+	waiting = false,
 	className,
 }: FleetBandProps<S>) {
 	const drawn = segments.filter((segment) => segment.count > 0)
@@ -78,9 +73,10 @@ export function FleetBand<S extends string>({
 		<div
 			className={cn(
 				"flex flex-col border-b bg-background md:flex-row md:items-stretch",
-				waiting && "opacity-60 transition-opacity",
+				refreshingClass(waiting),
 				className,
 			)}
+			aria-busy={waiting || undefined}
 		>
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<span className="flex items-baseline gap-1.5">

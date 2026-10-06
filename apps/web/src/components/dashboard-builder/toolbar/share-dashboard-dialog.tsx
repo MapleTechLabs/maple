@@ -26,6 +26,7 @@ import {
 } from "@/components/icons"
 import { Alert } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { useCopy } from "@maple/ui/hooks/use-copy"
 import {
 	Dialog,
 	DialogClose,
@@ -290,29 +291,19 @@ export function ShareLinkRow({
 	replaceWarning: string
 }) {
 	const [confirmingReplace, setConfirmingReplace] = useState(false)
-	const [copied, setCopied] = useState(false)
 	const [copyBlocked, setCopyBlocked] = useState(false)
-	const resetCopied = useRef<ReturnType<typeof setTimeout>>(undefined)
 	const field = useRef<HTMLInputElement>(null)
 
-	// Browsers deny `writeText` outside a secure context or when the clipboard
-	// permission is refused, and the promise rejects. Without this the button just
-	// sat there — the one thing the dialog exists to hand over, silently withheld.
-	// Falling back to selecting the field leaves ⌘C as a working escape.
-	const copy = () => {
-		void navigator.clipboard.writeText(url).then(
-			() => {
-				setCopyBlocked(false)
-				setCopied(true)
-				clearTimeout(resetCopied.current)
-				resetCopied.current = setTimeout(() => setCopied(false), 2000)
-			},
-			() => {
-				setCopyBlocked(true)
-				field.current?.select()
-			},
-		)
-	}
+	// When even the fallback write fails, select the field so ⌘C still works.
+	const { copy, copied } = useCopy({
+		label: "Share link",
+		toast: false,
+		onCopy: () => setCopyBlocked(false),
+		onError: () => {
+			setCopyBlocked(true)
+			field.current?.select()
+		},
+	})
 
 	return (
 		<div className="space-y-2">
@@ -330,7 +321,7 @@ export function ShareLinkRow({
 						className="min-w-0 flex-1 truncate bg-transparent outline-none"
 					/>
 				</div>
-				<Button size="sm" onClick={copy}>
+				<Button size="sm" onClick={() => void copy(url)}>
 					{copied ? <CheckIcon /> : <CopyIcon />}
 					{copied ? "Copied" : "Copy"}
 				</Button>
@@ -351,7 +342,6 @@ export function ShareLinkRow({
 						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>
 					</p>
 					<div className="flex justify-end gap-2">
-
 						<Button variant="ghost" size="xs" onClick={() => setConfirmingReplace(false)}>
 							Cancel
 						</Button>

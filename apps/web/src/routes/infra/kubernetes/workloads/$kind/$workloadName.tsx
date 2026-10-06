@@ -1,11 +1,13 @@
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
@@ -106,20 +108,12 @@ function WorkloadDetailPage() {
 		.orElse(() => null)
 
 	const rightPanel = summary ? (
-		<Card>
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center gap-2 text-sm font-medium">
-					<GridIcon size={14} className="text-muted-foreground" />
-					Resource attributes
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-1">
-				<DetailRail.MetaRow label="kind" value={KIND_LABEL[params.kind]} />
-				<DetailRail.MetaRow label={`k8s.${params.kind}.name`} value={summary.workloadName} />
-				<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
-				<DetailRail.MetaRow label="pods" value={String(summary.podCount)} />
-			</CardContent>
-		</Card>
+		<ResourceAttributesCard icon={GridIcon}>
+			<DetailRail.MetaRow label="kind" value={KIND_LABEL[params.kind]} />
+			<DetailRail.MetaRow label={`k8s.${params.kind}.name`} value={summary.workloadName} />
+			<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
+			<DetailRail.MetaRow label="pods" value={String(summary.podCount)} />
+		</ResourceAttributesCard>
 	) : null
 
 	return (
@@ -185,9 +179,7 @@ function WorkloadDetailPage() {
 						/>
 					</StatRail>
 				) : (
-					<EmptyMessage dashed className="py-12">
-						No metrics arrived for this workload in the selected window.
-					</EmptyMessage>
+					<NoMetricsMessage noun="workload" />
 				)}
 
 				<div className="space-y-3">
@@ -222,7 +214,7 @@ function WorkloadDetailPage() {
 				</div>
 
 				<div className="space-y-3">
-					<h3 className="text-sm font-medium">Pods</h3>
+					<SectionHeading as="h3" title="Pods" />
 					{Result.builder(podsResult)
 						.onInitial(() => <Skeleton className="h-28 w-full rounded-md" />)
 						.onError((error) => (

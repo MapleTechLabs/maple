@@ -10,7 +10,8 @@ import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import type { ValueUnit } from "@/components/dashboard-builder/types"
 import { Switch } from "@maple/ui/components/ui/switch"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
 import { GripDotsIcon } from "@/components/icons"
 import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
@@ -24,6 +25,8 @@ import {
 } from "@/lib/query-builder/list-widget-config"
 import { WarningList } from "./warning-list"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+
+const DATA_SOURCE_OPTIONS = LIST_DATA_SOURCES.map((ds) => ({ value: ds, label: LIST_DATA_SOURCE_LABEL[ds] }))
 
 // Props interface removed — ListConfigPanel now reads from context
 
@@ -358,40 +361,28 @@ export function ListConfigPanel() {
 				<Eyebrow variant="label" as="p">
 					Data Source
 				</Eyebrow>
-				<ToggleGroup
-					variant="outline"
+				<SegmentedSelect
+					options={DATA_SOURCE_OPTIONS}
+					value={listDataSource}
+					onChange={handleDataSourceChange}
 					size="sm"
 					aria-label="Data source"
-					value={[listDataSource]}
-					onValueChange={(values) => {
-						const next = LIST_DATA_SOURCES.find((ds) => ds === values[0])
-						if (next) handleDataSourceChange(next)
-					}}
-				>
-					{LIST_DATA_SOURCES.map((ds) => (
-						<ToggleGroupItem key={ds} value={ds} className="px-4 text-xs">
-							{LIST_DATA_SOURCE_LABEL[ds]}
-						</ToggleGroupItem>
-					))}
-				</ToggleGroup>
+					className="*:px-4 *:text-xs"
+				/>
 			</div>
 
 			{/* Root spans only (traces only) */}
 			{listDataSource === "traces" && (
-				<div className="flex items-center justify-between">
-					<div className="space-y-0.5">
-						<Eyebrow variant="label" as="p">
-							Root spans only
-						</Eyebrow>
-						<p className="text-[10px] text-muted-foreground">
-							Uses pre-aggregated data for faster queries
-						</p>
-					</div>
-					<Switch
-						checked={rootOnly}
-						onCheckedChange={(checked) => onChange({ listRootOnly: checked })}
-					/>
-				</div>
+				<SettingRow
+					label="Root spans only"
+					description="Uses pre-aggregated data for faster queries"
+					control={
+						<Switch
+							checked={rootOnly}
+							onCheckedChange={(checked) => onChange({ listRootOnly: checked })}
+						/>
+					}
+				/>
 			)}
 
 			{/* Where clause */}

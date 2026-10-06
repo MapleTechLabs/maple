@@ -30,7 +30,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { logKey, type LocalLog } from "../lib/log-shape"
 import { hrefFor } from "../lib/router"
 import { formatLocalDateTime, formatUtcTitle } from "../lib/time"
-import { ErrorSection } from "@maple/ui/components/error-section"
+import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { highlightJson } from "../lib/highlight"
 
@@ -247,24 +247,6 @@ function LogMetaStrip({
 				<CopyButton value={() => buildLogJsonPayload(log)} label="Log JSON" iconSize={13} tooltip />
 			</div>
 		</div>
-	)
-}
-
-function getErrorMessage(log: LocalLog): string {
-	return log.logAttributes["exception.message"] ?? log.logAttributes["error.message"] ?? log.body ?? ""
-}
-
-function LogErrorBanner({ log }: { log: LocalLog }) {
-	const message = getErrorMessage(log)
-	if (!message) return null
-
-	return (
-		<ErrorSection
-			message={message}
-			title={log.severityText.toUpperCase() === "FATAL" ? "Fatal" : "Error"}
-			badge={log.logAttributes["exception.type"] ?? log.logAttributes["error.type"]}
-			prompt={{ serviceName: log.serviceName, attributes: log.logAttributes }}
-		/>
 	)
 }
 

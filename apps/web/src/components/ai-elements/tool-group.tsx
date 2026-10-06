@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react"
-import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
+import { CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
-import { cn } from "@maple/ui/lib/utils"
 import { RunningClock, TranscriptRowButton } from "./tool"
 import { DotLoader } from "./dot-loader"
 import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
@@ -127,12 +127,7 @@ export function ToolGroup({
 					</>
 				)}
 				{running ? <RunningClock /> : null}
-				<ChevronDownIcon
-					className={cn(
-						"size-3 shrink-0 text-muted-foreground/60 transition-transform",
-						open ? "rotate-0" : "-rotate-90",
-					)}
-				/>
+				<DisclosureChevron open={open} className="size-3 text-muted-foreground/60" />
 			</TranscriptRowButton>
 			{open && (
 				<div className="ms-[0.9375rem] max-h-[55vh] overflow-y-auto border-s border-border/60 py-0.5 ps-1.5">

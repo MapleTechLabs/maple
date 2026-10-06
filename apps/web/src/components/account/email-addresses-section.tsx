@@ -32,13 +32,7 @@ import {
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import {
-	CircleCheckIcon,
-	DotsVerticalIcon,
-	EnvelopeIcon,
-	PlusIcon,
-	TrashIcon,
-} from "@/components/icons"
+import { CircleCheckIcon, DotsVerticalIcon, EnvelopeIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { CodeField } from "@/components/account/code-field"
@@ -149,8 +143,8 @@ export function EmailAddressesSection() {
 				<CardHeader>
 					<CardTitle>Email Addresses</CardTitle>
 					<CardDescription>
-						Your primary address receives sign-in codes, alerts and digests. Others can be used
-						to sign in.
+						Your primary address receives sign-in codes, alerts and digests. Others can be used to
+						sign in.
 					</CardDescription>
 					<CardAction>
 						<Button size="sm" onClick={() => setAdd({ step: "email", value: "" })}>
@@ -284,9 +278,10 @@ export function EmailAddressesSection() {
 								</Button>
 								<Button
 									onClick={() => void handleVerify(add.code)}
-									disabled={isBusy || add.code.length < 6}
+									loading={isBusy}
+									disabled={add.code.length < 6}
 								>
-									{isBusy ? "Verifying..." : "Verify"}
+									Verify
 								</Button>
 							</DialogFooter>
 						</>
@@ -322,9 +317,10 @@ export function EmailAddressesSection() {
 								</Button>
 								<Button
 									onClick={handleCreate}
-									disabled={isBusy || add.step !== "email" || add.value.trim().length === 0}
+									loading={isBusy}
+									disabled={add.step !== "email" || add.value.trim().length === 0}
 								>
-									{isBusy ? "Sending..." : "Send code"}
+									Send code
 								</Button>
 							</DialogFooter>
 						</>

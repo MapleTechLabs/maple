@@ -1,7 +1,7 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState } from "react"
 import { Exit, Option } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 
@@ -122,8 +122,13 @@ function WorkspaceSettings({
 				</div>
 			))}
 			<div>
-				<Button size="sm" variant="outline" onClick={handleSave} disabled={disabled || !dirty}>
-					{saving ? <Spinner size={14} /> : null}
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={handleSave}
+					disabled={disabled || !dirty}
+					loading={saving}
+				>
 					Save settings
 				</Button>
 			</div>
@@ -199,9 +204,8 @@ function ChatIdentityRow({
 					size="sm"
 					variant="outline"
 					onClick={identity === undefined ? handleLink : handleUnlink}
-					disabled={busy}
+					loading={busy}
 				>
-					{busy ? <Spinner size={14} /> : null}
 					{identity === undefined ? "Link your account" : "Unlink"}
 				</Button>
 			</ItemActions>
@@ -237,18 +241,12 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 
 	// A refetch that fails must not wipe a card that already loaded — the list is
 	// refetched after every save and disconnect.
-	const status = Result.builder(listResult)
-		.onSuccess((response) => response.data.find((entry) => entry.id === connector) ?? null)
-		.orElse(() =>
-			Result.isFailure(listResult)
-				? Option.getOrNull(
-						Option.map(
-							listResult.previousSuccess,
-							(previous) => previous.value.data.find((entry) => entry.id === connector) ?? null,
-						),
-					)
-				: null,
-		)
+	const status = Option.getOrNull(
+		Option.map(
+			AsyncResult.value(listResult),
+			(response) => response.data.find((entry) => entry.id === connector) ?? null,
+		),
+	)
 
 	if (manifest === undefined) return null
 	// Bound once for the handlers below: a function declaration is hoisted, so
@@ -325,8 +323,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				<IntegrationEmptyCard>
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
-					<Button onClick={handleInstall} disabled={connectDisabled}>
-						{busy === "install" ? <Spinner size={16} /> : <MonoIcon size={16} />}
+					<Button onClick={handleInstall} disabled={connectDisabled} loading={busy === "install"}>
+						<MonoIcon size={16} />
 						Add to {manifest.name}
 					</Button>
 					<IntegrationEmptyFooter>
@@ -393,8 +391,13 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				<ChatIdentityRow connector={connector} platform={platform} identity={status.identity} />
 			) : null}
 			<div>
-				<Button size="sm" variant="outline" onClick={handleInstall} disabled={connectDisabled}>
-					{busy === "install" ? <Spinner size={14} /> : null}
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={handleInstall}
+					disabled={connectDisabled}
+					loading={busy === "install"}
+				>
 					Add another workspace
 				</Button>
 			</div>

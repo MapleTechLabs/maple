@@ -1,4 +1,6 @@
 import { SectionHeader } from "@/components/layout/section-header"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit } from "effect"
@@ -19,14 +21,7 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	Empty,
-	EmptyContent,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyMedia,
-	EmptyTitle,
-} from "@maple/ui/components/ui/empty"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	ArrowRotateAnticlockwiseIcon,
@@ -50,7 +45,6 @@ export const Route = createFileRoute("/recommendations/$recommendationKey")({
 })
 
 const INGESTION_HREF = "/settings?tab=ingestion"
-const MONO = "font-mono text-[0.92em] text-muted-foreground"
 
 type IssueKind = V2Recommendation["kind"]
 type IssueStatus = V2Recommendation["status"]
@@ -90,9 +84,9 @@ function recSentence(issue: V2Recommendation) {
 		return (
 			<>
 				<span className="text-foreground font-medium">Standardize on</span>{" "}
-				<code className={MONO}>{issue.canonical_key}</code>
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 				<span className="text-muted-foreground"> — spans also emit </span>
-				<code className={MONO}>{issue.source_key}</code>
+				<InlineCode variant="plain">{issue.source_key}</InlineCode>
 			</>
 		)
 	}
@@ -100,15 +94,16 @@ function recSentence(issue: V2Recommendation) {
 		return (
 			<>
 				<span className="text-foreground font-medium">Rename non-conforming key</span>{" "}
-				<code className={MONO}>{issue.source_key}</code>
+				<InlineCode variant="plain">{issue.source_key}</InlineCode>
 			</>
 		)
 	}
 	return (
 		<>
 			<span className="text-foreground font-medium">Rename</span>{" "}
-			<code className={MONO}>{issue.source_key}</code> <span className="text-muted-foreground">→</span>{" "}
-			<code className={MONO}>{issue.canonical_key}</code>
+			<InlineCode variant="plain">{issue.source_key}</InlineCode>{" "}
+			<span className="text-muted-foreground">→</span>{" "}
+			<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 		</>
 	)
 }
@@ -285,27 +280,27 @@ function Summary({ issue }: { issue: V2Recommendation }) {
 	if (issue.kind === "double-emission") {
 		body = (
 			<>
-				Your spans emit both <code className={MONO}>{issue.source_key}</code> and{" "}
-				<code className={MONO}>{issue.canonical_key}</code>. Standardize on{" "}
-				<code className={MONO}>{issue.canonical_key}</code> in your SDK — an ingest mapping can't
-				merge them because the canonical key already exists on your spans.
+				Your spans emit both <InlineCode variant="plain">{issue.source_key}</InlineCode> and{" "}
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode>. Standardize on{" "}
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode> in your SDK — an ingest mapping
+				can't merge them because the canonical key already exists on your spans.
 			</>
 		)
 	} else if (issue.kind === "naming") {
 		body = (
 			<>
-				<code className={MONO}>{issue.source_key}</code> doesn't follow OpenTelemetry's lowercase{" "}
-				<code className={MONO}>dotted.snake_case</code> convention. Rename it where your spans are
-				created so it conforms to the semantic conventions.
+				<InlineCode variant="plain">{issue.source_key}</InlineCode> doesn't follow OpenTelemetry's
+				lowercase <InlineCode variant="plain">dotted.snake_case</InlineCode> convention. Rename it
+				where your spans are created so it conforms to the semantic conventions.
 			</>
 		)
 	} else {
 		body = (
 			<>
-				<code className={MONO}>{issue.source_key}</code> is a deprecated or non-conforming
+				<InlineCode variant="plain">{issue.source_key}</InlineCode> is a deprecated or non-conforming
 				OpenTelemetry attribute key. Maple can rewrite it to{" "}
-				<code className={MONO}>{issue.canonical_key}</code> at ingest time so newly ingested spans use
-				the current semantic-convention name.
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode> at ingest time so newly
+				ingested spans use the current semantic-convention name.
 			</>
 		)
 	}
@@ -369,9 +364,10 @@ function CautionCallout({ issue, isApplyable }: { issue: V2Recommendation; isApp
 		isApplyable && issue.canonical_key ? (
 			<>
 				Applying creates an ingest mapping that copies{" "}
-				<code className={MONO}>{issue.source_key}</code> →{" "}
-				<code className={MONO}>{issue.canonical_key}</code> on newly ingested spans. Existing spans
-				aren't rewritten, and the mapping never overwrites a target that already exists.
+				<InlineCode variant="plain">{issue.source_key}</InlineCode> →{" "}
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode> on newly ingested spans.
+				Existing spans aren't rewritten, and the mapping never overwrites a target that already
+				exists.
 			</>
 		) : (
 			<>
@@ -429,11 +425,11 @@ function SdkFixBlock({ issue }: { issue: V2Recommendation }) {
 			<SectionHeader label="How to fix" />
 			<div className="rounded-md border bg-muted/40 px-4 py-3">
 				<p className="text-sm leading-relaxed text-muted-foreground">
-					Rename <code className={MONO}>{issue.source_key}</code>
+					Rename <InlineCode variant="plain">{issue.source_key}</InlineCode>
 					{issue.canonical_key ? (
 						<>
 							{" "}
-							to <code className={MONO}>{issue.canonical_key}</code>
+							to <InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 						</>
 					) : (
 						<> to a lowercase, dotted semantic-convention key</>
@@ -627,26 +623,14 @@ function ErrorShell({ message }: { message: string }) {
 function InactiveShell() {
 	return (
 		<ShellLayout>
-			<Empty>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<PulseIcon className="text-muted-foreground" />
-					</EmptyMedia>
-					<EmptyTitle>Recommendation not found</EmptyTitle>
-					<EmptyDescription>
-						This recommendation isn't in your list anymore. It may have resolved on its own.
-					</EmptyDescription>
-				</EmptyHeader>
-				<EmptyContent>
-					<Button
-						variant="outline"
-						size="sm"
-						render={<Link to="/settings" search={{ tab: "ingestion" }} />}
-					>
-						Back to recommendations
-					</Button>
-				</EmptyContent>
-			</Empty>
+			<ResourceNotFound
+				className=""
+				icon={<PulseIcon className="text-muted-foreground" />}
+				title="Recommendation not found"
+				description="This recommendation isn't in your list anymore. It may have resolved on its own."
+				backLink={<Link to="/settings" search={{ tab: "ingestion" }} />}
+				backLabel="Back to recommendations"
+			/>
 		</ShellLayout>
 	)
 }

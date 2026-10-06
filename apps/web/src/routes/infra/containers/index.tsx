@@ -1,4 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -283,9 +285,8 @@ function ContainersPage() {
 
 										return (
 											<div
-												className={`space-y-4 transition-opacity ${
-													result.waiting ? "opacity-60" : ""
-												}`}
+												className={cn("space-y-4", refreshingClass(result.waiting))}
+												aria-busy={result.waiting || undefined}
 											>
 												<SearchToolbar
 													value={searchText}

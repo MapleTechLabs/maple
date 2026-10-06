@@ -5,7 +5,7 @@
 
 import type { LogsListOutput } from "@maple/query-engine/ch"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
-import { lookup } from "./lookup"
+import { severityRank } from "@maple/ui/lib/severity"
 
 export interface LocalLog {
 	timestamp: string
@@ -41,20 +41,7 @@ export function logKey(log: LocalLog): string {
 	return `${log.timestamp}|${log.serviceName}|${log.traceId}|${log.spanId}|${log.recordIdentity}`
 }
 
-const SEVERITY_RANK = {
-	FATAL: 0,
-	CRITICAL: 0,
-	ERROR: 1,
-	WARN: 2,
-	WARNING: 2,
-	INFO: 3,
-	DEBUG: 4,
-	TRACE: 5,
-} as const satisfies Record<string, number>
-
 /** Most severe first; unknown levels after the known ones, alphabetically. */
 export function compareSeverity(a: string, b: string): number {
-	const rankA = lookup(SEVERITY_RANK, a.toUpperCase()) ?? 99
-	const rankB = lookup(SEVERITY_RANK, b.toUpperCase()) ?? 99
-	return rankA - rankB || a.localeCompare(b)
+	return severityRank(a) - severityRank(b) || a.localeCompare(b)
 }

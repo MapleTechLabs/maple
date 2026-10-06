@@ -40,6 +40,15 @@ export function useIntegrationConnect(): IntegrationConnect | null {
 	return use(IntegrationConnectContext)
 }
 
+/** For cards that only render inside an `IntegrationConnectProvider`. */
+export function useRequiredIntegrationConnect(component: string): IntegrationConnect {
+	const connect = use(IntegrationConnectContext)
+	if (connect === null) {
+		throw new Error(`${component} must be rendered inside IntegrationConnectProvider`)
+	}
+	return connect
+}
+
 export function IntegrationConnectProvider({
 	integration,
 	children,

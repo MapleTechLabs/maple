@@ -12,6 +12,7 @@ import {
 	formatLoad,
 	formatNumber,
 	formatPercent,
+	formatRate,
 	formatRatePerHour,
 	formatStorageBytes,
 	formatUptime,
@@ -183,5 +184,15 @@ describe("formatRatePerHour", () => {
 		expect(formatRatePerHour(2.34)).toBe("2.3× an hour")
 		expect(formatRatePerHour(0.5)).toBe("12× a day")
 		expect(formatRatePerHour(0.01)).toBe("1.7× a week")
+	})
+})
+
+describe("formatRate", () => {
+	it("reads at the precision a rate is compared at", () => {
+		expect(formatRate(0)).toBe("0")
+		expect(formatRate(0.0123)).toBe("0.012")
+		expect(formatRate(12.3456)).toBe("12.3")
+		expect(formatRate(123.4)).toBe("123")
+		expect(formatRate(1234)).toBe("1.2K")
 	})
 })

@@ -6,7 +6,7 @@ import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Textarea } from "@maple/ui/components/ui/textarea"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	DEFAULT_HEATMAP_COLOR_SCALE,
@@ -76,35 +76,26 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 	)
 }
 
-/** A recessed track of mutually exclusive options — the rail's segmented control. */
+/** The rail's full-width segmented control: equal-width segments in small type. */
 function Segments<T extends string>({
 	options,
 	value,
 	onSelect,
 	className,
 }: {
-	options: ReadonlyArray<{ value: T; label: string }>
+	options: ReadonlyArray<SegmentedOption<T>>
 	value: T
 	onSelect: (next: T) => void
 	className?: string
 }) {
 	return (
-		<ToggleGroup
-			variant="outline"
+		<SegmentedSelect
+			options={options}
+			value={value}
+			onChange={onSelect}
 			size="sm"
-			value={[value]}
-			onValueChange={(values) => {
-				const next = options.find((option) => option.value === values[0])
-				if (next) onSelect(next.value)
-			}}
-			className={cn("w-full", className)}
-		>
-			{options.map((option) => (
-				<ToggleGroupItem key={option.value} value={option.value} className="flex-1 text-xs">
-					{option.label}
-				</ToggleGroupItem>
-			))}
-		</ToggleGroup>
+			className={cn("w-full *:flex-1 *:text-xs", className)}
+		/>
 	)
 }
 
@@ -172,22 +163,14 @@ function TypePicker() {
 		<Field label="Type">
 			{/* Three columns, not four: "Histogram" overflows a quarter of the
 			    272px rail and collides with its neighbour. */}
-			<ToggleGroup
-				variant="outline"
+			<SegmentedSelect
+				options={PANEL_TYPES}
+				value={panelType}
+				onChange={(next) => set(fromPanelType(next, state.chartId))}
 				size="sm"
-				value={[panelType]}
-				onValueChange={(values) => {
-					const next = PANEL_TYPES.find((option) => option.value === values[0])
-					if (next) set(fromPanelType(next.value, state.chartId))
-				}}
-				className="grid w-full grid-cols-3"
-			>
-				{PANEL_TYPES.map((option) => (
-					<ToggleGroupItem key={option.value} value={option.value} className="text-xs">
-						{option.label}
-					</ToggleGroupItem>
-				))}
-			</ToggleGroup>
+				aria-label="Panel type"
+				className="grid w-full grid-cols-3 *:text-xs"
+			/>
 		</Field>
 	)
 }

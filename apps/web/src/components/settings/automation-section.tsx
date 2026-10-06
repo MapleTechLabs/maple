@@ -129,8 +129,8 @@ function PolicySimulator() {
 					</SimulatorField>
 				</div>
 				<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
-					<Button size="sm" onClick={() => void run()} disabled={busy}>
-						{busy ? "Evaluating…" : "Evaluate policy"}
+					<Button size="sm" onClick={() => void run()} loading={busy}>
+						Evaluate policy
 					</Button>
 					{decision ? (
 						<>

@@ -1,4 +1,3 @@
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -116,8 +115,8 @@ export function RuleLiveChartHero({
 						presetValue={timeRange.presetValue}
 						onChange={onTimeRangeChange}
 					/>
-					<Button variant="outline" size="sm" onClick={onTestRule} disabled={testing}>
-						{testing ? <Spinner size={14} /> : <EyeIcon size={14} />}
+					<Button variant="outline" size="sm" onClick={onTestRule} loading={testing}>
+						<EyeIcon size={14} />
 						Test rule
 					</Button>
 				</div>

@@ -8,7 +8,7 @@ import {
 	type CodeReviewFinding,
 } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
@@ -123,10 +123,7 @@ function CodeReviewIssuesPage() {
 				/>
 			</div>
 			{Result.builder(result)
-				.onInitial(() => (
-					<SkeletonList rows={6} rowClassName="h-16" gap="2" />
-
-				))
+				.onInitial(() => <SkeletonList rows={6} rowClassName="h-16" gap="2" />)
 				.onError((error) => (
 					<ErrorState error={error} title="Failed to load issues" onRetry={refresh} />
 				))
@@ -164,20 +161,16 @@ function CodeReviewIssuesPage() {
 								))}
 							</ul>
 							{response.nextCursor !== null ? (
-								limit < MAX_ROWS ? (
-									<LoadMoreButton
-										className="self-center"
-										loading={result.waiting}
-										onClick={() =>
-											setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
-										}
-									/>
-
-								) : (
-									<p className="text-center text-xs text-muted-foreground">
-										Showing the latest {MAX_ROWS}. Narrow the window to see older issues.
-									</p>
-								)
+								<ListFooter
+									shown={response.findings.length}
+									noun="issues"
+									hasMore={limit < MAX_ROWS}
+									capped={limit >= MAX_ROWS}
+									loading={result.waiting}
+									onLoadMore={() =>
+										setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
+									}
+								/>
 							) : null}
 						</div>
 					),

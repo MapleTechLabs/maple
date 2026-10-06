@@ -1,6 +1,5 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { displayError } from "@/lib/error-messages"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit, Schema } from "effect"
 import { Fragment, useCallback, useMemo, useRef, useState } from "react"
@@ -24,6 +23,8 @@ import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
 import { SegmentedSelect } from "@/components/common/segmented-select"
+import { ErrorState } from "@/components/common/error-state"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import {
 	signalLabels,
 	comparatorLabels,
@@ -47,13 +48,7 @@ import {
 	type AlertRuleDocument,
 } from "@maple/domain/http"
 import { useAlertDestinationsList, useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import {
-	CheckIcon,
-	PencilIcon,
-	DotsVerticalIcon,
-	CircleWarningIcon,
-	ChatBubbleSparkleIcon,
-} from "@/components/icons"
+import { CheckIcon, PencilIcon, DotsVerticalIcon, ChatBubbleSparkleIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -489,27 +484,12 @@ function RuleDetailContent() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<Empty className="py-12">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<CircleWarningIcon size={18} />
-									</EmptyMedia>
-									<EmptyTitle>Failed to load alert rule</EmptyTitle>
-									<EmptyDescription>
-										{Result.builder(rulesResult)
-											.onError((error) => displayError(error).message)
-											.orElse(() => undefined) ?? "Try refreshing or check API logs."}
-									</EmptyDescription>
-								</EmptyHeader>
-								<div className="flex items-center gap-2">
-									<Button variant="outline" size="sm" onClick={() => refreshRules()}>
-										Retry
-									</Button>
-									<Button variant="outline" size="sm" render={<Link to="/alerts" />}>
-										Back to rules
-									</Button>
-								</div>
-							</Empty>
+							<ErrorState
+								error={rulesResult.cause}
+								title="Failed to load alert rule"
+								onRetry={() => refreshRules()}
+								className="m-6"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -526,20 +506,12 @@ function RuleDetailContent() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<Empty className="py-12">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<CircleWarningIcon size={18} />
-									</EmptyMedia>
-									<EmptyTitle>Rule not found</EmptyTitle>
-									<EmptyDescription>
-										This alert rule could not be found. It may have been deleted.
-									</EmptyDescription>
-								</EmptyHeader>
-								<Button variant="outline" size="sm" render={<Link to="/alerts" />}>
-									Back to rules
-								</Button>
-							</Empty>
+							<ResourceNotFound
+								title="Rule not found"
+								description="This alert rule could not be found. It may have been deleted."
+								backLink={<Link to="/alerts" />}
+								backLabel="Back to rules"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -889,24 +861,11 @@ function RuleDetailContent() {
 									.onError((error) => (
 										<div className="space-y-4">
 											<h2 className="text-lg font-semibold">Checks</h2>
-											<Empty className="py-12">
-												<EmptyHeader>
-													<EmptyMedia variant="icon">
-														<CircleWarningIcon size={18} />
-													</EmptyMedia>
-													<EmptyTitle>Failed to load checks</EmptyTitle>
-													<EmptyDescription>
-														{displayError(error).message}
-													</EmptyDescription>
-												</EmptyHeader>
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={() => refreshChecks()}
-												>
-													Retry
-												</Button>
-											</Empty>
+											<ErrorState
+												error={error}
+												title="Failed to load checks"
+												onRetry={() => refreshChecks()}
+											/>
 										</div>
 									))
 									.orElse(() => (
@@ -939,22 +898,11 @@ function RuleDetailContent() {
 									</div>
 								))
 								.onError((error) => (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<CircleWarningIcon size={18} />
-											</EmptyMedia>
-											<EmptyTitle>Failed to load incidents</EmptyTitle>
-											<EmptyDescription>{displayError(error).message}</EmptyDescription>
-										</EmptyHeader>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => refreshIncidents()}
-										>
-											Retry
-										</Button>
-									</Empty>
+									<ErrorState
+										error={error}
+										title="Failed to load incidents"
+										onRetry={() => refreshIncidents()}
+									/>
 								))
 								.onSuccess(() => (
 									<div className="space-y-6">

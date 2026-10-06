@@ -1,6 +1,5 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useMemo, useState } from "react"
 import { Exit } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -29,7 +28,8 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { showErrorToast } from "@/lib/error-toast"
 import { IntegrationIconPlate, catalogEntry } from "./integration-catalog"
-import { useIntegrationConnect } from "./integration-connect"
+import { useRequiredIntegrationConnect } from "./integration-connect"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -72,11 +72,14 @@ export function PlanetScaleIntegrationCard() {
 
 	// Connect flow (popup, busy, refresh-on-return) lives in IntegrationConnectProvider —
 	// shared with the drill-in header's Connect button.
-	const connectFlow = useIntegrationConnect()
-	if (connectFlow === null) {
-		throw new Error("PlanetScaleIntegrationCard must be rendered inside IntegrationConnectProvider")
-	}
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const connectFlow = useRequiredIntegrationConnect("PlanetScaleIntegrationCard")
+	const { disconnect: runDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["planetscaleIntegration", "scrapeTargets"] }),
+		{
+			success: "PlanetScale organization disconnected",
+			error: "Failed to disconnect PlanetScale organization",
+		},
+	)
 	const actionBusy = connectFlow.busy || disconnectBusy
 	const [pickerOpen, setPickerOpen] = useState(false)
 	const [rotateOpen, setRotateOpen] = useState(false)
@@ -102,17 +105,7 @@ export function PlanetScaleIntegrationCard() {
 	const watchedForMs = Date.now() - watchStartedAt
 
 	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({
-			reactivityKeys: ["planetscaleIntegration", "scrapeTargets"],
-		})
-		setDisconnectBusy(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "PlanetScale organization disconnected", type: "success" })
-			refreshStatus()
-		} else {
-			toastManager.add({ title: "Failed to disconnect PlanetScale organization", type: "error" })
-		}
+		if (await runDisconnect()) refreshStatus()
 	}
 
 	// Guard the first fetch so a connected org doesn't flash the "Connect" empty state.
@@ -197,8 +190,8 @@ export function PlanetScaleIntegrationCard() {
 					<IntegrationEmptyHint>
 						Your databases and branches will appear here after connecting.
 					</IntegrationEmptyHint>
-					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? <Spinner size={16} /> : <PlanetScaleIcon size={16} />}
+					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
+						<PlanetScaleIcon size={16} />
 						Connect PlanetScale
 					</Button>
 				</IntegrationEmptyCard>
@@ -255,8 +248,13 @@ export function PlanetScaleIntegrationCard() {
 						>
 							Change organization
 						</Button>
-						<Button size="sm" variant="outline" onClick={handleDisconnect} disabled={actionBusy}>
-							{disconnectBusy ? <Spinner size={14} /> : null}
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={handleDisconnect}
+							disabled={actionBusy}
+							loading={disconnectBusy}
+						>
 							Disconnect
 						</Button>
 					</ItemActions>
@@ -270,14 +268,22 @@ export function PlanetScaleIntegrationCard() {
 							steps={setup.steps}
 							actions={{
 								connected: (
-									<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy}>
-										{connectFlow.busy ? <Spinner size={14} /> : null}
+									<Button
+										size="sm"
+										onClick={connectFlow.connect}
+										disabled={actionBusy}
+										loading={connectFlow.busy}
+									>
 										Reconnect
 									</Button>
 								),
 								permissions: (
-									<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy}>
-										{connectFlow.busy ? <Spinner size={14} /> : null}
+									<Button
+										size="sm"
+										onClick={connectFlow.connect}
+										disabled={actionBusy}
+										loading={connectFlow.busy}
+									>
 										Reauthorize with read_databases
 									</Button>
 								),
@@ -406,8 +412,8 @@ function FirstMetricsDetail({
 		<div className="space-y-2">
 			<p className="text-xs text-muted-foreground">
 				Still nothing after a few minutes. The most common cause is a token without the{" "}
-				<InlineCode>read_metrics_endpoints</InlineCode> permission — PlanetScale
-				accepts the token and then serves no metrics.
+				<InlineCode>read_metrics_endpoints</InlineCode> permission — PlanetScale accepts the token and
+				then serves no metrics.
 			</p>
 			<Button size="sm" variant="outline" onClick={onRotate}>
 				Rotate token
@@ -553,8 +559,8 @@ function PlanetScaleOrgPicker(props: {
 						autoComplete="off"
 					/>
 					<p className="text-xs text-muted-foreground">
-						Glob patterns — <InlineCode>*</InlineCode> matches any run,{" "}
-						<InlineCode>?</InlineCode> exactly one character.
+						Glob patterns — <InlineCode>*</InlineCode> matches any run, <InlineCode>?</InlineCode>{" "}
+						exactly one character.
 					</p>
 				</div>
 				{/* The preview shares its glob implementation with the scraper
@@ -579,8 +585,7 @@ function PlanetScaleOrgPicker(props: {
 				<Button variant="outline" onClick={props.onCancel} disabled={submitting}>
 					{props.cancelLabel}
 				</Button>
-				<Button onClick={handleSubmit} disabled={submitting || selected === null}>
-					{submitting ? <Spinner size={14} /> : null}
+				<Button onClick={handleSubmit} disabled={selected === null} loading={submitting}>
 					Connect organization
 				</Button>
 			</DialogFooter>
@@ -654,8 +659,8 @@ function PlanetScaleWebhookConfig() {
 			</KeyValueList>
 			<p className="text-[11px] text-muted-foreground">
 				PlanetScale signs each delivery with this secret (
-				<InlineCode>X-PlanetScale-Signature</InlineCode>); Maple rejects anything that
-				doesn&apos;t verify.
+				<InlineCode>X-PlanetScale-Signature</InlineCode>); Maple rejects anything that doesn&apos;t
+				verify.
 			</p>
 		</div>
 	)

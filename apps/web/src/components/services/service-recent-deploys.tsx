@@ -16,7 +16,7 @@ import {
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { DocsLink } from "@/components/common/docs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -305,8 +305,7 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 						))}
 						{expanded && hiddenCount > 0 ? (
 							<div className="px-2 py-1.5 text-center text-[11px] text-muted-foreground/70">
-								…and {hiddenCount} more {hiddenCount === 1 ? "version" : "versions"} in this
-								window
+								…and {hiddenCount} more {pluralize(hiddenCount, "version")} in this window
 							</div>
 						) : null}
 					</div>

@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ComputerIcon, MobileIcon } from "@/components/icons"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useMountEffect } from "@/hooks/use-mount-effect"
-import { toastAccountError } from "@/components/account/account-errors"
+import { accountErrorMessage, toastAccountError } from "@/components/account/account-errors"
 
 type LoadState =
 	| { status: "loading" }
@@ -54,7 +54,7 @@ export function ActiveSessionsSection() {
 		} catch (err) {
 			setState({
 				status: "error",
-				message: err instanceof Error ? err.message : "Failed to load your sessions",
+				message: accountErrorMessage(err, "Failed to load your sessions"),
 			})
 		}
 	}

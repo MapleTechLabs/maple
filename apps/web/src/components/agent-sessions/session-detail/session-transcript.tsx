@@ -28,6 +28,7 @@ import {
 	UserIcon,
 	type IconComponent,
 } from "@/components/icons"
+import { FailedBadge } from "./session-waterfall"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -436,11 +437,7 @@ function TurnChapter({
 				<span className="shrink-0 font-medium text-muted-foreground text-xs group-hover/turn:text-foreground">
 					{turnOrdinal(turn)}
 				</span>
-				{turn.failed && (
-					<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
-						Failed
-					</Badge>
-				)}
+				{turn.failed && <FailedBadge />}
 				{collapsed && (
 					<>
 						{/* The label is the first prose line of a captured message, not a
@@ -709,11 +706,7 @@ function AssistantBlock({
 					className="flex min-w-0 grow cursor-pointer items-center gap-2 text-left"
 				>
 					{(!continued || row.failed) && <span className={SPEAKER}>Assistant</span>}
-					{row.failed && (
-						<Badge pill size="xs" className={cn("uppercase tracking-wide", TONE_SOFT.crit)}>
-							Failed
-						</Badge>
-					)}
+					{row.failed && <FailedBadge />}
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					{row.span.genAi.errorType !== undefined && (
 						<span className="shrink-0 font-mono text-[11px] text-destructive">

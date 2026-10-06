@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type { V2Recommendation } from "@maple/domain/http/v2"
 import { useState } from "react"
@@ -5,7 +6,6 @@ import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -18,7 +18,8 @@ import {
 } from "@/lib/services/atoms/ingestion-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
 import { DocsLink } from "@/components/common/docs-link"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 type IssueKind = V2Recommendation["kind"]
@@ -53,16 +54,14 @@ const MODE = {
 	},
 } as const
 
-const MONO = "font-mono text-[0.92em] text-muted-foreground"
-
 function recSentence(issue: V2Recommendation) {
 	if (issue.kind === "double-emission") {
 		return (
 			<>
 				<span className="text-foreground font-medium">Standardize on</span>{" "}
-				<code className={MONO}>{issue.canonical_key}</code>
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 				<span className="text-muted-foreground"> — spans also emit </span>
-				<code className={MONO}>{issue.source_key}</code>
+				<InlineCode variant="plain">{issue.source_key}</InlineCode>
 			</>
 		)
 	}
@@ -70,15 +69,16 @@ function recSentence(issue: V2Recommendation) {
 		return (
 			<>
 				<span className="text-foreground font-medium">Rename non-conforming key</span>{" "}
-				<code className={MONO}>{issue.source_key}</code>
+				<InlineCode variant="plain">{issue.source_key}</InlineCode>
 			</>
 		)
 	}
 	return (
 		<>
 			<span className="text-foreground font-medium">Rename</span>{" "}
-			<code className={MONO}>{issue.source_key}</code> <span className="text-muted-foreground">→</span>{" "}
-			<code className={MONO}>{issue.canonical_key}</code>
+			<InlineCode variant="plain">{issue.source_key}</InlineCode>{" "}
+			<span className="text-muted-foreground">→</span>{" "}
+			<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 		</>
 	)
 }
@@ -180,34 +180,27 @@ export function RecommendedMappingsSection() {
 	const rows = tab === "open" ? openIssues : closedIssues
 
 	return (
-		<div className="bg-card flex flex-col rounded-lg border">
-			<div className="flex items-start gap-3 px-4 pt-4 pb-3">
-				<div className="flex flex-col gap-1">
-					<h3 className="text-sm font-medium">Recommendations</h3>
-					<p className="text-muted-foreground text-xs">
-						Deprecated or non-conforming OpenTelemetry attribute keys detected on your spans.
-					</p>
-				</div>
-				<div className="grow" />
-				<ToggleGroup
-					variant="outline"
-					size="xs"
-					aria-label="Recommendation status"
-					className="shrink-0"
-					value={[tab]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next === "open" || next === "closed") setTab(next)
-					}}
-				>
-					<ToggleGroupItem value="open" className="font-mono text-[11px]">
-						Open · {openIssues.length}
-					</ToggleGroupItem>
-					<ToggleGroupItem value="closed" className="font-mono text-[11px]">
-						Closed · {closedIssues.length}
-					</ToggleGroupItem>
-				</ToggleGroup>
-			</div>
+		<Card className="overflow-hidden">
+			<CardHeader className="px-4 pt-4 pb-3">
+				<CardTitle render={<h3 />} className="text-sm font-medium">
+					Recommendations
+				</CardTitle>
+				<CardDescription className="text-xs">
+					Deprecated or non-conforming OpenTelemetry attribute keys detected on your spans.
+				</CardDescription>
+				<CardAction>
+					<SegmentedSelect
+						size="sm"
+						aria-label="Recommendation status"
+						value={tab}
+						onChange={setTab}
+						options={[
+							{ value: "open", label: `Open · ${openIssues.length}` },
+							{ value: "closed", label: `Closed · ${closedIssues.length}` },
+						]}
+					/>
+				</CardAction>
+			</CardHeader>
 
 			{rows.length === 0 ? (
 				<div className="text-muted-foreground flex flex-col items-center gap-2 border-t px-4 py-8 text-center text-sm">
@@ -256,9 +249,9 @@ export function RecommendedMappingsSection() {
 											<Button
 												size="sm"
 												onClick={() => handleApply(issue)}
-												disabled={isApplying}
+												loading={isApplying}
 											>
-												{isApplying ? <Spinner size={14} /> : <CheckIcon size={14} />}
+												<CheckIcon size={14} />
 												Apply fix
 											</Button>
 										) : (
@@ -276,9 +269,9 @@ export function RecommendedMappingsSection() {
 											size="sm"
 											className="text-muted-foreground hover:text-foreground"
 											onClick={() => handleDismiss(issue)}
-											disabled={isBusy}
+											loading={isBusy}
 										>
-											{isBusy ? <Spinner size={14} /> : <XmarkIcon size={14} />}
+											<XmarkIcon size={14} />
 											Dismiss
 										</Button>
 									</>
@@ -289,13 +282,9 @@ export function RecommendedMappingsSection() {
 											variant="outline"
 											size="sm"
 											onClick={() => handleReopen(issue)}
-											disabled={isBusy}
+											loading={isBusy}
 										>
-											{isBusy ? (
-												<Spinner size={14} />
-											) : (
-												<ArrowRotateAnticlockwiseIcon size={14} />
-											)}
+											<ArrowRotateAnticlockwiseIcon size={14} />
 											Reopen
 										</Button>
 									</>
@@ -307,6 +296,6 @@ export function RecommendedMappingsSection() {
 					)
 				})
 			)}
-		</div>
+		</Card>
 	)
 }

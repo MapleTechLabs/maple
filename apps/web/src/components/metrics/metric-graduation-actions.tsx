@@ -1,6 +1,7 @@
 import * as React from "react"
 import { useNavigate } from "@tanstack/react-router"
 
+import { countLabel } from "@maple/ui/lib/format"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import {
@@ -172,8 +173,7 @@ function AddToDashboardDialog({
 									>
 										<span className="truncate">{dashboard.name}</span>
 										<span className="shrink-0 text-xs text-muted-foreground">
-											{dashboard.widgets.length} widget
-											{dashboard.widgets.length !== 1 ? "s" : ""}
+											{countLabel(dashboard.widgets.length, "widget")}
 										</span>
 									</button>
 								))}

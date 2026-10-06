@@ -2,7 +2,7 @@ import type { ActorDocument } from "@maple/domain/http"
 import { internalAgentLabel } from "@maple/domain/system-agents"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { gradientFor } from "@maple/ui/lib/replay-format"
+import { gradientFor } from "@maple/ui/lib/replay"
 import { cn } from "@maple/ui/lib/utils"
 
 import { FaceRobotIcon } from "@/components/icons"

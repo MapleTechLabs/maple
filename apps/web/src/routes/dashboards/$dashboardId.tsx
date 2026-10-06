@@ -40,6 +40,7 @@ import { useDashboardStore } from "@/hooks/use-dashboard-store"
 import { DashboardHistoryPanel, PreviewedCanvas } from "@/components/dashboard-builder/history"
 import { DashboardViewSkeleton } from "@/components/dashboard-builder/loading-skeletons"
 import { SyncDegradedBanner, SyncUnavailable } from "@/components/common/sync-unavailable"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { historyPanelOpenAtom, previewedVersionAtom } from "@/atoms/dashboard-history-atoms"
 import { useDashboardVersions } from "@/components/dashboard-builder/history/use-dashboard-history"
 import { Result } from "@/lib/effect-atom"
@@ -282,19 +283,20 @@ function DashboardViewPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Scroll>
-							<div className="flex flex-col items-center gap-3 px-4 py-24 text-center">
-								<p className="text-sm font-medium text-foreground">Dashboard not found</p>
-								<p className="text-xs text-muted-foreground">
-									No dashboard with id{" "}
-									<InlineCode className="break-all px-1.5 py-0.5">{dashboardId}</InlineCode>
-								</p>
-								<Link
-									to="/dashboards"
-									className="mt-2 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-								>
-									← Back to all dashboards
-								</Link>
-							</div>
+							<ResourceNotFound
+								title="Dashboard not found"
+								description={
+									<>
+										No dashboard with id{" "}
+										<InlineCode className="break-all px-1.5 py-0.5">
+											{dashboardId}
+										</InlineCode>
+									</>
+								}
+								backLink={<Link to="/dashboards" />}
+								backLabel="Back to all dashboards"
+								className="py-24"
+							/>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
 				</DashboardLayout.Body>
@@ -379,7 +381,8 @@ function DashboardViewPage() {
 										{persistenceError && (
 											<Alert variant="error" size="sm" className="mb-4">
 												<AlertDescription className="text-destructive">
-													{persistenceError}. Dashboard editing is temporarily disabled.
+													{persistenceError}. Dashboard editing is temporarily
+													disabled.
 												</AlertDescription>
 											</Alert>
 										)}

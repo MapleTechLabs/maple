@@ -16,3 +16,20 @@ export const SEVERITY_ORDER = ["FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEB
 export function getSeverityColor(severity: string): string {
 	return SEVERITY_COLORS[severity.toUpperCase()] ?? "var(--color-muted-foreground)"
 }
+
+// Synonyms share a rank (WARN/WARNING, FATAL/CRITICAL); 0 is the most severe.
+const SEVERITY_RANK: Record<string, number> = {
+	FATAL: 0,
+	CRITICAL: 0,
+	ERROR: 1,
+	WARN: 2,
+	WARNING: 2,
+	INFO: 3,
+	DEBUG: 4,
+	TRACE: 5,
+} satisfies Record<string, number>
+
+/** Sort rank for a log level, case-insensitive; unknown levels rank after every known one. */
+export function severityRank(severity: string): number {
+	return SEVERITY_RANK[severity.toUpperCase()] ?? 99
+}

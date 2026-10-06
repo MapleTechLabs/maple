@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Cause, Exit } from "effect"
+import { toastExit } from "@/lib/error-toast"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -116,16 +116,14 @@ export function BillingControlsDialog({
 		})
 		setSaving(false)
 
-		if (Exit.isSuccess(exit)) {
-			toastManager.add({ title: `${FEATURE_LABELS[featureId]} controls saved.`, type: "success" })
+		if (
+			toastExit(exit, {
+				success: `${FEATURE_LABELS[featureId]} controls saved.`,
+				error: "Billing controls could not be saved.",
+			})
+		) {
 			onOpenChange(false)
-			return
 		}
-		const error = Cause.squash(exit.cause)
-		toastManager.add({
-			title: error instanceof Error ? error.message : "Billing controls could not be saved.",
-			type: "error",
-		})
 	}
 
 	return (

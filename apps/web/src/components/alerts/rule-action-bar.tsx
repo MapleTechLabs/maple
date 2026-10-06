@@ -1,4 +1,3 @@
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import type { ReactNode } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -80,8 +79,8 @@ export function RuleActionBar({
 							Cancel
 						</Button>
 					)}
-					<Button type="button" onClick={onSave} disabled={!ready || saving}>
-						{saving ? <Spinner size={14} /> : <FloppyDiskIcon size={14} />}
+					<Button type="button" onClick={onSave} disabled={!ready} loading={saving}>
+						<FloppyDiskIcon size={14} />
 						{editing ? "Save changes" : "Create rule"}
 					</Button>
 				</div>

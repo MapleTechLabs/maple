@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { shortId } from "@maple/ui/lib/ids"
 import {
 	ClockIcon,
@@ -18,7 +19,8 @@ import { useRange } from "../hooks/use-range"
 import { useTimeWindow } from "../hooks/use-time-window"
 import { hrefFor, useQueryParams } from "../lib/router"
 import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, WIDEST_RANGE } from "../lib/time"
-import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay-format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import {
 	FilterSection,
 	SearchableFilterSection,
@@ -187,9 +189,14 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-2">
 					<span className="max-w-[16rem] truncate text-sm font-medium">{label}</span>
-					<StatusDot active={isActive} />
+					<StatusDot
+						tone={isActive ? "success" : "neutral"}
+						pulse={isActive}
+						title={isActive ? "active" : "ended"}
+					/>
 					<span className="font-mono text-xs text-muted-foreground">
-						{shortId(session.sessionId, "session", { length: 8 })} · {formatSessionDuration(session.durationMs)}
+						{shortId(session.sessionId, "session", { length: 8 })} ·{" "}
+						{formatSessionDuration(session.durationMs)}
 					</span>
 				</div>
 				<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
@@ -240,16 +247,6 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 				</span>
 			</div>
 		</a>
-	)
-}
-
-function StatusDot({ active }: { active: boolean }) {
-	if (!active) return <span className="size-1.5 rounded-full bg-muted-foreground/40" title="ended" />
-	return (
-		<span className="relative flex size-1.5" title="active">
-			<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-			<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-		</span>
 	)
 }
 

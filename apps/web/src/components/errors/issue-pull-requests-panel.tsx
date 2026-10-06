@@ -7,7 +7,7 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { DocsLink } from "@/components/common/docs-link"
 import { GithubIcon, PlusIcon, TrashIcon } from "@/components/icons"
-import { AttachPullRequestDialog } from "./attach-pull-request-dialog"
+import { AttachPullRequestDialog, PULL_REQUEST_STATE_TONE } from "./attach-pull-request-dialog"
 
 /**
  * Pull requests attached to this issue.
@@ -18,12 +18,6 @@ import { AttachPullRequestDialog } from "./attach-pull-request-dialog"
  * panel says so on the empty state, because "attach a PR" is otherwise a
  * chore with no visible payoff.
  */
-
-const STATE_TONE: Record<ErrorIssuePullRequestDocument["state"], string> = {
-	open: "bg-success/10 text-success",
-	merged: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-	closed: "bg-muted text-muted-foreground",
-} satisfies Record<ErrorIssuePullRequestDocument["state"], string>
 
 const SOURCE_HINT: Record<ErrorIssuePullRequestDocument["linkSource"], string | null> = {
 	user: null,
@@ -102,7 +96,10 @@ export function IssuePullRequestsPanel({
 										</a>
 										<Badge
 											variant="outline"
-											className={cn("shrink-0 capitalize", STATE_TONE[pr.state])}
+											className={cn(
+												"shrink-0 capitalize",
+												PULL_REQUEST_STATE_TONE[pr.state],
+											)}
 										>
 											{pr.state}
 										</Badge>
@@ -111,7 +108,9 @@ export function IssuePullRequestsPanel({
 										<ItemDescription className="line-clamp-1">{pr.title}</ItemDescription>
 									) : null}
 									{hint ? (
-										<ItemDescription className="text-muted-foreground/80">{hint}</ItemDescription>
+										<ItemDescription className="text-muted-foreground/80">
+											{hint}
+										</ItemDescription>
 									) : null}
 								</ItemContent>
 								<Button

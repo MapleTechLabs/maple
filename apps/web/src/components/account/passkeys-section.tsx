@@ -32,13 +32,7 @@ import {
 } from "@maple/ui/components/ui/dropdown-menu"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import {
-	DotsVerticalIcon,
-	FingerprintIcon,
-	PencilIcon,
-	PlusIcon,
-	TrashIcon,
-} from "@/components/icons"
+import { DotsVerticalIcon, FingerprintIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 
@@ -256,9 +250,10 @@ export function PasskeysSection() {
 						</Button>
 						<Button
 							onClick={handleRename}
-							disabled={isBusy || (renaming?.name.trim().length ?? 0) === 0}
+							loading={isBusy}
+							disabled={(renaming?.name.trim().length ?? 0) === 0}
 						>
-							{isBusy ? "Saving..." : "Save"}
+							Save
 						</Button>
 					</DialogFooter>
 				</DialogContent>

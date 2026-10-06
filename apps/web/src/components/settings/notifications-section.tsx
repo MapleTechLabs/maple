@@ -252,13 +252,14 @@ export function NotificationsSection() {
 							variant="outline"
 							size="sm"
 							onClick={handlePreview}
-							disabled={isPreviewing || isSaving}
+							loading={isPreviewing}
+							disabled={isSaving}
 						>
-							{isPreviewing ? "Generating..." : "Preview Digest"}
+							Preview Digest
 						</Button>
 						{scopeDirty && (
-							<Button size="sm" onClick={handleSaveScope} disabled={isSaving}>
-								{isSaving ? "Saving..." : "Save scope"}
+							<Button size="sm" onClick={handleSaveScope} loading={isSaving}>
+								Save scope
 							</Button>
 						)}
 					</div>
@@ -273,19 +274,20 @@ export function NotificationsSection() {
 				description="Weekly overview of visitors, top pages and AI traffic. Only sent once the browser SDK is reporting visits."
 				control={
 					<>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={handlePreviewWebAnalytics}
-						disabled={isPreviewingWebAnalytics || isSaving}
-					>
-						{isPreviewingWebAnalytics ? "Generating..." : "Preview"}
-					</Button>
-					<Switch
-						checked={webAnalyticsEnabled}
-						onCheckedChange={handleWebAnalyticsToggle}
-						disabled={isSaving || !email}
-					/>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={handlePreviewWebAnalytics}
+							loading={isPreviewingWebAnalytics}
+							disabled={isSaving}
+						>
+							Preview
+						</Button>
+						<Switch
+							checked={webAnalyticsEnabled}
+							onCheckedChange={handleWebAnalyticsToggle}
+							disabled={isSaving || !email}
+						/>
 					</>
 				}
 			/>

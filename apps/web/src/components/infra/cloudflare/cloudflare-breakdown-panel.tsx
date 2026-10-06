@@ -19,6 +19,7 @@
 //     decaying shape instead of a flat wall of names.
 
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
@@ -48,12 +49,7 @@ import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
-import {
-	CACHE_STATUS_COLORS,
-	CACHE_STATUS_ORDER,
-	STATUS_CLASS_COLORS,
-	STATUS_CLASS_ORDER,
-} from "./constants"
+import { CACHE_STATUS_COLORS, CACHE_STATUS_ORDER, STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "./constants"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilterKey, CloudflareFilters } from "./filters"
 
@@ -437,7 +433,7 @@ function StoredBreakdown({
 					: data.totals.filter((row) => row.key.toLowerCase().includes(query))
 
 			return (
-				<div className={cn("transition-opacity", r.waiting && "opacity-60")}>
+				<div className={refreshingClass(r.waiting)} aria-busy={r.waiting || undefined}>
 					<Toolbar
 						dimension={dimension}
 						value={search}
@@ -624,7 +620,7 @@ function LiveBreakdown({
 			}))
 
 			return (
-				<div className={cn("transition-opacity", r.waiting && "opacity-60")}>
+				<div className={refreshingClass(r.waiting)} aria-busy={r.waiting || undefined}>
 					{toolbar(rows.length)}
 					<BreakdownTable
 						dimension={dimension}

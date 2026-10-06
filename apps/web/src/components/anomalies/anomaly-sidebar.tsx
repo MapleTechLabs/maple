@@ -101,7 +101,7 @@ export function AnomalySidebar({
 				</DetailRail.Row>
 				<DetailRail.Row label="Service" title={incident.serviceName}>
 					<span className="flex min-w-0 items-center gap-2">
-						<ServiceDot serviceName={incident.serviceName} className="size-1.5" />
+						<ServiceDot serviceName={incident.serviceName} size="sm" />
 						<span className="truncate text-sm text-foreground">{incident.serviceName}</span>
 					</span>
 				</DetailRail.Row>

@@ -1,5 +1,4 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useState, type Dispatch, type SetStateAction } from "react"
 import { Link } from "@tanstack/react-router"
 
@@ -11,10 +10,7 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
-import {
-	MultiSegmentedSelect,
-	type SegmentedOption,
-} from "@/components/common/segmented-select"
+import { MultiSegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SectionHeader } from "@/components/layout/section-header"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
@@ -72,10 +68,11 @@ export function NotificationsSection({
 						variant="ghost"
 						size="sm"
 						onClick={onSendTest}
-						disabled={!hasSelection || testing}
+						disabled={!hasSelection}
+						loading={testing}
 						className="h-7 px-2 text-xs"
 					>
-						{testing ? <Spinner size={12} /> : <PaperPlaneIcon size={12} />}
+						<PaperPlaneIcon size={12} />
 						Send test
 					</Button>
 				)}

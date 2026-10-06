@@ -5,6 +5,7 @@ import type { V2SupportChannel } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { DialogFooter, DialogPanel } from "@maple/ui/components/ui/dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ErrorState } from "@/components/common/error-state"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { trackProduct } from "@/lib/analytics"
@@ -62,7 +63,7 @@ export function SupportChannelBody() {
 	if (Result.isFailure(result)) {
 		return (
 			<DialogPanel>
-				<p className="text-sm text-destructive">{displayError(result.cause).message}</p>
+				<ErrorState error={result.cause} onRetry={refresh} variant="inline" />
 			</DialogPanel>
 		)
 	}
@@ -112,12 +113,8 @@ export function SupportChannelBody() {
 				{channel.status === "active" && channel.slack_url ? (
 					<OpenInSlack url={channel.slack_url} />
 				) : null}
-				<Button onClick={() => void invite()} disabled={pending}>
-					{pending
-						? "Sending invite..."
-						: channel.status === "active"
-							? "Send me an invite"
-							: "Create channel"}
+				<Button onClick={() => void invite()} loading={pending}>
+					{channel.status === "active" ? "Send me an invite" : "Create channel"}
 				</Button>
 			</DialogFooter>
 		</>

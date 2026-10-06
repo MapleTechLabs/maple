@@ -1,4 +1,3 @@
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useState } from "react"
 import { Exit } from "effect"
@@ -114,9 +113,8 @@ export function PlanetScaleMetricsTokenForm({
 	return (
 		<div className="flex flex-col gap-3">
 			<p className="text-xs text-muted-foreground">
-				Create a service token with the single{" "}
-				<InlineCode>read_metrics_endpoints</InlineCode> permission — no other
-				permission is needed, and Maple never uses it for anything else.
+				Create a service token with the single <InlineCode>read_metrics_endpoints</InlineCode>{" "}
+				permission — no other permission is needed, and Maple never uses it for anything else.
 			</p>
 
 			{linkHref !== null ? (
@@ -174,8 +172,7 @@ export function PlanetScaleMetricsTokenForm({
 							Cancel
 						</Button>
 					) : null}
-					<Button onClick={handleSubmit} disabled={!canSubmit}>
-						{submitting ? <Spinner size={14} /> : null}
+					<Button onClick={handleSubmit} disabled={!canSubmit} loading={submitting}>
 						{mode === "rotate" ? "Update token" : "Enable metrics"}
 					</Button>
 				</div>

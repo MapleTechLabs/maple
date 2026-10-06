@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import type { CodeReviewListItem } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
@@ -120,9 +120,7 @@ function CodeReviewPullRequestsPage() {
 				</Select>
 			</div>
 			{Result.builder(result)
-				.onInitial(() => (
-					<SkeletonList rows={6} rowClassName="h-14" gap="2" />
-				))
+				.onInitial(() => <SkeletonList rows={6} rowClassName="h-14" gap="2" />)
 				.onError((error) => (
 					<ErrorState error={error} title="Failed to load reviews" onRetry={refresh} />
 				))
@@ -154,19 +152,16 @@ function CodeReviewPullRequestsPage() {
 								onOpen={(review) => onChange({ review: review.id })}
 							/>
 							{response.nextCursor !== null ? (
-								limit < MAX_ROWS ? (
-									<LoadMoreButton
-										className="self-center"
-										loading={result.waiting}
-										onClick={() =>
-											setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
-										}
-									/>
-								) : (
-									<p className="text-center text-xs text-muted-foreground">
-										Showing the latest {MAX_ROWS}. Narrow the window to see older reviews.
-									</p>
-								)
+								<ListFooter
+									shown={response.reviews.length}
+									noun="reviews"
+									hasMore={limit < MAX_ROWS}
+									capped={limit >= MAX_ROWS}
+									loading={result.waiting}
+									onLoadMore={() =>
+										setLimit((current) => Math.min(current + PAGE, MAX_ROWS))
+									}
+								/>
 							) : null}
 						</div>
 					),
@@ -306,7 +301,12 @@ function ReviewTable({
 									) : (
 										<span className="inline-flex items-center gap-1.5">
 											{review.criticalFindings > 0 ? (
-												<Badge size="xs" mono className={TONE_SOFT.crit} title="Critical">
+												<Badge
+													size="xs"
+													mono
+													className={TONE_SOFT.crit}
+													title="Critical"
+												>
 													{review.criticalFindings}
 												</Badge>
 											) : null}

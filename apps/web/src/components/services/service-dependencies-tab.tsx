@@ -1,14 +1,14 @@
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
-import { formatRate } from "./service-table-cells"
+import { SampledValue } from "./sampled-value"
 import type { DependencyKind } from "./dependency-type-badge"
 import { dependencyDrillWhereClause } from "./dependency-drill"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
@@ -271,7 +271,12 @@ export function ServiceDependenciesTab({
 						<HeadlineFact
 							label="Busiest"
 							name={summary.topByCalls.name}
-							value={`${summary.topByCalls.hasSampling ? "~" : ""}${formatRate(summary.topByCalls.callsPerSec)}/s`}
+							value={
+								<SampledValue
+									estimated={summary.topByCalls.hasSampling}
+									value={formatThroughput(summary.topByCalls.callsPerSec, "/s")}
+								/>
+							}
 						/>
 						{summary.topByErrors ? (
 							<HeadlineFact
@@ -313,7 +318,7 @@ export function ServiceDependenciesTab({
 interface HeadlineFactProps {
 	label: string
 	name: string
-	value: string
+	value: ReactNode
 	tone?: "error"
 	/** Overrides the default value color — e.g. a magnitude tone for latency. */
 	valueClassName?: string

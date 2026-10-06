@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as React from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
@@ -8,7 +9,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { type Log } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "./log-detail-sheet"
 import { LogRowExpanded } from "./log-row-expanded"
@@ -20,6 +21,7 @@ import { formatCompactTimeInTimezone } from "@/lib/timezone-format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
+import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
@@ -85,16 +87,18 @@ interface LogsTableProps {
 function LoadingState() {
 	return (
 		<div className="flex-1 min-h-0 flex flex-col">
-			<div className="rounded-md border overflow-hidden flex-1 min-h-0">
-				{Array.from({ length: 40 }).map((_, i) => (
-					<div key={i} className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
-						<Skeleton className="size-1.5 rounded-full shrink-0" />
+			<SkeletonList
+				rows={40}
+				className="min-h-0 flex-1 gap-0 overflow-hidden rounded-md border"
+				renderRow={() => (
+					<div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+						<Skeleton className="size-1.5 shrink-0 rounded-full" />
 						<Skeleton className="h-3 w-16 shrink-0" />
 						<Skeleton className="h-3 w-[72px] shrink-0" />
 						<Skeleton className="h-3 flex-1" />
 					</div>
-				))}
-			</div>
+				)}
+			/>
 		</div>
 	)
 }
@@ -562,14 +566,13 @@ export function LogsTableView({
 		{ enabled: allData.length > 0 },
 	)
 
-	React.useEffect(() => {
-		const lastItem = virtualItems[virtualItems.length - 1]
-		if (!lastItem) return
-
-		if (lastItem.index >= allData.length - FETCH_THRESHOLD && hasNextPage && !isFetchingNextPage) {
-			fetchNextPage()
-		}
-	}, [virtualItems, allData.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+	useVirtualReachEnd(virtualizer, {
+		count: allData.length,
+		hasMore: hasNextPage,
+		loading: isFetchingNextPage,
+		onReachEnd: fetchNextPage,
+		threshold: FETCH_THRESHOLD,
+	})
 
 	if (allData.length === 0) {
 		return (
@@ -641,7 +644,10 @@ export function LogsTableView({
 
 	return (
 		<>
-			<div className={`flex-1 min-h-0 flex flex-col transition-opacity ${waiting ? "opacity-60" : ""}`}>
+			<div
+				className={cn("flex min-h-0 flex-1 flex-col", refreshingClass(waiting))}
+				aria-busy={waiting || undefined}
+			>
 				{!onLogClick && !embedded && <LogsTableToolbar />}
 				<div className="flex-1 min-h-0 relative">
 					<div

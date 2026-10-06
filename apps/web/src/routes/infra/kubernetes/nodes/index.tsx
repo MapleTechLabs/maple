@@ -1,9 +1,9 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { ErrorState } from "@/components/common/error-state"
@@ -160,7 +160,10 @@ function NodesPage() {
 						: named
 
 					return (
-						<div className={`space-y-5 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+						<div
+							className={cn("space-y-5", refreshingClass(result.waiting))}
+							aria-busy={result.waiting || undefined}
+						>
 							<FleetBand
 								total={nodes.length}
 								noun="node"
@@ -189,26 +192,19 @@ function NodesPage() {
 									trailing={countLabel(filtered.length, filtered.length, "node")}
 								/>
 								{(q || statusScope) && filtered.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No nodes match</EmptyTitle>
-											<EmptyDescription>
-												{q
-													? `Nothing named “${searchText}” in this scope.`
-													: "Nothing in this scope right now, which is good news."}
-											</EmptyDescription>
-										</EmptyHeader>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => patchSearch({ q: undefined, status: undefined })}
-										>
-											{q ? "Clear search" : "Show all nodes"}
-										</Button>
-									</Empty>
+									<FilteredEmpty
+										noun="nodes"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										title="No nodes match"
+										description={
+											q
+												? `Nothing named “${searchText}” in this scope.`
+												: "Nothing in this scope right now, which is good news."
+										}
+										onClear={() => patchSearch({ q: undefined, status: undefined })}
+										clearLabel={q ? "Clear search" : "Show all nodes"}
+									/>
 								) : (
 									<NodeTable
 										nodes={filtered}

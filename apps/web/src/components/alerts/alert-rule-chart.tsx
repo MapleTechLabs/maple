@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import * as React from "react"
 import { areaY, d3Curve, defineChart, lineY, rect, ruleY } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
@@ -862,12 +863,9 @@ function Placeholder({ children, tone }: { children: React.ReactNode; tone?: "de
 /** Fixed-width label column that keeps both lanes aligned to the plot area. */
 function RailGutter({ children }: { children: React.ReactNode }) {
 	return (
-		<span
-			className="shrink-0 pr-3 text-right text-[10px] text-muted-foreground uppercase tracking-wider"
-			style={{ width: Y_AXIS_WIDTH }}
-		>
+		<Eyebrow className="shrink-0 pr-3 text-right" style={{ width: Y_AXIS_WIDTH }}>
 			{children}
-		</span>
+		</Eyebrow>
 	)
 }
 

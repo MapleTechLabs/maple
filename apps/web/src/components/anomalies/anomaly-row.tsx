@@ -108,7 +108,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 					className={cn(META_CHIP_CLASS, "z-10 hidden min-w-0 shrink md:inline-flex")}
 					title={incident.serviceName}
 				>
-					<ServiceDot serviceName={incident.serviceName} className="size-1.5" />
+					<ServiceDot serviceName={incident.serviceName} size="sm" />
 					<span className="max-w-[140px] truncate">{incident.serviceName}</span>
 				</Badge>
 			) : null}

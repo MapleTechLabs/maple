@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useState } from "react"
 import {
 	Dialog,
@@ -189,8 +190,8 @@ function VariablesEditor({
 			<DialogHeader>
 				<DialogTitle>Dashboard variables</DialogTitle>
 				<DialogDescription>
-					Reference variables as <code className="text-[11px]">$name</code> in widget filters and
-					raw SQL. Selectors appear in the dashboard toolbar.
+					Reference variables as <InlineCode>$name</InlineCode> in widget filters and raw SQL.
+					Selectors appear in the dashboard toolbar.
 				</DialogDescription>
 			</DialogHeader>
 			<DialogPanel className="flex flex-col gap-3">
@@ -325,8 +326,8 @@ function VariableForm({
 					) : (
 						variable.name !== "" && (
 							<span className="text-[11px] text-muted-foreground">
-								Reference it as <code className="text-foreground">${variable.name}</code> in
-								widget filters and SQL.
+								Reference it as <InlineCode>${variable.name}</InlineCode> in widget filters
+								and SQL.
 							</span>
 						)
 					)}

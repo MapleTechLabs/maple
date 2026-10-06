@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
-import { ArrowRightIcon, ChevronRightIcon } from "@/components/icons"
+import { ArrowRightIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Meter, SegmentedBar } from "@maple/ui/components/ui/meter"
@@ -523,11 +524,7 @@ function ToolLedgerRow({
 							"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary",
 						)}
 					>
-						<ChevronRightIcon
-							aria-hidden
-							size={9}
-							className={cn("shrink-0 transition-transform", expanded && "rotate-90")}
-						/>
+						<DisclosureChevron open={expanded} size={9} />
 						<span className="min-w-0 truncate font-mono text-xs" title={tool.name}>
 							{tool.name}
 						</span>

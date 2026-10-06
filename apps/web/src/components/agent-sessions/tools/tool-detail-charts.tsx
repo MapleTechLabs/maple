@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 
@@ -95,7 +96,10 @@ export function ToolDetailCharts({
 	)
 
 	return (
-		<div className={cn("grid @min-[900px]/page:grid-cols-2", waiting && "opacity-60")}>
+		<div
+			className={cn("grid @min-[900px]/page:grid-cols-2", refreshingClass(waiting ?? false))}
+			aria-busy={waiting || undefined}
+		>
 			<Cell title="Tool calls" rows={rows} series={CALLS_SERIES} format={formatNumber} />
 			<Cell title="Error rate" rows={rows} series={ERROR_RATE_SERIES} format={formatErrorRate} />
 			<Cell title="Duration" rows={rows} series={DURATION_SERIES} format={formatDurationNs} />

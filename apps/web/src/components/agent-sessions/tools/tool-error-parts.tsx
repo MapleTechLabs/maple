@@ -1,4 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate } from "@maple/ui/lib/format"
@@ -156,7 +157,7 @@ export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextTo
 			</span>
 			<span className="flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-[26px]">
 				<span className="text-muted-foreground">at</span>
-				<span className="break-all font-semibold tracking-[-0.01em] text-[var(--severity-error)]">
+				<span className={cn("break-all font-semibold tracking-[-0.01em]", TONE_TEXT.crit)}>
 					{path?.kind === "path" ? (
 						<PathParts
 							parts={path.parts}
@@ -250,7 +251,7 @@ export function windowRangeLabel(startMs: number, endMs: number, timeZone: strin
 
 const STATUS_DOT = {
 	stopped: "bg-[var(--severity-info)]",
-	ongoing: "bg-[var(--severity-error)]",
+	ongoing: TONE_FILL.crit,
 	quiet: "bg-muted-foreground",
 } satisfies Record<FailureStatus["kind"], string>
 

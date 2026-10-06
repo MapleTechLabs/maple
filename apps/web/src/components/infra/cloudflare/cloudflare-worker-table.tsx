@@ -3,7 +3,7 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 
 import type { CloudflareWorkerRow } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
+import { ColumnHead, DataTable, type SortControls, useTableSort } from "@/components/common/data-table"
 import { formatPercent } from "@maple/ui/lib/format"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 
@@ -27,22 +27,79 @@ const ROW_CLASS =
 // Matches the zone table: the server caps at 500 scripts, so scroll rather than grow the page.
 const TABLE_MAX_HEIGHT = 460
 
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function WorkerColumns({ sort }: { sort?: SortControls<SortKey> }) {
+	return (
+		<>
+			<ColumnHead<SortKey>
+				label="Script"
+				sortKey="scriptName"
+				{...sort}
+				width="w-0 flex-1 min-w-[220px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Invocations"
+				sortKey="requests"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Errors"
+				sortKey="errors"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Error rate"
+				sortKey="errorRate"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Subrequests"
+				sortKey="subrequests"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="CPU p99"
+				sortKey="cpuP99Ms"
+				{...sort}
+				align="right"
+				width="w-[90px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Duration p99"
+				sortKey="durationP99Ms"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
+	)
+}
+
 export function CloudflareWorkerTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Workers">
 			<DataTable.Head>
-				<ColumnHead label="Script" width="w-0 flex-1 min-w-[220px]" />
-				<ColumnHead label="Invocations" align="right" width="w-[100px]" />
-				<ColumnHead label="Error rate" align="right" width="w-[90px]" />
-				<ColumnHead label="CPU p99" align="right" width="w-[90px]" hidden="hidden md:flex" />
-				<ColumnHead label="Duration p99" align="right" width="w-[100px]" />
+				<WorkerColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={3}>
 				<div className="w-0 min-w-[220px] flex-1">
 					<Skeleton className="h-4 w-44" />
 				</div>
 				<Skeleton className="h-3 w-[100px]" />
+				<Skeleton className="hidden h-3 w-[90px] lg:block" />
 				<Skeleton className="h-3 w-[90px]" />
+				<Skeleton className="hidden h-3 w-[100px] lg:block" />
 				<Skeleton className="hidden h-3 w-[90px] md:block" />
 				<Skeleton className="h-3 w-[100px]" />
 			</DataTable.SkeletonRows>
@@ -59,71 +116,7 @@ export function CloudflareWorkerTable({ workers, waiting }: CloudflareWorkerTabl
 	return (
 		<DataTable.Root ariaLabel="Cloudflare Workers" waiting={waiting} maxHeight={TABLE_MAX_HEIGHT}>
 			<DataTable.Head>
-				<ColumnHead<SortKey>
-					label="Script"
-					sortKey="scriptName"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					width="w-0 flex-1 min-w-[220px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Invocations"
-					sortKey="requests"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Errors"
-					sortKey="errors"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Error rate"
-					sortKey="errorRate"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-				/>
-				<ColumnHead<SortKey>
-					label="Subrequests"
-					sortKey="subrequests"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="CPU p99"
-					sortKey="cpuP99Ms"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[90px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Duration p99"
-					sortKey="durationP99Ms"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-				/>
+				<WorkerColumns sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }} />
 			</DataTable.Head>
 			{sorted.length === 0 && (
 				<DataTable.Empty>No Worker invocations in the selected window.</DataTable.Empty>

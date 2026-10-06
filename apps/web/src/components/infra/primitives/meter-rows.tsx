@@ -1,3 +1,4 @@
+import { Meter } from "@maple/ui/components/ui/meter"
 import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 
@@ -73,18 +74,7 @@ function MeterRow({ label, fraction, hideLabel }: Meter & { hideLabel?: boolean 
 					{label}
 				</span>
 			)}
-			<div className="relative h-[3px] min-w-0 flex-1 overflow-hidden rounded-[1px] bg-muted/60">
-				<div
-					className={cn(
-						"absolute inset-y-0 left-0 transition-[width] duration-500",
-						BAR_FILL[level],
-					)}
-					// A non-zero value never renders as nothing: 0.4% of a 120px lane
-					// rounds to half a pixel, and "no bar" and "a bar too small to see"
-					// are different facts.
-					style={{ width: `${clamped > 0 ? Math.max(clamped * 100, 1.5) : 0}%` }}
-				/>
-			</div>
+			<Meter value={clamped} className="h-[3px] flex-1 rounded-[1px]" fillClassName={BAR_FILL[level]} />
 			<span
 				className={cn(
 					VALUE_WIDTH,

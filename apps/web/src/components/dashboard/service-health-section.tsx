@@ -20,7 +20,8 @@ import type { AlertIncidentDocument, AnomalySignalType } from "@maple/domain/htt
 import { Card } from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -238,7 +239,10 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 				),
 			)
 			return (
-				<section className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
+				<section
+					className={cn("mb-4 space-y-3", refreshingClass(result.waiting))}
+					aria-busy={result.waiting || undefined}
+				>
 					{banner}
 					<StatRail>
 						<StatRailItem
@@ -326,7 +330,10 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 				anomaliesResponse.data.map(anomalyServiceCountFromV2),
 			).slice(0, MAX_ROWS)
 			return (
-				<section className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
+				<section
+					className={cn("mt-4 space-y-3", refreshingClass(result.waiting))}
+					aria-busy={result.waiting || undefined}
+				>
 					{header}
 					<Card className="overflow-hidden p-0">
 						{rows.length === 0 ? (
@@ -389,7 +396,7 @@ function ServiceHealthRow({
 			>
 				<StatusDot tone="custom" size="lg" className={TONE_FILL[HEALTH_TONE[health]]} />
 				<div className="flex min-w-0 flex-1 items-center gap-2">
-					<ServiceDot serviceName={service.serviceName} className="size-1.5" />
+					<ServiceDot serviceName={service.serviceName} size="sm" />
 					<span className="truncate text-sm font-medium text-foreground">
 						{service.serviceName}
 					</span>
@@ -430,7 +437,7 @@ function ServiceHealthRow({
 					/>
 					<Metric
 						label="rps"
-						value={formatThroughput(service.throughput)}
+						value={formatThroughput(service.throughput, "/s")}
 						tone={metricTone(trafficCause)}
 					/>
 				</div>
@@ -463,11 +470,4 @@ function Metric({
 			<Eyebrow>{label}</Eyebrow>
 		</div>
 	)
-}
-
-function formatThroughput(rps: number): string {
-	if (!Number.isFinite(rps)) return "—"
-	if (rps >= 100) return `${Math.round(rps)}/s`
-	if (rps >= 1) return `${rps.toFixed(1)}/s`
-	return `${rps.toFixed(2)}/s`
 }

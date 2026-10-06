@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from "react"
+import { useState } from "react"
 import { useClerk, useReverification, useUser } from "@clerk/clerk-react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -7,13 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@mapl
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
-import { UploadIcon } from "@/components/icons"
+import { ImageDropzone, TypeToConfirmField } from "@/components/common/image-dropzone"
 import { UserAvatar, userInitials } from "@/components/dashboard/user-avatar"
 import { toastAccountError } from "@/components/account/account-errors"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
-
-const MAX_AVATAR_BYTES = 10 * 1024 * 1024 // 10 MB
-const ACCEPTED_AVATAR_TYPES = "image/png,image/jpeg,image/webp,image/gif"
 
 /**
  * Edits to the name fields are held as a draft tagged with the user id they were typed against.
@@ -33,8 +30,6 @@ export function ProfileSection() {
 	const [draft, setDraft] = useState<NameDraft | null>(null)
 	const [isSavingName, setIsSavingName] = useState(false)
 	const [isSavingAvatar, setIsSavingAvatar] = useState(false)
-	const [isDragging, setIsDragging] = useState(false)
-	const fileInputRef = useRef<HTMLInputElement>(null)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [confirmText, setConfirmText] = useState("")
 	const [isDeleting, setIsDeleting] = useState(false)
@@ -77,16 +72,8 @@ export function ProfileSection() {
 		}
 	}
 
-	async function handleAvatarSelect(file: File | undefined | null) {
-		if (!user || isSavingAvatar || !file) return
-		if (!file.type.startsWith("image/")) {
-			toastManager.add({ title: "Please choose an image file", type: "error" })
-			return
-		}
-		if (file.size > MAX_AVATAR_BYTES) {
-			toastManager.add({ title: "Image must be 10 MB or smaller", type: "error" })
-			return
-		}
+	async function handleAvatarSelect(file: File) {
+		if (!user || isSavingAvatar) return
 		setIsSavingAvatar(true)
 		try {
 			await user.setProfileImage({ file })
@@ -95,7 +82,6 @@ export function ProfileSection() {
 			toastAccountError(err, "Failed to update profile picture")
 		} finally {
 			setIsSavingAvatar(false)
-			if (fileInputRef.current) fileInputRef.current.value = ""
 		}
 	}
 
@@ -110,18 +96,6 @@ export function ProfileSection() {
 		} finally {
 			setIsSavingAvatar(false)
 		}
-	}
-
-	function openFilePicker() {
-		if (isSavingAvatar) return
-		fileInputRef.current?.click()
-	}
-
-	function handleDrop(e: DragEvent<HTMLDivElement>) {
-		e.preventDefault()
-		setIsDragging(false)
-		if (isSavingAvatar) return
-		void handleAvatarSelect(e.dataTransfer.files?.[0])
 	}
 
 	async function handleDelete() {
@@ -156,76 +130,20 @@ export function ProfileSection() {
 					<div className="space-y-4 max-w-md">
 						<div className="space-y-1.5">
 							<Label>Profile picture</Label>
-							<div className="flex items-center gap-4">
-								<div
-									role="button"
-									tabIndex={isSavingAvatar ? -1 : 0}
-									aria-label="Change profile picture"
-									aria-disabled={isSavingAvatar}
-									onClick={openFilePicker}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											openFilePicker()
-										}
-									}}
-									onDragOver={(e) => {
-										e.preventDefault()
-										if (!isSavingAvatar) setIsDragging(true)
-									}}
-									onDragLeave={() => setIsDragging(false)}
-									onDrop={handleDrop}
-									className={`relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none transition-colors ${
-										isSavingAvatar
-											? "cursor-not-allowed opacity-60"
-											: "cursor-pointer hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-									} ${isDragging ? "border-primary ring-2 ring-primary" : "border-border"}`}
-								>
+							<ImageDropzone
+								preview={
 									<UserAvatar
 										name={displayName}
 										initials={userInitials(displayName)}
 										imageUrl={user.hasImage ? user.imageUrl : undefined}
 										className="size-full rounded-md text-sm"
 									/>
-									{isDragging && (
-										<div className="absolute inset-0 flex items-center justify-center rounded-md bg-primary/10 text-center text-[10px] font-medium text-primary">
-											Drop image
-										</div>
-									)}
-								</div>
-								<div className="space-y-1.5">
-									<div className="flex items-center gap-2">
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={openFilePicker}
-											disabled={isSavingAvatar}
-										>
-											<UploadIcon size={14} className="mr-1.5" />
-											{isSavingAvatar ? "Uploading..." : "Change picture"}
-										</Button>
-										{user.hasImage && (
-											<Button
-												variant="ghost"
-												size="sm"
-												onClick={handleRemoveAvatar}
-												disabled={isSavingAvatar}
-											>
-												Remove
-											</Button>
-										)}
-									</div>
-									<p className="text-xs text-muted-foreground">
-										Drop an image or click to upload. PNG, JPG, WEBP or GIF, up to 10 MB.
-									</p>
-								</div>
-							</div>
-							<input
-								ref={fileInputRef}
-								type="file"
-								accept={ACCEPTED_AVATAR_TYPES}
-								className="hidden"
-								onChange={(e) => void handleAvatarSelect(e.target.files?.[0])}
+								}
+								onFile={(file) => void handleAvatarSelect(file)}
+								onRemove={user.hasImage ? () => void handleRemoveAvatar() : undefined}
+								uploading={isSavingAvatar}
+								targetLabel="Change profile picture"
+								changeLabel="Change picture"
 							/>
 						</div>
 						<div className="grid grid-cols-2 gap-3">
@@ -253,8 +171,13 @@ export function ProfileSection() {
 							</div>
 						</div>
 						<div className="flex justify-end">
-							<Button size="sm" onClick={handleSaveName} disabled={!nameDirty || isSavingName}>
-								{isSavingName ? "Saving..." : "Save"}
+							<Button
+								size="sm"
+								onClick={handleSaveName}
+								loading={isSavingName}
+								disabled={!nameDirty}
+							>
+								Save
 							</Button>
 						</div>
 					</div>
@@ -294,19 +217,12 @@ export function ProfileSection() {
 				confirmDisabled={!confirmMatches}
 				onConfirm={() => void handleDelete()}
 			>
-				{/* AlertDialog has no panel slot, so a body between header and footer pads itself. */}
-				<div className="space-y-2">
-					<Label htmlFor="account-delete-confirm" className="text-xs">
-						Type <span className="font-mono font-semibold">{email}</span> to confirm.
-					</Label>
-					<Input
-						id="account-delete-confirm"
-						value={confirmText}
-						onChange={(e) => setConfirmText(e.target.value)}
-						placeholder={email}
-						autoComplete="off"
-					/>
-				</div>
+				<TypeToConfirmField
+					id="account-delete-confirm"
+					expected={email}
+					value={confirmText}
+					onChange={setConfirmText}
+				/>
 			</ConfirmDialog>
 		</div>
 	)

@@ -1,3 +1,5 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type {
 	IngestAttributeMappingId,
@@ -8,7 +10,6 @@ import type { V2AttributeMapping } from "@maple/domain/http/v2"
 import { useState } from "react"
 import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -30,8 +31,6 @@ import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	AlertWarningIcon,
-	ArrowPathIcon,
 	ArrowRightFromLineIcon,
 	ArrowRightIcon,
 	ArrowUpDownIcon,
@@ -51,8 +50,7 @@ import {
 } from "@/lib/services/atoms/ingestion-atoms"
 import { AttributeKeyAutocomplete } from "./attribute-key-autocomplete"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-
-const MONO = "font-mono text-[0.92em] text-muted-foreground"
+import { ErrorState } from "@/components/common/error-state"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
 	span: "Span attribute",
@@ -213,29 +211,28 @@ export function AttributeMappingsSection() {
 
 	return (
 		<>
-			<div className="bg-card flex flex-col rounded-lg border">
-				<div className="flex items-start gap-3 px-4 pt-4 pb-3">
-					<div className="flex flex-col gap-1">
-						<h3 className="text-sm font-medium">
-							Attribute mappings
-							{mappingCount !== null && mappingCount > 0 && (
-								<span className="text-muted-foreground font-normal tabular-nums">
-									{" "}
-									· {mappingCount}
-								</span>
-							)}
-						</h3>
-						<p className="text-muted-foreground text-xs">
-							Rename or promote span attribute keys at ingest. Applied only to spans received
-							after a rule is saved.
-						</p>
-					</div>
-					<div className="grow" />
-					<Button variant="outline" size="sm" className="shrink-0" onClick={openAddDialog}>
-						<PlusIcon size={14} />
-						Add mapping
-					</Button>
-				</div>
+			<Card className="overflow-hidden">
+				<CardHeader className="px-4 pt-4 pb-3">
+					<CardTitle render={<h3 />} className="text-sm font-medium">
+						Attribute mappings
+						{mappingCount !== null && mappingCount > 0 && (
+							<span className="text-muted-foreground font-normal tabular-nums">
+								{" "}
+								· {mappingCount}
+							</span>
+						)}
+					</CardTitle>
+					<CardDescription className="text-xs">
+						Rename or promote span attribute keys at ingest. Applied only to spans received after
+						a rule is saved.
+					</CardDescription>
+					<CardAction>
+						<Button variant="outline" size="sm" onClick={openAddDialog}>
+							<PlusIcon size={14} />
+							Add mapping
+						</Button>
+					</CardAction>
+				</CardHeader>
 				<div className="border-t">
 					{Result.isInitial(listResult) ? (
 						<SkeletonList
@@ -252,21 +249,12 @@ export function AttributeMappingsSection() {
 							)}
 						/>
 					) : !Result.isSuccess(listResult) ? (
-						<Empty className="py-10">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<AlertWarningIcon size={16} className="text-destructive" />
-								</EmptyMedia>
-								<EmptyTitle>Couldn't load mappings</EmptyTitle>
-								<EmptyDescription>
-									Something went wrong fetching your attribute mappings.
-								</EmptyDescription>
-							</EmptyHeader>
-							<Button variant="outline" size="sm" onClick={() => refreshMappings()}>
-								<ArrowPathIcon size={14} />
-								Try again
-							</Button>
-						</Empty>
+						<ErrorState
+							error={listResult.cause}
+							title="Couldn't load mappings"
+							onRetry={() => refreshMappings()}
+							className="border-0"
+						/>
 					) : mappings.length === 0 ? (
 						<Empty className="py-10">
 							<EmptyHeader>
@@ -321,14 +309,14 @@ export function AttributeMappingsSection() {
 										</span>
 
 										<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
-											<code className={MONO}>{mapping.source_key}</code>
+											<InlineCode variant="plain">{mapping.source_key}</InlineCode>
 											<ArrowRightIcon
 												size={12}
 												className="text-muted-foreground shrink-0"
 											/>
-											<code className="font-mono text-[0.92em] text-foreground">
+											<InlineCode variant="plain" className="text-foreground">
 												{mapping.target_key}
-											</code>
+											</InlineCode>
 										</div>
 
 										<Eyebrow
@@ -378,7 +366,7 @@ export function AttributeMappingsSection() {
 						</div>
 					)}
 				</div>
-			</div>
+			</Card>
 
 			{/* Add / Edit Dialog */}
 			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -530,11 +518,11 @@ export function AttributeMappingsSection() {
 									Preview
 								</Eyebrow>
 								<div className="flex flex-wrap items-center gap-1.5 text-sm">
-									<code className={MONO}>{formSourceKey.trim()}</code>
+									<InlineCode variant="plain">{formSourceKey.trim()}</InlineCode>
 									<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
-									<code className="text-foreground font-mono text-[0.92em]">
+									<InlineCode variant="plain" className="text-foreground">
 										{formTargetKey.trim()}
-									</code>
+									</InlineCode>
 									<Badge
 										variant={OPERATION_BADGE[formOperation].variant}
 										className="ml-1 gap-1"
@@ -550,17 +538,8 @@ export function AttributeMappingsSection() {
 						<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
 							Cancel
 						</Button>
-						<Button onClick={handleSave} disabled={isSaving}>
-							{isSaving ? (
-								<>
-									<Spinner size={14} />
-									{editing ? "Saving..." : "Adding..."}
-								</>
-							) : editing ? (
-								"Save Changes"
-							) : (
-								"Add Mapping"
-							)}
+						<Button onClick={handleSave} loading={isSaving}>
+							{editing ? "Save Changes" : "Add Mapping"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -576,8 +555,8 @@ export function AttributeMappingsSection() {
 				description={
 					<>
 						Are you sure you want to delete{" "}
-						<span className="text-foreground font-medium">{deleteConfirm?.name}</span>? This action
-						cannot be undone.
+						<span className="text-foreground font-medium">{deleteConfirm?.name}</span>? This
+						action cannot be undone.
 					</>
 				}
 				confirmLabel="Delete"

@@ -31,7 +31,6 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import {
 	Dialog,
 	DialogContent,
@@ -54,6 +53,7 @@ import {
 	GlobePointerIcon,
 } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
 
 const FEATURE_ICONS: Record<string, IconComponent> = {
 	logs: FileIcon,
@@ -257,7 +257,7 @@ export function PricingCards() {
 	}
 
 	if (!Result.isSuccess(plansResult)) {
-		return <p className="text-muted-foreground text-sm">Unable to load pricing plans.</p>
+		return <ErrorState error={plansResult.cause} title="Unable to load pricing plans" variant="row" />
 	}
 
 	const plans = plansResult.value.plans
@@ -566,19 +566,16 @@ export function PlanCards({
 						<CardFooter className="mt-auto flex-col gap-2 items-stretch">
 							<Button
 								variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
-								disabled={btn.disabled || loadingPlanId === plan.id}
+								loading={loadingPlanId === plan.id}
+								disabled={btn.disabled}
 								className="w-full font-medium"
 								onClick={() => onCheckout(plan.id)}
 							>
-								{loadingPlanId === plan.id ? (
-									<Spinner className="size-4" />
-								) : trialAvailable && !btn.disabled ? (
-									`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-								) : isActive && isTrialing ? (
-									"Trialing"
-								) : (
-									btn.label
-								)}
+								{trialAvailable && !btn.disabled
+									? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+									: isActive && isTrialing
+										? "Trialing"
+										: btn.label}
 							</Button>
 							{trialAvailable && !btn.disabled && (
 								<p className="text-[11px] text-muted-foreground text-center tabular-nums">

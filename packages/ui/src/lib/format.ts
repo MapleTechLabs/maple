@@ -273,7 +273,21 @@ export function bucketIntervalLabel(seconds: number | undefined): string {
  * Format a throughput value with a rate suffix for chart axes.
  */
 export function formatThroughput(value: number, suffix: string): string {
-	return `${formatNumber(value)}${suffix}`
+	return `${formatRate(value)}${suffix}`
+}
+
+/**
+ * A per-second (or per-anything) rate at reading precision: compacted past 1K, whole above 100,
+ * one decimal above 1, two significant digits below. `formatNumber` keeps three decimals, which
+ * turns a request rate into "12.346".
+ */
+export function formatRate(value: number): string {
+	if (!Number.isFinite(value)) return "—"
+	const abs = Math.abs(value)
+	if (abs >= 1_000) return formatNumber(value)
+	if (abs >= 100) return Math.round(value).toLocaleString()
+	if (abs >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+	return value.toLocaleString(undefined, { maximumSignificantDigits: 2 })
 }
 
 /** Decimals a percentage may grow to before the number stops being readable. */

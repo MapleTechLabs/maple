@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { SectionHeading } from "@/components/common/section-heading"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -562,10 +563,12 @@ function PlanetScaleDatabaseData({
 			{/* Between the charts and the tables: the markers above are the index,
 			    this is the detail. */}
 			<section className="space-y-2">
-				<div className="flex items-baseline justify-between gap-3">
-					<h2 className="text-sm font-medium text-foreground">Activity</h2>
-					<span className="font-mono text-[11px] text-muted-foreground">{events.length}</span>
-				</div>
+				<SectionHeading
+					title="Activity"
+					actions={
+						<span className="font-mono text-[11px] text-muted-foreground">{events.length}</span>
+					}
+				/>
 				{Result.isInitial(eventsResult) ? (
 					<PlanetScaleActivityFeedLoading />
 				) : Result.isFailure(eventsResult) ? (

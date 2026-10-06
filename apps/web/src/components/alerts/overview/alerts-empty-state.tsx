@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -149,7 +150,9 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 				</span>
 				<span className="font-medium text-sm">{template.title}</span>
 			</div>
-			<code className="font-mono text-[11px] text-muted-foreground">{template.summary}</code>
+			<InlineCode className="self-start text-[11px] text-muted-foreground">
+				{template.summary}
+			</InlineCode>
 		</Link>
 	)
 }

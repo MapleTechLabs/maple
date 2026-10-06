@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router"
+import { RelativeTime } from "@/components/common/relative-time"
 import { Fragment, useMemo } from "react"
 
 import type { AlertIncidentDocument, AlertIncidentHoldReason } from "@maple/domain/http"
@@ -77,9 +78,11 @@ export function ActiveIncidentsTable({
 						<span title={holdReasonTitle(incident.holdReason)}>
 							<AlertStatusBadge state="held" />
 							{incident.heldSince ? (
-								<span className="text-muted-foreground text-xs ml-1">
-									{formatRelativeTime(incident.heldSince)}
-								</span>
+								<RelativeTime
+									value={incident.heldSince}
+									tooltip="title"
+									className="text-muted-foreground text-xs ml-1"
+								/>
 							) : null}
 						</span>
 					) : (
@@ -95,7 +98,11 @@ export function ActiveIncidentsTable({
 				</TableCell>
 				<TableCell>{duration}</TableCell>
 				<TableCell>
-					{incident.lastNotifiedAt ? formatRelativeTime(incident.lastNotifiedAt) : "Never"}
+					{incident.lastNotifiedAt ? (
+						<RelativeTime value={incident.lastNotifiedAt} tooltip="title" />
+					) : (
+						"Never"
+					)}
 				</TableCell>
 			</TableRow>
 		)

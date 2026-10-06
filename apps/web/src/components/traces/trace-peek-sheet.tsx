@@ -1,9 +1,12 @@
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as React from "react"
 import { Link } from "@tanstack/react-router"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain"
 
+import { countLabel } from "@maple/ui/lib/format"
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@maple/ui/components/ui/resizable"
@@ -339,7 +342,7 @@ function TracePeekLoaded({
 					<SheetDescription>
 						{data.spans.length === 0
 							? "This trace could not be found. It may have expired or not been ingested yet."
-							: `Found ${data.spans.length} span${data.spans.length !== 1 ? "s" : ""}, but the root span is missing.`}
+							: `Found ${countLabel(data.spans.length, "span")}, but the root span is missing.`}
 					</SheetDescription>
 				</SheetHeader>
 				<div className="flex flex-1 flex-col items-center justify-center p-8">
@@ -359,7 +362,10 @@ function TracePeekLoaded({
 	})
 
 	return (
-		<div className={`flex min-h-0 flex-1 flex-col transition-opacity ${waiting ? "opacity-50" : ""}`}>
+		<div
+			className={cn("flex min-h-0 flex-1 flex-col", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
+		>
 			<SheetDetailHeader
 				kind="Trace"
 				mono={false}
