@@ -52,13 +52,14 @@ import {
 } from "@/components/icons"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
+import { SyncUnavailable } from "@/components/common/sync-unavailable"
+import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { displayError } from "@/lib/error-messages"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { CreateApiKeyDialog } from "./create-api-key-dialog"
 import { RollApiKeyDialog } from "./roll-api-key-dialog"
-import { ErrorState } from "@/components/common/error-state"
 
 type ApiKey = V2ApiKey
 
@@ -242,7 +243,11 @@ export function ApiKeysSection() {
 					{isLoading ? (
 						<SkeletonList rows={2} rowClassName="h-[52px]" gap="2" className="p-4" />
 					) : isError ? (
-						<ErrorState error={null} title="Couldn't load API keys" className="border-0" />
+						<SyncUnavailable
+							title="Couldn't load API keys"
+							description="The key list couldn't be synced. Your keys are unaffected; this is a read problem."
+							onRetry={retryOrgCollections}
+						/>
 					) : keys.length === 0 ? (
 						<Empty className="py-8">
 							<EmptyHeader>

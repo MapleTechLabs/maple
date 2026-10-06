@@ -128,11 +128,12 @@ export function MembersSection() {
 				await memberToRemove.destroy()
 				toastManager.add({ title: `${memberToRemove.name} has been removed`, type: "success" })
 				memberships?.revalidate?.()
+				setRemoveDialogOpen(false)
+				setMemberToRemove(null)
 			} catch (err: unknown) {
+				// Keep the confirmation open with its member selected so the admin can retry.
 				toastAccountError(err, "Failed to remove member")
 			}
-			setRemoveDialogOpen(false)
-			setMemberToRemove(null)
 		})
 	}
 

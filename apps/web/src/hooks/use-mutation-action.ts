@@ -17,7 +17,10 @@ export function useAsyncAction<Args extends ReadonlyArray<unknown>, R>(
 	actionRef.current = action
 	const run = useCallback((...args: Args): Promise<R> => {
 		setPending(true)
-		return actionRef.current(...args).finally(() => setPending(false))
+		// The executor turns a synchronous throw into a rejection, so the flag always clears.
+		return new Promise<R>((resolve) => resolve(actionRef.current(...args))).finally(() =>
+			setPending(false),
+		)
 	}, [])
 	return [run, pending] as const
 }
