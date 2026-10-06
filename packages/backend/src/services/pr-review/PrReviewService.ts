@@ -31,6 +31,8 @@ import {
 	type PrReviewSeverity,
 	type PrReviewSkipReason,
 	type PrReviewStatus,
+	PrReviewTelemetry,
+	openContractBreaks,
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_FAILURE_COPY,
 	DEFAULT_REVIEWER_MENTION,
@@ -43,6 +45,7 @@ import {
 	type PullRequestReviewComment,
 	type PullRequestReviewPublication,
 	type SubmitPrReviewRequest,
+	type VcsInstallation,
 	type VcsRepo,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
@@ -75,6 +78,17 @@ import {
 	findingText,
 } from "./feedback"
 import { FindingEmbedder } from "./FindingEmbedder"
+import { isRuntimeSource } from "./telemetry/diff"
+import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
+import {
+	fixedContractBreaks,
+	lineStillEmits,
+	renderTelemetryKickoff,
+	renderTelemetryMarkdown,
+	telemetryFindings,
+	weighByTraffic,
+	withDismissals,
+} from "./telemetry/render"
 import {
 	dismissedFindings,
 	nextHandles,
@@ -254,6 +268,8 @@ export const buildReviewKickoff = (input: {
 	 * be read (the agent then reads them itself).
 	 */
 	readonly rules?: ReadonlyArray<RepositoryRuleFile>
+	/** What production telemetry says about the diff; absent when it could not be read. */
+	readonly telemetry?: PrReviewTelemetry
 }): string => {
 	const body = (input.body ?? "").trim()
 	const quoted =
@@ -278,6 +294,7 @@ export const buildReviewKickoff = (input: {
 		"",
 		...renderConfigRules(input.config),
 		...(input.followUp === undefined || input.followUp.length === 0 ? [] : [...input.followUp, ""]),
+		...renderTelemetryKickoff(input.telemetry),
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(lines.join("\n"), "")
@@ -523,6 +540,8 @@ export interface ReviewMarkdownInput {
 	readonly carried?: CarriedFindings
 	/** How the footer tells people to address the reviewer; the App's login. */
 	readonly mention?: string
+	/** The repository fails the check on a broken telemetry contract. */
+	readonly blocking?: boolean
 }
 
 const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings: ReadonlyArray<F>) =>
@@ -657,6 +676,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 		)
 	}
+	lines.push(...renderTelemetryMarkdown(report.telemetry, { blocking: input.blocking === true }))
 	const checked = report.checked ?? []
 	if (checked.length > 0) {
 		lines.push(
@@ -810,6 +830,8 @@ export const buildPublication = (input: {
 	readonly keys?: ReadonlyMap<string, string>
 	readonly commentAttempt?: number
 	readonly mention?: string
+	/** Fail the check while a telemetry contract break is open (the repository's setting). */
+	readonly blockOnContractBreaks?: boolean
 }): PullRequestReviewPublication => {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
@@ -832,8 +854,10 @@ export const buildPublication = (input: {
 				finding.handle === undefined ? undefined : input.keys?.get(finding.handle),
 			),
 		)
+	const blocking = input.blockOnContractBreaks === true && openContractBreaks(report.telemetry).length > 0
 	const markdown = {
 		report,
+		blocking,
 		partial: input.partial,
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
@@ -851,10 +875,12 @@ export const buildPublication = (input: {
 			verdictTitle(report, carried),
 		].join(" · "),
 		summary: renderCheckSummary(markdown),
-		// Never `failure`: the review informs, it does not block a merge. Green only for a review
-		// that finished, found nothing to address and is confident the change is safe.
-		conclusion:
-			hasIssues || input.partial || (confidence !== undefined && confidence.confidence <= 3)
+		// `failure` only for a repository that asked to block on a broken telemetry contract, a fact
+		// rather than an opinion. Otherwise the review informs: green only for a review that
+		// finished, found nothing to address and is confident the change is safe.
+		conclusion: blocking
+			? "failure"
+			: hasIssues || input.partial || (confidence !== undefined && confidence.confidence <= 3)
 				? "neutral"
 				: "success",
 		annotations,
@@ -882,6 +908,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
 			// Present where the agent runs; without it the feedback filter is off.
 			const embedder = Option.getOrUndefined(yield* Effect.serviceOption(FindingEmbedder))
+			// Present where a warehouse is wired; without it reviews read the diff alone.
+			const telemetryReader = Option.getOrUndefined(yield* Effect.serviceOption(PrReviewTelemetryService))
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -1107,6 +1135,29 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
 				})
 			})
+
+			/**
+			 * The diff read against the organization's telemetry, for the kickoff and the report. Best
+			 * effort, like the rules: a review that cannot read it reviews the diff alone.
+			 */
+			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+				Effect.gen(function* () {
+					if (telemetryReader === undefined) return undefined
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return undefined
+					const { provider, installation, ref } = target.value
+					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
+					return yield* telemetryReader.analyze(orgId, files)
+				}).pipe(
+					Effect.timeout("20 seconds"),
+					Effect.withSpan("PrReviewService.telemetryFor"),
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not read production telemetry; reviewing the diff alone").pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
 
 			/**
 			 * The repository's rule files at the base, for the kickoff. Best effort: `undefined` when
@@ -1512,11 +1563,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					),
 				)
-				const rules = yield* repositoryRules(
-					orgId,
-					repo,
-					job.baseSha ?? job.baseRef ?? repo.defaultBranch,
+				const [rules, telemetry] = yield* Effect.all(
+					[
+						repositoryRules(orgId, repo, job.baseSha ?? job.baseRef ?? repo.defaultBranch),
+						telemetryFor(orgId, repo, job.number),
+					],
+					{ concurrency: "unbounded" },
 				)
+				if (telemetry !== undefined) {
+					// Read back at submit, where the facts become findings and the gate.
+					yield* update(orgId, reviewId, { telemetryJson: telemetry }).pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("[PrReview] could not store the telemetry facts").pipe(
+								Effect.annotateLogs({ orgId, reviewId, error: error.message }),
+							),
+						),
+					)
+				}
 				const text = buildReviewKickoff({
 					repository: repo.fullName,
 					number: job.number,
@@ -1535,6 +1598,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
 					...(rules === undefined ? undefined : { rules }),
+					...(telemetry === undefined ? undefined : { telemetry }),
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
@@ -1897,6 +1961,59 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 
+			/**
+			 * The telemetry facts stored at start, with each dismissal the reviewer could prove: the
+			 * file it names, read at the head, still emits the name on that line. Anything that cannot
+			 * be read is not proof.
+			 */
+			const telemetryAtSubmit = Effect.fn("PrReviewService.telemetryAtSubmit")(function* (
+				orgId: OrgId,
+				reviewId: PrReviewId,
+				headSha: GitCommitSha,
+				dismissals: ReadonlyArray<{ readonly name: string; readonly path: string; readonly line: number }>,
+				repository: Option.Option<VcsRepo>,
+				installation: Option.Option<VcsInstallation>,
+			) {
+				const rows = yield* database
+					.execute((db) =>
+						db
+							.select({ telemetryJson: prReviews.telemetryJson })
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(Effect.mapError(toPersistence))
+				const stored = rows[0]?.telemetryJson
+				if (stored === null || stored === undefined) return undefined
+				const telemetry = yield* Schema.decodeUnknownEffect(PrReviewTelemetry)(stored).pipe(Effect.option)
+				if (Option.isNone(telemetry)) return undefined
+				const open = new Set(openContractBreaks(telemetry.value).map((item) => item.name))
+				const candidates = dismissals.filter((item) => open.has(item.name) && isRuntimeSource(item.path))
+				if (candidates.length === 0 || Option.isNone(repository) || Option.isNone(installation))
+					return telemetry.value
+				const target = yield* providerFor(orgId, repository.value).pipe(Effect.option, Effect.map(Option.flatten))
+				if (Option.isNone(target)) return telemetry.value
+				const { provider, ref } = target.value
+				const verified = yield* Effect.forEach(
+					candidates,
+					(item) =>
+						provider.fetchSourceFile(installation.value, ref, item.path, headSha).pipe(
+							Effect.map((file) =>
+								Option.isSome(file) && lineStillEmits(file.value.content, item.line, item.name)
+									? [item]
+									: [],
+							),
+							Effect.catchCause(() => Effect.succeed([])),
+						),
+					{ concurrency: 4 },
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.pr_review.telemetry.dismissals_claimed": dismissals.length,
+					"maple.pr_review.telemetry.dismissals_verified": verified.flat().length,
+				})
+				return withDismissals(telemetry.value, verified.flat())
+			})
+
 			const submitReview: PrReviewServiceApi["submitReview"] = Effect.fn(
 				"PrReviewService.submitReview",
 			)(function* (orgId, reviewId, request) {
@@ -1920,13 +2037,27 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
+				// The facts read at start, with the dismissals the reviewer could prove.
+				const telemetry = yield* telemetryAtSubmit(
+					orgId,
+					reviewId,
+					review.headSha,
+					request.telemetryDismissals ?? [],
+					repository,
+					installation,
+				)
+
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
 				const open = tracked.filter((finding) => finding.status === "open")
-				const resolved = resolvedByHandle(request.resolved ?? [], open)
+				const resolved = [
+					...resolvedByHandle(request.resolved ?? [], open),
+					...fixedContractBreaks(open, telemetry),
+				].filter((finding, i, all) => all.indexOf(finding) === i)
 				const stillOpen = open.filter((finding) => !resolved.includes(finding))
-				// The repository's settings are enforced here, not only stated in the kickoff.
-				const allowed = request.report.findings.filter(
+				// The model's findings weighed by production traffic, and the facts the service files
+				// itself. The repository's settings are enforced here, not only stated in the kickoff.
+				const allowed = [...weighByTraffic(request.report.findings, telemetry), ...telemetryFindings(telemetry)].filter(
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -1966,6 +2097,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
 				const settled = new PrReviewReport({
 					...request.report,
+					...(telemetry === undefined ? undefined : { telemetry }),
 					findings,
 					verdict: hasIssues
 						? "issues"
@@ -2116,6 +2248,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...(config.minInlineSeverity === undefined
 						? undefined
 						: { minInlineSeverity: config.minInlineSeverity }),
+					...(config.blockOnContractBreaks === true ? { blockOnContractBreaks: true } : undefined),
 				})
 				const published = yield* provider.success
 					.publishPullRequestReview(installation.value, ref, publication)
@@ -2272,6 +2405,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				VcsRepository.layer,
 				VcsProviderRegistry.layer,
 				OrganizationFeatureFlagsService.layer,
+				PrReviewTelemetryService.layer,
 			),
 		),
 	)

@@ -1,0 +1,462 @@
+/**
+ * The organization's telemetry, read for one pull request: what it emits, which alerts and
+ * dashboards read it, which errors are open, and how production behaved after the merge shipped.
+ *
+ * Every read is best effort and bounded. A review that cannot reach the warehouse reviews the diff
+ * as before, without these facts; nothing here fails a review.
+ */
+import { type OrgId, type PrReviewTelemetry, type PullRequestFile } from "@maple/domain/http"
+import { alertRules, dashboards, errorIssues } from "@maple/db"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { and, desc, eq, gte, inArray, isNull, notInArray } from "drizzle-orm"
+import { Clock, Context, Effect, Layer } from "effect"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { dateToMs } from "@maple/backend/platform/time"
+import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import {
+	analyzeTelemetry,
+	type CatalogIssue,
+	type CatalogOperation,
+	DEFAULT_BYTES_PER_LOG_RECORD,
+	type TelemetryCatalog,
+} from "./analyze"
+import { type ReferenceSource, textsOf } from "./references"
+
+/** The week a change is weighed against: long enough to include a weekly job, short enough to be today. */
+export const TELEMETRY_WINDOW_DAYS = 7
+const DAY_MS = 86_400_000
+const HOUR_MS = 3_600_000
+
+/** Issues no longer anyone's problem. */
+const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
+const ISSUE_SCAN_LIMIT = 500
+const SOURCE_SCAN_LIMIT = 500
+
+
+export interface OperationWindowStats {
+	readonly service: string
+	readonly spanName: string
+	readonly count: number
+	readonly errorCount: number
+	readonly p95Ms: number
+}
+
+export interface DeploymentVersion {
+	readonly service: string
+	readonly environment: string
+	readonly commitSha: string
+	readonly firstSeenAt: number
+	readonly spanCount: number
+}
+
+export interface PrReviewTelemetryServiceApi {
+	/** The pull request's diff read against the last week of production. */
+	readonly analyze: (orgId: OrgId, files: ReadonlyArray<PullRequestFile>) => Effect.Effect<PrReviewTelemetry | undefined>
+	/** Versions of these services that first reported after `sinceMs`, oldest first. */
+	readonly deploymentsSince: (
+		orgId: OrgId,
+		services: ReadonlyArray<string>,
+		sinceMs: number,
+		nowMs: number,
+	) => Effect.Effect<ReadonlyArray<DeploymentVersion>>
+	/** Per-operation traffic in one window, minute-exact. */
+	readonly operationsIn: (
+		orgId: OrgId,
+		services: ReadonlyArray<string>,
+		spanNames: ReadonlyArray<string>,
+		startMs: number,
+		endMs: number,
+	) => Effect.Effect<ReadonlyArray<OperationWindowStats>>
+	/** Occurrences per fingerprint in one window. */
+	readonly issueCountsIn: (
+		orgId: OrgId,
+		fingerprintHashes: ReadonlyArray<string>,
+		startMs: number,
+		endMs: number,
+	) => Effect.Effect<ReadonlyMap<string, number>>
+	/** Error issues first seen in these services since a moment. */
+	readonly issuesFirstSeenSince: (
+		orgId: OrgId,
+		services: ReadonlyArray<string>,
+		sinceMs: number,
+	) => Effect.Effect<ReadonlyArray<CatalogIssue>>
+	/** Attribute keys set at least once in a window. */
+	readonly attributeKeysIn: (orgId: OrgId, startMs: number, endMs: number) => Effect.Effect<ReadonlySet<string>>
+}
+
+/** A failed read is logged and read as empty: the review goes on without that fact. */
+const orEmpty =
+	<Empty>(empty: Empty, what: string, orgId: OrgId) =>
+	<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A | Empty, never, R> =>
+		effect.pipe(
+			Effect.timeout("8 seconds"),
+			Effect.catchCause((cause) =>
+				Effect.logWarning(`[PrReviewTelemetry] could not read ${what}`).pipe(
+					Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+					Effect.as(empty),
+				),
+			),
+		)
+
+export class PrReviewTelemetryService extends Context.Service<
+	PrReviewTelemetryService,
+	PrReviewTelemetryServiceApi
+>()("@maple/backend/services/pr-review/telemetry/PrReviewTelemetryService", {
+	make: Effect.gen(function* () {
+		const database = yield* Database
+		const warehouse = yield* WarehouseQueryService
+
+		const window = (startMs: number, endMs: number) => ({
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		})
+
+		const catalogFor = Effect.fn("PrReviewTelemetry.catalog")(function* (orgId: OrgId, nowMs: number) {
+			const tenant = systemTenant(orgId)
+			const params = { orgId, ...window(nowMs - TELEMETRY_WINDOW_DAYS * DAY_MS, nowMs) }
+			const [operations, spanKeys, resourceKeys, metrics, usage] = yield* Effect.all(
+				[
+					warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(CH.operationTrafficHourlyQuery({}), params),
+							{ profile: "aggregation", context: "prReviewOperationCatalog" },
+						)
+						.pipe(orEmpty([], "operations", orgId)),
+					warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(CH.attributeKeysQuery({ scope: "span", limit: 2_000 }), params),
+							{ profile: "aggregation", context: "prReviewSpanAttributeKeys" },
+						)
+						.pipe(orEmpty([], "span attribute keys", orgId)),
+					warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(CH.attributeKeysQuery({ scope: "resource", limit: 500 }), params),
+							{ profile: "aggregation", context: "prReviewResourceAttributeKeys" },
+						)
+						.pipe(orEmpty([], "resource attribute keys", orgId)),
+					warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(CH.listMetricsQuery({ limit: 2_000 }), params),
+							{ profile: "aggregation", context: "prReviewMetricCatalog" },
+						)
+						.pipe(orEmpty([], "metrics", orgId)),
+					warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(CH.serviceUsageQuery({}), params, { rowSchema: CH.serviceUsageRowSchema }),
+							{ profile: "aggregation", context: "prReviewServiceUsage" },
+						)
+						.pipe(orEmpty([], "ingest usage", orgId)),
+				],
+				{ concurrency: "unbounded" },
+			)
+			const logCount = usage.reduce((sum, row) => sum + row.totalLogCount, 0)
+			const logBytes = usage.reduce((sum, row) => sum + row.totalLogSizeBytes, 0)
+			const attributeKeys = [...spanKeys, ...resourceKeys].reduce(
+				(keys, row) => keys.set(row.attributeKey, (keys.get(row.attributeKey) ?? 0) + row.usageCount),
+				new Map<string, number>(),
+			)
+			const catalog: TelemetryCatalog = {
+				windowDays: TELEMETRY_WINDOW_DAYS,
+				operations: operations.map(
+					(row): CatalogOperation => ({
+						service: row.serviceName,
+						spanName: row.spanName,
+						count: row.spanCount,
+						errorCount: row.errorCount,
+						p95Ms: row.p95DurationMs,
+					}),
+				),
+				attributeKeys,
+				metricNames: new Map(metrics.map((row) => [row.metricName, row.dataPointCount] as const)),
+				bytesPerLogRecord: logCount > 0 ? logBytes / logCount : DEFAULT_BYTES_PER_LOG_RECORD,
+			}
+			return catalog
+		})
+
+		const referenceSources = Effect.fn("PrReviewTelemetry.referenceSources")(function* (orgId: OrgId) {
+			const [rules, boards] = yield* Effect.all(
+				[
+					database.execute((db) =>
+						db
+							.select({
+								id: alertRules.id,
+								name: alertRules.name,
+								querySpecJson: alertRules.querySpecJson,
+								queryBuilderDraftJson: alertRules.queryBuilderDraftJson,
+								rawQuerySql: alertRules.rawQuerySql,
+								groupBy: alertRules.groupBy,
+							})
+							.from(alertRules)
+							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.enabled, true)))
+							.limit(SOURCE_SCAN_LIMIT),
+					),
+					database.execute((db) =>
+						db
+							.select({ id: dashboards.id, name: dashboards.name, payloadJson: dashboards.payloadJson })
+							.from(dashboards)
+							.where(eq(dashboards.orgId, orgId))
+							.orderBy(desc(dashboards.updatedAt))
+							.limit(SOURCE_SCAN_LIMIT),
+					),
+				],
+				{ concurrency: "unbounded" },
+			)
+			return [
+				...rules.map(
+					(rule): ReferenceSource => ({
+						kind: "alert",
+						id: rule.id,
+						name: rule.name,
+						texts: textsOf([rule.querySpecJson, rule.queryBuilderDraftJson, rule.rawQuerySql, rule.groupBy]),
+					}),
+				),
+				...boards.map(
+					(board): ReferenceSource => ({
+						kind: "dashboard",
+						id: board.id,
+						name: board.name,
+						texts: textsOf(board.payloadJson),
+					}),
+				),
+			]
+		})
+
+		const openIssues = Effect.fn("PrReviewTelemetry.openIssues")(function* (orgId: OrgId, nowMs: number) {
+			const rows = yield* database.execute((db) =>
+				db
+					.select({
+						id: errorIssues.id,
+						fingerprintHash: errorIssues.fingerprintHash,
+						serviceName: errorIssues.serviceName,
+						exceptionType: errorIssues.exceptionType,
+						errorLabel: errorIssues.errorLabel,
+						exceptionMessage: errorIssues.exceptionMessage,
+						topFrame: errorIssues.topFrame,
+						occurrenceCount: errorIssues.occurrenceCount,
+						lastSeenAt: errorIssues.lastSeenAt,
+					})
+					.from(errorIssues)
+					.where(
+						and(
+							eq(errorIssues.orgId, orgId),
+							eq(errorIssues.kind, "error"),
+							isNull(errorIssues.archivedAt),
+							notInArray(errorIssues.workflowState, [...CLOSED_STATES]),
+							gte(errorIssues.lastSeenAt, new Date(nowMs - 14 * DAY_MS)),
+						),
+					)
+					.orderBy(desc(errorIssues.lastSeenAt))
+					.limit(ISSUE_SCAN_LIMIT),
+			)
+			return rows.map(toCatalogIssue)
+		})
+
+		const analyze: PrReviewTelemetryServiceApi["analyze"] = (orgId, files) =>
+			Effect.gen(function* () {
+				const nowMs = yield* Clock.currentTimeMillis
+				const [catalog, sources, issues] = yield* Effect.all(
+					[
+						catalogFor(orgId, nowMs),
+						referenceSources(orgId).pipe(orEmpty([], "alerts and dashboards", orgId)),
+						openIssues(orgId, nowMs).pipe(orEmpty([], "open issues", orgId)),
+					],
+					{ concurrency: "unbounded" },
+				)
+				const telemetry = analyzeTelemetry({ files, catalog, sources, issues })
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.pr_review.telemetry.operations": catalog.operations.length,
+					"maple.pr_review.telemetry.sources": sources.length,
+					"maple.pr_review.telemetry.contract_breaks": telemetry.contractBreaks.length,
+					"maple.pr_review.telemetry.hot_files": telemetry.hotFiles.length,
+					"maple.pr_review.telemetry.linked_issues": telemetry.linkedIssues.length,
+					"maple.pr_review.telemetry.cost_notes": telemetry.costNotes.length,
+				})
+				// Nothing to say: the kickoff and the comment stay as they were.
+				return catalog.operations.length === 0 && sources.length === 0 && issues.length === 0
+					? undefined
+					: telemetry
+			}).pipe(
+				Effect.withSpan("PrReviewTelemetryService.analyze"),
+				Effect.catchCause((cause) =>
+					Effect.logWarning("[PrReviewTelemetry] analysis failed; reviewing without it").pipe(
+						Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+						Effect.as(undefined),
+					),
+				),
+			)
+
+		const deploymentsSince: PrReviewTelemetryServiceApi["deploymentsSince"] = (orgId, services, sinceMs, nowMs) =>
+			Effect.forEach(
+				services,
+				(serviceName) =>
+					warehouse
+						.compiledQuery(
+							systemTenant(orgId),
+							CH.compile(
+								CH.serviceDeploymentsQuery({ serviceName, minutePrecision: true, limit: 50 }),
+								{ orgId, ...window(sinceMs - HOUR_MS, nowMs) },
+								{ rowSchema: CH.serviceDeploymentsRowSchema },
+							),
+							{ profile: "aggregation", context: "prReviewDeployments" },
+						)
+						.pipe(orEmpty([], "deployments", orgId)),
+				{ concurrency: 4 },
+			).pipe(
+				Effect.map((perService) =>
+					perService
+						.flat()
+						.map(
+							(row): DeploymentVersion => ({
+								service: row.serviceName,
+								environment: row.environment,
+								commitSha: row.commitSha,
+								firstSeenAt: Date.parse(`${row.firstSeen.replace(" ", "T")}Z`),
+								spanCount: row.spanCount,
+							}),
+						)
+						.filter((version) => Number.isFinite(version.firstSeenAt) && version.firstSeenAt >= sinceMs)
+						.sort((a, b) => a.firstSeenAt - b.firstSeenAt),
+				),
+				Effect.withSpan("PrReviewTelemetryService.deploymentsSince"),
+			)
+
+		const operationsIn: PrReviewTelemetryServiceApi["operationsIn"] = (
+			orgId,
+			services,
+			spanNames,
+			startMs,
+			endMs,
+		) =>
+			warehouse
+				.compiledQuery(
+					systemTenant(orgId),
+					CH.compile(
+						CH.operationTrafficMinutelyQuery({ serviceNames: services, spanNames, limit: 200 }),
+						{ orgId, ...window(startMs, endMs) },
+					),
+					{ profile: "aggregation", context: "prReviewOperationWindow" },
+				)
+				.pipe(
+					Effect.map((rows) =>
+						rows.map((row) => ({
+							service: row.serviceName,
+							spanName: row.spanName,
+							count: row.spanCount,
+							errorCount: row.errorCount,
+							p95Ms: row.p95DurationMs,
+						})),
+					),
+					orEmpty([], "operation window", orgId),
+				)
+
+		const issueCountsIn: PrReviewTelemetryServiceApi["issueCountsIn"] = (orgId, fingerprintHashes, startMs, endMs) =>
+			fingerprintHashes.length === 0
+				? Effect.succeed(new Map())
+				: warehouse
+						.compiledQuery(
+							systemTenant(orgId),
+							CH.compile(
+								CH.errorIssuesQuery({ fingerprintHashes, limit: fingerprintHashes.length }),
+								{ orgId, ...window(startMs, endMs) },
+							),
+							{ profile: "aggregation", context: "prReviewIssueCounts" },
+						)
+						.pipe(
+							Effect.map(
+								(rows) => new Map(rows.map((row) => [row.fingerprintHash, row.count] as const)),
+							),
+							orEmpty(new Map<string, number>(), "issue counts", orgId),
+						)
+
+		const issuesFirstSeenSince: PrReviewTelemetryServiceApi["issuesFirstSeenSince"] = (orgId, services, sinceMs) =>
+			services.length === 0
+				? Effect.succeed([])
+				: database
+						.execute((db) =>
+							db
+								.select({
+									id: errorIssues.id,
+									fingerprintHash: errorIssues.fingerprintHash,
+									serviceName: errorIssues.serviceName,
+									exceptionType: errorIssues.exceptionType,
+									errorLabel: errorIssues.errorLabel,
+									exceptionMessage: errorIssues.exceptionMessage,
+									topFrame: errorIssues.topFrame,
+									occurrenceCount: errorIssues.occurrenceCount,
+									lastSeenAt: errorIssues.lastSeenAt,
+								})
+								.from(errorIssues)
+								.where(
+									and(
+										eq(errorIssues.orgId, orgId),
+										eq(errorIssues.kind, "error"),
+										inArray(errorIssues.serviceName, [...services]),
+										gte(errorIssues.firstSeenAt, new Date(sinceMs)),
+									),
+								)
+								.orderBy(desc(errorIssues.occurrenceCount))
+								.limit(20),
+						)
+						.pipe(
+							Effect.map((rows) => rows.map(toCatalogIssue)),
+							orEmpty([], "new issues", orgId),
+						)
+
+		const attributeKeysIn: PrReviewTelemetryServiceApi["attributeKeysIn"] = (orgId, startMs, endMs) =>
+			Effect.all(
+				(["span", "resource"] as const).map((scope) =>
+					warehouse.compiledQuery(
+						systemTenant(orgId),
+						CH.compile(
+							CH.attributeKeysQuery({ scope, limit: 2_000 }),
+							{ orgId, ...window(startMs, endMs) },
+						),
+						{ profile: "aggregation", context: "prReviewAttributeKeysWindow" },
+					),
+				),
+				{ concurrency: "unbounded" },
+			).pipe(
+				Effect.map((scopes) => new Set(scopes.flat().map((row) => row.attributeKey))),
+				orEmpty(new Set<string>(), "attribute keys", orgId),
+			)
+
+		return {
+			analyze,
+			deploymentsSince,
+			operationsIn,
+			issueCountsIn,
+			issuesFirstSeenSince,
+			attributeKeysIn,
+		} satisfies PrReviewTelemetryServiceApi
+	}),
+}) {
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+}
+
+const toCatalogIssue = (row: {
+	readonly id: string
+	readonly fingerprintHash: string
+	readonly serviceName: string
+	readonly exceptionType: string
+	readonly errorLabel: string
+	readonly exceptionMessage: string
+	readonly topFrame: string
+	readonly occurrenceCount: number
+	readonly lastSeenAt: Date
+}): CatalogIssue => ({
+	id: row.id,
+	fingerprintHash: row.fingerprintHash,
+	title: (row.errorLabel || `${row.exceptionType}: ${row.exceptionMessage}`).slice(0, 200),
+	service: row.serviceName,
+	topFrame: row.topFrame,
+	occurrences: row.occurrenceCount,
+	lastSeenAt: dateToMs(row.lastSeenAt) ?? 0,
+})

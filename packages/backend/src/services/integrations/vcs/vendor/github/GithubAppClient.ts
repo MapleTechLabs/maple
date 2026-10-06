@@ -363,7 +363,7 @@ export interface GithubCheckRunInput {
 	/** `in_progress` while the review runs; the same run is then completed with its result. */
 	readonly state:
 		| { readonly status: "in_progress" }
-		| { readonly status: "completed"; readonly conclusion: "success" | "neutral" | "skipped" }
+		| { readonly status: "completed"; readonly conclusion: "success" | "neutral" | "failure" | "skipped" }
 	readonly title: string
 	readonly summary: string
 	readonly annotations: ReadonlyArray<{

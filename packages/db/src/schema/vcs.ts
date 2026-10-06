@@ -9,12 +9,15 @@ import {
 	timestamp,
 	uniqueIndex,
 } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
+	PrReviewPostMerge,
+	PrReviewPostMergeStatus,
 	PrReviewReport,
 	PrReviewReplyCommand,
 	PrReviewReplyId,
@@ -23,6 +26,7 @@ import type {
 	PrReviewSeverity,
 	PrReviewSkipReason,
 	PrReviewStatus,
+	PrReviewTelemetry,
 	VcsAccountType,
 	VcsBranchId,
 	VcsCommitRowId,
@@ -226,6 +230,15 @@ export const prReviews = pgTable(
 		finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
 		/** When the pull request merged, stamped on every review of it by the `closed` event. */
 		mergedAt: timestamp("merged_at", { withTimezone: true, mode: "date" }),
+		/** What production telemetry said about the change, read when the review started. */
+		telemetryJson: jsonb("telemetry_json").$type<PrReviewTelemetry>(),
+		/** The commit the merge produced; the deploy that carries it is the one the post-merge look reads. */
+		mergeCommitSha: text("merge_commit_sha"),
+		/** The look at production after the merge ships; set on the merged head's review only. */
+		postMergeStatus: text("post_merge_status").$type<PrReviewPostMergeStatus>(),
+		/** When the post-merge tick next looks at this row. */
+		postMergeAfter: timestamp("post_merge_after", { withTimezone: true, mode: "date" }),
+		postMergeJson: jsonb("post_merge_json").$type<PrReviewPostMerge>(),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
@@ -237,6 +250,10 @@ export const prReviews = pgTable(
 		index("pr_reviews_repo_number_idx").on(table.repositoryId, table.number),
 		// The daily quota count.
 		index("pr_reviews_org_created_idx").on(table.orgId, table.createdAt),
+		// The post-merge tick's due rows.
+		index("pr_reviews_post_merge_due_idx")
+			.on(table.postMergeAfter)
+			.where(sql`${table.postMergeStatus} = 'waiting'`),
 	],
 )
 
