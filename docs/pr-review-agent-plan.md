@@ -101,18 +101,18 @@ needs work (50+) or poor. A single warning scores 90 but grades good, so the hea
 gap excellent. The score is computed from the findings rather than asked of the model, so the same
 gaps always score the same, and it is stored in `pr_reviews.score`.
 
-The headline is now a confidence level from 1 to 5 (`confidencePrReview`, same file), from "do not
+The headline is now a confidence level from 1 to 10 (`confidencePrReview`, same file), from "do not
 merge" to "safe to merge". It starts from the quality score, deducts for missing tests, a high-risk
-area and unobservable new work, and is capped by findings. The quality score is shown beneath it.
+area and unobservable new work in whole points, and is capped by findings. The quality score is shown beneath it.
 
 ### Publishing to GitHub
 
 `PrReviewService.submitReview` stores the report, then calls
 `VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/5 · <verdict>`.
+1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/10 · <verdict>`.
    It concludes `success` only when the review finished, left nothing to address and did not
-   rate confidence 3 or lower; otherwise `neutral`. It concludes `failure` only when the repository enables
+   rate confidence 6 or lower; otherwise `neutral`. It concludes `failure` only when the repository enables
    `blockOnContractBreaks` and an undismissed contract break is open (see "Production telemetry").
    An installation that has not granted
    `checks: write` answers 403, and the review is posted without the check run. A rate-limited

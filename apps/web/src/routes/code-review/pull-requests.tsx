@@ -280,7 +280,7 @@ function ReviewTable({
 									) : (
 										<>
 											{review.confidence}
-											<span className="text-muted-foreground">/5</span>
+											<span className="text-muted-foreground">/10</span>
 										</>
 									)}
 								</TableCell>

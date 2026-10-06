@@ -826,7 +826,7 @@ describe("PrReviewService.submitReview", () => {
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
 			// Two warnings (quality 80) and an unobservable route.
-			assert.equal(publication.title, "Confidence 2/5 · 2 issues to address")
+			assert.equal(publication.title, "Confidence 5/10 · 2 issues to address")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
@@ -1285,7 +1285,7 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
 		// Quality 88 reads 4, less half a point for the unobservable route.
-		assert.equal(publication.title, "Confidence 3/5 · 1 issue to address")
+		assert.equal(publication.title, "Confidence 6/10 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -1303,7 +1303,7 @@ describe("buildPublication", () => {
 		assert.isTrue(publication.summaryComment.body.startsWith(prReviewCommentMarker(UNKNOWN_REVIEW)))
 		assert.include(
 			publication.summaryComment.body,
-			"## Maple review\n\n🟢 **Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
+			"## Maple review\n\n🟢 **Confidence 9/10** · safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
 		)
 	})
 
@@ -1357,7 +1357,7 @@ describe("buildPublication", () => {
 			repositoryUrl: `${REPO_URL}/`,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
-		assert.include(comment, "🔴 **Confidence 2/5** · risky as written")
+		assert.include(comment, "🔴 **Confidence 4/10** · risky as written")
 		assert.include(comment, "<sub>quality 75/100 · 1 critical · 0/1 new units observable</sub>")
 		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
 		assert.include(comment, "<details><summary>🔴 <b>Critical</b> · gap</summary>")
@@ -1442,7 +1442,7 @@ describe("buildPublication", () => {
 					coverage: [],
 					tests: "covered",
 					risk: "low",
-					confidence: 5,
+					confidence: 10,
 					confidenceReason: "Small change, verified end to end.",
 				}),
 				partial,
@@ -1451,18 +1451,18 @@ describe("buildPublication", () => {
 			})
 		assert.include(
 			render([]),
-			"🟢 **Confidence 5/5** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
+			"🟢 **Confidence 10/10** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
 		)
 		const critical = render([
 			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
 		])
 		assert.include(
 			critical,
-			"🔴 **Confidence 2/5** · risky as written\nHeld at 2 because a critical finding is open.",
+			"🔴 **Confidence 4/10** · risky as written\nHeld at 4 because a critical finding is open.",
 		)
 		assert.notInclude(critical, "verified end to end")
 		const partial = render([], true)
-		assert.include(partial, "🟡 **Confidence 3/5** · needs attention\n<sub>")
+		assert.include(partial, "🟡 **Confidence 6/10** · needs attention\n<sub>")
 		// The early end is the warning; a reason saying so again is left out.
 		assert.notInclude(partial, "Held at")
 		assert.include(partial, "ended early")
@@ -1476,14 +1476,17 @@ describe("buildPublication", () => {
 				headSha: HEAD,
 				partial,
 				repositoryUrl: REPO_URL,
+				// Signals read 7: an unobservable unit, partial tests and a medium-risk area.
 				report: new PrReviewReport({
 					...report([]),
+					tests: "partial",
+					risk: "medium",
 					...(confidence === undefined ? undefined : { confidence }),
 				}),
 			}).conclusion
-		assert.equal(conclusion(5), "success")
-		assert.equal(conclusion(4), "success")
-		assert.equal(conclusion(3), "neutral")
+		assert.equal(conclusion(undefined), "success")
+		assert.equal(conclusion(8), "success")
+		assert.equal(conclusion(6), "neutral")
 		assert.equal(conclusion(undefined, true), "neutral")
 	})
 
