@@ -96,6 +96,8 @@ const similarTitles = (a: string, b: string) => {
  * Whether a new finding is a near-exact restatement of one already tracked: same file, lens and
  * nearly the same line, and a title saying the same thing. Anything looser is left to the reviewer,
  * which judges each earlier finding at the new head: a different bug next to an old one is new.
+ * A finding the service files from telemetry (`TEL-*`) names its subject in the title, so the same
+ * title in the same file is the same issue wherever later pushes moved its line.
  */
 const restates = (
 	finding: PrReviewFinding,
@@ -103,8 +105,9 @@ const restates = (
 ) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
-	Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
-	similarTitles(finding.title, tracked.title)
+	((finding.checkId?.startsWith("TEL-") === true && finding.title === tracked.title) ||
+		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
+			similarTitles(finding.title, tracked.title)))
 
 /**
  * New findings minus near-exact restatements of a finding still open or already dismissed, a

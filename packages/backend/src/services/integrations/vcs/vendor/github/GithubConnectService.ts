@@ -210,6 +210,10 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 			? undefined
 			: { automaticReviewLimit: config.automaticReviewLimit }),
 		...(config.feedbackScope === undefined ? undefined : { feedbackScope: config.feedbackScope }),
+		...(config.blockOnContractBreaks === undefined
+			? undefined
+			: { blockOnContractBreaks: config.blockOnContractBreaks }),
+		...(config.postMergeCheck === undefined ? undefined : { postMergeCheck: config.postMergeCheck }),
 	})
 })
 

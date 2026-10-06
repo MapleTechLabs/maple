@@ -705,8 +705,9 @@ const make: Effect.Effect<
 
 		const defaultStart = row.firstTriggeredAt.getTime() - 24 * HOUR_MS
 		const defaultEnd = Math.min(nowMs, (dateToMs(row.resolvedAt) ?? nowMs) + 2 * HOUR_MS)
-		const requestedStart = opts.startTime !== undefined ? Date.parse(opts.startTime) : defaultStart
-		const requestedEnd = opts.endTime !== undefined ? Date.parse(opts.endTime) : defaultEnd
+		const requestedStart =
+			opts.startTime !== undefined ? parseWarehouseDateTime(opts.startTime) : defaultStart
+		const requestedEnd = opts.endTime !== undefined ? parseWarehouseDateTime(opts.endTime) : defaultEnd
 		const endMs = Math.min(Number.isFinite(requestedEnd) ? requestedEnd : defaultEnd, nowMs)
 		const startUnclamped = Number.isFinite(requestedStart) ? requestedStart : defaultStart
 		const startMs = Math.max(

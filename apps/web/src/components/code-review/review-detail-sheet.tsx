@@ -4,7 +4,10 @@ import {
 	type CodeReviewFinding,
 	type PrReviewFinding,
 	type PrReviewId,
+	type PrReviewPostMerge,
+	type PrReviewTelemetry,
 } from "@maple/domain/http"
+import { DateTime } from "effect"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -198,6 +201,10 @@ function ReviewDetailContent({
 								</ul>
 							)}
 						</Section>
+						{report.telemetry !== undefined ? (
+							<ProductionSection telemetry={report.telemetry} />
+						) : null}
+						{detail.postMerge ? <PostMergeSection postMerge={detail.postMerge} /> : null}
 						{report.checked && report.checked.length > 0 ? (
 							<Section title="Checked and ruled out">
 								<BulletList items={report.checked} />
@@ -306,6 +313,83 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 			className="min-w-0 px-3 py-2.5"
 			valueClassName={cn("min-w-0 shrink truncate text-sm font-medium", tone)}
 		/>
+	)
+}
+
+/** What production said about the change when it was reviewed. */
+function ProductionSection({ telemetry }: { telemetry: PrReviewTelemetry }) {
+	const breaks = telemetry.contractBreaks
+	if (breaks.length === 0 && telemetry.linkedIssues.length === 0 && telemetry.hotFiles.length === 0)
+		return null
+	return (
+		<Section title="Production impact">
+			{breaks.length > 0 ? (
+				<ul className="flex flex-col gap-1.5 text-sm">
+					{breaks.map((item) => (
+						<li
+							key={`${item.kind}:${item.name}`}
+							className={item.dismissed ? "text-muted-foreground" : undefined}
+						>
+							<span className={cn("font-medium", item.dismissed ? undefined : TONE_TEXT.crit)}>
+								{item.dismissed ? "Still emitted elsewhere" : "Stops arriving"}
+							</span>{" "}
+							<code className="font-mono text-xs">{item.name}</code> ·{" "}
+							{item.references.map((ref) => `${ref.kind} “${ref.name}”`).join(", ")}
+						</li>
+					))}
+				</ul>
+			) : null}
+			{telemetry.linkedIssues.length > 0 ? (
+				<BulletList
+					items={telemetry.linkedIssues.map(
+						(issue) =>
+							`Open error in ${issue.path}: ${issue.title} (${formatCount(issue.occurrences)} occurrences)`,
+					)}
+				/>
+			) : null}
+			{telemetry.hotFiles.length > 0 ? (
+				<BulletList
+					items={telemetry.hotFiles
+						.slice(0, 5)
+						.map(
+							(file) =>
+								`${file.path}: ${formatCount(file.perDay)} calls/day (${file.operations[0]?.spanName ?? ""})`,
+						)}
+				/>
+			) : null}
+		</Section>
+	)
+}
+
+/** How the operations the change touched behaved the hour before and after it deployed. */
+function PostMergeSection({ postMerge }: { postMerge: PrReviewPostMerge }) {
+	const regressed = postMerge.verdict === "regressed"
+	return (
+		<Section title="After it shipped">
+			<p className={cn("text-sm", regressed ? TONE_TEXT.warn : "text-muted-foreground")}>
+				{regressed ? "Something changed after this deployed" : "Shipped clean"} ·{" "}
+				{postMerge.deploy.service}{" "}
+				<TruncatedId value={postMerge.deploy.commitSha} kind="sha" className="text-xs" />{" "}
+				{formatRelativeFrom(DateTime.toEpochMillis(postMerge.deploy.firstSeen))}
+			</p>
+			<BulletList
+				items={[
+					...postMerge.missing.map((name) => `${name} stopped arriving`),
+					...postMerge.newIssues.map(
+						(issue) => `New error: ${issue.title} (${issue.afterPerHour}/h)`,
+					),
+					...postMerge.linkedIssues.map(
+						(issue) => `${issue.title}: ${issue.beforePerHour}/h → ${issue.afterPerHour}/h`,
+					),
+					...postMerge.operations
+						.filter((operation) => operation.regressed)
+						.map(
+							(operation) =>
+								`${operation.spanName}: errors ${(operation.before.errorRate * 100).toFixed(1)}% → ${(operation.after.errorRate * 100).toFixed(1)}%, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
+						),
+				]}
+			/>
+		</Section>
 	)
 }
 
