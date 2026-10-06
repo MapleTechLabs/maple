@@ -1,8 +1,8 @@
 import * as React from "react"
 
-import { Input } from "@maple/ui/components/ui/input"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { GridIcon, MenuIcon } from "@/components/icons"
-import { MetricsSummaryCards, type MetricType } from "./metrics-summary-cards"
+import { MetricsTypeFilter, type MetricType } from "./metrics-type-filter"
 import { MetricsTable } from "./metrics-table"
 import { MetricPreviewGrid } from "./metric-preview-grid"
 import type { Metric } from "@/api/warehouse/metrics"
@@ -17,32 +17,27 @@ export interface MetricsBrowsePatch {
 	view?: MetricsBrowseView
 }
 
-interface MetricsBrowseProps {
+interface TimeWindowProps {
 	startTime?: string
 	endTime?: string
 	timePreset?: string
-	q: string
-	type: MetricType | null
-	view: MetricsBrowseView
-	onPatch: (patch: MetricsBrowsePatch) => void
-	onOpenMetric: (metric: Metric) => void
 }
 
-export function MetricsBrowse({
-	startTime,
-	endTime,
-	timePreset,
+const useBrowseTimeRange = ({ startTime, endTime, timePreset }: TimeWindowProps) =>
+	useEffectiveTimeRange(startTime, endTime, timePreset ?? "24h")
+
+/** Search and type pivot, rendered in the page header so the page has one control row. */
+export function MetricsBrowseFilters({
 	q,
 	type,
-	view,
 	onPatch,
-	onOpenMetric,
-}: MetricsBrowseProps) {
-	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
-		startTime,
-		endTime,
-		timePreset ?? "24h",
-	)
+	...time
+}: TimeWindowProps & {
+	q: string
+	type: MetricType | null
+	onPatch: (patch: MetricsBrowsePatch) => void
+}) {
+	const { startTime, endTime } = useBrowseTimeRange(time)
 
 	// Search input stays local while typing and commits to the URL after a
 	// pause, so the atom query (and history) aren't churned per keystroke.
@@ -63,74 +58,85 @@ export function MetricsBrowse({
 		commitTimer.current = setTimeout(() => onPatch({ q: next }), 300)
 	}
 
+	return (
+		<div className="flex min-w-0 flex-wrap items-center gap-2">
+			<SearchInput
+				className="w-64"
+				placeholder="Search metrics..."
+				value={localSearch}
+				onValueChange={handleSearchChange}
+			/>
+			<MetricsTypeFilter
+				value={type}
+				onChange={(nextType) => onPatch({ type: nextType ?? undefined })}
+				startTime={startTime}
+				endTime={endTime}
+			/>
+		</div>
+	)
+}
+
+export function MetricsViewToggle({
+	view,
+	onPatch,
+}: {
+	view: MetricsBrowseView
+	onPatch: (patch: MetricsBrowsePatch) => void
+}) {
+	return (
+		<ToggleGroup
+			variant="outline"
+			size="sm"
+			aria-label="View"
+			value={[view]}
+			onValueChange={(values) => {
+				const next = values[0]
+				if (next === "grid" || next === "table") onPatch({ view: next })
+			}}
+		>
+			<ToggleGroupItem value="grid" aria-label="Grid view">
+				<GridIcon size={14} />
+			</ToggleGroupItem>
+			<ToggleGroupItem value="table" aria-label="Table view">
+				<MenuIcon size={14} />
+			</ToggleGroupItem>
+		</ToggleGroup>
+	)
+}
+
+interface MetricsBrowseProps extends TimeWindowProps {
+	q: string
+	type: MetricType | null
+	view: MetricsBrowseView
+	onPatch: (patch: MetricsBrowsePatch) => void
+	onOpenMetric: (metric: Metric) => void
+}
+
+export function MetricsBrowse({ q, type, view, onPatch, onOpenMetric, ...time }: MetricsBrowseProps) {
+	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useBrowseTimeRange(time)
+
 	const deferredSearch = React.useDeferredValue(q)
 	const handleClearFilters = () => onPatch({ q: "", type: undefined })
 
-	return (
-		<div className="space-y-6">
-			<MetricsSummaryCards
-				selectedType={type}
-				onSelectType={(nextType) => onPatch({ type: nextType ?? undefined })}
-				startTime={effectiveStartTime}
-				endTime={effectiveEndTime}
-			/>
-
-			<div className="flex flex-wrap items-center gap-4">
-				<Input
-					placeholder="Search metrics..."
-					value={localSearch}
-					onChange={(e) => handleSearchChange(e.target.value)}
-					className="max-w-sm"
-				/>
-				{type && (
-					<span className="text-sm text-muted-foreground">
-						Filtered by: <span className="font-medium">{type}</span>
-					</span>
-				)}
-				<ToggleGroup
-					variant="outline"
-					size="sm"
-					aria-label="View"
-					className="ml-auto"
-					value={[view]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next === "grid" || next === "table") onPatch({ view: next })
-					}}
-				>
-					<ToggleGroupItem value="grid" aria-label="Grid view">
-						<GridIcon size={14} />
-					</ToggleGroupItem>
-					<ToggleGroupItem value="table" aria-label="Table view">
-						<MenuIcon size={14} />
-					</ToggleGroupItem>
-				</ToggleGroup>
-			</div>
-
-			{view === "grid" ? (
-				<MetricPreviewGrid
-					key={`${deferredSearch}|${type ?? ""}|${effectiveStartTime}|${effectiveEndTime}`}
-					search={deferredSearch}
-					metricType={type}
-					startTime={effectiveStartTime}
-					endTime={effectiveEndTime}
-					onOpenMetric={onOpenMetric}
-					onClearFilters={handleClearFilters}
-				/>
-			) : (
-				<div>
-					<h3 className="mb-4 text-lg font-semibold">Available Metrics</h3>
-					<MetricsTable
-						key={`${deferredSearch}|${type ?? ""}|${effectiveStartTime}|${effectiveEndTime}`}
-						search={deferredSearch}
-						metricType={type}
-						onOpenMetric={onOpenMetric}
-						onClearFilters={handleClearFilters}
-						startTime={effectiveStartTime}
-						endTime={effectiveEndTime}
-					/>
-				</div>
-			)}
-		</div>
+	return view === "grid" ? (
+		<MetricPreviewGrid
+			key={`${deferredSearch}|${type ?? ""}|${effectiveStartTime}|${effectiveEndTime}`}
+			search={deferredSearch}
+			metricType={type}
+			startTime={effectiveStartTime}
+			endTime={effectiveEndTime}
+			onOpenMetric={onOpenMetric}
+			onClearFilters={handleClearFilters}
+		/>
+	) : (
+		<MetricsTable
+			key={`${deferredSearch}|${type ?? ""}|${effectiveStartTime}|${effectiveEndTime}`}
+			search={deferredSearch}
+			metricType={type}
+			onOpenMetric={onOpenMetric}
+			onClearFilters={handleClearFilters}
+			startTime={effectiveStartTime}
+			endTime={effectiveEndTime}
+		/>
 	)
 }
