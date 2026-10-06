@@ -286,6 +286,10 @@ export class PlanetScaleOAuthService extends Context.Service<
 				"listing organizations",
 				collectPages(PlanetScale.listOrganizations, { per_page: PAGE_SIZE }, MAX_PAGES),
 			).pipe(
+				// The org picker keys its reconnect CTA on the revoked tag.
+				Effect.catchTag("@maple/api/integrations/PlanetScaleForbiddenError", (forbidden) =>
+					Effect.fail(new IntegrationsRevokedError({ message: forbidden.message })),
+				),
 				Effect.flatMap(({ items }) =>
 					decodeConsumed(Schema.Array(OrganizationSchema), "organizations")(items),
 				),
@@ -486,17 +490,11 @@ export class PlanetScaleOAuthService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const config = yield* resolveConfig(env)
-			const { accessToken, row } = yield* oauth.getValidConnectionToken(config, orgId)
-			// A stamped grant failed a refresh or had a fresh token rejected: calling with it again
-			// only repeats the 401. Reconnecting clears the stamp.
-			if (row.revokedAt !== null) {
-				return yield* Effect.fail(
-					new IntegrationsRevokedError({
-						message:
-							"PlanetScale no longer accepts this authorization — reconnect the integration",
-					}),
-				)
-			}
+			// A stamped grant failed a refresh or had a fresh token rejected: refreshing or calling
+			// with it again only repeats the 401. Reconnecting clears the stamp.
+			const { accessToken } = yield* oauth.getValidConnectionToken(config, orgId, {
+				failIfRevoked: true,
+			})
 			return { accessToken }
 		})
 
@@ -513,7 +511,13 @@ export class PlanetScaleOAuthService extends Context.Service<
 							const refreshed = yield* oauth.refreshRejectedToken(config, orgId, accessToken)
 							return yield* use(refreshed.accessToken).pipe(
 								Effect.catchIf(isPlanetScaleTokenRejected, (rejected) =>
-									oauth.markConnectionRevoked(orgId).pipe(
+									oauth.markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
+										Effect.tap((stamped) =>
+											Effect.annotateCurrentSpan(
+												"maple.planetscale.grant_revoked",
+												stamped,
+											),
+										),
 										Effect.andThen(
 											Effect.fail(
 												new IntegrationsRevokedError({

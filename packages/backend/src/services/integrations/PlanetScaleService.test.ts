@@ -234,6 +234,60 @@ describe("PlanetScaleService", () => {
 		)
 	})
 
+	// The timeout budgets each request, not the whole listing: a page that stalls once is
+	// re-sent alone, and the pages before it are not fetched again.
+	it.effect("retries only the timed-out page of a paginated listing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const pageCalls = new Map<number, number>()
+		let stallPageTwo = false
+		const baseStub = stubApi({ databases: [], branchesByDatabase: {} })
+		const stub = (async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+			if (stallPageTwo && /\/databases\?/.test(url)) {
+				const page = Number(new URL(url).searchParams.get("page") ?? "1")
+				const calls = (pageCalls.get(page) ?? 0) + 1
+				pageCalls.set(page, calls)
+				if (page === 2 && calls === 1) return new Promise<Response>(() => {})
+				const data =
+					page === 1
+						? Array.from({ length: 100 }, (_, index) => ({
+								id: `db_${index}`,
+								name: `db-${index}`,
+							}))
+						: [{ id: "db_100", name: "db-100" }]
+				return new Response(JSON.stringify({ next_page: page === 1 ? 2 : null, data }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				})
+			}
+			return baseStub(input, init)
+		}) as typeof fetch
+		globalThis.fetch = stub
+
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			const service = yield* PlanetScaleService
+			stallPageTwo = true
+
+			const poll = yield* Effect.forkChild(service.pollAllOrgs())
+			for (let tick = 0; tick < 6; tick++) {
+				yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)))
+				yield* TestClock.adjust("20 seconds")
+			}
+			const summary = yield* Fiber.join(poll)
+
+			assert.strictEqual(summary.refreshed, 1)
+			assert.strictEqual(pageCalls.get(1), 1)
+			assert.strictEqual(pageCalls.get(2), 2)
+			const rows = yield* service.listDatabases(asOrgId("org_1"))
+			assert.strictEqual(rows.length, 101)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
 	it.effect("queryInsights proxies top queries, defaulting to the production branch", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insightCalls: string[] = []
@@ -1163,10 +1217,19 @@ describe("PlanetScaleService pagination truncation", () => {
 	})
 })
 
+/** Encrypted access-token columns of an `oauth_connections` row, as SQL parameters. */
+interface StoredTokenColumns {
+	columns: Array<unknown>
+}
+
 // A grant PlanetScale stops accepting before its stored expiry used to 401 on every tick
 // forever: nothing refreshed it or stamped it revoked.
 describe("PlanetScaleService rejected tokens", () => {
-	const stubRejecting = (options: { readonly refreshedTokenWorks: boolean }) => {
+	const stubRejecting = (options: {
+		readonly refreshedTokenWorks: boolean
+		/** Runs before the refreshed token's rejection is answered. */
+		readonly beforeRefreshedRejection?: () => Promise<void>
+	}) => {
 		const base = stubApi({
 			databases: [{ id: "db_1", name: "main-db" }],
 			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
@@ -1204,6 +1267,9 @@ describe("PlanetScaleService rejected tokens", () => {
 			// The connect flow's own calls use the original token and must succeed.
 			if (url.includes("/databases") && !accepted && rejectOriginal.value) {
 				calls.rejected += 1
+				if (authorization === "Bearer ps-access-token-refreshed") {
+					await options.beforeRefreshedRejection?.()
+				}
 				return json({ code: "unauthorized", message: "invalid_token" }, 401)
 			}
 			if (url.includes("/v1/organizations/")) calls.api += 1
@@ -1260,6 +1326,76 @@ describe("PlanetScaleService rejected tokens", () => {
 			assert.strictEqual(calls.api, apiBefore)
 			const error = yield* Effect.flip(oauth.getValidAccessToken(asOrgId("org_1")))
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
+
+			// Past its expiry, a stamped grant still fails before reaching the token endpoint.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE oauth_connections SET expires_at = to_timestamp(0) WHERE org_id = $1",
+					["org_1"],
+				),
+			)
+			const refreshesBefore = calls.refreshes
+			yield* Effect.flip(oauth.getValidAccessToken(asOrgId("org_1")))
+			assert.strictEqual(calls.refreshes, refreshesBefore)
+
+			// Query Insights reports the revocation rather than a scope hint.
+			const insights = yield* Effect.flip(
+				service.queryInsights(asOrgId("org_1"), {
+					database: "main-db",
+					branch: "main",
+					startTime: 0,
+					endTime: 60_000,
+				}),
+			)
+			assert.strictEqual(insights._tag, "@maple/http/errors/IntegrationsRevokedError")
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
+	// A reconnect (or a refresh in another isolate) that lands while the refreshed token's
+	// rejection is in flight must not be revoked by that late 401.
+	it.effect("does not revoke a grant that changed while the rejected request was in flight", () => {
+		const testDb = createTestDb(trackedDbs)
+		// The connect-time token's ciphertext, written back mid-flight: the row then holds a
+		// different token than the one PlanetScale just rejected, as after a reconnect.
+		const otherToken: StoredTokenColumns = { columns: [] }
+		const { stub, rejectOriginal } = stubRejecting({
+			refreshedTokenWorks: false,
+			beforeRefreshedRejection: () =>
+				executeSql(
+					testDb,
+					"UPDATE oauth_connections SET access_token_ciphertext = $1, access_token_iv = $2, access_token_tag = $3, updated_at = now() WHERE org_id = $4",
+					[...otherToken.columns, "org_1"],
+				),
+		})
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			const original = yield* Effect.promise(() =>
+				queryFirstRow<{
+					access_token_ciphertext: string
+					access_token_iv: string
+					access_token_tag: string
+				}>(
+					testDb,
+					"SELECT access_token_ciphertext, access_token_iv, access_token_tag FROM oauth_connections WHERE org_id = $1",
+					["org_1"],
+				),
+			)
+			otherToken.columns = [
+				original?.access_token_ciphertext,
+				original?.access_token_iv,
+				original?.access_token_tag,
+			]
+			rejectOriginal.value = true
+			const service = yield* PlanetScaleService
+
+			const summary = yield* service.pollAllOrgs()
+			assert.strictEqual(summary.failures, 1)
+			const grant = yield* (yield* PlanetScaleOAuthService).grantStatus(asOrgId("org_1"))
+			assert.isNull(grant.revokedAt)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),

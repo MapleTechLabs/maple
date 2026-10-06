@@ -22,7 +22,7 @@ import {
 } from "@maple/db"
 import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schedule, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -77,7 +77,6 @@ const LEASE_MS = Duration.toMillis(Duration.minutes(4))
  * the caller's own taxonomy (revoked / upstream) and must not be replayed.
  */
 const REQUEST_TIMEOUT_RETRIES = 2
-const REQUEST_RETRY_BASE_DELAY = Duration.millis(500)
 /**
  * Tagged onto the exhausted-timeout failure so the tick can tell "PlanetScale is
  * slow" from "PlanetScale rejected us" without matching on a message string. A
@@ -330,8 +329,8 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			/**
 			 * One management-API call with the org's grant. A 401 refreshes once and stamps the
 			 * grant revoked if the fresh token is rejected too (`withAccessToken`). Only timeouts
-			 * retry: a PlanetScale slowdown once timed out 5+ orgs at once, and one jittered retry
-			 * rides that out without stretching the tick. HTTP errors are never replayed.
+			 * retry, per request: a PlanetScale slowdown once timed out 5+ orgs at once, and a
+			 * jittered retry rides that out without stretching the tick. HTTP errors are never replayed.
 			 */
 			const callApi = <A, E extends SdkError>(
 				connection: PlanetScaleConnectionRow,
@@ -347,14 +346,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 								{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
 								operation,
 								effect,
-							).pipe(
-								Effect.retry({
-									while: isUpstreamTimeout,
-									times: REQUEST_TIMEOUT_RETRIES,
-									schedule: Schedule.exponential(REQUEST_RETRY_BASE_DELAY).pipe(
-										Schedule.jittered,
-									),
-								}),
+								{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
 							),
 						),
 					),
@@ -1101,7 +1093,9 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					}),
 				).pipe(
 					Effect.catchTags({
-						"@maple/http/errors/IntegrationsRevokedError": () =>
+						// Only a 403 from the insights endpoint itself: a revoked grant still fails, so
+						// the client sees the reconnect error rather than a scope hint.
+						"@maple/api/integrations/PlanetScaleForbiddenError": () =>
 							unavailable(
 								"The PlanetScale authorization lacks the read_databases scope needed for Query Insights.",
 							),
