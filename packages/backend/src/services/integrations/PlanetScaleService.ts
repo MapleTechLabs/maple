@@ -21,14 +21,19 @@ import {
 	type PlanetScaleEventRow,
 } from "@maple/db"
 import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm"
-import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schedule, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import * as PlanetScale from "@distilled.cloud/planetscale"
+import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import {
-	PlanetScaleOAuthService,
-	planetScaleBearerHeader,
-} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+	collectPages,
+	decodeConsumed,
+	PLANETSCALE_TIMEOUT_STATUS,
+	runPlanetScale,
+	type SdkError,
+} from "./planetscale/api"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
@@ -63,7 +68,6 @@ const DEPLOY_REQUESTS_MAX_DATABASES_PER_TICK = 25
 const DEPLOY_REQUESTS_CONCURRENCY = 2
 /** Tick-overlap lease. */
 const LEASE_MS = Duration.toMillis(Duration.minutes(4))
-const REQUEST_TIMEOUT = Duration.seconds(15)
 /**
  * Extra attempts after a timed-out request, before the call fails. A PlanetScale
  * slowdown timed out the inventory listing for 5+ orgs at once; a single retry
@@ -73,16 +77,15 @@ const REQUEST_TIMEOUT = Duration.seconds(15)
  * the caller's own taxonomy (revoked / upstream) and must not be replayed.
  */
 const REQUEST_TIMEOUT_RETRIES = 2
-const REQUEST_RETRY_BASE_DELAY = Duration.millis(500)
 /**
  * Tagged onto the exhausted-timeout failure so the tick can tell "PlanetScale is
  * slow" from "PlanetScale rejected us" without matching on a message string. A
  * genuine upstream 504 classifies the same way, which is correct — both are the
  * provider failing to answer in time.
  */
-const UPSTREAM_TIMEOUT_STATUS = 504
 const isUpstreamTimeout = (error: { readonly _tag: string; readonly status?: number }) =>
-	error._tag === "@maple/http/errors/IntegrationsUpstreamError" && error.status === UPSTREAM_TIMEOUT_STATUS
+	error._tag === "@maple/http/errors/IntegrationsUpstreamError" &&
+	error.status === PLANETSCALE_TIMEOUT_STATUS
 const ORG_CONCURRENCY = 3
 const INVENTORY_WRITE_CONCURRENCY = 4
 /** Pagination caps — a runaway org can't make a tick unbounded. */
@@ -161,9 +164,9 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "PlanetScale inventory persistence failed",
 	})
 
-// Lenient decoders: only the fields we consume, everything else ignored. The
-// region/kind shapes differ between the Vitess and Postgres products, so all
-// secondary fields are optional.
+// Lenient decoders for the fields we consume. The SDK returns bodies unchecked while typing
+// them as complete, and the region/kind shapes differ between the Vitess and Postgres
+// products, so all secondary fields are optional.
 const DatabaseSchema = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
@@ -238,11 +241,6 @@ const InsightRowSchema = Schema.Struct({
 	rows_returned_per_query: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	last_run_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
-
-const PageSchema = <S extends Schema.Top>(item: S) =>
-	Schema.Struct({
-		data: Schema.Array(item),
-	})
 
 const parseTimestamp = (value: string | null | undefined): number | null => {
 	if (value == null || value === "") return null
@@ -327,119 +325,31 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const env = yield* Env
 			const psOAuth = yield* PlanetScaleOAuthService
 			const httpClient = yield* HttpClient.HttpClient
-			const apiBase = env.MAPLE_PLANETSCALE_API_BASE_URL.replace(/\/$/, "")
-
-			const apiGetJson = Effect.fn("PlanetScaleService.apiGetJson")(function* (
-				path: string,
-				authorization: string,
-			) {
-				return yield* Effect.gen(function* () {
-					const request = HttpClientRequest.get(`${apiBase}${path}`).pipe(
-						HttpClientRequest.setHeaders({
-							Authorization: authorization,
-							Accept: "application/json",
-						}),
-					)
-					const res = yield* httpClient.execute(request)
-					const text = yield* res.text
-					return { status: res.status, text }
-				}).pipe(
-					Effect.mapError(
-						(error) =>
-							new IntegrationsUpstreamError({
-								message: `PlanetScale API request failed: ${error.message}`,
-								cause: error,
-							}),
-					),
-					Effect.timeout(REQUEST_TIMEOUT),
-					Effect.retry({
-						while: (error) => error._tag === "TimeoutError",
-						times: REQUEST_TIMEOUT_RETRIES,
-						schedule: Schedule.exponential(REQUEST_RETRY_BASE_DELAY).pipe(Schedule.jittered),
-					}),
-					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(
-							new IntegrationsUpstreamError({
-								message: `PlanetScale API request timed out: ${path}`,
-								status: UPSTREAM_TIMEOUT_STATUS,
-							}),
-						),
-					),
-				)
-			})
 
 			/**
-			 * Fetch all pages of a list endpoint, bounded by MAX_PAGES. `complete`
-			 * is false when the bound was hit with a full final page — the listing
-			 * was truncated, and callers must not treat the items as an exhaustive
-			 * inventory (no reconciling deletions, no advancing watermarks past
-			 * data that was never observed).
+			 * One management-API call with the org's grant. A 401 refreshes once and stamps the
+			 * grant revoked if the fresh token is rejected too (`withAccessToken`). Only timeouts
+			 * retry, per request: a PlanetScale slowdown once timed out 5+ orgs at once, and a
+			 * jittered retry rides that out without stretching the tick. HTTP errors are never replayed.
 			 */
-			const fetchAllPages = Effect.fn("PlanetScaleService.fetchAllPages")(function* <
-				S extends Schema.Top,
-			>(basePath: string, authorization: string, itemSchema: S) {
-				const decodePage = Schema.decodeUnknownEffect(Schema.fromJsonString(PageSchema(itemSchema)))
-				const items: Array<S["Type"]> = []
-				let complete = false
-				for (let page = 1; page <= MAX_PAGES; page++) {
-					const separator = basePath.includes("?") ? "&" : "?"
-					const response = yield* apiGetJson(
-						`${basePath}${separator}page=${page}&per_page=${PAGE_SIZE}`,
-						authorization,
-					)
-					// Same taxonomy as fetchOrganizations: a rejected grant surfaces as
-					// revoked, so the per-org lastInventoryError copy (and any future
-					// tag-keyed handling) distinguishes it from a transient blip.
-					if (response.status === 401 || response.status === 403) {
-						return yield* Effect.fail(
-							new IntegrationsRevokedError({
-								message: `PlanetScale rejected the authorization (HTTP ${response.status}) for ${basePath} — reconnect the integration`,
-							}),
-						)
-					}
-					if (response.status < 200 || response.status >= 300) {
-						return yield* Effect.fail(
-							new IntegrationsUpstreamError({
-								message: `PlanetScale API returned HTTP ${response.status} for ${basePath}`,
-								status: response.status,
-							}),
-						)
-					}
-					const decoded = yield* decodePage(response.text).pipe(
-						Effect.mapError(
-							(cause) =>
-								new IntegrationsUpstreamError({
-									message: `PlanetScale API returned an unexpected payload for ${basePath}`,
-									cause,
-								}),
-						),
-					)
-					items.push(...decoded.data)
-					if (decoded.data.length < PAGE_SIZE) {
-						complete = true
-						break
-					}
-				}
-				if (!complete) {
-					yield* Effect.annotateCurrentSpan("maple.planetscale.listing_truncated", true)
-					yield* Effect.logWarning("PlanetScale listing truncated at the pagination ceiling", {
-						basePath,
-						maxItems: MAX_PAGES * PAGE_SIZE,
-					})
-				}
-				return { items, complete }
-			})
-
-			/**
-			 * Bearer Authorization for the org's OAuth grant, refreshed as needed.
-			 * A revoked/missing grant surfaces as-is — the poller records it per-org
-			 * and moves on; queryInsights lets the endpoint error union carry it.
-			 */
-			const authorizationFor = (connection: PlanetScaleConnectionRow) =>
+			const callApi = <A, E extends SdkError>(
+				connection: PlanetScaleConnectionRow,
+				operation: string,
+				effect: Effect.Effect<A, E, PlanetScale.PlanetScaleOpContext>,
+			) =>
 				Schema.decodeEffect(OrgId)(connection.orgId).pipe(
 					Effect.orDie,
-					Effect.flatMap((orgId) => psOAuth.getValidAccessToken(orgId)),
-					Effect.map(({ accessToken }) => planetScaleBearerHeader(accessToken)),
+					Effect.flatMap((orgId) =>
+						psOAuth.withAccessToken(orgId, (accessToken) =>
+							runPlanetScale(
+								httpClient,
+								{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
+								operation,
+								effect,
+								{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
+							),
+						),
+					),
 				)
 
 			/**
@@ -677,23 +587,42 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const refreshInventory = Effect.fn("PlanetScaleService.refreshInventory")(function* (
 				connection: PlanetScaleConnectionRow,
 			) {
-				const authorization = yield* authorizationFor(connection)
-				const org = encodeURIComponent(connection.psOrganization)
-
-				const { items: upstreamDatabases, complete: inventoryComplete } = yield* fetchAllPages(
-					`/v1/organizations/${org}/databases`,
-					authorization,
-					DatabaseSchema,
+				const organization = connection.psOrganization
+				const listing = yield* callApi(
+					connection,
+					`listing databases in ${organization}`,
+					collectPages(PlanetScale.listDatabases, { organization, per_page: PAGE_SIZE }, MAX_PAGES),
 				)
+				const inventoryComplete = listing.complete
+				const upstreamDatabases = yield* decodeConsumed(
+					Schema.Array(DatabaseSchema),
+					`databases in ${organization}`,
+				)(listing.items)
+				if (!inventoryComplete) {
+					yield* Effect.logWarning(
+						"PlanetScale database listing truncated at the pagination ceiling",
+					).pipe(Effect.annotateLogs({ orgId: connection.orgId, maxItems: MAX_PAGES * PAGE_SIZE }))
+				}
 
 				const withBranches = yield* Effect.forEach(
 					upstreamDatabases,
 					(db) =>
 						Effect.gen(function* () {
-							const { items: branches } = yield* fetchAllPages(
-								`/v1/organizations/${org}/databases/${encodeURIComponent(db.name)}/branches`,
-								authorization,
-								BranchSchema,
+							const branches = yield* callApi(
+								connection,
+								`listing branches of ${organization}/${db.name}`,
+								collectPages(
+									PlanetScale.listBranches,
+									{ organization, database: db.name, per_page: PAGE_SIZE },
+									MAX_PAGES,
+								),
+							).pipe(
+								Effect.flatMap(({ items }) =>
+									decodeConsumed(
+										Schema.Array(BranchSchema),
+										`branches of ${db.name}`,
+									)(items),
+								),
 							)
 							const branchInfos: PlanetScaleBranchInfo[] = branches.map((branch) => ({
 								id: branch.id,
@@ -787,11 +716,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			 * dedupe index is what makes the two sources converge.
 			 */
 			const refreshDeployRequestsFor = Effect.fn("PlanetScaleService.refreshDeployRequestsFor")(
-				function* (
-					connection: PlanetScaleConnectionRow,
-					database_: PlanetScaleDatabaseRow,
-					authorization: string,
-				) {
+				function* (connection: PlanetScaleConnectionRow, database_: PlanetScaleDatabaseRow) {
 					const claim = yield* claimPollWork(
 						connection.orgId,
 						DEPLOY_REQUESTS_DATASET,
@@ -814,12 +739,21 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					// the watermark, so a steady-state tick pages once and stops.
 					const floor = Math.max(state?.watermarkAt?.getTime() ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
 
-					const org = encodeURIComponent(connection.psOrganization)
-					const { items: requests, complete: requestsComplete } = yield* fetchAllPages(
-						`/v1/organizations/${org}/databases/${encodeURIComponent(database_.name)}/deploy-requests`,
-						authorization,
-						DeployRequestSchema,
+					const organization = connection.psOrganization
+					const listing = yield* callApi(
+						connection,
+						`listing deploy requests of ${organization}/${database_.name}`,
+						collectPages(
+							PlanetScale.listDeployRequests,
+							{ organization, database: database_.name, per_page: PAGE_SIZE },
+							MAX_PAGES,
+						),
 					)
+					const requestsComplete = listing.complete
+					const requests = yield* decodeConsumed(
+						Schema.Array(DeployRequestSchema),
+						`deploy requests of ${database_.name}`,
+					)(listing.items)
 
 					let inserted = 0
 					let newestUpdate = state?.watermarkAt?.getTime() ?? 0
@@ -890,7 +824,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const refreshDeployRequests = Effect.fn("PlanetScaleService.refreshDeployRequests")(function* (
 				connection: PlanetScaleConnectionRow,
 			) {
-				const authorization = yield* authorizationFor(connection)
 				const rows = yield* database
 					.execute((db) =>
 						db
@@ -934,7 +867,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const counts = yield* Effect.forEach(
 					batch,
 					(row) =>
-						refreshDeployRequestsFor(connection, row, authorization).pipe(
+						refreshDeployRequestsFor(connection, row).pipe(
 							// One bad database must not stop the others.
 							Effect.catchCause((cause) =>
 								Cause.hasInterruptsOnly(cause)
@@ -958,6 +891,14 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				connection: PlanetScaleConnectionRow,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
+				// A revoked grant fails every call until someone reconnects, so polling it only
+				// repeats the 401. Reconnecting clears the stamp and polling resumes.
+				const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
+				const grant = yield* psOAuth.grantStatus(orgId)
+				if (grant.revokedAt !== null) {
+					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
+					return { outcome: "skipped" as const, deployEvents: 0 }
+				}
 				const claim = yield* claimInventoryWork(connection.orgId)
 				// Deliberately outside the inventory claim: inventory refreshes hourly,
 				// and a deploy marker an hour late is a deploy nobody can correlate.
@@ -1129,48 +1070,55 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					branch = branches.find((entry) => entry.production)?.name ?? branches[0]?.name ?? "main"
 				}
 
-				const authorization = yield* authorizationFor(connection)
 				const limit = Math.min(Math.max(Math.floor(options.limit ?? 10), 1), 25)
-				const path =
-					`/v1/organizations/${encodeURIComponent(connection.psOrganization)}` +
-					`/databases/${encodeURIComponent(options.database)}` +
-					`/branches/${encodeURIComponent(branch)}/insights` +
-					`?from=${encodeURIComponent(new Date(options.startTime).toISOString())}` +
-					`&to=${encodeURIComponent(new Date(options.endTime).toISOString())}` +
-					`&sort=totalTime&dir=desc&per_page=${limit}`
-
-				const response = yield* apiGetJson(path, authorization)
-				if (response.status < 200 || response.status >= 300) {
-					// Authz/branch-shaped rejections soft-fail so the panel renders an
-					// inline empty state instead of a 5xx toast (top-traffic pattern).
-					return new PlanetScaleQueryInsightsResponse({
+				const unavailable = (unavailableReason: string) =>
+					Effect.succeed(
+						new PlanetScaleQueryInsightsResponse({ branch, rows: [], unavailableReason }),
+					)
+				// Authz/branch-shaped rejections soft-fail so the panel renders an inline empty
+				// state instead of a 5xx toast (top-traffic pattern). Timeouts and transport
+				// failures still fail the request.
+				const insights = yield* callApi(
+					connection,
+					`reading Query Insights for ${options.database}/${branch}`,
+					PlanetScale.listBranchQueries({
+						organization: connection.psOrganization,
+						database: options.database,
 						branch,
-						rows: [],
-						unavailableReason:
-							response.status === 401 || response.status === 403
-								? "The PlanetScale authorization lacks the read_databases scope needed for Query Insights."
-								: response.status === 404
-									? `PlanetScale has no insights for ${options.database}/${branch}.`
-									: `PlanetScale Query Insights returned HTTP ${response.status}.`,
-					})
-				}
-
-				const decoded = yield* Schema.decodeEffect(
-					Schema.fromJsonString(PageSchema(InsightRowSchema)),
-				)(response.text).pipe(
-					Effect.mapError(
-						(cause) =>
-							new IntegrationsUpstreamError({
-								message: "PlanetScale Query Insights returned an unexpected payload",
-								cause,
-							}),
-					),
+						from: new Date(options.startTime).toISOString(),
+						to: new Date(options.endTime).toISOString(),
+						sort: "totalTime",
+						dir: "desc",
+						per_page: limit,
+					}),
+				).pipe(
+					Effect.catchTags({
+						// Only a 403 from the insights endpoint itself: a revoked grant still fails, so
+						// the client sees the reconnect error rather than a scope hint.
+						"@maple/api/integrations/PlanetScaleForbiddenError": () =>
+							unavailable(
+								"The PlanetScale authorization lacks the read_databases scope needed for Query Insights.",
+							),
+						"@maple/http/errors/IntegrationsUpstreamError": (error) =>
+							error.status === 404
+								? unavailable(
+										`PlanetScale has no insights for ${options.database}/${branch}.`,
+									)
+								: error.status !== undefined && !isUpstreamTimeout(error)
+									? unavailable(`PlanetScale Query Insights returned HTTP ${error.status}.`)
+									: Effect.fail(error),
+					}),
 				)
+				if (insights instanceof PlanetScaleQueryInsightsResponse) return insights
+				const insightRows = yield* decodeConsumed(
+					Schema.Array(InsightRowSchema),
+					"Query Insights",
+				)(insights.data)
 
 				return new PlanetScaleQueryInsightsResponse({
 					branch,
 					unavailableReason: null,
-					rows: decoded.data.flatMap((row) => {
+					rows: insightRows.flatMap((row) => {
 						const normalizedSql = row.normalized_sql ?? ""
 						if (normalizedSql.length === 0) return []
 						const lastRunAtMs = row.last_run_at ? Date.parse(row.last_run_at) : Number.NaN
