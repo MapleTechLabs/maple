@@ -36,6 +36,7 @@ apps/api/.data/
 apps/api/scripts/.bench/
 apps/ai/scripts/.pr-review-runs/
 apps/ai/scripts/.pr-review-evals/
+apps/ai/.evals/
 
 .alchemy
 .mcp.json

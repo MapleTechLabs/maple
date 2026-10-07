@@ -13,6 +13,9 @@ const testEnv = (): Record<string, string> => ({
 	PORT: "3472",
 	TINYBIRD_HOST: "https://maple-eval.tinybird.co",
 	TINYBIRD_TOKEN: "eval-token",
+	// Lets run_sql mint its org-scoped token locally and reach the fake warehouse like any query.
+	TINYBIRD_SIGNING_KEY: "eval-signing-key",
+	TINYBIRD_WORKSPACE_ID: "eval-workspace",
 	MAPLE_AUTH_MODE: "self_hosted",
 	MAPLE_ROOT_PASSWORD: "eval-root-password",
 	MAPLE_DEFAULT_ORG_ID: FIXTURES.orgId,

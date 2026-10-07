@@ -1,23 +1,31 @@
-name: MCP Evals
+name: Evals
 
-# LLM tool-selection + full-execution evals for the MCP server.
+# Model-driven evals (apps/ai/src/evals). They call a REAL model through
+# OpenRouter, so every run costs money and varies, and the job is OPT-IN:
 #
-# These drive a REAL model through OpenRouter — every run costs money and is
-# nondeterministic — so the job is OPT-IN. It only runs when the PR carries the
-# `run-evals` label (the "badge"), or via manual dispatch:
-#
-#   • Add the `run-evals` label to a PR → evals run on that event and on every
-#     subsequent push while the label stays on.
+#   • Add the `run-evals` label to a PR → the regression tier runs on that
+#     event and on every push while the label stays on.
 #   • Remove the label                  → later pushes skip the job (free).
-#   • Actions ▸ MCP Evals ▸ Run workflow → run on demand against any branch.
+#   • Actions ▸ Evals ▸ Run workflow    → pick the model, k and tier.
 #
-# Only the model-driven `*.eval.ts` files are gated here. The deterministic
-# renderer regression tests (`apps/api/src/mcp/__evals__/*.test.ts`) need no
-# model and run for free in the normal `test` CI job. Without OPENROUTER_API_KEY
-# the eval suite self-skips (green), so this job is safe before the secret is set.
+# The deterministic tests beside them (schema contract, renderer guards) need no
+# model and run in the normal `test` job. Without OPENROUTER_API_KEY the suites
+# skip. Every run uploads its transcripts and summary as an artifact.
 
 on:
     workflow_dispatch:
+        inputs:
+            model:
+                description: OpenRouter model id (empty = production triage model)
+                required: false
+            k:
+                description: Trials per task
+                required: false
+                default: "3"
+            tier:
+                description: regression, capability, or all
+                required: false
+                default: regression
     # No `paths` filter: the `run-evals` label is the gate (see the job `if:`),
     # so the workflow can be triggered on any PR by adding the badge.
     pull_request:
@@ -33,7 +41,7 @@ permissions:
 
 jobs:
     eval:
-        name: MCP Evals
+        name: Evals
         # Opt-in: only spend OpenRouter budget when the `run-evals` badge is on
         # the PR (or on manual dispatch). Otherwise the job is skipped, not failed.
         if: >-
@@ -50,9 +58,19 @@ jobs:
               with:
                   filters: "@maple/ai"
 
-            - name: Run MCP evals
+            - name: Run evals
               run: bun run --filter @maple/ai eval
               env:
                   OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-                  # Override to eval a different model (defaults to the production triage model).
-                  MCP_EVAL_MODEL: ${{ vars.MCP_EVAL_MODEL }}
+                  EVAL_MODEL: ${{ inputs.model || vars.EVAL_MODEL }}
+                  EVAL_K: ${{ inputs.k || '3' }}
+                  EVAL_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.tier || 'regression' }}
+
+            - name: Upload eval runs
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: eval-runs
+                  path: apps/ai/.evals/runs/
+                  if-no-files-found: ignore
+                  retention-days: 30

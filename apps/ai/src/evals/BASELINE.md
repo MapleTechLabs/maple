@@ -1,22 +1,44 @@
-# MCP eval + catalog baseline
+# Eval baselines
 
-Reference point for judging changes to the MCP tool catalog. Regenerate both halves with the
-commands below and append a row; never overwrite history.
+Reference points for judging changes to the tools, prompts and models. Append a section per
+baseline; never overwrite history. Runs before 2026-10-08 used the old single-run harness and are
+not comparable with anything after.
 
 ## How to regenerate
 
 ```bash
-# Catalog cost (free, deterministic)
-bun run --cwd apps/api measure-tokens
-
-# Eval scores (costs money, needs OPENROUTER_API_KEY)
-set -a && . ./.env.local && set +a
-cd apps/ai && MCP_EVAL_MODEL=moonshotai/kimi-k2.7-code \
-  npx vitest run --config vitest.eval.config.ts src/mcp/__evals__
+set -a && . ../../.env.local && set +a          # from apps/ai
+EVAL_MODEL=<model> EVAL_K=3 bun run eval:tools
+bun run eval:compare .evals/runs/<A> .evals/runs/<B>
+bun run measure-tokens                          # catalog cost, free
 ```
 
-Pin `MCP_EVAL_MODEL` explicitly. The default in `model.ts` tracks production and will move,
-which makes a later run incomparable to an earlier one.
+Pin `EVAL_MODEL`. Unset, it tracks the production triage model, which moves.
+
+---
+
+## Tools suite: 2026-10-08, first run on the rebuilt harness
+
+50 tasks (40 regression, 10 capability), k=3, production chat turn, eval world.
+
+| Model                        | pass@1 (95% CI)     | pass^3 | Calls/trial | Input tokens/trial | s/trial |
+| ---------------------------- | ------------------- | ------ | ----------- | ------------------ | ------- |
+| `anthropic/claude-haiku-5.5` | 100.0% (100 to 100) | 100%   | 3.8         | 170k               | 7.1     |
+| `z-ai/glm-5.3-flash:nitro`   | 98.7% (96.8 to 100) | 96.0%  | 3.9         | 114k               | 11.3    |
+
+Paired difference: +1.3 pts for Haiku (95% CI −0.5 to +3.2), not significant. GLM's misses were
+`requests-per-minute` (one trial queried a hallucinated July window) and `span-attribute-keys`
+(a grader bug since fixed: span is the default scope).
+
+**This suite is saturated.** Single-turn tool choice no longer separates current models. It is a
+regression guard for tool and prompt changes. Telling models apart needs multi-step,
+outcome-graded tasks: the investigation suite is next.
+
+How it got here, for the next person: the first run scored GLM 96.7% and Haiku 98.0%, and most of
+the misses were the harness. The warehouse was empty, so agents that check before acting spent
+their calls looking for data. The broad trace-log fixture answered unrelated log queries with the
+wrong row shape. `run_sql` had no signing key. The issue the tasks named did not exist. And two
+targets rejected valid answers. Tool errors per call fell from 27% to 2 to 4% once the world existed.
 
 ---
 
