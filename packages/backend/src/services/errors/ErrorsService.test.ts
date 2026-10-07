@@ -303,6 +303,7 @@ const makeGatingLayer = (opts: {
 	profiles?: Map<string, string | undefined>
 	/** Answer for the idle-cursor recovery lookup: the first error minute, or none. */
 	firstErrorMinute?: () => string | null
+	failFirstErrorLookup?: boolean
 	firstErrorSql?: Array<string>
 }) => {
 	const testDb = createTestDb(createdDbs)
@@ -361,6 +362,7 @@ const makeGatingLayer = (opts: {
 				})
 			}
 			if (options?.context === "errorTickFirstErrorMinute") {
+				if (opts.failFirstErrorLookup) return Effect.die(new Error("lookup down"))
 				const query = compiledQueryOf(compiled)
 				opts.firstErrorSql?.push(query.sql)
 				const minute = opts.firstErrorMinute?.() ?? null
@@ -1146,6 +1148,19 @@ describe("ErrorsService.runTick", () => {
 			),
 		)
 	})
+
+	it.effect("a failed recovery lookup leaves the cursor for the next tick", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedCursor(TICK_MS - 3 * 60 * MINUTE)
+
+			yield* errors.runTick()
+
+			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 3 * 60 * MINUTE)
+		}).pipe(Effect.provide(makeGatingLayer({ failFirstErrorLookup: true }))),
+	)
 
 	it.effect("an org with recent errors replays from a stale cursor instead of jumping", () =>
 		Effect.gen(function* () {

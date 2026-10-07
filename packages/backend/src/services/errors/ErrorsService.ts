@@ -128,6 +128,10 @@ const TICK_CURSOR_UPDATE_CHUNK = 500
  *  unobserved (the tick or discovery was down). Older than this, telling a
  *  customer about the error is no longer useful and the cursor skips it. */
 const TICK_IDLE_RECOVERY_HORIZON_MS = 6 * 60 * TICK_MINUTE_MS
+/** Recovery lookups per tick. They run before the active orgs are scanned and
+ *  pile up exactly when the warehouse is coming back, so the rest wait a tick;
+ *  an org needs one lookup unless it really has errors to recover. */
+const TICK_IDLE_RECOVERY_LOOKUPS = 40
 // Last-known active-org set, cached so a discovery failure can fail CLOSED
 // (reuse the previous active set) instead of fanning out to every known org —
 // the latter melts the warehouse exactly when it is already struggling. Keyed
@@ -1584,7 +1588,11 @@ const make: Effect.Effect<
 		// the parking point when the stretch is empty. A failed lookup leaves the
 		// cursor alone for the next tick.
 		const recovered = yield* Effect.forEach(
-			trailing.filter((row) => !isObserved(row)),
+			trailing
+				.filter((row) => !isObserved(row))
+				// Most recent first: a short outage gap before rows that are weeks old.
+				.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime())
+				.slice(0, TICK_IDLE_RECOVERY_LOOKUPS),
 			(row) =>
 				Effect.gen(function* () {
 					if (yield* isOrgWarehouseQuarantined(edgeCache, row.orgId)) return []
@@ -1597,7 +1605,8 @@ const make: Effect.Effect<
 							startTime: formatWarehouseDateTime(fromMs),
 							endTime: formatWarehouseDateTime(cutoffMs),
 						}),
-						{ profile: "aggregation", context: "errorTickFirstErrorMinute" },
+						// The 5s budget: a slow lookup is retried next tick, not waited on.
+						{ profile: "discovery", context: "errorTickFirstErrorMinute" },
 					)
 					if (cursorMs < horizonMs) {
 						yield* Effect.logInfo("Idle error tick cursor moved past the recovery horizon").pipe(
@@ -1619,28 +1628,20 @@ const make: Effect.Effect<
 					Effect.catchCause((cause) =>
 						Cause.hasInterruptsOnly(cause)
 							? Effect.interrupt
-							: Effect.gen(function* () {
-									yield* quarantineOnConfigClassCause(edgeCache, row.orgId, cause, nowMs)
-									yield* Effect.logWarning("Idle error tick cursor lookup failed").pipe(
-										Effect.annotateLogs({
-											orgId: row.orgId,
-											error: summarizeCause(cause),
-										}),
-									)
-									return []
-								}),
+							: Effect.logWarning("Idle error tick cursor lookup failed").pipe(
+									Effect.annotateLogs({ orgId: row.orgId, error: summarizeCause(cause) }),
+									Effect.as([]),
+								),
 					),
 				),
 			{ concurrency: 4 },
 		).pipe(Effect.map((results) => results.flat()))
 
-		yield* moveCursors(
-			[
-				...trailing.filter(isObserved).map((row) => row.orgId),
-				...recovered.filter((row) => row.firstErrorMs === null).map((row) => row.orgId),
-			],
-			parkedAtMs,
-		)
+		const parked = [
+			...trailing.filter(isObserved).map((row) => row.orgId),
+			...recovered.filter((row) => row.firstErrorMs === null).map((row) => row.orgId),
+		]
+		yield* moveCursors(parked, parkedAtMs)
 		const recovering = recovered.flatMap((row) =>
 			row.firstErrorMs === null ? [] : [{ orgId: row.orgId, firstErrorMs: row.firstErrorMs }],
 		)
@@ -1649,7 +1650,7 @@ const make: Effect.Effect<
 		})
 
 		yield* Effect.annotateCurrentSpan({
-			idleCursorsAdvanced: trailing.length - recovering.length,
+			idleCursorsParked: parked.length,
 			idleCursorsRecovering: recovering.length,
 		})
 		return recovering.map((row) => row.orgId)
@@ -1693,11 +1694,22 @@ const make: Effect.Effect<
 		// Postgres round-trips each per minute — ~1.6M/day, most of the statement
 		// volume on the database — to discover nothing.
 		const activeScanOrgs = [...knownOrgs].filter(isActive)
+		// Housekeeping for orgs that are not being scanned: a failure here must not
+		// cost the active orgs their tick.
 		const recoveringOrgs = discovered
 			? yield* advanceIdleCursors(
 					[...knownOrgs].filter((org) => !isActive(org)),
 					cutoffMs,
 					nowMs,
+				).pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logWarning("Idle error tick cursors were not advanced").pipe(
+									Effect.annotateLogs({ error: summarizeCause(cause) }),
+									Effect.as([] as ReadonlyArray<OrgId>),
+								),
+					),
 				)
 			: []
 
