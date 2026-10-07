@@ -1,6 +1,10 @@
-const configuredIngestUrl = import.meta.env.VITE_INGEST_URL?.trim()
+const normalize = (configured: string | undefined, fallback: string) => {
+	const trimmed = configured?.trim()
+	return trimmed && trimmed.length > 0 ? trimmed.replace(/\/$/, "") : fallback
+}
 
-export const ingestUrl =
-	configuredIngestUrl && configuredIngestUrl.length > 0
-		? configuredIngestUrl.replace(/\/$/, "")
-		: "https://ingest.maple.dev"
+/** The endpoint users send their telemetry to (setup snippets, connect flows). */
+export const ingestUrl = normalize(import.meta.env.VITE_INGEST_URL, "https://ingest.maple.dev")
+
+/** Where the app's own telemetry goes. Differs from {@link ingestUrl} on PR previews only. */
+export const selfIngestUrl = normalize(import.meta.env.VITE_MAPLE_SELF_INGEST_URL, ingestUrl)

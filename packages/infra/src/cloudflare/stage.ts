@@ -206,10 +206,13 @@ export function resolveMapleDomains({ stage, region }: MapleDeployment): MapleDo
 			if (region !== DEFAULT_MAPLE_REGION) return {}
 			// Custom domains, not workers.dev: its account subdomain is masked as a secret
 			// (GitHub then rejects the env URL), and inter-app URLs must be plan-time strings.
+			// ingest and electric get names too, so the build knows them before their ALBs exist.
 			return {
 				web: `app-pr-${stage.prNumber}.maple.dev`,
 				api: `api-pr-${stage.prNumber}.maple.dev`,
+				ingest: `ingest-pr-${stage.prNumber}.maple.dev`,
 				sync: `sync-pr-${stage.prNumber}.maple.dev`,
+				electric: `electric-pr-${stage.prNumber}.maple.dev`,
 				landing: `landing-pr-${stage.prNumber}.maple.dev`,
 			}
 		case "dev":

@@ -114,7 +114,10 @@ export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
 /** Public URLs for links, defaulting to the deploy's own hostnames (else production's). */
 export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv> =>
 	merge(
-		plainWithDefault("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest ?? "ingest.maple.dev"}`),
+		// Derived where the deploy has its own gateway: a preview must hand out its own endpoint.
+		domains.ingest
+			? derived("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest}`)
+			: plainWithDefault("MAPLE_INGEST_PUBLIC_URL", "https://ingest.maple.dev"),
 		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
 		// Canonical API origin for self-published URLs (MCP `server.json`, email one-click
 		// unsubscribe), never forwarded headers.

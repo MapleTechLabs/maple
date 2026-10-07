@@ -59,12 +59,12 @@ const AiGateway = Cloudflare.AI.Gateway("maple-api-ai")
 /**
  * Bind the gateway and resolve it to a Workers AI binding whose calls carry the gateway id.
  *
- * Deployed stages only: the gateway has no local emulation, so declaring it under `alchemy dev`
- * diffs it against Cloudflare and demands a login. The stage is known only at plan time; in the
- * isolate the binding is either on the env or not, and a dev isolate reads none.
+ * prd only: dev has no local emulation of it, and the account caps gateways at 20, so a gateway
+ * per preview would exhaust it. The stage is known only at plan time; in the isolate the binding
+ * is either on the env or not, and the others read none and call Workers AI directly.
  */
 const bindWorkersAiGateway = Effect.gen(function* () {
-	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind === "dev") {
+	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind !== "prd") {
 		return Option.none()
 	}
 	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)

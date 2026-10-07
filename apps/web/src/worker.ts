@@ -43,6 +43,11 @@ const props = Effect.gen(function* () {
 			// Client build inputs: a change here rebuilds with no source change.
 			VITE_API_BASE_URL: urls.api,
 			VITE_INGEST_URL: urls.ingest,
+			// The app's own telemetry. A preview's gateway knows none of Maple's internal keys.
+			VITE_MAPLE_SELF_INGEST_URL:
+				stage.kind === "pr"
+					? yield* plainFrom(["VITE_INGEST_URL"], "https://ingest.maple.dev")
+					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
 			// Orgs living in another region are redirected to that region's app.
 			VITE_MAPLE_REGION: region,

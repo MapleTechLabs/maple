@@ -308,16 +308,14 @@ What each kind of Worker keeps beside the module:
     maple-ai; `MAPLE_DB` (the api's Hyperdrive config, one row per mention, read inside a
     connection scope that closes before the turn streams); `MAPLE_APP_BASE_URL` for the
     links a reply carries; and an optional `MAPLE_SHARE_TOKEN_HMAC_KEY`, without which a
-    chart in a reply is relayed as text rather than as a picture. On a stage with no
-    application database (PR previews) the lookup fails, is logged, and the mention goes
-    unanswered rather than being told the workspace is unlinked.
+    chart in a reply is relayed as text rather than as a picture.
 
     It takes **one public hostname on production instances** (`domains.chat`:
     `chat.maple.dev`, `chat.eu.maple.dev`). A webhook connector's platform is configured with
     a request URL inside the vendor's own application, and that URL has to keep working
     across deploys. That is what the custom domain buys; the socket half never needed one. A
-    dev stage reaches the same route through portless and a PR preview gets none, since a
-    connector there would have neither credentials nor a database to resolve a workspace in.
+    dev stage reaches the same route through portless. A PR preview gets no hostname and no
+    connector config at all: a socket connector there would fight dev's bot session.
     The Worker is inert on a stage with no connector credentials. Every connector key is
     bound optional, and a connector without its configuration is skipped with one log line,
     so no socket is opened, the webhook route answers 503, and no turn is ever relayed.
@@ -343,8 +341,8 @@ What each kind of Worker keeps beside the module:
   `SANDBOX_INTERNAL_SERVICE_TOKEN`, deliberately not the shared `INTERNAL_SERVICE_TOKEN`,
   which lets its holder act as any organization.
 
-    Only `prd` gets one (`profile.deploys.sandbox`). A PR preview has no application database,
-    so no repository resolves there. On a dev stage, `alchemy dev` would put a
+    Only `prd` gets one (`profile.deploys.sandbox`); a PR preview's `sandbox_*` tools report
+    unavailable. On a dev stage, `alchemy dev` would put a
     multi-gigabyte `docker pull` between every developer and `bun dev`.
 
     What runs inside is one full `git clone` per commit under `/workspace/maple/<sha>`, kept
@@ -379,7 +377,8 @@ What each kind of Worker keeps beside the module:
   `Hyperdrive.Connect(ManagedMapleDb)` on dev stages, `host.bind` of the dashboard-managed
   config by id on the US prd (alchemy has no `env` form for a Hyperdrive it did not create;
   its own `ConnectBinding` attaches the same raw metadata). On the EU prd the props bind the
-  declared config through `mapleDbEnv`. Previews get nothing. The api's Workflow yields it
+  declared config through `mapleDbEnv`, and so do previews (one shared config on their Neon
+  branch). The api's Workflow yields it
   too, from its outer phase. The root yields `ManagedMapleDb` first on dev stages so its
   `MAPLE_PG_URL` read happens outside any init, where alchemy's plan-time ConfigProvider
   would bind it as a secret. Every Postgres layer reads the `MapleDbConnection` port
@@ -404,7 +403,7 @@ the deployed isolate). Two rules keep it honest about which one it is in:
 - **The app layer is built on the first request, not in init.** `impl` (init) also runs at
   plan time, and alchemy's plan-time ConfigProvider auto-binds every `Config` it sees read
   during init onto the Worker as a secret. That would override the explicit `env` contract
-  (a PR preview deliberately gets no `ELECTRIC_URL`). So the route graph is dynamic-imported
+  (a PR preview's `ELECTRIC_URL` is derived, never the shared one). So the route graph is dynamic-imported
   and built once per isolate on the first `fetch` (`Effect.cached`), against a scope that is
   never closed. workerd has no isolate teardown, so nothing in the layer may need releasing.
 - **The bridge serves the router and owns telemetry.** `fetch` is the `HttpRouter.toHttpEffect`
@@ -501,7 +500,7 @@ services.
 - **The ingest ALB admits only Cloudflare's edge** (`cloudflareIpv4Ranges`, read at plan time
   from Cloudflare's published list), so `Cf-IPCountry` cannot be forged and
   `MAPLE_INGEST_TRUST_PROXY_GEO` is safe. A range change lands on the next deploy. PR previews
-  have no proxied domain: their ALB stays open on 80 and does not trust the header.
+  get the same shape on `ingest-pr-<n>.maple.dev`.
 
 ## Schema migrations run in the deploy
 
@@ -547,11 +546,11 @@ architecture.
 - **The OTel collector is prd-only** (`profile.deploys.collector`). The intent is every stage
   that deploys the gateway. The `preview:collector` label sets `MAPLE_DEPLOY_AWS_COLLECTOR=1`
   for one preview, and `scripts/ingest-preview-verify.sh` checks it.
-- **PR previews get an ingest fleet, but no database.** The `pr` profile's `database` is
-  `"none"`, so DB-backed routes 500 and the rest of the preview works. The AWS half costs real money, so a preview only
-  exists while the PR carries the `preview` label. It has no ingest domain: its ALB answers
-  plain HTTP on 80 with no certificate, and the URL is posted on the PR comment.
-  `cleanup-preview-orphans.yml` sweeps what a missed teardown leaves.
+- **PR previews are the whole stack minus the sandbox.** A Neon branch (`database:
+  "preview"`), a Tinybird branch, an ingest fleet on `ingest-pr-<n>.maple.dev` and Electric on
+  `electric-pr-<n>.maple.dev`. The AWS half costs real money, so a preview only exists while
+  the PR carries the `preview` label, capped at `MAX_LIVE_PREVIEWS` live at once.
+  `cleanup-preview-orphans.yml` sweeps what a missed teardown leaves. See `docs/pr-previews.md`.
 - **The EU ingest fleet is sized to EU traffic** (`EU_PRD` in `packages/infra/src/profile.ts`):
   one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
   the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU

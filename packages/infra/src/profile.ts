@@ -4,9 +4,9 @@ import type { MapleDeployment } from "./cloudflare/stage.ts"
 /**
  * How a deployment reaches the app database: `ref` (dashboard Hyperdrive by id, US prd),
  * `declared` (deploy-declared roles and configs, EU prd), `managed` (from `MAPLE_PG_URL`, dev),
- * `none` (PR previews; DB-backed routes 500). See docs/infra.md.
+ * `preview` (a Neon branch per PR, migrated by its deploy). See docs/infra.md.
  */
-export type MapleDatabaseMode = "ref" | "declared" | "managed" | "none"
+export type MapleDatabaseMode = "ref" | "declared" | "managed" | "preview"
 
 export interface TaskSize {
 	/** ECS CPU units. 1024 = 1 vCPU. */
@@ -28,7 +28,7 @@ export interface IngestScaling {
 /** Everything that differs between deployments, other than names and hostnames. */
 export interface MapleProfile {
 	readonly database: MapleDatabaseMode
-	/** Whether the deploy adopts the instance's PlanetScale branch and applies the migrations. */
+	/** Whether the deploy declares its database branch (PlanetScale on prd, Neon on previews) and migrates it. */
 	readonly migratesDatabase: boolean
 	/** Which optional parts of the stack this deployment runs. */
 	readonly deploys: {
@@ -38,7 +38,7 @@ export interface MapleProfile {
 		readonly ingest: boolean
 		/** The OTel collector beside the gateway (`MAPLE_DEPLOY_AWS_COLLECTOR=1` forces it for one deploy). */
 		readonly collector: boolean
-		/** Self-hosted Electric. Needs a database to replicate from, so prd only. */
+		/** Self-hosted Electric. Needs a declared database to replicate from, so not on dev. */
 		readonly electric: boolean
 		/** The agents' repository sandbox. Dev would pull the multi-gigabyte image. */
 		readonly sandbox: boolean
@@ -126,15 +126,15 @@ const SMALL_INGEST: MapleProfile["ingest"] = {
 	selfTraceSampleRatio: undefined,
 }
 
-/** PR previews: Workers plus the ingest gateway, no database (and so no Electric). */
+/** PR previews: the whole stack on a Neon branch of their own, minus the sandbox. */
 const PR: MapleProfile = {
-	database: "none",
-	migratesDatabase: false,
+	database: "preview",
+	migratesDatabase: true,
 	deploys: {
 		sharedApps: true,
 		ingest: true,
 		collector: false,
-		electric: false,
+		electric: true,
 		sandbox: false,
 		replayBlobs: false,
 	},
@@ -146,7 +146,8 @@ const PR: MapleProfile = {
 const DEV: MapleProfile = {
 	...PR,
 	database: "managed",
-	deploys: { ...PR.deploys, ingest: false },
+	migratesDatabase: false,
+	deploys: { ...PR.deploys, ingest: false, electric: false },
 }
 
 /** The profile for one deployment. PR previews are `us` only (`parseMapleDeployment`). */
