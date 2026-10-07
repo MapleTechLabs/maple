@@ -3,7 +3,7 @@
 // DSL-based query definitions for error aggregation and timeseries.
 
 import { finiteOrZero } from "./format"
-import { edgeCondition, interiorConditions } from "./rollup-splice"
+import { edgeCondition, interiorConditions, utcInteriorConditions } from "./rollup-splice"
 import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
@@ -662,7 +662,11 @@ function traceFacetsHourlyInteriorConditions(
 	$: ColumnAccessor<typeof TraceFacetsHourly.columns>,
 	opts: TracesDurationStatsOpts,
 ) {
-	return [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour), ...traceFacetDimensionConditions($, opts)]
+	return [
+		$.OrgId.eq(orgIdParam),
+		...utcInteriorConditions($.Hour),
+		...traceFacetDimensionConditions($, opts),
+	]
 }
 
 export interface TracesDurationStatsOutput {

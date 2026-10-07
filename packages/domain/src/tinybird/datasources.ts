@@ -365,7 +365,7 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		TraceId: t.string(),
 		SpanId: t.string(),
 		ParentSpanId: t.string(),
@@ -398,7 +398,7 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		TraceId: t.string(),
 		ParentSpanId: t.string(),
 		ServiceName: t.string().lowCardinality(),
@@ -432,7 +432,7 @@ export const serviceMapEdgesHourlyIngest = defineDatasource("service_map_edges_h
 		"Zero-retention Events API ingress bridge for scheduled service-map edge rollups. A materialized view forwards each insert to service_map_edges_hourly.",
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		TargetService: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -473,7 +473,7 @@ export const serviceMapEdgesHourly = defineDatasource("service_map_edges_hourly"
 	forwardQuery: "SELECT *",
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		TargetService: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -511,7 +511,7 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DbSystem: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -570,7 +570,7 @@ export const serviceMapDbQuerySignaturesHourly = defineDatasource("service_map_d
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DbSystem: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -635,7 +635,7 @@ export const serviceExternalEdgesHourly = defineDatasource("service_external_edg
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		TargetType: t.string().lowCardinality(),
 		TargetSystem: t.string().lowCardinality(),
@@ -690,7 +690,7 @@ export const serviceAddressResolutionsHourly = defineDatasource("service_address
 	// writes these rows directly via POST /v0/events, which requires them.
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		ParentServerAddress: t.string(),
 		ResolvedTargetService: t.string().lowCardinality(),
@@ -729,7 +729,7 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		K8sCluster: t.simpleAggregateFunction("max", t.string()),
@@ -767,7 +767,7 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		Duration: t.uint64(),
 		StatusCode: t.string().lowCardinality(),
@@ -815,7 +815,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		ServiceNamespace: t.string().lowCardinality(),
@@ -826,7 +826,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
@@ -865,7 +865,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Minute: t.dateTime(),
+		Minute: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		ServiceNamespace: t.string().lowCardinality(),
@@ -876,7 +876,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
@@ -1095,7 +1095,7 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string(),
 		HttpMethod: t.string().lowCardinality(),
@@ -1613,7 +1613,7 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		MetricType: t.string().lowCardinality(),
 		ServiceName: t.string().lowCardinality(),
 		MetricName: t.string().lowCardinality(),
@@ -1621,8 +1621,8 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 		MetricUnit: t.simpleAggregateFunction("anyLast", t.string()),
 		IsMonotonic: t.simpleAggregateFunction("anyLast", t.uint8()),
 		DataPointCount: t.simpleAggregateFunction("sum", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
-		LastSeen: t.simpleAggregateFunction("max", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -1643,7 +1643,7 @@ export const attributeKeysHourly = defineDatasource("attribute_keys_hourly", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		AttributeKey: t.string().lowCardinality(),
 		AttributeScope: t.string().lowCardinality(),
 		UsageCount: t.simpleAggregateFunction("sum", t.uint64()),
@@ -1671,7 +1671,7 @@ export const attributeValuesHourly = defineDatasource("attribute_values_hourly",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		AttributeKey: t.string().lowCardinality(),
 		AttributeValue: t.string(),
 		AttributeScope: t.string().lowCardinality(),
@@ -1821,7 +1821,7 @@ export const serviceOperationsMinutely = defineDatasource("service_operations_mi
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Minute: t.dateTime(),
+		Minute: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		// Falls back to url.path when no route template exists; keep this a plain
@@ -1881,7 +1881,7 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		SpanName: t.string(),
@@ -1943,7 +1943,7 @@ export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string().lowCardinality(),
 		SpanKind: t.string().lowCardinality(),
@@ -2016,7 +2016,7 @@ export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourl
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		MetricName: t.string().lowCardinality(),
 		SpanKind: t.string().lowCardinality(),
@@ -2026,7 +2026,7 @@ export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourl
 		AttrFingerprint: t.uint64(),
 		ResourceFingerprint: t.uint64(),
 		// Counter-reset epoch; isolates accumulation runs within one series.
-		StartTimeUnix: t.dateTime64(9),
+		StartTimeUnix: utcDateTime64(9),
 		// Cumulative counter value at the end of the hour for this series-epoch.
 		// Finalize with argMaxMerge(LastValue). Tinybird's aggregateFunction(func,
 		// type) emits one type slot, so the value type (Float64) is smuggled into
@@ -2066,7 +2066,7 @@ export const logsAggregatesHourly = defineDatasource("logs_aggregates_hourly", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SeverityText: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),

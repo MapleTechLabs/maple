@@ -3353,7 +3353,7 @@ SELECT
           sum(shapes.bErr) AS errorCount,
           if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
           if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
-          toString(max(shapes.bLastSeen)) AS lastSeen
+          max(shapes.bLastSeen) AS lastSeen
         FROM (
 SELECT
           service_map_db_query_shapes_hourly.ServiceName AS bService,
@@ -3447,7 +3447,7 @@ SELECT
           sum(shapes.bErr) AS errorCount,
           if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
           if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
-          toString(max(shapes.bLastSeen)) AS lastSeen
+          max(shapes.bLastSeen) AS lastSeen
         FROM (
 SELECT
           service_map_db_query_shapes_hourly.ServiceName AS bService,
@@ -4328,15 +4328,15 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:allServices  [cc7e9fe3]
+-- builder:service-operations:routeUsageQuery:allServices  [679f9639]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
           sum(route_windows.bSpanCount) AS spanCount,
           sum(route_windows.bErrorCount) AS errorCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
-          toString(min(route_windows.bFirst)) AS firstSeen,
-          toString(max(route_windows.bLast)) AS lastSeen
+          min(route_windows.bFirst) AS firstSeen,
+          max(route_windows.bLast) AS lastSeen
         FROM (
 SELECT
           traces.ServiceName AS bServiceName,
@@ -4390,15 +4390,15 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:searchStalest  [45e0cd47]
+-- builder:service-operations:routeUsageQuery:searchStalest  [8998c3e5]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
           sum(route_windows.bSpanCount) AS spanCount,
           sum(route_windows.bErrorCount) AS errorCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
-          toString(min(route_windows.bFirst)) AS firstSeen,
-          toString(max(route_windows.bLast)) AS lastSeen
+          min(route_windows.bFirst) AS firstSeen,
+          max(route_windows.bLast) AS lastSeen
         FROM (
 SELECT
           traces.ServiceName AS bServiceName,

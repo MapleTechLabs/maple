@@ -28,4 +28,19 @@ describe("utcSecondsParam", () => {
 			expect(sql).toContain("TimestampTime >= '2026-10-07 10:00:00'")
 		}),
 	)
+
+	it.effect("floors a fractional string bound", () =>
+		Effect.gen(function* () {
+			const q = from(Stamps)
+				.select(($) => ({ at: $.Timestamp }))
+				.where(($) => [
+					$.OrgId.eq(param.string("orgId")),
+					$.Timestamp.gte(param.dateTime("startTime")),
+					$.TimestampTime.gte(utcSecondsParam("startTime")),
+				])
+			const { sql } = yield* compile(q, { orgId: "org_1", startTime: "2026-10-07 10:00:00.123" })
+			expect(sql).toContain("Timestamp >= '2026-10-07 10:00:00.123'")
+			expect(sql).toContain("TimestampTime >= '2026-10-07 10:00:00'")
+		}),
+	)
 })

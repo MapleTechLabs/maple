@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import { chartWindow, parseClickHouseDateTime, type ChartWindow, type TimeBounds } from "../lib/time"
@@ -44,8 +45,11 @@ export function foldCatalogRows(rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
 		if (existing) {
 			if (!existing.serviceNames.includes(row.serviceName)) existing.serviceNames.push(row.serviceName)
 			existing.dataPointCount += Number(row.dataPointCount)
-			if (row.lastSeen > existing.lastSeen) existing.lastSeen = row.lastSeen
-			if (row.firstSeen < existing.firstSeen) existing.firstSeen = row.firstSeen
+			// ISO strings of one format compare chronologically.
+			const lastSeen = DateTime.formatIso(row.lastSeen)
+			const firstSeen = DateTime.formatIso(row.firstSeen)
+			if (lastSeen > existing.lastSeen) existing.lastSeen = lastSeen
+			if (firstSeen < existing.firstSeen) existing.firstSeen = firstSeen
 		} else {
 			byMetric.set(key, {
 				metricName: row.metricName,
@@ -54,8 +58,8 @@ export function foldCatalogRows(rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
 				metricDescription: row.metricDescription,
 				serviceNames: [row.serviceName],
 				dataPointCount: Number(row.dataPointCount),
-				firstSeen: row.firstSeen,
-				lastSeen: row.lastSeen,
+				firstSeen: DateTime.formatIso(row.firstSeen),
+				lastSeen: DateTime.formatIso(row.lastSeen),
 				isMonotonic: Number(row.isMonotonic) === 1,
 			})
 		}

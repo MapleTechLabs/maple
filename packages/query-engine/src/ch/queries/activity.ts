@@ -19,7 +19,7 @@
 
 import { from, param } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
-import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly } from "../tables"
+import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly, utcSecondsParam } from "../tables"
 
 /** The `OrgId` brand comes off the tables' branded `OrgId` column — the
  *  derived row schema carries it, so no declared schema is needed. */
@@ -42,7 +42,7 @@ export function activeOrgsByErrorEventsQuery() {
 export function activeOrgsByTracesQuery() {
 	return from(TracesAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Hour.gte(param.dateTimeSeconds("startTime"))])
+		.where(($) => [$.Hour.gte(utcSecondsParam("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
 		.route("ingest")
@@ -53,7 +53,7 @@ export function activeOrgsByTracesQuery() {
 export function activeOrgsByLogsQuery() {
 	return from(LogsAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Hour.gte(param.dateTimeSeconds("startTime"))])
+		.where(($) => [$.Hour.gte(utcSecondsParam("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
 		.route("ingest")

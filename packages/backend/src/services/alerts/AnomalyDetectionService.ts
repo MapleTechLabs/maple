@@ -47,6 +47,7 @@ import {
 	Cause,
 	Clock,
 	Context,
+	DateTime,
 	Effect,
 	Layer,
 	MutableHashMap,
@@ -782,7 +783,7 @@ const make: Effect.Effect<
 				context: "anomalyIncidentTimeseries",
 			})
 			buckets = rows.map((r) => {
-				const hourMs = parseWarehouseDateTime(String(r.hour ?? ""))
+				const hourMs = DateTime.toEpochMillis(r.hour)
 				const errorLogCount = Number(r.errorLogCount ?? 0)
 				return new AnomalyTimeseriesBucket({
 					bucket: isoFromEpoch(hourMs),
@@ -809,7 +810,7 @@ const make: Effect.Effect<
 						? "milliseconds"
 						: "per_minute"
 			buckets = rows.map((r) => {
-				const hourMs = parseWarehouseDateTime(String(r.hour ?? ""))
+				const hourMs = DateTime.toEpochMillis(r.hour)
 				const requestCount = Number(r.requestCount ?? 0)
 				const errorCount = Number(r.errorCount ?? 0)
 				const p95Ms = Number(r.p95Ms ?? 0)
@@ -842,7 +843,8 @@ const make: Effect.Effect<
 	// Tick: data fetch
 
 	interface HourRow {
-		readonly hour: string
+		/** Epoch ms, not a `DateTime.Utc`: baseline rows are cached as JSON. */
+		readonly hourMs: number
 		readonly serviceName: string
 		readonly deploymentEnv: string
 	}
@@ -853,7 +855,7 @@ const make: Effect.Effect<
 		const baseline = new Map<string, R[]>()
 		for (const row of rows) {
 			const key = `${row.serviceName}\u0000${row.deploymentEnv}`
-			if (parseWarehouseDateTime(row.hour) >= currentHourStartMs) {
+			if (row.hourMs >= currentHourStartMs) {
 				current.set(key, row)
 			} else {
 				const list = baseline.get(key)
@@ -898,14 +900,14 @@ const make: Effect.Effect<
 				// the cached blob is purely sealed baseline.
 				return rows
 					.map((r) => ({
-						hour: String(r.hour ?? ""),
+						hourMs: DateTime.toEpochMillis(r.hour),
 						serviceName: String(r.serviceName ?? ""),
 						deploymentEnv: String(r.deploymentEnv ?? ""),
 						requestCount: Number(r.requestCount ?? 0),
 						errorCount: Number(r.errorCount ?? 0),
 						p95Ms: Number(r.p95Ms ?? 0),
 					}))
-					.filter((r) => parseWarehouseDateTime(r.hour) < currentHourStartMs)
+					.filter((r) => r.hourMs < currentHourStartMs)
 			}),
 		)
 
@@ -921,7 +923,7 @@ const make: Effect.Effect<
 			})
 			.pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
-			hour: String(r.hour ?? ""),
+			hourMs: DateTime.toEpochMillis(r.hour),
 			serviceName: String(r.serviceName ?? ""),
 			deploymentEnv: String(r.deploymentEnv ?? ""),
 			requestCount: Number(r.requestCount ?? 0),
@@ -987,12 +989,12 @@ const make: Effect.Effect<
 					.pipe(Effect.mapError(makePersistenceError))
 				return rows
 					.map((r) => ({
-						hour: String(r.hour ?? ""),
+						hourMs: DateTime.toEpochMillis(r.hour),
 						serviceName: String(r.serviceName ?? ""),
 						deploymentEnv: String(r.deploymentEnv ?? ""),
 						errorLogCount: Number(r.errorLogCount ?? 0),
 					}))
-					.filter((r) => parseWarehouseDateTime(r.hour) < currentHourStartMs)
+					.filter((r) => r.hourMs < currentHourStartMs)
 			}),
 		)
 
@@ -1008,7 +1010,7 @@ const make: Effect.Effect<
 			})
 			.pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
-			hour: String(r.hour ?? ""),
+			hourMs: DateTime.toEpochMillis(r.hour),
 			serviceName: String(r.serviceName ?? ""),
 			deploymentEnv: String(r.deploymentEnv ?? ""),
 			errorLogCount: Number(r.errorLogCount ?? 0),

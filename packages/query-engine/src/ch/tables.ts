@@ -5,8 +5,10 @@
 // timestamps decode as the strings ClickHouse sends, the wire format web and
 // the iOS app parse.
 
+import { DateTime, Option, Schema, SchemaGetter } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import { parseUtc } from "../datetime"
 
 /**
  * The type every attribute column in the warehouse has.
@@ -30,12 +32,35 @@ export const orgId = Datasources.traces.columns.OrgId
 export const orgIdParam = T.param.of(orgId, "orgId")
 
 /**
- * A `DateTime.Utc` bound for a second-precision `DateTime` column, floored to
- * whole seconds. It may share a name with a `param.dateTime` bound on a
- * `DateTime64` column. Use it instead of `param.dateTimeSeconds`, which in
- * effect-orm 0.3.0 only accepts strings at runtime despite its type.
+ * A string bound written as a `DateTime` literal: floored to whole seconds, as
+ * `param.dateTimeSeconds` does, since the column rejects a fractional literal.
  */
-export const utcSecondsParam = <const N extends string>(name: N) => T.param.of(T.dateTime, name)
+const FlooredSecondsString = Schema.String.pipe(
+	Schema.decodeTo(Schema.String, {
+		decode: SchemaGetter.passthrough(),
+		encode: SchemaGetter.transform((value: string) =>
+			Option.match(parseUtc(value), {
+				onNone: () => value,
+				onSome: (utc) => DateTime.formatIso(utc).slice(0, 19).replace("T", " "),
+			}),
+		),
+	}),
+)
+
+const utcSeconds = T.custom(
+	"DateTime",
+	T.dateTime.schema,
+	Schema.Union([T.dateTime.schema, FlooredSecondsString]),
+)
+
+/**
+ * A `DateTime.Utc` bound for a second-precision `DateTime` column, floored to
+ * whole seconds (a string bound too). It may share a name with a
+ * `param.dateTime` bound on a `DateTime64` column. Use it instead of
+ * `param.dateTimeSeconds`, which in effect-orm 0.3.0 only accepts strings at
+ * runtime despite its type.
+ */
+export const utcSecondsParam = <const N extends string>(name: N) => T.param.of(utcSeconds, name)
 
 export const Traces = Datasources.traces
 

@@ -22,6 +22,7 @@
 // The expressions are SQL strings rather than DSL nodes because they embed
 // param placeholders that `compile()` substitutes later.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -99,8 +100,22 @@ export function interiorConditions(
 	bucketColumn: CH.Expr<string>,
 	grain: SpliceGrain = hourGrain,
 ): readonly [CH.Condition, CH.Condition] {
-	return [
-		bucketColumn.gte(CH.rawExpr(grain.firstFullBucket, T.dateTimeString)),
-		bucketColumn.lt(CH.rawExpr(grain.endFloor, T.dateTimeString)),
-	]
+	return boundedBy(bucketColumn, T.dateTimeString, grain)
 }
+
+/** {@link interiorConditions} for a bucket column that decodes to `DateTime.Utc`. */
+export function utcInteriorConditions(
+	bucketColumn: CH.Expr<DateTime.Utc>,
+	grain: SpliceGrain = hourGrain,
+): readonly [CH.Condition, CH.Condition] {
+	return boundedBy(bucketColumn, T.dateTime, grain)
+}
+
+const boundedBy = <A>(
+	bucketColumn: CH.Expr<A>,
+	type: T.CHType<string, A, unknown>,
+	grain: SpliceGrain,
+): readonly [CH.Condition, CH.Condition] => [
+	bucketColumn.gte(CH.rawExpr(grain.firstFullBucket, type)),
+	bucketColumn.lt(CH.rawExpr(grain.endFloor, type)),
+]

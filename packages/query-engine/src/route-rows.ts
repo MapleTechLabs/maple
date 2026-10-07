@@ -14,7 +14,7 @@
  * driver — the one input a shaper needs beyond its rows is the window's
  * duration, and the caller hands that in.
  */
-import { Option, Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
 
@@ -125,6 +125,10 @@ type RawCommitTuple = readonly [unknown, unknown, unknown, unknown]
 
 const isCommitTuple = (value: unknown): value is RawCommitTuple => Array.isArray(value) && value.length === 4
 
+/** A row timestamp as a string: decoded rows carry a `DateTime.Utc`, HTTP JSON the string. */
+const timeString = (value: unknown): string =>
+	DateTime.isDateTime(value) ? DateTime.formatIso(value) : String(value ?? "")
+
 /**
  * One services-list row, already collapsed to (service, environment) by
  * `serviceOverviewQuery`.
@@ -158,7 +162,7 @@ export function coerceServiceOverviewRow(
 			spanCount: commitSpanCount,
 			percentage: spanCount > 0 ? Math.round((commitSpanCount / spanCount) * 100) : 0,
 			errorCount: Number(tuple[2] ?? 0),
-			firstSeen: String(tuple[3] ?? ""),
+			firstSeen: timeString(tuple[3]),
 		}
 	})
 
