@@ -1233,59 +1233,6 @@ describe("withReviewStatus", () => {
 		assert.notInclude(superseded, "is reviewing")
 	})
 
-	const progress = {
-		startedAt: 0,
-		updatedAt: 245_000,
-		stepCount: 23,
-		steps: [
-			{ tool: "pr_changed_files", label: "Pr changed files", at: 4_000 },
-			{ tool: "sandbox_grep", label: "Sandbox grep · @octocat|`x`", at: 240_000 },
-		],
-		filesDue: 12,
-		filesRead: 7,
-		findings: { critical: 1, warn: 2, info: 0 },
-		closingOut: false,
-	}
-
-	it("shows a running review's progress on its own reviewing notice", () => {
-		const reviewing = withReviewStatus(
-			undefined,
-			MARKER,
-			{ kind: "reviewing", headSha: HEAD },
-			"@maple-review-bot",
-		)
-		const updated =
-			withReviewStatus(
-				reviewing,
-				MARKER,
-				{ kind: "reviewing", headSha: HEAD, progress },
-				"@maple-review-bot",
-			) ?? ""
-		assert.include(updated, "Maple is reviewing this pull request")
-		assert.include(updated, "| 4m 5s | 7 of 12 | 🔴 1 🟠 2 | 23 |")
-		// The model's argument sits in a code span, so it cannot mention anyone.
-		assert.include(updated, "**Now:** Sandbox grep `@octocat|'x'`")
-		assert.include(updated, "- `+4s` Pr changed files")
-		assert.include(updated, "<sub>Updated 00:04:05 UTC</sub>")
-		// A later failure still recognises the notice it replaces.
-		assert.include(
-			withReviewStatus(updated, MARKER, { kind: "failed", headSha: HEAD }, "@maple-review-bot"),
-			"could not finish",
-		)
-	})
-
-	it("never writes progress over a finished summary or into a missing comment", () => {
-		const finished = renderSummaryComment(MARKER, {
-			report: report([]),
-			partial: false,
-			headSha: HEAD,
-			repositoryUrl: REPO_URL,
-		})
-		const notice = { kind: "reviewing" as const, headSha: HEAD, progress }
-		assert.isUndefined(withReviewStatus(finished, MARKER, notice, "@maple-review-bot"))
-		assert.isUndefined(withReviewStatus(undefined, MARKER, notice, "@maple-review-bot"))
-	})
-
 	it("leaves a finished summary alone when a review fails or is superseded late", () => {
 		const finished = renderSummaryComment(MARKER, {
 			report: report([]),

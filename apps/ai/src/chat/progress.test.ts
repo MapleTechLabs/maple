@@ -7,7 +7,6 @@ import {
 	INVESTIGATION_PROGRESS_HEARTBEAT,
 	makeProgressFeed,
 	PROGRESS_WRITE_TIMEOUT,
-	reviewStepLabel,
 	stepLabel,
 } from "./progress"
 
@@ -32,14 +31,6 @@ describe("stepLabel", () => {
 		)
 	})
 
-	it("shows a review only the files it read, never a pattern or a query", () => {
-		expect(reviewStepLabel("sandbox_grep", { pattern: "user@example.com" })).toBe("Sandbox grep")
-		expect(reviewStepLabel("search_traces", { query: "customer_id = 42" })).toBe("Search traces")
-		expect(reviewStepLabel("sandbox_read_file", { path: "src/a.ts" })).toBe(
-			"Sandbox read file · src/a.ts",
-		)
-	})
-
 	/** A label padded with whichever key came first reads as detail while carrying none. */
 	it("says nothing extra when the arguments are only time bounds", () => {
 		expect(stepLabel("find_errors", { start_time: "a", end_time: "b", limit: 50 })).toBe("Find errors")
@@ -58,13 +49,12 @@ describe("stepLabel", () => {
 	})
 })
 
-const feedWith = (everyBeat = false) =>
+const feedWith = () =>
 	Effect.gen(function* () {
 		const writes: Array<InvestigationProgress> = []
 		const feed = yield* makeProgressFeed({
 			label: stepLabel,
 			heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
-			everyBeat,
 			write: (record) => Effect.sync(() => writes.push(record)),
 		})
 		yield* Effect.yieldNow
@@ -105,14 +95,11 @@ describe("makeProgressFeed", () => {
 		}),
 	)
 
-	it.effect("writes nothing on a beat with no new step, unless asked to write every beat", () =>
+	it.effect("writes nothing on a beat with no new step", () =>
 		Effect.gen(function* () {
 			const quiet = yield* feedWith()
 			yield* TestClock.adjust(Duration.times(INVESTIGATION_PROGRESS_HEARTBEAT, 3))
 			assert.lengthOf(quiet.writes, 0)
-			const beating = yield* feedWith(true)
-			yield* TestClock.adjust(Duration.times(INVESTIGATION_PROGRESS_HEARTBEAT, 2))
-			assert.isAtLeast(beating.writes.length, 3)
 		}),
 	)
 
@@ -154,7 +141,6 @@ describe("makeProgressFeed", () => {
 			const feed = yield* makeProgressFeed({
 				label: stepLabel,
 				heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
-				everyBeat: false,
 				write: () => Effect.never,
 			})
 			feed.step("search_logs", {})
@@ -172,7 +158,6 @@ describe("makeProgressFeed", () => {
 			const feed = yield* makeProgressFeed({
 				label: stepLabel,
 				heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
-				everyBeat: false,
 				// The first write hangs; the retry lands.
 				write: (record) =>
 					Ref.getAndUpdate(attempts, (count) => count + 1).pipe(

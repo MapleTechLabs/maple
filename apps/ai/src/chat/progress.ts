@@ -99,27 +99,11 @@ export const stepLabel = (tool: string, input: ToolCallInput): string => {
 	return arg === null ? phrase : `${phrase} · ${arg}`
 }
 
-/**
- * Arguments a review step may show on its pull request: the files the pull request already shows.
- * Anything else (a grep pattern, a telemetry query) can carry a value read from private source or
- * production data, and the comment may sit on a public repository.
- */
-const PUBLIC_REVIEW_ARGS = ["path", "paths"] as const
-
-/** A review step as its pull request comment shows it. */
-export const reviewStepLabel = (tool: string, input: ToolCallInput): string =>
-	stepLabel(
-		tool,
-		Object.fromEntries(PUBLIC_REVIEW_ARGS.flatMap((key) => (key in input ? [[key, input[key]]] : []))),
-	)
-
 export interface ProgressFeed {
 	/** Note a tool call. Synchronous, since the run's event callback is; stamped by the `Clock` service. */
 	readonly step: (tool: string, input: ToolCallInput) => void
 	/** Write the steps not written yet, if any. */
 	readonly flush: Effect.Effect<void>
-	/** Write the record now, changed or not. */
-	readonly writeNow: Effect.Effect<void>
 	/** Stop writing, waiting out a write in flight. Steps still queue, for a `resume`. */
 	readonly pause: Effect.Effect<void>
 	/** Write again after a `pause`, as when the report it made way for was refused. */
@@ -148,8 +132,6 @@ interface FeedState {
 export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 	readonly label: (tool: string, input: ToolCallInput) => string
 	readonly heartbeat: Duration.Input
-	/** Write on every beat, not only after new steps, so the record's own time keeps moving. */
-	readonly everyBeat: boolean
 	readonly write: (record: InvestigationProgress) => Effect.Effect<void>
 }) {
 	const clock = yield* Clock.Clock
@@ -178,37 +160,36 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 
 	// The bookkeeping cannot be cut off midway; only the write itself is interruptible, by its
 	// timeout, so a hung request cannot hold the permit (and the report behind it) for long.
-	const write = (force: boolean) =>
-		Effect.uninterruptibleMask((restore) =>
-			Effect.gen(function* () {
-				if (!(yield* Ref.get(open))) return
-				yield* Queue.clear(calls).pipe(Effect.flatMap(absorb))
-				const current = yield* Ref.get(state)
-				if (!current.dirty && !force) return
-				yield* Ref.set(state, { ...current, dirty: false })
-				const now = yield* Clock.currentTimeMillis
-				const written = yield* restore(
-					options
-						.write({
-							stepCount: current.stepCount,
-							steps: current.steps,
-							// A row's liveness reads its newest step; a beat that writes anyway is itself the news.
-							updatedAt: options.everyBeat ? now : (current.steps.at(-1)?.at ?? now),
-						})
-						.pipe(Effect.timeoutOption(PROGRESS_WRITE_TIMEOUT)),
-				)
-				if (Option.isSome(written)) return
-				// Still unwritten, so the next beat or the final flush retries it.
-				yield* Ref.update(state, (latest) => ({ ...latest, dirty: true }))
-				yield* Effect.logWarning("Progress write timed out; the next beat retries")
-			}).pipe(permit.withPermits(1)),
-		)
+	const write = Effect.uninterruptibleMask((restore) =>
+		Effect.gen(function* () {
+			if (!(yield* Ref.get(open))) return
+			yield* Queue.clear(calls).pipe(Effect.flatMap(absorb))
+			const current = yield* Ref.get(state)
+			if (!current.dirty) return
+			yield* Ref.set(state, { ...current, dirty: false })
+			const now = yield* Clock.currentTimeMillis
+			const written = yield* restore(
+				options
+					.write({
+						stepCount: current.stepCount,
+						steps: current.steps,
+						// A row's liveness reads its newest step.
+						updatedAt: current.steps.at(-1)?.at ?? now,
+					})
+					.pipe(Effect.timeoutOption(PROGRESS_WRITE_TIMEOUT)),
+			)
+			if (Option.isSome(written)) return
+			// Still unwritten, so the next beat or the final flush retries it.
+			yield* Ref.update(state, (latest) => ({ ...latest, dirty: true }))
+			yield* Effect.logWarning("Progress write timed out; the next beat retries")
+		}).pipe(permit.withPermits(1)),
+	)
 
 	const first = Queue.take(calls).pipe(
 		Effect.flatMap((call) => absorb([call])),
-		Effect.andThen(write(false)),
+		Effect.andThen(write),
 	)
-	const beat = write(options.everyBeat).pipe(Effect.repeat(Schedule.spaced(options.heartbeat)))
+	const beat = write.pipe(Effect.repeat(Schedule.spaced(options.heartbeat)))
 	const fiber = yield* Effect.forkChild(
 		Effect.all([first, beat], { concurrency: "unbounded", discard: true }),
 	)
@@ -221,8 +202,7 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 		step: (tool, input) => {
 			Queue.offerUnsafe(calls, { tool, input, at: clock.currentTimeMillisUnsafe() })
 		},
-		flush: write(false),
-		writeNow: write(true),
+		flush: write,
 		pause,
 		resume: Ref.set(open, true),
 		close: pause.pipe(Effect.andThen(Fiber.interrupt(fiber))),

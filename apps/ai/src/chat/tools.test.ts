@@ -169,7 +169,6 @@ describe("buildReviewCompletion", () => {
 		const coverage = (unread: ReadonlyArray<string>): ReviewCoverage => ({
 			observe: () => {},
 			unread: () => unread,
-			counts: () => ({ due: unread.length, read: 0 }),
 		})
 		const recording = () => {
 			const filed: Array<unknown> = []

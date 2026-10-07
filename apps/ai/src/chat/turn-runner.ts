@@ -37,7 +37,6 @@ import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, ste
 import { makeReviewCoverage } from "./review-coverage"
 import { reviewFailureError, reviewFailureReason } from "./review-failure"
 import { makeReviewLedger } from "./review-ledger"
-import { makeReviewProgressFeed } from "./review-progress"
 import {
 	investigationForSession,
 	isAutonomousTurn,
@@ -406,14 +405,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			prReviewId !== undefined && autonomous
 				? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
 				: undefined
-		// The autonomous pass's tool calls show on the investigation row, or on the review's comment,
-		// until its report is on its way. A failed write is logged and dropped: it is only a feed.
+		// The autonomous pass's tool calls show on the investigation row until its report is on its way. A failed write is logged and dropped: it is only a feed.
 		const investigationFeed =
 			investigationId !== undefined && autonomous
 				? yield* makeProgressFeed({
 						label: stepLabel,
 						heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
-						everyBeat: false,
 						write: (record) =>
 							investigations
 								.recordProgress(tenant.orgId, investigationId, record)
@@ -426,25 +423,20 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 								),
 					})
 				: undefined
-		const reviewFeed =
-			prReviewId !== undefined && review !== undefined
-				? yield* makeReviewProgressFeed({
-						...review,
-						write: (snapshot) => reviews.recordProgress(tenant.orgId, prReviewId, snapshot),
-					})
-				: undefined
-		const feeds = [investigationFeed, reviewFeed].filter((feed) => feed !== undefined)
 		// The tail lands while the row is still active, and the report's own write lands last. A
 		// report that does not land hands the row back to the feed, since the pass goes on.
 		const beforeReport = <A, E>(submit: Effect.Effect<A, E>) =>
-			(investigationFeed?.flush ?? Effect.void).pipe(
-				Effect.andThen(Effect.forEach(feeds, (feed) => feed.pause, { discard: true })),
-				Effect.andThen(submit),
-				Effect.onError(() => Effect.forEach(feeds, (feed) => feed.resume, { discard: true })),
-			)
-		const closeFeeds = (investigationFeed?.flush ?? Effect.void).pipe(
-			Effect.andThen(Effect.forEach(feeds, (feed) => feed.close, { discard: true })),
-		)
+			investigationFeed === undefined
+				? submit
+				: investigationFeed.flush.pipe(
+						Effect.andThen(investigationFeed.pause),
+						Effect.andThen(submit),
+						Effect.onError(() => investigationFeed.resume),
+					)
+		const closeFeeds =
+			investigationFeed === undefined
+				? Effect.void
+				: investigationFeed.flush.pipe(Effect.andThen(investigationFeed.close))
 		// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
 		let failure: PrReviewFailureReason | undefined
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
@@ -486,9 +478,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						event.name !== SUBMIT_DIAGNOSIS &&
 						event.name !== SUBMIT_REVIEW
 					) {
-						const input = parseToolInput(event.input)
-						investigationFeed?.step(event.name, input)
-						reviewFeed?.step(event.name, input)
+						investigationFeed?.step(event.name, parseToolInput(event.input))
 					}
 					if (event.type === "turn-end" && event.task === undefined) {
 						observability.outcome = event.reason
@@ -541,7 +531,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
 		if (!submitted && holdsTurn()) {
 			held = undefined
-			if (reviewFeed !== undefined) yield* reviewFeed.closingOut
 			const closeOut = yield* recoverAutonomousFailure(
 				run({
 					text:
