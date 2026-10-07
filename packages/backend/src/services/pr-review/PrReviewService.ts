@@ -2536,58 +2536,68 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					})
 					return
 				}
-				const publication = buildPublication({
-					reviewId,
-					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
-					repositoryUrl: repo.htmlUrl,
-					number: review.number,
-					headSha: review.headSha,
-					report,
-					partial: request.partial === true,
-					carried,
-					keys,
-					mention: provider.success.reviewerMention,
-					...(config.minInlineSeverity === undefined
-						? undefined
-						: { minInlineSeverity: config.minInlineSeverity }),
-					...(config.blockOnContractBreaks === true ? { blockOnContractBreaks: true } : undefined),
-				})
-				const published = yield* provider.success
-					.publishPullRequestReview(installation.value, ref, publication)
-					.pipe(Effect.result)
-				if (Result.isFailure(published)) {
-					// Recorded, not retried: the usual cause is the installation not having
-					// accepted `checks: write` yet, and the report itself is already safe.
-					yield* Effect.logWarning("[PrReview] could not publish the review to the provider").pipe(
-						Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }),
-					)
-					yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
-					yield* update(orgId, reviewId, {
-						publishError: published.failure.message.slice(0, 500),
-						updatedAt: msToDate(nowMs),
+				// An early end gets the retry notice, not a half review that reads as finished. The partial
+				// report stays stored for the review page.
+				if (request.partial === true) {
+					yield* postReviewStatus(orgId, reviewId, repo, review.number, {
+						kind: "failed",
+						headSha: review.headSha,
+						reason: "ended_early",
 					})
 				} else {
-					yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
-					yield* update(orgId, reviewId, {
-						checkRunUrl: published.success.checkRunUrl,
-						commentUrl: published.success.commentUrl,
-						reviewUrl: published.success.reviewUrl,
-						publishError: null,
-						updatedAt: msToDate(nowMs),
+					const publication = buildPublication({
+						reviewId,
+						commentAttempt: yield* commentAttemptOf(orgId, reviewId),
+						repositoryUrl: repo.htmlUrl,
+						number: review.number,
+						headSha: review.headSha,
+						report,
+						partial: false,
+						carried,
+						keys,
+						mention: provider.success.reviewerMention,
+						...(config.minInlineSeverity === undefined
+							? undefined
+							: { minInlineSeverity: config.minInlineSeverity }),
+						...(config.blockOnContractBreaks === true ? { blockOnContractBreaks: true } : undefined),
 					})
-					yield* Effect.forEach(
-						published.success.inlineComments,
-						({ key, commentId }) =>
-							database
-								.execute((db) =>
-									db
-										.update(prReviewFindings)
-										.set({ commentId })
-										.where(eq(prReviewFindings.id, key)),
-								)
-								.pipe(Effect.mapError(toPersistence)),
-						{ discard: true },
-					)
+					const published = yield* provider.success
+						.publishPullRequestReview(installation.value, ref, publication)
+						.pipe(Effect.result)
+					if (Result.isFailure(published)) {
+						// Recorded, not retried: the usual cause is the installation not having
+						// accepted `checks: write` yet, and the report itself is already safe.
+						yield* Effect.logWarning("[PrReview] could not publish the review to the provider").pipe(
+							Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }),
+						)
+						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
+						yield* update(orgId, reviewId, {
+							publishError: published.failure.message.slice(0, 500),
+							updatedAt: msToDate(nowMs),
+						})
+					} else {
+						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
+						yield* update(orgId, reviewId, {
+							checkRunUrl: published.success.checkRunUrl,
+							commentUrl: published.success.commentUrl,
+							reviewUrl: published.success.reviewUrl,
+							publishError: null,
+							updatedAt: msToDate(nowMs),
+						})
+						yield* Effect.forEach(
+							published.success.inlineComments,
+							({ key, commentId }) =>
+								database
+									.execute((db) =>
+										db
+											.update(prReviewFindings)
+											.set({ commentId })
+											.where(eq(prReviewFindings.id, key)),
+									)
+									.pipe(Effect.mapError(toPersistence)),
+							{ discard: true },
+						)
+					}
 				}
 
 				// A fixed finding's thread is answered and resolved, so the conversation shows it.

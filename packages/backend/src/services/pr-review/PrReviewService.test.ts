@@ -756,6 +756,40 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
+	it.effect("keeps a partial review off the pull request and leaves the retry notice instead", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						{
+							path: "src/routes/orders.ts",
+							line: 12,
+							category: "observability",
+							severity: "warn",
+							title: "POST /orders has no server span",
+							body: "Wrap the handler in withSpan.",
+						},
+					]),
+					partial: true,
+				}),
+			)
+			assert.equal(published.length, 0)
+			assert.include(comments.at(-1)!, PR_REVIEW_FAILURE_COPY.ended_early)
+			assert.notInclude(comments.at(-1)!, "POST /orders")
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.equal(stored.status, "completed")
+			assert.equal(stored.report?.findings.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
+	})
+
 	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
