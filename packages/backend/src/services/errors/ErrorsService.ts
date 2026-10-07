@@ -123,6 +123,12 @@ const ERROR_ACTIVE_DISCOVERY_WINDOW_MS = 15 * 60_000
  *  per tick. Bounds the extra scans when many go stale at once (the tick after a
  *  discovery outage), which is when the warehouse can least afford a fan-out. */
 const TICK_LAGGING_IDLE_ORGS = 10
+/** How far behind the cutoff a skipped org's cursor is parked. An error that is
+ *  ingested this long after its timestamp is still ahead of the cursor when the
+ *  org is scanned again; the price is that many minutes of replay on return.
+ *  With `TICK_MAX_WINDOW_MS` of drift before the next move it must stay inside
+ *  `ERROR_ACTIVE_DISCOVERY_WINDOW_MS`. */
+const TICK_IDLE_CURSOR_TRAIL_MS = 5 * TICK_MINUTE_MS
 const TICK_CURSOR_UPDATE_CHUNK = 500
 // Last-known active-org set, cached so a discovery failure can fail CLOSED
 // (reuse the previous active set) instead of fanning out to every known org —
@@ -1491,13 +1497,15 @@ const make: Effect.Effect<
 	// minutes per tick before reaching the errors it has now.
 	//
 	// The discovery scan that skipped these orgs proved they have no error events
-	// inside its window, so a cursor inside that window moves to the cutoff
-	// without a scan. It is moved only once it trails by a full window, which
-	// keeps this to one write per idle org every few minutes. A cursor older than
-	// the discovery window covers time this tick did not check (discovery was
-	// down, or the org was last skipped before this existed); those orgs are
-	// returned to be scanned until they are back inside it. Callers skip this when
-	// discovery failed: the reused set proves nothing about the current window.
+	// inside its window, so a cursor inside that window moves forward without a
+	// scan. It is parked `TICK_IDLE_CURSOR_TRAIL_MS` short of the cutoff, for
+	// errors that arrive late, and moved only once it trails that by a full
+	// window, which keeps this to one write per idle org every few minutes. A
+	// cursor older than the discovery window covers time this tick did not check
+	// (discovery was down, or the org was last skipped before this existed);
+	// those orgs are returned to be scanned until they are back inside it.
+	// Callers skip this when discovery failed: the reused set proves nothing
+	// about the current window.
 	const settleIdleCursors = Effect.fn("ErrorsService.settleIdleCursors")(function* (
 		idleOrgs: ReadonlySet<OrgId>,
 		cutoffMs: number,
@@ -1505,6 +1513,7 @@ const make: Effect.Effect<
 	) {
 		if (idleOrgs.size === 0) return []
 		const discoveryStartMs = nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
+		const parkedAt = new Date(cutoffMs - TICK_IDLE_CURSOR_TRAIL_MS)
 		const cursors = (yield* dbExecute((db) =>
 			db
 				.select({
@@ -1512,7 +1521,9 @@ const make: Effect.Effect<
 					processedThrough: errorTickStates.processedThrough,
 				})
 				.from(errorTickStates)
-				.where(lte(errorTickStates.processedThrough, new Date(cutoffMs - TICK_MAX_WINDOW_MS))),
+				.where(
+					lte(errorTickStates.processedThrough, new Date(parkedAt.getTime() - TICK_MAX_WINDOW_MS)),
+				),
 		)).filter((row) => idleOrgs.has(row.orgId))
 
 		const insideWindow = (row: { readonly processedThrough: Date }) =>
@@ -1528,11 +1539,11 @@ const make: Effect.Effect<
 				dbExecute((db) =>
 					db
 						.update(errorTickStates)
-						.set({ processedThrough: new Date(cutoffMs), updatedAt: new Date(nowMs) })
+						.set({ processedThrough: parkedAt, updatedAt: new Date(nowMs) })
 						.where(
 							and(
 								inArray(errorTickStates.orgId, chunk),
-								lt(errorTickStates.processedThrough, new Date(cutoffMs)),
+								lt(errorTickStates.processedThrough, parkedAt),
 								// A held token means a tick may still commit this org's
 								// window, even past its lease; its checkpoint would then
 								// set the cursor back. Left alone, the row is replayed.

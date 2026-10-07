@@ -1060,9 +1060,27 @@ describe("ErrorsService.runTick", () => {
 			return rows[0]?.processedThrough.getTime()
 		})
 
-	it.effect("a skipped org's cursor inside the discovery window moves to the cutoff unscanned", () => {
-		const scanned = new Set<string>()
-		return Effect.gen(function* () {
+	it.effect(
+		"a skipped org's cursor inside the discovery window is parked behind the cutoff unscanned",
+		() => {
+			const scanned = new Set<string>()
+			return Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				yield* TestClock.setTime(TICK_MS)
+				yield* seedIngestKey(ORG)
+				yield* seedCursor(ORG, TICK_MS - 12 * 60_000)
+
+				yield* errors.runTick()
+
+				assert.isFalse(scanned.has(ORG))
+				// Five minutes short of the cutoff, which itself trails the clock by one.
+				assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 6 * 60_000)
+			}).pipe(Effect.provide(makeGatingLayer({ scanned })))
+		},
+	)
+
+	it.effect("a parked cursor is not rewritten until it trails by a full window", () =>
+		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIngestKey(ORG)
@@ -1070,10 +1088,9 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 
-			assert.isFalse(scanned.has(ORG))
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 60_000)
-		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
-	})
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 10 * 60_000)
+		}).pipe(Effect.provide(makeGatingLayer({}))),
+	)
 
 	it.effect("a skipped org's cursor still held by a claim token is not moved", () => {
 		return Effect.gen(function* () {
@@ -1081,11 +1098,11 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIngestKey(ORG)
 			// Lease long expired, token never released: a tick may still commit it.
-			yield* seedCursor(ORG, TICK_MS - 10 * 60_000, "held")
+			yield* seedCursor(ORG, TICK_MS - 12 * 60_000, "held")
 
 			yield* errors.runTick()
 
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 10 * 60_000)
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 12 * 60_000)
 		}).pipe(Effect.provide(makeGatingLayer({})))
 	})
 
@@ -1132,13 +1149,13 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIngestKey(ORG)
 			yield* seedIngestKey(STALE)
-			yield* seedCursor(ORG, TICK_MS - 10 * 60_000)
+			yield* seedCursor(ORG, TICK_MS - 12 * 60_000)
 			yield* seedCursor(STALE, TICK_MS - 60 * 60_000)
 
 			yield* errors.runTick()
 
 			assert.strictEqual(scanned.size, 0)
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 10 * 60_000)
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 12 * 60_000)
 			assert.strictEqual(yield* cursorOf(STALE), TICK_MS - 60 * 60_000)
 		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true, scanned })))
 	})
