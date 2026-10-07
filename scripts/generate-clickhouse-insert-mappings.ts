@@ -45,7 +45,7 @@ interface DatasourceMapping {
 	readonly inputSchema: string
 }
 
-const manifest = await buildTinybirdProjectManifest()
+const manifest = buildTinybirdProjectManifest()
 const byName = new Map(manifest.datasources.map((ds) => [ds.name, ds]))
 
 const localDatasources: Record<string, DatasourceMapping> = {}

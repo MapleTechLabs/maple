@@ -9,7 +9,7 @@ const outputPath = fileURLToPath(
 )
 const checkMode = process.argv.includes("--check")
 
-const manifest = await buildTinybirdProjectManifest()
+const manifest = buildTinybirdProjectManifest()
 const statements = emitProjectDdl(manifest)
 
 const renderedModule = renderModule(statements, manifest.projectRevision)
