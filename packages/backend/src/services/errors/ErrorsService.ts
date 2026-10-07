@@ -1587,15 +1587,26 @@ const make: Effect.Effect<
 
 		// A quarantined org stays where it is until the quarantine ends, so it is
 		// passed over before the cap: counted, it would keep a lookup from an org
-		// behind it on every one of those ticks.
+		// behind it on every one of those ticks. Probed a cap-sized wave at a time,
+		// so the common case is one wave and a wall of quarantined orgs is not
+		// read through one by one.
 		const lookups: Array<(typeof trailing)[number]> = []
-		for (const row of trailing
-			.filter((row) => !isObserved(row))
-			// Most recent first: a short outage gap before rows that are weeks old.
-			.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime())) {
-			if (lookups.length === TICK_IDLE_RECOVERY_LOOKUPS) break
-			if (!(yield* isOrgWarehouseQuarantined(edgeCache, row.orgId))) lookups.push(row)
+		for (const wave of Arr.chunksOf(
+			trailing
+				.filter((row) => !isObserved(row))
+				// Most recent first: a short outage gap before rows that are weeks old.
+				.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime()),
+			TICK_IDLE_RECOVERY_LOOKUPS,
+		)) {
+			if (lookups.length >= TICK_IDLE_RECOVERY_LOOKUPS) break
+			const quarantined = yield* Effect.forEach(
+				wave,
+				(row) => isOrgWarehouseQuarantined(edgeCache, row.orgId),
+				{ concurrency: 4 },
+			)
+			lookups.push(...wave.filter((_, index) => !quarantined[index]))
 		}
+		lookups.splice(TICK_IDLE_RECOVERY_LOOKUPS)
 
 		// Where each unobserved org's cursor belongs: its first error minute, or
 		// the parking point when the stretch is empty. A failed lookup leaves the
