@@ -105,8 +105,6 @@ interface ErrorsByTypeRow {
 	sampleMessage: string
 	count: number
 	affectedServicesCount: number
-	firstSeen: string
-	lastSeen: string
 }
 
 interface TracesTimeseriesRow {

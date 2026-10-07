@@ -25,7 +25,13 @@ import {
 	orgIdParam,
 } from "../tables"
 import { CHNumber } from "../schema"
-import { apdexExprs, serviceOverviewWhereConditions, hourFloor, type FacetOutput } from "./query-helpers"
+import {
+	apdexExprs,
+	serviceOverviewWhereConditions,
+	hourFloor,
+	utcHourFloor,
+	type FacetOutput,
+} from "./query-helpers"
 import { edgeCondition, hourGrain, interiorConditions, minuteGrain } from "./rollup-splice"
 
 // Service overview
@@ -818,8 +824,8 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 			// the requested window contributes. The cards over-report toward the
 			// edges (they show the full enclosing hour, not just the partial
 			// window) which is the only sensible answer when the MV is hourly.
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))),
-			$.Hour.lte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("endTime")))),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			opts.serviceNames?.length
 				? CH.inList($.ServiceName, opts.serviceNames)
 				: CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
@@ -850,9 +856,9 @@ export interface ServiceUsageWithPreviousOutput extends ServiceUsageOutput {
  */
 export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 	const inCurrent = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
-		$.Hour.gte(hourFloor("startTime")).and($.Hour.lte(hourFloor("endTime")))
+		$.Hour.gte(utcHourFloor("startTime")).and($.Hour.lte(utcHourFloor("endTime")))
 	const inPrevious = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
-		$.Hour.gte(hourFloor("previousStartTime")).and($.Hour.lte(hourFloor("previousEndTime")))
+		$.Hour.gte(utcHourFloor("previousStartTime")).and($.Hour.lte(utcHourFloor("previousEndTime")))
 
 	return from(ServiceUsage)
 		.select(($) => ({
@@ -892,8 +898,8 @@ export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 			$.OrgId.eq(orgIdParam),
 			// Scan the union window [previousStartTime, endTime] once; sumIf splits
 			// it into the two periods. Hour-floored bounds match serviceUsageQuery.
-			$.Hour.gte(hourFloor("previousStartTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("previousStartTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			opts.serviceNames?.length
 				? CH.inList($.ServiceName, opts.serviceNames)
 				: CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),

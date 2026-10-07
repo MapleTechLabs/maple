@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { dailyProductEventCountQuery, dailySessionCountQuery, dailySignalVolumeQuery } from "./billing-usage"
 import { OrgId } from "@maple/domain"
@@ -56,8 +56,9 @@ describe("dailySignalVolumeQuery", () => {
 			},
 		])
 
+		expect(compiled.rowSchemaSource).toBe("derived")
 		expect(row).toEqual({
-			day: "2026-07-01 00:00:00",
+			day: DateTime.makeUnsafe("2026-07-01T00:00:00Z"),
 			logBytes: 13_421_772_800,
 			traceBytes: 4_294_967_296,
 			metricBytes: 1_073_741_824,

@@ -329,7 +329,7 @@ export const serviceUsage = defineDatasource("service_usage", {
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		ServiceName: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		LogCount: t.uint64(),
 		LogSizeBytes: t.uint64(),
 		TraceCount: t.uint64(),
@@ -910,7 +910,7 @@ export const errorEvents = defineDatasource("error_events", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		TraceId: t.string().brand(TraceId),
 		SpanId: t.string().brand(SpanId),
 		ParentSpanId: t.string().default("__unset__"),
@@ -959,7 +959,7 @@ export const errorEventsByTime = defineDatasource("error_events_by_time", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		TraceId: t.string().brand(TraceId),
 		SpanId: t.string().brand(SpanId),
 		ParentSpanId: t.string().default("__unset__"),
@@ -1007,7 +1007,7 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Minute: t.dateTime(),
+		Minute: utcDateTime(),
 		FingerprintHash: t.uint64(),
 		ServiceName: t.simpleAggregateFunction("anyLast", t.string()),
 		ExceptionType: t.simpleAggregateFunction("anyLast", t.string()),
@@ -1015,8 +1015,8 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 		ErrorLabel: t.simpleAggregateFunction("anyLast", t.string()),
 		TopFrame: t.simpleAggregateFunction("anyLast", t.string()),
 		OccurrenceCount: t.simpleAggregateFunction("sum", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
-		LastSeen: t.simpleAggregateFunction("max", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 		// EVERY build seen in the minute, not one sampled build. The evaluator
 		// unions these into the issue's build set, and that set is what decides
 		// whether an occurrence on a resolved issue is a real regression or an old
@@ -1770,8 +1770,8 @@ export const auditLog = defineDatasource("audit_log", {
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		Id: t.string(),
-		OccurredAt: t.dateTime64(3),
-		RecordedAt: t.dateTime64(3),
+		OccurredAt: utcDateTime64(3),
+		RecordedAt: utcDateTime64(3),
 		ActorType: t.string().lowCardinality(),
 		UserId: t.string(),
 		ApiKeyId: t.string(),

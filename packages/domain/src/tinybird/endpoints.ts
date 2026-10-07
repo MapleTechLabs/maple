@@ -415,8 +415,8 @@ export interface ErrorsByTypeOutput {
 	readonly sampleMessage: string
 	readonly count: number
 	readonly affectedServicesCount: number
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 }
 
 export interface ErrorsByTypeParams {
@@ -437,7 +437,7 @@ export interface ErrorsByTypeParams {
 // errors_timeseries
 
 export interface ErrorsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 

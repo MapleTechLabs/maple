@@ -47,6 +47,7 @@ import {
 	Cause,
 	Clock,
 	Context,
+	DateTime,
 	Effect,
 	Layer,
 	MutableHashMap,
@@ -741,7 +742,7 @@ const make: Effect.Effect<
 				...queryWindow,
 				// Include the preceding window so the first displayed point has
 				// a complete rolling 30-minute value.
-				startTime: formatWarehouseDateTime(startMs - SPIKE_WINDOW_MS),
+				startTime: DateTime.makeUnsafe(startMs - SPIKE_WINDOW_MS),
 				fingerprintHash: row.fingerprintHash ?? "0",
 				deploymentEnv: row.deploymentEnv,
 				bucketSeconds,
@@ -752,7 +753,7 @@ const make: Effect.Effect<
 			})
 			buckets = rollingCountBuckets(
 				rows.map((r) => ({
-					bucketMs: parseWarehouseDateTime(String(r.bucket ?? "")),
+					bucketMs: DateTime.toEpochMillis(r.bucket),
 					count: Number(r.count ?? 0),
 				})),
 				{
@@ -1035,8 +1036,8 @@ const make: Effect.Effect<
 	) {
 		const currentCompiled = CH.compile(CH.anomalyErrorSpikeCurrentQuery({}), {
 			orgId: tenant.orgId,
-			startTime: formatWarehouseDateTime(nowMs - SPIKE_WINDOW_MS),
-			endTime: formatWarehouseDateTime(nowMs),
+			startTime: DateTime.makeUnsafe(nowMs - SPIKE_WINDOW_MS),
+			endTime: DateTime.makeUnsafe(nowMs),
 		})
 		const currentRows = yield* warehouse
 			.compiledQuery(tenant, currentCompiled, {
@@ -1069,8 +1070,8 @@ const make: Effect.Effect<
 			Effect.gen(function* () {
 				const baselineCompiled = CH.compile(CH.anomalyErrorSpikeBaselineQuery({}), {
 					orgId: tenant.orgId,
-					startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS),
-					endTime: formatWarehouseDateTime(Math.floor(nowMs / HOUR_MS) * HOUR_MS),
+					startTime: DateTime.makeUnsafe(nowMs - BASELINE_WINDOW_MS),
+					endTime: DateTime.makeUnsafe(Math.floor(nowMs / HOUR_MS) * HOUR_MS),
 				})
 				const rows = yield* warehouse
 					.compiledQuery(tenant, baselineCompiled, {

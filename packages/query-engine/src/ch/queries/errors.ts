@@ -3,7 +3,7 @@
 // DSL-based query definitions for error aggregation and timeseries.
 
 import { finiteOrZero } from "./format"
-import { edgeCondition, interiorConditions } from "./rollup-splice"
+import { edgeCondition, interiorConditions, utcInteriorConditions } from "./rollup-splice"
 import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
@@ -20,7 +20,7 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
-import { type DateTime, Schema } from "effect"
+import { Schema, type DateTime } from "effect"
 import {
 	ErrorEvents,
 	ErrorEventsByTime,
@@ -43,6 +43,7 @@ import {
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { httpDisplaySpanName } from "../../traces-shared"
 import { CHNumber } from "../schema"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
 
 function errorEventsTableForRecentScan(opts: {
 	fingerprintHashes?: readonly string[]
@@ -189,8 +190,8 @@ export interface ErrorsByTypeOutput {
 	readonly affectedServicesCount: number
 	/** Up to three of the services that raised it, sorted; `affectedServicesCount` has the total. */
 	readonly serviceNames: readonly string[]
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 }
 
 /** How many service names a by-type row carries; enough to name a small blast radius. */
@@ -212,8 +213,8 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts),
 			opts.fingerprintHashes?.length
@@ -242,7 +243,7 @@ export interface ErrorsTimeseriesOpts {
 }
 
 export interface ErrorsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 
@@ -255,8 +256,8 @@ export function errorsTimeseriesQuery(opts: ErrorsTimeseriesOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 		])
 		.groupBy("bucket")
@@ -282,7 +283,7 @@ export interface ErrorsSparkOpts extends ErrorsSharedFilters {
 
 export const ErrorsSparkOutputSchema = Schema.Struct({
 	fingerprintHash: Schema.String,
-	bucket: Schema.String,
+	bucket: DateTimeUtcFromWarehouse,
 	count: CHNumber,
 })
 export type ErrorsSparkOutput = Schema.Schema.Type<typeof ErrorsSparkOutputSchema>
@@ -298,8 +299,8 @@ export function errorsSparkQuery(opts: ErrorsSparkOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			...sharedFilterConditions($, opts),
 		])
 		.groupBy("fingerprintHash", "bucket")
@@ -897,8 +898,8 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 		(except: ErrorsFilterDimension) =>
 		($: ColumnAccessor<typeof table.columns>): Array<CH.Condition | undefined> => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts, except),
 			opts.fingerprintHashes?.length
@@ -991,8 +992,8 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts),
 			opts.fingerprintHashes?.length
@@ -1056,7 +1057,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			...interiorConditions($.Hour),
+			...utcInteriorConditions($.Hour),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 		])
 	const partialHours = from(Traces)
@@ -1096,8 +1097,8 @@ export interface ErrorIssuesOutput {
 	readonly topFrame: string
 	readonly count: number
 	readonly affectedServicesCount: number
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 }
 
 export function errorIssuesQuery(opts: ErrorIssuesOpts) {
@@ -1119,8 +1120,8 @@ export function errorIssuesQuery(opts: ErrorIssuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 			opts.fingerprintHashes?.length
@@ -1157,8 +1158,8 @@ export function errorTickIssuesQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Minute.gte(param.dateTimeSeconds("startTime")),
-			$.Minute.lt(param.dateTimeSeconds("endTime")),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash")
 		.format("JSON")
@@ -1174,8 +1175,8 @@ export function errorTickFirstErrorMinuteQuery() {
 		.select(($) => ({ minute: $.Minute }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Minute.gte(param.dateTimeSeconds("startTime")),
-			$.Minute.lt(param.dateTimeSeconds("endTime")),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lt(utcSecondsParam("endTime")),
 		])
 		.orderBy(["minute", "asc"])
 		.limit(1)
@@ -1205,8 +1206,8 @@ export function errorTickBootstrapIssuesQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lt(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash")
 		.format("JSON")
@@ -1238,8 +1239,8 @@ export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 		])
@@ -1251,7 +1252,7 @@ export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
 // Error Issue timeseries — per-fingerprint occurrence bucket
 
 export interface ErrorIssueTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 
@@ -1264,8 +1265,8 @@ export function errorIssueTimeseriesQuery() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
@@ -1280,7 +1281,7 @@ export interface ErrorIssueSampleTracesOutput {
 	readonly traceId: TraceId
 	readonly spanId: SpanId
 	readonly serviceName: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly exceptionMessage: string
 	readonly durationMicros: number
 }
@@ -1298,8 +1299,8 @@ export function errorIssueSampleTracesQuery(opts: { limit?: number }) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 25)
@@ -1336,8 +1337,8 @@ export function errorIssueVersionsSinceQuery(opts: { limit?: number } = {}) {
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
 				$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
-				$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-				$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+				$.Timestamp.gte(utcSecondsParam("startTime")),
+				$.Timestamp.lte(utcSecondsParam("endTime")),
 			])
 			.groupBy("serviceVersion")
 			.orderBy(["count", "desc"])
@@ -1358,8 +1359,8 @@ export function errorIssueEnvironmentsQuery(opts: { limit?: number } = {}) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			$.DeploymentEnv.neq(""),
 		])
 		.groupBy("name")
@@ -1425,8 +1426,8 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
@@ -1512,8 +1513,8 @@ export function errorFingerprintSummaryQuery(opts: ErrorFingerprintSummaryOpts) 
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 		])
 		.format("JSON")
@@ -1540,8 +1541,8 @@ export function errorCooccurringFingerprintsQuery(opts: ErrorCooccurringFingerpr
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
 			$.FingerprintHash.neq(fingerprintHashLiteral(opts.fingerprintHash)),
 		])
@@ -1564,8 +1565,8 @@ export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: read
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash")
 		.format("JSON")
@@ -1607,8 +1608,8 @@ export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts),
 			opts.unexpectedIdentity

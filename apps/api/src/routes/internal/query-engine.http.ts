@@ -96,7 +96,7 @@ import {
 } from "@maple/domain/http"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
-import { Cause, Clock, Effect, Option, Schema } from "effect"
+import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
@@ -515,8 +515,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								sampleMessage: row.sampleMessage,
 								count: Number(row.count),
 								affectedServicesCount: Number(row.affectedServicesCount),
-								firstSeen: String(row.firstSeen),
-								lastSeen: String(row.lastSeen),
+								firstSeen: DateTime.formatIso(row.firstSeen),
+								lastSeen: DateTime.formatIso(row.lastSeen),
 							})),
 						})
 					}),
@@ -528,7 +528,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ErrorsSparkResponse({
 							data: rows.map((row) => ({
 								fingerprintHash: decodeFingerprintHash(row.fingerprintHash),
-								bucket: String(row.bucket),
+								bucket: DateTime.formatIso(row.bucket),
 								count: Number(row.count),
 							})),
 						})
@@ -1126,7 +1126,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							errorFingerprints: fingerprintRows.map((row) => ({
 								fingerprintHash: decodeFingerprintHash(row.fingerprintHash),
 								count: Number(row.count),
-								firstSeen: String(row.firstSeen),
+								firstSeen: DateTime.formatIso(row.firstSeen),
 							})),
 						})
 					}),

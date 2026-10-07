@@ -6,7 +6,7 @@
 // missing column becomes an error. Coercing again downstream only hid which
 // layer was responsible.
 
-import { Option, Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import type { ListLogsOutput, ErrorsByTypeOutput } from "@maple/domain/tinybird"
 import type { TracesRootListOutput } from "../ch"
@@ -63,5 +63,5 @@ export const toErrorSummary = (e: ErrorsByTypeOutput): ErrorSummary => ({
 	sampleMessage: e.sampleMessage ?? "",
 	count: e.count,
 	affectedServicesCount: e.affectedServicesCount,
-	lastSeen: e.lastSeen,
+	lastSeen: DateTime.formatIso(e.lastSeen),
 })
