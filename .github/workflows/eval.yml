@@ -54,5 +54,5 @@ jobs:
               run: bun run --filter @maple/ai eval
               env:
                   OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-                  # Override to eval a different model (defaults to the prod kimi-k2.5).
+                  # Override to eval a different model (defaults to the production triage model).
                   MCP_EVAL_MODEL: ${{ vars.MCP_EVAL_MODEL }}

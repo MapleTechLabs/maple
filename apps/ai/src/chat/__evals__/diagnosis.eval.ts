@@ -16,16 +16,17 @@
  * Gated like every other eval: skips without `OPENROUTER_API_KEY`, runs under
  * `bun run eval`, never as part of `bun run test`.
  */
-import { generateText, jsonSchema, Output } from "ai"
-import { describe, it } from "vitest"
-import { describeEval, type TaskResult } from "vitest-evals/legacy"
+import { Effect, Schema } from "effect"
+import { LanguageModel, Prompt } from "effect/ai"
 import { INVESTIGATE_SYSTEM_PROMPT } from "../prompts"
-import { createEvalModel, hasEvalCredentials } from "../../mcp/__evals__/model"
+import { describeEval, type Scorer } from "../../mcp/__evals__/harness"
+import { evalModelLayer } from "../../mcp/__evals__/model"
 import { DIAGNOSIS_FIXTURES, type DiagnosisFixture } from "./diagnosis-fixtures"
 import {
 	scoreCauseMatch,
 	scoreEvidenceGrounding,
 	scoreUnknownDiscipline,
+	type RuleScore,
 	type ScoredReport,
 } from "./diagnosis-scorers"
 
@@ -37,133 +38,79 @@ const fixtureFor = (input: string): DiagnosisFixture => {
 	return fixture
 }
 
-const stringArray = { type: "array", items: { type: "string" } } as const
-
-interface ReportModel {
-	readonly summary: string
-	readonly suspectedCause: string
-	readonly severityAssessment: "critical" | "high" | "medium" | "low"
-	readonly affectedScope: string
-	readonly evidence: ReadonlyArray<{
-		readonly traceIds: ReadonlyArray<string>
-		readonly logPatterns: ReadonlyArray<string>
-		readonly relatedServices: ReadonlyArray<string>
-		readonly note: string
-	}>
-	readonly suggestedActions: ReadonlyArray<string>
-	readonly confidence: "high" | "medium" | "low"
-	readonly ruledOut: ReadonlyArray<string>
-}
+const Strings = Schema.Array(Schema.String)
 
 /**
- * Mirrors `AiTriageResult`, in the shape the `ai` SDK wants.
+ * Mirrors `AiTriageResult`.
  *
- * Hand-written rather than derived from the Effect schema: this suite exists to
- * catch the prompt drifting away from the contract, and deriving both from one
- * source would let a schema change silently move the target it is scored against.
- *
- * Expressed as JSON Schema via the SDK's own `jsonSchema()`, the way
- * `mcp/__evals__/tools.ts` does.
+ * Hand-written rather than imported: this suite exists to catch the prompt
+ * drifting away from the contract, and deriving both from one source would let a
+ * schema change silently move the target it is scored against.
  */
-const REPORT_SCHEMA = jsonSchema<ReportModel>({
-	type: "object",
-	additionalProperties: false,
-	required: [
-		"summary",
-		"suspectedCause",
-		"severityAssessment",
-		"affectedScope",
-		"evidence",
-		"suggestedActions",
-		"confidence",
-		"ruledOut",
-	],
-	properties: {
-		summary: { type: "string" },
-		suspectedCause: { type: "string" },
-		severityAssessment: { type: "string", enum: ["critical", "high", "medium", "low"] },
-		affectedScope: { type: "string" },
-		evidence: {
-			type: "array",
-			items: {
-				type: "object",
-				additionalProperties: false,
-				required: ["traceIds", "logPatterns", "relatedServices", "note"],
-				properties: {
-					traceIds: stringArray,
-					logPatterns: stringArray,
-					relatedServices: stringArray,
-					note: { type: "string" },
-				},
-			},
+const Report = Schema.Struct({
+	summary: Schema.String,
+	suspectedCause: Schema.String,
+	severityAssessment: Schema.Literals(["critical", "high", "medium", "low"]),
+	affectedScope: Schema.String,
+	evidence: Schema.Array(
+		Schema.Struct({
+			traceIds: Strings,
+			logPatterns: Strings,
+			relatedServices: Strings,
+			note: Schema.String,
+		}),
+	),
+	suggestedActions: Strings,
+	confidence: Schema.Literals(["high", "medium", "low"]),
+	ruledOut: Strings,
+})
+
+const encodeReport = Schema.encodeSync(Schema.fromJsonString(Report))
+const decodeReport = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))
+
+const diagnose = (input: string) => {
+	const fixture = fixtureFor(input)
+	const prompt = Prompt.make([
+		{ role: "system", content: INVESTIGATE_SYSTEM_PROMPT },
+		{
+			role: "user",
+			content: [
+				"Your tool calls have already run. This is everything they returned:",
+				"",
+				fixture.context,
+				"",
+				`What your first calls established: ${fixture.scopeSummary}`,
+				"",
+				"Produce the diagnosis you would submit.",
+			].join("\n"),
 		},
-		suggestedActions: stringArray,
-		confidence: { type: "string", enum: ["high", "medium", "low"] },
-		ruledOut: stringArray,
+	])
+	return LanguageModel.generateObject({ prompt, schema: Report, objectName: "diagnosis" }).pipe(
+		Effect.map((response) => ({ output: encodeReport(response.value), toolCalls: [] })),
+		Effect.provide(evalModelLayer()),
+		Effect.runPromise,
+	)
+}
+
+/** A scoring rule as a harness scorer, resolving the fixture from the case's input. */
+const rule = (
+	name: string,
+	apply: (report: ScoredReport, fixture: DiagnosisFixture) => RuleScore,
+): Scorer => ({
+	name,
+	score: ({ input, output }) => {
+		const report = decodeReport(output)
+		return apply(typeof report === "object" && report !== null ? report : {}, fixtureFor(input))
 	},
 })
 
-const diagnoseTask = async (input: string): Promise<TaskResult> => {
-	const fixture = fixtureFor(input)
-	const result = await generateText({
-		model: createEvalModel(),
-		temperature: 0,
-		output: Output.object({ schema: REPORT_SCHEMA }),
-		instructions: INVESTIGATE_SYSTEM_PROMPT,
-		prompt: [
-			"Your tool calls have already run. This is everything they returned:",
-			"",
-			fixture.context,
-			"",
-			`What your first calls established: ${fixture.scopeSummary}`,
-			"",
-			"Produce the diagnosis you would submit.",
-		].join("\n"),
-	})
-	return { result: JSON.stringify(result.output) }
-}
-
-const parse = <T>(output: string | undefined): T => JSON.parse(output ?? "{}") as T
-
-/** Bridge a rule to `vitest-evals`, resolving the fixture from the data item's input. */
-const rule =
-	(
-		name: string,
-		apply: (
-			output: string | undefined,
-			fixture: DiagnosisFixture,
-		) => { score: number; rationale: string },
-	) =>
-	async (opts: { readonly input: string; readonly output?: string }) => {
-		const { score, rationale } = apply(opts.output, fixtureFor(opts.input))
-		return { score, metadata: { rationale: `${name}: ${rationale}` } }
-	}
-
-type DescribeEvalArgs = Parameters<typeof describeEval>
-
-/** Skips rather than fails without a key, matching `mcp/__evals__/utils.ts`. */
-const describeDiagnosisEval = (...args: DescribeEvalArgs): void => {
-	const [name, options] = args
-	if (!hasEvalCredentials()) {
-		describe.skip(`[eval] ${String(name)}`, () => {
-			it("skipped — set OPENROUTER_API_KEY to run diagnosis evals", () => {})
-		})
-		return
-	}
-	describeEval(name, options)
-}
-
-describeDiagnosisEval("investigation diagnosis", {
-	data: async () => DIAGNOSIS_FIXTURES.map((fixture) => ({ input: fixture.id, expected: "" })),
-	task: diagnoseTask,
+describeEval("investigation diagnosis", {
+	data: DIAGNOSIS_FIXTURES.map((fixture) => ({ input: fixture.id })),
+	task: diagnose,
 	scorers: [
-		rule("cause match", (output, fixture) =>
-			scoreCauseMatch(parse<ScoredReport>(output), fixture),
-		) as never,
-		rule("evidence grounding", (output, fixture) =>
-			scoreEvidenceGrounding(parse<ScoredReport>(output), fixture),
-		) as never,
-		rule("unknown discipline", (output) => scoreUnknownDiscipline(parse<ScoredReport>(output))) as never,
+		rule("cause match", scoreCauseMatch),
+		rule("evidence grounding", scoreEvidenceGrounding),
+		rule("unknown discipline", (report) => scoreUnknownDiscipline(report)),
 	],
 	threshold: 0.75,
 })

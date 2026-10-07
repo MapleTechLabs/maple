@@ -1,11 +1,11 @@
-import { ToolCallScorer } from "vitest-evals/legacy"
-import { describeMapleEval, predictToolCalls, FIXTURES } from "./utils"
+import { describeEval, ToolCallScorer } from "./harness"
+import { predictToolCalls, FIXTURES } from "./utils"
 
 // Tool-selection + argument evals over the observability surface (the tools
 // Part 1 touched). The model is handed every MCP tool and must pick the right
 // one with the right key args. Tools are NOT executed — no warehouse needed.
-describeMapleEval("observability tool selection", {
-	data: async () => [
+describeEval("observability tool selection", {
+	data: [
 		{
 			input: `What errors are happening in the ${FIXTURES.service} service in the last hour?`,
 			expectedTools: [{ name: "find_errors", arguments: { service: FIXTURES.service } }],
@@ -57,6 +57,6 @@ describeMapleEval("observability tool selection", {
 	task: predictToolCalls,
 	// Fuzzy arg matching tolerates case + extra params; requireAll (default)
 	// means every expected tool must be called.
-	scorers: [ToolCallScorer({ params: "fuzzy" })],
+	scorers: [ToolCallScorer()],
 	threshold: 0.7,
 })
