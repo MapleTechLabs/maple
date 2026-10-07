@@ -3226,6 +3226,30 @@ describe("ErrorsService.runTick idle cursors", () => {
 		}).pipe(Effect.provide(h.layer))
 	})
 
+	it.effect("quarantined orgs do not use up the tick's lookups", () => {
+		const first = T - 2 * HOUR_MS
+		const h = makeIdleTickHarness({ errors: [{ orgId: IDLE, atMs: first, count: 3 }] })
+		// More quarantined orgs than the tick has lookups, all with a more recent cursor.
+		const quarantined = Array.from({ length: 41 }, (_, index) => ({
+			orgId: asOrgId(`org_quarantined_${index}`),
+			cursorMs: T - (20 + index) * MINUTE_MS,
+		}))
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T)
+			yield* seedIdleOrgs([...quarantined, { orgId: IDLE, cursorMs: T - 3 * HOUR_MS }])
+			yield* Effect.forEach(quarantined, (org) => h.quarantine(org.orgId), { discard: true })
+
+			yield* tickAt(T)
+
+			assert.deepStrictEqual(
+				h.callsTo(LOOKUP).map((call) => call.orgId),
+				[IDLE],
+			)
+			assert.lengthOf(yield* issuesOf(IDLE), 1)
+			assert.strictEqual(yield* cursorOf(IDLE), first + 5 * MINUTE_MS)
+		}).pipe(Effect.provide(h.layer))
+	})
+
 	it.effect("parks more idle cursors than fit one statement", () => {
 		const h = makeIdleTickHarness()
 		const orgs = Array.from({ length: 520 }, (_, index) => asOrgId(`org_parkable_${index}`))

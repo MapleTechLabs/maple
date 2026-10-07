@@ -1584,18 +1584,25 @@ const make: Effect.Effect<
 		const isObserved = (row: { readonly processedThrough: Date }) =>
 			row.processedThrough.getTime() >= nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
 
+		// A quarantined org stays where it is until the quarantine ends, so it is
+		// passed over before the cap: counted, it would keep a lookup from an org
+		// behind it on every one of those ticks.
+		const lookups: Array<(typeof trailing)[number]> = []
+		for (const row of trailing
+			.filter((row) => !isObserved(row))
+			// Most recent first: a short outage gap before rows that are weeks old.
+			.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime())) {
+			if (lookups.length === TICK_IDLE_RECOVERY_LOOKUPS) break
+			if (!(yield* isOrgWarehouseQuarantined(edgeCache, row.orgId))) lookups.push(row)
+		}
+
 		// Where each unobserved org's cursor belongs: its first error minute, or
 		// the parking point when the stretch is empty. A failed lookup leaves the
 		// cursor alone for the next tick.
 		const recovered = yield* Effect.forEach(
-			trailing
-				.filter((row) => !isObserved(row))
-				// Most recent first: a short outage gap before rows that are weeks old.
-				.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime())
-				.slice(0, TICK_IDLE_RECOVERY_LOOKUPS),
+			lookups,
 			(row) =>
 				Effect.gen(function* () {
-					if (yield* isOrgWarehouseQuarantined(edgeCache, row.orgId)) return []
 					const cursorMs = row.processedThrough.getTime()
 					const fromMs = Math.max(cursorMs, horizonMs)
 					const rows = yield* warehouse.compiledQuery(
