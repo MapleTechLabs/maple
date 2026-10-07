@@ -227,24 +227,27 @@ export function warehouseDateTime(epochMs: number): WarehouseDateTime {
 // effect-orm. These codecs put that value back on Maple's HTTP wire in exactly
 // the string ClickHouse would have sent, so clients see no change.
 
+/**
+ * A time input as a `DateTime.Utc`: the warehouse wire shape (tz-less, read as
+ * UTC) or ISO-8601 with `Z`/offset. `None` for anything else, including
+ * impossible calendar dates. The replacement for `parseWarehouseDateTime`.
+ */
+export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
+	const trimmed = value.trim()
+	return TIME_INPUT_PATTERN.test(trimmed) && hasRealCalendarFields(trimmed)
+		? Option.map(DateTime.make(warehouseDateTimeToIso(trimmed)), DateTime.toUtc)
+		: Option.none()
+}
+
 /** Parses the warehouse wire shape (tz-less = UTC), or ISO with `Z`/offset. */
 const warehouseWireToUtc = SchemaGetter.transformEffect<DateTime.Utc, string>((value, options) =>
-	Option.match(
-		TIME_INPUT_PATTERN.test(value.trim()) && hasRealCalendarFields(value.trim())
-			? DateTime.make(warehouseDateTimeToIso(value))
-			: Option.none(),
-		{
-			onNone: () =>
-				Effect.fail(
-					new SchemaIssue.InvalidValue(
-						{ message: `\`${value}\` is not a warehouse DateTime` },
-						value,
-						options,
-					),
-				),
-			onSome: (dt) => Effect.succeed(DateTime.toUtc(dt)),
-		},
-	),
+	Option.match(parseUtc(value), {
+		onNone: () =>
+			Effect.fail(
+				new SchemaIssue.InvalidValue({ message: `\`${value}\` is not a warehouse DateTime` }, value, options),
+			),
+		onSome: Effect.succeed,
+	}),
 )
 
 /** `DateTime.Utc` -> `YYYY-MM-DD hh:mm:ss[.SSS]`; second precision floors. */

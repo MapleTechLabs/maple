@@ -1,5 +1,18 @@
 import { column, defineDatasource, engine, type InferRow, t } from "@maple-dev/effect-orm/tinybird"
+import * as CH from "@maple-dev/effect-orm/clickhouse"
 import { OrgId, SpanId, TraceId } from "@maple/primitives"
+
+/**
+ * A `DateTime` column queried as a `DateTime.Utc`. ClickHouse sends the
+ * tz-less UTC string; the column's codec reads it as UTC, and comparisons
+ * encode a `DateTime.Utc` back to that literal. The datafile type and the
+ * ingested row stay the string, so switching a column changes no schema.
+ */
+export const utcDateTime = () => t.dateTime().brand(CH.dateTime.schema)
+
+/** `utcDateTime` for `DateTime64(precision)`; reads keep milliseconds. */
+export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) =>
+	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
 const attributeItemsExpr = (mapColumn: string): string =>
 	`arrayMap((k, v) -> concat(k, char(31), v), mapKeys(${mapColumn}), mapValues(${mapColumn}))`
@@ -1700,7 +1713,7 @@ export const alertChecks = defineDatasource("alert_checks", {
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		RuleId: t.string(),
 		GroupKey: t.string(),
-		Timestamp: t.dateTime64(3),
+		Timestamp: utcDateTime64(3),
 		Status: t.string().lowCardinality(),
 		SignalType: t.string().lowCardinality(),
 		Comparator: t.string().lowCardinality(),
@@ -1708,8 +1721,8 @@ export const alertChecks = defineDatasource("alert_checks", {
 		ObservedValue: t.float64().nullable(),
 		SampleCount: t.uint32(),
 		WindowMinutes: t.uint16(),
-		WindowStart: t.dateTime64(3),
-		WindowEnd: t.dateTime64(3),
+		WindowStart: utcDateTime64(3),
+		WindowEnd: utcDateTime64(3),
 		ConsecutiveBreaches: t.uint16(),
 		ConsecutiveHealthy: t.uint16(),
 		IncidentId: t.string().nullable(),
