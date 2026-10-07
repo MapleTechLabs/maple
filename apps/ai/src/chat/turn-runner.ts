@@ -21,7 +21,7 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
+import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
@@ -33,7 +33,7 @@ import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
 import { CLOSE_OUT_PROMPT, PR_REPLY_CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
-import { makeProgressRecorder, parseToolInput } from "./progress"
+import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
 import { makeReviewCoverage } from "./review-coverage"
 import { reviewFailureError, reviewFailureReason } from "./review-failure"
 import { makeReviewLedger } from "./review-ledger"
@@ -302,40 +302,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const prReviewId = prReviewForSession(input.sessionId)
 	const prReplyId = prReplyForSession(input.sessionId)
 
-	// Mirror the autonomous pass's tool calls onto the investigation row. Writes are chained so
-	// two heartbeats cannot land out of order, and so `drainProgress` has one promise to await
-	// before the runtime is disposed. A failed write is logged and dropped: it is only a feed.
-	const progress = makeProgressRecorder()
-	let progressWrites: Promise<void> = Promise.resolve()
-	const writeProgress = (record: InvestigationProgress | undefined) => {
-		if (record === undefined || investigationId === undefined) return
-		progressWrites = progressWrites.then((): Promise<void> =>
-			runtime
-				.runPromiseExit(
-					InvestigationService.pipe(
-						Effect.flatMap((service) =>
-							service.recordProgress(tenant.orgId, investigationId, record),
-						),
-						Effect.catch((error) =>
-							Effect.logWarning("Could not record investigation progress").pipe(
-								Effect.annotateLogs({ investigationId, error: error.message }),
-							),
-						),
-					),
-				)
-				// An Exit never rejects, so a write that died (or a graph that never built) is dropped.
-				.then(() => undefined),
-		)
-	}
-
-	// Flush the steps the heartbeat swallowed and await whatever is in flight. Called before
-	// `failInvestigation` so the tail lands while the row is still `investigating`, and again
-	// from `ensuring` so an interrupted pass never disposes the runtime mid-write.
-	const drainProgress = Effect.suspend(() => {
-		writeProgress(progress.pending())
-		return Effect.promise(() => progressWrites)
-	})
-
 	const program = Effect.gen(function* () {
 		const investigations = yield* InvestigationService
 		const reviews = yield* PrReviewService
@@ -440,15 +406,43 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			prReviewId !== undefined && autonomous
 				? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
 				: undefined
-		// The review's comment follows the pass until a report is on its way.
-		const feed =
+		// The autonomous pass's tool calls show on the investigation row, or on the review's comment,
+		// until its report is on its way. A failed write is logged and dropped: it is only a feed.
+		const investigationFeed =
+			investigationId !== undefined && autonomous
+				? yield* makeProgressFeed({
+						label: stepLabel,
+						heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
+						everyBeat: false,
+						write: (record) =>
+							investigations
+								.recordProgress(tenant.orgId, investigationId, record)
+								.pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("Could not record investigation progress").pipe(
+											Effect.annotateLogs({ investigationId, error: error.message }),
+										),
+									),
+								),
+					})
+				: undefined
+		const reviewFeed =
 			prReviewId !== undefined && review !== undefined
 				? yield* makeReviewProgressFeed({
 						...review,
 						write: (snapshot) => reviews.recordProgress(tenant.orgId, prReviewId, snapshot),
 					})
 				: undefined
-		const closeFeed = feed?.close ?? Effect.void
+		// The tail lands while the row is still active, and the report's own write lands last.
+		const closeFeeds = Effect.all(
+			[
+				(investigationFeed?.flush ?? Effect.void).pipe(
+					Effect.andThen(investigationFeed?.close ?? Effect.void),
+				),
+				reviewFeed?.close ?? Effect.void,
+			],
+			{ discard: true },
+		)
 		// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
 		let failure: PrReviewFailureReason | undefined
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
@@ -468,10 +462,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				origin,
 				toolExecutor,
 				model,
-				submitDiagnosis: investigations.submitDiagnosis,
-				// The last progress edit lands before the report's own.
+				submitDiagnosis: (orgId, id, request) =>
+					closeFeeds.pipe(Effect.andThen(investigations.submitDiagnosis(orgId, id, request))),
 				submitReview: (orgId, reviewId, request) =>
-					closeFeed.pipe(Effect.andThen(reviews.submitReview(orgId, reviewId, request))),
+					closeFeeds.pipe(Effect.andThen(reviews.submitReview(orgId, reviewId, request))),
 				submitReply: conversations.submitReply,
 				stageEdit: conversations.stageEdit,
 				...(turn.closeOut === true ? { closeOut: true } : undefined),
@@ -483,23 +477,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				// a conversation that has moved on.
 				holdsTurn,
 				append: (event) => {
-					// The diagnosis call is the run ending, not a step of it; recording it would also
-					// race the status flip and land on some rows but not others.
+					// The report call is the run ending, not a step of it.
 					if (
-						autonomous &&
 						event.type === "tool-call" &&
 						event.proposed !== true &&
-						event.name !== SUBMIT_DIAGNOSIS
-					) {
-						writeProgress(progress.step(event.name, parseToolInput(event.input), Date.now()))
-					}
-					if (
-						feed !== undefined &&
-						event.type === "tool-call" &&
-						event.proposed !== true &&
+						event.name !== SUBMIT_DIAGNOSIS &&
 						event.name !== SUBMIT_REVIEW
 					) {
-						feed.step(event.name, parseToolInput(event.input))
+						const input = parseToolInput(event.input)
+						investigationFeed?.step(event.name, input)
+						reviewFeed?.step(event.name, input)
 					}
 					if (event.type === "turn-end" && event.task === undefined) {
 						observability.outcome = event.reason
@@ -552,7 +539,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
 		if (!submitted && holdsTurn()) {
 			held = undefined
-			if (feed !== undefined) yield* feed.closingOut
+			if (reviewFeed !== undefined) yield* reviewFeed.closingOut
 			const closeOut = yield* recoverAutonomousFailure(
 				run({
 					text:
@@ -577,8 +564,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			)
 		}
 
-		yield* closeFeed
-		yield* drainProgress
+		yield* closeFeeds
 
 		if (holdsTurn()) {
 			if (!submitted && investigationId !== undefined) {
@@ -664,7 +650,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
 		// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 		Effect.ensuring(Effect.suspend(() => meterTurn(input, tenant, origin, usage))),
-		Effect.ensuring(drainProgress),
 		Effect.tapCause((cause) => {
 			observability.outcome = "error"
 			observability.failureReason ??= "UnhandledTurnFailure"

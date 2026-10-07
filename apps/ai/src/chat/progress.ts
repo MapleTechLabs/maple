@@ -1,9 +1,21 @@
 /**
- * What a running investigation is doing, accumulated from its tool-call events and handed to
- * `InvestigationService` as a whole record on a heartbeat. The table replicates with REPLICA
- * IDENTITY FULL, so a write per tool call would ship the entire row up to a hundred times a run.
+ * What a running pass is doing, accumulated from its tool-call events and written as a whole record
+ * on a heartbeat: an investigation's row (which replicates with REPLICA IDENTITY FULL, so a write
+ * per tool call would ship the entire row up to a hundred times a run) or a review's comment.
  */
-import { Option, Schema, SchemaGetter } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Fiber,
+	Option,
+	Queue,
+	Ref,
+	Schedule,
+	Schema,
+	SchemaGetter,
+	Semaphore,
+} from "effect"
 import {
 	INVESTIGATION_PROGRESS_STEPS,
 	type InvestigationProgress,
@@ -19,8 +31,8 @@ const decode = Schema.decodeUnknownOption(ToolCallInput)
 /** A tool call's arguments, or an empty record when they are not one. */
 export const parseToolInput = (input: unknown): ToolCallInput => Option.getOrElse(decode(input), () => ({}))
 
-/** How long a step may sit in memory before it is worth a write. */
-export const PROGRESS_HEARTBEAT_MS = 8_000
+/** How long an investigation's step may sit in memory before it is worth a write. */
+export const INVESTIGATION_PROGRESS_HEARTBEAT = Duration.seconds(8)
 
 /** Longest argument fragment a label will carry. */
 const ARG_MAX = 32
@@ -98,42 +110,96 @@ export const reviewStepLabel = (tool: string, input: ToolCallInput): string =>
 		Object.fromEntries(PUBLIC_REVIEW_ARGS.flatMap((key) => (key in input ? [[key, input[key]]] : []))),
 	)
 
-export interface ProgressRecorder {
-	/** Note a tool call. Returns the record to write, or `undefined` while the heartbeat has not elapsed. */
-	readonly step: (tool: string, input: ToolCallInput, nowMs: number) => InvestigationProgress | undefined
-	/** The record as it stands, for the flush a run's end owes its last steps. */
-	readonly pending: () => InvestigationProgress | undefined
+export interface ProgressFeed {
+	/** Note a tool call. Synchronous, since the run's event callback is; stamped by the `Clock` service. */
+	readonly step: (tool: string, input: ToolCallInput) => void
+	/** Write the steps not written yet, if any. */
+	readonly flush: Effect.Effect<void>
+	/** Write the record now, changed or not. */
+	readonly writeNow: Effect.Effect<void>
+	/** Stop the feed, waiting out a write in flight; nothing is written after. Safe to call twice. */
+	readonly close: Effect.Effect<void>
 }
 
-export const makeProgressRecorder = (): ProgressRecorder => {
-	let steps: Array<InvestigationStep> = []
-	let stepCount = 0
-	let lastWriteMs: number | undefined
-	let dirty = false
+interface ToolCall {
+	readonly tool: string
+	readonly input: ToolCallInput
+	readonly at: number
+}
 
-	const snapshot = (): InvestigationProgress => ({
-		stepCount,
-		steps: [...steps],
-		updatedAt: steps.at(-1)?.at ?? 0,
-	})
+interface FeedState {
+	readonly stepCount: number
+	readonly steps: ReadonlyArray<InvestigationStep>
+	readonly dirty: boolean
+}
+
+/**
+ * A pass's progress feed. Steps queue as they happen; a child fiber writes the first one at once
+ * (making a reader wait a heartbeat for it is the whole complaint) and the rest on the beat. Writes
+ * hold one permit and are uninterruptible, so the turn cannot end, or close the feed, mid-write.
+ */
+export const makeProgressFeed = Effect.fnUntraced(function* (options: {
+	readonly label: (tool: string, input: ToolCallInput) => string
+	readonly heartbeat: Duration.Input
+	/** Write on every beat, not only after new steps, so the record's own time keeps moving. */
+	readonly everyBeat: boolean
+	readonly write: (record: InvestigationProgress) => Effect.Effect<void>
+}) {
+	const clock = yield* Clock.Clock
+	const calls = yield* Queue.unbounded<ToolCall>()
+	const state = yield* Ref.make<FeedState>({ stepCount: 0, steps: [], dirty: false })
+	const permit = yield* Semaphore.make(1)
+	const open = yield* Ref.make(true)
+
+	const absorb = (batch: ReadonlyArray<ToolCall>) =>
+		Ref.update(state, (current) =>
+			batch.length === 0
+				? current
+				: {
+						stepCount: current.stepCount + batch.length,
+						steps: [
+							...current.steps,
+							...batch.map((call) => ({
+								tool: call.tool,
+								label: options.label(call.tool, call.input),
+								at: call.at,
+							})),
+						].slice(-INVESTIGATION_PROGRESS_STEPS),
+						dirty: true,
+					},
+		)
+
+	const write = (force: boolean) =>
+		Effect.gen(function* () {
+			if (!(yield* Ref.get(open))) return
+			yield* Queue.clear(calls).pipe(Effect.flatMap(absorb))
+			const current = yield* Ref.get(state)
+			if (!current.dirty && !force) return
+			yield* Ref.set(state, { ...current, dirty: false })
+			const now = yield* Clock.currentTimeMillis
+			yield* options.write({
+				stepCount: current.stepCount,
+				steps: current.steps,
+				// A row's liveness reads its newest step; a beat that writes anyway is itself the news.
+				updatedAt: options.everyBeat ? now : (current.steps.at(-1)?.at ?? now),
+			})
+		}).pipe(permit.withPermits(1), Effect.uninterruptible)
+
+	const first = Queue.take(calls).pipe(
+		Effect.flatMap((call) => absorb([call])),
+		Effect.andThen(write(false)),
+	)
+	const beat = write(options.everyBeat).pipe(Effect.repeat(Schedule.spaced(options.heartbeat)))
+	const fiber = yield* Effect.forkChild(
+		Effect.all([first, beat], { concurrency: "unbounded", discard: true }),
+	)
 
 	return {
-		step: (tool, input, nowMs) => {
-			stepCount += 1
-			steps = [...steps, { tool, label: stepLabel(tool, input), at: nowMs }].slice(
-				-INVESTIGATION_PROGRESS_STEPS,
-			)
-			dirty = true
-			// The first step always writes; making a reader wait a heartbeat for it is the whole complaint.
-			if (lastWriteMs !== undefined && nowMs - lastWriteMs < PROGRESS_HEARTBEAT_MS) return undefined
-			lastWriteMs = nowMs
-			dirty = false
-			return snapshot()
+		step: (tool, input) => {
+			Queue.offerUnsafe(calls, { tool, input, at: clock.currentTimeMillisUnsafe() })
 		},
-		pending: () => {
-			if (!dirty) return undefined
-			dirty = false
-			return snapshot()
-		},
-	}
-}
+		flush: write(false),
+		writeNow: write(true),
+		close: Ref.set(open, false).pipe(permit.withPermits(1), Effect.andThen(Fiber.interrupt(fiber))),
+	} satisfies ProgressFeed
+})
