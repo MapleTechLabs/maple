@@ -135,5 +135,12 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		id: "gallery-alert-create",
 		route: "/alerts/create",
 		search: { serviceName: "payment-svc", template: "high_error_rate" },
+		// The preview evaluates after the chart draws; wait for its verdict, not just data.
+		setup: async (page) => {
+			await page
+				.getByText(/would have fired/i)
+				.first()
+				.waitFor({ timeout: 60_000 })
+		},
 	},
 ]
