@@ -49,13 +49,12 @@ export const makeQueryRunners = ({ warehouse, queryEngine }: QueryRunnerDeps) =>
 			}
 			// Decoded rows hold values JSON cannot keep (a `DateTime.Utc` comes back as
 			// a string), so the cache stores them through the query's own row codec.
-			// A capability-aware plan may select differently, so it keeps plain JSON.
-			const rowSchema = def.capabilityAware
-				? undefined
-				: yield* def.compile(payload, tenant.orgId, baselineWarehouseCapabilities()).pipe(
-						Effect.map((compiled) => compiled.rowSchema),
-						Effect.orElseSucceed(() => undefined),
-					)
+			// Capabilities only pick the WHERE plan (index or scan), never the select
+			// list, so the baseline compile has the codec of every capability-aware def.
+			const rowSchema = yield* def.compile(payload, tenant.orgId, baselineWarehouseCapabilities()).pipe(
+				Effect.map((compiled) => compiled.rowSchema),
+				Effect.orElseSucceed(() => undefined),
+			)
 			return yield* queryEngine.cachedDirect(
 				tenant,
 				def.id,

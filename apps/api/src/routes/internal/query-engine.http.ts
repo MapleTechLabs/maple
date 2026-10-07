@@ -107,6 +107,7 @@ import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audi
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import {
+	baselineWarehouseCapabilities,
 	CH,
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
@@ -402,7 +403,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				for (const row of timeseriesRows) {
 					const key = String(row.spanName)
 					const points = sparklines.get(key) ?? []
-					points.push({ bucket: String(row.bucket), count: toNumber(row.count) })
+					// The raw fallback reads `traces`, whose buckets decode to `DateTime.Utc`.
+					const bucket = DateTime.isDateTime(row.bucket) ? DateTime.formatIso(row.bucket) : String(row.bucket)
+					points.push({ bucket, count: toNumber(row.count) })
 					sparklines.set(key, points)
 				}
 
@@ -439,6 +442,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const nowMs = yield* Clock.currentTimeMillis
+						// The cache stores rows through the query's row codec, so a hit
+						// returns the same `DateTime.Utc` start times a miss does.
+						const rowSchema = yield* Queries.spanHierarchy
+							.compile(payload, tenant.orgId, baselineWarehouseCapabilities())
+							.pipe(
+								Effect.map((compiled) => compiled.rowSchema),
+								Effect.orElseSucceed(() => undefined),
+							)
 						const rows = yield* queryEngine.cachedDirect(
 							tenant,
 							"spanHierarchy",
@@ -464,7 +475,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										})) ??
 										(yield* runQueryFirst(Queries.spanHierarchyProbe, tenant, payload))
 									if (probe?.timestamp != null) {
-										const window = partitionWindowAround(probe.timestamp)
+										const window = partitionWindowAround(DateTime.formatIso(probe.timestamp))
 										startTime = window.startTime
 										endTime = window.endTime
 									}
@@ -477,9 +488,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								})
 							}),
 							traceCacheTtlSeconds(payload.endTime, nowMs),
+							rowSchema === undefined ? undefined : Schema.Array(rowSchema),
 						)
 						const typedRows = rows.map((row) => ({
 							...row,
+							startTime: DateTime.formatIso(row.startTime),
 							traceId: decodeTraceId(row.traceId),
 							spanId: decodeSpanId(row.spanId),
 							spanName: decodeSpanName(row.spanName),
@@ -558,7 +571,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ErrorDetailTracesResponse({
 							data: rows.map((row) => ({
 								traceId: decodeTraceId(row.traceId),
-								startTime: String(row.startTime),
+								startTime: DateTime.formatIso(row.startTime),
 								durationMicros: Number(row.durationMicros),
 								spanCount: Number(row.spanCount),
 								services: row.services.map((service) => decodeServiceName(service)),
