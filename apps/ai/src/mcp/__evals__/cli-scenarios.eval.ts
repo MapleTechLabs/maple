@@ -1,5 +1,5 @@
-import { ToolCallScorer } from "vitest-evals/legacy"
-import { describeMapleEval, predictToolCalls } from "./utils"
+import { describeEval, ToolCallScorer } from "./harness"
+import { predictToolCalls } from "./utils"
 
 // Investigation scenarios ported from the former `apps/cli/EVALS.md` suite.
 // That file documented real Maple-production investigations as `maple <cmd>`
@@ -26,8 +26,8 @@ const SPAN = {
 
 const ATTR = { key: "applicationId", value: "16408" } as const
 
-describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
-	data: async () => [
+describeEval("CLI investigation scenarios (ported from EVALS.md)", {
+	data: [
 		// § 1 · Service discovery — top operations
 		{
 			input: `What are the top operations for the ${SVC.stripe} service by request count?`,
@@ -201,6 +201,6 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 		},
 	],
 	task: predictToolCalls,
-	scorers: [ToolCallScorer({ params: "fuzzy" })],
+	scorers: [ToolCallScorer()],
 	threshold: 0.7,
 })

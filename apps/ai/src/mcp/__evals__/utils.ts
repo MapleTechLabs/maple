@@ -1,8 +1,12 @@
-import { describe, it } from "vitest"
-import { describeEval, type TaskResult, type ToolCall } from "vitest-evals/legacy"
-import { generateText } from "ai"
-import { createEvalModel, hasEvalCredentials } from "./model"
-import { buildPredictionToolSet } from "./tools"
+import { Effect, Layer, Schema } from "effect"
+import { LanguageModel, Prompt, type Response, type Tool } from "effect/ai"
+import { OrgId, UserId } from "@maple/domain/http"
+import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { McpToolExecutorApi } from "../dispatcher"
+import { buildMapleToolkit } from "../tools/llm-tools"
+import type { TaskResult, ToolCall } from "./harness"
+import { evalModelLayer } from "./model"
 
 /** Stable identifiers used across eval prompts + fixtures. */
 export const FIXTURES = {
@@ -21,40 +25,80 @@ export const FIXTURES = {
 	issueId: "2b11d788-6f3a-4c21-9f0e-51c4a8d7e930",
 } as const
 
-/**
- * Prediction task: hand the model every MCP tool (no `execute`) and capture
- * which it chooses for `input`, without running anything. vitest-evals passes
- * the returned `toolCalls` to `ToolCallScorer`, which compares them to the data
- * item's `expectedTools`.
- */
-export const predictToolCalls = async (input: string): Promise<TaskResult> => {
-	const result = await generateText({
-		model: createEvalModel(),
-		temperature: 0,
-		tools: buildPredictionToolSet(),
-		toolChoice: "auto",
-		messages: [{ role: "user", content: input }],
-	})
-	const toolCalls: ToolCall[] = result.toolCalls.map((call) => ({
-		name: call.toolName,
-		arguments: (call.input ?? {}) as Record<string, unknown>,
-	}))
-	return { result: result.text, toolCalls }
+export const EVAL_TENANT: TenantContext = {
+	orgId: Schema.decodeSync(OrgId)(FIXTURES.orgId),
+	userId: Schema.decodeSync(UserId)("internal-service"),
+	roles: [],
+	authMode: "self_hosted",
 }
 
-type DescribeEvalArgs = Parameters<typeof describeEval>
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+
+const toToolCall = (part: { readonly name: string; readonly params: unknown }): ToolCall => ({
+	name: part.name,
+	arguments: isRecord(part.params) ? part.params : {},
+})
+
+/** Prediction never resolves a call, so nothing reaches the executor. */
+const unreachableExecutor: McpToolExecutorApi = {
+	execute: (_tenant, name) =>
+		Effect.fail(new McpToolNotFoundError({ name, message: `prediction evals never execute ${name}` })),
+	prepareRepository: () => Effect.void,
+	prepareConnectedRepositories: () => Effect.void,
+}
 
 /**
- * `describeEval` that skips (rather than fails) when no OpenRouter key is
- * configured — so `bun run eval` is green locally/CI without secrets.
+ * Prediction task: offer the model the MCP surface's tools, exactly as the agents' toolkit builds
+ * them, and record which it calls for `input` without running any.
  */
-export const describeMapleEval = (...args: DescribeEvalArgs): void => {
-	const [name, options] = args
-	if (!hasEvalCredentials()) {
-		describe.skip(`[eval] ${String(name)}`, () => {
-			it("skipped — set OPENROUTER_API_KEY to run MCP evals", () => {})
-		})
-		return
-	}
-	describeEval(name, options)
+export const predictToolCalls = (input: string): Promise<TaskResult> => {
+	const { toolkit } = buildMapleToolkit(unreachableExecutor, EVAL_TENANT, { surface: "mcp" })
+	return LanguageModel.generateText({ prompt: input, toolkit, disableToolCallResolution: true }).pipe(
+		Effect.map((response) => ({ output: response.text, toolCalls: response.toolCalls.map(toToolCall) })),
+		Effect.provide(evalModelLayer()),
+		Effect.runPromise,
+	)
+}
+
+interface Transcript {
+	readonly text: string
+	readonly toolCalls: ReadonlyArray<ToolCall>
+	readonly toolOutputs: ReadonlyArray<string>
+}
+
+/** A failed call resolves with its error, which the model reads in encoded form; keep it too. */
+const toolOutput = (part: Response.ToolResultPart<string, unknown, unknown>): string =>
+	typeof part.result === "string" ? part.result : JSON.stringify(part.encodedResult ?? null)
+
+/**
+ * Full-execution task: the model calls tools for real through `executor`, for up to `maxSteps`
+ * model turns, and the transcript keeps every call and every rendered result the model was shown.
+ */
+export const runToolLoop = (executor: McpToolExecutorApi, input: string, maxSteps: number) => {
+	const { toolkit, layer } = buildMapleToolkit(executor, EVAL_TENANT, { surface: "mcp" })
+	const step = (
+		prompt: Prompt.Prompt,
+		remaining: number,
+		so: Transcript,
+	): Effect.Effect<Transcript, unknown, LanguageModel.LanguageModel | Tool.Handler<string>> =>
+		LanguageModel.generateText({ prompt, toolkit }).pipe(
+			Effect.flatMap((response) => {
+				const next: Transcript = {
+					text: response.text,
+					toolCalls: [...so.toolCalls, ...response.toolCalls.map(toToolCall)],
+					toolOutputs: [...so.toolOutputs, ...response.toolResults.map(toolOutput)],
+				}
+				return response.finishReason === "tool-calls" && remaining > 1
+					? step(
+							Prompt.concat(prompt, Prompt.fromResponseParts(response.content)),
+							remaining - 1,
+							next,
+						)
+					: Effect.succeed(next)
+			}),
+		)
+	return step(Prompt.make(input), maxSteps, { text: "", toolCalls: [], toolOutputs: [] }).pipe(
+		Effect.provide(Layer.mergeAll(layer, evalModelLayer())),
+	)
 }

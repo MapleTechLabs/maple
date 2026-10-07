@@ -1,12 +1,12 @@
-import { ToolCallScorer } from "vitest-evals/legacy"
-import { describeMapleEval, predictToolCalls, FIXTURES } from "./utils"
+import { describeEval, ToolCallScorer } from "./harness"
+import { predictToolCalls, FIXTURES } from "./utils"
 
 // Disambiguation evals: prompts where two tools are plausible and the model must
 // pick the better one. Each case has a single clear best answer (ambiguous-by-
 // design prompts are avoided — they'd make a flaky `requireAll` scorer). These
 // guard against tool-selection drift as descriptions evolve.
-describeMapleEval("tool disambiguation", {
-	data: async () => [
+describeEval("tool disambiguation", {
+	data: [
 		// "slowest" is a first-class tool, not search_traces + a sort arg.
 		{
 			input: "Which traces are taking the longest right now?",
@@ -44,6 +44,6 @@ describeMapleEval("tool disambiguation", {
 		},
 	],
 	task: predictToolCalls,
-	scorers: [ToolCallScorer({ params: "fuzzy" })],
+	scorers: [ToolCallScorer()],
 	threshold: 0.7,
 })

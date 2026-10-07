@@ -1,11 +1,11 @@
 import { afterAll, beforeAll } from "vitest"
-import { generateText, isStepCount } from "ai"
-import { ToolCallScorer, type TaskResult, type ToolCall } from "vitest-evals/legacy"
-import { describeMapleEval, FIXTURES } from "./utils"
-import { createEvalModel, hasEvalCredentials } from "./model"
-import { buildExecutionToolSet } from "./tools"
+import { Effect } from "effect"
+import { McpToolExecutor } from "../dispatcher"
+import { describeEval, ToolCallScorer, type TaskResult } from "./harness"
+import { hasEvalCredentials } from "./model"
+import { FIXTURES, runToolLoop } from "./utils"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
-import { makeEvalRuntime, markdown, type EvalRuntime } from "./eval-runtime"
+import { makeEvalRuntime, type EvalRuntime } from "./eval-runtime"
 import { OutputContainsScorer } from "./scorers"
 import { LARGE_TRACE_SPAN_COUNT } from "./fixtures"
 
@@ -22,44 +22,31 @@ afterAll(async () => {
 	if (rt) await rt.dispose()
 })
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const extractText = (toolResult: any): string => {
-	const out = toolResult?.output ?? toolResult?.result
-	// `markdown` takes the FIRST text block: the `__maple_ui` mirror a dual-content
-	// tool writes as a second block would otherwise satisfy a markdown assertion.
-	return typeof out === "string" ? out : markdown(out)
-}
+const MAX_STEPS = 6
 
 // Full-execution eval: the model actually calls inspect_trace, which runs end
 // to end against the fake warehouse (150-span trace). Verifies the Part-1
 // bounded-overview behavior surfaces through a real model + the real renderer.
-describeMapleEval("observability tool execution (fake warehouse)", {
-	data: async () => [
+describeEval("observability tool execution (fake warehouse)", {
+	data: [
 		{
 			input: `Inspect trace ${FIXTURES.traceId} and tell me where the time went.`,
 			expectedTools: [{ name: "inspect_trace" }],
 		},
 	],
 	task: async (input: string): Promise<TaskResult> => {
-		const result = await generateText({
-			model: createEvalModel(),
-			temperature: 0,
-			tools: buildExecutionToolSet(rt!.runtime, rt!.tenant),
-			stopWhen: isStepCount(6),
-			messages: [{ role: "user", content: input }],
-		})
-		// `toolCalls` / `toolResults` accumulate across every step.
-		const toolCalls: ToolCall[] = result.toolCalls.map((call) => ({
-			name: call.toolName,
-			arguments: (call.input ?? {}) as Record<string, unknown>,
-		}))
-		// Fold rendered tool output into `result` so OutputContainsScorer (which
-		// reads opts.output) can assert on the bounded-overview text.
-		const toolText = result.toolResults.map(extractText).join("\n")
-		return { result: `${toolText}\n${result.text}`, toolCalls }
+		if (rt === undefined) throw new Error("eval runtime was not built")
+		const transcript = await rt.runtime.runPromise(
+			McpToolExecutor.pipe(Effect.flatMap((executor) => runToolLoop(executor, input, MAX_STEPS))),
+		)
+		// The rendered tool output joins the reply, so OutputContainsScorer sees what the model was shown.
+		return {
+			output: `${transcript.toolOutputs.join("\n")}\n${transcript.text}`,
+			toolCalls: transcript.toolCalls,
+		}
 	},
 	scorers: [
-		ToolCallScorer({ requireAll: false, params: "fuzzy" }),
+		ToolCallScorer({ requireAll: false }),
 		OutputContainsScorer({
 			mustContain: ["Showing", `of ${LARGE_TRACE_SPAN_COUNT} spans (errors and longest first)`],
 		}),

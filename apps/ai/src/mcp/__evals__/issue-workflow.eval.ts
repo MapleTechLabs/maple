@@ -1,5 +1,5 @@
-import { ToolCallScorer } from "vitest-evals/legacy"
-import { describeMapleEval, predictToolCalls, FIXTURES } from "./utils"
+import { describeEval, ToolCallScorer } from "./harness"
+import { predictToolCalls, FIXTURES } from "./utils"
 
 /**
  * Does a real model actually pick up an issue before working it?
@@ -15,8 +15,8 @@ import { describeMapleEval, predictToolCalls, FIXTURES } from "./utils"
  * other half: that the tool an agent reaches for is one of the ones that claims,
  * and never a bare state walk that pretends work has started without holding it.
  */
-describeMapleEval("error issue workflow", {
-	data: async () => [
+describeEval("error issue workflow", {
+	data: [
 		// The canonical pickup. `claim_error_issue` is the direct answer; a
 		// transition to `in_progress` now claims too, so both are acceptable — a
 		// move to any OTHER state is not.
@@ -67,6 +67,6 @@ describeMapleEval("error issue workflow", {
 		},
 	],
 	task: predictToolCalls,
-	scorers: [ToolCallScorer({ params: "fuzzy" })],
+	scorers: [ToolCallScorer()],
 	threshold: 0.7,
 })

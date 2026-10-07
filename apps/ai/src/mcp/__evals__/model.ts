@@ -1,32 +1,30 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import type { LanguageModel } from "ai"
-
-/**
- * Default eval model. Override with `MCP_EVAL_MODEL`.
- */
-const DEFAULT_EVAL_MODEL = "moonshotai/kimi-k2.7-code"
-
-const evalModelId = (): string => process.env.MCP_EVAL_MODEL ?? DEFAULT_EVAL_MODEL
+import { OpenAiClient } from "@effect/ai-openai-compat"
+import { OpenRouterClient } from "@effect/ai-openrouter"
+import { Layer, Redacted } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { openRouterApiUrl, resolveTriageModel, type LlmSettings } from "../../platform/Llm"
 
 /** Evals require an OpenRouter key; without one the suites skip rather than fail. */
 export const hasEvalCredentials = (): boolean => Boolean(process.env.OPENROUTER_API_KEY)
 
 /**
- * Build the eval model via OpenRouter.
+ * The model evals run on: the triage model the agents use, built by the same resolver.
+ * `MCP_EVAL_MODEL` overrides the id; unset, it tracks production.
  *
- * Deliberately *not* app-attributed or tagged the way `apps/api/src/platform/Llm.ts` is: this is
- * CI-only traffic, and keeping it off Maple's OpenRouter app page keeps eval spend out of the
- * product's numbers. See `docs/openrouter-tracing.md`.
+ * The clients are built here rather than with `layerLlm` on purpose: that adds Maple's OpenRouter
+ * app attribution, and eval spend stays off the product's app page. See `docs/openrouter-tracing.md`.
  */
-export const createEvalModel = (): LanguageModel => {
-	const apiKey = process.env.OPENROUTER_API_KEY
-	if (!apiKey) {
-		throw new Error("OPENROUTER_API_KEY is required to run MCP evals")
+export const evalModelLayer = () => {
+	const apiKey = Redacted.make(process.env.OPENROUTER_API_KEY ?? "")
+	const settings: LlmSettings = {
+		OPENROUTER_API_KEY: apiKey,
+		MAPLE_TRIAGE_MODEL_OPENROUTER: process.env.MCP_EVAL_MODEL,
 	}
-	const openrouter = createOpenAICompatible({
-		name: "openrouter",
-		baseURL: "https://openrouter.ai/api/v1",
-		apiKey,
-	})
-	return openrouter.chatModel(evalModelId())
+	const apiUrl = openRouterApiUrl(settings)
+	// The resolved model's layer asks for both provider clients; only the OpenRouter one is called.
+	const clients = Layer.mergeAll(
+		OpenRouterClient.layer({ apiKey, apiUrl }),
+		OpenAiClient.layer({ apiKey, apiUrl }),
+	).pipe(Layer.provide(FetchHttpClient.layer))
+	return resolveTriageModel(settings).layer.pipe(Layer.provide(clients))
 }

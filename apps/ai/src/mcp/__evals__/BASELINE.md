@@ -11,9 +11,8 @@ bun run --cwd apps/api measure-tokens
 
 # Eval scores (costs money, needs OPENROUTER_API_KEY)
 set -a && . ./.env.local && set +a
-cd apps/api && MCP_EVAL_MODEL=moonshotai/kimi-k2.7-code \
-  npx vitest run --config vitest.eval.config.ts \
-  --reporter=vitest-evals/reporter src/mcp/__evals__
+cd apps/ai && MCP_EVAL_MODEL=moonshotai/kimi-k2.7-code \
+  npx vitest run --config vitest.eval.config.ts src/mcp/__evals__
 ```
 
 Pin `MCP_EVAL_MODEL` explicitly. The default in `model.ts` tracks production and will move,
@@ -34,6 +33,11 @@ Model: `moonshotai/kimi-k2.7-code` · scope: `src/mcp/__evals__` only.
 | `disambiguation.eval.ts` | 5      | 1.00       | 0.7       |
 | `execution.eval.ts`      | 1      | 1.00       | 0.7       |
 | **Total**                | **35** | **1.00**   | —         |
+
+**Not comparable across 2026-10-07.** Evals moved off the Vercel AI SDK onto the agents' Effect AI
+stack: the toolkit is now the `mcp` surface as `buildMapleToolkit` builds it, temperature is the
+provider default rather than 0, and the diagnosis report schema is now sent as `json_schema`
+structured output. Re-baseline before comparing against the rows below.
 
 **These suites are at ceiling.** Every case scores 1.00, so a before/after comparison against
 them can only demonstrate _absence of regression_ — it cannot demonstrate improvement. Any

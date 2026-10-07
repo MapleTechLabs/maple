@@ -8,7 +8,7 @@ Quality net for the Maple MCP server (`apps/api/src/mcp`). Two layers:
 | **LLM evals**                      | `*.eval.ts`                             | Yes — real model via **OpenRouter** | 💲 per run | **Opt-in only** — see below                  |
 
 The LLM evals hand a real model every MCP tool and score whether it picks the
-right tool with the right arguments (`vitest-evals` `ToolCallScorer`), plus a
+right tool with the right arguments (`ToolCallScorer` in `harness.ts`), plus a
 full-execution case that runs `inspect_trace` end-to-end against a fake
 warehouse. They are **nondeterministic and cost money**, so CI does **not** run
 them on every push.
@@ -38,21 +38,20 @@ OPENROUTER_API_KEY=sk-or-... bun run --filter @maple/api eval
 # Deterministic regression tests only (no key, no cost):
 bun run --filter @maple/api test
 
-# See per-case scores:
-OPENROUTER_API_KEY=sk-or-... \
-  bunx --bun vitest run --config apps/api/vitest.eval.config.ts \
-  --reporter=vitest-evals/reporter
 ```
 
-Model defaults to the production `moonshotai/kimi-k2.7-code`. Override per-run with
-`MCP_EVAL_MODEL=...` (CI reads it from the `MCP_EVAL_MODEL` repo variable).
+Every case logs an `[eval] <mean> <case>` line with each scorer's score and rationale.
+
+Evals run the model through the agents' own stack: Effect AI, `resolveTriageModel` and the
+toolkit `buildMapleToolkit` builds. The model defaults to the production triage model; override
+per-run with `MCP_EVAL_MODEL=...` (CI reads it from the `MCP_EVAL_MODEL` repo variable).
 
 ## Files
 
-- `model.ts` — OpenRouter model factory (`MCP_EVAL_MODEL`, `OPENROUTER_API_KEY`).
-- `tools.ts` — builds the `ai` ToolSet from the registry: `buildPredictionToolSet`
-  (no `execute`) and `buildExecutionToolSet` (runs handlers through a runtime).
-- `utils.ts` — `predictToolCalls` task + `describeMapleEval` (skips without a key).
+- `harness.ts` — `describeEval` (skips without a key), `ToolCallScorer` and the fuzzy argument match.
+- `model.ts` — the eval model layer (`MCP_EVAL_MODEL`, `OPENROUTER_API_KEY`), unattributed.
+- `utils.ts` — `predictToolCalls` (tools offered, never run) and `runToolLoop` (tools run
+  through an executor, multi-step).
 - `scorers.ts` — `OutputContainsScorer` for rendered-output assertions.
 - `fixtures.ts` / `fake-warehouse.ts` / `eval-runtime.ts` — canned warehouse data
     - a runtime wired to it (`WarehouseQueryService.__testables`), for full-execution.

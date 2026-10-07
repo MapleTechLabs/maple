@@ -1,12 +1,11 @@
-import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
+import { ConfigProvider, Effect, Layer, ManagedRuntime } from "effect"
 import { McpServicesLive } from "../../runtime/mcp-service-graph"
 import { Env } from "@maple/backend/platform/Env"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { FIXTURES } from "./utils"
+import { EVAL_TENANT, FIXTURES } from "./utils"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
@@ -58,16 +57,9 @@ export const makeEvalRuntime = (): EvalRuntime => {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const runtime = ManagedRuntime.make(layer as any) as ManagedRuntime.ManagedRuntime<any, never>
 
-	const tenant: TenantContext = {
-		orgId: Schema.decodeSync(OrgId)(FIXTURES.orgId),
-		userId: Schema.decodeSync(UserId)("internal-service"),
-		roles: [],
-		authMode: "self_hosted",
-	}
-
 	return {
 		runtime,
-		tenant,
+		tenant: EVAL_TENANT,
 		testDb,
 		dispose: async () => {
 			await runtime.dispose()
