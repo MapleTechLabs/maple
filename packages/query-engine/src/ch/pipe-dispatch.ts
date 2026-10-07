@@ -18,14 +18,14 @@ import type { OrgId } from "@maple/domain"
 import {
 	compile,
 	compileUnion,
+	QueryBuilderError,
 	type CHQuery,
 	type CompiledQuery,
 	type NeedsSelect,
 } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "./raw-sql"
-import { Array as A, Effect, Match, Option, Result, Schema } from "effect"
+import { Array as A, type DateTime, Effect, Match, Option, Result, Schema } from "effect"
 import { parseUtc } from "../datetime"
-import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
@@ -218,32 +218,40 @@ export function compilePipeQuery(
 		.pipe(
 			Match.when("list_traces", () =>
 				eraseType(
-					compile(
-						tracesRootListQuery({
-							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
-							limit: int("limit", 100),
-							offset: int("offset", 0),
-							cursor: Option.getOrUndefined(Option.flatMap(Option.fromUndefinedOr(str("cursor")), parseUtc)),
-							serviceName: str("service"),
-							spanName: str("span_name"),
-							errorsOnly: hasError,
-							minDurationMs: int("min_duration_ms"),
-							maxDurationMs: int("max_duration_ms"),
-							environments: strList("deployment_env"),
-							matchModes: {
-								serviceName:
-									str("service_match_mode") === "contains" ? "contains" : undefined,
-								spanName: str("span_name_match_mode") === "contains" ? "contains" : undefined,
-								deploymentEnv:
-									str("deployment_env_match_mode") === "contains" ? "contains" : undefined,
-							},
-							attributeFilters: equalsFilter("attribute_filter_key", "attribute_filter_value"),
-							resourceAttributeFilters: equalsFilter(
-								"resource_filter_key",
-								"resource_filter_value",
-							),
-						}),
-						{ orgId, startTime, endTime },
+					Effect.flatMap(pipeCursor(str("cursor")), (cursor) =>
+						compile(
+							tracesRootListQuery({
+								attributeIndexMode: attributeIndexMode(capabilities, "traces"),
+								limit: int("limit", 100),
+								offset: int("offset", 0),
+								cursor,
+								serviceName: str("service"),
+								spanName: str("span_name"),
+								errorsOnly: hasError,
+								minDurationMs: int("min_duration_ms"),
+								maxDurationMs: int("max_duration_ms"),
+								environments: strList("deployment_env"),
+								matchModes: {
+									serviceName:
+										str("service_match_mode") === "contains" ? "contains" : undefined,
+									spanName:
+										str("span_name_match_mode") === "contains" ? "contains" : undefined,
+									deploymentEnv:
+										str("deployment_env_match_mode") === "contains"
+											? "contains"
+											: undefined,
+								},
+								attributeFilters: equalsFilter(
+									"attribute_filter_key",
+									"attribute_filter_value",
+								),
+								resourceAttributeFilters: equalsFilter(
+									"resource_filter_key",
+									"resource_filter_value",
+								),
+							}),
+							{ orgId, startTime, endTime },
+						),
 					),
 				),
 			),
@@ -857,6 +865,24 @@ export function compilePipeQuery(
 			Match.orElse(() => undefined),
 		)
 }
+
+/**
+ * A keyset cursor off the wire. An unparseable one is invalid input: reading
+ * it as absent would silently restart paging at the first page.
+ */
+const pipeCursor = (raw: string | undefined): Effect.Effect<DateTime.Utc | undefined, QueryBuilderError> =>
+	raw === undefined
+		? Effect.succeed(undefined)
+		: Option.match(parseUtc(raw), {
+				onNone: () =>
+					Effect.fail(
+						new QueryBuilderError({
+							code: "InvalidLiteral",
+							message: `cursor \`${raw}\` is not a timestamp`,
+						}),
+					),
+				onSome: (cursor) => Effect.succeed(cursor),
+			})
 
 // Attribute filter param helpers (numbered suffix pattern from Tinybird pipes)
 

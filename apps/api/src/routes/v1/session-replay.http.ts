@@ -6,6 +6,7 @@ import {
 	MapleApi,
 	ReplaysForTraceResponse,
 	SessionTranscriptResponse,
+	V1RequestValidationError,
 	SessionId,
 	TraceId,
 	UserId,
@@ -33,6 +34,22 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					// An unparseable cursor is invalid input: reading it as absent would
+					// silently restart paging at the first page.
+					const cursorStart =
+						payload.cursor === undefined
+							? undefined
+							: yield* Option.match(parseUtc(payload.cursor), {
+									onNone: () =>
+										Effect.fail(
+											new V1RequestValidationError({
+												message: "cursor is not a valid timestamp",
+												param: "cursor",
+												details: [payload.cursor ?? ""],
+											}),
+										),
+									onSome: Effect.succeed,
+								})
 					const compiled = CH.compile(
 						CH.sessionReplaysListQuery({
 							serviceName: payload.serviceName,
@@ -46,16 +63,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							hasErrors: payload.hasErrors,
 							search: payload.search,
 							pagePath: payload.pagePath,
-							cursor: Option.match(
-								Option.flatMap(Option.fromUndefinedOr(payload.cursor), parseUtc),
-								{
-									onNone: () => undefined,
-									onSome: (startTime) => ({
-										startTime,
-										sessionId: payload.cursorSessionId,
-									}),
-								},
-							),
+							cursor:
+								cursorStart === undefined
+									? undefined
+									: { startTime: cursorStart, sessionId: payload.cursorSessionId },
 							durationMinMs: payload.durationMinMs,
 							durationMaxMs: payload.durationMaxMs,
 							activeTimeMinMs: payload.activeTimeMinMs,

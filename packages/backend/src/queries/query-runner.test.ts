@@ -4,7 +4,7 @@ import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { ErrorsByTypeRequest, ListLogsRequest } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Queries } from "@maple/query-engine/registry"
-import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import { baselineWarehouseCapabilities, type WarehouseCapabilities } from "@maple/query-engine"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -80,7 +80,7 @@ describe("makeQueryRunners", () => {
 				compiledQueryWithCapabilities: ((_tenant: unknown, compile: unknown) =>
 					Effect.gen(function* () {
 						// SAFETY: a capability-aware definition hands the stub its compile function.
-						const build = compile as (capabilities: unknown) => Effect.Effect<CompiledQuery<unknown>>
+						const build = compile as (capabilities: WarehouseCapabilities) => Effect.Effect<CompiledQuery<unknown>>
 						const query = yield* build(baselineWarehouseCapabilities())
 						return yield* query.decodeRows([
 							{
