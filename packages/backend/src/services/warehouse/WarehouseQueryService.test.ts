@@ -364,6 +364,23 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	})
 })
 
+describe("ClickHouse-protocol session settings", () => {
+	it("pins UTC on BYO ClickHouse and chDB, never on the Tinybird gateway", () => {
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("clickhouse"), {
+			output_format_json_quote_64bit_integers: 0,
+			session_timezone: "UTC",
+		})
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("chdb"), {
+			output_format_json_quote_64bit_integers: 0,
+			session_timezone: "UTC",
+		})
+		// Tinybird rejects `session_timezone` as a restricted setting.
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("tinybird-gateway"), {
+			output_format_json_quote_64bit_integers: 0,
+		})
+	})
+})
+
 describe("bounded Tinybird response body", () => {
 	const tbConfig = { kind: "tinybird" as const, host: "https://api.tinybird.example", token: "tok" }
 	const limits = { maxRows: 1000, maxBytes: MAX_RAW_SQL_RESULT_BYTES }

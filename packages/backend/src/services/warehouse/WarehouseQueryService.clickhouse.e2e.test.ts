@@ -315,4 +315,33 @@ describe.skipIf(!enabled)("WarehouseQueryService ClickHouse raw-SQL E2E", () => 
 		assert.strictEqual(row!.wide, 42)
 		assert.strictEqual(typeof row!.c, "number")
 	}, 60_000)
+
+	// A BYO server in any zone must read zone-less literals and columns as UTC.
+	// `getSetting` is '' unless the session sets it, so this fails without the
+	// pin even on the UTC servers CI and local dev run.
+	it("resolves zone-less DateTime literals as UTC through the production client", async () => {
+		const client = await Effect.runPromise(
+			__testables
+				.createClickHouseSqlClient({
+					kind: "clickhouse",
+					url: clickhouseUrl,
+					username: clickhouseUser,
+					password: clickhousePassword,
+					database,
+				})
+				.pipe(Effect.provide(FetchHttpClient.layer)),
+		)
+		const result = await Effect.runPromise(
+			client.sql(
+				parseStatement(
+					"SELECT getSetting('session_timezone') AS pinned, timezone() AS tz, toUnixTimestamp(toDateTime('2026-10-07 10:00:00')) AS ts FROM system.one",
+				),
+			),
+		)
+		const row = result.data[0]
+		assert.isDefined(row)
+		assert.strictEqual(row!.pinned, "UTC", "session_timezone was not sent")
+		assert.strictEqual(row!.tz, "UTC")
+		assert.strictEqual(row!.ts, 1791367200)
+	}, 60_000)
 })

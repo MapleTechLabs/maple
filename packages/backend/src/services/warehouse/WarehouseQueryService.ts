@@ -99,6 +99,14 @@ const clickHouseDriverError = (
 	}
 }
 
+const clickHouseSessionSettings = (kind: ClickHouseProtocolBackendConfig["kind"]) => {
+	const dialect = BackendDialect[kind]
+	return {
+		...(dialect.unquote64BitIntegers ? { output_format_json_quote_64bit_integers: 0 } : undefined),
+		...(dialect.pinSessionTimezoneUtc ? { session_timezone: "UTC" } : undefined),
+	}
+}
+
 const createClickHouseSqlClient = (
 	config: ClickHouseProtocolBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
@@ -107,13 +115,9 @@ const createClickHouseSqlClient = (
 		username: config.username,
 		password: Redacted.make(config.password),
 		database: config.database,
-		// Wire-format parity with the Tinybird SDK: without this, JSONEachRow quotes
-		// 64-bit ints ("count":"42") and every schema-less query leaks strings into
-		// Schema.Number responses on BYO-CH orgs. Sent as a per-query URL param, so
-		// the compiled SQL text (and its fingerprint) is untouched.
-		...(BackendDialect[config.kind].unquote64BitIntegers
-			? { settings: { output_format_json_quote_64bit_integers: 0 } }
-			: undefined),
+		// Sent as per-query URL params, so the compiled SQL text (and its fingerprint)
+		// is untouched. See `BackendDialect` for why each one is there.
+		settings: clickHouseSessionSettings(config.kind),
 	}).pipe(
 		Effect.mapError(
 			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
@@ -618,4 +622,5 @@ export const __testables = {
 	},
 	createClickHouseSqlClient,
 	createTinybirdSqlClient,
+	clickHouseSessionSettings,
 }

@@ -661,7 +661,7 @@ const measureRetainedDays = (db: Chdb, countedOn: string): RetainedDays => {
 		const days: Record<string, number> = {}
 		for (const row of readJsonRows(
 			db.query(
-				`SELECT toString(toDate(${column})) AS day, count() AS count FROM ${table} GROUP BY day`,
+				`SELECT toString(toDate(${column}, 'UTC')) AS day, count() AS count FROM ${table} GROUP BY day`,
 			),
 		)) {
 			const decoded = decodeDayCountRow(row)

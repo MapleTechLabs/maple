@@ -391,6 +391,10 @@ jobs:
               timeout-minutes: 5
               env:
                   TEST_LANE: ${{ toJSON(matrix) }}
+                  # Runners and Workers are UTC, which hides any code that reads a
+                  # zone-less warehouse timestamp as local time. +05:45 shifts both
+                  # hours and minutes, so such a bug fails here instead of on a laptop.
+                  TZ: Asia/Kathmandu
               run: python3 .github/scripts/run-tests.py
 
     # The only job where `layerPg` meets a real Postgres. Everything else that
