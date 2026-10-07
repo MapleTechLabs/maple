@@ -1541,6 +1541,9 @@ const make: Effect.Effect<
 				),
 		)).filter((row) => idle.has(row.orgId))
 
+		// `skip locked` for the reason `claimTickWindow` has it: a lapsed lease can
+		// still have its apply transaction open, holding the row. Waiting on that
+		// lock here would stall the whole tick; the row is picked up next time.
 		const moveCursors = (orgIds: ReadonlyArray<OrgId>, toMs: number) =>
 			Effect.forEach(
 				Arr.chunksOf(orgIds, TICK_CURSOR_UPDATE_CHUNK),
@@ -1555,10 +1558,19 @@ const make: Effect.Effect<
 								updatedAt: new Date(nowMs),
 							})
 							.where(
-								and(
-									inArray(errorTickStates.orgId, chunk),
-									lt(errorTickStates.processedThrough, new Date(toMs)),
-									unclaimed,
+								inArray(
+									errorTickStates.orgId,
+									db
+										.select({ orgId: errorTickStates.orgId })
+										.from(errorTickStates)
+										.where(
+											and(
+												inArray(errorTickStates.orgId, chunk),
+												lt(errorTickStates.processedThrough, new Date(toMs)),
+												unclaimed,
+											),
+										)
+										.for("update", { skipLocked: true }),
 								),
 							),
 					),
