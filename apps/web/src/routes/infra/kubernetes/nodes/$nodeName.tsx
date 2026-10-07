@@ -6,7 +6,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { EMPTY_VALUE, formatUptime } from "@maple/ui/lib/format"
 
@@ -74,6 +77,8 @@ function NodeDetailPage() {
 			<DetailRail.MetaRow label="k8s.kubelet.version" value={summary.kubeletVersion} />
 			<DetailRail.MetaRow label="container.runtime" value={summary.containerRuntime} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={ServerIcon} />
 	) : null
 
 	return (

@@ -4,10 +4,12 @@ import { ResultView } from "@/components/common/result-view"
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
+	hasNoFacetOptions,
 } from "@/components/filters/filter-sidebar"
 import type { ContainerFacetsResponse } from "@maple/domain/http"
 
@@ -61,6 +63,9 @@ export function ContainersFilterSidebarView({
 		>
 			{(facetsResponse, { waiting }) => {
 				const f = facetsResponse.data
+				if (!hasActiveFilters && hasNoFacetOptions(Object.values(f))) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={waiting}>

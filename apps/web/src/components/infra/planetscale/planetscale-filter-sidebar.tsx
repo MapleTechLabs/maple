@@ -3,8 +3,10 @@ import { useMemo } from "react"
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
+	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
 import type { BranchCandidate } from "./branch-selection"
 import {
@@ -25,19 +27,22 @@ import {
  * Unlike the Cloudflare sidebar there is no server facet endpoint, and there
  * doesn't need to be: `candidates` is already the complete branch universe
  * (inventory ∪ metric rollups ∪ the scrape target's include/exclude globs), so
- * the options are a `useMemo` over data the page has in hand. That also means
- * this sidebar has no loading state of its own — it inherits the page's.
+ * the options are a `useMemo` over data the page has in hand. The page says
+ * when that data is still loading.
  *
  * Counts are branches, not traffic: on a database with thirty `pr-*` branches
  * "how many are excluded" is the question the sidebar is being asked.
  */
 export function PlanetScaleFilterSidebar({
 	candidates,
+	loading = false,
 	filters,
 	onFilterChange,
 	onClear,
 }: {
 	candidates: ReadonlyArray<BranchCandidate>
+	/** The database inventory has not landed, so `candidates` is empty for now, not for good. */
+	loading?: boolean
 	filters: PlanetScaleFilters
 	onFilterChange: (key: keyof PlanetScaleFilters, values: ReadonlyArray<string> | undefined) => void
 	onClear: () => void
@@ -69,6 +74,11 @@ export function PlanetScaleFilterSidebar({
 		// Empty selections drop out of the URL entirely rather than lingering
 		// as `?branches=`.
 		onFilterChange(key, selected.length === 0 ? undefined : selected)
+
+	if (loading) return <FilterSidebarLoading sectionCount={3} />
+	if (candidates.length === 0 && !hasActiveFilters(filters)) {
+		return <FilterSidebarEmpty />
+	}
 
 	return (
 		<FilterSidebarFrame>

@@ -8,6 +8,7 @@ import { FilterSection, SearchableFilterSection, serviceColorMap } from "@/compo
 import { getLogsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
@@ -113,6 +114,9 @@ export function LogsFilterSidebar() {
 					(facets.severities?.length ?? 0) > 0 ||
 					(facets.deploymentEnvs?.length ?? 0) > 0 ||
 					(facets.namespaces?.length ?? 0) > 0
+				if (!hasFacets && !hasActiveFilters) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={waiting}>
@@ -161,12 +165,6 @@ export function LogsFilterSidebar() {
 								onExcludedChange={(val) => updateFilter("excludedServices", val)}
 								colorMap={serviceColorMap(facets.services ?? [])}
 							/>
-
-							{!hasFacets && (
-								<p className="text-sm text-muted-foreground py-4">
-									No logs found in the selected time range
-								</p>
-							)}
 						</FilterSidebarBody>
 					</FilterSidebarFrame>
 				)

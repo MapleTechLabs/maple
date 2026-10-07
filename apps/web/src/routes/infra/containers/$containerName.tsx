@@ -7,7 +7,10 @@ import { Schema } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 
 import { ErrorState } from "@/components/common/error-state"
 import { DashboardPage } from "@/components/layout/dashboard-page"
@@ -88,6 +91,8 @@ function ContainerDetailPage() {
 			<DetailRail.MetaRow label="compose.project" value={summary.composeProject} />
 			<DetailRail.MetaRow label="compose.service" value={summary.composeService} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={DockerIcon} />
 	) : null
 
 	return (

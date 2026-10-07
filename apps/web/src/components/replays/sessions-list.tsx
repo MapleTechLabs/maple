@@ -1,3 +1,4 @@
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import { useState } from "react"
 import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
@@ -561,5 +562,47 @@ function QuietRunRow({
 				<DisclosureChevron open={expanded} size={14} />
 			</span>
 		</button>
+	)
+}
+
+const SKELETON_NAME_WIDTHS = ["w-40", "w-28", "w-48", "w-32", "w-36", "w-24", "w-44", "w-32"]
+
+/** The list's loading state: same header, columns and row height, so nothing moves when it lands. */
+export function SessionsListSkeleton({ rows = 8 }: { rows?: number }) {
+	return (
+		<div className="@container" aria-busy>
+			<ColumnHeader />
+			{Array.from({ length: rows }, (_, i) => (
+				<div
+					key={i}
+					className="flex h-[65px] items-center gap-3 border-b border-border px-3 @2xl:gap-4"
+				>
+					<div className="min-w-0 flex-1 space-y-2">
+						<Skeleton
+							className={cn("h-3.5", SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length])}
+						/>
+						<Skeleton className="h-3 w-56 max-w-full" />
+					</div>
+					<span className={COLUMNS.org}>
+						<Skeleton className="h-5 w-24 rounded-md" />
+					</span>
+					<span className={COLUMNS.tags}>
+						<Skeleton className="h-5 w-20 rounded-md" />
+					</span>
+					<span className={COLUMNS.activity}>
+						<Skeleton className="h-3 w-full" />
+					</span>
+					<span className={COLUMNS.device}>
+						<Skeleton className="h-3.5 w-14" />
+					</span>
+					<span className={COLUMNS.signals}>
+						<Skeleton className="h-3.5 w-20" />
+					</span>
+					<span className={COLUMNS.time}>
+						<Skeleton className="h-3 w-14" />
+					</span>
+				</div>
+			))}
+		</div>
 	)
 }

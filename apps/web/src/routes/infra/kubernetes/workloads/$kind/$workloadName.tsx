@@ -6,7 +6,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { EMPTY_VALUE, countLabel, formatPercent } from "@maple/ui/lib/format"
 
@@ -113,6 +116,8 @@ function WorkloadDetailPage() {
 			<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
 			<DetailRail.MetaRow label="pods" value={String(summary.podCount)} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={GridIcon} />
 	) : null
 
 	return (

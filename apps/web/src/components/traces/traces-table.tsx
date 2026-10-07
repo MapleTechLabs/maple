@@ -212,6 +212,8 @@ function LoadingState() {
 		<div className="flex-1 min-h-0 flex flex-col gap-4">
 			<TableSkeleton
 				rows={10}
+				// ROW_HEIGHT, so the list doesn't grow by a row's worth when data lands.
+				rowClassName="h-11"
 				tableClassName="w-full table-fixed"
 				columns={TRACE_COLUMNS.map((column) => ({
 					header: column.header,

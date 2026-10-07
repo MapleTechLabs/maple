@@ -13,10 +13,12 @@ import {
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
+	hasNoFacetOptions,
 } from "@/components/filters/filter-sidebar"
 import { ResultView } from "@/components/common/result-view"
 import {
@@ -126,6 +128,10 @@ function AnalyticsFilterSidebarView({
 	// Not `some(Boolean)`: `traffic` is always set now, so that would offer to
 	// clear a page that has nothing narrowed on it.
 	const canClear = hasActiveFilters(filters)
+
+	if (!canClear && hasNoFacetOptions(Object.values(breakdowns))) {
+		return <FilterSidebarEmpty />
+	}
 
 	return (
 		<FilterSidebarFrame waiting={waiting}>

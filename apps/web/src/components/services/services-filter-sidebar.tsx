@@ -11,6 +11,7 @@ import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-not
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
@@ -84,76 +85,76 @@ export function ServicesFilterSidebar() {
 	return (
 		<ResultView
 			result={facetsResult}
-			loading={<FilterSidebarLoading sectionCount={2} />}
+			loading={<FilterSidebarLoading sectionCount={3} />}
 			error={(error) => <FilterSidebarError error={error} onRetry={refreshFacets} />}
 		>
-			{({ data: facets }, { waiting }) => (
-				<FilterSidebarFrame waiting={waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
-					<FilterSidebarBody>
-						{healthSummary !== undefined && (
-							<FilterSection
-								title="Health"
-								options={(["unhealthy", "degraded", "healthy"] as const).map((level) => ({
-									name: level,
-									count: healthSummary.counts[level],
-								}))}
-								selected={search.health === undefined ? [] : [search.health]}
-								onChange={(selected) => {
-									// Single-select semantics on a multi-select control: the
-									// newly toggled value wins; re-unchecking clears the filter.
-									const next = selected.find((value) => value !== search.health)
-									updateFilter(
-										"health",
-										next !== undefined && isServiceHealth(next) ? next : undefined,
-									)
-								}}
-							/>
-						)}
-
-						<FilterSection
-							title="Environment"
-							options={facets.environments}
-							selected={search.environments ?? []}
-							onChange={(val) => updateFilter("environments", val)}
-							excluded={search.excludedEnvironments ?? []}
-							onExcludedChange={(val) => updateFilter("excludedEnvironments", val)}
-						/>
-
-						{pinnedNamespace !== null ? (
-							<PinnedNamespaceNotice namespace={pinnedNamespace} />
-						) : (
-							facets.namespaces.length > 0 && (
-								<SearchableFilterSection
-									title="Namespace"
-									options={facets.namespaces}
-									selected={search.namespaces ?? []}
-									onChange={(val) => updateFilter("namespaces", val)}
-									excluded={search.excludedNamespaces ?? []}
-									onExcludedChange={(val) => updateFilter("excludedNamespaces", val)}
+			{({ data: facets }, { waiting }) =>
+				!hasActiveFilters &&
+				healthSummary === undefined &&
+				facets.environments.length === 0 &&
+				facets.namespaces.length === 0 &&
+				facets.commitShas.length === 0 ? (
+					<FilterSidebarEmpty />
+				) : (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
+						<FilterSidebarBody>
+							{healthSummary !== undefined && (
+								<FilterSection
+									title="Health"
+									options={(["unhealthy", "degraded", "healthy"] as const).map((level) => ({
+										name: level,
+										count: healthSummary.counts[level],
+									}))}
+									selected={search.health === undefined ? [] : [search.health]}
+									onChange={(selected) => {
+										// Single-select semantics on a multi-select control: the
+										// newly toggled value wins; re-unchecking clears the filter.
+										const next = selected.find((value) => value !== search.health)
+										updateFilter(
+											"health",
+											next !== undefined && isServiceHealth(next) ? next : undefined,
+										)
+									}}
 								/>
-							)
-						)}
-
-						<FilterSection
-							title="Commit SHA"
-							options={facets.commitShas}
-							selected={search.commitShas ?? []}
-							onChange={(val) => updateFilter("commitShas", val)}
-							excluded={search.excludedCommitShas ?? []}
-							onExcludedChange={(val) => updateFilter("excludedCommitShas", val)}
-						/>
-
-						{facets.environments.length === 0 &&
-							facets.namespaces.length === 0 &&
-							facets.commitShas.length === 0 && (
-								<p className="text-sm text-muted-foreground py-4">
-									No filter options available
-								</p>
 							)}
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)}
+
+							<FilterSection
+								title="Environment"
+								options={facets.environments}
+								selected={search.environments ?? []}
+								onChange={(val) => updateFilter("environments", val)}
+								excluded={search.excludedEnvironments ?? []}
+								onExcludedChange={(val) => updateFilter("excludedEnvironments", val)}
+							/>
+
+							{pinnedNamespace !== null ? (
+								<PinnedNamespaceNotice namespace={pinnedNamespace} />
+							) : (
+								facets.namespaces.length > 0 && (
+									<SearchableFilterSection
+										title="Namespace"
+										options={facets.namespaces}
+										selected={search.namespaces ?? []}
+										onChange={(val) => updateFilter("namespaces", val)}
+										excluded={search.excludedNamespaces ?? []}
+										onExcludedChange={(val) => updateFilter("excludedNamespaces", val)}
+									/>
+								)
+							)}
+
+							<FilterSection
+								title="Commit SHA"
+								options={facets.commitShas}
+								selected={search.commitShas ?? []}
+								onChange={(val) => updateFilter("commitShas", val)}
+								excluded={search.excludedCommitShas ?? []}
+								onExcludedChange={(val) => updateFilter("excludedCommitShas", val)}
+							/>
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}
 		</ResultView>
 	)
 }

@@ -9,8 +9,10 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { FilterSection, SingleCheckboxFilter, serviceColorMap } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
+	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
 import { getErrorsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -79,6 +81,13 @@ export function ErrorsFilterSidebar() {
 
 	const setFilter = <K extends keyof typeof search>(key: K, value: (typeof search)[K]) => {
 		navigate({ search: (prev) => ({ ...prev, [key]: value }) })
+	}
+
+	// The service counts are what the sidebar is mostly made of; drawing the static Source list
+	// first and popping the rest in under it reads as two different sidebars.
+	if (Result.isInitial(serviceCounts)) return <FilterSidebarLoading sectionCount={3} />
+	if (Result.isSuccess(serviceCounts) && services.length === 0 && !hasErrorFilters(search)) {
+		return <FilterSidebarEmpty />
 	}
 
 	return (

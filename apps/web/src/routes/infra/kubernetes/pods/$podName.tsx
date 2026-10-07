@@ -4,7 +4,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { formatPercent } from "@maple/ui/lib/format"
 
@@ -82,6 +85,8 @@ function PodDetailPage() {
 			<DetailRail.MetaRow label="k8s.daemonset.name" value={summary.daemonsetName} />
 			<DetailRail.MetaRow label="k8s.pod.start_time" value={summary.podStartTime} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={FolderIcon} />
 	) : null
 
 	return (
