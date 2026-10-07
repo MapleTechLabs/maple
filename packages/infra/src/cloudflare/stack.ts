@@ -1,6 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
-import type * as Planetscale from "alchemy/Planetscale"
+import type * as Output from "alchemy/Output"
 import * as Context from "effect/Context"
+import type * as Redacted from "effect/Redacted"
 import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
 import { type DevApp, isDevApp } from "../dev-urls.ts"
@@ -17,13 +18,24 @@ import {
 	resolveWorkerPlacement,
 } from "./stage.ts"
 
+/** A Postgres login for an ECS service. A changed `id` rolls the tasks before the old login goes. */
+export interface MapleDbLogin {
+	readonly id: Output.Output<string>
+	readonly url: Output.Output<Redacted.Redacted<string>>
+}
+
 /**
- * prd's database: the branch whose deploy applies the migrations, and on a `"declared"`
- * instance the Hyperdrive config each consumer binds as `MAPLE_DB`.
+ * A deploy-declared database (PlanetScale on prd, Neon on previews): the migrated branch, the
+ * Hyperdrive config each consumer binds as `MAPLE_DB` (undefined on US prd), and the ECS logins.
  */
 export interface MapleDbResources {
-	readonly schema: Planetscale.PostgresBranch
+	/** The branch's name. As Worker env it orders the upload after the migrations. */
+	readonly branch: Output.Output<string>
 	readonly hyperdrives: Record<MapleDbConsumer, Cloudflare.Hyperdrive.Connection> | undefined
+	/** The ingest gateway's pooled login. */
+	readonly ingest: MapleDbLogin
+	/** Electric's direct replication login, where the profile deploys Electric. */
+	readonly electric: MapleDbLogin | undefined
 }
 
 /** Inter-app public origins as plan-time strings (custom domains, portless routes, or env). */
@@ -45,7 +57,7 @@ export interface MapleStackContext {
 	readonly workerDev: (app: DevApp) => WorkerDev | undefined
 	/** Inter-app URLs under `bun dev`, spread last so `.env.local` cannot override them. */
 	readonly devEnv: Record<string, string> | undefined
-	/** prd's database resources; undefined on the other stages. */
+	/** The declared database (prd and previews); undefined on dev. */
 	readonly db: MapleDbResources | undefined
 }
 

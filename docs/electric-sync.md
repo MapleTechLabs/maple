@@ -244,16 +244,12 @@ Electric Cloud never used that pair. It created its own generated
 service could run beside Cloud on the same database with no collision during the
 cutover.
 
-## PR previews (no Electric source)
+## PR previews
 
-PR previews deploy without an application database (see `resolveMapleProfile` in
-`packages/infra/src/profile.ts`), so there is nothing for Electric to
-replicate. `apps/electric-sync/src/worker.ts` withholds
-`ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` on the `pr` stage, so a
-preview can never proxy shapes at another stage's data. The sync worker deploys
-unconfigured and returns 503: `/dashboards` falls back to its HTTP snapshot and the
-alerts lists show `SyncUnavailable`. Restoring live sync in a preview means pointing
-it at a self-hosted Electric.
+Each preview runs its own Electric on ECS (`electric-pr-<n>.maple.dev`), replicating from its
+Neon branch as the branch owner. That needs logical replication enabled on the Neon project.
+`apps/electric-sync/src/worker.ts` derives the preview's `ELECTRIC_URL` from that hostname and
+never reads the shared one, so a preview can never proxy shapes at another stage's data.
 
 ## Adding a synced table later
 

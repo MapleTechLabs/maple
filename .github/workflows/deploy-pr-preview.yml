@@ -2,7 +2,8 @@ name: Deploy PR Preview (Cloudflare + AWS via Alchemy)
 
 # Label-gated: a PR gets the full stack (AWS ingest included) only while it carries
 # `preview`, torn down when the label comes off or the PR closes. `preview:collector`
-# adds the in-VPC OTel collector. Previews have no application database.
+# adds the in-VPC OTel collector. Each preview gets its own Neon branch (migrated by the
+# deploy), Tinybird branch, ingest gateway and Electric; see docs/pr-previews.md.
 # cleanup-preview-orphans.yml reaps anything a missed teardown leaves behind.
 on:
     pull_request:
@@ -54,8 +55,10 @@ jobs:
             name: pr-preview
             url: ${{ steps.deploy.outputs.web_url }}
         env:
-            # Infisical `dev` environment; no dedicated preview env yet.
-            INFISICAL_ENV_SLUG: dev
+            # Set `PREVIEW_INFISICAL_ENV_SLUG` once a dedicated preview environment exists.
+            INFISICAL_ENV_SLUG: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
+            # Each live preview holds one of the account's 25 Hyperdrive configs.
+            MAX_LIVE_PREVIEWS: 8
             # `unlabeled` only reaches here for the `preview` label, so both mean teardown.
             TEARDOWN: ${{ (github.event.action == 'closed' || github.event.action == 'unlabeled') && 'true' || 'false' }}
             # Opt-in collector (prd-only otherwise, see `profile.deploys.collector`).
@@ -68,6 +71,19 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            # Counts open PRs carrying `preview`, this one included. Runs before anything is created.
+            - name: Check the live preview cap
+              if: ${{ env.TEARDOWN != 'true' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  live=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label preview --limit 200 --json number --jq length)
+                  echo "live previews: $live (cap $MAX_LIVE_PREVIEWS)"
+                  if [ "$live" -gt "$MAX_LIVE_PREVIEWS" ]; then
+                    echo "::error::$live open PRs carry 'preview'; remove the label from one before deploying another."
+                    exit 1
+                  fi
 
             # `tb` for branch up/down. Installed BEFORE secrets load so the installer never sees them.
             - name: Install Tinybird CLI
@@ -90,9 +106,6 @@ jobs:
               if: ${{ env.TEARDOWN != 'true' }}
               run: bun scripts/tinybird-pr-branch.ts up "$PR_NUMBER"
 
-            # No database step: previews deploy without an application database
-            # (the `pr` profile's database is "none"), so DB-backed routes 500.
-
             # AWS_ACCOUNT_ID avoids alchemy's silent STS deadlock (see deploy-prd-instance.yml).
             - name: Deploy PR preview stack with Alchemy
               id: deploy
@@ -100,6 +113,15 @@ jobs:
               env:
                   AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
               run: bun run alchemy:deploy:pr
+
+            # Seeds demo telemetry as the dev test user, then fails on any 5xx from a read path.
+            - name: Seed and smoke-test the preview
+              id: smoke
+              if: ${{ env.TEARDOWN != 'true' && steps.deploy.outcome == 'success' }}
+              env:
+                  API_URL: ${{ steps.deploy.outputs.api_url }}
+                  WEB_URL: ${{ steps.deploy.outputs.web_url }}
+              run: bun scripts/preview-seed-smoke.ts
 
             - name: Destroy PR preview stack with Alchemy
               id: destroy
@@ -130,6 +152,7 @@ jobs:
                   TEARDOWN: ${{ env.TEARDOWN }}
                   INGEST_URL: ${{ steps.deploy.outputs.ingest_url }}
                   DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+                  SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
                   DESTROY_OUTCOME: ${{ steps.destroy.outcome }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
                   API_URL: ${{ steps.deploy.outputs.api_url }}
@@ -176,8 +199,14 @@ jobs:
                       printf '| API | [%s](%s) |\n' "${API_URL#https://}" "$API_URL"
                       printf '| Electric Sync | [%s](%s) |\n' "${SYNC_URL#https://}" "$SYNC_URL"
                       if [ -n "$INGEST_URL" ]; then
-                        printf '| Ingest (OTLP, plain HTTP) | [%s](%s) |\n' "${INGEST_URL#http://}" "$INGEST_URL"
+                        printf '| Ingest (OTLP) | [%s](%s) |\n' "${INGEST_URL#https://}" "$INGEST_URL"
                       fi
+                      echo
+                      case "$SMOKE_OUTCOME" in
+                        success) echo "Smoke test: passed" ;;
+                        failure) echo "Smoke test: failed (see the workflow run)" ;;
+                        *) printf 'Smoke test: %s\n' "${SMOKE_OUTCOME:-not run}" ;;
+                      esac
                       echo
                       printf 'Deployed from [`%s`](%s) · [View workflow run](%s)\n' "$short_sha" "$COMMIT_URL" "$RUN_URL"
                     else

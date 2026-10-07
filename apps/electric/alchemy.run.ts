@@ -1,11 +1,10 @@
 import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
 import type * as Output from "alchemy/Output"
-import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"
 import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
-import type { MapleStackContext } from "@maple/infra/cloudflare"
+import type { MapleDbLogin, MapleStackContext } from "@maple/infra/cloudflare"
 import { requiredPlain } from "@maple/infra/env"
 
 /** Port Electric's HTTP API binds (`ELECTRIC_PORT`, whose own default is 3000). */
@@ -20,8 +19,8 @@ export interface CreateMapleElectricOptions extends Pick<
 > {
 	/** The ingest VPC: a second `AWS.EC2.Network` in one stack fights over the internet gateway. */
 	network: Pick<AWS.EC2.Network, "vpcId" | "publicSubnetIds">
-	/** The replication role on the instance's branch (`withReplication`), minted by the root. */
-	dbRole: Planetscale.PostgresRole
+	/** A direct login with REPLICATION on the declared branch, minted by the root. */
+	dbLogin: MapleDbLogin
 }
 
 /**
@@ -35,7 +34,7 @@ export const createMapleElectric = ({
 	domains,
 	profile,
 	network,
-	dbRole,
+	dbLogin,
 }: CreateMapleElectricOptions) =>
 	Effect.gen(function* () {
 		const { taskSize, dbPoolSize } = profile.electric
@@ -87,7 +86,7 @@ export const createMapleElectric = ({
 
 		// Direct connection (5432), never a pooler: logical replication needs it. The role
 		// must carry the REPLICATION attribute itself (membership does not grant it).
-		const databaseUrl = yield* secret("database-url", pgUrlRequireSsl(dbRole.connectionUrl))
+		const databaseUrl = yield* secret("database-url", pgUrlRequireSsl(dbLogin.url))
 		// Shared with the electric-sync Worker; rotate by redeploying this first, then the Worker.
 		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
 
@@ -101,7 +100,7 @@ export const createMapleElectric = ({
 		const baseEnv = {
 			ELECTRIC_PORT: String(ELECTRIC_PORT),
 			// A replaced role restarts the task on the new secret before the old role is deleted.
-			MAPLE_PG_ROLE_ID: dbRole.id,
+			MAPLE_PG_ROLE_ID: dbLogin.id,
 			// A Drizzle migration owns `electric_publication_default` (Electric cannot own
 			// tables on PlanetScale); the stream id stays `default` to match it.
 			ELECTRIC_MANUAL_TABLE_PUBLISHING: "true",

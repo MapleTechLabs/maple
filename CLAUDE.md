@@ -85,7 +85,7 @@ Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction`
   Fork DB work off a request only with `forkRequestScoped`.
 - Tests use `createTestDb()` (PGlite, `packages/backend/src/platform/test-pglite.ts`).
 - **Migrations apply in the prd alchemy deploy.** Never run `drizzle-kit migrate` against prd.
-- PR previews (only with the `preview` label) have no database; DB-backed routes 500 there.
+- PR previews (only with the `preview` label) get their own Neon branch, migrated by the deploy (`docs/pr-previews.md`).
 
 ## Conventions
 
