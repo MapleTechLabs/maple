@@ -132,6 +132,7 @@ const TICK_IDLE_RECOVERY_HORIZON_MS = 6 * 60 * TICK_MINUTE_MS
  *  pile up exactly when the warehouse is coming back, so the rest wait a tick;
  *  an org needs one lookup unless it really has errors to recover. */
 const TICK_IDLE_RECOVERY_LOOKUPS = 40
+const TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS = 6_000
 // Last-known active-org set, cached so a discovery failure can fail CLOSED
 // (reuse the previous active set) instead of fanning out to every known org —
 // the latter melts the warehouse exactly when it is already struggling. Keyed
@@ -1605,16 +1606,19 @@ const make: Effect.Effect<
 				Effect.gen(function* () {
 					const cursorMs = row.processedThrough.getTime()
 					const fromMs = Math.max(cursorMs, horizonMs)
-					const rows = yield* warehouse.compiledQuery(
-						systemTenant(row.orgId),
-						CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
-							orgId: row.orgId,
-							startTime: formatWarehouseDateTime(fromMs),
-							endTime: formatWarehouseDateTime(cutoffMs),
-						}),
-						// The 5s budget: a slow lookup is retried next tick, not waited on.
-						{ profile: "discovery", context: "errorTickFirstErrorMinute" },
-					)
+					const rows = yield* warehouse
+						.compiledQuery(
+							systemTenant(row.orgId),
+							CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
+								orgId: row.orgId,
+								startTime: formatWarehouseDateTime(fromMs),
+								endTime: formatWarehouseDateTime(cutoffMs),
+							}),
+							{ profile: "discovery", context: "errorTickFirstErrorMinute" },
+						)
+						// The executor adds a client buffer and retries on top of the
+						// profile's 5s. A slow lookup is retried next tick, not waited on.
+						.pipe(Effect.timeout(TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS))
 					if (cursorMs < horizonMs) {
 						yield* Effect.logInfo("Idle error tick cursor moved past the recovery horizon").pipe(
 							Effect.annotateLogs({
@@ -1625,12 +1629,15 @@ const make: Effect.Effect<
 						)
 					}
 					const first = rows[0]
-					return [
-						{
-							orgId: row.orgId,
-							firstErrorMs: first === undefined ? null : parseWarehouseDateTime(first.minute),
-						},
-					]
+					const firstErrorMs = first === undefined ? null : parseWarehouseDateTime(first.minute)
+					// A minute that does not parse must not reach the cursor update.
+					if (Number.isNaN(firstErrorMs)) {
+						yield* Effect.logWarning(
+							"Idle error tick cursor lookup returned an unreadable minute",
+						).pipe(Effect.annotateLogs({ orgId: row.orgId, rawMinute: first?.minute }))
+						return []
+					}
+					return [{ orgId: row.orgId, firstErrorMs }]
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Cause.hasInterruptsOnly(cause)
