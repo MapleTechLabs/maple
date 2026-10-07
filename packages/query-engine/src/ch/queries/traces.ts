@@ -29,6 +29,7 @@ import {
 	Traces,
 	TracesAggregatesHourly,
 	orgIdParam,
+	utcSecondsParam,
 } from "../tables"
 import {
 	deploymentEnvExpr,
@@ -39,7 +40,8 @@ import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "./series-cap"
-import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
+import { utcAsWireString } from "./utc-bridge"
+import { edgeCondition, hourGrain, interiorBounds, utcInteriorConditions, minuteGrain } from "./rollup-splice"
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
@@ -613,7 +615,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.where(($) => [
 				...rollupWhere($),
-				...interiorConditions($.Minute, minuteGrain),
+				...utcInteriorConditions($.Minute, minuteGrain),
 				// Only the sub-hour remainder when the hourly tier covers the middle;
 				// the whole interior otherwise.
 				includeHourly ? edgeCondition("Minute", hourGrain) : undefined,
@@ -634,7 +636,7 @@ export function tracesTimeseriesQuery(
 				bSatisfiedCount: needs.has("apdex") ? CH.sum($.ApdexSatisfiedCount) : CH.lit(0),
 				bToleratingCount: needs.has("apdex") ? CH.sum($.ApdexToleratingCount) : CH.lit(0),
 			}))
-			.where(($) => [...rollupWhere($), ...interiorConditions($.Hour)])
+			.where(($) => [...rollupWhere($), ...utcInteriorConditions($.Hour)])
 			.groupBy("bucket", "groupName")
 
 		const tiers = !includeMinutely
@@ -663,7 +665,7 @@ export function tracesTimeseriesQuery(
 				const tolerating = needs.has("apdex") ? CH.sum($.bToleratingCount) : CH.lit(0)
 				const quantiles = "quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles)"
 				return {
-					bucket: $.bucket,
+					bucket: utcAsWireString($.bucket),
 					groupName: $.groupName,
 					count: weightedTotal,
 					spanCount: rawTotal,
@@ -770,7 +772,7 @@ export function tracesTimeseriesQuery(
 
 		const hourlyInterior = from(TracesAggregatesHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				bucket: utcAsWireString(CH.toStartOfInterval($.Hour, param.int("bucketSeconds"))),
 				groupName: buildAggregatesGroupNameExpr($, opts.groupBy),
 				bWeightedCount: CH.sum($.WeightedCount),
 				// The MV stores no raw row count, so the weighted value stands in for
@@ -837,7 +839,7 @@ export function tracesTimeseriesQuery(
 	if (canUseServiceOverviewMv(opts, opts.groupBy)) {
 		const mv = from(ServiceOverviewSpans)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: utcAsWireString(CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds"))),
 				groupName: buildMvGroupNameExpr($, opts.groupBy),
 				...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 			}))
@@ -1878,8 +1880,8 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)

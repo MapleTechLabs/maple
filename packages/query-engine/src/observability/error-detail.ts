@@ -1,7 +1,7 @@
 import { Array as Arr, DateTime, Effect, pipe } from "effect"
 import type { ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import type { ErrorDetailTracesOutput } from "../ch/queries/errors"
-import { parseWarehouseDateTime, formatWarehouseDateTime } from "../datetime"
+import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso } from "../datetime"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import { isUnlabelledError, spanErrorLabel } from "./fingerprint-labels"
@@ -282,7 +282,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 						pipe(
 							r.data,
 							Arr.map((p) => ({
-								bucket: DateTime.formatIso(p.bucket),
+								bucket: warehouseDateTimeToIso(p.bucket),
 								count: Number(p.count),
 							})),
 						),

@@ -4,6 +4,7 @@
 // strings (`'YYYY-MM-DD HH:MM:SS'`, UTC); chDB returns tz-less UTC strings too.
 // Everything the user reads is rendered in the browser's local zone.
 
+import { DateTime } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
 import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -70,14 +71,17 @@ export function boundsForRange(key: string | undefined, anchorMs = Date.now()): 
  * Returns `null` for empty/invalid input or the zero date chDB emits for an
  * empty aggregate.
  */
-export function parseClickHouseDateTime(chDateTime: string | null | undefined): number | null {
+/** A warehouse timestamp: a decoded `DateTime.Utc`, or the string ClickHouse sent. */
+export type WarehouseTime = DateTime.Utc | string | null | undefined
+
+export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | null {
 	if (!chDateTime) return null
-	const ms = toEpochMs(chDateTime)
+	const ms = DateTime.isDateTime(chDateTime) ? DateTime.toEpochMillis(chDateTime) : toEpochMs(chDateTime)
 	return Number.isFinite(ms) && ms > 0 ? ms : null
 }
 
 /** Compact relative-time label ("3m ago") from a ClickHouse DateTime string. */
-export function formatRelativeTime(chDateTime: string | null | undefined): string {
+export function formatRelativeTime(chDateTime: WarehouseTime): string {
 	const ms = parseClickHouseDateTime(chDateTime)
 	return ms === null ? "-" : formatRelativeFrom(ms)
 }
@@ -107,7 +111,7 @@ export function formatLocalTimestamp(
 }
 
 /** Full local date and time with millis, for detail panels. */
-export function formatLocalDateTime(chDateTime: string | null | undefined): string {
+export function formatLocalDateTime(chDateTime: WarehouseTime): string {
 	const ms = parseClickHouseDateTime(chDateTime)
 	if (ms === null) return "-"
 	const date = new Date(ms)
@@ -116,8 +120,9 @@ export function formatLocalDateTime(chDateTime: string | null | undefined): stri
 }
 
 /** The stored value, verbatim and zone-marked, for `title` tooltips and copy. */
-export function formatUtcTitle(chDateTime: string | null | undefined): string {
-	return chDateTime ? `${chDateTime} UTC` : ""
+export function formatUtcTitle(chDateTime: WarehouseTime): string {
+	if (!chDateTime) return ""
+	return DateTime.isDateTime(chDateTime) ? DateTime.formatIso(chDateTime) : `${chDateTime} UTC`
 }
 
 export interface ChartWindow {

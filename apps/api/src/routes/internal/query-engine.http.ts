@@ -278,7 +278,7 @@ const toReleaseRow = (row: CH.ReleasesListOutput): ReleaseRow => {
 		serviceName: decodeServiceName(String(row.serviceName ?? "")),
 		environment: String(row.environment ?? ""),
 		commitSha: decodeCommitSha(row.commitSha),
-		firstSeen: String(row.firstSeen),
+		firstSeen: DateTime.formatIso(row.firstSeen),
 		spanCount,
 		errorCount: Number(row.errorCount),
 		p50LatencyMs: Number(row.p50LatencyMs),
@@ -290,7 +290,7 @@ const toReleaseRow = (row: CH.ReleasesListOutput): ReleaseRow => {
 }
 
 const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
-	bucket: String(row.bucket),
+	bucket: DateTime.formatIso(row.bucket),
 	serviceName: decodeServiceName(String(row.serviceName ?? "")),
 	commitSha: decodeCommitSha(row.commitSha),
 	count: Number(row.count),
@@ -402,7 +402,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				for (const row of timeseriesRows) {
 					const key = String(row.spanName)
 					const points = sparklines.get(key) ?? []
-					points.push({ bucket: String(row.bucket), count: toNumber(row.count) })
+					points.push({ bucket: DateTime.formatIso(row.bucket), count: toNumber(row.count) })
 					sparklines.set(key, points)
 				}
 
@@ -625,7 +625,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.serviceApdex, tenant, payload)
 						return new ServiceApdexResponse({
 							data: rows.map((row) => ({
-								bucket: String(row.bucket),
+								bucket: DateTime.formatIso(row.bucket),
 								totalCount: Number(row.totalCount),
 								satisfiedCount: Number(row.satisfiedCount),
 								toleratingCount: Number(row.toleratingCount),
@@ -1076,7 +1076,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ServiceDetailOverviewResponse({
 							timeseries,
 							releases: releaseRows.map((row) => ({
-								bucket: String(row.bucket),
+								bucket: DateTime.formatIso(row.bucket),
 								commitSha: decodeCommitSha(row.commitSha),
 								count: Number(row.count),
 								errorCount: Number(row.errorCount),
@@ -1231,7 +1231,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										}
 									: null,
 							timeseries: timeseriesRows.map((row) => ({
-								bucket: String(row.bucket),
+								bucket: DateTime.formatIso(row.bucket),
 								queryCount: toNumber(row.queryCount),
 								estimatedQueryCount: toNumber(row.estimatedQueryCount),
 								errorCount: toNumber(row.errorCount),
@@ -1253,7 +1253,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								avgDurationMs: toNumber(row.avgDurationMs),
 								p50DurationMs: toNumber(row.p50DurationMs),
 								p95DurationMs: toNumber(row.p95DurationMs),
-								lastSeen: String(row.lastSeen),
+								lastSeen: DateTime.formatIso(row.lastSeen),
 							})),
 						})
 					}),

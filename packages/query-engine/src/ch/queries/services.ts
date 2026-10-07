@@ -2,7 +2,7 @@
 //
 // DSL-based query definitions for service overview, releases, apdex, and usage.
 
-import { Schema } from "effect"
+import { type DateTime, Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
@@ -25,14 +25,14 @@ import {
 	orgIdParam,
 } from "../tables"
 import { CHNumber } from "../schema"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
 import {
 	apdexExprs,
 	serviceOverviewWhereConditions,
-	hourFloor,
 	utcHourFloor,
 	type FacetOutput,
 } from "./query-helpers"
-import { edgeCondition, hourGrain, interiorConditions, minuteGrain } from "./rollup-splice"
+import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 
 // Service overview
 
@@ -53,7 +53,7 @@ export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99
 const COMMIT_TUPLE = T.array(
 	T.custom(
 		"Tuple(String, UInt64, UInt64, String)",
-		Schema.Tuple([Schema.String, CHNumber, CHNumber, Schema.String]),
+		Schema.Tuple([Schema.String, CHNumber, CHNumber, DateTimeUtcFromWarehouse]),
 	),
 )
 
@@ -202,7 +202,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bApdexSatisfiedCount: CH.sum($.ApdexSatisfiedCount),
 			bApdexToleratingCount: CH.sum($.ApdexToleratingCount),
 		}))
-		.where(($) => [...rollupFilters($), ...interiorConditions($.Hour)])
+		.where(($) => [...rollupFilters($), ...utcInteriorConditions($.Hour)])
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
 
 	if (grain === "hour") {
@@ -237,7 +237,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 		}))
 		.where(($) => [
 			...rollupFilters($),
-			...interiorConditions($.Minute, minuteGrain),
+			...utcInteriorConditions($.Minute, minuteGrain),
 			includeHourly ? edgeCondition("Minute", hourGrain) : undefined,
 		])
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
@@ -269,7 +269,7 @@ export type ServiceCommitTuple = readonly [
 	commitSha: string,
 	spanCount: number,
 	errorCount: number,
-	firstSeen: string,
+	firstSeen: DateTime.Utc,
 ]
 
 export interface ServiceOverviewOutput {
@@ -284,7 +284,7 @@ export interface ServiceOverviewOutput {
 	readonly p95LatencyMs: number
 	readonly p99LatencyMs: number
 	readonly estimatedSpanCount: number
-	readonly firstSeen: string
+	readonly firstSeen: DateTime.Utc
 	/** Sorted by span count descending, capped at {@link SERVICE_OVERVIEW_COMMIT_CAP}. */
 	readonly commits: readonly ServiceCommitTuple[]
 }
@@ -301,11 +301,11 @@ export const serviceOverviewRowSchema = Schema.Struct({
 	p95LatencyMs: CHNumber,
 	p99LatencyMs: CHNumber,
 	estimatedSpanCount: CHNumber,
-	firstSeen: Schema.String,
+	firstSeen: DateTimeUtcFromWarehouse,
 	// `CHNumber`, never `Schema.Number`: the counts are UInt64, and a
 	// gateway/readonly cluster that refuses `output_format_json_quote_64bit_integers=0`
 	// returns them as quoted strings.
-	commits: Schema.Array(Schema.Tuple([Schema.String, CHNumber, CHNumber, Schema.String])),
+	commits: Schema.Array(Schema.Tuple([Schema.String, CHNumber, CHNumber, DateTimeUtcFromWarehouse])),
 }) satisfies CompiledQueryRowSchema<ServiceOverviewOutput>
 
 export interface ServiceCatalogOpts {
@@ -510,8 +510,8 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.IsEntryPoint.eq(1),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
 		])
 		.groupBy("serviceName", "environment")
@@ -575,7 +575,7 @@ export interface ServiceReleasesTimelineOpts {
 }
 
 export interface ServiceReleasesTimelineOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly commitSha: string
 	readonly count: number
 	readonly errorCount: number
@@ -684,7 +684,7 @@ export interface ServiceApdexTimeseriesOpts {
 }
 
 export interface ServiceApdexTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly totalCount: number
 	readonly satisfiedCount: number
 	readonly toleratingCount: number
