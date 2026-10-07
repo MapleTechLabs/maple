@@ -10,7 +10,7 @@ import {
 
 describe("ClickHouse DDL emitter", () => {
 	it("emits a CREATE TABLE for every datasource and a CREATE MATERIALIZED VIEW for every pipe", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const stmts = emitProjectDdl(manifest)
 
 		expect(stmts.length).toBe(manifest.datasources.length + manifest.pipes.length)
@@ -21,7 +21,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("strips Tinybird `json:$.path` annotations from column definitions", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const traces = manifest.datasources.find((ds) => ds.name === "traces")
 		expect(traces).toBeDefined()
 
@@ -34,7 +34,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("emits Null-engine ingestion bridges without a sorting key", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const ingress = manifest.datasources.find((ds) => ds.name === "service_map_edges_hourly_ingest")
 		expect(ingress).toBeDefined()
 
@@ -45,7 +45,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("preserves DEFAULT expressions on computed columns", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const traces = manifest.datasources.find((ds) => ds.name === "traces")
 		const ddl = emitCreateTable(traces!)
 
@@ -54,7 +54,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("folds INDEXES blocks into the column list", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const traces = manifest.datasources.find((ds) => ds.name === "traces")
 		const ddl = emitCreateTable(traces!)
 
@@ -64,7 +64,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("keeps generated DDL portable while text indexes are reconciled separately", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const logs = manifest.datasources.find((ds) => ds.name === "logs")
 
 		const portable = emitCreateTable(logs!)
@@ -73,7 +73,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("does not include FORWARD_QUERY blocks (Tinybird-only)", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const traces = manifest.datasources.find((ds) => ds.name === "traces")
 		const ddl = emitCreateTable(traces!)
 
@@ -81,7 +81,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("emits CREATE MATERIALIZED VIEW … TO <target> AS … with the original SELECT", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const errorEvents = manifest.pipes.find((p) => p.name === "error_events_mv")
 		expect(errorEvents).toBeDefined()
 
@@ -93,7 +93,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("emits a JSONPath spec mapping each ingested column to its $.path", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const logs = manifest.datasources.find((ds) => ds.name === "logs")
 		expect(logs).toBeDefined()
 
@@ -113,7 +113,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("respects the engineFlavor option for swapping MergeTree → ReplicatedMergeTree", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const logs = manifest.datasources.find((ds) => ds.name === "logs")
 		const ddl = emitCreateTable(logs!, { engineFlavor: "ReplicatedMergeTree" })
 		expect(ddl).toContain("ENGINE = ReplicatedMergeTree")
@@ -125,7 +125,7 @@ describe("ClickHouse DDL emitter", () => {
 	})
 
 	it("emits the service-operation rollup key, lifecycle, and MV projection", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const rollup = manifest.datasources.find((ds) => ds.name === "service_operations_minutely")
 		const mv = manifest.pipes.find((pipe) => pipe.name === "service_operations_minutely_mv")
 		expect(rollup).toBeDefined()
@@ -204,7 +204,7 @@ ENGINE = MergeTree`
 	})
 
 	it("works against actual emitted CREATE TABLE statements", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 		const traces = manifest.datasources.find((ds) => ds.name === "traces")
 		const ddl = emitCreateTable(traces!)
 

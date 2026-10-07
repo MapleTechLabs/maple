@@ -1,4 +1,9 @@
-import { getColumnJsonPath, getColumnType, getTinybirdType, isDatasourceDefinition } from "@tinybirdco/sdk"
+import {
+	getColumnJsonPath,
+	getColumnType,
+	getTinybirdType,
+	isDatasourceDefinition,
+} from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
 
 // Live introspection of the `defineDatasource` exports in
@@ -223,9 +228,8 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 		return jsonPath ? { name: colName, type, jsonPath } : { name: colName, type }
 	})
 
-	const engine = ds.options.engine as
-		| { type?: string; sortingKey?: ReadonlyArray<string> | string; partitionKey?: string }
-		| undefined
+	const engine = ds.options.engine
+	const keys = engine === undefined || engine.type === "Null" ? undefined : engine
 	const timeColumn = timeColumnOf(columns.map((c) => c.name))
 	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES.get(engine.type)
 	const notes = [
@@ -243,7 +247,7 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 		...(timeColumn === undefined ? undefined : { timeColumn }),
 		columns,
 		notes: notes.length > 0 ? notes : undefined,
-		sortingKey: engine?.sortingKey,
-		partitionKey: engine?.partitionKey,
+		sortingKey: keys?.sortingKey,
+		partitionKey: keys?.partitionKey,
 	}
 }

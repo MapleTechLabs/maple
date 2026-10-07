@@ -1,4 +1,4 @@
-import { defineMaterializedView, node } from "@tinybirdco/sdk"
+import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import {
 	chPattern,
 	chRedactChain,

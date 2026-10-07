@@ -1,52 +1,15 @@
 import { createHash } from "node:crypto"
-import { resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { buildProject, type Datafile } from "@maple-dev/effect-orm/tinybird"
+import * as Datasources from "./datasources"
+import * as Materializations from "./materializations"
 
-// The SDK doesn't re-export `buildFromInclude` (or the generator resource
-// types) from its main entry point, so we load the JS module dynamically at
-// runtime and keep a minimal structural type covering the fields we consume.
-
-export interface GeneratedResource {
-	readonly name: string
-	readonly content: string
-}
+export type GeneratedResource = Datafile
 
 export interface TinybirdProjectManifest {
 	readonly projectRevision: string
 	readonly datasources: ReadonlyArray<GeneratedResource>
 	readonly pipes: ReadonlyArray<GeneratedResource>
 }
-
-interface TinybirdBuildResult {
-	readonly resources: {
-		readonly datasources: ReadonlyArray<GeneratedResource>
-		readonly pipes: ReadonlyArray<GeneratedResource>
-	}
-}
-
-interface TinybirdGeneratorModule {
-	readonly buildFromInclude: (options: {
-		readonly includePaths: string[]
-		readonly cwd: string
-	}) => Promise<TinybirdBuildResult>
-}
-
-const REPO_ROOT = resolve(fileURLToPath(new URL("../../../../", import.meta.url)))
-const INCLUDE_PATHS = [
-	resolve(REPO_ROOT, "packages/domain/src/tinybird/datasources.ts"),
-	resolve(REPO_ROOT, "packages/domain/src/tinybird/endpoints.ts"),
-	resolve(REPO_ROOT, "packages/domain/src/tinybird/materializations.ts"),
-] as const
-
-const loadTinybirdGenerator = async (): Promise<TinybirdGeneratorModule> =>
-	import(
-		pathToFileURL(resolve(REPO_ROOT, "node_modules/@tinybirdco/sdk/dist/generator/index.js")).href
-	) as Promise<TinybirdGeneratorModule>
-
-const toResource = (resource: GeneratedResource): GeneratedResource => ({
-	name: resource.name,
-	content: resource.content,
-})
 
 export const createTinybirdProjectRevision = (
 	datasources: ReadonlyArray<GeneratedResource>,
@@ -65,21 +28,9 @@ export const createTinybirdProjectRevision = (
 	return digest.digest("hex")
 }
 
-export const buildTinybirdProjectManifest = async (): Promise<TinybirdProjectManifest> => {
-	const generator = await loadTinybirdGenerator()
-	const buildResult = await generator.buildFromInclude({
-		includePaths: [...INCLUDE_PATHS],
-		cwd: REPO_ROOT,
-	})
-
-	const datasources = buildResult.resources.datasources.map(toResource)
-	const pipes = buildResult.resources.pipes.map(toResource)
-
-	return {
-		datasources,
-		pipes,
-		projectRevision: createTinybirdProjectRevision(datasources, pipes),
-	}
+export const buildTinybirdProjectManifest = (): TinybirdProjectManifest => {
+	const { datasources, pipes } = buildProject(Datasources, Materializations)
+	return { datasources, pipes, projectRevision: createTinybirdProjectRevision(datasources, pipes) }
 }
 
 export const renderTinybirdProjectManifestModule = (manifest: TinybirdProjectManifest): string => {

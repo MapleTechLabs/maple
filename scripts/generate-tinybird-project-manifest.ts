@@ -12,7 +12,7 @@ const outputPath = fileURLToPath(
 )
 const checkMode = process.argv.includes("--check")
 
-const manifest = await buildTinybirdProjectManifest()
+const manifest = buildTinybirdProjectManifest()
 const renderedModuleResult = await format(outputPath, renderTinybirdProjectManifestModule(manifest), {
 	printWidth: 110,
 	semi: false,

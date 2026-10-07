@@ -8,9 +8,6 @@
 		"test:integration": "vitest run --config vitest.integration.config.ts",
 		"typecheck": "tsc --noEmit && bun run bench:typecheck",
 		"typecheck:test": "tsc --noEmit -p tsconfig.test.json",
-		"tinybird:dev": "tinybird dev",
-		"tinybird:build": "tinybird build",
-		"tinybird:deploy": "tinybird deploy",
 		"bench:fetch": "bun run scripts/bench-queries.ts fetch",
 		"bench:catalog": "bun run scripts/bench-queries.ts catalog",
 		"bench:typecheck": "tsc --noEmit -p tsconfig.bench.json",
@@ -34,7 +31,6 @@
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@tinybirdco/sdk": "catalog:tinybird",
 		"alchemy": "catalog:alchemy",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect"

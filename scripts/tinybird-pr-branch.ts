@@ -33,6 +33,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
+import { writeTinybirdDatafiles } from "./write-tinybird-datafiles"
 
 type Subcommand = "up" | "down" | "sweep"
 
@@ -87,8 +88,6 @@ const runTb = (
 ): TbResult => {
 	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, "--token", auth.token, ...args], {
 		encoding: "utf8",
-		// tinybird.json resolves `${TINYBIRD_TOKEN}` while generating resources, so
-		// the env token has to match the workspace the command targets.
 		env: { ...process.env, TINYBIRD_HOST: auth.host, TINYBIRD_TOKEN: auth.token },
 	})
 	if (proc.error) {
@@ -172,6 +171,7 @@ const up = async (branchName: string): Promise<void> => {
 
 	// 3. Deploy this PR's datasources/MVs into the branch. The branch is ephemeral,
 	//    so destructive schema iteration is acceptable.
+	writeTinybirdDatafiles()
 	const deployed = runTb(branch, ["deploy", "--allow-destructive-operations"])
 	if (deployed.exitCode !== 0) {
 		fail(`Failed to deploy project schema to Tinybird branch ${branchName}.`)

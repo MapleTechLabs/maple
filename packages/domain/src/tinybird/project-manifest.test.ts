@@ -7,7 +7,7 @@ import {
 
 describe("Tinybird project manifest", () => {
 	it("builds datasource and pipe resources from the current repo definitions", async () => {
-		const manifest = await buildTinybirdProjectManifest()
+		const manifest = buildTinybirdProjectManifest()
 
 		expect(manifest.datasources.some((resource) => resource.name === "logs")).toBe(true)
 		expect(manifest.pipes.some((resource) => resource.name === "trace_list_mv_mv")).toBe(true)
@@ -31,8 +31,8 @@ describe("Tinybird project manifest", () => {
 	})
 
 	it("keeps a stable project revision for unchanged inputs", async () => {
-		const first = await buildTinybirdProjectManifest()
-		const second = await buildTinybirdProjectManifest()
+		const first = buildTinybirdProjectManifest()
+		const second = buildTinybirdProjectManifest()
 
 		expect(second.projectRevision).toBe(first.projectRevision)
 		expect(renderTinybirdProjectManifestModule(first)).toContain(first.projectRevision)
