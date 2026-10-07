@@ -123,6 +123,14 @@ export interface WarehouseBackendDialect {
 	 */
 	readonly unquote64BitIntegers: boolean
 	/**
+	 * Send `session_timezone = 'UTC'` with every query, so zone-less `DateTime`
+	 * columns, string literals and date functions resolve in UTC whatever the
+	 * server's own zone. Tinybird refuses the setting ("Usage of setting
+	 * 'session_timezone' is restricted"); its servers run in UTC (checked
+	 * 2026-10-07), so managed backends leave it off.
+	 */
+	readonly pinSessionTimezoneUtc: boolean
+	/**
 	 * True when this backend runs the schema *we* deploy, so its columns and
 	 * skip indices are known at compile time and capability probing is both
 	 * unnecessary and — on Tinybird — impossible (`system.*` answers `403`
@@ -146,6 +154,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		peerService: "tinybird",
 		// The SDK's /v0/sql JSON already returns 64-bit ints as numbers.
 		unquote64BitIntegers: false,
+		pinSessionTimezoneUtc: false,
 		managedSchema: true,
 	},
 	"tinybird-gateway": {
@@ -157,6 +166,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		dbSystemName: "clickhouse",
 		peerService: "clickhouse",
 		unquote64BitIntegers: true,
+		pinSessionTimezoneUtc: false,
 		managedSchema: true,
 	},
 	clickhouse: {
@@ -168,6 +178,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		dbSystemName: "clickhouse",
 		peerService: "clickhouse",
 		unquote64BitIntegers: true,
+		pinSessionTimezoneUtc: true,
 		managedSchema: false,
 	},
 	chdb: {
@@ -179,6 +190,7 @@ export const BackendDialect: Record<WarehouseBackendKind, WarehouseBackendDialec
 		dbSystemName: "clickhouse",
 		peerService: "chdb",
 		unquote64BitIntegers: true,
+		pinSessionTimezoneUtc: true,
 		managedSchema: false,
 	},
 } satisfies Record<WarehouseBackendKind, WarehouseBackendDialect>
