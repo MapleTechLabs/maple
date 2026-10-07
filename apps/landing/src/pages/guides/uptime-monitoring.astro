@@ -442,7 +442,6 @@ const articleJsonLd = {
     .uptime-guide [data-verdict="missed"] { --verdict: var(--destructive); }
     .uptime-guide [data-verdict] { position: relative; padding-left: 1.9rem; }
     .uptime-guide [data-verdict]::before { content: ""; position: absolute; left: 0.9rem; width: 6px; height: 6px; border-radius: 999px; background: var(--verdict); }
-    .uptime-guide td[data-verdict] { background: color-mix(in oklab, var(--verdict) 9%, transparent); color: color-mix(in oklab, var(--verdict) 55%, var(--foreground)); }
     .uptime-guide td[data-verdict]::before { top: 1.4rem; }
     .uptime-guide > section > p.guide-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; margin: -1.2rem 0 2rem; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
     .uptime-guide .guide-legend span { padding-left: 0.85rem; }
