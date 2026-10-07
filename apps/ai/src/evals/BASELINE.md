@@ -17,6 +17,30 @@ Pin `EVAL_MODEL`. Unset, it tracks the production triage model, which moves.
 
 ---
 
+## Tools suite: 2026-10-08, six models, two runs pooled
+
+Same 50 tasks. Two k=3 runs pooled to 6 trials per task (Sonnet: one run, 3 trials), all graded
+with the current targets. The second run reproduced the first: every model's failures recur on
+the same tasks.
+
+| Model                                | pass@1 (95% CI)     | pass^6 | Invalid calls | Errored | s/trial | Input tokens |
+| ------------------------------------ | ------------------- | ------ | ------------- | ------- | ------- | ------------ |
+| `z-ai/glm-5.3-flash:nitro` (prod)    | 99.0% (97.6 to 100) | 96.0%  | 1.8%          | 0       | 10.5    | 115k         |
+| `anthropic/claude-haiku-5.5`         | 100.0%              | 100.0% | 1.0%          | 0       | 6.9     | 172k         |
+| `anthropic/claude-sonnet-5.5`        | 99.3% (98.0 to 100) | n/a    | 2.2%          | 1       | 8.1     | 153k         |
+| `deepseek/deepseek-v4.1-flash:nitro` | 99.0% (97.6 to 100) | 96.0%  | 0.6%          | 0       | 2.9     | 109k         |
+| `openai/gpt-6.1-sol`                 | 98.0% (94.1 to 100) | 98.0%  | 23.0%         | 1       | 17.6    | 111k         |
+| `openai/gpt-6-luna`                  | 96.0% (90.5 to 100) | 96.0%  | 30.5%         | 4       | 14.3    | 106k         |
+
+Paired against GLM, no model differs significantly (Haiku +1.0, 95% CI −0.4 to +2.4; Luna −3.0,
+−7.7 to +1.7). The deterministic failures are the OpenAI models': both fail `all-error-types` in
+6 of 6 trials and Luna fails `requests-per-minute` 6 of 6, from empty-string arguments followed by
+invented dates. Four Luna trials hit the engine's 5-consecutive-tool-failure limit, which ends the
+turn in production. Sonnet's one miss was a protocol error (the model signalled tool calls and sent
+none).
+
+---
+
 ## Tools suite: 2026-10-08, five models
 
 Same 50 tasks, k=3. Regraded after two target fixes (`record-fix` now accepts
