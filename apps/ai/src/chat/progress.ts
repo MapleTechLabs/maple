@@ -197,8 +197,10 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 						})
 						.pipe(Effect.timeoutOption(PROGRESS_WRITE_TIMEOUT)),
 				)
-				if (Option.isNone(written))
-					yield* Effect.logWarning("Progress write timed out; the next beat retries")
+				if (Option.isSome(written)) return
+				// Still unwritten, so the next beat or the final flush retries it.
+				yield* Ref.update(state, (latest) => ({ ...latest, dirty: true }))
+				yield* Effect.logWarning("Progress write timed out; the next beat retries")
 			}).pipe(permit.withPermits(1)),
 		)
 
@@ -211,8 +213,9 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 		Effect.all([first, beat], { concurrency: "unbounded", discard: true }),
 	)
 
-	// Under the permit: a write in flight finishes first, and none starts after.
-	const pause = Ref.set(open, false).pipe(permit.withPermits(1))
+	// The flag first, so a write still queued for the permit gives way at once; then the permit,
+	// so the one write in flight (bounded by its timeout) finishes before anything follows.
+	const pause = Ref.set(open, false).pipe(Effect.andThen(permit.withPermits(1)(Effect.void)))
 
 	return {
 		step: (tool, input) => {

@@ -1,6 +1,6 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { INVESTIGATION_PROGRESS_STEPS, type InvestigationProgress } from "@maple/domain/http"
-import { Duration, Effect, Fiber } from "effect"
+import { Duration, Effect, Fiber, Ref } from "effect"
 import { TestClock } from "effect/testing"
 
 import {
@@ -162,6 +162,30 @@ describe("makeProgressFeed", () => {
 			const closed = yield* Effect.forkChild(feed.close)
 			yield* TestClock.adjust(PROGRESS_WRITE_TIMEOUT)
 			yield* Fiber.join(closed)
+		}),
+	)
+
+	it.effect("retries a timed-out write rather than dropping its steps", () =>
+		Effect.gen(function* () {
+			const writes: Array<InvestigationProgress> = []
+			const attempts = yield* Ref.make(0)
+			const feed = yield* makeProgressFeed({
+				label: stepLabel,
+				heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
+				everyBeat: false,
+				// The first write hangs; the retry lands.
+				write: (record) =>
+					Ref.getAndUpdate(attempts, (count) => count + 1).pipe(
+						Effect.flatMap((count) =>
+							count === 0 ? Effect.never : Effect.sync(() => writes.push(record)),
+						),
+					),
+			})
+			feed.step("search_logs", {})
+			yield* settle
+			yield* TestClock.adjust(PROGRESS_WRITE_TIMEOUT)
+			yield* feed.flush
+			assert.equal(writes.at(-1)?.stepCount, 1)
 		}),
 	)
 
