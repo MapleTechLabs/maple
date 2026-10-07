@@ -1033,7 +1033,7 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true, scanned })))
 	})
 
-	const seedCursor = (orgId: string, processedThroughMs: number) =>
+	const seedCursor = (orgId: string, processedThroughMs: number, claimToken: string | null = null) =>
 		Effect.gen(function* () {
 			const database = yield* Database
 			yield* database.execute((db) =>
@@ -1041,6 +1041,8 @@ describe("ErrorsService.runTick", () => {
 					orgId: asOrgId(orgId),
 					processedThrough: new Date(processedThroughMs),
 					bootstrapCompleted: true,
+					claimToken,
+					claimExpiresAt: claimToken === null ? null : new Date(processedThroughMs),
 					updatedAt: new Date(processedThroughMs),
 				}),
 			)
@@ -1071,6 +1073,20 @@ describe("ErrorsService.runTick", () => {
 			assert.isFalse(scanned.has(ORG))
 			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 60_000)
 		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
+	})
+
+	it.effect("a skipped org's cursor still held by a claim token is not moved", () => {
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			// Lease long expired, token never released: a tick may still commit it.
+			yield* seedCursor(ORG, TICK_MS - 10 * 60_000, "held")
+
+			yield* errors.runTick()
+
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 10 * 60_000)
+		}).pipe(Effect.provide(makeGatingLayer({})))
 	})
 
 	it.effect("a skipped org's cursor older than the discovery window is replayed, not jumped", () => {

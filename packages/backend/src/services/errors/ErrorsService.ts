@@ -291,12 +291,15 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
-		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: OrgId }>))
-		const byo = new Set<OrgId>(byoRows.map((r) => r.orgId))
+		).pipe(Effect.option)
+		// Without the BYO set an org on its own warehouse reads as idle, and
+		// managed discovery says nothing about its data: not a discovered result.
+		const byoKnown = Option.isSome(byoRows)
+		const byo = new Set<OrgId>(Option.getOrElse(byoRows, () => []).map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
 			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
-			return { active: byo as ReadonlySet<OrgId>, discovered: true }
+			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
 		}
 
 		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
@@ -318,7 +321,7 @@ const make: Effect.Effect<
 					for (const row of rows) {
 						active.add(row.orgId)
 					}
-					return { active: active as ReadonlySet<OrgId>, discovered: true }
+					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
 				}),
 				Effect.tap(({ active }) =>
 					Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
@@ -1530,10 +1533,10 @@ const make: Effect.Effect<
 							and(
 								inArray(errorTickStates.orgId, chunk),
 								lt(errorTickStates.processedThrough, new Date(cutoffMs)),
-								or(
-									isNull(errorTickStates.claimExpiresAt),
-									lte(errorTickStates.claimExpiresAt, new Date(nowMs)),
-								),
+								// A held token means a tick may still commit this org's
+								// window, even past its lease; its checkpoint would then
+								// set the cursor back. Left alone, the row is replayed.
+								isNull(errorTickStates.claimToken),
 							),
 						),
 				),
