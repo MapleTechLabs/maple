@@ -7,12 +7,33 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
 
 const pageTitle = "Uptime monitoring with OpenTelemetry: alerts from traces and HTTP checks";
 const pageDescription =
     "Monitor uptime with the telemetry you already send. Alert on error rate, throughput and Apdex from traces, add OpenTelemetry Collector HTTP checks for endpoints and certificates, and learn which failures each one catches.";
 const published = "2026-10-04";
 const updatedLabel = "October 4, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const downtimeBudgets = [
+    { availability: "99%", downtime: "7 h 12 min", minutes: 432 },
+    { availability: "99.9%", downtime: "43 min 12 s", minutes: 43.2 },
+    { availability: "99.95%", downtime: "21 min 36 s", minutes: 21.6 },
+    { availability: "99.99%", downtime: "4 min 19 s", minutes: 4.32 },
+];
+
+type Verdict = "caught" | "partial" | "missed";
+const failureComparison: { failure: string; probe: [Verdict, string]; traces: [Verdict, string] }[] = [
+    { failure: "2% of checkout requests return 500 after a deploy", probe: ["missed", "Passes"], traces: ["caught", "Error rate fires"] },
+    { failure: "A dependency slows every request to 4 s", probe: ["partial", "Passes, unless it has a latency limit"], traces: ["caught", "Apdex and p95 fire"] },
+    { failure: "The process crashes and the load balancer returns 502", probe: ["caught", "Fails"], traces: ["caught", "Throughput drops to zero and fires"] },
+    { failure: "The TLS certificate expires", probe: ["caught", "Fails, and can warn weeks ahead"], traces: ["caught", "Throughput drops after expiry and an alert fires"] },
+    { failure: "A DNS change points the domain nowhere", probe: ["caught", "Fails"], traces: ["caught", "Throughput drops and an alert fires"] },
+    { failure: "An outage at 3am on a service with no night traffic", probe: ["caught", "Fails"], traces: ["missed", "Nothing to measure"] },
+    { failure: "Users in one region cannot reach you", probe: ["partial", "Fails only from a prober in that region"], traces: ["partial", "A partial dip, often under the threshold"] },
+];
 
 const toc = [
     ["definition", "Definition"],
@@ -60,7 +81,7 @@ const articleJsonLd = {
     description: pageDescription,
     datePublished: published,
     dateModified: published,
-    author: { "@type": "Organization", name: "Maple" },
+    author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -102,8 +123,11 @@ const articleJsonLd = {
                     <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
                         Find out within minutes when a service stops answering or starts failing requests. Alert on the traces your services already send, then add OpenTelemetry Collector HTTP checks for the endpoints and certificates that real traffic cannot cover.
                     </p>
-                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
-                        <span>By Maple</span>
+                    <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                            <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                            <span>By {author.name}</span>
+                        </a>
                         <time datetime={published}>Updated {updatedLabel}</time>
                     </div>
                 </div>
@@ -143,16 +167,21 @@ const articleJsonLd = {
                         The result is reported as availability: the time the endpoint answered, divided by the total time. Each added nine cuts the downtime you are allowed by a factor of ten.
                     </p>
 
-                    <div class="overflow-x-auto">
+                    <div class="guide-table">
                         <table>
                             <thead>
                                 <tr><th>Availability</th><th>Downtime allowed in 30 days</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>99%</td><td>7 h 12 min</td></tr>
-                                <tr><td>99.9%</td><td>43 min 12 s</td></tr>
-                                <tr><td>99.95%</td><td>21 min 36 s</td></tr>
-                                <tr><td>99.99%</td><td>4 min 19 s</td></tr>
+                                {downtimeBudgets.map((row) => (
+                                    <tr>
+                                        <td class="guide-table__key">{row.availability}</td>
+                                        <td>
+                                            {row.downtime}
+                                            <span class="guide-bar" aria-hidden="true"><span style={`width: ${(row.minutes / downtimeBudgets[0].minutes) * 100}%`}></span></span>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
@@ -202,22 +231,27 @@ const articleJsonLd = {
                     </p>
 
                     <h3>Failures compared: outside probe and trace alerts</h3>
-                    <div class="overflow-x-auto">
+                    <div class="guide-table">
                         <table>
                             <thead>
                                 <tr><th>Failure</th><th>Probe on /health</th><th>Alerts on traces</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>2% of checkout requests return 500 after a deploy</td><td>Passes</td><td>Error rate fires</td></tr>
-                                <tr><td>A dependency slows every request to 4 s</td><td>Passes, unless it has a latency limit</td><td>Apdex and p95 fire</td></tr>
-                                <tr><td>The process crashes and the load balancer returns 502</td><td>Fails</td><td>Throughput drops to zero and fires</td></tr>
-                                <tr><td>The TLS certificate expires</td><td>Fails, and can warn weeks ahead</td><td>Throughput drops after expiry and an alert fires</td></tr>
-                                <tr><td>A DNS change points the domain nowhere</td><td>Fails</td><td>Throughput drops and an alert fires</td></tr>
-                                <tr><td>An outage at 3am on a service with no night traffic</td><td>Fails</td><td>Nothing to measure</td></tr>
-                                <tr><td>Users in one region cannot reach you</td><td>Fails only from a prober in that region</td><td>A partial dip, often under the threshold</td></tr>
+                                {failureComparison.map((row) => (
+                                    <tr>
+                                        <td class="guide-table__key">{row.failure}</td>
+                                        <td data-verdict={row.probe[0]}>{row.probe[1]}</td>
+                                        <td data-verdict={row.traces[0]}>{row.traces[1]}</td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
+                    <p class="guide-legend">
+                        <span data-verdict="caught">Alerts</span>
+                        <span data-verdict="partial">Alerts in some cases</span>
+                        <span data-verdict="missed">Stays silent</span>
+                    </p>
 
                     <p>
                         A probe misses the common incidents: partial errors and slowdowns inside the application.
@@ -396,9 +430,25 @@ const articleJsonLd = {
     .uptime-guide a:not(.guide-button):hover { color: var(--foreground); }
     .uptime-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
     .uptime-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
-    .uptime-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
-    .uptime-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .uptime-guide .guide-table { margin: 1.6rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .uptime-guide table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .uptime-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
     .uptime-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .uptime-guide td + td { border-left: 1px solid var(--border); }
+    .uptime-guide tbody tr:last-child td { border-bottom: 0; }
+    .uptime-guide .guide-table__key { color: var(--foreground); }
+    .uptime-guide [data-verdict="caught"] { --verdict: var(--success); }
+    .uptime-guide [data-verdict="partial"] { --verdict: var(--warning); }
+    .uptime-guide [data-verdict="missed"] { --verdict: var(--destructive); }
+    .uptime-guide [data-verdict] { position: relative; padding-left: 1.9rem; }
+    .uptime-guide [data-verdict]::before { content: ""; position: absolute; left: 0.9rem; width: 6px; height: 6px; border-radius: 999px; background: var(--verdict); }
+    .uptime-guide td[data-verdict] { background: color-mix(in oklab, var(--verdict) 9%, transparent); color: color-mix(in oklab, var(--verdict) 55%, var(--foreground)); }
+    .uptime-guide td[data-verdict]::before { top: 1.4rem; }
+    .uptime-guide > section > p.guide-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; margin: -1.2rem 0 2rem; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .uptime-guide .guide-legend span { padding-left: 0.85rem; }
+    .uptime-guide .guide-legend span::before { left: 0; top: 0.45rem; }
+    .uptime-guide .guide-bar { display: block; height: 4px; margin-top: 0.55rem; border-radius: 999px; background: color-mix(in oklab, var(--primary) 12%, transparent); }
+    .uptime-guide .guide-bar span { display: block; min-width: 4px; height: 100%; border-radius: inherit; background: var(--primary); }
     .uptime-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
     .uptime-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
     .uptime-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
