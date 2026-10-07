@@ -123,6 +123,22 @@ const ERROR_STATE_TABLES = [
 	"investigations",
 ]
 
+/**
+ * Parsed, not pattern-matched: libpq percent-decodes query keys and lets
+ * `host`, `hostaddr` or `service` there override the URL's host, so only the
+ * decoded keys can be trusted.
+ */
+const LIBPQ_HOST_OVERRIDES = new Set(["host", "hostaddr", "service"])
+const isLocalScreenshotDb = (raw: string) =>
+	Option.match(Schema.decodeUnknownOption(Schema.URLFromString)(raw), {
+		onNone: () => false,
+		onSome: (url) =>
+			/^postgres(ql)?:$/.test(url.protocol) &&
+			(url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
+			url.pathname === "/maple_screenshots" &&
+			![...url.searchParams.keys()].some((key) => LIBPQ_HOST_OVERRIDES.has(key.toLowerCase())),
+	})
+
 const Datasources = Schema.Struct({ datasources: Schema.Array(Schema.Struct({ name: Schema.String })) })
 
 /**
@@ -145,14 +161,7 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 			message: `--reset only truncates a local warehouse, not ${host.value}`,
 		})
 	}
-	if (
-		!/^postgres(ql)?:\/\/([^@/]*@)?(localhost|127\.0\.0\.1)(:\d+)?\/maple_screenshots(\?|$)/.test(
-			pgUrl.value,
-		) ||
-		// libpq lets these query params override the URL's host, so they would bypass the check above.
-		/[?&](host|hostaddr|service)=/i.test(pgUrl.value) ||
-		!/^org_[A-Za-z0-9]+$/.test(orgId)
-	) {
+	if (!isLocalScreenshotDb(pgUrl.value) || !/^org_[A-Za-z0-9]+$/.test(orgId)) {
 		return yield* new SeedPreflightError({
 			message: "--reset only runs against a local maple_screenshots database (bun run seed:demo:env)",
 		})
