@@ -1164,6 +1164,24 @@ export function errorTickIssuesQuery() {
 }
 
 /**
+ * The first minute in a half-open window that holds any error for the org, or
+ * no row. Lets the tick move a cursor that fell behind while the org was not
+ * being scanned straight to where there is something to process.
+ */
+export function errorTickFirstErrorMinuteQuery() {
+	return from(ErrorFingerprintsMinutely)
+		.select(($) => ({ minute: $.Minute }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Minute.gte(param.dateTimeSeconds("startTime")),
+			$.Minute.lt(param.dateTimeSeconds("endTime")),
+		])
+		.orderBy(["minute", "asc"])
+		.limit(1)
+		.format("JSON")
+}
+
+/**
  * One-time cursor bootstrap against the existing per-occurrence projection.
  * Incremental materialized views do not backfill historical rows, so a newly
  * deployed evaluator uses this query for its initial two-minute window only.

@@ -732,6 +732,17 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
+-- builder:errors:errorTickFirstErrorMinuteQuery:first-error-minute  [b184bf95]
+SELECT
+          error_fingerprints_minutely.Minute AS minute
+        FROM error_fingerprints_minutely
+        WHERE error_fingerprints_minutely.OrgId = 'org_sql_catalog'
+          AND error_fingerprints_minutely.Minute >= '2026-01-01 10:30:00'
+          AND error_fingerprints_minutely.Minute < '2026-01-03 14:15:00'
+        ORDER BY minute ASC
+        LIMIT 1
+        FORMAT JSON
+
 -- builder:errors:errorTickIssuesQuery:cursor-window  [55871f3d]
 SELECT
           toString(error_fingerprints_minutely.FingerprintHash) AS fingerprintHash,

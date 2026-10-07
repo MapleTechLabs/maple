@@ -354,6 +354,7 @@ export {
 	errorsWindowTotalsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
