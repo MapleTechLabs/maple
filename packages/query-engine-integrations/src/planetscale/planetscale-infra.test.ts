@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { planetscaleBranchInfraTimeseriesSQL, planetscaleInfraTimeseriesSQL } from "./planetscale-infra"
 import { OrgId } from "@maple/domain"
@@ -52,7 +52,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 			),
 		).toEqual([
 			{
-				bucket: "2026-07-02 00:00:00.000",
+				bucket: DateTime.makeUnsafe("2026-07-02T00:00:00Z"),
 				connectionsAvg: 12.5,
 				cpuMaxPercent: 80,
 				memMaxPercent: 70.25,

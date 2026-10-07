@@ -88,9 +88,9 @@ describe("dailySessionCountQuery", () => {
 	it("decodes a string session count", () => {
 		const compiled = compileUnsafe(dailySessionCountQuery(), params)
 
-		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00", sessions: "1284" }])
+		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00.000000000", sessions: "1284" }])
 
-		expect(row).toEqual({ day: "2026-07-01 00:00:00", sessions: 1284 })
+		expect(row).toEqual({ day: DateTime.makeUnsafe("2026-07-01T00:00:00Z"), sessions: 1284 })
 	})
 })
 
@@ -110,8 +110,8 @@ describe("dailyProductEventCountQuery", () => {
 	it("decodes a string event count", () => {
 		const compiled = compileUnsafe(dailyProductEventCountQuery(), params)
 
-		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00", events: "40120" }])
+		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00.000000000", events: "40120" }])
 
-		expect(row).toEqual({ day: "2026-07-01 00:00:00", events: 40120 })
+		expect(row).toEqual({ day: DateTime.makeUnsafe("2026-07-01T00:00:00Z"), events: 40120 })
 	})
 })

@@ -174,8 +174,8 @@ export function serviceWorkloadsSQL(
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.inList($.MetricName, [
 				"k8s.pod.cpu.usage",
 				"k8s.pod.cpu_limit_utilization",

@@ -5,7 +5,7 @@
 //   run the browser SDK. Only `host` / `pagePath` narrow them.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { Schema } from "effect"
+import { type DateTime, Schema } from "effect"
 import { param, from, compileFnCall, compileTypedFnCall } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { AI_PRODUCTS } from "@maple/domain/ai-traffic"
@@ -65,7 +65,7 @@ export interface WebAnalyticsAiReferralsOpts extends WebAnalyticsFilters {
 }
 
 export interface WebAnalyticsAiReferralsOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly product: string
 	readonly sessions: number
 }
@@ -102,8 +102,8 @@ export type WebAnalyticsAiCrawlerFilters = Pick<WebAnalyticsFilters, "host" | "p
 function crawlerWhere($: CrawlerAccessor, filters: WebAnalyticsAiCrawlerFilters) {
 	return [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		CH.when(filters.host, (v: string) => $.Host.eq(v)),
 		CH.when(filters.pagePath, (v: string) => $.Path.eq(v)),
 	]
@@ -121,7 +121,7 @@ export interface WebAnalyticsAiCrawlersOutput {
 	readonly failedRequests: number
 	/** Distinct pages served (status below 400). */
 	readonly pages: number
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 }
 
 /** Requests, failures and pages served per crawler. */
@@ -192,7 +192,7 @@ export interface WebAnalyticsAiCrawledPagesOutput {
 	readonly path: string
 	readonly requests: number
 	readonly crawlers: ReadonlyArray<string>
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 }
 
 /** The pages AI crawlers read most, served fetches only. */

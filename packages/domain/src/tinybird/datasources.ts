@@ -1285,7 +1285,7 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime64(9),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		ServiceName: t.string().lowCardinality(),
 		Crawler: t.string().lowCardinality(),
@@ -1339,8 +1339,8 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Value: column(t.float64(), { jsonPath: "$.value" }),
 		Flags: column(t.uint32(), { jsonPath: "$.flags" }),
 		ExemplarsTraceId: column(t.array(t.string()), {
@@ -1349,7 +1349,7 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1409,8 +1409,8 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Value: column(t.float64(), { jsonPath: "$.value" }),
 		Flags: column(t.uint32(), { jsonPath: "$.flags" }),
 		ExemplarsTraceId: column(t.array(t.string()), {
@@ -1419,7 +1419,7 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1475,8 +1475,8 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Count: column(t.uint64(), { jsonPath: "$.count" }),
 		Sum: column(t.float64(), { jsonPath: "$.sum" }),
 		BucketCounts: column(t.array(t.uint64()), {
@@ -1491,7 +1491,7 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1553,8 +1553,8 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Count: column(t.uint64(), { jsonPath: "$.count" }),
 		Sum: column(t.float64(), { jsonPath: "$.sum" }),
 		Scale: column(t.int32(), { jsonPath: "$.scale" }),
@@ -1573,7 +1573,7 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -2128,8 +2128,8 @@ export const sessionReplays = defineDatasource("session_replays", {
 	schema: {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
-		StartTime: column(t.dateTime64(9), { jsonPath: "$.start_time" }),
-		EndTime: column(t.dateTime64(9).nullable(), { jsonPath: "$.end_time" }),
+		StartTime: column(utcDateTime64(9), { jsonPath: "$.start_time" }),
+		EndTime: column(utcDateTime64(9).nullable(), { jsonPath: "$.end_time" }),
 		DurationMs: column(t.uint32().nullable(), { jsonPath: "$.duration_ms" }),
 		Status: column(t.string().lowCardinality(), { jsonPath: "$.status" }),
 		UserId: column(t.string(), { jsonPath: "$.user_id" }),
@@ -2257,7 +2257,7 @@ export const sessionReplays = defineDatasource("session_replays", {
 		 * null and `DurationMs` unknown; `LastActivityAt - StartTime` recovers a
 		 * usable duration for those sessions.
 		 */
-		LastActivityAt: column(t.dateTime64(9).nullable(), {
+		LastActivityAt: column(utcDateTime64(9).nullable(), {
 			jsonPath: "$.last_activity_at",
 		}),
 	},
@@ -2301,7 +2301,7 @@ export const sessionReplayEvents = defineDatasource("session_replay_events", {
 		// Gateway receipt time. Drives partitioning and the TTL, and doubles as the
 		// chunk index's playback anchor: it trails the recording's own clock by the
 		// upload latency, which is well inside a single chunk's duration.
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		DurationMs: column(t.uint32().default(0), { jsonPath: "$.duration_ms" }),
 		EventCount: column(t.uint32().default(0), { jsonPath: "$.event_count" }),
 		// Uncompressed byte length of the events JSON (telemetry / debugging).
@@ -2340,7 +2340,7 @@ export const sessionEvents = defineDatasource("session_events", {
 	schema: {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Seq: column(t.uint32().default(0), { jsonPath: "$.seq" }),
 		Type: column(t.string().lowCardinality(), { jsonPath: "$.type" }),
 		Url: column(t.string().default(""), { jsonPath: "$.url" }),
@@ -2475,7 +2475,7 @@ export const productEvents = defineDatasource("product_events", {
 		"Product events fact table: browser page views and track() calls (materialized from session_events) plus events posted directly by backends and mobile apps via POST /v1/events. Carries the person key (VisitorId/UserId/GroupId). Powers page views, top pages and funnels.",
 	schema: {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		/** `browser` (from session_events) | `server` | `mobile`. */
 		Source: column(t.string().lowCardinality().default("browser"), {
 			jsonPath: "$.source",
@@ -2600,7 +2600,7 @@ export const identityLinks = defineDatasource("identity_links", {
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		VisitorId: t.string(),
 		UserId: t.string(),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime64(9)),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime64(9)),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",

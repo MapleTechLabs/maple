@@ -108,12 +108,12 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				const sessionsByDay = new Map<string, number>()
 				for (const row of sessionRows) {
-					sessionsByDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), row.sessions)
+					sessionsByDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), row.sessions)
 				}
 
 				const eventsByDay = new Map<string, number>()
 				for (const row of eventRows) {
-					eventsByDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), row.events)
+					eventsByDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), row.events)
 				}
 
 				const days: DailyVolume[] = []

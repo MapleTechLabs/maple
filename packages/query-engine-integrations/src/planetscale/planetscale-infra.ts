@@ -11,6 +11,7 @@
 // the database-wide `max()` is dominated by whichever ephemeral branch spiked.
 // Scoping to a branch is what makes the chart mean anything.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
@@ -34,7 +35,7 @@ const ALL_METRIC_NAMES = [
 ] as const
 
 export interface PlanetScaleInfraTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly connectionsAvg: number
 	readonly cpuMaxPercent: number
 	readonly memMaxPercent: number
@@ -100,8 +101,8 @@ export function planetscaleInfraTimeseriesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("t")
 
@@ -122,8 +123,8 @@ export function planetscaleBranchInfraTimeseriesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_branch_name"), ""),
 				$.Attributes.get("planetscale_branch"),
 			).eq(param.string("branch")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("t")
 

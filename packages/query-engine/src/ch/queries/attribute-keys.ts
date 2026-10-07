@@ -123,8 +123,8 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("attributeKey")
@@ -150,8 +150,8 @@ export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValu
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.Attributes.get(opts.attributeKey).neq(""),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
