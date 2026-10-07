@@ -1032,6 +1032,80 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true, scanned })))
 	})
 
+	const seedCursor = (orgId: string, processedThroughMs: number) =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.insert(errorTickStates).values({
+					orgId: asOrgId(orgId),
+					processedThrough: new Date(processedThroughMs),
+					bootstrapCompleted: true,
+					updatedAt: new Date(processedThroughMs),
+				}),
+			)
+		})
+
+	const cursorOf = (orgId: string) =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			const rows = yield* database.execute((db) =>
+				db
+					.select()
+					.from(errorTickStates)
+					.where(eq(errorTickStates.orgId, asOrgId(orgId))),
+			)
+			return rows[0]?.processedThrough.getTime()
+		})
+
+	it.effect("a skipped org's cursor inside the discovery window moves to the cutoff unscanned", () => {
+		const scanned = new Set<string>()
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedCursor(ORG, TICK_MS - 10 * 60_000)
+
+			yield* errors.runTick()
+
+			assert.isFalse(scanned.has(ORG))
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 60_000)
+		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
+	})
+
+	it.effect("a skipped org's cursor older than the discovery window is replayed, not jumped", () => {
+		const scanned = new Set<string>()
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedCursor(ORG, TICK_MS - 60 * 60_000)
+
+			yield* errors.runTick()
+
+			assert.isTrue(scanned.has(ORG))
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 55 * 60_000)
+		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
+	})
+
+	it.effect("a failed discovery leaves skipped orgs' cursors alone", () => {
+		const scanned = new Set<string>()
+		const STALE = asOrgId("org_idle_stale_cursor")
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedIngestKey(STALE)
+			yield* seedCursor(ORG, TICK_MS - 10 * 60_000)
+			yield* seedCursor(STALE, TICK_MS - 60 * 60_000)
+
+			yield* errors.runTick()
+
+			assert.strictEqual(scanned.size, 0)
+			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 10 * 60_000)
+			assert.strictEqual(yield* cursorOf(STALE), TICK_MS - 60 * 60_000)
+		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true, scanned })))
+	})
+
 	it.effect("discovery uses the 5s profile; the minutely tick scan uses aggregation", () => {
 		const profiles = new Map<string, string | undefined>()
 		return Effect.gen(function* () {
