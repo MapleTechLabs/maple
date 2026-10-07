@@ -87,7 +87,7 @@ const NUMERIC_TOLERANCE = 1e-3
  * Expected is a pattern over actual: object keys are a subset, arrays match in any order, strings
  * match case-insensitively either way round as substrings, numbers within a relative tolerance.
  */
-const fuzzyMatch = (expected: unknown, actual: unknown): boolean => {
+export const fuzzyMatch = (expected: unknown, actual: unknown): boolean => {
 	if (typeof expected === "string" && typeof actual === "string") {
 		const want = expected.toLowerCase()
 		const got = actual.toLowerCase()

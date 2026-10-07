@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { LanguageModel, Prompt, type Response, type Tool } from "effect/ai"
 import { OrgId, UserId } from "@maple/domain/http"
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
@@ -67,8 +67,9 @@ interface Transcript {
 	readonly toolOutputs: ReadonlyArray<string>
 }
 
+/** A failed call resolves with its error, which the model reads in encoded form; keep it too. */
 const toolOutput = (part: Response.ToolResultPart<string, unknown, unknown>): string =>
-	typeof part.result === "string" ? part.result : ""
+	typeof part.result === "string" ? part.result : JSON.stringify(part.encodedResult ?? null)
 
 /**
  * Full-execution task: the model calls tools for real through `executor`, for up to `maxSteps`
@@ -98,7 +99,6 @@ export const runToolLoop = (executor: McpToolExecutorApi, input: string, maxStep
 			}),
 		)
 	return step(Prompt.make(input), maxSteps, { text: "", toolCalls: [], toolOutputs: [] }).pipe(
-		Effect.provide(layer),
-		Effect.provide(evalModelLayer()),
+		Effect.provide(Layer.mergeAll(layer, evalModelLayer())),
 	)
 }
