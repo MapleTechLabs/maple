@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hasEvalCredentials } from "./model"
+import { hasEvalCredentials } from "../../evals/model"
 
 /**
  * The eval harness: a case table, a task that runs the model, and scorers averaged against a

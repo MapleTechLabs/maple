@@ -16,11 +16,11 @@
  * Gated like every other eval: skips without `OPENROUTER_API_KEY`, runs under
  * `bun run eval`, never as part of `bun run test`.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { LanguageModel, Prompt } from "effect/ai"
 import { INVESTIGATE_SYSTEM_PROMPT } from "../prompts"
 import { describeEval, type Scorer } from "../../mcp/__evals__/harness"
-import { evalModelLayer } from "../../mcp/__evals__/model"
+import { evalModel } from "../../evals/model"
 import { DIAGNOSIS_FIXTURES, type DiagnosisFixture } from "./diagnosis-fixtures"
 import {
 	scoreCauseMatch,
@@ -29,6 +29,11 @@ import {
 	type RuleScore,
 	type ScoredReport,
 } from "./diagnosis-scorers"
+
+const modelLayer = () => {
+	const { model, clients } = evalModel()
+	return model.layer.pipe(Layer.provide(clients))
+}
 
 const byId = new Map(DIAGNOSIS_FIXTURES.map((fixture) => [fixture.id, fixture]))
 
@@ -87,7 +92,7 @@ const diagnose = (input: string) => {
 	])
 	return LanguageModel.generateObject({ prompt, schema: Report, objectName: "diagnosis" }).pipe(
 		Effect.map((response) => ({ output: encodeReport(response.value), toolCalls: [] })),
-		Effect.provide(evalModelLayer()),
+		Effect.provide(modelLayer()),
 		Effect.runPromise,
 	)
 }
