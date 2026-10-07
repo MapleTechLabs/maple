@@ -1,7 +1,6 @@
 import { Option, Schema } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
-import { InvestigationStep } from "./investigations"
 import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
 
@@ -107,31 +106,6 @@ export const PrReviewSeverity = Schema.Literals(["critical", "warn", "info"]).an
 	title: "Pull Request Review Severity",
 })
 export type PrReviewSeverity = Schema.Schema.Type<typeof PrReviewSeverity>
-
-/** Findings per severity. */
-export const PrReviewFindingCounts = Schema.Struct({
-	critical: Schema.Int,
-	warn: Schema.Int,
-	info: Schema.Int,
-}).annotate({ identifier: "@maple/PrReviewFindingCounts", title: "Pull Request Review Finding Counts" })
-export type PrReviewFindingCounts = Schema.Schema.Type<typeof PrReviewFindingCounts>
-
-/** What a running review has done so far, as its pull request comment shows it while it works. */
-export const PrReviewProgress = Schema.Struct({
-	startedAt: Schema.Number,
-	updatedAt: Schema.Number,
-	stepCount: Schema.Int,
-	/** The latest tool calls, oldest first. */
-	steps: Schema.Array(InvestigationStep),
-	/** Reviewed files with a diff, and how many of those were read; 0 due before the listing. */
-	filesDue: Schema.Int,
-	filesRead: Schema.Int,
-	/** Findings saved with `record_finding` so far. */
-	findings: PrReviewFindingCounts,
-	/** The pass stopped without a report and the close-out is writing up what it found. */
-	closingOut: Schema.Boolean,
-}).annotate({ identifier: "@maple/PrReviewProgress", title: "Pull Request Review Progress" })
-export type PrReviewProgress = Schema.Schema.Type<typeof PrReviewProgress>
 
 export const PrReviewCategory = Schema.Literals([
 	"correctness",
