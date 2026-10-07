@@ -44,6 +44,7 @@ import {
 	makeRunUsage,
 	prReplyForSession,
 	prReviewForSession,
+	type RunUsage,
 	savedFindingsRequest,
 	SUBMIT_DIAGNOSIS,
 	SUBMIT_REVIEW,
@@ -68,7 +69,7 @@ import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { toTenantContext, withConnectorActor } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
+import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
 /**
  * The engine's per-step bookkeeping, which is named and therefore traced.
@@ -164,6 +165,10 @@ const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an
  * `usage` is the turn's whole total: every model call the run made, including any the engine spent
  * compacting, and any a sub-agent made against the parent's accumulator.
  *
+ * **Two meters while AI credits roll out.** `ai_credits` charges each model call in dollars,
+ * priced by Autumn from the model's rates, so a cache read or a cheap model costs what it costs.
+ * The raw `ai_input_tokens` / `ai_output_tokens` counts keep running beside it for comparison.
+ *
  * **In a finalizer, not on the happy path.** A turn that failed, was stopped, or ran out of steps
  * is still billed for every step the provider actually served — the loop accounts a step's usage
  * before it checks whether the turn survived. Metering follows the spend, not the outcome. (A step
@@ -174,7 +179,7 @@ export const meterTurn = (
 	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId">,
 	tenant: Pick<TenantContext, "orgId">,
 	origin: ChatTurnOrigin,
-	usage: { readonly input: number; readonly output: number },
+	usage: Pick<RunUsage, "input" | "output" | "charges">,
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ??
@@ -184,13 +189,24 @@ export const meterTurn = (
 		}
 	// Bookkeeping must never fail a delivered answer: the tracker is infallible and bounded here too.
 	// It runs as a finalizer, outside any graph that is sure to carry an HttpClient, so it brings its own.
-	return trackTokenUsage({
-		orgId: tenant.orgId,
-		inputTokens: usage.input,
-		outputTokens: usage.output,
-		idempotencyKey: billing.idempotencyKey,
-		source: billing.source,
-	}).pipe(
+	return Effect.all(
+		[
+			trackAiCredits({
+				orgId: tenant.orgId,
+				spends: usage.charges,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+			trackTokenUsage({
+				orgId: tenant.orgId,
+				inputTokens: usage.input,
+				outputTokens: usage.output,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+		],
+		{ concurrency: "unbounded", discard: true },
+	).pipe(
 		Effect.timeout(METERING_TIMEOUT),
 		Effect.ignore,
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
