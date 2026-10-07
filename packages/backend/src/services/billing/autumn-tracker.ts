@@ -140,6 +140,11 @@ const postUsage = (
 					Effect.annotateLogs({ path: request.path, feature: request.label }),
 				),
 			),
+			// Named like `autumn-http.ts`'s span so every Autumn call reads as one dependency.
+			Effect.withSpan("autumn.request", {
+				kind: "client",
+				attributes: { "autumn.route": request.path, "peer.service": "autumn" },
+			}),
 		)
 
 const postAll = (orgId: string, requests: ReadonlyArray<UsageRequest>) =>
