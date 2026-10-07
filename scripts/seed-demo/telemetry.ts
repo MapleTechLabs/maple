@@ -809,7 +809,7 @@ const buildMetrics = (
 			memory.push({
 				timeUnixNano: time,
 				attributes: [],
-				asInt: Math.round((baseMb + load * 0.8 + rng.next() * 12) * 1_048_576),
+				asDouble: Math.round((baseMb + load * 0.8 + rng.next() * 12) * 1_048_576),
 			})
 		}
 		if (cpu.length === 0) continue
@@ -827,20 +827,24 @@ const buildMetrics = (
 			const exhausted = resource.version === INCIDENT.version
 			const used = exhausted
 				? INCIDENT.poolSize
-				: Math.min(INCIDENT.poolSize - 4, 2 + Math.round(load * 0.35 + rng.next() * 2))
+				: Math.min(8, 2 + Math.round(load * 0.08 + rng.next() * 2))
 			const time = nano(minute + MINUTE)
 			const pool = attr("db.client.connection.pool.name", "payments")
 			points.push({
 				timeUnixNano: time,
 				attributes: [pool, attr("db.client.connection.state", "used")],
-				asInt: used,
+				asDouble: used,
 			})
 			points.push({
 				timeUnixNano: time,
 				attributes: [pool, attr("db.client.connection.state", "idle")],
-				asInt: INCIDENT.poolSize - used,
+				asDouble: INCIDENT.poolSize - used,
 			})
-			pending.push({ timeUnixNano: time, attributes: [pool], asInt: exhausted ? rng.int(24, 48) : 0 })
+			pending.push({
+				timeUnixNano: time,
+				attributes: [pool],
+				asDouble: exhausted ? rng.int(24, 48) : 0,
+			})
 		}
 		if (points.length === 0) continue
 		add(resource, gauge("db.client.connection.count", "{connection}", points))
@@ -855,7 +859,7 @@ const buildMetrics = (
 			startTimeUnixNano: nano(agg.minute),
 			timeUnixNano: nano(agg.minute + MINUTE),
 			attributes: [],
-			asInt: agg.count,
+			asDouble: agg.count,
 		})
 		orders.set(agg.resource.key, entry)
 	}

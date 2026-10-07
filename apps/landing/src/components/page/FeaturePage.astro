@@ -8,10 +8,11 @@
  *   00  PageHero            bg-bg       feature engraving   (page top)
  *   01  SurfacePanel        bg-bg       border-t            tone flat → hairline
  *   02  ArtifactSection     bg-bg       border-t            tone flat → hairline
- *   03  [extra sections]    per section                     kubernetes only
- *   04  CapabilityLedger    bg-bg-deep  no border           tone steps → tone is the rule
- *   05  CrossLinks          bg-bg-deep  border-t            tone flat → hairline
- *   06  PageCta             amber                           the one peak
+ *   03  ScreenGallery       bg-bg       border-t            more of the surface
+ *   04  [extra sections]    per section                     kubernetes only
+ *   05  CapabilityLedger    bg-bg-deep  no border           tone steps → tone is the rule
+ *   06  CrossLinks          bg-bg-deep  border-t            tone flat → hairline
+ *   07  PageCta             amber                           the one peak
  *
  * The tonal rule is tighter here than on the homepage because these pages carry
  * more frames: `.live-frame` is itself `--bg-deep`, so any section holding one
@@ -35,6 +36,7 @@ import CapabilityLedger from "./CapabilityLedger.astro";
 import CrossLinks from "./CrossLinks.astro";
 import PageCta from "./PageCta.astro";
 import PageHero from "./PageHero.astro";
+import ScreenGallery from "./ScreenGallery.astro";
 import SurfacePanel from "./SurfacePanel.astro";
 import { ARTIFACTS, EXTRA_SECTIONS } from "./slots";
 
@@ -124,6 +126,17 @@ const crossLinks = [
 			>
 				<Artifact />
 			</ArtifactSection>
+		)
+	}
+
+	{
+		feature.gallery.length > 0 && (
+			<ScreenGallery
+				class="border-t border-border"
+				eyebrow={m.page_gallery_eyebrow()}
+				title={m.page_gallery_title({ feature: feature.navLabel() })}
+				shots={feature.gallery}
+			/>
 		)
 	}
 

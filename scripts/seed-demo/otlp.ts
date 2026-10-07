@@ -67,8 +67,11 @@ export interface NumberPoint {
 	readonly startTimeUnixNano?: string
 	readonly timeUnixNano: string
 	readonly attributes: ReadonlyArray<KeyValue>
-	readonly asDouble?: number
-	readonly asInt?: number
+	/**
+	 * Integer points go out as asDouble too: the gateway's OTLP/JSON shim currently
+	 * stores asInt as 0 (it stringifies a field the proto derive wants as a number).
+	 */
+	readonly asDouble: number
 }
 
 export interface HistogramPoint {
