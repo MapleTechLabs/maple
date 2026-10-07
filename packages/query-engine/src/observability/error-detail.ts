@@ -325,7 +325,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 				logs: pipe(
 					errorFirstLogs(
 						(logsResults[i]?.data ?? []).map((l) => ({
-							timestamp: String(l.timestamp),
+							timestamp: l.timestamp,
 							severityText: l.severityText || "INFO",
 							body: l.body,
 						})),

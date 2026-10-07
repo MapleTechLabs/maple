@@ -319,8 +319,8 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					breakdowns
 						.filter((row) => row.facetType === "referrerHost")
 						.map((row) => ({
-							icon: sourceIcon(String(row.name)),
-							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : String(row.name),
+							icon: sourceIcon(row.name),
+							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : row.name,
 							value: Number(row.count) || 0,
 						}))
 						.sort((a, b) => b.value - a.value)

@@ -411,7 +411,7 @@ const make: Effect.Effect<
 						return yield* Effect.fail(
 							new ErrorValidationError({
 								message: "Invalid snoozeUntil timestamp",
-								details: [String(opts.snoozeUntil)],
+								details: [opts.snoozeUntil],
 							}),
 						)
 					}

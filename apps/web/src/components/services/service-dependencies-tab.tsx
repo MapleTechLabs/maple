@@ -96,7 +96,7 @@ export function ServiceDependenciesTab({
 			if (!edge.targetService) continue
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.targetService)
+			const target = edge.targetService
 			out.push({
 				id: `service:${target}`,
 				kind: "service",
@@ -120,7 +120,7 @@ export function ServiceDependenciesTab({
 			if (!edge.dbSystem) continue
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.dbSystem)
+			const target = edge.dbSystem
 			// Edges are per database identity (db.namespace et al.) — surface it as
 			// the row name so two databases of the same system stay distinguishable.
 			// The drill-down stays scoped by system only: the identity can originate
@@ -151,7 +151,7 @@ export function ServiceDependenciesTab({
 				edge.targetType === "messaging" ? "messaging" : edge.targetType === "rpc" ? "rpc" : "http"
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const system = edge.targetSystem ? String(edge.targetSystem) : ""
+			const system = edge.targetSystem ? edge.targetSystem : ""
 			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({

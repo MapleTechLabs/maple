@@ -1,6 +1,9 @@
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { SpanSearchOutput } from "../ch"
+
+/** A `span_search` row as the pipe returns it: pipes re-encode timestamps to the wire string. */
+type SpanSearchWireRow = Omit<SpanSearchOutput, "timestamp"> & { readonly timestamp: string }
 import type { ListTracesOutput } from "@maple/domain/tinybird"
 import { WarehouseValidationError } from "@maple/domain/http/warehouse-errors"
 import {
@@ -100,7 +103,7 @@ const spanLevelSearch = (
 	} satisfies Record<string, unknown>
 
 	return Effect.map(
-		executor.query<SpanSearchOutput>("span_search", params, { profile: "list" }),
+		executor.query<SpanSearchWireRow>("span_search", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> =>
 			result.data.map((row): SpanResult => ({
 				traceId: Schema.decodeSync(TraceId)(row.traceId),
@@ -112,7 +115,7 @@ const spanLevelSearch = (
 				statusMessage: row.statusMessage ?? "",
 				attributes: row.spanAttributes ?? {},
 				resourceAttributes: row.resourceAttributes ?? {},
-				timestamp: String(row.timestamp),
+				timestamp: row.timestamp,
 			})),
 	)
 }

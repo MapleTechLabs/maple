@@ -360,7 +360,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				}
 
 				const toRow = (row: (typeof summaryRows)[number], sparkline: SparklinePoint[]) => ({
-					spanName: String(row.spanName),
+					spanName: row.spanName,
 					spanCount: toNumber(row.spanCount),
 					estimatedSpanCount: toNumber(row.estimatedSpanCount),
 					errorCount: toNumber(row.errorCount),
@@ -377,7 +377,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					return summaryRows.map((row) => toRow(row, []))
 				}
 
-				const spanNames = summaryRows.map((row) => String(row.spanName))
+				const spanNames = summaryRows.map((row) => row.spanName)
 				// The rollup is minute-grain, so every sparkline interval must be
 				// a whole-minute multiple. Nearest-minute rounding keeps ~50 points.
 				const windowSeconds = Math.max(
@@ -401,13 +401,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 
 				const sparklines = new Map<string, SparklinePoint[]>()
 				for (const row of timeseriesRows) {
-					const key = String(row.spanName)
+					const key = row.spanName
 					const points = sparklines.get(key) ?? []
 					points.push({ bucket: DateTime.formatIso(row.bucket), count: toNumber(row.count) })
 					sparklines.set(key, points)
 				}
 
-				return summaryRows.map((row) => toRow(row, sparklines.get(String(row.spanName)) ?? []))
+				return summaryRows.map((row) => toRow(row, sparklines.get(row.spanName) ?? []))
 			})
 
 		const executeRawSql = makeExecuteRawSql<
@@ -473,7 +473,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										})) ??
 										(yield* runQueryFirst(Queries.spanHierarchyProbe, tenant, payload))
 									if (probe?.timestamp != null) {
-										const window = partitionWindowAround(DateTime.formatIso(probe.timestamp))
+										const window = partitionWindowAround(
+											DateTime.formatIso(probe.timestamp),
+										)
 										startTime = window.startTime
 										endTime = window.endTime
 									}
@@ -986,7 +988,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						for (const row of rows) {
 							// BYO-ClickHouse returns sum() as a JSON string; compileUnion has no
 							// rowSchema hook, so coerce here — same as podFacets.
-							const entry = { name: String(row.name), count: Number(row.count) || 0 }
+							const entry = { name: row.name, count: Number(row.count) || 0 }
 							switch (row.facetType) {
 								case "host":
 									buckets.hosts.push(entry)
@@ -1252,10 +1254,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								p95DurationMs: toNumber(row.p95DurationMs),
 							})),
 							topQueries: topQueryRows.map((row) => ({
-								queryKey: String(row.queryKey),
-								queryLabel: String(row.queryLabel),
-								sampleStatement: String(row.sampleStatement),
-								sampleService: String(row.sampleService),
+								queryKey: row.queryKey,
+								queryLabel: row.queryLabel,
+								sampleStatement: row.sampleStatement,
+								sampleService: row.sampleService,
 								serviceCount: toNumber(row.serviceCount),
 								queryCount: toNumber(row.queryCount),
 								estimatedQueryCount: toNumber(row.estimatedQueryCount),
@@ -1703,7 +1705,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							environments: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: String(row.name), count: Number(row.count) || 0 }
+							const entry = { name: row.name, count: Number(row.count) || 0 }
 							switch (row.facetType) {
 								case "container":
 									buckets.containers.push(entry)
@@ -1853,7 +1855,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							computeTypes: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: String(row.name), count: Number(row.count) || 0 }
+							const entry = { name: row.name, count: Number(row.count) || 0 }
 							switch (row.facetType) {
 								case "pod":
 									buckets.pods.push(entry)
@@ -1900,7 +1902,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							environments: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: String(row.name), count: Number(row.count) || 0 }
+							const entry = { name: row.name, count: Number(row.count) || 0 }
 							switch (row.facetType) {
 								case "node":
 									buckets.nodes.push(entry)
@@ -1928,7 +1930,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							computeTypes: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: String(row.name), count: Number(row.count) || 0 }
+							const entry = { name: row.name, count: Number(row.count) || 0 }
 							switch (row.facetType) {
 								case "workload":
 									buckets.workloads.push(entry)
@@ -2045,8 +2047,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						)
 						return new WebAnalyticsPagesResponse({
 							data: rows.map((row) => ({
-								host: String(row.host),
-								pagePath: String(row.pagePath),
+								host: row.host,
+								pagePath: row.pagePath,
 								pageViews: Number(row.pageViews) || 0,
 								sessions: Number(row.sessions) || 0,
 							})),
@@ -2064,7 +2066,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						)
 						return new WebAnalyticsEventsResponse({
 							data: rows.map((row) => ({
-								name: String(row.name),
+								name: row.name,
 								events: Number(row.events) || 0,
 								sessions: Number(row.sessions) || 0,
 							})),
@@ -2113,8 +2115,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						} satisfies Record<string, keyof typeof buckets>
 						for (const row of rows) {
 							const key = bucketOf[row.facetType]
-							if (key)
-								buckets[key].push({ name: String(row.name), count: Number(row.count) || 0 })
+							if (key) buckets[key].push({ name: row.name, count: Number(row.count) || 0 })
 						}
 						return new WebAnalyticsBreakdownsResponse({ data: buckets })
 					}),
@@ -2213,7 +2214,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventsFunnelBreakdown, tenant, payload)
 						return new ProductEventsFunnelBreakdownResponse({
 							data: rows.map((row) => ({
-								group: String(row.group),
+								group: row.group,
 								step: Number(row.step) || 0,
 								count: Number(row.count) || 0,
 							})),
@@ -2242,7 +2243,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ProductEventsFunnelLeaversResponse({
 							data: rows.map((row) => ({
 								step: Number(row.step) || 0,
-								next: String(row.next),
+								next: row.next,
 								count: Number(row.count) || 0,
 							})),
 						})
@@ -2256,8 +2257,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ProductEventsPathsResponse({
 							data: rows.map((row) => ({
 								hop: Number(row.hop) || 0,
-								fromNode: String(row.fromNode),
-								toNode: String(row.toNode),
+								fromNode: row.fromNode,
+								toNode: row.toNode,
 								count: Number(row.count) || 0,
 							})),
 						})
@@ -2269,8 +2270,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventNames, tenant, payload)
 						return new ProductEventNamesResponse({
 							data: rows.map((row) => ({
-								eventName: String(row.eventName),
-								kind: String(row.kind),
+								eventName: row.eventName,
+								kind: row.kind,
 								count: Number(row.count) || 0,
 								sessions: Number(row.sessions) || 0,
 								persons: Number(row.persons) || 0,
@@ -2286,13 +2287,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ProductEventsForTraceResponse({
 							data: rows.map((row) => ({
 								timestamp: DateTime.formatIso(row.timestamp),
-								eventName: String(row.eventName),
-								spanId: String(row.spanId),
-								serviceName: String(row.serviceName),
-								userId: String(row.userId),
-								groupId: String(row.groupId),
-								visitorId: String(row.visitorId),
-								sessionId: String(row.sessionId),
+								eventName: row.eventName,
+								spanId: row.spanId,
+								serviceName: row.serviceName,
+								userId: row.userId,
+								groupId: row.groupId,
+								visitorId: row.visitorId,
+								sessionId: row.sessionId,
 								// Already decoded as Record<string, string> by the derived row schema.
 								attributes: row.attributes,
 							})),
@@ -2305,12 +2306,12 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventTraceSamples, tenant, payload)
 						return new ProductEventTraceSamplesResponse({
 							data: rows.map((row) => ({
-								traceId: String(row.traceId),
-								spanId: String(row.spanId),
+								traceId: row.traceId,
+								spanId: row.spanId,
 								timestamp: DateTime.formatIso(row.timestamp),
-								serviceName: String(row.serviceName),
-								userId: String(row.userId),
-								visitorId: String(row.visitorId),
+								serviceName: row.serviceName,
+								userId: row.userId,
+								visitorId: row.visitorId,
 							})),
 						})
 					}),
