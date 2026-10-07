@@ -8,6 +8,7 @@ import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { severityRank } from "@maple/ui/lib/severity"
 
 export interface LocalLog {
+	/** The stored `DateTime64(9)` value with its nanoseconds: shown verbatim and the keyset cursor. */
 	timestamp: string
 	severityText: string
 	severityNumber: number
@@ -23,7 +24,7 @@ export interface LocalLog {
 
 export function normalizeLog(row: LogsListOutput): LocalLog {
 	return {
-		timestamp: row.timestamp,
+		timestamp: row.exactTimestamp,
 		severityText: row.severityText,
 		severityNumber: row.severityNumber,
 		serviceName: row.serviceName,

@@ -202,7 +202,7 @@ describe("get_session_traces", () => {
 		const text = markdown(result)
 		expect(text).toContain("### Backend traces")
 		expect(text).toContain(
-			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:02"\`: errored POST /api/pay in api`,
+			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:02.000Z"\`: errored POST /api/pay in api`,
 		)
 	})
 

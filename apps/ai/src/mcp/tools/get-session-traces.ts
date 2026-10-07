@@ -62,7 +62,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 				totalTraceCount: Number(totalTraceCount),
 				traces: traces.map((t) => ({
 					traceId: t.traceId,
-					startTime: t.startTime,
+					startTime: DateTime.formatIso(t.startTime),
 					durationMs: Number(t.durationMs),
 					rootSpanName: t.rootSpanName,
 					rootServiceName: t.rootServiceName,
