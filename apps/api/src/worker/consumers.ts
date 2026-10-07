@@ -35,7 +35,9 @@ const VCS_SYNC_CONSUMER = {
 } satisfies Cloudflare.Queues.MessagesProps
 const PLANETSCALE_WEBHOOKS_CONSUMER = VCS_SYNC_CONSUMER
 // One review is a dozen reads and a model call, and cancellations are rare:
-// one at a time, with room for Autumn or Slack to come back.
+// one at a time, with room for Autumn or Slack to come back. `maxRetries` must
+// stay in sync with CANCELLATION_REVIEWS_MAX_RETRIES in
+// cancellation-review-runtime.ts, which logs the drop on the final attempt.
 const CANCELLATION_REVIEWS_CONSUMER = {
 	batchSize: 1,
 	maxConcurrency: 1,

@@ -97,13 +97,18 @@ describe("cancellationsFromBillingUpdated", () => {
 		}),
 	)
 
-	it.effect("does not call a plan switch a cancellation", () =>
+	it.effect("reports the ended plan of a switch, leaving the consumer to recognise it", () =>
 		Effect.gen(function* () {
+			// The payload cannot tell a replacement plan from an add-on starting in
+			// the same delivery, so nothing is dropped here.
 			const result = yield* cancellations([
 				{ action: "activated", subscription: subscription({ plan_id: "scale" }) },
 				{ action: "expired", subscription: subscription({ status: "expired" }) },
 			])
-			assert.deepStrictEqual(result, [])
+			assert.deepStrictEqual(
+				result.map(({ planId, phase }) => ({ planId, phase })),
+				[{ planId: "startup", phase: "ended" }],
+			)
 		}),
 	)
 

@@ -55,6 +55,8 @@ interface World {
 	channel: string | null
 	wrongRegion: boolean
 	addOn: boolean
+	/** What Autumn says the org's `startup` subscription is now. */
+	planStatus: "active" | "expired"
 	slackFails: boolean
 	warehouseDown: boolean
 	posts: Array<Record<string, unknown>>
@@ -64,6 +66,7 @@ const freshWorld = (): World => ({
 	channel: "C_CANCELLATIONS",
 	wrongRegion: false,
 	addOn: false,
+	planStatus: "active",
 	slackFails: false,
 	warehouseDown: false,
 	posts: [],
@@ -143,7 +146,7 @@ const stubs = (world: World) =>
 					statusCode: 200,
 					response: {
 						id: ORG,
-						subscriptions: [{ planId: "startup", status: "active", addOn: world.addOn }],
+						subscriptions: [{ planId: "startup", status: world.planStatus, addOn: world.addOn }],
 						balances: {},
 						invoices: [
 							{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
@@ -270,8 +273,33 @@ describe("CancellationReviewService", () => {
 
 			assert.strictEqual(yield* review(world, testDb), "posted")
 			assert.strictEqual(yield* review(world, testDb), "duplicate")
+			world.planStatus = "expired"
 			assert.strictEqual(yield* review(world, testDb, { ...job, phase: "ended" }), "duplicate")
 			assert.strictEqual(world.posts.length, 1)
+		}),
+	)
+
+	it.effect("keys a subscription Autumn sent no start for on its cancellation time", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			const first = { ...job, startedAt: null }
+			const second = { ...first, canceledAt: CANCELED_AT + 90 * DAY_MS }
+
+			assert.strictEqual(yield* review(world, testDb, first), "posted")
+			assert.strictEqual(yield* review(world, testDb, first), "duplicate")
+			// A later cancellation of the same plan is its own review, not the first one again.
+			assert.strictEqual(yield* review(world, testDb, second), "posted")
+		}),
+	)
+
+	it.effect("does not review a plan that ended because the org holds another one", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			// Autumn still reports an active plan subscription: an upgrade, not a departure.
+			const outcome = yield* review(world, createTestDb(trackedDbs), { ...job, phase: "ended" })
+			assert.strictEqual(outcome, "plan_switch")
+			assert.strictEqual(world.posts.length, 0)
 		}),
 	)
 

@@ -117,7 +117,8 @@ export const planEventsFromBillingUpdated = (
  * actually going away, which is the only signal for an immediate cancel or a
  * subscription Stripe gave up collecting on. A scheduled cancel later produces
  * its own `ended`; the consumer keys on `(orgId, planId, startedAt)` so one
- * subscription is looked at once.
+ * subscription is looked at once. A plan switch also ends the old plan: the
+ * consumer tells that apart by asking Autumn what the org holds now.
  */
 export interface PlanCancellation {
 	readonly orgId: string
@@ -137,13 +138,6 @@ export const cancellationsFromBillingUpdated = (
 	data: AutumnBillingUpdatedData,
 ): ReadonlyArray<PlanCancellation> => {
 	if (data.entity_id !== undefined && data.entity_id !== null && data.entity_id.length > 0) return []
-	// A plan switch expires the old plan and activates the new one in one delivery.
-	const switched = data.plan_changes.some(
-		(change) =>
-			change.action === "activated" &&
-			change.subscription != null &&
-			!isFreePlan(change.subscription.plan_id),
-	)
 	const cancellations: Array<PlanCancellation> = []
 	for (const change of data.plan_changes) {
 		const subscription = change.subscription
@@ -155,7 +149,7 @@ export const cancellationsFromBillingUpdated = (
 			"canceled_at" in previous &&
 			previous.canceled_at === null
 				? "scheduled"
-				: change.action === "expired" && !switched
+				: change.action === "expired"
 					? "ended"
 					: undefined
 		if (phase === undefined) continue

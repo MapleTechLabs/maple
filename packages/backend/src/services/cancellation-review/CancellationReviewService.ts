@@ -19,7 +19,7 @@ import {
 	orgSupportChannels,
 	vcsInstallations,
 } from "@maple/db"
-import { isPlanSubscription } from "@maple/domain/billing"
+import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import {
 	BillingCustomer,
 	BillingInvoice,
@@ -76,6 +76,8 @@ export type CancellationReviewOutcome =
 	| "other_region"
 	/** An add-on going away is not the org leaving. */
 	| "not_a_plan"
+	/** The plan ended because the org moved to another one. */
+	| "plan_switch"
 	/** No Slack channel or bot token on this deployment. */
 	| "not_configured"
 
@@ -120,7 +122,9 @@ export class CancellationReviewService extends Context.Service<
 								Effect.as(null),
 							),
 				),
-				Effect.withSpan(`CancellationReview.${name}`),
+				Effect.withSpan("CancellationReview.readSource", {
+					attributes: { "maple.cancellation.source": name },
+				}),
 			)
 
 		const count = (table: PgTable, where: SQL | undefined) =>
@@ -220,15 +224,20 @@ export class CancellationReviewService extends Context.Service<
 			)
 		})
 
-		/** The row that makes this subscription's review happen once. */
+		/**
+		 * The row that makes this subscription's review happen once. Autumn may
+		 * send no start; the cancellation's own timestamp then names it, which a
+		 * scheduled cancellation and its later expiry still share.
+		 */
 		const claim = (job: CancellationReviewJob, nowMs: number) =>
 			database
 				.execute((db) =>
 					Effect.gen(function* () {
+						const subscriptionStartedAt = job.startedAt ?? job.canceledAt ?? 0
 						const subscription = and(
 							eq(cancellationReviews.orgId, job.orgId),
 							eq(cancellationReviews.planId, job.planId),
-							eq(cancellationReviews.subscriptionStartedAt, job.startedAt ?? 0),
+							eq(cancellationReviews.subscriptionStartedAt, subscriptionStartedAt),
 						)
 						const inserted = yield* db
 							.insert(cancellationReviews)
@@ -236,7 +245,7 @@ export class CancellationReviewService extends Context.Service<
 								id: crypto.randomUUID(),
 								orgId: job.orgId,
 								planId: job.planId,
-								subscriptionStartedAt: job.startedAt ?? 0,
+								subscriptionStartedAt,
 								createdAt: msToDate(nowMs),
 								updatedAt: msToDate(nowMs),
 							})
@@ -302,6 +311,12 @@ export class CancellationReviewService extends Context.Service<
 				const subscription = customer?.subscriptions.find((sub) => sub.planId === job.planId)
 				if (subscription !== undefined && !isPlanSubscription(subscription)) {
 					return yield* outcome("not_a_plan")
+				}
+				// An ended plan with another real plan active is an upgrade or downgrade.
+				// Asked of Autumn rather than read off the webhook, whose payload cannot
+				// tell a replacement plan from an add-on starting in the same delivery.
+				if (job.phase === "ended" && customer?.subscriptions.some(isActivePlanSubscription) === true) {
+					return yield* outcome("plan_switch")
 				}
 
 				const nowMs = yield* Clock.currentTimeMillis
