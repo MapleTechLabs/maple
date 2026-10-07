@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	canUseLogsAggregatesHourly,
@@ -503,10 +503,50 @@ describe("logsListQuery", () => {
 	})
 
 	it("applies cursor pagination", () => {
-		const q = logsListQuery({ cursor: "2024-01-01T12:00:00" })
+		const q = logsListQuery({ cursor: "2024-01-01 12:00:00.123456789" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("Timestamp < '2024-01-01T12:00:00'")
+		expect(sql).toContain("Timestamp < '2024-01-01 12:00:00.123456789'")
 	})
+
+	// `timestamp` decodes to a millisecond `DateTime.Utc`; the cursor rides on
+	// `exactTimestamp`, so a page boundary inside one millisecond stays exact.
+	it.effect("round-trips a row's exactTimestamp into the next page's cursor", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(logsListQuery({ limit: 1 }), baseParams)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					timestamp: "2024-01-01 12:00:00.123456789",
+					exactTimestamp: "2024-01-01 12:00:00.123456789",
+					severityText: "INFO",
+					severityNumber: 9,
+					serviceName: "api",
+					body: "hello",
+					traceId: "",
+					spanId: "",
+					recordIdentity: "00112233445566778899AABBCCDDEEFF",
+					logAttributes: "{}",
+					resourceAttributes: "{}",
+				},
+			])
+			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T12:00:00.123Z")
+			const next = yield* compile(
+				logsListQuery({
+					limit: 1,
+					cursorIdentity: {
+						timestamp: row!.exactTimestamp,
+						serviceName: row!.serviceName,
+						traceId: row!.traceId,
+						spanId: row!.spanId,
+						recordIdentity: row!.recordIdentity,
+					},
+				}),
+				baseParams,
+			)
+			expect(next.sql).toContain("logs.Timestamp < '2024-01-01 12:00:00.123456789'")
+			expect(next.sql).toContain("logs.Timestamp = '2024-01-01 12:00:00.123456789'")
+		}),
+	)
 
 	it("uses the full composite identity for deterministic keyset continuation", () => {
 		const { sql } = compileUnsafe(

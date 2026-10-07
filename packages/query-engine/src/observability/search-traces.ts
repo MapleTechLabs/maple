@@ -111,7 +111,7 @@ const spanLevelSearch = (
 				statusMessage: row.statusMessage ?? "",
 				attributes: row.spanAttributes ?? {},
 				resourceAttributes: row.resourceAttributes ?? {},
-				timestamp: String(row.timestamp),
+				timestamp: row.timestamp,
 			})),
 	)
 }

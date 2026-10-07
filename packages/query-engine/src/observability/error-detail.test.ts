@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { DateTime, Effect, Layer } from "effect"
 import { errorDetail } from "./error-detail"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -12,7 +12,7 @@ interface CapturedCalls {
 
 const traceRow = (traceId: string, startTime: string) => ({
 	traceId,
-	startTime,
+	startTime: DateTime.makeUnsafe(startTime),
 	durationMicros: 1000,
 	spanCount: 3,
 	services: ["api"],
@@ -74,7 +74,7 @@ describe("errorDetail", () => {
 				timeRange,
 			}).pipe(
 				Effect.provide(
-					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00.123")])),
+					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03T12:00:00.123Z")])),
 				),
 			)
 
@@ -87,28 +87,12 @@ describe("errorDetail", () => {
 		}),
 	)
 
-	it.effect("falls back to the input time range when the trace start is unparseable", () =>
-		Effect.gen(function* () {
-			const captured: CapturedCalls = { pipeCalls: [] }
-
-			yield* errorDetail({
-				fingerprintHash: "123",
-				timeRange,
-			}).pipe(Effect.provide(makeLayer(makeMockExecutor(captured, [traceRow("t1", "not-a-date")]))))
-
-			const logs = captured.pipeCalls.filter((c) => c.pipe === "list_logs")
-			assert.lengthOf(logs, 1)
-			assert.strictEqual(logs[0]!.params.start_time, timeRange.startTime)
-			assert.strictEqual(logs[0]!.params.end_time, timeRange.endTime)
-		}),
-	)
-
 	it.effect("surfaces the failing span with only the attributes it carries", () =>
 		Effect.gen(function* () {
 			const captured: CapturedCalls = { pipeCalls: [] }
 			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
 				Effect.provide(
-					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")])),
+					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03T12:00:00Z")])),
 				),
 			)
 			const span = result.traces[0]!.errorSpan
@@ -124,7 +108,7 @@ describe("errorDetail", () => {
 			const captured: CapturedCalls = { pipeCalls: [] }
 			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
 				Effect.provide(
-					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")])),
+					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03T12:00:00Z")])),
 				),
 			)
 			assert.deepStrictEqual(result.error, {
@@ -212,7 +196,7 @@ describe("errorDetail", () => {
 		Effect.gen(function* () {
 			const captured: CapturedCalls = { pipeCalls: [] }
 			const row = {
-				...traceRow("t1", "2026-04-03 12:00:00"),
+				...traceRow("t1", "2026-04-03T12:00:00Z"),
 				errorLabel: "Unknown Error",
 				exceptionType: "",
 				exceptionMessage: "",
@@ -224,8 +208,8 @@ describe("errorDetail", () => {
 				errorHttpStatus: "404",
 			}
 			const logs = [
-				{ timestamp: "2026-04-03 12:00:03", severityText: "Info", body: "Tool completed" },
-				{ timestamp: "2026-04-03 12:00:01", severityText: "Error", body: "lookup failed" },
+				{ timestamp: DateTime.makeUnsafe("2026-04-03T12:00:03Z"), severityText: "Info", body: "Tool completed" },
+				{ timestamp: DateTime.makeUnsafe("2026-04-03T12:00:01Z"), severityText: "Error", body: "lookup failed" },
 			]
 			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
 				Effect.provide(makeLayer(makeMockExecutor(captured, [row], {}, logs))),
@@ -245,7 +229,7 @@ describe("errorDetail", () => {
 			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
 				Effect.provide(
 					makeLayer(
-						makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")], {
+						makeMockExecutor(captured, [traceRow("t1", "2026-04-03T12:00:00Z")], {
 							errorCooccurringFingerprints: [
 								{
 									fingerprintHash: "999",

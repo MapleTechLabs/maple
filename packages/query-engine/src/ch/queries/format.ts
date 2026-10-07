@@ -4,6 +4,7 @@
 // PlanetScale, usage and alert-check queries format buckets the same way, and
 // the format string has to match what the frontend parses.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { defineFn, param } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -19,7 +20,7 @@ export const ISO_Z_FORMAT = "%Y-%m-%dT%H:%i:%S.%fZ"
  * The bucket column every timeseries query selects: the timestamp snapped down
  * to the caller's interval, rendered as an ISO-Z string.
  */
-export function isoBucket(column: CH.Expr<string>): CH.Expr<string> {
+export function isoBucket<V extends string | DateTime.Utc>(column: CH.Expr<V>): CH.Expr<string> {
 	return CH.formatDateTime(CH.toStartOfInterval(column, param.int("bucketSeconds")), ISO_Z_FORMAT)
 }
 

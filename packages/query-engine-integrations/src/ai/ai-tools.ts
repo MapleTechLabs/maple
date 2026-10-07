@@ -77,14 +77,14 @@ import {
 	type CHUnionQuery,
 } from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, type DateTime, Schema } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { AiTraceIndex, TraceDetailSpans, orgIdParam } from "@maple/query-engine/ch/tables"
+import { AiTraceIndex, TraceDetailSpans, exactDateTime64, orgIdParam } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
 import {
-	SESSION_ORDER_SENTINEL,
+	sessionOrderSentinel,
 	aiSpanAttributes,
 	isSessionTraceCond,
 	orderTuple,
@@ -142,8 +142,8 @@ const windowParams = {
 	previous: { start: "prevStartTime", end: "prevEndTime" },
 } as const
 
-const startParam = <W extends AiToolsWindow>(window: W) => param.dateTimeString(windowParams[window].start)
-const endParam = <W extends AiToolsWindow>(window: W) => param.dateTimeString(windowParams[window].end)
+const startParam = <W extends AiToolsWindow>(window: W) => param.dateTime(windowParams[window].start)
+const endParam = <W extends AiToolsWindow>(window: W) => param.dateTime(windowParams[window].end)
 
 /** Series a bucketed read returns before the rest collapse into
  *  {@link AI_TOOLS_OTHER_SERIES_KEY}. */
@@ -218,7 +218,7 @@ const traceFacts = <W extends AiToolsWindow>(window: W) =>
 			),
 			traceAgentName: CH.argMin(
 				$.AgentName,
-				CH.if_($.AgentName.neq(""), $.Timestamp, CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL))),
+				CH.if_($.AgentName.neq(""), $.Timestamp, sessionOrderSentinel()),
 			),
 		}))
 		.where(($) => [
@@ -244,7 +244,7 @@ const resolvedModel = (parentModel: CH.Expr<string | null>, traceModel: CH.Expr<
 
 /** The accessor shape every aggregate below reads off {@link toolCalls}. */
 interface ToolCallColumns {
-	readonly ts: CH.Expr<string>
+	readonly ts: CH.Expr<DateTime.Utc>
 	readonly traceId: CH.Expr<string>
 	readonly spanId: CH.Expr<string>
 	readonly sessionKey: CH.Expr<string>
@@ -465,7 +465,7 @@ export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 /** A datetime aggregate as `''` where the aggregate saw no rows at all. Only
  *  un-grouped aggregates need it — a GROUP BY key exists because a row produced
  *  it, so a grouped `min()` always has one to report. */
-const emptyWhenNoRows = (value: CH.Expr<string>): CH.Expr<string> =>
+const emptyWhenNoRows = (value: CH.Expr<DateTime.Utc>): CH.Expr<string> =>
 	CH.if_(CH.count().eq(0), CH.lit(""), CH.toString_(value))
 
 export interface AiToolsTotalsOutput {
@@ -945,7 +945,9 @@ export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 				// nanosecond precision, which with the span id makes the position unique.
 				before === undefined
 					? undefined
-					: $.ts.lt(before.timestamp).or($.ts.eq(before.timestamp).and($.spanId.lt(before.spanId))),
+					: $.ts
+							.lt(exactDateTime64(before.timestamp))
+							.or($.ts.eq(exactDateTime64(before.timestamp)).and($.spanId.lt(before.spanId))),
 			])
 			// Newest first: a modal opened from a failing tool is asking what is
 			// happening now, and `spanId` breaks the ties agent spans routinely have.
@@ -1034,8 +1036,8 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("sliceStart")),
-			$.Timestamp.lte(param.dateTimeString("sliceEnd")),
+			$.Timestamp.gte(param.dateTime("sliceStart")),
+			$.Timestamp.lte(param.dateTime("sliceEnd")),
 			CH.inExprList(
 				traceSpanKey,
 				calls.map((call) =>
@@ -1142,8 +1144,8 @@ export function aiToolDescriptionQuery() {
 		.select(($) => ({ description: CH.argMax($.ToolDescription, $.Timestamp) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.IsToolCall.eq(1),
 			$.ToolName.eq(param.string("toolName")),
 			// Rows materialized before 0032 carry '', and so does a call whose

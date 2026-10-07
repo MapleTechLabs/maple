@@ -10,6 +10,7 @@ import {
 	sessionTraceSummariesQuery,
 } from "./session-replays"
 import { OrgId } from "@maple/domain"
+import { DateTime } from "effect"
 
 const baseParams = { orgId: OrgId.make("org_1") }
 const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
@@ -47,7 +48,11 @@ describe("sessionTraceSummariesQuery", () => {
 	// The table is PARTITION BY toDate(Timestamp); the session window prunes the
 	// daily partitions an unbounded TraceId-IN scan would otherwise touch.
 	it("adds the session time window as a partition-pruning predicate when provided", () => {
-		const q = sessionTraceSummariesQuery({ traceIds: ["t1"], ...WINDOW })
+		const q = sessionTraceSummariesQuery({
+			traceIds: ["t1"],
+			startTime: DateTime.makeUnsafe("2026-06-24T04:00:00Z"),
+			endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
+		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Timestamp >= '2026-06-24 04:00:00'")
 		expect(sql).toContain("Timestamp <= '2026-06-25 06:00:00'")

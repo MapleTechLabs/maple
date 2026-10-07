@@ -199,8 +199,8 @@ const serviceSpanSample = (scope: "span" | "resource") =>
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.limit(SERVICE_SCOPED_SPAN_SAMPLE)
 

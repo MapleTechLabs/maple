@@ -20,7 +20,7 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { type DateTime, Schema } from "effect"
 import {
 	ErrorEvents,
 	ErrorEventsByTime,
@@ -31,6 +31,7 @@ import {
 	TraceListMv,
 	Traces,
 	orgIdParam,
+	utcSecondsParam,
 } from "../tables"
 import {
 	buildProjectedMapExpr,
@@ -386,7 +387,7 @@ export interface SpanHierarchyOutput {
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly statusCode: string
 	readonly statusMessage: string
 	readonly spanAttributes: string
@@ -437,8 +438,8 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 			.where(($) => [
 				$.TraceId.eq(opts.traceId),
 				$.OrgId.eq(orgIdParam),
-				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTimeString("startTime"))),
-				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTimeString("endTime"))),
+				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
+				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
 			])
 			// ORDER BY + LIMIT bounds pathological traces — the earliest spans keep
 			// the root subtree connected. buildSpanTree (web) re-sorts children anyway.
@@ -469,7 +470,7 @@ export interface SpanDetailOutput {
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly statusCode: string
 	readonly statusMessage: string
 	readonly spanAttributes: string
@@ -506,8 +507,8 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 			$.TraceId.eq(opts.traceId),
 			$.SpanId.eq(opts.spanId),
 			$.OrgId.eq(orgIdParam),
-			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTimeString("startTime"))),
-			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTimeString("endTime"))),
+			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
+			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
 		])
 		.limit(1)
 		.format("JSON")
@@ -516,7 +517,7 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 // Trace timestamp probe — resolve any one span timestamp for a trace
 
 export interface TraceTimeProbeOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 }
 
 /**
@@ -543,7 +544,7 @@ export function traceTimeProbeQuery(opts: { traceId: string }) {
 
 /** {@link traceTimeProbeQuery} bounded below by the `startTime` param. */
 export function recentTraceTimeProbeQuery(opts: { traceId: string }) {
-	return traceTimeProbeQuery(opts).where(($) => [$.Timestamp.gte(param.dateTimeString("startTime"))])
+	return traceTimeProbeQuery(opts).where(($) => [$.Timestamp.gte(param.dateTime("startTime"))])
 }
 
 // Traces duration stats and facets
@@ -649,8 +650,8 @@ export function canUseTraceFacetsRollup(
 function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>, opts: TracesFacetsOpts) {
 	return [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
 		...traceFacetDimensionConditions($, opts),
 		CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
 		CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
@@ -1021,8 +1022,8 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 				}))
 				.where(($) => [
 					$.OrgId.eq(orgIdParam),
-					$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-					$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+					$.Timestamp.gte(utcSecondsParam("startTime")),
+					$.Timestamp.lte(utcSecondsParam("endTime")),
 					opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 					opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 				]),
@@ -1038,8 +1039,8 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 				}))
 				.where(($) => [
 					$.OrgId.eq(orgIdParam),
-					$.Timestamp.gte(param.dateTimeString("startTime")),
-					$.Timestamp.lte(param.dateTimeString("endTime")),
+					$.Timestamp.gte(param.dateTime("startTime")),
+					$.Timestamp.lte(param.dateTime("endTime")),
 					opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 					CH.inList(deploymentEnvExpr($.ResourceAttributes), deploymentEnvs),
 				]),
@@ -1064,8 +1065,8 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			edgeCondition("Timestamp"),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 		])
@@ -1383,7 +1384,7 @@ export interface ErrorDetailTracesOpts {
 
 export interface ErrorDetailTracesOutput {
 	readonly traceId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMicros: number
 	readonly spanCount: number
 	readonly services: readonly string[]
@@ -1478,8 +1479,8 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 				$.TraceId,
 				fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
 			),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "desc"])
@@ -1586,8 +1587,8 @@ export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; s
 			$.OrgId.eq(orgIdParam),
 			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
 			opts.spanIds.length ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.limit(Math.max(opts.spanIds.length, 1))
 		.format("JSON")

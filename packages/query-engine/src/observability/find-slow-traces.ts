@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, pipe } from "effect"
+import { Array as Arr, type DateTime, Effect, pipe } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
@@ -33,7 +33,7 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 		readonly serviceName: string
 		readonly durationMs: number
 		readonly statusCode: string
-		readonly timestamp: string
+		readonly timestamp: DateTime.Utc
 	}
 
 	const [slowResult, statsResult] = yield* Effect.all(

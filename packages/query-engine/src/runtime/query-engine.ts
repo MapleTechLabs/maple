@@ -28,7 +28,7 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Duration, Effect, Match, Option, Result, Schema } from "effect"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
@@ -37,6 +37,7 @@ import {
 	BUCKET_POLICIES,
 	computeBucketSeconds,
 	formatWarehouseDateTime,
+	parseUtc,
 	parseWarehouseDateTime,
 } from "../datetime"
 import { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
@@ -144,7 +145,7 @@ interface BucketFillOptions {
 }
 
 interface MetricTimeseriesRow {
-	readonly bucket: string | Date
+	readonly bucket: string | Date | DateTime.Utc
 	readonly serviceName: string
 	readonly attributeValue: string
 	readonly avgValue: number
@@ -252,10 +253,10 @@ export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
  * retention window of `service_map_spans`.
  */
 function traceServicePartitionWindow(
-	rows: ReadonlyArray<{ readonly timestamp: unknown }>,
+	rows: ReadonlyArray<{ readonly timestamp: DateTime.Utc }>,
 	fallback: { readonly startTime: string; readonly endTime: string },
 ): { readonly startTime: string; readonly endTime: string } {
-	const pageTimes = rows.map((row) => parseWarehouseDateTime(String(row.timestamp))).filter(Number.isFinite)
+	const pageTimes = rows.map((row) => DateTime.toEpochMillis(row.timestamp))
 
 	if (pageTimes.length === 0) return fallback
 
@@ -453,9 +454,12 @@ const buildBucketTimeline = (startMs: number, endMs: number, bucketSeconds: numb
 	return timeline
 }
 
-const normalizeBucket = (bucket: string | Date): string => {
+const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 	if (bucket instanceof Date) {
 		return bucket.toISOString()
+	}
+	if (DateTime.isDateTime(bucket)) {
+		return DateTime.formatIso(bucket)
 	}
 
 	const raw = String(bucket).trim()
@@ -709,7 +713,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 	}
 })
 
-function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: string }>(
+function groupTimeSeriesRows<T extends { bucket: string | Date | DateTime.Utc; groupName: string }>(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
 	fillOptions?: BucketFillOptions,
@@ -750,7 +754,7 @@ function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: strin
 
 function groupAllMetricsTimeSeriesRows<
 	T extends {
-		bucket: string | Date
+		bucket: string | Date | DateTime.Utc
 		groupName: string
 		count: number
 		avgDuration: number
@@ -1313,7 +1317,7 @@ function extractTracesDurationStatsOpts(
 }
 
 function signatureMetricsGroupRows<
-	T extends { bucket: string | Date; serviceName: string; attributeValue: string },
+	T extends { bucket: string | Date | DateTime.Utc; serviceName: string; attributeValue: string },
 >(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
@@ -1874,8 +1878,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						source: "traces",
 						data: rows.map((row) => ({
 							traceId: row.traceId,
-							startTime: String(row.startTime),
-							endTime: String(row.endTime),
+							startTime: DateTime.formatIso(row.startTime),
+							endTime: DateTime.formatIso(row.endTime),
 							durationMs: Number(row.durationMicros) / 1000,
 							spanCount: Number(row.spanCount),
 							services: row.services.map(String),
@@ -1900,6 +1904,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			)
 			const maxLimit = hasIndexedFilter ? 200 : 50
 			const clampedLimit = Math.min(tracesQuery.limit ?? 25, maxLimit)
+			const cursor =
+				tracesQuery.cursor === undefined ? Option.none() : Option.some(parseUtc(tracesQuery.cursor))
+			if (Option.isSome(cursor) && Option.isNone(cursor.value)) {
+				return yield* new QueryEngineValidationError({
+					message: "Invalid traces list cursor",
+					details: ["`cursor` must be a timestamp from a previous page's last row"],
+				})
+			}
 
 			const rows = yield* executeCHQuery(
 				warehouse,
@@ -1910,7 +1922,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 						limit: clampedLimit,
 						offset: tracesQuery.offset,
-						cursor: tracesQuery.cursor,
+						cursor: Option.getOrUndefined(Option.flatten(cursor)),
 						sortBy: tracesQuery.sortBy,
 						sortDir: tracesQuery.sortDir,
 						columns: requestedColumns as string[] | undefined,
@@ -1963,7 +1975,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "traces",
 					data: rows.map((row) => ({
 						traceId: row.traceId,
-						timestamp: String(row.timestamp),
+						timestamp: DateTime.formatIso(row.timestamp),
 						spanId: row.spanId,
 						// Empty for a root span. Lets the traces list tell a child-span row
 						// apart from a root one and deep-link `?spanId=` only for children.

@@ -29,6 +29,7 @@ import {
 	TraceListMv,
 	TracesAggregatesHourly,
 	orgIdParam,
+	utcSecondsParam,
 } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { hourFloor } from "@maple/query-engine/ch/query-helpers"
@@ -408,10 +409,10 @@ export function auditLogCorrelationQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimestampTime.gte(param.dateTimeString("startTime")),
-			$.TimestampTime.lte(param.dateTimeString("endTime")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["logCount", "desc"])
@@ -597,8 +598,8 @@ export function auditRootlessTracesSQL(
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("parentStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 		.groupBy("TraceId")

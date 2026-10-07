@@ -16,6 +16,7 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compileFnCallCond } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -1056,14 +1057,14 @@ export interface SessionTraceSummariesOpts {
 	/** The correlated trace ids to summarize (from session_replays.TraceIds). */
 	traceIds: ReadonlyArray<string>
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 	limit?: number
 }
 
 export interface SessionTraceSummaryOutput {
 	readonly traceId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootServiceName: string
@@ -1107,8 +1108,8 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "asc"])

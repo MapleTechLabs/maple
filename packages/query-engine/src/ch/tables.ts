@@ -1,11 +1,13 @@
 // Maple Table Definitions
 //
 // The query tables ARE the warehouse datasources in
-// packages/domain/src/tinybird/datasources.ts; these names are aliases. Their
-// timestamps decode as the strings ClickHouse sends, the wire format web and
-// the iOS app parse.
+// packages/domain/src/tinybird/datasources.ts; these names are aliases. A
+// column declared with `utcDateTime()`/`utcDateTime64()` decodes as a
+// `DateTime.Utc`; the rest still decode as the strings ClickHouse sends.
 
 import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import type { DateTime } from "effect"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 
 /**
@@ -36,6 +38,25 @@ export const orgIdParam = T.param.of(orgId, "orgId")
  * effect-orm 0.3.0 only accepts strings at runtime despite its type.
  */
 export const utcSecondsParam = <const N extends string>(name: N) => T.param.of(T.dateTime, name)
+
+/**
+ * A rollup's time column read as `DateTime.Utc`, so a UNION arm over it matches
+ * a raw-table arm whose timestamp already is one. Same SQL; a no-op on a column
+ * declared with `utcDateTime()`.
+ */
+const WIRE_DATETIME64 = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,9})?$/
+
+/**
+ * A `DateTime64(9)` bound from a `toString(Timestamp)` literal, which keeps the
+ * nanoseconds a `DateTime.Utc` drops: a millisecond keyset cursor would skip
+ * rows sharing the boundary millisecond. Any other string fails `compile` on
+ * the column's codec, as a typed `QueryBuilderError`.
+ */
+export const exactDateTime64 = (value: string): CH.Expr<DateTime.Utc> | string =>
+	WIRE_DATETIME64.test(value) ? CH.makeExpr(CH.toFragment(CH.lit(value)), T.dateTime64.schema) : value
+
+export const utcColumn = (column: CH.Expr<string | DateTime.Utc>): CH.Expr<DateTime.Utc> =>
+	CH.makeExpr(CH.toFragment(column), T.dateTime.schema)
 
 export const Traces = Datasources.traces
 

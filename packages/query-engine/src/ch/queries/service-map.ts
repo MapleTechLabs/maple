@@ -16,7 +16,7 @@ import {
 	presentableStatementSql,
 } from "@maple/domain/tinybird/db-query-shape-sql"
 import { deploymentEnvExpr, messagingDestinationExpr } from "@maple/domain/tinybird/semconv-renames"
-import { Schema, Effect } from "effect"
+import { type DateTime, Schema, Effect } from "effect"
 import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { defineCondFn, defineFn } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -37,6 +37,7 @@ import {
 	type StringMap,
 	Traces,
 	orgIdParam,
+	utcSecondsParam,
 } from "../tables"
 import { unionAll } from "@maple-dev/effect-orm/clickhouse"
 import { edgeCondition, interiorConditions } from "./rollup-splice"
@@ -588,8 +589,8 @@ function serviceDbEdgesQueryBase(opts: { serviceName?: string; deploymentEnv?: s
 			// time, so this keeps the raw in-progress-hour branch consistent and
 			// avoids phantom edges from unnamed spans.
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : $.ServiceName.neq(""),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			edgeCondition("Timestamp"),
 			$.SpanKind.in_("Client", "Producer"),
 			dbSystemExpr($).neq(""),
@@ -802,7 +803,7 @@ const signaturesHourlyFilters = (
 const serviceDbRawFilters = (
 	$: {
 		OrgId: CH.Expr<string>
-		Timestamp: CH.Expr<string>
+		Timestamp: CH.Expr<DateTime.Utc>
 		SpanKind: CH.Expr<string>
 		ServiceName: CH.Expr<string>
 		SpanAttributes: CH.ColumnRef<"SpanAttributes", StringMap>
@@ -812,8 +813,8 @@ const serviceDbRawFilters = (
 	scope: "edge" | "fullWindow",
 ) => [
 	$.OrgId.eq(orgIdParam),
-	$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
-	$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+	$.Timestamp.gte(CH.toDateTime(utcSecondsParam("startTime"))),
+	$.Timestamp.lte(CH.toDateTime(utcSecondsParam("endTime"))),
 	scope === "edge" ? edgeCondition("Timestamp") : undefined,
 	$.SpanKind.in_("Client", "Producer"),
 	$.ServiceName.neq(""),
@@ -1203,8 +1204,8 @@ export function serviceExternalEdgesSQL(
 			return [
 				$.OrgId.eq(orgIdParam),
 				$.ServiceName.eq(opts.serviceName),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 				edgeCondition("Timestamp"),
 				CH.inList($.SpanKind, ["Client", "Producer"]),
 				attr("db.system.name").eq(""),
@@ -1424,8 +1425,8 @@ export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
-			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			$.Timestamp.gte(CH.toDateTime(utcSecondsParam("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(utcSecondsParam("endTime"))),
 			edgeCondition("Timestamp"),
 			$.SpanKind.in_("Client", "Producer"),
 			$.ServiceName.neq(""),

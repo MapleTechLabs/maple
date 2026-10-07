@@ -14,7 +14,7 @@
 
 import { Schema, Effect } from "effect"
 import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { compile } from "@maple-dev/effect-orm/clickhouse"
+import { compile, dateTimeString } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
@@ -265,8 +265,8 @@ export function serviceMapResolutionsRollupSQL(
 		}))
 		.where(($) => [
 			CH.inList($.SpanKind, ["Client", "Producer"]),
-			$.Timestamp.gte(param.dateTimeString("hourStart")),
-			$.Timestamp.lt(param.dateTimeString("hourEnd")),
+			$.Timestamp.gte(param.dateTime("hourStart")),
+			$.Timestamp.lt(param.dateTime("hourEnd")),
 			$.OrgId.eq(orgIdParam),
 			$.SpanAttributes.get("server.address").neq(""),
 		])
@@ -281,8 +281,8 @@ export function serviceMapResolutionsRollupSQL(
 		}))
 		.where(($) => [
 			CH.inList($.SpanKind, ["Server", "Consumer"]),
-			$.Timestamp.gte(param.dateTimeString("hourStart")),
-			$.Timestamp.lt(param.dateTimeString("hourEnd")),
+			$.Timestamp.gte(param.dateTime("hourStart")),
+			$.Timestamp.lt(param.dateTime("hourEnd")),
 			$.OrgId.eq(orgIdParam),
 		])
 
@@ -290,7 +290,8 @@ export function serviceMapResolutionsRollupSQL(
 		.innerJoinQuery(children, "c", (p, c) => p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)))
 		.select(($) => ({
 			OrgId: $.OrgId,
-			Hour: CH.toStartOfHour($.Timestamp),
+			// Rows go to `ingest` as they are, so `Hour` stays the wire string.
+			Hour: CH.makeExpr(CH.toFragment(CH.toStartOfHour($.Timestamp)), dateTimeString.schema),
 			SourceService: $.ServiceName,
 			ParentServerAddress: $.ServerAddress,
 			ResolvedTargetService: $.c.ServiceName,

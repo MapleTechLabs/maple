@@ -28,8 +28,8 @@ export const logs = defineDatasource("logs", {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
-		TimestampTime: column(t.dateTime(), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
+		TimestampTime: column(utcDateTime(), { jsonPath: "$.timestamp" }),
 		TraceId: column(t.string(), { jsonPath: "$.trace_id" }),
 		SpanId: column(t.string(), { jsonPath: "$.span_id" }),
 		TraceFlags: column(t.uint8(), { jsonPath: "$.flags" }),
@@ -187,7 +187,7 @@ export const traces = defineDatasource("traces", {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.start_time" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.start_time" }),
 		TraceId: column(t.string(), { jsonPath: "$.trace_id" }),
 		SpanId: column(t.string(), { jsonPath: "$.span_id" }),
 		ParentSpanId: column(t.string(), { jsonPath: "$.parent_span_id" }),
@@ -217,7 +217,7 @@ export const traces = defineDatasource("traces", {
 		SpanAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.span_attributes",
 		}),
-		EventsTimestamp: column(t.array(t.dateTime64(9)), {
+		EventsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.events_timestamp[:]",
 		}),
 		EventsName: column(t.array(t.string().lowCardinality()), {
@@ -1051,7 +1051,7 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		TraceId: t.string(),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string(),
 		SpanKind: t.string().lowCardinality(),
@@ -1140,7 +1140,7 @@ export const traceDetailSpans = defineDatasource("trace_detail_spans", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime64(9),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		SpanId: t.string(),
 		ParentSpanId: t.string(),
@@ -1205,7 +1205,7 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime64(9),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		SessionId: t.string(),
 		VendorId: t.string().lowCardinality(),

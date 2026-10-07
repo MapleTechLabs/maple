@@ -15,7 +15,7 @@
 
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 
@@ -723,8 +723,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(
 				CH.sessionTraceSummariesQuery({
 					traceIds: [TRACE_ID],
-					startTime: START_TIME,
-					endTime: END_TIME,
+					startTime: DateTime.makeUnsafe("2026-01-01T10:30:00Z"),
+					endTime: DateTime.makeUnsafe("2026-01-03T14:15:00Z"),
 				}),
 				{ orgId: ORG_ID },
 			),

@@ -35,7 +35,7 @@ import {
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { Logs, MetricCatalog, ServiceOperationsMinutely, ServiceOverviewSpans, orgIdParam } from "../tables"
+import { Logs, MetricCatalog, ServiceOperationsMinutely, ServiceOverviewSpans, orgIdParam, utcSecondsParam } from "../tables"
 import { hourFloor } from "./query-helpers"
 
 export interface ServiceLivenessOutput {
@@ -127,10 +127,10 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 
 	return unionAll(spans, logs).format("JSON")
@@ -193,10 +193,10 @@ export function logsFreshnessQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.format("JSON")
 }

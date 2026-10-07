@@ -4,12 +4,14 @@
 // by @maple/query-engine — these types exist solely for consumers that import
 // output/param shapes (apps/web, observability layer).
 
+import type { DateTime } from "effect"
+
 // list_traces
 
 export interface ListTracesOutput {
 	readonly traceId: string
-	readonly startTime: string
-	readonly endTime: string
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc
 	readonly durationMicros: number
 	readonly spanCount: number
 	readonly services: readonly string[]
@@ -69,7 +71,7 @@ export interface SpanHierarchyOutput {
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly statusCode: string
 	readonly statusMessage: string
 	readonly spanAttributes: string
@@ -86,7 +88,9 @@ export interface SpanHierarchyParams {
 // list_logs
 
 export interface ListLogsOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
+	/** `timestamp` with its nanoseconds, for cursors and log keys. */
+	readonly exactTimestamp: string
 	readonly severityText: string
 	readonly severityNumber: number
 	readonly serviceName: string
@@ -451,7 +455,7 @@ export interface ErrorsTimeseriesParams {
 
 export interface ErrorDetailTracesOutput {
 	readonly traceId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMicros: number
 	readonly spanCount: number
 	readonly services: readonly string[]

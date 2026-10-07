@@ -23,7 +23,8 @@ import {
 	type NeedsSelect,
 } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "./raw-sql"
-import { Array as A, Effect, Match, Result, Schema } from "effect"
+import { Array as A, Effect, Match, Option, Result, Schema } from "effect"
+import { parseUtc } from "../datetime"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import {
 	attributeIndexMode,
@@ -222,7 +223,7 @@ export function compilePipeQuery(
 							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 							limit: int("limit", 100),
 							offset: int("offset", 0),
-							cursor: str("cursor"),
+							cursor: Option.getOrUndefined(Option.flatMap(Option.fromUndefinedOr(str("cursor")), parseUtc)),
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							errorsOnly: hasError,

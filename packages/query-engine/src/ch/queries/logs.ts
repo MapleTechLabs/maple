@@ -2,6 +2,7 @@
 //
 // DSL-based query definitions for logs timeseries and breakdown.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import { compileFnCall, subqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -10,7 +11,7 @@ import { from, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/e
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { Logs, LogsAggregatesHourly, orgIdParam } from "../tables"
+import { Logs, LogsAggregatesHourly, exactDateTime64, orgIdParam, utcSecondsParam } from "../tables"
 import { finalizeTimeseries } from "./series-cap"
 import type { AttributeFilter } from "@maple/domain/query-engine"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
@@ -228,10 +229,10 @@ function rawLogsTimeRange($: ColumnAccessor<typeof Logs.columns>): Array<CH.Cond
 	return [
 		// TimestampTime is the partition/index key; this filter unlocks
 		// partition pruning. Timestamp filter retained for sub-second accuracy.
-		$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-		$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.TimestampTime.gte(utcSecondsParam("startTime")),
+		$.TimestampTime.lte(utcSecondsParam("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 	]
 }
 
@@ -269,7 +270,7 @@ export interface LogsTimeseriesOpts extends LogsQueryOpts {
 }
 
 export interface LogsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	readonly count: number
 }
@@ -277,7 +278,7 @@ export interface LogsTimeseriesOutput {
 // Synthetic column defs matching LogsTimeseriesOutput, used to wrap the inner
 // query in a CTE when the top-N series cap is applied.
 const LOGS_TS_COLUMNS: ColumnDefs = {
-	bucket: T.string,
+	bucket: T.dateTime,
 	groupName: T.string,
 	count: T.float64,
 }
@@ -372,10 +373,10 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 			$.OrgId.eq(orgIdParam),
 			// TimestampTime is the partition/index key; this filter unlocks
 			// partition pruning. Timestamp filter retained for sub-second accuracy.
-			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			...serviceSeverityConditions($, opts),
 			opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
@@ -556,10 +557,12 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 
 export interface LogsListOpts extends LogsQueryOpts {
 	minSeverity?: number
+	/** A previous row's `exactTimestamp`: only rows older than it. */
 	cursor?: string
 	limit?: number
 	offset?: number
 	cursorIdentity?: {
+		/** The boundary row's `exactTimestamp`. */
 		timestamp: string
 		serviceName: string
 		traceId: string
@@ -569,7 +572,9 @@ export interface LogsListOpts extends LogsQueryOpts {
 }
 
 export interface LogsListOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
+	/** `Timestamp` with its nanoseconds, the value cursors and log keys compare against. */
+	readonly exactTimestamp: string
 	readonly severityText: string
 	readonly severityNumber: number
 	readonly serviceName: string
@@ -601,18 +606,18 @@ export function logsListQuery(opts: LogsListOpts) {
 
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
-		$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-		$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.TimestampTime.gte(utcSecondsParam("startTime")),
+		$.TimestampTime.lte(utcSecondsParam("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		...serviceSeverityConditions($, opts),
 		opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
 		CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
 		CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
-		CH.when(opts.cursor, (v: string) => $.Timestamp.lt(v)),
+		CH.when(opts.cursor, (v: string) => $.Timestamp.lt(exactDateTime64(v))),
 		opts.cursorIdentity
-			? $.Timestamp.lt(opts.cursorIdentity.timestamp).or(
-					$.Timestamp.eq(opts.cursorIdentity.timestamp).and(
+			? $.Timestamp.lt(exactDateTime64(opts.cursorIdentity.timestamp)).or(
+					$.Timestamp.eq(exactDateTime64(opts.cursorIdentity.timestamp)).and(
 						$.ServiceName.gt(opts.cursorIdentity.serviceName).or(
 							$.ServiceName.eq(opts.cursorIdentity.serviceName).and(
 								$.TraceId.gt(opts.cursorIdentity.traceId).or(
@@ -643,12 +648,13 @@ export function logsListQuery(opts: LogsListOpts) {
 		.where(baseWhere)
 		.orderBy(["ts", "desc"])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTimeString, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	// Stage 2: heavy columns read only for rows at/after the cutoff timestamp.
 	let query = from(Logs)
 		.select(($) => ({
 			timestamp: $.Timestamp,
+			exactTimestamp: CH.toString_($.Timestamp),
 			severityText: $.SeverityText,
 			severityNumber: $.SeverityNumber,
 			serviceName: $.ServiceName,
@@ -691,6 +697,7 @@ export function getLogByKeyQuery(opts: LogByKeyOpts) {
 	return from(Logs)
 		.select(($) => ({
 			timestamp: $.Timestamp,
+			exactTimestamp: CH.toString_($.Timestamp),
 			severityText: $.SeverityText,
 			severityNumber: $.SeverityNumber,
 			serviceName: $.ServiceName,
@@ -705,9 +712,9 @@ export function getLogByKeyQuery(opts: LogByKeyOpts) {
 			$.OrgId.eq(orgIdParam),
 			// TimestampTime is the partition/index key; bounding it unlocks
 			// partition pruning. Timestamp.eq pins the exact sub-second row.
-			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-			$.Timestamp.eq(param.dateTimeString("timestamp")),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.eq(param.dateTime("timestamp")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
 			CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
@@ -870,10 +877,10 @@ function logsFacetsQueryFromRaw(
 ): CHUnionQuery<LogsFacetsOutput> {
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
-		$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-		$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.TimestampTime.gte(utcSecondsParam("startTime")),
+		$.TimestampTime.lte(utcSecondsParam("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),
 		environmentCondition($, opts),

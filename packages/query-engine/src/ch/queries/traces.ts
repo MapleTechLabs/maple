@@ -2,9 +2,9 @@
 //
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
+import type { DateTime } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
 import {
-	compileFnCall,
 	subqueryCond,
 	subqueryExpr,
 	untypedSubqueryExpr,
@@ -29,6 +29,8 @@ import {
 	Traces,
 	TracesAggregatesHourly,
 	orgIdParam,
+	utcColumn,
+	utcSecondsParam,
 } from "../tables"
 import {
 	deploymentEnvExpr,
@@ -389,7 +391,7 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 }
 
 export interface TracesTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	/** Sample-weighted estimate of spans that happened. See COUNT SEMANTICS. */
 	readonly count: number
@@ -410,7 +412,7 @@ export interface TracesTimeseriesOutput {
 // query when the top-N series cap is applied. CH types are nominal
 // here (the cap helper references columns by name), so numerics use Float64.
 const TRACES_TS_COLUMNS: ColumnDefs = {
-	bucket: T.string,
+	bucket: T.dateTime,
 	groupName: T.string,
 	count: T.float64,
 	spanCount: T.float64,
@@ -770,7 +772,7 @@ export function tracesTimeseriesQuery(
 
 		const hourlyInterior = from(TracesAggregatesHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				bucket: CH.toStartOfInterval(utcColumn($.Hour), param.int("bucketSeconds")),
 				groupName: buildAggregatesGroupNameExpr($, opts.groupBy),
 				bWeightedCount: CH.sum($.WeightedCount),
 				// The MV stores no raw row count, so the weighted value stands in for
@@ -965,7 +967,7 @@ export interface TracesListOpts extends TracesQueryOpts {
 	 * both, but callers should pick one. Cursor is strictly preferred for deep
 	 * pages: offset still scans all skipped rows.
 	 */
-	cursor?: string
+	cursor?: DateTime.Utc
 	columns?: readonly string[]
 	/** Defaults to `"timestamp"`. */
 	sortBy?: TracesListSortKey
@@ -978,7 +980,7 @@ export type TracesListSortDir = "asc" | "desc"
 
 export interface TracesListOutput {
 	readonly traceId: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly spanId: string
 	/** Empty string for a root span. */
 	readonly parentSpanId: string
@@ -1045,7 +1047,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, opts),
-		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
+		CH.when(cursor, (v: DateTime.Utc) => $.Timestamp.lt(v)),
 	]
 
 	const sortBy = opts.sortBy ?? "timestamp"
@@ -1076,11 +1078,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 			.orderBy(["ts", sortDir])
 			.limit(limit + offset)
 		const agg = sortDir === "desc" ? "min" : "max"
-		const cutoff = subqueryExpr(
-			cutoffInner,
-			T.dateTimeString,
-			(sql) => `(SELECT ${agg}(ts) FROM (${sql}))`,
-		)
+		const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT ${agg}(ts) FROM (${sql}))`)
 		return sortDir === "desc" ? $.Timestamp.gte(cutoff) : $.Timestamp.lte(cutoff)
 	}
 
@@ -1137,7 +1135,7 @@ export interface SlowTracesOutput {
 	readonly serviceName: string
 	readonly durationMs: number
 	readonly statusCode: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 }
 
 export function slowTracesQuery(opts: SlowTracesOpts) {
@@ -1148,12 +1146,12 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			serviceName: $.ServiceName,
 			durationMs: $.Duration.div(1000000),
 			statusCode: $.StatusCode,
-			timestamp: CH.toString_($.Timestamp),
+			timestamp: $.Timestamp,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.environment, (v: string) => $.DeploymentEnv.eq(v)),
 		])
@@ -1188,7 +1186,7 @@ export interface SpanSearchOutput {
 	readonly statusMessage: string
 	readonly spanAttributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 }
 
 type SpanSearchColumns = Pick<
@@ -1213,7 +1211,7 @@ function spanSearchFrom<Name extends string>(
 	opts: SpanSearchOpts,
 	limit: number,
 	offset: number,
-	cutoff?: CH.Expr<string>,
+	cutoff?: CH.Expr<DateTime.Utc>,
 ) {
 	const q = from(source)
 		.select(($) => ({
@@ -1226,7 +1224,7 @@ function spanSearchFrom<Name extends string>(
 			statusMessage: $.StatusMessage,
 			spanAttributes: $.SpanAttributes,
 			resourceAttributes: $.ResourceAttributes,
-			timestamp: CH.toString_($.Timestamp),
+			timestamp: $.Timestamp,
 		}))
 		.where(($) => [
 			...tracesBaseWhereConditions($, opts),
@@ -1266,7 +1264,7 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 		])
 		.orderBy(["ts", "desc"])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTimeString, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	return spanSearchFrom(Traces, opts, limit, offset, cutoff)
 }
@@ -1280,13 +1278,13 @@ export interface TracesRootListOpts extends TracesQueryOpts {
 	 * Keyset pagination cursor. When set, only root spans with `Timestamp < cursor`
 	 * are returned. Strictly preferred over `offset` for deep pagination.
 	 */
-	cursor?: string
+	cursor?: DateTime.Utc
 }
 
 export interface TracesRootListOutput {
 	readonly traceId: string
-	readonly startTime: string
-	readonly endTime: string
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc
 	readonly durationMicros: number
 	readonly spanCount: number
 	readonly services: readonly string[]
@@ -1324,12 +1322,12 @@ export interface TraceSummariesOpts extends TracesBaseWhereOpts {
 	httpRoute?: string
 	limit?: number
 	offset?: number
-	cursor?: { timestamp: string; traceId: string }
+	cursor?: { timestamp: DateTime.Utc; traceId: string }
 }
 
 export interface TraceSummaryOutput {
 	readonly traceId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootSpanKind: string
@@ -1405,8 +1403,8 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
 			opts.cursor
 				? $.Timestamp.lt(opts.cursor.timestamp).or(
@@ -1463,7 +1461,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
-		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
+		CH.when(cursor, (v: DateTime.Utc) => $.Timestamp.lt(v)),
 	]
 
 	// Stage 1: cheap scan — only `Timestamp` is read, sharing the same WHERE
@@ -1473,7 +1471,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 		.where(baseWhere)
 		.orderBy(["ts", "desc"])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTimeString, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	// Stage 2: heavy SpanAttributes lookups read only for rows at/after the cutoff.
 	let q = from(Traces)
@@ -1521,7 +1519,7 @@ export interface TraceListOpts extends TracesQueryOpts {
 	 * timestamp. Strictly preferred over `offset` for deep pagination.
 	 * Only valid with the default `timestamp` sort.
 	 */
-	cursor?: { timestamp: string; traceId: string }
+	cursor?: { timestamp: DateTime.Utc; traceId: string }
 	/**
 	 * `durationMs` sorts by the ROOT span's own duration, not the trace's
 	 * wall-clock extent — the wall clock only exists after stage 2 aggregates,
@@ -1535,11 +1533,11 @@ export interface TraceListOpts extends TracesQueryOpts {
 export interface TraceListOutput {
 	readonly traceId: string
 	/** Root span timestamp — the keyset cursor field, paired with `traceId`. */
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	/** `startTime` truncated to the second: the page order on the `trace_list_mv` path. */
-	readonly startSecond: string
+	readonly startSecond: DateTime.Utc
 	/** When the last span finished, so `endTime - startTime` is the duration below. */
-	readonly endTime: string
+	readonly endTime: DateTime.Utc
 	/** Wall-clock extent of the whole trace, not the root span's own duration. */
 	readonly durationMicros: number
 	/** The root span's own duration — the `durationMs` sort key (see `TraceListOpts.sortBy`). */
@@ -1563,14 +1561,14 @@ export interface TraceListOutput {
 // they preserve their argument's element type, and the local copies here (plain
 // `compileFnCall`) did not, which cost every query selecting one its row schema.
 
-const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
-	CH.compileTypedFnCall("fromUnixTimestamp64Nano", T.dateTime64String.schema, nanos)
+const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<DateTime.Utc> =>
+	CH.compileTypedFnCall("fromUnixTimestamp64Nano", T.dateTime64.schema, nanos)
 
-const subtractHours = (d: CH.Expr<string>, hours: CH.Expr<number>): CH.Expr<string> =>
-	compileFnCall<string>("subtractHours", d, hours)
+const subtractHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =>
+	CH.compileTypedFnCall("subtractHours", T.dateTime.schema, d, hours)
 
-const addHours = (d: CH.Expr<string>, hours: CH.Expr<number>): CH.Expr<string> =>
-	compileFnCall<string>("addHours", d, hours)
+const addHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =>
+	CH.compileTypedFnCall("addHours", T.dateTime.schema, d, hours)
 
 /**
  * Attribute-filter keys the trace-list MV pre-extracts into columns. The MV
@@ -1623,8 +1621,8 @@ function traceListMvWhereConditions(
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -1722,12 +1720,10 @@ export function traceListQuery(opts: TraceListOpts) {
 		? (() => {
 				// `trace_list_mv` is sorted `(OrgId, Timestamp, TraceId)`, so this pages
 				// read-in-order instead of scanning the window. Its Timestamp is
-				// second-granularity (`toDateTime`): the ns cursor from stage-2
-				// `startTime` must be truncated to match, and the `(ts, traceId)` tuple
+				// second-granularity (`toDateTime`): the column's codec floors the
+				// stage-2 `startTime` cursor to the second, and the `(ts, traceId)` tuple
 				// ordering is what keeps pages disjoint despite the truncation ties.
 				const secCursor = cursor
-					? { timestamp: cursor.timestamp.slice(0, 19), traceId: cursor.traceId }
-					: undefined
 				const mvBase = from(TraceListMv)
 					.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
 					.where(($) => [
@@ -1818,8 +1814,8 @@ export function traceListQuery(opts: TraceListOpts) {
 			// (`computeTraceTimeWindow`). Without any bound this scans every
 			// retained partition for the PK analysis and times out on prod
 			// (measured: 12h window, unbounded >10s; bounded <10s).
-			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
+			$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
+			$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
 			subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
 		])
 		.groupBy("traceId")
@@ -1922,8 +1918,8 @@ export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
+			$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
+			$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)
