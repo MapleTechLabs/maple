@@ -5,11 +5,13 @@
  * Both windows are whole UTC days counted back from the cancellation: `recent`
  * is the 30 days up to it, `prior` the 30 before.
  */
-import type { BillingCustomer, BillingInvoice, CancellationSnapshot, DailyVolume } from "@maple/domain/http"
+import type { CancellationSnapshot, DailyVolume } from "@maple/domain/http"
 import { timestampMs } from "@maple/backend/platform/time"
 
 export const DAY_MS = 86_400_000
 export const WINDOW_DAYS = 30
+/** How far back "when did telemetry last arrive" looks; the usage rollup keeps a year. */
+const LOOKBACK_DAYS = 365
 
 const startOfUtcDay = (epochMs: number): number => Math.floor(epochMs / DAY_MS) * DAY_MS
 
@@ -21,9 +23,13 @@ type Ingest = NonNullable<CancellationSnapshot["ingest"]>
 type Visits = NonNullable<CancellationSnapshot["visits"]>
 type Billing = NonNullable<CancellationSnapshot["billing"]>
 
-/** The warehouse window `summarizeIngest` expects: both 30-day windows, ending at the cancellation. */
+/**
+ * The warehouse window `summarizeIngest` expects: a year ending at the
+ * cancellation. Only the last 60 days are summed; the rest is there so an org
+ * that switched off three months ago is not read as one that never sent anything.
+ */
 export const ingestWindow = (atMs: number): { readonly startMs: number; readonly endMs: number } => ({
-	startMs: startOfUtcDay(atMs) - (WINDOW_DAYS * 2 - 1) * DAY_MS,
+	startMs: startOfUtcDay(atMs) - (LOOKBACK_DAYS - 1) * DAY_MS,
 	endMs: atMs,
 })
 
@@ -35,16 +41,18 @@ export const summarizeIngest = (days: ReadonlyArray<DailyVolume>, atMs: number):
 	for (const day of days) {
 		const age = daysBefore(atMs, timestampMs(`${day.date}T00:00:00Z`))
 		// Written as the accepted range so an unparseable date (NaN) is skipped too.
-		if (!(age >= 0 && age < WINDOW_DAYS * 2)) continue
-		const active = day.logsGB + day.tracesGB + day.metricsGB + day.browserSessions > 0
+		if (!(age >= 0 && age < LOOKBACK_DAYS)) continue
+		const active =
+			day.logsGB + day.tracesGB + day.metricsGB + day.browserSessions + (day.productEvents ?? 0) > 0
 		if (!active) continue
+		if (daysSinceLastData === null || age < daysSinceLastData) daysSinceLastData = age
+		if (age >= WINDOW_DAYS * 2) continue
 		const window = age < WINDOW_DAYS ? recent : prior
 		window.logsGB += day.logsGB
 		window.tracesGB += day.tracesGB
 		window.metricsGB += day.metricsGB
 		window.browserSessions += day.browserSessions
 		window.activeDays += 1
-		if (daysSinceLastData === null || age < daysSinceLastData) daysSinceLastData = age
 	}
 	return { recent, prior, daysSinceLastData }
 }
@@ -68,7 +76,8 @@ export const summarizeVisits = (
 	let daysSinceLastVisit: number | null = null
 	for (const day of days) {
 		const age = daysBefore(atMs, day.dayMs)
-		if (day.users <= 0 || age < 1 || age > WINDOW_DAYS * 2) continue
+		// Accepted range, so a bucket that did not parse (NaN) is skipped too.
+		if (!(day.users > 0 && age >= 1 && age <= WINDOW_DAYS * 2)) continue
 		const window = age <= WINDOW_DAYS ? recent : prior
 		window.activeDays += 1
 		window.peakDailyUsers = Math.max(window.peakDailyUsers, day.users)
@@ -80,14 +89,30 @@ export const summarizeVisits = (
 /** Drafts and voided invoices were never a bill the org saw. */
 const BILLED_STATUSES = new Set(["paid", "open", "uncollectible"])
 
-export const summarizeBilling = (
-	customer: BillingCustomer,
-	invoices: ReadonlyArray<BillingInvoice>,
-): Billing => {
+/** The parts of Autumn's customer the billing section is read from. */
+interface BillingInputs {
+	readonly balances: Readonly<
+		Record<
+			string,
+			{
+				readonly granted?: number | null | undefined
+				readonly usage?: number | null | undefined
+				readonly unlimited?: boolean | null | undefined
+			}
+		>
+	>
+	readonly invoices: ReadonlyArray<{
+		readonly status: string
+		readonly total: number
+		readonly createdAt: number
+	}>
+}
+
+export const summarizeBilling = ({ balances, invoices }: BillingInputs): Billing => {
 	const billed = invoices
 		.filter((invoice) => BILLED_STATUSES.has(invoice.status))
 		.toSorted((a, b) => b.createdAt - a.createdAt)
-	const overAllowance = Object.entries(customer.balances ?? {})
+	const overAllowance = Object.entries(balances)
 		.filter(([, balance]) => {
 			const granted = balance.granted ?? 0
 			return balance.unlimited !== true && granted > 0 && (balance.usage ?? 0) > granted

@@ -29,9 +29,11 @@ const BILL_JUMP_MIN_DOLLARS = 20
 export const totalGB = (volume: CancellationVolume): number =>
 	volume.logsGB + volume.tracesGB + volume.metricsGB
 
+// A first charge after a $0 trial invoice is the plan starting, not the bill jumping.
 const billJumped = (billing: NonNullable<CancellationSnapshot["billing"]>): boolean =>
 	billing.lastInvoiceTotal !== null &&
 	billing.previousInvoiceTotal !== null &&
+	billing.previousInvoiceTotal > 0 &&
 	billing.lastInvoiceTotal >= billing.previousInvoiceTotal * BILL_JUMP_RATIO &&
 	billing.lastInvoiceTotal - billing.previousInvoiceTotal >= BILL_JUMP_MIN_DOLLARS
 
@@ -41,11 +43,12 @@ const billJumped = (billing: NonNullable<CancellationSnapshot["billing"]>): bool
  */
 export const ruleReason = (snapshot: CancellationSnapshot): CancellationReason => {
 	const { plan, org, ingest, visits, billing } = snapshot
-	if (plan.pastDue) return "payment_failure"
+	// Past due on a plan the org itself scheduled to cancel is a choice, with a late invoice.
+	if (plan.pastDue && plan.phase === "ended") return "payment_failure"
 
 	if (ingest !== null) {
 		const activeDays = ingest.recent.activeDays + ingest.prior.activeDays
-		if (activeDays === 0 && org?.everReceivedData !== true) return "never_activated"
+		if (ingest.daysSinceLastData === null && org?.everReceivedData !== true) return "never_activated"
 		// Only for an org young enough that the two windows are its whole life:
 		// a few active days from an older org are the tail of real use.
 		const young = (plan.tenureDays ?? org?.ageDays ?? 0) <= WINDOW_DAYS * 2
@@ -94,14 +97,14 @@ export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<Can
 		if (ingest.daysSinceLastData === null) {
 			add(
 				"concern",
-				org?.everReceivedData === true
-					? "No telemetry in the last 60 days"
-					: "Never sent any telemetry",
+				org?.everReceivedData === true ? "No telemetry in the last year" : "Never sent any telemetry",
 			)
 		} else if (ingest.daysSinceLastData >= STOPPED_AFTER_DAYS) {
 			add(
 				"concern",
-				`Stopped sending telemetry ${days(ingest.daysSinceLastData)} ago (${formatGB(prior)} the month before)`,
+				`Stopped sending telemetry ${days(ingest.daysSinceLastData)} ago${
+					prior > 0 ? ` (${formatGB(prior)} the month before)` : ""
+				}`,
 			)
 		} else if (prior > 0 && recent < prior * WOUND_DOWN_RATIO) {
 			add("concern", `Telemetry wound down: ${formatGB(recent)} in the last 30 days, ${formatGB(prior)} before`)

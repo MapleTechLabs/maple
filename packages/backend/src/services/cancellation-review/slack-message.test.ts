@@ -27,7 +27,8 @@ const text = (message: ReturnType<typeof buildCancellationMessage>) => JSON.stri
 describe("buildCancellationMessage", () => {
 	it("leads with the org, the plan's remaining access and the rule's reason", () => {
 		const message = buildCancellationMessage(report("pipeline-off"))
-		expect(message.text).toBe("Plan cancelled: Acme <Labs> & Co (Stopped sending telemetry)")
+		// The fallback is mrkdwn, where a raw `<!channel>` in an org name would ping; the header is plain text.
+		expect(message.text).toBe("Plan cancelled: Acme &lt;Labs&gt; &amp; Co (Stopped sending telemetry)")
 		expect(message.blocks[0]).toEqual({
 			type: "header",
 			text: { type: "plain_text", text: "Plan cancelled: Acme <Labs> & Co", emoji: true },
@@ -72,9 +73,20 @@ describe("buildCancellationMessage", () => {
 		expect(text(message)).not.toContain("Days in the app")
 	})
 
+	it("escapes markup in the sentences and the contact", () => {
+		const base = report("healthy-team")
+		const message = buildCancellationMessage({
+			...base,
+			subject: { ...base.subject, contactEmail: "a&b@example.com" },
+			signals: [{ tone: "neutral", text: "Past the included allowance on <logs>" }],
+		})
+		expect(text(message)).toContain("a&amp;b@example.com")
+		expect(text(message)).toContain("allowance on &lt;logs&gt;")
+	})
+
 	it("says the plan ended for an immediate cancellation", () => {
 		const message = buildCancellationMessage(report("past-due"))
-		expect(message.text).toBe("Plan ended: Acme <Labs> & Co (Payment failed)")
+		expect(message.text).toBe("Plan ended: Acme &lt;Labs&gt; &amp; Co (Payment failed)")
 		expect(text(message)).toContain("access ended")
 	})
 })

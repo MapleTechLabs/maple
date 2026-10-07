@@ -1,12 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import {
-	CancellationAssessment,
-	DailySpendResponse,
-	DailyVolume,
-	OrgId,
-	OrganizationWrongRegionError,
-} from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { CancellationAssessment, DailySpendResponse, DailyVolume, OrgId } from "@maple/domain/http"
+import { compiledQueryOf } from "@maple/query-engine/execution"
+import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -53,22 +48,30 @@ const job: CancellationReviewJob = {
 
 interface World {
 	channel: string | null
-	wrongRegion: boolean
-	addOn: boolean
-	/** What Autumn says the org's `startup` subscription is now. */
-	planStatus: "active" | "expired"
+	/** What the region lookup answers; `null` is Clerk not answering. */
+	servedHere: boolean | null
+	/** Autumn's HTTP status, and the subscriptions it reports the org holding now. */
+	autumnStatus: number
+	subscriptions: Array<{ planId: string; status: string; addOn?: boolean }>
 	slackFails: boolean
 	warehouseDown: boolean
+	/** The org's own page views, and whether anyone at all has page views under Maple's org. */
+	visitRows: Array<{ bucket: string; groupName: string; value: number; eventCount: number }>
+	anyPageViews: boolean
+	queries: Array<{ orgId: string; sql: string }>
 	posts: Array<Record<string, unknown>>
 }
 
 const freshWorld = (): World => ({
 	channel: "C_CANCELLATIONS",
-	wrongRegion: false,
-	addOn: false,
-	planStatus: "active",
+	servedHere: true,
+	autumnStatus: 200,
+	subscriptions: [{ planId: "startup", status: "active" }],
 	slackFails: false,
 	warehouseDown: false,
+	visitRows: [{ bucket: "2026-09-17 00:00:00", groupName: "", value: 3, eventCount: 40 }],
+	anyPageViews: true,
+	queries: [],
 	posts: [],
 })
 
@@ -83,19 +86,9 @@ const day = (daysAgo: number, logsGB: number) =>
 
 const stubs = (world: World) =>
 	Layer.mergeAll(
-		Layer.succeed(OrganizationRegionService, {
+		Layer.mock(OrganizationRegionService)({
 			region: "us",
-			ensureServedHere: (orgId) =>
-				world.wrongRegion
-					? Effect.fail(
-							new OrganizationWrongRegionError({
-								message: "lives in the EU",
-								orgId,
-								orgRegion: "eu",
-								region: "us",
-							}),
-						)
-					: Effect.void,
+			servedHere: () => Effect.succeed(Option.fromNullishOr(world.servedHere)),
 		}),
 		Layer.mock(OrganizationService)({
 			retrieve: (orgId) =>
@@ -128,12 +121,19 @@ const stubs = (world: World) =>
 		Layer.succeed(
 			WarehouseQueryService,
 			makeWarehouseServiceStub({
-				compiledQuery: () =>
-					world.warehouseDown
-						? Effect.die(new Error("warehouse down"))
-						: Effect.succeed([
-								{ bucket: "2026-09-17 00:00:00", groupName: "", value: 3, eventCount: 40 },
-							] as ReadonlyArray<never>),
+				compiledQuery: (tenant, compiled) =>
+					Effect.suspend(() => {
+						if (world.warehouseDown) return Effect.die(new Error("warehouse down"))
+						const sql = compiledQueryOf(compiled).sql
+						world.queries.push({ orgId: tenant.orgId, sql })
+						// The second, unfiltered query is the "is this the right org at all" probe.
+						const rows = sql.includes(ORG)
+							? world.visitRows
+							: world.anyPageViews
+								? [{ bucket: "2026-08-08 00:00:00", groupName: "", value: 9, eventCount: 900 }]
+								: []
+						return Effect.succeed(rows as ReadonlyArray<never>)
+					}),
 			}),
 		),
 		Layer.mock(OrgIngestKeysService)({
@@ -143,10 +143,11 @@ const stubs = (world: World) =>
 		Layer.mock(AutumnClient)({
 			getOrCreateCustomer: () =>
 				Effect.succeed({
-					statusCode: 200,
+					statusCode: world.autumnStatus,
 					response: {
 						id: ORG,
-						subscriptions: [{ planId: "startup", status: world.planStatus, addOn: world.addOn }],
+						// One odd field on a subscription must not cost the report its guards.
+						subscriptions: world.subscriptions.map((sub) => ({ ...sub, pastDue: null })),
 						balances: {},
 						invoices: [
 							{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
@@ -208,21 +209,37 @@ const config = (world: World) =>
 		? BASE_CONFIG
 		: { ...BASE_CONFIG, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }
 
-const review = (world: World, testDb: TestDb, input: CancellationReviewJob = job) =>
+const review = (world: World, testDb: TestDb, input: CancellationReviewJob = job, nowMs = CANCELED_AT + 1_000) =>
 	Effect.gen(function* () {
-		yield* TestClock.setTime(CANCELED_AT + 1_000)
+		yield* TestClock.setTime(nowMs)
 		return yield* CancellationReviewService.use((service) => service.review(input))
 	}).pipe(Effect.provide(makeLayer(world, testDb)))
 
-const seedOnboarding = (testDb: TestDb) =>
-	Effect.promise(() =>
-		executeSql(
-			testDb,
-			`INSERT INTO org_onboarding_state (org_id, email, first_data_received_at, created_at, updated_at)
-			 VALUES ($1, 'founder@acme.test', now(), now(), now())`,
-			[ORG],
-		),
+/** The step a review failed at. */
+const failedStep = (world: World, testDb: TestDb, input: CancellationReviewJob = job) =>
+	review(world, testDb, input).pipe(
+		Effect.flip,
+		Effect.map((error) => error.step),
 	)
+
+const seed = (testDb: TestDb) =>
+	Effect.promise(async () => {
+		await executeSql(
+			testDb,
+			`INSERT INTO org_onboarding_state (org_id, email, created_at, updated_at)
+			 VALUES ($1, 'founder@acme.test', now(), now())`,
+			[ORG],
+		)
+		// One dashboard for the org, one for somebody else.
+		for (const orgId of [ORG, "org_someone_else"]) {
+			await executeSql(
+				testDb,
+				`INSERT INTO dashboards (org_id, id, name, payload_json, created_at, updated_at, created_by, updated_by)
+				 VALUES ($1, 'dash_1', 'Overview', '{}', now(), now(), 'user_1', 'user_1')`,
+				[orgId],
+			)
+		}
+	})
 
 const storedReview = (testDb: TestDb) =>
 	Effect.promise(() =>
@@ -238,9 +255,12 @@ describe("CancellationReviewService", () => {
 		Effect.gen(function* () {
 			const world = freshWorld()
 			const testDb = createTestDb(trackedDbs)
-			yield* seedOnboarding(testDb)
+			yield* seed(testDb)
 
-			assert.strictEqual(yield* review(world, testDb), "posted")
+			// Processed three days after the org cancelled: the windows are anchored
+			// on the cancellation, the access left on today.
+			const lateJob = { ...job, receivedAt: CANCELED_AT + 3 * DAY_MS }
+			assert.strictEqual(yield* review(world, testDb, lateJob, CANCELED_AT + 3 * DAY_MS), "posted")
 
 			assert.strictEqual(world.posts.length, 1)
 			const post = world.posts[0]
@@ -250,17 +270,26 @@ describe("CancellationReviewService", () => {
 			assert.include(blocks, "Stopped sending telemetry 24 days ago (42 GB the month before)")
 			assert.include(blocks, "Nobody opened the app in 20 days")
 			assert.include(blocks, "founder@acme.test")
-			assert.include(blocks, "access until Oct 19 (12d left)")
+			assert.include(blocks, "access until Oct 19 (9d left)")
+			assert.notInclude(blocks, "Could not read")
+
+			// The org's visits are read from Maple's own org, filtered to the customer.
+			assert.strictEqual(world.queries.length, 1)
+			assert.strictEqual(world.queries[0]?.orgId, OWN_ORG)
+			assert.include(world.queries[0]?.sql, ORG)
 
 			const stored = yield* storedReview(testDb)
 			assert.strictEqual(stored?.rule_reason, "stopped_sending")
 			assert.isNotNull(stored?.posted_at)
 			assert.deepNestedInclude(stored?.snapshot_json as object, {
 				"plan.tenureDays": 240,
+				"plan.daysUntilEnd": 9,
 				"org.members": 2,
+				// From the telemetry itself: nothing writes the onboarding column this once read.
 				"org.everReceivedData": true,
 				"ingest.daysSinceLastData": 24,
 				"visits.daysSinceLastVisit": 20,
+				"adoption.dashboards": 1,
 				"billing.lastInvoiceTotal": 39,
 			})
 		}),
@@ -273,9 +302,25 @@ describe("CancellationReviewService", () => {
 
 			assert.strictEqual(yield* review(world, testDb), "posted")
 			assert.strictEqual(yield* review(world, testDb), "duplicate")
-			world.planStatus = "expired"
+			world.subscriptions = [{ planId: "startup", status: "expired" }]
 			assert.strictEqual(yield* review(world, testDb, { ...job, phase: "ended" }), "duplicate")
 			assert.strictEqual(world.posts.length, 1)
+		}),
+	)
+
+	it.effect("reviews a subscription again when it is cancelled a second time", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			const again = { ...job, canceledAt: CANCELED_AT + 90 * DAY_MS }
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			// Kept the plan after all, then cancelled it again three months on.
+			assert.strictEqual(yield* review(world, testDb, again), "posted")
+			assert.strictEqual(yield* review(world, testDb, again), "duplicate")
+			// A stale redelivery of the first cancellation does not reopen it.
+			assert.strictEqual(yield* review(world, testDb), "duplicate")
+			assert.strictEqual(world.posts.length, 2)
 		}),
 	)
 
@@ -288,17 +333,40 @@ describe("CancellationReviewService", () => {
 
 			assert.strictEqual(yield* review(world, testDb, first), "posted")
 			assert.strictEqual(yield* review(world, testDb, first), "duplicate")
-			// A later cancellation of the same plan is its own review, not the first one again.
 			assert.strictEqual(yield* review(world, testDb, second), "posted")
 		}),
 	)
 
-	it.effect("does not review a plan that ended because the org holds another one", () =>
+	it.effect("does not review a plan that ended while the org holds an active one", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
-			// Autumn still reports an active plan subscription: an upgrade, not a departure.
+			world.subscriptions = [
+				{ planId: "startup", status: "expired" },
+				{ planId: "scale", status: "active" },
+			]
 			const outcome = yield* review(world, createTestDb(trackedDbs), { ...job, phase: "ended" })
-			assert.strictEqual(outcome, "plan_switch")
+			assert.strictEqual(outcome, "still_subscribed")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("reviews an ended plan when only an add-on is still active", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.subscriptions = [
+				{ planId: "startup", status: "expired" },
+				{ planId: "bringyourowncloud", status: "active", addOn: true },
+			]
+			const outcome = yield* review(world, createTestDb(trackedDbs), { ...job, phase: "ended" })
+			assert.strictEqual(outcome, "posted")
+		}),
+	)
+
+	it.effect("does not review an add-on going away", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.subscriptions = [{ planId: "startup", status: "active", addOn: true }]
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "not_a_plan")
 			assert.strictEqual(world.posts.length, 0)
 		}),
 	)
@@ -314,14 +382,30 @@ describe("CancellationReviewService", () => {
 		}),
 	)
 
+	it.effect("says nobody opened the app only when the org it read has page views at all", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.visitRows = []
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "posted")
+			assert.include(String(world.posts[0]?.blocks), "Nobody opened the app in the last 60 days")
+
+			// No page views from anyone: the key points at an org the app does not report to.
+			const elsewhere = freshWorld()
+			elsewhere.visitRows = []
+			elsewhere.anyPageViews = false
+			assert.strictEqual(yield* review(elsewhere, createTestDb(trackedDbs)), "posted")
+			assert.include(String(elsewhere.posts[0]?.blocks), "Could not read: app visits")
+			assert.notInclude(String(elsewhere.posts[0]?.blocks), "Nobody opened the app")
+		}),
+	)
+
 	it.effect("retries a report Slack refused, and posts it on the next delivery", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
 			world.slackFails = true
 			const testDb = createTestDb(trackedDbs)
 
-			const failed = yield* Effect.exit(review(world, testDb))
-			assert.isTrue(Exit.isFailure(failed))
+			assert.strictEqual(yield* failedStep(world, testDb), "post")
 			assert.isNull((yield* storedReview(testDb))?.posted_at)
 
 			world.slackFails = false
@@ -329,20 +413,32 @@ describe("CancellationReviewService", () => {
 		}),
 	)
 
-	it.effect("leaves an org on another region's instance to that instance", () =>
+	it.effect("retries, with nothing claimed or posted, when Autumn does not answer", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
-			world.wrongRegion = true
-			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "other_region")
+			world.autumnStatus = 500
+			const testDb = createTestDb(trackedDbs)
+
+			assert.strictEqual(yield* failedStep(world, testDb), "billing")
+			assert.isUndefined(yield* storedReview(testDb))
 			assert.strictEqual(world.posts.length, 0)
 		}),
 	)
 
-	it.effect("does not review an add-on going away", () =>
+	it.effect("waits rather than guesses when the org's region is unknown", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
-			world.addOn = true
-			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "not_a_plan")
+			world.servedHere = null
+			assert.strictEqual(yield* failedStep(world, createTestDb(trackedDbs)), "region")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("leaves an org on another region's instance to that instance", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.servedHere = false
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "other_region")
 			assert.strictEqual(world.posts.length, 0)
 		}),
 	)

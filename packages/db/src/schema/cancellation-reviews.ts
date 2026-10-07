@@ -18,6 +18,8 @@ export const cancellationReviews = pgTable(
 		planId: text("plan_id").notNull(),
 		/** Epoch ms; 0 when Autumn sent none. With org and plan it names one subscription. */
 		subscriptionStartedAt: bigint("subscription_started_at", { mode: "number" }).notNull(),
+		/** Epoch ms of the cancellation reviewed. A later one on the same subscription is reviewed again. */
+		canceledAt: bigint("canceled_at", { mode: "number" }),
 		snapshotJson: jsonb("snapshot_json").$type<CancellationSnapshot>(),
 		ruleReason: text("rule_reason").$type<CancellationReason>(),
 		/** Null when the decision model did not answer. */

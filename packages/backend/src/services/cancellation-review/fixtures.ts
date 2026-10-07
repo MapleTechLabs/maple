@@ -38,7 +38,7 @@ const healthy: Fields = {
 	visits: {
 		recent: { activeDays: 22, peakDailyUsers: 4 },
 		prior: { activeDays: 24, peakDailyUsers: 5 },
-		daysSinceLastVisit: 0,
+		daysSinceLastVisit: 1,
 	},
 	adoption: {
 		dashboards: 9,

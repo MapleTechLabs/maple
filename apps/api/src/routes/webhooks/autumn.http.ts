@@ -67,13 +67,19 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 				)
 				if (Option.isSome(data)) {
 					const receivedAt = yield* Clock.currentTimeMillis
-					const cancellations = cancellationsFromBillingUpdated(data.value)
+					// Nothing reads the queue's output without a channel to post to.
+					const cancellations = Option.isSome(env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID)
+						? cancellationsFromBillingUpdated(data.value)
+						: []
 					const queued = yield* Effect.forEach(
 						cancellations,
 						({ orgId: rawOrgId, ...cancellation }) =>
 							Option.match(decodeOrgId(rawOrgId), {
 								// Not an id this instance could have issued; nothing to review.
-								onNone: () => Effect.void,
+								onNone: () =>
+									Effect.logWarning("Autumn customer id is not an org id; cancellation not queued").pipe(
+										Effect.annotateLogs({ rawOrgId }),
+									),
 								onSome: (orgId) =>
 									cancellationReviews.send({
 										kind: "cancellation-review",
@@ -85,7 +91,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 						{ discard: true },
 					).pipe(
 						Effect.as(true),
-						Effect.catch((error) =>
+						Effect.catchTag("@maple/api/platform/QueueSendError", (error) =>
 							Effect.logError("Could not queue a cancellation review").pipe(
 								Effect.annotateLogs({ orgId: data.value.customer_id, error: error.message }),
 								Effect.as(false),

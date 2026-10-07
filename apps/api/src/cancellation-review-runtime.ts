@@ -1,7 +1,8 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
-import { Effect, Layer, Schema } from "effect"
+import { Cause, Effect, Layer, Option, Schema } from "effect"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import {
 	CancellationReviewJob,
@@ -29,61 +30,76 @@ const decodeJob = Schema.decodeUnknownEffect(CancellationReviewJob)
  */
 const CANCELLATION_REVIEWS_MAX_RETRIES = 5
 
+const settle = (outcome: string) =>
+	Effect.annotateCurrentSpan({ "maple.cancellation.queue.outcome": outcome })
+
 export const processCancellationReviewBatch = (batch: QueueBatch) =>
-	Effect.forEach(
-		batch.messages,
-		(message) =>
-			decodeJob(message.body).pipe(
-				Effect.matchEffect({
-					onFailure: (error) =>
-						Effect.logWarning("Discarding malformed cancellation review queue message").pipe(
-							Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
-							Effect.andThen(Effect.sync(() => message.ack())),
-						),
-					onSuccess: (job) =>
-						CancellationReviewService.use((service) => service.review(job)).pipe(
-							Effect.matchEffect({
-								onFailure: (error) => {
-									const abandoned = message.attempts > CANCELLATION_REVIEWS_MAX_RETRIES
-									return Effect.logError(
-										abandoned
-											? "Cancellation review abandoned after its last retry; no report was posted"
-											: "Cancellation review failed; retrying",
-									).pipe(
-										Effect.annotateLogs({
+	Effect.gen(function* () {
+		const reviews = yield* CancellationReviewService
+		yield* Effect.forEach(
+			batch.messages,
+			(message) =>
+				decodeJob(message.body).pipe(
+					Effect.matchEffect({
+						// Nothing a retry could fix, and the cancellation it stood for is lost.
+						onFailure: (error) =>
+							Effect.logError("Discarding malformed cancellation review queue message").pipe(
+								Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
+								Effect.andThen(settle("malformed_ack")),
+								Effect.andThen(Effect.sync(() => message.ack())),
+							),
+						onSuccess: (job) =>
+							Effect.annotateCurrentSpan({
+								orgId: job.orgId,
+								"maple.cancellation.plan_id": job.planId,
+							}).pipe(
+								Effect.andThen(reviews.review(job)),
+								// The whole cause: a defect must reach the same retry and the
+								// same last-attempt log as an upstream that did not answer.
+								Effect.matchCauseEffect({
+									onFailure: (cause) => {
+										if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+										const abandoned = message.attempts > CANCELLATION_REVIEWS_MAX_RETRIES
+										const details = Effect.annotateLogs({
 											orgId: job.orgId,
 											planId: job.planId,
-											step: error.step,
+											step:
+												Option.getOrUndefined(Cause.findErrorOption(cause))?.step ??
+												"defect",
 											attempt: message.attempts,
-											error: error.message,
-										}),
-										Effect.andThen(
-											Effect.annotateCurrentSpan({
-												"maple.cancellation.queue.outcome": abandoned
-													? "abandoned"
-													: "retry",
-											}),
+											error: summarizeCause(cause),
+										})
+										return (
+											abandoned
+												? Effect.logError(
+														"Cancellation review abandoned after its last retry; no report was posted",
+													)
+												: Effect.logWarning("Cancellation review failed; retrying")
+										).pipe(
+											details,
+											Effect.andThen(settle(abandoned ? "abandoned" : "retry")),
+											Effect.andThen(Effect.sync(() => message.retry())),
+										)
+									},
+									onSuccess: (outcome) =>
+										Effect.logInfo("Cancellation review settled").pipe(
+											Effect.annotateLogs({ orgId: job.orgId, outcome }),
+											Effect.andThen(settle(`${outcome}_ack`)),
+											Effect.andThen(Effect.sync(() => message.ack())),
 										),
-										Effect.andThen(Effect.sync(() => message.retry())),
-									)
-								},
-								onSuccess: (outcome) =>
-									Effect.logInfo("Cancellation review settled").pipe(
-										Effect.annotateLogs({ orgId: job.orgId, outcome }),
-										Effect.andThen(Effect.sync(() => message.ack())),
-									),
-							}),
-						),
-				}),
-				Effect.withSpan("CancellationReviewQueue.processMessage", {
-					kind: "consumer",
-					attributes: {
-						"messaging.system": MESSAGING_SYSTEM,
-						"messaging.destination.name": MESSAGING_DESTINATION,
-						"messaging.operation.name": "process",
-						"messaging.message.delivery_attempt": message.attempts,
-					},
-				}),
-			),
-		{ discard: true },
-	)
+								}),
+							),
+					}),
+					Effect.withSpan("CancellationReviewQueue.processMessage", {
+						kind: "consumer",
+						attributes: {
+							"messaging.system": MESSAGING_SYSTEM,
+							"messaging.destination.name": MESSAGING_DESTINATION,
+							"messaging.operation.name": "process",
+							"messaging.message.delivery_attempt": message.attempts,
+						},
+					}),
+				),
+			{ discard: true },
+		)
+	})

@@ -11,18 +11,22 @@ cancellation and posts a report to a Slack channel in Maple's workspace.
    `MAPLE_SUPPORT_SLACK_BOT_TOKEN`, and `MAPLE_CANCELLATION_SLACK_CHANNEL_ID`.
 3. Invite the support bot to that channel.
 
-Without a channel id or bot token the consumer does nothing.
+Without a channel id nothing is queued; without the bot token the consumer does nothing.
 
 ## What triggers one
 
 `billing.updated` with a subscription whose `canceled_at` was just set (cancels at period end),
-or one that `expired` without another plan starting in the same delivery (immediate cancel,
-failed payment). Add-ons, the free tier and plan switches are skipped. A subscription is
-reported once: the `expired` that follows a scheduled cancellation is a no-op.
+or one that `expired` (immediate cancel, failed payment). The consumer then asks Autumn what the
+org holds now: an add-on, or a plan that ended while another plan is active, is skipped. A
+cancellation is reported once: the `expired` that follows a scheduled cancellation is a no-op,
+while cancelling again after keeping the plan is a new review.
+
+A failed review is retried five times, half an hour apart, then logged as abandoned.
 
 ## What it reads
 
-Two 30-day windows ending at the cancellation, `recent` and `prior`:
+Two 30-day windows ending at the cancellation, `recent` and `prior`. "Last telemetry" looks back
+a year, so an org that switched off months ago is not read as one that never started:
 
 | Section  | Source                                                                    |
 | -------- | ------------------------------------------------------------------------- |

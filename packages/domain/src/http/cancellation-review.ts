@@ -10,27 +10,32 @@ import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { IncidentTriageUnauthorizedError, TriageProbability } from "./incident-triage"
 
+/** A count or a number of days: a whole number, never negative. */
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+/** A volume in GB: finite, never negative. */
+const Volume = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+
 /** `scheduled`: cancels at period end, access continues. `ended`: the plan is gone now. */
 export const CancellationPhase = Schema.Literals(["scheduled", "ended"])
 export type CancellationPhase = Schema.Schema.Type<typeof CancellationPhase>
 
 /** Billable volume over one 30-day window, in the units the plan is metered in. */
 export const CancellationVolume = Schema.Struct({
-	logsGB: Schema.Number,
-	tracesGB: Schema.Number,
-	metricsGB: Schema.Number,
-	browserSessions: Schema.Number,
+	logsGB: Volume,
+	tracesGB: Volume,
+	metricsGB: Volume,
+	browserSessions: Count,
 	/** Days in the window on which anything arrived. */
-	activeDays: Schema.Number,
+	activeDays: Count,
 })
 export type CancellationVolume = Schema.Schema.Type<typeof CancellationVolume>
 
 /** People from the org using the app over one 30-day window. */
 export const CancellationVisits = Schema.Struct({
 	/** Days in the window on which someone opened the app. */
-	activeDays: Schema.Number,
+	activeDays: Count,
 	/** The most distinct people seen on a single day. */
-	peakDailyUsers: Schema.Number,
+	peakDailyUsers: Count,
 })
 export type CancellationVisits = Schema.Schema.Type<typeof CancellationVisits>
 
@@ -46,16 +51,16 @@ export class CancellationSnapshot extends Schema.Class<CancellationSnapshot>("Ca
 		trial: Schema.Boolean,
 		pastDue: Schema.Boolean,
 		/** Days from the subscription's start to the cancellation. */
-		tenureDays: Schema.NullOr(Schema.Number),
+		tenureDays: Schema.NullOr(Count),
 		/** Days of paid access left; 0 once ended. */
-		daysUntilEnd: Schema.NullOr(Schema.Number),
+		daysUntilEnd: Schema.NullOr(Count),
 	}),
 	org: Schema.NullOr(
 		Schema.Struct({
-			ageDays: Schema.NullOr(Schema.Number),
-			members: Schema.NullOr(Schema.Number),
+			ageDays: Schema.NullOr(Count),
+			members: Schema.NullOr(Count),
 			onboardingCompleted: Schema.Boolean,
-			/** Telemetry reached the org at least once, however long ago. */
+			/** Telemetry reached the org at some point in the last year. */
 			everReceivedData: Schema.Boolean,
 			supportChannel: Schema.Boolean,
 		}),
@@ -64,8 +69,8 @@ export class CancellationSnapshot extends Schema.Class<CancellationSnapshot>("Ca
 		Schema.Struct({
 			recent: CancellationVolume,
 			prior: CancellationVolume,
-			/** Null when nothing arrived in either window. */
-			daysSinceLastData: Schema.NullOr(Schema.Number),
+			/** Looks back a year, past both windows. Null when nothing arrived in it. */
+			daysSinceLastData: Schema.NullOr(Count),
 		}),
 	),
 	visits: Schema.NullOr(
@@ -73,25 +78,25 @@ export class CancellationSnapshot extends Schema.Class<CancellationSnapshot>("Ca
 			recent: CancellationVisits,
 			prior: CancellationVisits,
 			/** Null when nobody opened the app in either window. */
-			daysSinceLastVisit: Schema.NullOr(Schema.Number),
+			daysSinceLastVisit: Schema.NullOr(Count),
 		}),
 	),
 	adoption: Schema.NullOr(
 		Schema.Struct({
-			dashboards: Schema.Number,
-			alertRules: Schema.Number,
-			alertDestinations: Schema.Number,
-			apiKeys: Schema.Number,
-			integrations: Schema.Number,
-			investigations: Schema.Number,
+			dashboards: Count,
+			alertRules: Count,
+			alertDestinations: Count,
+			apiKeys: Count,
+			integrations: Count,
+			investigations: Count,
 		}),
 	),
 	billing: Schema.NullOr(
 		Schema.Struct({
-			invoices: Schema.Number,
-			/** Dollars. Null with no invoice yet. */
-			lastInvoiceTotal: Schema.NullOr(Schema.Number),
-			previousInvoiceTotal: Schema.NullOr(Schema.Number),
+			invoices: Count,
+			/** Dollars; a credit note is negative. Null with no invoice yet. */
+			lastInvoiceTotal: Schema.NullOr(Schema.Finite),
+			previousInvoiceTotal: Schema.NullOr(Schema.Finite),
 			/** Metered features used past the plan's included allowance this cycle. */
 			overAllowance: Schema.Array(Schema.String),
 		}),

@@ -3,6 +3,7 @@ CREATE TABLE "cancellation_reviews" (
 	"org_id" text NOT NULL,
 	"plan_id" text NOT NULL,
 	"subscription_started_at" bigint NOT NULL,
+	"canceled_at" bigint,
 	"snapshot_json" jsonb,
 	"rule_reason" text,
 	"assessment_json" jsonb,

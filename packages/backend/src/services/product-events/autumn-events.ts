@@ -134,6 +134,19 @@ export interface PlanCancellation {
 /** The legacy free tier is not a plan anyone cancels (`isPlanSubscription`, @maple/domain/billing). */
 const isFreePlan = (planId: string): boolean => planId.toLowerCase() === "free"
 
+/**
+ * `trial_ends_at` stays on a subscription after it converts, so a set value
+ * alone does not mean the plan was cancelled during its trial.
+ */
+const isTrialing = (subscription: {
+	readonly trial_ends_at?: number | null | undefined
+	readonly canceled_at?: number | null | undefined
+	readonly expires_at?: number | null | undefined
+}): boolean => {
+	const leftAt = subscription.canceled_at ?? subscription.expires_at
+	return subscription.trial_ends_at != null && (leftAt == null || subscription.trial_ends_at >= leftAt)
+}
+
 export const cancellationsFromBillingUpdated = (
 	data: AutumnBillingUpdatedData,
 ): ReadonlyArray<PlanCancellation> => {
@@ -160,7 +173,7 @@ export const cancellationsFromBillingUpdated = (
 			startedAt: subscription.started_at ?? null,
 			canceledAt: subscription.canceled_at ?? null,
 			expiresAt: subscription.expires_at ?? null,
-			trial: subscription.trial_ends_at != null,
+			trial: isTrialing(subscription),
 			pastDue: subscription.past_due === true,
 		})
 	}

@@ -20,12 +20,7 @@ import {
 	vcsInstallations,
 } from "@maple/db"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
-import {
-	BillingCustomer,
-	BillingInvoice,
-	CancellationSnapshot,
-	type OrgId,
-} from "@maple/domain/http"
+import { CancellationSnapshot, type OrgId } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm"
 import type { PgTable } from "drizzle-orm/pg-core"
@@ -35,7 +30,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { msToDate } from "@maple/backend/platform/time"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
-import { decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
+import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -51,6 +46,7 @@ import { deriveSignals, ruleReason } from "./signals"
 import { buildCancellationMessage } from "./slack-message"
 import {
 	DAY_MS,
+	WINDOW_DAYS,
 	ingestWindow,
 	summarizeBilling,
 	summarizeIngest,
@@ -58,12 +54,12 @@ import {
 	visitsWindow,
 } from "./snapshot"
 
-/** A failure worth another delivery: Autumn, Postgres or Slack did not answer. */
+/** A failure worth another delivery: Clerk, Autumn, Postgres or Slack did not answer. */
 export class CancellationReviewError extends Schema.TaggedError<CancellationReviewError>()(
 	"@maple/backend/cancellation-review/CancellationReviewError",
 	{
 		message: Schema.String,
-		step: Schema.Literals(["billing", "claim", "post"]),
+		step: Schema.Literals(["region", "billing", "claim", "post"]),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -76,8 +72,8 @@ export type CancellationReviewOutcome =
 	| "other_region"
 	/** An add-on going away is not the org leaving. */
 	| "not_a_plan"
-	/** The plan ended because the org moved to another one. */
-	| "plan_switch"
+	/** The plan ended but the org still holds an active one: a switch or a resubscription. */
+	| "still_subscribed"
 	/** No Slack channel or bot token on this deployment. */
 	| "not_configured"
 
@@ -87,10 +83,42 @@ export interface CancellationReviewServiceApi {
 	) => Effect.Effect<CancellationReviewOutcome, CancellationReviewError>
 }
 
-/** Autumn omits `invoices` for a customer that has none. */
-const CustomerInvoices = Schema.Struct({
-	invoices: Schema.optionalKey(Schema.NullOr(Schema.Array(BillingInvoice))),
+/**
+ * Only what the billing section reads off Autumn's customer, so a field it does
+ * not use changing type cannot cost the report its invoices. Autumn omits
+ * `invoices` for a customer that has none.
+ */
+const CustomerBilling = Schema.Struct({
+	balances: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Record(
+				Schema.String,
+				Schema.Struct({
+					granted: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+					usage: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+					unlimited: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+				}),
+			),
+		),
+	),
+	invoices: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Array(
+				Schema.Struct({ status: Schema.String, total: Schema.Number, createdAt: Schema.Number }),
+			),
+		),
+	),
 })
+
+/** The upstream's own words, so the consumer's log says why and not only where. */
+const failedAt =
+	(step: CancellationReviewError["step"], message: string) =>
+	(cause: unknown): CancellationReviewError =>
+		new CancellationReviewError({
+			message: `${message}: ${cause instanceof Error ? cause.message : String(cause)}`,
+			step,
+			cause,
+		})
 
 export class CancellationReviewService extends Context.Service<
 	CancellationReviewService,
@@ -122,7 +150,7 @@ export class CancellationReviewService extends Context.Service<
 								Effect.as(null),
 							),
 				),
-				Effect.withSpan("CancellationReview.readSource", {
+				Effect.withSpan("CancellationReviewService.readSource", {
 					attributes: { "maple.cancellation.source": name },
 				}),
 			)
@@ -194,30 +222,45 @@ export class CancellationReviewService extends Context.Service<
 		 * of the org Maple reports its own usage under, tagged with the customer's
 		 * org as `GroupId`; that org is whichever one owns the product-events key.
 		 */
-		const readVisits = Effect.fn("CancellationReview.readVisits")(function* (orgId: OrgId, atMs: number) {
+		const readVisits = Effect.fn("CancellationReviewService.readVisits")(function* (
+			orgId: OrgId,
+			atMs: number,
+		) {
 			const key = Option.orElse(env.MAPLE_PRODUCT_EVENTS_INGEST_KEY, () => env.MAPLE_INGEST_KEY)
 			if (Option.isNone(key)) return null
 			const own = yield* ingestKeys.resolveIngestKey(Redacted.value(key.value))
 			if (Option.isNone(own)) return null
 			const window = visitsWindow(atMs)
-			const rows = yield* warehouse.compiledQuery(
-				systemTenant(own.value.orgId),
-				CH.compile(
-					CH.productEventsTimeseriesQuery({
-						metric: "users",
-						groupIds: [orgId],
-						sources: ["browser"],
-						bucketSeconds: DAY_MS / 1000,
-					}),
-					{
-						orgId: own.value.orgId,
-						startTime: formatWarehouseDateTime(window.startMs),
-						endTime: formatWarehouseDateTime(window.endMs),
-						bucketSeconds: DAY_MS / 1000,
-					},
-				),
-				{ profile: "list", context: "cancellationReviewVisits" },
-			)
+			const pageViews = (groupIds: ReadonlyArray<string> | undefined, bucketSeconds: number) =>
+				warehouse.compiledQuery(
+					systemTenant(own.value.orgId),
+					CH.compile(
+						CH.productEventsTimeseriesQuery({
+							metric: "users",
+							sources: ["browser"],
+							bucketSeconds,
+							...(groupIds === undefined ? undefined : { groupIds }),
+						}),
+						{
+							orgId: own.value.orgId,
+							startTime: formatWarehouseDateTime(window.startMs),
+							endTime: formatWarehouseDateTime(window.endMs),
+							bucketSeconds,
+						},
+					),
+					{ profile: "list", context: "cancellationReviewVisits" },
+				)
+			const rows = yield* pageViews([orgId], DAY_MS / 1000)
+			if (rows.length === 0) {
+				// No visits, or the wrong org: the key is configurable, and an org with no
+				// page views from anyone is not the one the app reports to. Saying
+				// "nobody opened the app" off that would be wrong for every review.
+				const anyone = yield* pageViews(undefined, (WINDOW_DAYS * 2 * DAY_MS) / 1000)
+				if (anyone.length === 0) {
+					yield* Effect.logWarning("cancellation review found no app page views under the product-events key's org")
+					return null
+				}
+			}
 			return summarizeVisits(
 				rows.map((row) => ({ dayMs: parseWarehouseDateTime(row.bucket), users: row.value })),
 				atMs,
@@ -234,11 +277,6 @@ export class CancellationReviewService extends Context.Service<
 				.execute((db) =>
 					Effect.gen(function* () {
 						const subscriptionStartedAt = job.startedAt ?? job.canceledAt ?? 0
-						const subscription = and(
-							eq(cancellationReviews.orgId, job.orgId),
-							eq(cancellationReviews.planId, job.planId),
-							eq(cancellationReviews.subscriptionStartedAt, subscriptionStartedAt),
-						)
 						const inserted = yield* db
 							.insert(cancellationReviews)
 							.values({
@@ -246,32 +284,40 @@ export class CancellationReviewService extends Context.Service<
 								orgId: job.orgId,
 								planId: job.planId,
 								subscriptionStartedAt,
+								canceledAt: job.canceledAt,
 								createdAt: msToDate(nowMs),
 								updatedAt: msToDate(nowMs),
 							})
 							.onConflictDoNothing()
 							.returning({ id: cancellationReviews.id })
 						if (inserted[0] !== undefined) return { id: inserted[0].id, posted: false }
-						const existing = yield* db
-							.select({ id: cancellationReviews.id, postedAt: cancellationReviews.postedAt })
+						const [existing] = yield* db
+							.select({
+								id: cancellationReviews.id,
+								postedAt: cancellationReviews.postedAt,
+								canceledAt: cancellationReviews.canceledAt,
+							})
 							.from(cancellationReviews)
-							.where(subscription)
+							.where(
+								and(
+									eq(cancellationReviews.orgId, job.orgId),
+									eq(cancellationReviews.planId, job.planId),
+									eq(cancellationReviews.subscriptionStartedAt, subscriptionStartedAt),
+								),
+							)
 							.limit(1)
-						return existing[0] === undefined
-							? undefined
-							: { id: existing[0].id, posted: existing[0].postedAt !== null }
+						if (existing === undefined) return undefined
+						// Cancelled, kept after all, then cancelled again: a new decision on
+						// the same subscription, and the one that counts.
+						const cancelledAgain =
+							job.phase === "scheduled" &&
+							job.canceledAt !== null &&
+							existing.canceledAt !== null &&
+							job.canceledAt > existing.canceledAt
+						return { id: existing.id, posted: existing.postedAt !== null && !cancelledAgain }
 					}),
 				)
-				.pipe(
-					Effect.mapError(
-						(cause) =>
-							new CancellationReviewError({
-								message: "Could not claim the cancellation review",
-								step: "claim",
-								cause,
-							}),
-					),
-				)
+				.pipe(Effect.mapError(failedAt("claim", "Could not claim the cancellation review")))
 
 		const review: CancellationReviewServiceApi["review"] = Effect.fn("CancellationReviewService.review")(
 			function* (job) {
@@ -285,38 +331,45 @@ export class CancellationReviewService extends Context.Service<
 					Effect.annotateCurrentSpan({ "maple.cancellation.outcome": value }).pipe(Effect.as(value))
 
 				const channel = env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID
-				if (Option.isNone(channel) || !slack.configured) return yield* outcome("not_configured")
+				if (Option.isNone(channel) || !slack.configured) {
+					if (Option.isSome(channel)) {
+						yield* Effect.logWarning(
+							"cancellation reviews have a channel but no Slack bot token; nothing is posted",
+						)
+					}
+					return yield* outcome("not_configured")
+				}
 
-				const servedHere = yield* regions.ensureServedHere(orgId).pipe(
-					Effect.as(true),
-					Effect.catchTag("@maple/http/errors/OrganizationWrongRegionError", () =>
-						Effect.succeed(false),
-					),
-				)
-				if (!servedHere) return yield* outcome("other_region")
+				// Every region's instance receives the webhook and exactly one may report,
+				// so an unanswered region lookup waits for the next delivery.
+				const servedHere = yield* regions.servedHere(orgId)
+				if (Option.isNone(servedHere)) {
+					return yield* new CancellationReviewError({
+						message: "Could not tell which region the org lives in",
+						step: "region",
+					})
+				}
+				if (!servedHere.value) return yield* outcome("other_region")
 
 				// The one required read: it says whether this plan is the org's plan at all.
-				const response = yield* autumn.getOrCreateCustomer(orgId, { expand: ["invoices"] }).pipe(
-					Effect.flatMap(ensureOk),
-					Effect.mapError(
-						(cause) =>
-							new CancellationReviewError({
-								message: "Could not read the Autumn customer",
-								step: "billing",
-								cause,
-							}),
-					),
-				)
-				const customer = yield* optional("customer", decodeUpstream(BillingCustomer, response))
-				const subscription = customer?.subscriptions.find((sub) => sub.planId === job.planId)
+				const response = yield* autumn
+					.getOrCreateCustomer(orgId, { expand: ["invoices"] })
+					.pipe(
+						Effect.flatMap(ensureOk),
+						Effect.mapError(failedAt("billing", "Could not read the Autumn customer")),
+					)
+				// Read off the raw response, as the plan gate does: a strict decode that
+				// failed would wave every add-on and plan switch through as a cancellation.
+				const subscriptions = subscriptionsOf(response)
+				const subscription = subscriptions.find((sub) => sub.planId === job.planId)
 				if (subscription !== undefined && !isPlanSubscription(subscription)) {
 					return yield* outcome("not_a_plan")
 				}
-				// An ended plan with another real plan active is an upgrade or downgrade.
-				// Asked of Autumn rather than read off the webhook, whose payload cannot
-				// tell a replacement plan from an add-on starting in the same delivery.
-				if (job.phase === "ended" && customer?.subscriptions.some(isActivePlanSubscription) === true) {
-					return yield* outcome("plan_switch")
+				// An ended plan while the org holds an active one is a switch or a
+				// resubscription, not a departure. Asked of Autumn rather than read off the
+				// webhook, whose payload cannot tell a replacement plan from an add-on.
+				if (job.phase === "ended" && subscriptions.some(isActivePlanSubscription)) {
+					return yield* outcome("still_subscribed")
 				}
 
 				const nowMs = yield* Clock.currentTimeMillis
@@ -332,14 +385,14 @@ export class CancellationReviewService extends Context.Service<
 						optional("ingest", readIngest(orgId, atMs)),
 						optional("visits", readVisits(orgId, atMs)),
 						optional("adoption", readAdoption(orgId)),
-						customer === null
-							? Effect.succeed(null)
-							: optional(
-									"billing",
-									decodeUpstream(CustomerInvoices, response).pipe(
-										Effect.map(({ invoices }) => summarizeBilling(customer, invoices ?? [])),
-									),
+						optional(
+							"billing",
+							decodeUpstream(CustomerBilling, response).pipe(
+								Effect.map(({ balances, invoices }) =>
+									summarizeBilling({ balances: balances ?? {}, invoices: invoices ?? [] }),
 								),
+							),
+						),
 					],
 					{ concurrency: 3 },
 				)
@@ -373,7 +426,7 @@ export class CancellationReviewService extends Context.Service<
 									onboardingCompleted: org.state?.onboardingCompletedAt != null,
 									everReceivedData:
 										org.state?.firstDataReceivedAt != null ||
-										(ingest !== null && ingest.recent.activeDays + ingest.prior.activeDays > 0),
+										(ingest !== null && ingest.daysSinceLastData !== null),
 									supportChannel: org.supportChannels > 0,
 								},
 					ingest,
@@ -404,16 +457,7 @@ export class CancellationReviewService extends Context.Service<
 						blocks: JSON.stringify(message.blocks),
 						unfurl_links: false,
 					})
-					.pipe(
-						Effect.mapError(
-							(cause) =>
-								new CancellationReviewError({
-									message: "Could not post the cancellation report to Slack",
-									step: "post",
-									cause,
-								}),
-						),
-					)
+					.pipe(Effect.mapError(failedAt("post", "Could not post the cancellation report to Slack")))
 
 				yield* database
 					.execute((db) =>
@@ -423,6 +467,7 @@ export class CancellationReviewService extends Context.Service<
 								snapshotJson: snapshot,
 								ruleReason: reason,
 								assessmentJson: assessment,
+								canceledAt: job.canceledAt,
 								postedAt: msToDate(nowMs),
 								updatedAt: msToDate(nowMs),
 							})
@@ -432,7 +477,7 @@ export class CancellationReviewService extends Context.Service<
 						// The report is out. Failing here would redeliver the job and post it again.
 						Effect.catchCause((cause) =>
 							Effect.logError("cancellation review was posted but not recorded").pipe(
-								Effect.annotateLogs({ orgId, error: summarizeCause(cause) }),
+								Effect.annotateLogs({ reviewId: claimed.id, error: summarizeCause(cause) }),
 							),
 						),
 					)
@@ -440,9 +485,16 @@ export class CancellationReviewService extends Context.Service<
 				yield* Effect.annotateCurrentSpan({
 					"maple.cancellation.rule_reason": reason,
 					"maple.cancellation.model_reason": assessment?.reason ?? "none",
+					// A report can go out missing sections; this is how that shows on the span.
+					"maple.cancellation.unread_sources": Object.entries({ org, ingest, visits, adoption, billing })
+						.filter(([, section]) => section === null)
+						.map(([name]) => name)
+						.join(","),
 				})
 				return yield* outcome("posted")
 			},
+			// Every log line from one review names the org it is about.
+			(effect, job) => Effect.annotateLogs(effect, { orgId: job.orgId, planId: job.planId }),
 		)
 
 		return { review } satisfies CancellationReviewServiceApi

@@ -467,7 +467,7 @@ describe("AutumnWebhookRouter", () => {
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
-					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET },
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
 					events.layer,
 					undefined,
 					undefined,
@@ -504,13 +504,38 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
+	it.effect("queues nothing on a deployment with no channel to report to", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationReviews()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET },
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(reviews.queued, [])
+				assert.strictEqual(events.tracked.length, 1)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
 	it.effect("answers 503 and records nothing when the review cannot be queued", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
-					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET },
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
 					events.layer,
 					undefined,
 					undefined,

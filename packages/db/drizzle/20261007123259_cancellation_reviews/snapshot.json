@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "ed0a388f-a780-4336-88e9-5ced28b14627",
+  "id": "ad42d0e3-fc45-4780-921d-e970cb6bd1e8",
   "prevIds": [
     "92119332-972c-45fa-948d-25fdcb3eb855"
   ],
@@ -3119,6 +3119,19 @@
       "generated": null,
       "identity": null,
       "name": "subscription_started_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "cancellation_reviews"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "canceled_at",
       "entityType": "columns",
       "schema": "public",
       "table": "cancellation_reviews"

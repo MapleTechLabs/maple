@@ -27,6 +27,37 @@ describe("ruleReason", () => {
 		expect(ruleReason(tail)).toBe("stopped_sending")
 	})
 
+	it("reads an org that switched off months ago as stopped, not as never having started", () => {
+		const { snapshot } = fixture("never-sent")
+		const idle = { logsGB: 0, tracesGB: 0, metricsGB: 0, browserSessions: 0, activeDays: 0 }
+		const longGone = {
+			...snapshot,
+			org: snapshot.org === null ? null : { ...snapshot.org, everReceivedData: true },
+			ingest: { recent: idle, prior: idle, daysSinceLastData: 140 },
+		}
+		expect(ruleReason(longGone)).toBe("stopped_sending")
+		expect(deriveSignals(longGone)[1]).toEqual({
+			tone: "concern",
+			text: "Stopped sending telemetry 140 days ago",
+		})
+	})
+
+	it("does not call the first charge after a $0 invoice a bill jump", () => {
+		const { snapshot } = fixture("healthy-team")
+		const firstCharge = {
+			...snapshot,
+			billing: { invoices: 2, lastInvoiceTotal: 39, previousInvoiceTotal: 0, overAllowance: [] },
+		}
+		expect(ruleReason(firstCharge)).toBe("unclear")
+	})
+
+	it("keeps payment failure for a plan that ended, not one the org scheduled to cancel", () => {
+		const { snapshot } = fixture("past-due")
+		expect(ruleReason(snapshot)).toBe("payment_failure")
+		const chosen = { ...snapshot, plan: { ...snapshot.plan, phase: "scheduled" as const } }
+		expect(ruleReason(chosen)).toBe("unclear")
+	})
+
 	it("does not read an ordinary dip as the org winding down", () => {
 		expect(ruleReason(fixture("quieter-month").snapshot)).toBe("unclear")
 	})

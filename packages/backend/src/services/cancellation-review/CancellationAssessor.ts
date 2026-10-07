@@ -36,7 +36,16 @@ export class CancellationAssessor extends Context.Service<CancellationAssessor, 
 			const binding = Option.flatten(yield* Effect.serviceOption(AiWorkerFetcher))
 			const config = yield* Env
 			const token = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
-			if (Option.isNone(binding) || Option.isNone(token)) return unavailable
+			if (Option.isNone(binding) || Option.isNone(token)) {
+				yield* Effect.logWarning("cancellation assessor is not available; reports carry no model read").pipe(
+					Effect.annotateLogs({
+						reason: Option.isSome(binding)
+							? "INTERNAL_SERVICE_TOKEN is not configured"
+							: "no AI_WORKER service binding on this deployment",
+					}),
+				)
+				return unavailable
+			}
 
 			const authorization = internalServiceBearer(token.value)
 			// The binding routes by name rather than by host; the origin is a formality.

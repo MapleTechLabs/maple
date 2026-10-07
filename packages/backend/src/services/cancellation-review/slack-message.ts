@@ -160,5 +160,6 @@ export const buildCancellationMessage = (
 	]
 	blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: footer.join("  ·  ") }] })
 
-	return { text: `${title} (${REASON_LABELS[ruleReason]})`, blocks }
+	// Unlike the header's plain text, the fallback is mrkdwn: an org name is escaped here.
+	return { text: `${escape(title)} (${REASON_LABELS[ruleReason]})`, blocks }
 }

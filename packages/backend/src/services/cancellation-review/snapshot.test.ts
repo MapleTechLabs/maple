@@ -1,4 +1,4 @@
-import { BillingCustomer, BillingInvoice, DailyVolume } from "@maple/domain/http"
+import { DailyVolume } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
 import {
 	DAY_MS,
@@ -37,8 +37,20 @@ describe("summarizeIngest", () => {
 		expect(summarizeIngest([volume(3, 0)], AT).daysSinceLastData).toBeNull()
 	})
 
-	it("asks the warehouse for exactly the days it folds", () => {
-		expect(ingestWindow(AT)).toEqual({ startMs: dayStart(59), endMs: AT })
+	it("finds the last data of an org that switched off before either window", () => {
+		const ingest = summarizeIngest([volume(140, 12), volume(365, 12)], AT)
+		expect(ingest.daysSinceLastData).toBe(140)
+		// Outside both windows: remembered, not summed.
+		expect(ingest.prior).toMatchObject({ logsGB: 0, activeDays: 0 })
+	})
+
+	it("counts a day with only product events as a day telemetry arrived", () => {
+		const eventsOnly = new DailyVolume({ ...volume(2, 0), productEvents: 500 })
+		expect(summarizeIngest([eventsOnly], AT).daysSinceLastData).toBe(2)
+	})
+
+	it("asks the warehouse for a year ending at the cancellation", () => {
+		expect(ingestWindow(AT)).toEqual({ startMs: dayStart(364), endMs: AT })
 	})
 })
 
@@ -58,22 +70,28 @@ describe("summarizeVisits", () => {
 		expect(visits.daysSinceLastVisit).toBe(4)
 	})
 
+	it("skips a bucket whose date did not parse", () => {
+		const visits = summarizeVisits([{ dayMs: Number.NaN, users: 4 }], AT)
+		expect(visits).toEqual({
+			recent: { activeDays: 0, peakDailyUsers: 0 },
+			prior: { activeDays: 0, peakDailyUsers: 0 },
+			daysSinceLastVisit: null,
+		})
+	})
+
 	it("ends its window where the day of the cancellation starts", () => {
 		expect(visitsWindow(AT)).toEqual({ startMs: dayStart(60), endMs: dayStart(0) - 1 })
 	})
 })
 
 describe("summarizeBilling", () => {
-	const invoice = (createdAt: number, total: number, status = "paid") =>
-		new BillingInvoice({ status, total, currency: "usd", createdAt })
+	const invoice = (createdAt: number, total: number, status = "paid") => ({ status, total, createdAt })
 
 	it("compares the two latest invoices the org was actually billed", () => {
-		const billing = summarizeBilling(new BillingCustomer({ id: "org_1", subscriptions: [] }), [
-			invoice(1, 39),
-			invoice(3, 212),
-			invoice(4, 999, "draft"),
-			invoice(2, 45),
-		])
+		const billing = summarizeBilling({
+			balances: {},
+			invoices: [invoice(1, 39), invoice(3, 212), invoice(4, 999, "draft"), invoice(2, 45)],
+		})
 		expect(billing).toEqual({
 			invoices: 3,
 			lastInvoiceTotal: 212,
@@ -83,18 +101,14 @@ describe("summarizeBilling", () => {
 	})
 
 	it("names the metered features used past their included allowance", () => {
-		const billing = summarizeBilling(
-			new BillingCustomer({
-				id: "org_1",
-				subscriptions: [],
-				balances: {
-					traces: { granted: 100, usage: 140 },
-					logs: { granted: 100, usage: 60 },
-					product_events: { granted: 0, usage: 9000, unlimited: true },
-				},
-			}),
-			[],
-		)
+		const billing = summarizeBilling({
+			balances: {
+				traces: { granted: 100, usage: 140 },
+				logs: { granted: 100, usage: 60 },
+				product_events: { granted: 0, usage: 9000, unlimited: true },
+			},
+			invoices: [],
+		})
 		expect(billing.overAllowance).toEqual(["traces"])
 		expect(billing.lastInvoiceTotal).toBeNull()
 	})

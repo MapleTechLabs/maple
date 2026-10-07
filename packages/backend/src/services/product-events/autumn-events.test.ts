@@ -84,7 +84,8 @@ describe("cancellationsFromBillingUpdated", () => {
 					subscription: subscription({
 						status: "expired",
 						past_due: true,
-						expires_at: 1_764_432_000_000,
+						// The trial ran out and the plan went with it.
+						expires_at: 1_760_457_600_000,
 						trial_ends_at: 1_760_457_600_000,
 					}),
 					previous_attributes: { status: "active" },
@@ -93,6 +94,27 @@ describe("cancellationsFromBillingUpdated", () => {
 			assert.deepStrictEqual(
 				result.map(({ phase, pastDue, trial }) => ({ phase, pastDue, trial })),
 				[{ phase: "ended", pastDue: true, trial: true }],
+			)
+		}),
+	)
+
+	it.effect("does not call it a trial cancellation once the trial converted", () =>
+		Effect.gen(function* () {
+			// `trial_ends_at` stays on the subscription long after the first paid month.
+			const result = yield* cancellations([
+				{
+					action: "updated",
+					subscription: subscription({
+						trial_ends_at: 1_760_457_600_000,
+						canceled_at: 1_781_000_000_000,
+						expires_at: 1_783_000_000_000,
+					}),
+					previous_attributes: { canceled_at: null },
+				},
+			])
+			assert.deepStrictEqual(
+				result.map(({ phase, trial }) => ({ phase, trial })),
+				[{ phase: "scheduled", trial: false }],
 			)
 		}),
 	)
