@@ -12,7 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Panel } from "@maple/ui/components/ui/panel"
-import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { ROW_LANE } from "@maple/ui/components/ui/list-row"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -228,10 +228,17 @@ function ReviewTable({
 								onClick={() => onOpen(review)}
 								className={cn(
 									"cursor-pointer transition-colors hover:bg-muted/40",
-									rowSelectedClass(selected === review.id),
+									selected === review.id && "bg-muted/40",
 								)}
 							>
-								<TableCell className="px-4 py-2.5 leading-normal">
+								{/* The lane's ::before goes on the cell: on a <tr> it becomes an extra table cell. */}
+								<TableCell
+									className={cn(
+										"px-4 py-2.5 leading-normal",
+										ROW_LANE,
+										selected === review.id ? "before:bg-primary" : "before:bg-transparent",
+									)}
+								>
 									<button
 										type="button"
 										onClick={(event) => {
