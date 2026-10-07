@@ -34,6 +34,7 @@ import {
 import { eq } from "drizzle-orm"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
+import { quarantineOrgWarehouse } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { isRetryablePostgresContention } from "@maple/backend/platform/postgres-errors"
@@ -1085,6 +1086,26 @@ describe("ErrorsService.runTick", () => {
 			assert.isTrue(scanned.has(ORG))
 			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 55 * 60_000)
 		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
+	})
+
+	it.effect("a quarantined org does not take a replay slot from a scannable one", () => {
+		const backend = makeMemoryBackend()
+		// One more lagging org than there are slots, nearest to caught up first.
+		const orgs = Array.from({ length: 11 }, (_, i) => asOrgId(`org_idle_lagging_${i}`))
+		const cursorMs = (i: number) => TICK_MS - (60 + i) * 60_000
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* Effect.forEach(orgs, (org, i) =>
+				Effect.andThen(seedIngestKey(org), seedCursor(org, cursorMs(i))),
+			)
+			yield* quarantineOrgWarehouse(makeEdgeCacheService(backend), orgs[0]!, TICK_MS)
+
+			yield* errors.runTick()
+
+			assert.strictEqual(yield* cursorOf(orgs[0]!), cursorMs(0))
+			assert.strictEqual(yield* cursorOf(orgs[10]!), cursorMs(10) + 5 * 60_000)
+		}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, backend)))
 	})
 
 	it.effect("a failed discovery leaves skipped orgs' cursors alone", () => {

@@ -1541,11 +1541,15 @@ const make: Effect.Effect<
 		)
 
 		// Closest to caught up first, so short gaps drain and leave the set
-		// instead of queueing behind a cursor that is weeks old.
-		const replay = lagging
-			.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime())
-			.slice(0, TICK_LAGGING_IDLE_ORGS)
-			.map((row) => row.orgId)
+		// instead of queueing behind a cursor that is weeks old. A quarantined
+		// org is not scanned this tick, so it must not hold a slot either.
+		const replay: Array<OrgId> = []
+		for (const row of lagging.toSorted(
+			(a, b) => b.processedThrough.getTime() - a.processedThrough.getTime(),
+		)) {
+			if (replay.length === TICK_LAGGING_IDLE_ORGS) break
+			if (!(yield* isOrgWarehouseQuarantined(edgeCache, row.orgId))) replay.push(row.orgId)
+		}
 		yield* Effect.annotateCurrentSpan({
 			idleCursorsAdvanced: provenEmpty.length,
 			idleCursorsLagging: lagging.length,
