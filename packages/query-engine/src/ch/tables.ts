@@ -29,6 +29,14 @@ export const orgId = Datasources.traces.columns.OrgId
 /** The tenant param every warehouse query filters `OrgId` on. */
 export const orgIdParam = T.param.of(orgId, "orgId")
 
+/**
+ * A `DateTime.Utc` bound for a second-precision `DateTime` column, floored to
+ * whole seconds. It may share a name with a `param.dateTime` bound on a
+ * `DateTime64` column. Use it instead of `param.dateTimeSeconds`, which in
+ * effect-orm 0.3.0 only accepts strings at runtime despite its type.
+ */
+export const utcSecondsParam = <const N extends string>(name: N) => T.param.of(T.dateTime, name)
+
 export const Traces = Datasources.traces
 
 export const TraceDetailSpans = Datasources.traceDetailSpans
