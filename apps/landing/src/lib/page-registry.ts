@@ -85,6 +85,24 @@ interface SurfacePanelSpec {
 	lede: Msg
 }
 
+/**
+ * One capture in a feature page's gallery, produced by
+ * `scripts/screenshots/capture.ts` as `/screenshots/<id>.webp` at
+ * `GALLERY_SHOT_SIZE`. Literal English, like `Plate`.
+ */
+export interface GalleryShot {
+	/** Shot id in `scripts/screenshots/shots.ts`. */
+	id: string
+	/** Frame head, left: the route the shot shows. */
+	route: string
+	/** Frame head, right: what to look at. */
+	title: string
+	alt: string
+}
+
+/** Every capture is 1440×810 CSS px at 2x. */
+export const GALLERY_SHOT_SIZE = { width: 2880, height: 1620 } as const
+
 interface ArtifactSpec {
 	id: ArtifactId
 	title: Msg
@@ -107,6 +125,8 @@ export interface Feature {
 	/** One per page. Two live artifacts plus the amber CTA reads speckled. */
 	artifact: ArtifactSpec | null
 	extraSections: SectionId[]
+	/** More of the surface, below the artifact. Empty when the demo world cannot show it yet. */
+	gallery: GalleryShot[]
 	capTitle: Msg
 	capabilities: Capability[]
 	/** Hand-picked, so no slug ends up with zero inbound links. */

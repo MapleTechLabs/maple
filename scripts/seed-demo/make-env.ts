@@ -29,6 +29,9 @@ const OVERRIDES = new Map([
 	["INGEST_KEY_STORE_BACKEND", "static"],
 	// Billing off: the plan gate fails open and no test customer lands in the Autumn sandbox.
 	["AUTUMN_SECRET_KEY", ""],
+	// The web app's own browser telemetry would otherwise land in the demo org.
+	["MAPLE_OTEL_PUBLIC_INGEST_KEY", ""],
+	["VITE_MAPLE_INGEST_KEY", ""],
 ])
 
 /** Point the URL at the screenshot database, also when it names none or ends in a slash. */

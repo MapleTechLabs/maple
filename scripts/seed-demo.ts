@@ -109,6 +109,88 @@ const checkWarehouse = Effect.fn("seedDemo.checkWarehouse")(function* () {
 	}
 })
 
+// ── reset ───────────────────────────────────────────────────────────────────
+
+const ERROR_STATE_TABLES = [
+	"error_fingerprint_candidates",
+	"error_incidents",
+	"error_issue_events",
+	"error_issue_pull_requests",
+	"error_issue_states",
+	"error_issue_verifications",
+	"error_issues",
+	"error_notification_deliveries",
+	"investigations",
+]
+
+const Datasources = Schema.Struct({ datasources: Schema.Array(Schema.Struct({ name: Schema.String })) })
+
+/**
+ * `--reset`: start the demo world over, so a re-seed never doubles rows. Only
+ * ever touches a localhost warehouse and the `maple_screenshots` database. The
+ * error tick's watermark is set just before the incident: on first sight it
+ * would otherwise bootstrap to "now" and skip the seeded history.
+ */
+const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incidentAt: number) {
+	const host = env("TINYBIRD_HOST")
+	const token = env("TINYBIRD_TOKEN")
+	const pgUrl = env("MAPLE_PG_URL")
+	if (Option.isNone(host) || Option.isNone(token) || Option.isNone(pgUrl)) {
+		return yield* new SeedPreflightError({
+			message: "--reset needs TINYBIRD_HOST, TINYBIRD_TOKEN and MAPLE_PG_URL",
+		})
+	}
+	if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(host.value)) {
+		return yield* new SeedPreflightError({
+			message: `--reset only truncates a local warehouse, not ${host.value}`,
+		})
+	}
+	if (!/\/maple_screenshots(\?|$)/.test(pgUrl.value) || !/^org_[A-Za-z0-9]+$/.test(orgId)) {
+		return yield* new SeedPreflightError({
+			message: "--reset only runs against the maple_screenshots database (bun run seed:demo:env)",
+		})
+	}
+
+	const client = (yield* HttpClient.HttpClient).pipe(
+		HttpClient.mapRequest(HttpClientRequest.bearerToken(token.value)),
+		HttpClient.filterStatusOk,
+	)
+	const fail = (cause: { readonly message: string }) =>
+		new SeedPreflightError({ message: `--reset: ${cause.message}` })
+	const { datasources } = yield* client.get(`${host.value}/v0/datasources`).pipe(
+		Effect.flatMap((response) => response.json),
+		Effect.flatMap(Schema.decodeUnknownEffect(Datasources)),
+		Effect.mapError(fail),
+	)
+	yield* Effect.forEach(
+		datasources,
+		({ name }) =>
+			client.post(`${host.value}/v0/datasources/${name}/truncate`).pipe(Effect.mapError(fail)),
+		{ concurrency: 4, discard: true },
+	)
+
+	const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+	const watermark = new Date(incidentAt - 5 * MINUTE).toISOString()
+	yield* spawner
+		.string(
+			ChildProcess.make("psql", [
+				pgUrl.value,
+				"-v",
+				"ON_ERROR_STOP=1",
+				"-c",
+				`TRUNCATE ${ERROR_STATE_TABLES.join(", ")} CASCADE`,
+				"-c",
+				`INSERT INTO error_tick_states (org_id, processed_through, bootstrap_completed, updated_at)
+				 VALUES ('${orgId}', '${watermark}', true, now())
+				 ON CONFLICT (org_id) DO UPDATE SET processed_through = EXCLUDED.processed_through,
+				   bootstrap_completed = true, claim_token = NULL, claim_expires_at = NULL, updated_at = now()`,
+			]),
+			{ includeStderr: true },
+		)
+		.pipe(Effect.mapError(fail))
+	yield* Console.log(`  reset: ${datasources.length} datasources truncated, error state cleared`)
+})
+
 // ── sending ─────────────────────────────────────────────────────────────────
 
 const post = Effect.fn("seedDemo.post")(
@@ -196,6 +278,12 @@ const seed = Command.make(
 			),
 			Flag.withDefault(false),
 		),
+		reset: Flag.Boolean("reset").pipe(
+			Flag.withDescription(
+				"Truncate the local warehouse and the demo error state first (screenshot stack only)",
+			),
+			Flag.withDefault(false),
+		),
 		resume: Flag.Boolean("resume").pipe(
 			Flag.withDescription("Skip the backfill and follow on from where the last run stopped sending"),
 			Flag.withDefault(false),
@@ -270,6 +358,12 @@ const seed = Command.make(
 			peakTracesPerMinute: flags.rate,
 			seed,
 		})
+		if (flags.reset && !flags.dryRun && Option.isNone(previous)) {
+			if (Option.isNone(orgId)) {
+				return yield* new SeedPreflightError({ message: "--reset needs MAPLE_ORG_ID_OVERRIDE" })
+			}
+			yield* resetDemo(orgId.value, world.incidentAt)
+		}
 		yield* Console.log(
 			`\nseeding ${clock(world.start)} → ${clock(anchor)} (${hours}h), incident at ${clock(world.incidentAt)}` +
 				(flags.dryRun ? " [dry run]" : ""),
