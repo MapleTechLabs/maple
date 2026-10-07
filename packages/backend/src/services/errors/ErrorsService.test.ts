@@ -1074,6 +1074,38 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
 	)
 
+	it.effect("after the jump the org advances window by window and does not jump again", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedCursor(TICK_MS - 30 * DAY, TICK_MS - 30 * DAY)
+
+			yield* errors.runTick()
+			yield* TestClock.setTime(TICK_MS + MINUTE)
+			yield* errors.runTick()
+
+			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 6 * MINUTE)
+		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
+	)
+
+	it.effect("a failed discovery never skips: the stale cursor is left where it is", () => {
+		const scanned = new Set<string>()
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedCursor(TICK_MS - 30 * DAY, TICK_MS - 30 * DAY)
+
+			yield* errors.runTick()
+
+			assert.isFalse(scanned.has(ORG))
+			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 30 * DAY)
+		}).pipe(
+			Effect.provide(makeGatingLayer({ failDiscovery: true, scanRows: () => [scanRow()], scanned })),
+		)
+	})
+
 	it.effect("an org that was scanned within the discovery window replays its backlog", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
