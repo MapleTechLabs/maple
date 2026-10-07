@@ -810,6 +810,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.errorTickBootstrapIssuesQuery(), window),
 	},
 	{
+		// ErrorsService cursor recovery for an org that was not being scanned.
+		module: "errors",
+		name: "errorTickFirstErrorMinuteQuery",
+		label: "first-error-minute",
+		compile: () => CH.compileUnsafe(CH.errorTickFirstErrorMinuteQuery(), window),
+	},
+	{
 		// ErrorsService errorIssueEnvFingerprints
 		module: "errors",
 		name: "errorFingerprintsQuery",

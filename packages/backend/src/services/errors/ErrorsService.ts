@@ -124,6 +124,10 @@ const ERROR_ACTIVE_DISCOVERY_WINDOW_MS = 15 * 60_000
  *  org is scanned again; the price is that many minutes of replay on return. */
 const TICK_IDLE_CURSOR_TRAIL_MS = 5 * TICK_MINUTE_MS
 const TICK_CURSOR_UPDATE_CHUNK = 500
+/** How far back an idle org's errors are still recovered after it went
+ *  unobserved (the tick or discovery was down). Older than this, telling a
+ *  customer about the error is no longer useful and the cursor skips it. */
+const TICK_IDLE_RECOVERY_HORIZON_MS = 6 * 60 * TICK_MINUTE_MS
 // Last-known active-org set, cached so a discovery failure can fail CLOSED
 // (reuse the previous active set) instead of fanning out to every known org —
 // the latter melts the warehouse exactly when it is already struggling. Keyed
@@ -1496,20 +1500,26 @@ const make: Effect.Effect<
 	// arrive late, and moved only once it trails that by a full window: one write
 	// per idle org every few minutes.
 	//
-	// The move is not limited to what this tick's discovery covered. A cursor
-	// older than the discovery window (the tick or discovery was down, or the org
-	// was skipped before this existed) is moved too, which skips time nobody
-	// checked; that is logged. An org that is being scanned never comes through
-	// here and always replays from its cursor. Callers skip this when discovery
-	// failed: the reused set proves nothing about who is idle.
+	// A cursor older than the discovery window was not being moved: the tick or
+	// discovery was down, or the row predates this. Whatever errors that stretch
+	// holds would otherwise be dropped, so the org's first error minute in it is
+	// looked up (one keyed read) and the cursor is set there; the org is returned
+	// to be scanned this tick. It hops error to error on later ticks until the
+	// lookup finds nothing, and is then parked like any idle org. The lookup
+	// reaches back `TICK_IDLE_RECOVERY_HORIZON_MS` at most.
+	//
+	// An org that is being scanned never comes through here and always replays
+	// from its cursor. Callers skip this when discovery failed: the reused set
+	// proves nothing about who is idle.
 	const advanceIdleCursors = Effect.fn("ErrorsService.advanceIdleCursors")(function* (
 		idleOrgs: ReadonlyArray<OrgId>,
 		cutoffMs: number,
 		nowMs: number,
 	) {
-		if (idleOrgs.length === 0) return
+		if (idleOrgs.length === 0) return []
 		const idle = new Set(idleOrgs)
 		const parkedAtMs = cutoffMs - TICK_IDLE_CURSOR_TRAIL_MS
+		const horizonMs = cutoffMs - TICK_IDLE_RECOVERY_HORIZON_MS
 		// A lease that has lapsed belongs to a tick that died mid-org. Left in
 		// place it would pin the cursor for as long as the org stays idle.
 		const unclaimed = or(
@@ -1531,51 +1541,106 @@ const make: Effect.Effect<
 				),
 		)).filter((row) => idle.has(row.orgId))
 
-		yield* Effect.forEach(
-			Arr.chunksOf(
-				trailing.map((row) => row.orgId),
-				TICK_CURSOR_UPDATE_CHUNK,
-			),
-			(chunk) =>
-				dbExecute((db) =>
-					db
-						.update(errorTickStates)
-						.set({
-							processedThrough: new Date(parkedAtMs),
-							claimToken: null,
-							claimExpiresAt: null,
-							updatedAt: new Date(nowMs),
-						})
-						.where(
-							and(
-								inArray(errorTickStates.orgId, chunk),
-								lt(errorTickStates.processedThrough, new Date(parkedAtMs)),
-								unclaimed,
+		const moveCursors = (orgIds: ReadonlyArray<OrgId>, toMs: number) =>
+			Effect.forEach(
+				Arr.chunksOf(orgIds, TICK_CURSOR_UPDATE_CHUNK),
+				(chunk) =>
+					dbExecute((db) =>
+						db
+							.update(errorTickStates)
+							.set({
+								processedThrough: new Date(toMs),
+								claimToken: null,
+								claimExpiresAt: null,
+								updatedAt: new Date(nowMs),
+							})
+							.where(
+								and(
+									inArray(errorTickStates.orgId, chunk),
+									lt(errorTickStates.processedThrough, new Date(toMs)),
+									unclaimed,
+								),
 							),
-						),
-				),
-			{ discard: true },
-		)
+					),
+				{ discard: true },
+			)
 
-		const unobserved = trailing.filter(
-			(row) => row.processedThrough.getTime() < nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS,
-		)
-		yield* Effect.forEach(
-			unobserved,
+		const isObserved = (row: { readonly processedThrough: Date }) =>
+			row.processedThrough.getTime() >= nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
+
+		// Where each unobserved org's cursor belongs: its first error minute, or
+		// the parking point when the stretch is empty. A failed lookup leaves the
+		// cursor alone for the next tick.
+		const recovered = yield* Effect.forEach(
+			trailing.filter((row) => !isObserved(row)),
 			(row) =>
-				Effect.logInfo("Idle error tick cursor moved past an unobserved gap").pipe(
-					Effect.annotateLogs({
-						orgId: row.orgId,
-						skippedFromMs: row.processedThrough.getTime(),
-						skippedMs: parkedAtMs - row.processedThrough.getTime(),
-					}),
+				Effect.gen(function* () {
+					if (yield* isOrgWarehouseQuarantined(edgeCache, row.orgId)) return []
+					const cursorMs = row.processedThrough.getTime()
+					const fromMs = Math.max(cursorMs, horizonMs)
+					const rows = yield* warehouse.compiledQuery(
+						systemTenant(row.orgId),
+						CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
+							orgId: row.orgId,
+							startTime: formatWarehouseDateTime(fromMs),
+							endTime: formatWarehouseDateTime(cutoffMs),
+						}),
+						{ profile: "aggregation", context: "errorTickFirstErrorMinute" },
+					)
+					if (cursorMs < horizonMs) {
+						yield* Effect.logInfo("Idle error tick cursor moved past the recovery horizon").pipe(
+							Effect.annotateLogs({
+								orgId: row.orgId,
+								skippedFromMs: cursorMs,
+								skippedMs: horizonMs - cursorMs,
+							}),
+						)
+					}
+					const first = rows[0]
+					return [
+						{
+							orgId: row.orgId,
+							firstErrorMs: first === undefined ? null : parseWarehouseDateTime(first.minute),
+						},
+					]
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.gen(function* () {
+									yield* quarantineOnConfigClassCause(edgeCache, row.orgId, cause, nowMs)
+									yield* Effect.logWarning("Idle error tick cursor lookup failed").pipe(
+										Effect.annotateLogs({
+											orgId: row.orgId,
+											error: summarizeCause(cause),
+										}),
+									)
+									return []
+								}),
+					),
 				),
-			{ discard: true },
+			{ concurrency: 4 },
+		).pipe(Effect.map((results) => results.flat()))
+
+		yield* moveCursors(
+			[
+				...trailing.filter(isObserved).map((row) => row.orgId),
+				...recovered.filter((row) => row.firstErrorMs === null).map((row) => row.orgId),
+			],
+			parkedAtMs,
 		)
-		yield* Effect.annotateCurrentSpan({
-			idleCursorsAdvanced: trailing.length,
-			idleCursorsUnobserved: unobserved.length,
+		const recovering = recovered.flatMap((row) =>
+			row.firstErrorMs === null ? [] : [{ orgId: row.orgId, firstErrorMs: row.firstErrorMs }],
+		)
+		yield* Effect.forEach(recovering, (row) => moveCursors([row.orgId], row.firstErrorMs), {
+			discard: true,
 		})
+
+		yield* Effect.annotateCurrentSpan({
+			idleCursorsAdvanced: trailing.length - recovering.length,
+			idleCursorsRecovering: recovering.length,
+		})
+		return recovering.map((row) => row.orgId)
 	})
 
 	// Align to the latest completed minute. Per-org cursor leases serialize
@@ -1615,14 +1680,16 @@ const make: Effect.Effect<
 		// any of those is in `withState` by construction. Visiting the rest cost 5
 		// Postgres round-trips each per minute — ~1.6M/day, most of the statement
 		// volume on the database — to discover nothing.
-		const scanOrgs = [...knownOrgs].filter(isActive)
-		if (discovered) {
-			yield* advanceIdleCursors(
-				[...knownOrgs].filter((org) => !isActive(org)),
-				cutoffMs,
-				nowMs,
-			)
-		}
+		const activeScanOrgs = [...knownOrgs].filter(isActive)
+		const recoveringOrgs = discovered
+			? yield* advanceIdleCursors(
+					[...knownOrgs].filter((org) => !isActive(org)),
+					cutoffMs,
+					nowMs,
+				)
+			: []
+
+		const scanOrgs = [...activeScanOrgs, ...recoveringOrgs]
 
 		const emptyResult = {
 			issuesTouched: 0,

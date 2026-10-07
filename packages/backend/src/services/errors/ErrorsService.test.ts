@@ -301,6 +301,9 @@ const makeGatingLayer = (opts: {
 	scanRows?: () => ReadonlyArray<Record<string, unknown>>
 	scanned?: Set<string>
 	profiles?: Map<string, string | undefined>
+	/** Answer for the idle-cursor recovery lookup: the first error minute, or none. */
+	firstErrorMinute?: () => string | null
+	firstErrorSql?: Array<string>
 }) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -356,6 +359,12 @@ const makeGatingLayer = (opts: {
 					opts.scanned?.add(orgId)
 					return Effect.orDie(compiledQueryOf(compiled).decodeRows(scanRows()))
 				})
+			}
+			if (options?.context === "errorTickFirstErrorMinute") {
+				const query = compiledQueryOf(compiled)
+				opts.firstErrorSql?.push(query.sql)
+				const minute = opts.firstErrorMinute?.() ?? null
+				return Effect.orDie(query.decodeRows(minute === null ? [] : [{ minute }]))
 			}
 			return Effect.orDie(compiledQueryOf(compiled).decodeRows([]))
 		},
@@ -1092,8 +1101,9 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeGatingLayer({}))),
 	)
 
-	it.effect("a skipped org's cursor that is weeks old jumps to the parking point unscanned", () => {
+	it.effect("an unobserved idle cursor with no errors behind it is parked unscanned", () => {
 		const scanned = new Set<string>()
+		const firstErrorSql: Array<string> = []
 		return Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
@@ -1104,7 +1114,37 @@ describe("ErrorsService.runTick", () => {
 
 			assert.isFalse(scanned.has(ORG))
 			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), PARKED_MS)
-		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
+			// A cursor older than the horizon is only checked from the horizon on.
+			assert.lengthOf(firstErrorSql, 1)
+			assert.include(
+				firstErrorSql[0],
+				`Minute >= '${formatWarehouseDateTime(TICK_MS - MINUTE - 6 * 60 * MINUTE)}'`,
+			)
+		}).pipe(Effect.provide(makeGatingLayer({ scanned, firstErrorSql })))
+	})
+
+	it.effect("an unobserved idle cursor resumes at the org's first error and is scanned", () => {
+		const scanned = new Set<string>()
+		const firstErrorMs = TICK_MS - 2 * 60 * MINUTE
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* seedCursor(TICK_MS - 3 * 60 * MINUTE)
+
+			yield* errors.runTick()
+
+			// The hour before the first error is skipped; one window from it is applied.
+			assert.isTrue(scanned.has(ORG))
+			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), firstErrorMs + 5 * MINUTE)
+		}).pipe(
+			Effect.provide(
+				makeGatingLayer({
+					scanned,
+					firstErrorMinute: () => formatWarehouseDateTime(firstErrorMs),
+				}),
+			),
+		)
 	})
 
 	it.effect("an org with recent errors replays from a stale cursor instead of jumping", () =>
