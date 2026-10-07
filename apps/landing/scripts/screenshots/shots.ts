@@ -98,8 +98,7 @@ export const SHOTS: ReadonlyArray<Shot> = [
 	},
 	{
 		id: "gallery-metric-pool",
-		route: "/metrics/db.client.connection.count",
-		search: { where: 'db.client.connection.state = "used"', agg: "max" },
+		route: "/metrics/db.client.connection.pending_requests",
 		range: lastMinutes(6 * 60),
 	},
 	{ id: "gallery-dashboard-templates", route: "/dashboards/templates" },

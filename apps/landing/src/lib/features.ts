@@ -292,8 +292,8 @@ export const features: Feature[] = [
 			{
 				id: "gallery-metric-pool",
 				route: "/metrics/:name",
-				title: "Connection pool",
-				alt: "Connections in use on payment-svc, pinned at the pool limit of 20 after the deploy",
+				title: "Requests waiting on the pool",
+				alt: "db.client.connection.pending_requests for payment-svc: zero until the deploy, then 30 to 40 requests waiting for a connection",
 			},
 			{
 				id: "gallery-dashboard-templates",
