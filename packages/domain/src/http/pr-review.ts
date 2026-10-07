@@ -65,6 +65,7 @@ export const PrReviewFailureReason = Schema.Literals([
 	"model_error",
 	"agent_error",
 	"no_report",
+	"ended_early",
 	"interrupted",
 ]).annotate({ identifier: "@maple/PrReviewFailureReason", title: "Pull Request Review Failure Reason" })
 export type PrReviewFailureReason = Schema.Schema.Type<typeof PrReviewFailureReason>
@@ -80,6 +81,7 @@ export const PR_REVIEW_FAILURE_COPY = {
 	model_error: "The model provider returned an error.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
+	ended_early: "It stopped before it finished, so its partial findings are not posted here.",
 	interrupted: "Maple was restarted while it ran, more than once. Ask again with @maple review.",
 } as const satisfies Record<PrReviewFailureReason, string>
 
