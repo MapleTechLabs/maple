@@ -97,4 +97,5 @@ const program = Effect.gen(function* () {
 	yield* Console.log(`wrote .env.screenshots (org ${DEMO_ORG_ID}, database ${DATABASE})`)
 })
 
+// oxlint-disable-next-line effecttsgo/strict-effect-provide
 program.pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain)

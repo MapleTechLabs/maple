@@ -333,7 +333,7 @@ const seed = Command.make(
 		if (!flags.follow && !flags.resume) return
 
 		yield* Console.log(`\nfollowing from ${clock(cursor)}: one window per minute, Ctrl-C to stop`)
-		yield* Effect.gen(function* () {
+		return yield* Effect.gen(function* () {
 			const end = Math.floor(Date.now() / MINUTE) * MINUTE
 			const catchUp = Array.from(
 				{ length: Math.ceil((end - cursor) / HOUR) },
@@ -358,6 +358,7 @@ const seed = Command.make(
 ).pipe(Command.withDescription("Seed the local stack with the Acme Shop demo world"))
 
 Command.run(seed, { version: "1.0.0" }).pipe(
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
 	NodeRuntime.runMain,
 )
