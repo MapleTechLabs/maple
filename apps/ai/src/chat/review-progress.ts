@@ -12,7 +12,7 @@ import type { ReviewLedger } from "./review-ledger"
 /** Each write edits a GitHub comment, so the beat stays well inside the API's rate limits. */
 export const REVIEW_PROGRESS_HEARTBEAT = Duration.seconds(30)
 
-export interface ReviewProgressFeed extends Pick<ProgressFeed, "step" | "close"> {
+export interface ReviewProgressFeed extends Pick<ProgressFeed, "step" | "pause" | "resume" | "close"> {
 	/** The pass ended without a report; say the write-up is under way, now rather than on the beat. */
 	readonly closingOut: Effect.Effect<void>
 }
@@ -51,6 +51,8 @@ export const makeReviewProgressFeed = Effect.fn("makeReviewProgressFeed")(functi
 	})
 	return {
 		step: feed.step,
+		pause: feed.pause,
+		resume: feed.resume,
 		closingOut: Ref.set(closingOut, true).pipe(Effect.andThen(feed.writeNow)),
 		close: feed.close,
 	} satisfies ReviewProgressFeed

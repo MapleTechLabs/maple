@@ -433,15 +433,17 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						write: (snapshot) => reviews.recordProgress(tenant.orgId, prReviewId, snapshot),
 					})
 				: undefined
-		// The tail lands while the row is still active, and the report's own write lands last.
-		const closeFeeds = Effect.all(
-			[
-				(investigationFeed?.flush ?? Effect.void).pipe(
-					Effect.andThen(investigationFeed?.close ?? Effect.void),
-				),
-				reviewFeed?.close ?? Effect.void,
-			],
-			{ discard: true },
+		const feeds = [investigationFeed, reviewFeed].filter((feed) => feed !== undefined)
+		// The tail lands while the row is still active, and the report's own write lands last. A
+		// report that does not land hands the row back to the feed, since the pass goes on.
+		const beforeReport = <A, E>(submit: Effect.Effect<A, E>) =>
+			(investigationFeed?.flush ?? Effect.void).pipe(
+				Effect.andThen(Effect.forEach(feeds, (feed) => feed.pause, { discard: true })),
+				Effect.andThen(submit),
+				Effect.onError(() => Effect.forEach(feeds, (feed) => feed.resume, { discard: true })),
+			)
+		const closeFeeds = (investigationFeed?.flush ?? Effect.void).pipe(
+			Effect.andThen(Effect.forEach(feeds, (feed) => feed.close, { discard: true })),
 		)
 		// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
 		let failure: PrReviewFailureReason | undefined
@@ -463,9 +465,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				toolExecutor,
 				model,
 				submitDiagnosis: (orgId, id, request) =>
-					closeFeeds.pipe(Effect.andThen(investigations.submitDiagnosis(orgId, id, request))),
+					beforeReport(investigations.submitDiagnosis(orgId, id, request)),
 				submitReview: (orgId, reviewId, request) =>
-					closeFeeds.pipe(Effect.andThen(reviews.submitReview(orgId, reviewId, request))),
+					beforeReport(reviews.submitReview(orgId, reviewId, request)),
 				submitReply: conversations.submitReply,
 				stageEdit: conversations.stageEdit,
 				...(turn.closeOut === true ? { closeOut: true } : undefined),

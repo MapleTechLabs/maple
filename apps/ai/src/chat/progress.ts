@@ -34,6 +34,9 @@ export const parseToolInput = (input: unknown): ToolCallInput => Option.getOrEls
 /** How long an investigation's step may sit in memory before it is worth a write. */
 export const INVESTIGATION_PROGRESS_HEARTBEAT = Duration.seconds(8)
 
+/** Longest one progress write may take before it is given up on. */
+export const PROGRESS_WRITE_TIMEOUT = Duration.seconds(15)
+
 /** Longest argument fragment a label will carry. */
 const ARG_MAX = 32
 
@@ -117,7 +120,11 @@ export interface ProgressFeed {
 	readonly flush: Effect.Effect<void>
 	/** Write the record now, changed or not. */
 	readonly writeNow: Effect.Effect<void>
-	/** Stop the feed, waiting out a write in flight; nothing is written after. Safe to call twice. */
+	/** Stop writing, waiting out a write in flight. Steps still queue, for a `resume`. */
+	readonly pause: Effect.Effect<void>
+	/** Write again after a `pause`, as when the report it made way for was refused. */
+	readonly resume: Effect.Effect<void>
+	/** Stop the feed for good, waiting out a write in flight. Safe to call twice. */
 	readonly close: Effect.Effect<void>
 }
 
@@ -169,21 +176,31 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 					},
 		)
 
+	// The bookkeeping cannot be cut off midway; only the write itself is interruptible, by its
+	// timeout, so a hung request cannot hold the permit (and the report behind it) for long.
 	const write = (force: boolean) =>
-		Effect.gen(function* () {
-			if (!(yield* Ref.get(open))) return
-			yield* Queue.clear(calls).pipe(Effect.flatMap(absorb))
-			const current = yield* Ref.get(state)
-			if (!current.dirty && !force) return
-			yield* Ref.set(state, { ...current, dirty: false })
-			const now = yield* Clock.currentTimeMillis
-			yield* options.write({
-				stepCount: current.stepCount,
-				steps: current.steps,
-				// A row's liveness reads its newest step; a beat that writes anyway is itself the news.
-				updatedAt: options.everyBeat ? now : (current.steps.at(-1)?.at ?? now),
-			})
-		}).pipe(permit.withPermits(1), Effect.uninterruptible)
+		Effect.uninterruptibleMask((restore) =>
+			Effect.gen(function* () {
+				if (!(yield* Ref.get(open))) return
+				yield* Queue.clear(calls).pipe(Effect.flatMap(absorb))
+				const current = yield* Ref.get(state)
+				if (!current.dirty && !force) return
+				yield* Ref.set(state, { ...current, dirty: false })
+				const now = yield* Clock.currentTimeMillis
+				const written = yield* restore(
+					options
+						.write({
+							stepCount: current.stepCount,
+							steps: current.steps,
+							// A row's liveness reads its newest step; a beat that writes anyway is itself the news.
+							updatedAt: options.everyBeat ? now : (current.steps.at(-1)?.at ?? now),
+						})
+						.pipe(Effect.timeoutOption(PROGRESS_WRITE_TIMEOUT)),
+				)
+				if (Option.isNone(written))
+					yield* Effect.logWarning("Progress write timed out; the next beat retries")
+			}).pipe(permit.withPermits(1)),
+		)
 
 	const first = Queue.take(calls).pipe(
 		Effect.flatMap((call) => absorb([call])),
@@ -194,12 +211,17 @@ export const makeProgressFeed = Effect.fnUntraced(function* (options: {
 		Effect.all([first, beat], { concurrency: "unbounded", discard: true }),
 	)
 
+	// Under the permit: a write in flight finishes first, and none starts after.
+	const pause = Ref.set(open, false).pipe(permit.withPermits(1))
+
 	return {
 		step: (tool, input) => {
 			Queue.offerUnsafe(calls, { tool, input, at: clock.currentTimeMillisUnsafe() })
 		},
 		flush: write(false),
 		writeNow: write(true),
-		close: Ref.set(open, false).pipe(permit.withPermits(1), Effect.andThen(Fiber.interrupt(fiber))),
+		pause,
+		resume: Ref.set(open, true),
+		close: pause.pipe(Effect.andThen(Fiber.interrupt(fiber))),
 	} satisfies ProgressFeed
 })

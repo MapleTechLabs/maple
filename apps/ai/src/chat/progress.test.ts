@@ -1,9 +1,15 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { INVESTIGATION_PROGRESS_STEPS, type InvestigationProgress } from "@maple/domain/http"
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 
-import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, reviewStepLabel, stepLabel } from "./progress"
+import {
+	INVESTIGATION_PROGRESS_HEARTBEAT,
+	makeProgressFeed,
+	PROGRESS_WRITE_TIMEOUT,
+	reviewStepLabel,
+	stepLabel,
+} from "./progress"
 
 describe("stepLabel", () => {
 	it("reads a verb-first tool name as a phrase, with no map to go stale", () => {
@@ -127,6 +133,35 @@ describe("makeProgressFeed", () => {
 			yield* feed.flush
 			yield* TestClock.adjust(Duration.times(INVESTIGATION_PROGRESS_HEARTBEAT, 3))
 			assert.lengthOf(writes, 2)
+		}),
+	)
+
+	it.effect("writes again after a resume, as when the report it paused for was refused", () =>
+		Effect.gen(function* () {
+			const { feed, writes } = yield* feedWith()
+			yield* feed.pause
+			feed.step("search_logs", {})
+			yield* TestClock.adjust(Duration.times(INVESTIGATION_PROGRESS_HEARTBEAT, 2))
+			assert.lengthOf(writes, 0)
+			yield* feed.resume
+			yield* TestClock.adjust(INVESTIGATION_PROGRESS_HEARTBEAT)
+			assert.equal(writes.at(-1)!.stepCount, 1)
+		}),
+	)
+
+	it.effect("gives up on a hung write instead of holding the permit", () =>
+		Effect.gen(function* () {
+			const feed = yield* makeProgressFeed({
+				label: stepLabel,
+				heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
+				everyBeat: false,
+				write: () => Effect.never,
+			})
+			feed.step("search_logs", {})
+			yield* settle
+			const closed = yield* Effect.forkChild(feed.close)
+			yield* TestClock.adjust(PROGRESS_WRITE_TIMEOUT)
+			yield* Fiber.join(closed)
 		}),
 	)
 
