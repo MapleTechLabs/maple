@@ -59,6 +59,9 @@ const regression = (
 	expect,
 })
 
+/** Outcome tasks are graded on the answer, so the turn needs room to finish one. */
+const withRoom = (task: ToolTask): ToolTask => ({ ...task, maxToolCalls: 10 })
+
 const capability = (
 	id: string,
 	tags: ReadonlyArray<string>,
@@ -232,22 +235,24 @@ export const TOOL_TASKS: ReadonlyArray<ToolTask> = [
 		"List all the error types across the system in the last 6 hours.",
 		calls(call("find_errors", { service: { absent: true } })),
 	),
-	regression(
-		"error-rate-by-service",
-		["analytics", "outcome"],
-		"Break down error rate by service so I can see the worst offenders.",
-		// list_services already shows each service's error rate, so it answers this as well.
-		calls(
-			call("query_data", {
-				source: "traces",
-				kind: "breakdown",
-				metric: "error_rate",
-				group_by: { orDefault: "service" },
-			}),
-			call("list_services"),
+	withRoom(
+		regression(
+			"error-rate-by-service",
+			["analytics", "outcome"],
+			"Break down error rate by service so I can see the worst offenders.",
+			// list_services already shows each service's error rate, so it answers this as well.
+			calls(
+				call("query_data", {
+					source: "traces",
+					kind: "breakdown",
+					metric: "error_rate",
+					group_by: { orDefault: "service" },
+				}),
+				call("list_services"),
+			),
+			// 640 errors in 12,100 requests: the world's worst offender by rate.
+			answerMentions("consumer-app-store-connect"),
 		),
-		// 640 errors in 12,100 requests: the world's worst offender by rate.
-		answerMentions("consumer-app-store-connect"),
 	),
 	regression(
 		"p95-by-span-name",
@@ -386,7 +391,12 @@ export const TOOL_TASKS: ReadonlyArray<ToolTask> = [
 		"record-fix",
 		["issues"],
 		`I fixed error issue ${ISSUE}. The PR is ${PR_42}. Record the fix.`,
-		calls(call("propose_fix", { issue_id: ISSUE, pr_url: PR_42 })),
+		// Both record it: propose_fix also moves the issue to in_review, link_pull_request leaves it
+		// for the merge to move. Neither description makes the other wrong for "record the fix".
+		calls(
+			call("propose_fix", { issue_id: ISSUE, pr_url: PR_42 }),
+			call("link_pull_request", { issue_id: ISSUE, pull_request_url: PR_42 }),
+		),
 		// propose_fix claims and moves the issue itself; walking the state machine first is the bug.
 		never("transition_error_issue"),
 	),
@@ -404,12 +414,14 @@ export const TOOL_TASKS: ReadonlyArray<ToolTask> = [
 	),
 
 	// Outcome: the answer has to come from what the tool returned, not just the right call.
-	regression(
-		"failed-span-in-trace",
-		["traces", "outcome"],
-		`Inspect trace ${FIXTURES.traceId}. Which span failed, and with what error?`,
-		calls(call("inspect_trace", { trace_id: FIXTURES.traceId })),
-		answerMentions("connection reset"),
+	withRoom(
+		regression(
+			"failed-span-in-trace",
+			["traces", "outcome"],
+			`Inspect trace ${FIXTURES.traceId}. Which span failed, and with what error?`,
+			calls(call("inspect_trace", { trace_id: FIXTURES.traceId })),
+			answerMentions("connection reset"),
+		),
 	),
 
 	// Negative cases: the right answer calls nothing, or must not call a particular thing.

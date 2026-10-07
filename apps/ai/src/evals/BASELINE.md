@@ -17,6 +17,26 @@ Pin `EVAL_MODEL`. Unset, it tracks the production triage model, which moves.
 
 ---
 
+## Tools suite: 2026-10-08, five models
+
+Same 50 tasks, k=3. Regraded after two target fixes (`record-fix` now accepts
+`link_pull_request`; outcome tasks get 10 calls instead of 6), so these supersede the table below.
+
+| Model                                | pass@1 | pass^3 | s/trial | Input tokens/trial |
+| ------------------------------------ | ------ | ------ | ------- | ------------------ |
+| `anthropic/claude-haiku-5.5`         | 100.0% | 100%   | 7.1     | 170k               |
+| `z-ai/glm-5.3-flash:nitro`           | 99.3%  | 98%    | 11.3    | 114k               |
+| `deepseek/deepseek-v4.1-flash:nitro` | 99.3%  | 98%    | 3.1     | 108k               |
+| `openai/gpt-6.1-sol`                 | 98.0%  | 98%    | 17.5    | 111k               |
+| `openai/gpt-6-luna`                  | 96.0%  | 96%    | 14.2    | 106k               |
+
+No pair differs significantly. The OpenAI models fill every optional parameter with an empty
+string (84% of Luna's calls), which fails validation (` ` is not a timestamp``); both then
+retried `all-error-types` with invented dates and never recovered. Luna also invented a March
+window for `requests-per-minute`. DeepSeek's one miss was cut off by the old 6-call cap.
+
+---
+
 ## Tools suite: 2026-10-08, first run on the rebuilt harness
 
 50 tasks (40 regression, 10 capability), k=3, production chat turn, eval world.
