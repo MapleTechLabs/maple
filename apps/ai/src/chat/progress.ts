@@ -36,8 +36,6 @@ const SALIENT_KEYS = [
 	"service",
 	"path",
 	"paths",
-	"title",
-	"command",
 	"sql",
 ] as const
 
@@ -86,19 +84,28 @@ export const stepLabel = (tool: string, input: ToolCallInput): string => {
 	return arg === null ? phrase : `${phrase} · ${arg}`
 }
 
+/**
+ * Arguments a review step may show on its pull request: the files the pull request already shows.
+ * Anything else (a grep pattern, a telemetry query) can carry a value read from private source or
+ * production data, and the comment may sit on a public repository.
+ */
+const PUBLIC_REVIEW_ARGS = ["path", "paths"] as const
+
+/** A review step as its pull request comment shows it. */
+export const reviewStepLabel = (tool: string, input: ToolCallInput): string =>
+	stepLabel(
+		tool,
+		Object.fromEntries(PUBLIC_REVIEW_ARGS.flatMap((key) => (key in input ? [[key, input[key]]] : []))),
+	)
+
 export interface ProgressRecorder {
 	/** Note a tool call. Returns the record to write, or `undefined` while the heartbeat has not elapsed. */
 	readonly step: (tool: string, input: ToolCallInput, nowMs: number) => InvestigationProgress | undefined
 	/** The record as it stands, for the flush a run's end owes its last steps. */
 	readonly pending: () => InvestigationProgress | undefined
-	/** The record as it stands, written or not, for a write the run forces at a phase change. */
-	readonly current: () => InvestigationProgress
 }
 
-/** A review edits a GitHub comment per write, so it beats slower than an investigation's row. */
-export const REVIEW_PROGRESS_HEARTBEAT_MS = 30_000
-
-export const makeProgressRecorder = (heartbeatMs = PROGRESS_HEARTBEAT_MS): ProgressRecorder => {
+export const makeProgressRecorder = (): ProgressRecorder => {
 	let steps: Array<InvestigationStep> = []
 	let stepCount = 0
 	let lastWriteMs: number | undefined
@@ -118,17 +125,13 @@ export const makeProgressRecorder = (heartbeatMs = PROGRESS_HEARTBEAT_MS): Progr
 			)
 			dirty = true
 			// The first step always writes; making a reader wait a heartbeat for it is the whole complaint.
-			if (lastWriteMs !== undefined && nowMs - lastWriteMs < heartbeatMs) return undefined
+			if (lastWriteMs !== undefined && nowMs - lastWriteMs < PROGRESS_HEARTBEAT_MS) return undefined
 			lastWriteMs = nowMs
 			dirty = false
 			return snapshot()
 		},
 		pending: () => {
 			if (!dirty) return undefined
-			dirty = false
-			return snapshot()
-		},
-		current: () => {
 			dirty = false
 			return snapshot()
 		},

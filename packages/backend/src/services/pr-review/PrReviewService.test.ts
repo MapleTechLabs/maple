@@ -1262,10 +1262,11 @@ describe("withReviewStatus", () => {
 				"@maple-review-bot",
 			) ?? ""
 		assert.include(updated, "Maple is reviewing this pull request")
-		assert.include(updated, "| 4m 05s | 7 of 12 | 🔴 1 🟠 2 | 23 |")
+		assert.include(updated, "| 4m 5s | 7 of 12 | 🔴 1 🟠 2 | 23 |")
 		// The model's argument sits in a code span, so it cannot mention anyone.
 		assert.include(updated, "**Now:** Sandbox grep `@octocat|'x'`")
 		assert.include(updated, "- `+4s` Pr changed files")
+		assert.include(updated, "<sub>Updated 00:04:05 UTC</sub>")
 		// A later failure still recognises the notice it replaces.
 		assert.include(
 			withReviewStatus(updated, MARKER, { kind: "failed", headSha: HEAD }, "@maple-review-bot"),

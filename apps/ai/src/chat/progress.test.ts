@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { INVESTIGATION_PROGRESS_STEPS } from "@maple/domain/http"
 
-import { makeProgressRecorder, PROGRESS_HEARTBEAT_MS, stepLabel } from "./progress"
+import { makeProgressRecorder, PROGRESS_HEARTBEAT_MS, reviewStepLabel, stepLabel } from "./progress"
 
 describe("stepLabel", () => {
 	it("reads a verb-first tool name as a phrase, with no map to go stale", () => {
@@ -21,6 +21,14 @@ describe("stepLabel", () => {
 	it("names a batch of review files by the first and a count", () => {
 		expect(stepLabel("pr_file_diff", { repository: "o/r", paths: ["a.ts", "b.ts", "c.ts"] })).toBe(
 			"Pr file diff · a.ts +2",
+		)
+	})
+
+	it("shows a review only the files it read, never a pattern or a query", () => {
+		expect(reviewStepLabel("sandbox_grep", { pattern: "user@example.com" })).toBe("Sandbox grep")
+		expect(reviewStepLabel("search_traces", { query: "customer_id = 42" })).toBe("Search traces")
+		expect(reviewStepLabel("sandbox_read_file", { path: "src/a.ts" })).toBe(
+			"Sandbox read file · src/a.ts",
 		)
 	})
 

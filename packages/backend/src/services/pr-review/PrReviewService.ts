@@ -63,7 +63,19 @@ import {
 	type PrReviewRow,
 } from "@maple/db"
 import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
-import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Result,
+	Schema,
+} from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -472,14 +484,20 @@ export type PrReviewStatusNotice = typeof PrReviewStatusNotice.Type
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
 	`The review of ${sha} could not finish.${reason === undefined ? "" : ` ${PR_REVIEW_FAILURE_COPY[reason]}`}`
 
-/** `45s`, `4m 05s`, `1h 02m`. */
-export const formatElapsed = (ms: number): string => {
-	const seconds = Math.max(0, Math.floor(ms / 1000))
-	if (seconds < 60) return `${seconds}s`
-	const minutes = Math.floor(seconds / 60)
-	if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`
-	return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`
+/** `45s`, `4m 5s`: whole seconds, since the comment updates on a beat far coarser than a millisecond. */
+const elapsedText = (fromMs: number, toMs: number): string => {
+	const elapsed = Duration.seconds(Math.max(0, Math.floor((toMs - fromMs) / 1000)))
+	return Duration.isZero(elapsed) ? "0s" : Duration.format(elapsed)
 }
+
+/** `14:04:31`, the time of day in UTC. */
+const utcClock = (ms: number): string =>
+	DateTime.formatUtc(DateTime.makeUnsafe(ms), {
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hourCycle: "h23",
+	})
 
 /** Steps the comment lists under "Recent steps". */
 const LISTED_STEPS = 8
@@ -518,7 +536,7 @@ const progressLines = (progress: PrReviewProgress): ReadonlyArray<string> => {
 		"",
 		"| Elapsed | Diffs read | Findings so far | Tool calls |",
 		"| --- | --- | --- | --- |",
-		`| ${formatElapsed(progress.updatedAt - progress.startedAt)} | ${files} | ${found.length === 0 ? "none" : found.join(" ")} | ${progress.stepCount} |`,
+		`| ${elapsedText(progress.startedAt, progress.updatedAt)} | ${files} | ${found.length === 0 ? "none" : found.join(" ")} | ${progress.stepCount} |`,
 		"",
 		`**Now:** ${now}`,
 		...(recent.length === 0
@@ -529,13 +547,13 @@ const progressLines = (progress: PrReviewProgress): ReadonlyArray<string> => {
 					"",
 					...recent.map(
 						(step) =>
-							`- \`+${formatElapsed(step.at - progress.startedAt)}\` ${stepText(step.label)}`,
+							`- \`+${elapsedText(progress.startedAt, step.at)}\` ${stepText(step.label)}`,
 					),
 					"",
 					"</details>",
 				]),
 		"",
-		`<sub>Last activity ${new Date(progress.updatedAt).toISOString().slice(11, 19)} UTC</sub>`,
+		`<sub>Updated ${utcClock(progress.updatedAt)} UTC</sub>`,
 	]
 }
 
