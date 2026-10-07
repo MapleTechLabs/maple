@@ -148,8 +148,8 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 		personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 	const inRange = ($: OpenJoinAccessor<typeof ProductEvents.columns>) => [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		keyOf($).neq(""),
 		hasPopulationFilter(filters)
 			? inSubquery(keyOf($), matchingPersonsSubquery(keyBy, filters))

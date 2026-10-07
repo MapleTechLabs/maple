@@ -16,6 +16,7 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compileFnCallCond } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -97,8 +98,8 @@ function pageVisitSessions(pagePath: string) {
 		.select(($) => ({ SessionId: $.SessionId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.Kind.eq("navigation"),
 			$.PagePath.eq(pagePath),
 		])
@@ -116,8 +117,8 @@ function tagFilter(
 		$.SessionId,
 		taggedSessionIds(tags, ($$) => [
 			$$.OrgId.eq(orgIdParam),
-			$$.StartTime.gte(param.dateTimeString("startTime")),
-			$$.StartTime.lte(param.dateTimeString("endTime")),
+			$$.StartTime.gte(param.dateTime("startTime")),
+			$$.StartTime.lte(param.dateTime("endTime")),
 		]),
 	)
 }
@@ -166,7 +167,7 @@ export interface SessionReplaysListOpts {
 	 * every session on the far side of it. `sessionId` is optional only for the
 	 * v1 endpoint, whose cursor is a bare timestamp.
 	 */
-	cursor?: { startTime: string; sessionId?: string }
+	cursor?: { startTime: DateTime.Utc; sessionId?: string }
 	/** Min/max wall-clock duration (ms). Filters on the stored DurationMs; only
 	 *  completed (Version=2) sessions carry it, so in-progress sessions are
 	 *  excluded when either bound is set. */
@@ -201,8 +202,8 @@ export interface SessionReplaysListOpts {
 
 export interface SessionReplaysListOutput {
 	readonly sessionId: string
-	readonly startTime: string
-	readonly endTime: string | null
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc | null
 	readonly durationMs: number | null
 	readonly status: string
 	/**
@@ -215,7 +216,7 @@ export interface SessionReplaysListOutput {
 	 * also what recovers a duration for those sessions, whose `durationMs` stays
 	 * NULL forever.
 	 */
-	readonly lastActivityAt: string | null
+	readonly lastActivityAt: DateTime.Utc | null
 	readonly userId: string
 	// identify() identity (migration 0011). `''` when the session was never
 	// identified — the list renders its existing session-id/host line in that case,
@@ -313,8 +314,8 @@ export function sessionReplaysListQuery(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(param.dateTimeString("startTime")),
-			$.StartTime.lte(param.dateTimeString("endTime")),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 			CH.when(opts.country, (v: string) => $.Country.eq(v)),
@@ -342,7 +343,7 @@ export function sessionReplaysListQuery(
 			tagFilter(opts.tags, $),
 			// Version-invariant, so the keyset can sit in WHERE ahead of the GROUP BY
 			// rather than becoming another post-aggregate predicate.
-			CH.when(opts.cursor, (c: { startTime: string; sessionId?: string }) =>
+			CH.when(opts.cursor, (c: { startTime: DateTime.Utc; sessionId?: string }) =>
 				c.sessionId === undefined
 					? $.StartTime.lt(c.startTime)
 					: $.StartTime.lt(c.startTime).or(
@@ -589,8 +590,8 @@ export function sessionReplaysFacetsQuery(
 		exclude?: SessionFacetKey,
 	): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
-		$.StartTime.gte(param.dateTimeString("startTime")),
-		$.StartTime.lte(param.dateTimeString("endTime")),
+		$.StartTime.gte(param.dateTime("startTime")),
+		$.StartTime.lte(param.dateTime("endTime")),
 		exclude === "service" ? undefined : CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		exclude === "browser" ? undefined : CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 		exclude === "country" ? undefined : CH.when(opts.country, (v: string) => $.Country.eq(v)),
@@ -641,8 +642,8 @@ export function sessionReplaysFacetsQuery(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.Kind.eq("navigation"),
 			$.PagePath.neq(""),
 			inSubquery(
@@ -729,10 +730,7 @@ export function sessionReplaysFacetsQuery(
 				$.SessionId,
 				$.Status.eq("active").and(
 					CH.coalesce($.LastActivityAt, $.StartTime).gte(
-						CH.intervalSub(
-							CH.toDateTime(param.dateTimeString("endTime")),
-							SESSION_LIVE_WINDOW_SECONDS,
-						),
+						CH.intervalSub(CH.toDateTime(param.dateTime("endTime")), SESSION_LIVE_WINDOW_SECONDS),
 					),
 				),
 			),
@@ -766,8 +764,8 @@ export function sessionReplaysFacetsQuery(
 			}))
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
-				$.StartTime.gte(param.dateTimeString("startTime")),
-				$.StartTime.lte(param.dateTimeString("endTime")),
+				$.StartTime.gte(param.dateTime("startTime")),
+				$.StartTime.lte(param.dateTime("endTime")),
 				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 				CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 				CH.when(opts.country, (v: string) => $.Country.eq(v)),
@@ -796,14 +794,14 @@ export function sessionReplaysFacetsQuery(
 // daily partitions a deep-scan would otherwise touch. Omit to scan all.
 
 export interface SessionReplayDetailOpts {
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 }
 
 export interface SessionReplayDetailOutput {
 	readonly sessionId: string
-	readonly startTime: string
-	readonly endTime: string | null
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc | null
 	readonly durationMs: number | null
 	readonly status: string
 	readonly userId: string
@@ -870,8 +868,8 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.StartTime.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.StartTime.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.StartTime.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.StartTime.lte(v)),
 		])
 		.orderBy(["version", "desc"])
 		.limit(1)
@@ -898,8 +896,8 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 
 export interface SessionReplayChunkIndexOpts {
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 }
 
 export interface SessionReplayChunkIndexOutput {
@@ -911,7 +909,7 @@ export interface SessionReplayChunkIndexOutput {
 	 * inside one chunk's duration, so it resolves a seek to the right chunk. The
 	 * exact offset within that chunk comes from its rrweb events once loaded.
 	 */
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly durationMs: number
 	readonly eventCount: number
 	readonly byteSize: number
@@ -941,8 +939,8 @@ export function sessionReplayChunkIndexQuery(opts: SessionReplayChunkIndexOpts =
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 		])
 		.orderBy(["chunkSeq", "asc"])
 		.format("JSON")
@@ -950,8 +948,8 @@ export function sessionReplayChunkIndexQuery(opts: SessionReplayChunkIndexOpts =
 
 export interface SessionReplayEventsOpts {
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 	/**
 	 * Inclusive chunk-sequence window. Callers get these from the chunk index and
 	 * fetch a session in bounded slices — selecting `Events` for a whole session
@@ -967,7 +965,7 @@ export interface SessionReplayEventsOpts {
 
 export interface SessionReplayEventsOutput {
 	readonly chunkSeq: number
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly durationMs: number
 	readonly eventCount: number
 	readonly byteSize: number
@@ -990,8 +988,8 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 			opts.fromChunkSeq === undefined ? undefined : $.ChunkSeq.gte(opts.fromChunkSeq),
 			opts.toChunkSeq === undefined ? undefined : $.ChunkSeq.lte(opts.toChunkSeq),
 		])
@@ -1013,7 +1011,7 @@ export interface SessionsForTraceOpts {
 
 export interface SessionsForTraceOutput {
 	readonly sessionId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number | null
 }
 
@@ -1026,8 +1024,8 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(param.dateTimeString("startTime")),
-			$.StartTime.lte(param.dateTimeString("endTime")),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
 			has($.TraceIds, CH.lit(opts.traceId)),
 		])
 		.groupBy("sessionId")

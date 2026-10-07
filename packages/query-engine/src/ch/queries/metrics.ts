@@ -3,6 +3,7 @@
 // DSL-based query definitions for metrics timeseries, breakdown, and
 // a raw-SQL builder for counter rate/increase (which requires CTEs).
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -53,7 +54,7 @@ interface MetricsQueryOpts {
 export interface MetricsTimeseriesOpts extends MetricsQueryOpts {}
 
 export interface MetricsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly serviceName: string
 	readonly attributeValue: string
 	readonly groupName: string
@@ -65,7 +66,7 @@ export interface MetricsTimeseriesOutput {
 }
 
 const metricsTimeseriesColumns = {
-	bucket: T.dateTimeString,
+	bucket: T.dateTime,
 	serviceName: T.string,
 	attributeValue: T.string,
 	groupName: T.string,
@@ -103,8 +104,8 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 		.where(($) => [
 			$.MetricName.eq(param.string("metricName")),
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.attributeKey, (k: string) =>
 				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
@@ -151,7 +152,7 @@ export interface MetricsRateTimeseriesOpts {
 }
 
 export interface MetricsRateTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly serviceName: string
 	readonly attributeValue: string
 	readonly groupName: string
@@ -161,7 +162,7 @@ export interface MetricsRateTimeseriesOutput {
 }
 
 const metricsRateTimeseriesColumns = {
-	bucket: T.dateTimeString,
+	bucket: T.dateTime,
 	serviceName: T.string,
 	attributeValue: T.string,
 	groupName: T.string,
@@ -211,6 +212,15 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		CH.toDateTime(param.dateTimeString("endTime")),
 		param.int("bucketSeconds"),
 	)
+	// The same bounds for the CTE columns below, which decode as `DateTime.Utc`.
+	const bucketUtc = CH.toStartOfInterval(
+		CH.toDateTime(param.dateTime("startTime")),
+		param.int("bucketSeconds"),
+	)
+	const endBucketUtc = CH.toStartOfInterval(
+		CH.toDateTime(param.dateTime("endTime")),
+		param.int("bucketSeconds"),
+	)
 
 	const hourlyQuery = from(SpanMetricsCallsHourly)
 		.select(($) => ({
@@ -246,7 +256,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	const hourlyValues = table("hourly_values", {
 		external: true,
 		columns: {
-			Hour: T.dateTimeString,
+			Hour: T.dateTime,
 			ServiceName: T.string,
 			MetricName: T.string,
 			SpanKind: T.string,
@@ -279,12 +289,12 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 				delta: $.Value.sub(CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)),
 			}
 		})
-		.where(($) => [$.Hour.gte(bucket)])
+		.where(($) => [$.Hour.gte(bucketUtc)])
 
 	const deltas = table("with_deltas", {
 		external: true,
 		columns: {
-			Hour: T.dateTimeString,
+			Hour: T.dateTime,
 			ServiceName: T.string,
 			SpanKind: T.string,
 			delta: T.float64,
@@ -306,7 +316,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
 			dataPointCount: CH.count(),
 		}))
-		.where(($) => [$.Hour.gte(bucket), $.Hour.lte(endBucket)])
+		.where(($) => [$.Hour.gte(bucketUtc), $.Hour.lte(endBucketUtc)])
 
 	const inner = (
 		opts.groupByAttributeKey === "span.kind"
@@ -331,9 +341,9 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 export function metricDeltaExpr(args: {
 	readonly value: CH.Expr<number>
 	readonly previousValue: CH.Expr<number>
-	readonly startTime: CH.Expr<string>
-	readonly previousTime: CH.Expr<string>
-	readonly time: CH.Expr<string>
+	readonly startTime: CH.Expr<DateTime.Utc>
+	readonly previousTime: CH.Expr<DateTime.Utc>
+	readonly time: CH.Expr<DateTime.Utc>
 	readonly isDeltaTemporality?: CH.Condition
 }): CH.Expr<number> {
 	const restarted = args.startTime.gt(args.previousTime).and(args.startTime.lt(args.time))
@@ -398,11 +408,11 @@ export function metricsTimeseriesRateQuery(
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(
 				CH.intervalSub(
-					param.dateTimeString("startTime"),
+					param.dateTime("startTime"),
 					opts.lookbackSeconds ?? param.int("bucketSeconds"),
 				),
 			),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.attributeKey, (k: string) =>
 				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
@@ -417,7 +427,7 @@ export function metricsTimeseriesRateQuery(
 	const cteTable = table("with_deltas", {
 		external: true,
 		columns: {
-			TimeUnix: T.dateTime64String,
+			TimeUnix: T.dateTime64,
 			ServiceName: T.string,
 			Attributes: T.map(T.string, T.string),
 			resourceAttributeValue: T.string,
@@ -462,7 +472,7 @@ export function metricsTimeseriesRateQuery(
 				dataPointCount: CH.count(),
 			}
 		})
-		.where(($) => [$.TimeUnix.gte(param.dateTimeString("startTime"))])
+		.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
 
 	const inner = (
 		opts.groupByAttributeKey || opts.groupByResourceAttributeKey
@@ -482,7 +492,7 @@ export interface MetricsSparklinesOpts {
 }
 
 export interface MetricsSparklinesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly metricName: string
 	readonly avgValue: number
 	readonly sumValue: number
@@ -506,8 +516,8 @@ export function metricsSparklinesQuery(opts: MetricsSparklinesOpts) {
 		.where(($) => [
 			$.MetricName.in_(...opts.metricNames),
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("bucket", "metricName")
 		.orderBy(["bucket", "asc"])
@@ -575,8 +585,8 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 		.where(($) => [
 			$.MetricName.eq(param.string("metricName")),
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			// Drop datapoints missing the label so an empty bucket doesn't dominate.
 			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
 			CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),

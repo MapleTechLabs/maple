@@ -112,8 +112,8 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(param.dateTimeString("startTime")),
-			$.StartTime.lte(param.dateTimeString("endTime")),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
 		])
 
 	const productEvents = from(ProductEvents)
@@ -125,8 +125,8 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 
 	return unionAll(traces, logs, metrics, sessions, productEvents).format("JSON")

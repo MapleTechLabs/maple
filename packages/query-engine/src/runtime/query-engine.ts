@@ -28,7 +28,7 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Duration, Effect, Match, Option, Result, Schema } from "effect"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
@@ -144,7 +144,7 @@ interface BucketFillOptions {
 }
 
 interface MetricTimeseriesRow {
-	readonly bucket: string | Date
+	readonly bucket: string | Date | DateTime.Utc
 	readonly serviceName: string
 	readonly attributeValue: string
 	readonly avgValue: number
@@ -453,7 +453,10 @@ const buildBucketTimeline = (startMs: number, endMs: number, bucketSeconds: numb
 	return timeline
 }
 
-const normalizeBucket = (bucket: string | Date): string => {
+const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
+	if (DateTime.isDateTime(bucket)) {
+		return DateTime.formatIso(bucket)
+	}
 	if (bucket instanceof Date) {
 		return bucket.toISOString()
 	}
@@ -709,7 +712,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 	}
 })
 
-function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: string }>(
+function groupTimeSeriesRows<T extends { bucket: string | Date | DateTime.Utc; groupName: string }>(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
 	fillOptions?: BucketFillOptions,
@@ -1313,7 +1316,7 @@ function extractTracesDurationStatsOpts(
 }
 
 function signatureMetricsGroupRows<
-	T extends { bucket: string | Date; serviceName: string; attributeValue: string },
+	T extends { bucket: string | Date | DateTime.Utc; serviceName: string; attributeValue: string },
 >(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
@@ -1721,7 +1724,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const points = pointsByMetric.get(row.metricName) ?? []
 				if (points.length === 0) pointsByMetric.set(row.metricName, points)
 				points.push({
-					bucket: String(row.bucket),
+					bucket: DateTime.formatIso(row.bucket),
 					avgValue: Number(row.avgValue),
 					sumValue: Number(row.sumValue),
 					dataPointCount: Number(row.dataPointCount),
@@ -2000,7 +2003,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					kind: "list",
 					source: "product_events",
 					data: rows.map((row) => ({
-						timestamp: String(row.timestamp),
+						timestamp: DateTime.formatIso(row.timestamp),
 						eventName: row.eventName,
 						kind: row.kind,
 						source: row.source,

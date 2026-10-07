@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	getSessionReplayQuery,
 	sessionReplaysFacetsQuery,
@@ -14,6 +15,10 @@ import { OrgId } from "@maple/domain"
 const baseParams = { orgId: OrgId.make("org_1") }
 const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const UTC_WINDOW = {
+	startTime: DateTime.makeUnsafe("2026-06-24T04:00:00Z"),
+	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
+}
 
 // sessionTraceSummariesQuery
 //
@@ -63,7 +68,7 @@ describe("sessionTraceSummariesQuery", () => {
 
 describe("sessionReplayEventsQuery", () => {
 	it("adds the session time window as a partition-pruning predicate when provided", () => {
-		const q = sessionReplayEventsQuery(WINDOW)
+		const q = sessionReplayEventsQuery(UTC_WINDOW)
 		const { sql } = compileUnsafe(q, sessionParams)
 		expect(sql).toContain("FROM session_replay_events")
 		expect(sql).toContain("Timestamp >= '2026-06-24 04:00:00'")
@@ -77,7 +82,7 @@ describe("sessionReplayEventsQuery", () => {
 	})
 
 	it("bounds the read to a chunk range so a session is fetched in slices", () => {
-		const q = sessionReplayEventsQuery({ ...WINDOW, fromChunkSeq: 16, toChunkSeq: 31, limit: 40 })
+		const q = sessionReplayEventsQuery({ ...UTC_WINDOW, fromChunkSeq: 16, toChunkSeq: 31, limit: 40 })
 		const { sql } = compileUnsafe(q, sessionParams)
 		expect(sql).toContain("ChunkSeq >= 16")
 		expect(sql).toContain("ChunkSeq <= 31")
@@ -85,7 +90,7 @@ describe("sessionReplayEventsQuery", () => {
 	})
 
 	it("omits the chunk range when absent, so existing callers keep their SQL", () => {
-		const { sql } = compileUnsafe(sessionReplayEventsQuery(WINDOW), sessionParams)
+		const { sql } = compileUnsafe(sessionReplayEventsQuery(UTC_WINDOW), sessionParams)
 		expect(sql).not.toContain("ChunkSeq >=")
 		expect(sql).not.toContain("ChunkSeq <=")
 		expect(sql).not.toContain("LIMIT")
@@ -104,7 +109,7 @@ describe("sessionReplayEventsQuery", () => {
 
 describe("sessionReplayChunkIndexQuery", () => {
 	it("never reads the payload column — that is the whole point of the index", () => {
-		const { sql } = compileUnsafe(sessionReplayChunkIndexQuery(WINDOW), sessionParams)
+		const { sql } = compileUnsafe(sessionReplayChunkIndexQuery(UTC_WINDOW), sessionParams)
 		expect(sql).toContain("FROM session_replay_events")
 		expect(sql).not.toContain("Events")
 		expect(sql).toContain("AS byteSize")
@@ -116,14 +121,14 @@ describe("sessionReplayChunkIndexQuery", () => {
 		// cluster lacks fails every read with schema drift (and every insert), so
 		// adding one would have broken all replay until a migration landed. The
 		// ingest timestamp positions a chunk closely enough to pick it.
-		const { sql } = compileUnsafe(sessionReplayChunkIndexQuery(WINDOW), sessionParams)
+		const { sql } = compileUnsafe(sessionReplayChunkIndexQuery(UTC_WINDOW), sessionParams)
 		expect(sql).toContain("Timestamp AS timestamp")
 		expect(sql).toContain("DurationMs AS durationMs")
 		expect(sql).not.toContain("FirstEventMs")
 	})
 
 	it("orders by chunk sequence and scopes to org + session", () => {
-		const { sql } = compileUnsafe(sessionReplayChunkIndexQuery(WINDOW), sessionParams)
+		const { sql } = compileUnsafe(sessionReplayChunkIndexQuery(UTC_WINDOW), sessionParams)
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("SessionId = 'sess_1'")
 		expect(sql).toContain("ORDER BY chunkSeq ASC")
@@ -300,7 +305,7 @@ describe("getSessionReplayQuery", () => {
 	// session_replays is PARTITION BY toDate(StartTime); StartTime is version-
 	// invariant so the window is safe alongside the ORDER BY Version DESC dedup.
 	it("adds the session time window on StartTime when provided", () => {
-		const q = getSessionReplayQuery(WINDOW)
+		const q = getSessionReplayQuery(UTC_WINDOW)
 		const { sql } = compileUnsafe(q, sessionParams)
 		expect(sql).toContain("StartTime >= '2026-06-24 04:00:00'")
 		expect(sql).toContain("StartTime <= '2026-06-25 06:00:00'")
@@ -547,7 +552,7 @@ describe("sessionReplaysListQuery keyset cursor", () => {
 	it("walks (StartTime, SessionId) so a tie can't swallow a page boundary", () => {
 		const { sql } = compileUnsafe(
 			sessionReplaysListQuery({
-				cursor: { startTime: "2026-09-01 12:00:00", sessionId: "sess_9" },
+				cursor: { startTime: DateTime.makeUnsafe("2026-09-01T12:00:00Z"), sessionId: "sess_9" },
 			}),
 			{ ...baseParams, ...WINDOW },
 		)
@@ -560,7 +565,7 @@ describe("sessionReplaysListQuery keyset cursor", () => {
 
 	it("falls back to the bare timestamp comparison without a session id", () => {
 		const { sql } = compileUnsafe(
-			sessionReplaysListQuery({ cursor: { startTime: "2026-09-01 12:00:00" } }),
+			sessionReplaysListQuery({ cursor: { startTime: DateTime.makeUnsafe("2026-09-01T12:00:00Z") } }),
 			{ ...baseParams, ...WINDOW },
 		)
 		expect(sql).toContain("StartTime < '2026-09-01 12:00:00'")
@@ -570,7 +575,7 @@ describe("sessionReplaysListQuery keyset cursor", () => {
 	it("filters before the GROUP BY, not after it", () => {
 		const { sql } = compileUnsafe(
 			sessionReplaysListQuery({
-				cursor: { startTime: "2026-09-01 12:00:00", sessionId: "sess_9" },
+				cursor: { startTime: DateTime.makeUnsafe("2026-09-01T12:00:00Z"), sessionId: "sess_9" },
 			}),
 			{ ...baseParams, ...WINDOW },
 		)
@@ -742,4 +747,90 @@ describe("session tags", () => {
 			"if(((t.newVisitor = 1 AND t.quality = 'bot') AND t.signedIn = 1), 'new_visitor', '')",
 		)
 	})
+})
+
+// Rows reach callers through `decodeRows`. A query whose row schema is not
+// derived passes rows through untouched, and its timestamps would stay strings
+// behind a `DateTime.Utc` type.
+describe("session replay rows decode timestamps to DateTime.Utc", () => {
+	const listRow = {
+		sessionId: "sess_1",
+		startTime: "2026-06-24 04:00:00.123000000",
+		endTime: null,
+		durationMs: null,
+		status: "active",
+		lastActivityAt: "2026-06-24 04:05:00.000000000",
+		userId: "",
+		userName: "",
+		userEmail: "",
+		groupId: "",
+		groupName: "",
+		visitorId: "v",
+		utmSource: "",
+		entryPath: "/",
+		urlInitial: "https://x.dev/",
+		browserName: "Chrome",
+		osName: "macOS",
+		deviceType: "desktop",
+		country: "DE",
+		serviceName: "web",
+		pageViews: 1,
+		clickCount: 0,
+		errorCount: 0,
+		traceCount: "0",
+		recorded: "true",
+		quality: "bounce",
+		visitorIsNew: 1,
+	}
+
+	for (const [name, opts] of [
+		["fast path", {}],
+		["duration-filtered", { durationMinMs: 1 }],
+		["active-time-filtered", { activeTimeMinMs: 1 }],
+	] as const) {
+		it.effect(`sessionReplaysListQuery (${name})`, () =>
+			Effect.gen(function* () {
+				const compiled = yield* compile(sessionReplaysListQuery(opts), { ...baseParams, ...WINDOW })
+				expect(compiled.rowSchemaSource).toBe("derived")
+				const [row] = yield* compiled.decodeRows([listRow])
+				expect(DateTime.formatIso(row!.startTime)).toBe("2026-06-24T04:00:00.123Z")
+				expect(row!.endTime).toBeNull()
+				expect(row!.lastActivityAt && DateTime.formatIso(row!.lastActivityAt)).toBe(
+					"2026-06-24T04:05:00.000Z",
+				)
+			}),
+		)
+	}
+
+	it.effect("sessionReplayChunkIndexQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(sessionReplayChunkIndexQuery(), sessionParams)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					chunkSeq: 0,
+					timestamp: "2026-06-24 04:00:01.500000000",
+					durationMs: 1000,
+					eventCount: 3,
+					byteSize: 100,
+					isCheckpoint: 1,
+				},
+			])
+			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:01.500Z")
+		}),
+	)
+
+	it.effect("sessionsForTraceQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(sessionsForTraceQuery({ traceId: "t1" }), {
+				...baseParams,
+				...WINDOW,
+			})
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{ sessionId: "sess_1", startTime: "2026-06-24 04:00:00.000000000", durationMs: null },
+			])
+			expect(DateTime.toEpochMillis(row!.startTime)).toBe(Date.UTC(2026, 5, 24, 4))
+		}),
+	)
 })
