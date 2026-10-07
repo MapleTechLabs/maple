@@ -7519,6 +7519,29 @@ mod tests {
                 .collect()
         }
 
+        /// Integer points sent over OTLP/JSON, as a number or a decimal string,
+        /// must reach the row as that value. They used to land as 0.
+        #[test]
+        fn otlp_json_int_points_encode_their_value() {
+            let mut json: Value = serde_json::from_str(
+                r#"{"resourceMetrics":[{"resource":{"attributes":[{"key":"maple_org_id","value":{"stringValue":"org_1"}}]},"scopeMetrics":[{"metrics":[{"name":"probe.gauge","gauge":{"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":42},{"timeUnixNano":"1753660000000000001","asInt":"43"}]}},{"name":"probe.sum","sum":{"aggregationTemporality":2,"isMonotonic":true,"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":44},{"timeUnixNano":"1753660000000000001","asInt":"45"}]}}]}]}]}"#,
+            )
+            .unwrap();
+            crate::otlp_json::normalize(&mut json, "resourceMetrics");
+            let request: ExportMetricsServiceRequest = serde_json::from_value(json).unwrap();
+
+            let (frames, _) = encode_metrics(&test_cfg().datasources, "org_1", &request).unwrap();
+            let rows = rows_by_datasource(frames);
+            let values = |datasource: &str| {
+                rows[datasource]
+                    .iter()
+                    .map(|row| row["value"].clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(values("metrics_gauge"), vec![json!(42.0), json!(43.0)]);
+            assert_eq!(values("metrics_sum"), vec![json!(44.0), json!(45.0)]);
+        }
+
         #[test]
         fn scraper_otlp_json_decodes_with_gateway_serde_and_encodes_to_rows() {
             // The deserialization itself is half the contract: it pins string
