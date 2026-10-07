@@ -428,7 +428,7 @@ export const features: Feature[] = [
 		gallery: [
 			{
 				id: "gallery-issue-detail",
-				route: "/errors",
+				route: "/errors/issues/:id",
 				title: "One issue, every occurrence",
 				alt: "The ConnectionTimeout issue open with its stack trace, trend and affected traces",
 			},

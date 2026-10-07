@@ -145,9 +145,14 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 			message: `--reset only truncates a local warehouse, not ${host.value}`,
 		})
 	}
-	if (!/\/maple_screenshots(\?|$)/.test(pgUrl.value) || !/^org_[A-Za-z0-9]+$/.test(orgId)) {
+	if (
+		!/^postgres(ql)?:\/\/([^@/]*@)?(localhost|127\.0\.0\.1)(:\d+)?\/maple_screenshots(\?|$)/.test(
+			pgUrl.value,
+		) ||
+		!/^org_[A-Za-z0-9]+$/.test(orgId)
+	) {
 		return yield* new SeedPreflightError({
-			message: "--reset only runs against the maple_screenshots database (bun run seed:demo:env)",
+			message: "--reset only runs against a local maple_screenshots database (bun run seed:demo:env)",
 		})
 	}
 
@@ -175,6 +180,8 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 		.string(
 			ChildProcess.make("psql", [
 				pgUrl.value,
+				// One transaction: a failed watermark upsert must not leave the error state truncated.
+				"--single-transaction",
 				"-v",
 				"ON_ERROR_STOP=1",
 				"-c",
