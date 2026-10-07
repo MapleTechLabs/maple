@@ -149,6 +149,8 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 		!/^postgres(ql)?:\/\/([^@/]*@)?(localhost|127\.0\.0\.1)(:\d+)?\/maple_screenshots(\?|$)/.test(
 			pgUrl.value,
 		) ||
+		// libpq lets these query params override the URL's host, so they would bypass the check above.
+		/[?&](host|hostaddr|service)=/i.test(pgUrl.value) ||
 		!/^org_[A-Za-z0-9]+$/.test(orgId)
 	) {
 		return yield* new SeedPreflightError({
