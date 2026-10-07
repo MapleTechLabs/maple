@@ -4,7 +4,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { SessionsList } from "@/components/replays/sessions-list"
+import { SessionsList, SessionsListSkeleton } from "@/components/replays/sessions-list"
 import { ActiveUserFilter } from "@/components/replays/active-user-filter"
 import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sidebar"
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
@@ -19,7 +19,6 @@ import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-r
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ToolbarStat } from "@maple/ui/components/toolbar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Link } from "@tanstack/react-router"
@@ -269,19 +268,7 @@ function ReplaysPage() {
 				/>
 			)}
 			{Result.builder(firstPageResult)
-				.onInitial(() => (
-					<div className="divide-y divide-border">
-						{Array.from({ length: 8 }).map((_, i) => (
-							<div key={i} className="flex items-center gap-3 py-2.5">
-								<div className="flex-1 space-y-1.5">
-									<Skeleton className="h-3.5 w-48" />
-									<Skeleton className="h-3 w-64" />
-								</div>
-								<Skeleton className="hidden h-3.5 w-40 sm:block" />
-							</div>
-						))}
-					</div>
-				))
+				.onInitial(() => <SessionsListSkeleton />)
 				.onError((error) => <ErrorState error={error} title="Failed to load session replays" />)
 				.onSuccess(() => (
 					<SessionsList

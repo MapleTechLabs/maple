@@ -12,6 +12,7 @@ import {
 	agentSessionsFilterInputs,
 	agentSessionsSort,
 	agentSessionsSortPatch,
+	hasAgentSessionsFilters,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import {
 	PageRefreshProvider,
@@ -138,16 +139,9 @@ function AgentSessionsBody() {
 		[navigate],
 	)
 
-	// Every search key but the sort narrows the list.
-	const hasActiveFilters = Object.entries(search).some(
-		([key, value]) =>
-			key !== "sortBy" &&
-			key !== "sortDir" &&
-			value !== undefined &&
-			value !== "" &&
-			value !== false &&
-			!(Array.isArray(value) && value.length === 0),
-	)
+	// The filter keys only: anything else riding in the URL (a dev flag, a stale param) is not a
+	// question the user asked, and reading it as one swaps the setup on-ramp for "clear filters".
+	const hasActiveFilters = hasAgentSessionsFilters(search)
 	const handleClearFilters = () =>
 		navigate({ search: (prev) => ({ sortBy: prev.sortBy, sortDir: prev.sortDir }) })
 

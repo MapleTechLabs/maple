@@ -4,10 +4,12 @@ import { ResultView } from "@/components/common/result-view"
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
+	hasNoFacetOptions,
 } from "@/components/filters/filter-sidebar"
 import type { PodFacetsResponse, NodeFacetsResponse, WorkloadFacetsResponse } from "@maple/domain/http"
 
@@ -77,6 +79,9 @@ export function PodsFilterSidebarView({
 		>
 			{(facetsResponse, { waiting }) => {
 				const f = facetsResponse.data
+				if (!hasActiveFilters && hasNoFacetOptions(Object.values(f))) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={waiting}>
@@ -215,6 +220,9 @@ export function NodesFilterSidebarView({
 		>
 			{(facetsResponse, { waiting }) => {
 				const f = facetsResponse.data
+				if (!hasActiveFilters && hasNoFacetOptions(Object.values(f))) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={waiting}>
@@ -287,6 +295,9 @@ export function WorkloadsFilterSidebarView({
 		>
 			{(facetsResponse, { waiting }) => {
 				const f = facetsResponse.data
+				if (!hasActiveFilters && hasNoFacetOptions(Object.values(f))) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={waiting}>

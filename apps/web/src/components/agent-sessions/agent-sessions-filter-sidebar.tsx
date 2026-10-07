@@ -11,6 +11,7 @@ import {
 } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
@@ -182,6 +183,14 @@ export function AgentSessionsFilterSidebar({
 			error={(error) => <FilterSidebarError error={error} />}
 		>
 			{(value, result) => {
+				if (
+					value.vendors.length === 0 &&
+					value.services.length === 0 &&
+					!hasAgentSessionsFilters(search)
+				) {
+					return <FilterSidebarEmpty />
+				}
+
 				return (
 					<FilterSidebarFrame waiting={result.waiting}>
 						<FilterSidebarHeader
@@ -325,12 +334,6 @@ export function AgentSessionsFilterSidebar({
 									})
 								}
 							/>
-
-							{value.vendors.length === 0 && value.services.length === 0 && (
-								<p className="py-4 text-sm text-muted-foreground">
-									No sessions in the last 7 days
-								</p>
-							)}
 						</FilterSidebarBody>
 					</FilterSidebarFrame>
 				)

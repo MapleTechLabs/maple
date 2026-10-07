@@ -91,8 +91,9 @@ function LoadingState() {
 			<SkeletonList
 				rows={40}
 				className="min-h-0 flex-1 gap-0 overflow-hidden rounded-md border"
+				// ROW_HEIGHT (compact): a shorter placeholder row makes the list jump on load.
 				renderRow={() => (
-					<div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+					<div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
 						<Skeleton className="size-1.5 shrink-0 rounded-full" />
 						<Skeleton className="h-3 w-16 shrink-0" />
 						<Skeleton className="h-3 w-[72px] shrink-0" />

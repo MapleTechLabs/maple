@@ -257,7 +257,8 @@ function WebAnalyticsPage() {
 				<SignalEmptyState
 					signal="sessions"
 					noun="visits"
-					purpose="Web analytics counts visitors, pages and referrers from the browser SDK."
+					purpose="See your visitors, top pages and where they came from."
+					action="Set up web analytics"
 					guideDocs="webAnalytics"
 				/>
 			) : (

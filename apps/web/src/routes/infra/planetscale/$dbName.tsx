@@ -236,6 +236,7 @@ function PlanetScaleDatabasePage() {
 			filters={
 				<PlanetScaleFilterSidebar
 					candidates={candidates}
+					loading={Result.isInitial(inventoryResult)}
 					filters={filters}
 					onFilterChange={setFilter}
 					onClear={clearFilters}

@@ -8,10 +8,12 @@ import { ResultView } from "@/components/common/result-view"
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
+	hasNoFacetOptions,
 } from "@/components/filters/filter-sidebar"
 import type { CloudflareInfraZoneFacetsResponse } from "@maple/domain/http"
 import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "./constants"
@@ -38,6 +40,10 @@ export function CloudflareFilterSidebarView({
 		>
 			{(response, { waiting }) => {
 				const f = response.data
+				if (!hasActiveFilters(filters) && hasNoFacetOptions(Object.values(f))) {
+					return <FilterSidebarEmpty />
+				}
+
 				return (
 					<FilterSidebarFrame waiting={waiting}>
 						<FilterSidebarHeader canClear={hasActiveFilters(filters)} onClear={onClearFilters} />

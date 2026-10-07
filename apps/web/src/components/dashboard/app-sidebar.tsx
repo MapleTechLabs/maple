@@ -476,7 +476,9 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 	const overflow = pinned.length - visible.length
 	const activeDashboardId = currentPath.match(/^\/dashboards\/([^/]+)/)?.[1]
 
-	if (isLoading) return null
+	// No pins, no group: a dashed "pin something" box in the main nav is an instruction, not a
+	// destination, and it is what every new org saw first. Pinning lives on the dashboards list.
+	if (isLoading || visible.length === 0) return null
 
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -485,44 +487,38 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 				{pinned.length > 0 ? <span className="font-normal tabular-nums">{pinned.length}</span> : null}
 			</SidebarGroupLabel>
 			<SidebarGroupContent>
-				{visible.length === 0 ? (
-					<p className="rounded-md border border-sidebar-border border-dashed px-2.5 py-2 text-2xs text-muted-foreground leading-relaxed">
-						Pin a dashboard to keep it here.
-					</p>
-				) : (
-					<SidebarMenu>
-						{visible.map((dashboard) => (
-							<SidebarMenuItem key={dashboard.id}>
-								<SidebarMenuButton
-									className={ACTIVE_RAIL}
-									isActive={activeDashboardId === dashboard.id}
-									render={
-										<Link
-											params={{ dashboardId: dashboard.id }}
-											to="/dashboards/$dashboardId"
-										/>
-									}
-									size="sm"
-								>
-									<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
-									<span>{dashboard.name}</span>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
-						))}
-						{overflow > 0 ? (
-							<SidebarMenuItem>
-								<SidebarMenuButton
-									className={`${ACTIVE_RAIL} text-muted-foreground`}
-									render={<Link to="/dashboards" />}
-									size="sm"
-								>
-									<span className="size-3.5 shrink-0" />
-									<span>{overflow} more…</span>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
-						) : null}
-					</SidebarMenu>
-				)}
+				<SidebarMenu>
+					{visible.map((dashboard) => (
+						<SidebarMenuItem key={dashboard.id}>
+							<SidebarMenuButton
+								className={ACTIVE_RAIL}
+								isActive={activeDashboardId === dashboard.id}
+								render={
+									<Link
+										params={{ dashboardId: dashboard.id }}
+										to="/dashboards/$dashboardId"
+									/>
+								}
+								size="sm"
+							>
+								<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
+								<span>{dashboard.name}</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					))}
+					{overflow > 0 ? (
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								className={`${ACTIVE_RAIL} text-muted-foreground`}
+								render={<Link to="/dashboards" />}
+								size="sm"
+							>
+								<span className="size-3.5 shrink-0" />
+								<span>{overflow} more…</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					) : null}
+				</SidebarMenu>
 			</SidebarGroupContent>
 		</SidebarGroup>
 	)

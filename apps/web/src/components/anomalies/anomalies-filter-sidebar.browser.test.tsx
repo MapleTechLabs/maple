@@ -106,7 +106,7 @@ describe("AnomaliesFilterSidebar", () => {
 	it("renders the empty state and no facet sections when there are no incidents", () => {
 		render(<AnomaliesFilterSidebar incidents={[]} filters={{}} onChange={vi.fn()} onClear={vi.fn()} />)
 
-		expect(screen.getByText("No anomalies in this view")).toBeTruthy()
+		expect(screen.getByText("Nothing to filter yet")).toBeTruthy()
 		expect(screen.queryByText("Severity")).toBeNull()
 		expect(screen.queryByText("Signal")).toBeNull()
 	})

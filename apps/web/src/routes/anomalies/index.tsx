@@ -253,6 +253,7 @@ function AnomaliesPage() {
 			filters={
 				<AnomaliesFilterSidebar
 					incidents={allIncidents}
+					loading={Result.isInitial(incidentsResult)}
 					filters={filters}
 					onChange={updateFilter}
 					onClear={clearFilters}

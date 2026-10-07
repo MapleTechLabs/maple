@@ -15,6 +15,8 @@ import { hostDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-quer
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
+import { ServerIcon } from "@/components/icons"
+import { ResourceAttributesCardSkeleton } from "@/components/infra/primitives/resource-attributes-card"
 import {
 	TimeRangeSearchFields,
 	WIDEN_TIME_PRESET,
@@ -71,7 +73,11 @@ function HostDetailPage() {
 		.onSuccess((r) => r.data)
 		.orElse(() => null)
 
-	const rightSidebar = <HostMetadataPanel summary={summary} />
+	const rightSidebar = summary ? (
+		<HostMetadataPanel summary={summary} />
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={ServerIcon} />
+	) : null
 
 	// Linked hover cursor across the metric strips (charts stay independent —
 	// no Recharts syncId render storms).

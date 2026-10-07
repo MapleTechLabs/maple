@@ -12,7 +12,6 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { badgeVariants } from "@maple/ui/components/ui/badge"
 import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
@@ -41,17 +40,6 @@ import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 import { sessionHeading } from "./session-name"
 
 /** How sessions get here, under the setup copy: the attributes Maple groups on. */
-function AgentSessionsSourceDetail() {
-	return (
-		<p className="max-w-md text-sm text-muted-foreground">
-			Trace your AI agents with a supported framework, or emit OpenTelemetry{" "}
-			<InlineCode>gen_ai</InlineCode> spans. A framework that groups its turns with a{" "}
-			<InlineCode>maple_ai.session.id</InlineCode> attribute gets one session across every trace;
-			anything else gets one per trace.
-		</p>
-	)
-}
-
 /** The wire row from `listAiSessions` — one AI agent session, newest first. */
 export interface AgentSessionRow {
 	readonly sessionId: string
@@ -423,11 +411,10 @@ export function AgentSessionsList({
 			<SignalEmptyState
 				signal="traces"
 				noun="agent sessions"
-				purpose="Agent sessions group your AI agent's LLM calls and tool calls into one conversation you can replay."
+				purpose="Replay each AI agent conversation, with its LLM and tool calls in order."
 				guideDocs="agentSessions"
 				filtered={filtered}
 				onClearFilters={onClearFilters}
-				detail={filtered ? undefined : <AgentSessionsSourceDetail />}
 			/>
 		)
 	}

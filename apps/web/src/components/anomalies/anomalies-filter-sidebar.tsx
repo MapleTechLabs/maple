@@ -4,8 +4,10 @@ import type { AnomalyIncidentDocument, AnomalySignalType } from "@maple/domain/h
 import { FilterSection, serviceColorMap } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
+	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
 import { SIGNAL_LABEL } from "./anomaly-format"
 import { hasAnomalyFilters, type AnomalyFilters } from "@/lib/anomalies/anomaly-filters"
@@ -18,12 +20,15 @@ const SEVERITY_LABEL = { critical: "Critical", warning: "Warning" } as const
 
 export function AnomaliesFilterSidebar({
 	incidents,
+	loading = false,
 	filters,
 	onChange,
 	onClear,
 }: {
 	/** Unfiltered incidents for the active status tab — facet counts derive from these. */
 	incidents: ReadonlyArray<AnomalyIncidentDocument>
+	/** The first page has not landed; `incidents` is empty only because nothing has loaded. */
+	loading?: boolean
 	filters: AnomalyFilters
 	onChange: <K extends keyof AnomalyFilters>(key: K, value: AnomalyFilters[K]) => void
 	onClear: () => void
@@ -61,6 +66,11 @@ export function AnomaliesFilterSidebar({
 	}, [incidents])
 
 	const hasActiveFilters = hasAnomalyFilters(filters)
+
+	if (loading) return <FilterSidebarLoading sectionCount={4} />
+	if (incidents.length === 0 && !hasActiveFilters) {
+		return <FilterSidebarEmpty />
+	}
 
 	return (
 		<FilterSidebarFrame>
@@ -132,9 +142,6 @@ export function AnomaliesFilterSidebar({
 					excluded={filters.excludedEnvs ?? []}
 					onExcludedChange={(val) => onChange("excludedEnvs", val.length === 0 ? undefined : val)}
 				/>
-				{incidents.length === 0 && (
-					<p className="text-sm text-muted-foreground py-4">No anomalies in this view</p>
-				)}
 			</FilterSidebarBody>
 		</FilterSidebarFrame>
 	)

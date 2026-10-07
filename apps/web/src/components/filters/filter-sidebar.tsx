@@ -9,6 +9,7 @@ export {
 	FilterSidebarHeader,
 	FilterSidebarBody,
 	FilterSidebarLoading,
+	FilterSidebarEmpty,
 } from "@maple/ui/components/filters/filter-sidebar"
 
 interface FilterSidebarErrorProps {
@@ -24,4 +25,12 @@ export function FilterSidebarError({ error, onRetry }: FilterSidebarErrorProps) 
 			<ErrorState error={error} onRetry={onRetry} variant="inline" />
 		</FilterSidebarFrame>
 	)
+}
+
+/**
+ * True when every list among a facets response's values is empty, i.e. there is nothing to offer
+ * as a filter. Takes `Object.values(facets)` so non-list fields (counts, stats) are simply skipped.
+ */
+export function hasNoFacetOptions(values: ReadonlyArray<unknown>): boolean {
+	return values.every((value) => !Array.isArray(value) || value.length === 0)
 }
