@@ -19,9 +19,11 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  * is the Maple org id. Public route; authenticity is the Svix signature
  * (`AUTUMN_WEBHOOK_SECRET`). Other event types are acknowledged with 200.
  *
- * A cancelled plan is also reviewed (`CancellationReviewService`), before the
- * product events are recorded: a review that could not finish answers 503, so
- * Svix redelivers and nothing about the delivery has been recorded twice.
+ * A cancelled plan is also reviewed (`CancellationReviewService`), after the
+ * product events are recorded, so the funnel never waits on the review. A
+ * review that could not finish answers 503 for Svix to redeliver; that
+ * redelivery records the delivery's events again, under the same
+ * `webhook_message_id`.
  */
 const ROUTE = "/webhooks/autumn"
 
@@ -66,11 +68,23 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 					Effect.option,
 				)
 				if (Option.isSome(data)) {
-					const receivedAt = yield* Clock.currentTimeMillis
 					// A review ends in a Slack post; without a channel there is nothing to do.
 					const cancellations = Option.isSome(env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID)
 						? cancellationsFromBillingUpdated(data.value)
 						: []
+					const events = planEventsFromBillingUpdated(data.value, {
+						id: envelope.value.id ?? received.messageId,
+						occurred_at: envelope.value.occurred_at,
+					})
+					yield* Effect.annotateCurrentSpan({
+						orgId: data.value.customer_id,
+						"maple.webhook.outcome": "handled",
+						"maple.webhook.emitted": events.length,
+						"maple.webhook.cancellations": cancellations.length,
+					})
+					yield* Effect.forEach(events, (event) => productEvents.track(event), { discard: true })
+
+					const receivedAt = yield* Clock.currentTimeMillis
 					const reviewed = yield* Effect.forEach(
 						cancellations,
 						({ orgId: rawOrgId, ...cancellation }) =>
@@ -105,17 +119,6 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 						})
 						return webhookText("Could not review the cancellation", 503)
 					}
-					const events = planEventsFromBillingUpdated(data.value, {
-						id: envelope.value.id ?? received.messageId,
-						occurred_at: envelope.value.occurred_at,
-					})
-					yield* Effect.annotateCurrentSpan({
-						orgId: data.value.customer_id,
-						"maple.webhook.outcome": "handled",
-						"maple.webhook.emitted": events.length,
-						"maple.webhook.cancellations": cancellations.length,
-					})
-					yield* Effect.forEach(events, (event) => productEvents.track(event), { discard: true })
 				} else {
 					yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "parse_rejected" })
 				}

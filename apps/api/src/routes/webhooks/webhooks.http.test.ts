@@ -529,7 +529,7 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("answers 503 and records nothing when the review could not finish", () =>
+	it.effect("records the plan events, then answers 503, when the review could not finish", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const { handler, dispose } = HttpRouter.toWebHandler(
@@ -547,7 +547,11 @@ describe("AutumnWebhookRouter", () => {
 				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 503)
-				assert.deepStrictEqual(events.tracked, [])
+				// The funnel does not wait on the review.
+				assert.deepStrictEqual(
+					events.tracked.map((event) => event.name),
+					["plan_changed"],
+				)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}),
 	)

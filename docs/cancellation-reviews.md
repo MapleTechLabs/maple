@@ -21,8 +21,10 @@ org holds now: an add-on, or a plan that ended while another plan is active, is 
 cancellation is reported once: the `expired` that follows a scheduled cancellation is a no-op,
 while cancelling again after keeping the plan is a new review.
 
-The review runs inside the webhook request (`CancellationReviewService`). If Clerk, Autumn,
-Postgres or Slack does not answer, the route answers 503 and Svix redelivers. If Slack answers
+The review runs inside the webhook request (`CancellationReviewService`), after the delivery's
+plan events are recorded. If Clerk, Autumn, Postgres or Slack does not answer, the route answers
+503 and Svix redelivers; the redelivery records those events again, under the same
+`webhook_message_id`. If Slack answers
 but refuses the post (bot not in the channel, wrong channel id), that is logged as an error and
 not retried; a scheduled cancellation is tried once more when the plan expires.
 
