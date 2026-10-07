@@ -21,8 +21,12 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
-import type { PrReviewProgress } from "@maple/backend/services/pr-review/PrReviewService"
+import type {
+	InvestigationProgress,
+	PrReviewFailureReason,
+	PrReviewFindingCounts,
+	PrReviewProgress,
+} from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
@@ -342,16 +346,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const { due, read } = reviewSource.coverage.counts()
 		const findings = reviewSource.ledger
 			.findings()
-			.reduce((counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }), {
-				critical: 0,
-				warn: 0,
-				info: 0,
-			})
+			.reduce<PrReviewFindingCounts>(
+				(counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }),
+				{ critical: 0, warn: 0, info: 0 },
+			)
 		const snapshot: PrReviewProgress = {
+			...record,
+			// A record with no steps yet carries 0; the write itself is the latest activity then.
+			updatedAt: record.steps.length === 0 ? Date.now() : record.updatedAt,
 			startedAt: reviewStartedAt,
-			updatedAt: record.updatedAt || Date.now(),
-			stepCount: record.stepCount,
-			steps: record.steps.map((step) => ({ label: step.label, at: step.at })),
 			filesDue: due,
 			filesRead: read,
 			findings,

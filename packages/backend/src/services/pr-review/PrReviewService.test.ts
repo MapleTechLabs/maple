@@ -1238,8 +1238,8 @@ describe("withReviewStatus", () => {
 		updatedAt: 245_000,
 		stepCount: 23,
 		steps: [
-			{ label: "Pr changed files", at: 4_000 },
-			{ label: "Sandbox grep · @octocat|`x`", at: 240_000 },
+			{ tool: "pr_changed_files", label: "Pr changed files", at: 4_000 },
+			{ tool: "sandbox_grep", label: "Sandbox grep · @octocat|`x`", at: 240_000 },
 		],
 		filesDue: 12,
 		filesRead: 7,

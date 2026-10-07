@@ -3,7 +3,7 @@
  * `InvestigationService` as a whole record on a heartbeat. The table replicates with REPLICA
  * IDENTITY FULL, so a write per tool call would ship the entire row up to a hundred times a run.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, SchemaGetter } from "effect"
 import {
 	INVESTIGATION_PROGRESS_STEPS,
 	type InvestigationProgress,
@@ -41,16 +41,21 @@ const SALIENT_KEYS = [
 	"sql",
 ] as const
 
-const asText = (value: unknown): string | null => {
-	if (typeof value === "string") return value.trim() || null
-	if (typeof value === "number" || typeof value === "boolean") return String(value)
-	// `paths: ["a.ts", "b.ts", "c.ts"]` reads as `a.ts +2`.
-	if (Array.isArray(value)) {
-		const first = asText(value[0])
-		return first === null ? null : value.length > 1 ? `${first} +${value.length - 1}` : first
-	}
-	return null
-}
+const Scalar = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])
+const scalarText = (value: typeof Scalar.Type): string => String(value).trim()
+
+/** An argument as one line: a scalar as itself, a list by its first item and a count (`a.ts +2`). */
+const ArgText = Schema.Union([Scalar, Schema.NonEmptyArray(Scalar)]).pipe(
+	Schema.decodeTo(Schema.NonEmptyString, {
+		decode: SchemaGetter.transform((value) => {
+			if (typeof value !== "object") return scalarText(value)
+			const first = scalarText(value[0])
+			return first === "" || value.length === 1 ? first : `${first} +${value.length - 1}`
+		}),
+		encode: SchemaGetter.forbidden(() => "a step label is never encoded back into arguments"),
+	}),
+)
+const decodeArg = Schema.decodeUnknownOption(ArgText)
 
 const clamp = (value: string): string => {
 	const line = value.split("\n")[0]!.trim()
@@ -58,13 +63,11 @@ const clamp = (value: string): string => {
 }
 
 /** The one argument worth showing, or nothing: a label padded with a time bound reads as detail while carrying none. */
-const salientArg = (input: ToolCallInput): string | null => {
-	for (const key of SALIENT_KEYS) {
-		const text = asText(input[key])
-		if (text !== null) return clamp(text)
-	}
-	return null
-}
+const salientArg = (input: ToolCallInput): string | null =>
+	Option.match(Option.firstSomeOf(SALIENT_KEYS.map((key) => decodeArg(input[key]))), {
+		onNone: () => null,
+		onSome: clamp,
+	})
 
 /** Words that stay upper case when a tool name is read as a phrase. */
 const ACRONYMS = new Set(["sql", "id", "api", "mcp"])

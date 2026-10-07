@@ -17,7 +17,7 @@
  */
 import { randomUUID } from "node:crypto"
 import {
-	type GitCommitSha,
+	GitCommitSha,
 	type OrgId,
 	PrReview,
 	PrReviewFinding,
@@ -37,8 +37,9 @@ import {
 	PR_REVIEW_CONFIDENCE_MAX,
 	PR_REVIEW_FAILURE_COPY,
 	DEFAULT_REVIEWER_MENTION,
-	type PrReviewFailureReason,
+	PrReviewFailureReason,
 	prReviewFailureReason,
+	PrReviewProgress,
 	confidencePrReview,
 	prReviewConfidenceTone,
 	scorePrReview,
@@ -430,31 +431,42 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string =>
 	`<!-- maple-pr-review ${reviewId} ${attempt} -->`
 
-/** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
-const STATUS_OPEN = "<!-- maple-pr-review:status"
+const STATUS_OPEN = "<!-- maple-pr-review:status "
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
 
-/** What a running review has done so far, as its comment shows it while it works. */
-export interface PrReviewProgress {
-	readonly startedAt: number
-	readonly updatedAt: number
-	readonly stepCount: number
-	/** The latest tool calls as lines of English, oldest first. */
-	readonly steps: ReadonlyArray<{ readonly label: string; readonly at: number }>
-	/** Reviewed files with a diff, and how many of those the pass has read; 0 due before the listing. */
-	readonly filesDue: number
-	readonly filesRead: number
-	/** Findings saved with `record_finding` so far, by severity. */
-	readonly findings: Readonly<Record<PrReviewSeverity, number>>
-	/** The pass stopped without a report and the close-out is writing up what it found. */
-	readonly closingOut: boolean
-}
+/** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
+const StatusMarker = Schema.TemplateLiteralParser([
+	STATUS_OPEN,
+	Schema.Literals(["reviewing", "failed", "superseded"]),
+	" ",
+	Schema.String,
+	" -->",
+])
+const encodeStatusMarker = Schema.encodeSync(StatusMarker)
+const decodeStatusMarker = Schema.decodeUnknownOption(StatusMarker)
+
+/** Whether a comment carries the "reviewing" notice of this head, the only notice anything replaces. */
+const isReviewing = (body: string | undefined, headSha: string): boolean =>
+	Option.exists(
+		Option.firstSomeOf((body ?? "").split("\n").map((line) => decodeStatusMarker(line))),
+		([, kind, , sha]) => kind === "reviewing" && sha === headSha,
+	)
 
 /** What a review's comment says before its result replaces it. */
-export type PrReviewStatusNotice =
-	| { readonly kind: "reviewing"; readonly headSha: string; readonly progress?: PrReviewProgress }
-	| { readonly kind: "failed"; readonly headSha: string; readonly reason?: PrReviewFailureReason }
-	| { readonly kind: "superseded"; readonly headSha: string }
+export const PrReviewStatusNotice = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("reviewing"),
+		headSha: GitCommitSha,
+		progress: Schema.optionalKey(PrReviewProgress),
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("failed"),
+		headSha: GitCommitSha,
+		reason: Schema.optionalKey(PrReviewFailureReason),
+	}),
+	Schema.Struct({ kind: Schema.Literal("superseded"), headSha: GitCommitSha }),
+]).pipe(Schema.toTaggedUnion("kind"))
+export type PrReviewStatusNotice = typeof PrReviewStatusNotice.Type
 
 /** "The review of `abc1234` could not finish. It ran out of time before it filed a report." */
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
@@ -539,59 +551,54 @@ export const withReviewStatus = (
 	notice: PrReviewStatusNotice,
 	mention: string,
 ): string | undefined => {
-	const updatesOnly = notice.kind !== "reviewing" || notice.progress !== undefined
-	if (updatesOnly && !(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)) {
-		return undefined
-	}
+	// Only the first "reviewing" notice opens a comment; everything after it replaces that notice.
+	const opens = PrReviewStatusNotice.guards.reviewing(notice) && notice.progress === undefined
+	if (!opens && !isReviewing(existing, notice.headSha)) return undefined
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
-	const lines = {
-		reviewing: [
+	const lines = PrReviewStatusNotice.match(notice, {
+		reviewing: ({ progress }) => [
 			"> [!NOTE]",
 			`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
-			...(notice.kind === "reviewing" && notice.progress !== undefined
-				? progressLines(notice.progress)
-				: []),
+			...(progress === undefined ? [] : progressLines(progress)),
 		],
-		failed: [
+		failed: ({ reason }) => [
 			"> [!WARNING]",
-			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`${mention} review\` to try again.`,
+			`> ${failedSentence(sha, reason)} Comment \`${mention} review\` to try again.`,
 		],
-		superseded: [
+		superseded: () => [
 			"> [!NOTE]",
 			`> A newer push replaced ${sha} before its review finished. The latest commit is reviewed in a new comment.`,
 		],
-	}[notice.kind]
-	return [marker, `${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`, ...lines, STATUS_CLOSE].join("\n")
+	})
+	const status = encodeStatusMarker([STATUS_OPEN, notice.kind, " ", notice.headSha, " -->"])
+	return [marker, status, ...lines, STATUS_CLOSE].join("\n")
 }
 
 /** What the review's check run says before a result replaces it. */
 export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
-	switch (notice.kind) {
-		case "reviewing":
-			return {
-				...run,
-				state: { status: "in_progress" as const },
-				title: "Reviewing",
-				summary: `Maple is reviewing ${sha}. The result lands here and in the review comment when it finishes.`,
-			}
-		case "failed":
-			// Neutral, like every other result: the review informs, it never blocks a merge.
-			return {
-				...run,
-				state: { status: "completed" as const, conclusion: "neutral" as const },
-				title: "Review could not finish",
-				summary: `${failedSentence(sha, notice.reason)} Comment \`${mention} review\` on the pull request to try again.`,
-			}
-		case "superseded":
-			return {
-				...run,
-				state: { status: "completed" as const, conclusion: "skipped" as const },
-				title: "Superseded by a newer push",
-				summary: `A newer commit replaced ${sha} before its review finished; the latest commit is reviewed instead.`,
-			}
-	}
+	return PrReviewStatusNotice.match(notice, {
+		reviewing: () => ({
+			...run,
+			state: { status: "in_progress" as const },
+			title: "Reviewing",
+			summary: `Maple is reviewing ${sha}. The result lands here and in the review comment when it finishes.`,
+		}),
+		// Neutral, like every other result: the review informs, it never blocks a merge.
+		failed: ({ reason }) => ({
+			...run,
+			state: { status: "completed" as const, conclusion: "neutral" as const },
+			title: "Review could not finish",
+			summary: `${failedSentence(sha, reason)} Comment \`${mention} review\` on the pull request to try again.`,
+		}),
+		superseded: () => ({
+			...run,
+			state: { status: "completed" as const, conclusion: "skipped" as const },
+			title: "Superseded by a newer push",
+			summary: `A newer commit replaced ${sha} before its review finished; the latest commit is reviewed instead.`,
+		}),
+	})
 }
 
 /** The check a push gets once its pull request has used the repository's automatic reviews. */
@@ -1381,7 +1388,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							),
 						)
 					// Progress is the comment's alone: the check already says "Reviewing".
-					const progress = notice.kind === "reviewing" && notice.progress !== undefined
+					const progress =
+						PrReviewStatusNotice.guards.reviewing(notice) && notice.progress !== undefined
 					yield* Effect.all(
 						[
 							provider
