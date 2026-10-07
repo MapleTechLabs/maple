@@ -18,9 +18,9 @@
 // sums are UInt64 and arrive as JSON strings on BYO-ClickHouse, so both row
 // schemas are built from `CHNumber`.
 
-import { Schema, type DateTime } from "effect"
+import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { dateTime64, from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
@@ -68,7 +68,7 @@ export function dailySignalVolumeQuery() {
 }
 
 export interface DailySessionCountOutput {
-	readonly day: string
+	readonly day: DateTime.Utc
 	readonly sessions: number
 }
 
@@ -91,8 +91,8 @@ export function dailySessionCountQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(CH.toDateTime(param.dateTimeString("startTime"))),
-			$.StartTime.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			$.StartTime.gte(CH.toDateTime(param.dateTime("startTime"))),
+			$.StartTime.lte(CH.toDateTime(param.dateTime("endTime"))),
 		])
 		.groupBy("day")
 		.orderBy(["day", "asc"])
@@ -100,13 +100,13 @@ export function dailySessionCountQuery() {
 }
 
 export interface DailyProductEventCountOutput {
-	readonly day: string
+	readonly day: DateTime.Utc
 	readonly events: number
 }
 
 export const dailyProductEventCountRowSchema: CompiledQueryRowSchema<DailyProductEventCountOutput> =
 	Schema.Struct({
-		day: Schema.String,
+		day: dateTime64.schema,
 		events: CHNumber,
 	})
 
@@ -128,8 +128,8 @@ export function dailyProductEventCountQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
-			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			$.Timestamp.gte(CH.toDateTime(param.dateTime("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(param.dateTime("endTime"))),
 			$.Kind.neq("navigation"),
 		])
 		.groupBy("day")

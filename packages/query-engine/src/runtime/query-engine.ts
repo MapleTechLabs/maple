@@ -455,11 +455,11 @@ const buildBucketTimeline = (startMs: number, endMs: number, bucketSeconds: numb
 }
 
 const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
-	if (bucket instanceof Date) {
-		return bucket.toISOString()
-	}
 	if (DateTime.isDateTime(bucket)) {
 		return DateTime.formatIso(bucket)
+	}
+	if (bucket instanceof Date) {
+		return bucket.toISOString()
 	}
 
 	const raw = String(bucket).trim()
@@ -1725,7 +1725,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const points = pointsByMetric.get(row.metricName) ?? []
 				if (points.length === 0) pointsByMetric.set(row.metricName, points)
 				points.push({
-					bucket: String(row.bucket),
+					bucket: DateTime.formatIso(row.bucket),
 					avgValue: Number(row.avgValue),
 					sumValue: Number(row.sumValue),
 					dataPointCount: Number(row.dataPointCount),
@@ -2012,7 +2012,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					kind: "list",
 					source: "product_events",
 					data: rows.map((row) => ({
-						timestamp: String(row.timestamp),
+						timestamp: DateTime.formatIso(row.timestamp),
 						eventName: row.eventName,
 						kind: row.kind,
 						source: row.source,

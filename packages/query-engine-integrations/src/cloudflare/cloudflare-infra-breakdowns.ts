@@ -183,8 +183,8 @@ export function cloudflareZoneBreakdownTotalsSQL(
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.in_(...cloudflareBreakdownMetrics(dimension)),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			...breakdownConditions($, dimension, opts),
 		])
 		.groupBy("key")
@@ -223,8 +223,8 @@ export function cloudflareZoneBreakdownTimeseriesSQL(
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(spec.requestsMetric),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			...breakdownConditions($, dimension, opts),
 		])
 		.groupBy("bucket", "key")
@@ -248,8 +248,8 @@ export function cloudflareZoneBreakdownCoverageSQL(dimension: CloudflareBreakdow
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(spec.requestsMetric),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.format("JSON")
 }
@@ -293,8 +293,8 @@ const makeCfFacet = (
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(metricName),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			(key === "host" ? cloudflareHostAttr($) : $.Attributes.get(CF_ATTR[key])).neq(""),
 			...cloudflareFilterConditions($, opts, CF_FILTERABLE[metricName] ?? [], key),
 		])

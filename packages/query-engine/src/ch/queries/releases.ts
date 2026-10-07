@@ -5,7 +5,7 @@
 // `CommitSha` and key on it, so every row here is a GROUP BY over the same
 // splice the services list already reads. Nothing scans the raw traces table.
 
-import { Schema, type DateTime } from "effect"
+import { type DateTime, Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import {
@@ -18,6 +18,7 @@ import {
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import { ErrorEventsByTime, ServiceOverviewSpans, orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { serviceOverviewWhereConditions } from "./query-helpers"
 import { serviceOverviewWindows, serviceWindowTiersForBucket } from "./services"
 
@@ -50,7 +51,7 @@ export interface ReleasesListOutput {
 	readonly serviceName: string
 	readonly environment: string
 	readonly commitSha: string
-	readonly firstSeen: string
+	readonly firstSeen: DateTime.Utc
 	readonly spanCount: number
 	readonly errorCount: number
 	readonly p50LatencyMs: number
@@ -64,7 +65,7 @@ export const releasesListRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
 	commitSha: Schema.String,
-	firstSeen: Schema.String,
+	firstSeen: DateTimeUtcFromWarehouse,
 	// `CHNumber`, never `Schema.Number`: UInt64 counts arrive quoted on a
 	// gateway that refuses `output_format_json_quote_64bit_integers=0`.
 	spanCount: CHNumber,
@@ -147,7 +148,7 @@ export interface ReleasesTimelineOpts {
 }
 
 export interface ReleasesTimelineOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly serviceName: string
 	readonly commitSha: string
 	readonly count: number
@@ -274,12 +275,12 @@ export interface ServiceDeploymentsOpts {
 }
 
 export interface ServiceDeploymentsOutput extends ReleasesListOutput {
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 }
 
 export const serviceDeploymentsRowSchema = Schema.Struct({
 	...releasesListRowSchema.fields,
-	lastSeen: Schema.String,
+	lastSeen: DateTimeUtcFromWarehouse,
 }) satisfies CompiledQueryRowSchema<ServiceDeploymentsOutput>
 
 export const DEPLOYMENTS_PER_SERVICE_CAP = 20

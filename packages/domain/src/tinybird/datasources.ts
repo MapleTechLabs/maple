@@ -365,7 +365,7 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		TraceId: t.string(),
 		SpanId: t.string(),
 		ParentSpanId: t.string(),
@@ -398,7 +398,7 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		TraceId: t.string(),
 		ParentSpanId: t.string(),
 		ServiceName: t.string().lowCardinality(),
@@ -432,7 +432,7 @@ export const serviceMapEdgesHourlyIngest = defineDatasource("service_map_edges_h
 		"Zero-retention Events API ingress bridge for scheduled service-map edge rollups. A materialized view forwards each insert to service_map_edges_hourly.",
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		TargetService: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -473,7 +473,7 @@ export const serviceMapEdgesHourly = defineDatasource("service_map_edges_hourly"
 	forwardQuery: "SELECT *",
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		TargetService: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -511,7 +511,7 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DbSystem: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -570,7 +570,7 @@ export const serviceMapDbQuerySignaturesHourly = defineDatasource("service_map_d
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DbSystem: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -635,7 +635,7 @@ export const serviceExternalEdgesHourly = defineDatasource("service_external_edg
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		TargetType: t.string().lowCardinality(),
 		TargetSystem: t.string().lowCardinality(),
@@ -690,7 +690,7 @@ export const serviceAddressResolutionsHourly = defineDatasource("service_address
 	// writes these rows directly via POST /v0/events, which requires them.
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		ParentServerAddress: t.string(),
 		ResolvedTargetService: t.string().lowCardinality(),
@@ -729,7 +729,7 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		K8sCluster: t.simpleAggregateFunction("max", t.string()),
@@ -767,7 +767,7 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		Duration: t.uint64(),
 		StatusCode: t.string().lowCardinality(),
@@ -815,7 +815,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		ServiceNamespace: t.string().lowCardinality(),
@@ -826,7 +826,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
@@ -865,7 +865,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Minute: t.dateTime(),
+		Minute: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		ServiceNamespace: t.string().lowCardinality(),
@@ -876,7 +876,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
@@ -1095,7 +1095,7 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string(),
 		HttpMethod: t.string().lowCardinality(),
@@ -1285,7 +1285,7 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: t.dateTime64(9),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		ServiceName: t.string().lowCardinality(),
 		Crawler: t.string().lowCardinality(),
@@ -1339,8 +1339,8 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Value: column(t.float64(), { jsonPath: "$.value" }),
 		Flags: column(t.uint32(), { jsonPath: "$.flags" }),
 		ExemplarsTraceId: column(t.array(t.string()), {
@@ -1349,7 +1349,7 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1409,8 +1409,8 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Value: column(t.float64(), { jsonPath: "$.value" }),
 		Flags: column(t.uint32(), { jsonPath: "$.flags" }),
 		ExemplarsTraceId: column(t.array(t.string()), {
@@ -1419,7 +1419,7 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1475,8 +1475,8 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Count: column(t.uint64(), { jsonPath: "$.count" }),
 		Sum: column(t.float64(), { jsonPath: "$.sum" }),
 		BucketCounts: column(t.array(t.uint64()), {
@@ -1491,7 +1491,7 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1553,8 +1553,8 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Count: column(t.uint64(), { jsonPath: "$.count" }),
 		Sum: column(t.float64(), { jsonPath: "$.sum" }),
 		Scale: column(t.int32(), { jsonPath: "$.scale" }),
@@ -1573,7 +1573,7 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1613,7 +1613,7 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		MetricType: t.string().lowCardinality(),
 		ServiceName: t.string().lowCardinality(),
 		MetricName: t.string().lowCardinality(),
@@ -1621,8 +1621,8 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 		MetricUnit: t.simpleAggregateFunction("anyLast", t.string()),
 		IsMonotonic: t.simpleAggregateFunction("anyLast", t.uint8()),
 		DataPointCount: t.simpleAggregateFunction("sum", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
-		LastSeen: t.simpleAggregateFunction("max", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -1643,7 +1643,7 @@ export const attributeKeysHourly = defineDatasource("attribute_keys_hourly", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		AttributeKey: t.string().lowCardinality(),
 		AttributeScope: t.string().lowCardinality(),
 		UsageCount: t.simpleAggregateFunction("sum", t.uint64()),
@@ -1671,7 +1671,7 @@ export const attributeValuesHourly = defineDatasource("attribute_values_hourly",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		AttributeKey: t.string().lowCardinality(),
 		AttributeValue: t.string(),
 		AttributeScope: t.string().lowCardinality(),
@@ -1821,7 +1821,7 @@ export const serviceOperationsMinutely = defineDatasource("service_operations_mi
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Minute: t.dateTime(),
+		Minute: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		// Falls back to url.path when no route template exists; keep this a plain
@@ -1881,7 +1881,7 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		SpanName: t.string(),
@@ -1943,7 +1943,7 @@ export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string().lowCardinality(),
 		SpanKind: t.string().lowCardinality(),
@@ -2016,7 +2016,7 @@ export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourl
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		MetricName: t.string().lowCardinality(),
 		SpanKind: t.string().lowCardinality(),
@@ -2026,7 +2026,7 @@ export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourl
 		AttrFingerprint: t.uint64(),
 		ResourceFingerprint: t.uint64(),
 		// Counter-reset epoch; isolates accumulation runs within one series.
-		StartTimeUnix: t.dateTime64(9),
+		StartTimeUnix: utcDateTime64(9),
 		// Cumulative counter value at the end of the hour for this series-epoch.
 		// Finalize with argMaxMerge(LastValue). Tinybird's aggregateFunction(func,
 		// type) emits one type slot, so the value type (Float64) is smuggled into
@@ -2066,7 +2066,7 @@ export const logsAggregatesHourly = defineDatasource("logs_aggregates_hourly", {
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SeverityText: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -2128,8 +2128,8 @@ export const sessionReplays = defineDatasource("session_replays", {
 	schema: {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
-		StartTime: column(t.dateTime64(9), { jsonPath: "$.start_time" }),
-		EndTime: column(t.dateTime64(9).nullable(), { jsonPath: "$.end_time" }),
+		StartTime: column(utcDateTime64(9), { jsonPath: "$.start_time" }),
+		EndTime: column(utcDateTime64(9).nullable(), { jsonPath: "$.end_time" }),
 		DurationMs: column(t.uint32().nullable(), { jsonPath: "$.duration_ms" }),
 		Status: column(t.string().lowCardinality(), { jsonPath: "$.status" }),
 		UserId: column(t.string(), { jsonPath: "$.user_id" }),
@@ -2257,7 +2257,7 @@ export const sessionReplays = defineDatasource("session_replays", {
 		 * null and `DurationMs` unknown; `LastActivityAt - StartTime` recovers a
 		 * usable duration for those sessions.
 		 */
-		LastActivityAt: column(t.dateTime64(9).nullable(), {
+		LastActivityAt: column(utcDateTime64(9).nullable(), {
 			jsonPath: "$.last_activity_at",
 		}),
 	},
@@ -2301,7 +2301,7 @@ export const sessionReplayEvents = defineDatasource("session_replay_events", {
 		// Gateway receipt time. Drives partitioning and the TTL, and doubles as the
 		// chunk index's playback anchor: it trails the recording's own clock by the
 		// upload latency, which is well inside a single chunk's duration.
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		DurationMs: column(t.uint32().default(0), { jsonPath: "$.duration_ms" }),
 		EventCount: column(t.uint32().default(0), { jsonPath: "$.event_count" }),
 		// Uncompressed byte length of the events JSON (telemetry / debugging).
@@ -2340,7 +2340,7 @@ export const sessionEvents = defineDatasource("session_events", {
 	schema: {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Seq: column(t.uint32().default(0), { jsonPath: "$.seq" }),
 		Type: column(t.string().lowCardinality(), { jsonPath: "$.type" }),
 		Url: column(t.string().default(""), { jsonPath: "$.url" }),
@@ -2475,7 +2475,7 @@ export const productEvents = defineDatasource("product_events", {
 		"Product events fact table: browser page views and track() calls (materialized from session_events) plus events posted directly by backends and mobile apps via POST /v1/events. Carries the person key (VisitorId/UserId/GroupId). Powers page views, top pages and funnels.",
 	schema: {
 		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		/** `browser` (from session_events) | `server` | `mobile`. */
 		Source: column(t.string().lowCardinality().default("browser"), {
 			jsonPath: "$.source",
@@ -2600,7 +2600,7 @@ export const identityLinks = defineDatasource("identity_links", {
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		VisitorId: t.string(),
 		UserId: t.string(),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime64(9)),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime64(9)),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",

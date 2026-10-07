@@ -29,7 +29,6 @@ import {
 	Traces,
 	TracesAggregatesHourly,
 	orgIdParam,
-	utcColumn,
 	utcSecondsParam,
 } from "../tables"
 import {
@@ -41,7 +40,7 @@ import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "./series-cap"
-import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
+import { edgeCondition, hourGrain, interiorBounds, utcInteriorConditions, minuteGrain } from "./rollup-splice"
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
@@ -615,7 +614,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.where(($) => [
 				...rollupWhere($),
-				...interiorConditions($.Minute, minuteGrain),
+				...utcInteriorConditions($.Minute, minuteGrain),
 				// Only the sub-hour remainder when the hourly tier covers the middle;
 				// the whole interior otherwise.
 				includeHourly ? edgeCondition("Minute", hourGrain) : undefined,
@@ -636,7 +635,7 @@ export function tracesTimeseriesQuery(
 				bSatisfiedCount: needs.has("apdex") ? CH.sum($.ApdexSatisfiedCount) : CH.lit(0),
 				bToleratingCount: needs.has("apdex") ? CH.sum($.ApdexToleratingCount) : CH.lit(0),
 			}))
-			.where(($) => [...rollupWhere($), ...interiorConditions($.Hour)])
+			.where(($) => [...rollupWhere($), ...utcInteriorConditions($.Hour)])
 			.groupBy("bucket", "groupName")
 
 		const tiers = !includeMinutely
@@ -772,7 +771,7 @@ export function tracesTimeseriesQuery(
 
 		const hourlyInterior = from(TracesAggregatesHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval(utcColumn($.Hour), param.int("bucketSeconds")),
+				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
 				groupName: buildAggregatesGroupNameExpr($, opts.groupBy),
 				bWeightedCount: CH.sum($.WeightedCount),
 				// The MV stores no raw row count, so the weighted value stands in for
@@ -1874,8 +1873,8 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)

@@ -1,4 +1,3 @@
-import type { DateTime } from "effect"
 import type { TraceId, SpanId } from "@maple/domain"
 
 export interface TimeRange {
@@ -31,7 +30,7 @@ export interface SpanResult {
 	readonly statusMessage: string
 	readonly attributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
-	readonly timestamp: DateTime.Utc
+	readonly timestamp: string
 }
 
 export interface SearchTracesInput {
@@ -80,8 +79,8 @@ export interface SpanNode {
 	 * service-entry spans when bounding a large trace to an overview. */
 	readonly spanKind: string
 	readonly durationMs: number
-	/** When the span started (millisecond precision). */
-	readonly startTime: DateTime.Utc
+	/** When the span started, as the warehouse or API reported it (UTC). */
+	readonly startTime: string
 	readonly statusCode: string
 	readonly statusMessage: string
 	readonly attributes: Record<string, string>
@@ -98,7 +97,7 @@ export interface InspectTraceOutput {
 	/** The window the final read covered; `widened` when the first read found nothing. */
 	readonly scanned?: { readonly startTime: string; readonly endTime: string; readonly widened: boolean }
 	readonly logs: ReadonlyArray<{
-		readonly timestamp: DateTime.Utc
+		readonly timestamp: string
 		readonly severityText: string
 		readonly serviceName: string
 		readonly body: string
@@ -129,7 +128,7 @@ export interface FindErrorsInput {
 }
 
 export interface LogEntry {
-	readonly timestamp: DateTime.Utc
+	readonly timestamp: string
 	readonly severityText: string
 	readonly serviceName: string
 	readonly body: string

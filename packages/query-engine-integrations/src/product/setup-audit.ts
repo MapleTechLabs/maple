@@ -32,7 +32,7 @@ import {
 	utcSecondsParam,
 } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { hourFloor } from "@maple/query-engine/ch/query-helpers"
+import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
@@ -77,8 +77,8 @@ export function auditAttributeKeyInventoryQuery(opts: { limit?: number } = {}) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			CH.inList($.AttributeScope, ["span", "resource", "log", "metric"]),
-			$.Hour.gte(param.dateTimeString("startTime")),
-			$.Hour.lte(param.dateTimeString("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("scope", "attributeKey")
 		.orderBy(["usageCount", "desc"])
@@ -147,8 +147,8 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["weightedSpanCount", "desc"])
@@ -190,8 +190,8 @@ export function auditSamplingByServiceQuery(opts: { limit?: number } = {}) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["spanCount", "desc"])
@@ -226,8 +226,8 @@ export function auditLogSeverityByServiceQuery(opts: { limit?: number } = {}) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("serviceName", "severityText")
 		.orderBy(["logCount", "desc"])
@@ -267,8 +267,8 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("metric"),
-			$.Hour.gte(param.dateTimeString("startTime")),
-			$.Hour.lte(param.dateTimeString("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("attributeKey")
 		.orderBy(["valueCardinality", "desc"])
@@ -317,8 +317,8 @@ export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
 			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("span"),
 			CH.inList($.AttributeKey, [...AUDIT_PEER_KEYS]),
-			$.Hour.gte(param.dateTimeString("startTime")),
-			$.Hour.lte(param.dateTimeString("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeValue.neq(""),
 		])
 		.groupBy("attributeKey", "attributeValue")
@@ -357,8 +357,8 @@ export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.DbSystem.neq(""),
 		])
 		.groupBy("serviceName", "dbSystem")
@@ -509,8 +509,8 @@ export function auditOrphanSpansSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("childStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.Timestamp.gte(utcSecondsParam("childStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			$.ParentSpanId.neq(""),
 			modulusFilter($.TraceId, modulus),
 		])
@@ -519,8 +519,8 @@ export function auditOrphanSpansSQL(
 		.select(($) => ({ TraceId: $.TraceId, SpanId: $.SpanId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("parentStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 
@@ -588,8 +588,8 @@ export function auditRootlessTracesSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("childStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.Timestamp.gte(utcSecondsParam("childStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 		.groupBy("TraceId")

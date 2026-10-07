@@ -96,14 +96,6 @@ export function interiorBounds(grain: SpliceGrain = hourGrain): {
  * The aggregate tier's predicate on its bucket column — half-open, so it is the
  * exact complement of `edgeCondition` at the same grain.
  */
-export function interiorConditions(
-	bucketColumn: CH.Expr<string>,
-	grain: SpliceGrain = hourGrain,
-): readonly [CH.Condition, CH.Condition] {
-	return boundedBy(bucketColumn, T.dateTimeString, grain)
-}
-
-/** {@link interiorConditions} for a bucket column that decodes to `DateTime.Utc`. */
 export function utcInteriorConditions(
 	bucketColumn: CH.Expr<DateTime.Utc>,
 	grain: SpliceGrain = hourGrain,

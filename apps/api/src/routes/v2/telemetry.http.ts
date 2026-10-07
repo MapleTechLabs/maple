@@ -885,8 +885,8 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 											unit: row.metricUnit,
 											is_monotonic: Number(row.isMonotonic) !== 0,
 											data_point_count: Number(row.dataPointCount),
-											first_seen: chToIso(row.firstSeen),
-											last_seen: chToIso(row.lastSeen),
+											first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
+											last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
 										})),
 									),
 								)

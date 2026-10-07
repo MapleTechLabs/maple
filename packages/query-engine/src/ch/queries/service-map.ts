@@ -17,6 +17,7 @@ import {
 } from "@maple/domain/tinybird/db-query-shape-sql"
 import { deploymentEnvExpr, messagingDestinationExpr } from "@maple/domain/tinybird/semconv-renames"
 import { type DateTime, Schema, Effect } from "effect"
+import { utcAsWireString } from "./utc-bridge"
 import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { defineCondFn, defineFn } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -40,8 +41,9 @@ import {
 	utcSecondsParam,
 } from "../tables"
 import { unionAll } from "@maple-dev/effect-orm/clickhouse"
-import { edgeCondition, interiorConditions } from "./rollup-splice"
+import { edgeCondition, utcInteriorConditions } from "./rollup-splice"
 import { CHNumber, CHNumberOrZero } from "../schema"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
@@ -132,8 +134,8 @@ const sampleWeightExpr = (traceState: CH.Expr<string>) =>
  * cover every service.
  */
 function serviceMapEdgeJoinSource(opts: {
-	rangeStart: CH.Expr<string>
-	rangeEnd: CH.Expr<string>
+	rangeStart: CH.Expr<DateTime.Utc>
+	rangeEnd: CH.Expr<DateTime.Utc>
 	deploymentEnv?: string
 	parentServiceName?: string
 	/**
@@ -220,15 +222,16 @@ function serviceMapEdgeJoinSource(opts: {
  * cross-org backfill needs its own explicitly-named entry point.
  */
 export function serviceMapEdgeJoinQuery(opts: {
-	rangeStart: CH.Expr<string>
-	rangeEnd: CH.Expr<string>
+	rangeStart: CH.Expr<DateTime.Utc>
+	rangeEnd: CH.Expr<DateTime.Utc>
 	deploymentEnv?: string
 	parentServiceName?: string
 }) {
 	return serviceMapEdgeJoinSource(opts)
 		.select(($) => ({
 			OrgId: $.OrgId,
-			Hour: CH.toStartOfHour($.Timestamp),
+			// Stays the wire string: the rollup ingests these rows unchanged.
+			Hour: utcAsWireString(CH.toStartOfHour($.Timestamp)),
 			SourceService: $.ServiceName,
 			TargetService: $.c.ServiceName,
 			DeploymentEnv: $.DeploymentEnv,
@@ -317,8 +320,8 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 	const envFilterMv = (deploymentEnv: CH.Expr<string>) =>
 		opts.deploymentEnv ? deploymentEnv.eq(opts.deploymentEnv) : undefined
 
-	const startDateTime = CH.toDateTime(param.dateTimeString("startTime"))
-	const endDateTime = CH.toDateTime(param.dateTimeString("endTime"))
+	const startDateTime = CH.toDateTime(param.dateTime("startTime"))
+	const endDateTime = CH.toDateTime(param.dateTime("endTime"))
 
 	// Hourly branch — only sealed, complete buckets inside the requested window.
 	const hourlyBranch = from(ServiceMapEdgesHourly)
@@ -339,7 +342,7 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.SourceService.eq(opts.serviceName) : undefined,
-			...interiorConditions($.Hour),
+			...utcInteriorConditions($.Hour),
 			envFilterMv($.DeploymentEnv),
 		])
 		.groupBy("sourceService", "targetService")
@@ -553,7 +556,7 @@ function serviceDbEdgesQueryBase(opts: { serviceName?: string; deploymentEnv?: s
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
-			...interiorConditions($.Hour),
+			...utcInteriorConditions($.Hour),
 			$.DbSystem.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
 		])
@@ -692,7 +695,7 @@ const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySu
 })
 
 export interface ServiceDbQueryTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly queryCount: number
 	readonly estimatedQueryCount: number
 	readonly errorCount: number
@@ -704,7 +707,7 @@ export interface ServiceDbQueryTimeseriesOutput {
 
 const ServiceDbQueryTimeseriesOutputSchema: CompiledQueryRowSchema<ServiceDbQueryTimeseriesOutput> =
 	Schema.Struct({
-		bucket: Schema.String,
+		bucket: DateTimeUtcFromWarehouse,
 		queryCount: CHNumber,
 		estimatedQueryCount: CHNumber,
 		errorCount: CHNumber,
@@ -727,7 +730,7 @@ export interface ServiceDbTopQueryOutput {
 	readonly avgDurationMs: number
 	readonly p50DurationMs: number
 	readonly p95DurationMs: number
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 }
 
 const ServiceDbTopQueryOutputSchema: CompiledQueryRowSchema<ServiceDbTopQueryOutput> = Schema.Struct({
@@ -743,7 +746,7 @@ const ServiceDbTopQueryOutputSchema: CompiledQueryRowSchema<ServiceDbTopQueryOut
 	avgDurationMs: CHNumberOrZero,
 	p50DurationMs: CHNumber,
 	p95DurationMs: CHNumber,
-	lastSeen: Schema.String,
+	lastSeen: DateTimeUtcFromWarehouse,
 })
 
 // Finalized sample-weighted quantiles over raw rows — used by the sub-hour
@@ -773,7 +776,7 @@ const clampTopN = (value: number | undefined): number => {
 const signaturesHourlyFilters = (
 	$: {
 		OrgId: CH.Expr<string>
-		Hour: CH.Expr<string>
+		Hour: CH.Expr<DateTime.Utc>
 		DbSystem: CH.Expr<string>
 		DbNamespace: CH.Expr<string>
 		ServiceName: CH.Expr<string>
@@ -782,7 +785,7 @@ const signaturesHourlyFilters = (
 	params: ServiceDbQuerySummaryParams,
 ) => [
 	$.OrgId.eq(orgIdParam),
-	...interiorConditions($.Hour),
+	...utcInteriorConditions($.Hour),
 	$.DbSystem.eq(params.dbSystem),
 	// `undefined` = unscoped; `''` is a real value (the legacy/unknown node).
 	// Collapse sealed hex → sentinel so a `dbNamespace: "hyperdrive"` filter also
@@ -1124,8 +1127,8 @@ export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceExternalEdgesOutput>, QueryBuilderError> {
-	const startHour = CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))
-	const endHour = CH.toStartOfHour(CH.toDateTime(param.dateTimeString("endTime")))
+	const startHour = CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))
+	const endHour = CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))
 
 	// Hourly branch: sealed buckets from the MV-fed table. Carries `bucket*`
 	// aliases so the outer aggregate can't collide with inner ones (same
@@ -1148,7 +1151,7 @@ export function serviceExternalEdgesSQL(
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
-			...interiorConditions($.Hour),
+			...utcInteriorConditions($.Hour),
 			$.TargetName.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
 		])
@@ -1327,8 +1330,8 @@ export function servicePlatformsSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.ServiceName.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
 		])
@@ -1367,7 +1370,7 @@ export interface DbQueryVolumeOutput {
 	readonly errorCount: number
 	readonly avgDurationMs: number
 	readonly p95DurationMs: number
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 }
 
 export const dbQueryVolumeRowSchema = Schema.Struct({
@@ -1380,7 +1383,7 @@ export const dbQueryVolumeRowSchema = Schema.Struct({
 	errorCount: CHNumber,
 	avgDurationMs: CHNumberOrZero,
 	p95DurationMs: CHNumber,
-	lastSeen: Schema.String,
+	lastSeen: DateTimeUtcFromWarehouse,
 }) satisfies CompiledQueryRowSchema<DbQueryVolumeOutput>
 
 export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
@@ -1401,7 +1404,7 @@ export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			...interiorConditions($.Hour),
+			...utcInteriorConditions($.Hour),
 			opts.dbSystem ? $.DbSystem.eq(opts.dbSystem) : undefined,
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
@@ -1449,7 +1452,7 @@ export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
 			errorCount: CH.sum($.bErr),
 			avgDurationMs: CH.if_(CH.sum($.bEst).gt(0), CH.sum($.bWDur).div(CH.sum($.bEst)), CH.lit(0)),
 			p95DurationMs: mergedQuantileExpr(2),
-			lastSeen: CH.toString_(CH.max_($.bLastSeen)),
+			lastSeen: CH.max_($.bLastSeen),
 		}))
 		.groupBy("serviceName", "dbSystem", "dbNamespace", "queryKey")
 

@@ -20,7 +20,7 @@ export const ISO_Z_FORMAT = "%Y-%m-%dT%H:%i:%S.%fZ"
  * The bucket column every timeseries query selects: the timestamp snapped down
  * to the caller's interval, rendered as an ISO-Z string.
  */
-export function isoBucket<V extends string | DateTime.Utc>(column: CH.Expr<V>): CH.Expr<string> {
+export function isoBucket<T extends string | DateTime.Utc>(column: CH.Expr<T>): CH.Expr<string> {
 	return CH.formatDateTime(CH.toStartOfInterval(column, param.int("bucketSeconds")), ISO_Z_FORMAT)
 }
 

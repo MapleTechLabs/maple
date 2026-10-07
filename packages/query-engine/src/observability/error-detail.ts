@@ -1,7 +1,6 @@
 import { Array as Arr, DateTime, Effect, pipe } from "effect"
-import type { ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
-import type { ErrorDetailTracesOutput } from "../ch/queries/errors"
-import { parseWarehouseDateTime, formatWarehouseDateTime } from "../datetime"
+import type { ErrorDetailTracesOutput, ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
+import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso } from "../datetime"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import { isUnlabelledError, spanErrorLabel } from "./fingerprint-labels"
@@ -15,8 +14,9 @@ const LOG_WINDOW_HALF_WIDTH_MS = 60 * 60 * 1000
  * pipe-dispatch falls back to an all-time sentinel window (2023→2099) and the
  * lookup scans full retention (mined at p95 ~5s on busy orgs).
  */
-const logRangeAround = (traceStartTime: DateTime.Utc): { start_time: string; end_time: string } => {
-	const ms = DateTime.toEpochMillis(traceStartTime)
+const logRangeAround = (traceStartTime: string): { start_time: string; end_time: string } | undefined => {
+	const ms = parseWarehouseDateTime(traceStartTime)
+	if (Number.isNaN(ms)) return undefined
 	return {
 		start_time: formatWarehouseDateTime(ms - LOG_WINDOW_HALF_WIDTH_MS),
 		end_time: formatWarehouseDateTime(ms + LOG_WINDOW_HALF_WIDTH_MS),
@@ -38,10 +38,10 @@ export interface ErrorDetailTrace {
 	readonly durationMs: number
 	readonly spanCount: number
 	readonly services: readonly string[]
-	readonly startTime: DateTime.Utc
+	readonly startTime: string
 	readonly errorMessage: string
 	readonly errorSpan: ErrorDetailSpan | undefined
-	readonly logs: ReadonlyArray<{ timestamp: DateTime.Utc; severityText: string; body: string }>
+	readonly logs: ReadonlyArray<{ timestamp: string; severityText: string; body: string }>
 }
 
 const errorSpanOf = (t: ErrorDetailTracesOutput): ErrorDetailSpan | undefined => {
@@ -159,13 +159,13 @@ const SEVERITY_RANK: ReadonlyMap<string, number> = new Map([
 const severityRank = (severity: string): number => SEVERITY_RANK.get(severity.toUpperCase()) ?? 3
 
 /** Error-level logs first (then newest first): a trace's last Info line is rarely the clue. */
-export const errorFirstLogs = <L extends { readonly severityText: string; readonly timestamp: DateTime.Utc }>(
+export const errorFirstLogs = <L extends { readonly severityText: string; readonly timestamp: string }>(
 	logs: ReadonlyArray<L>,
 ): ReadonlyArray<L> =>
 	[...logs].sort(
 		(a, b) =>
 			severityRank(a.severityText) - severityRank(b.severityText) ||
-			DateTime.Order(b.timestamp, a.timestamp),
+			(a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0),
 	)
 
 const ANCHOR_SLACK_MS = 60 * 1000
@@ -251,7 +251,10 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 						trace_id: t.traceId,
 						// Wider than the 5 shown, so error-level lines can be picked out of it.
 						limit: 20,
-						...logRangeAround(t.startTime),
+						...(logRangeAround(t.startTime) ?? {
+							start_time: sampleRange.startTime,
+							end_time: sampleRange.endTime,
+						}),
 					},
 					{ profile: "list" },
 				),
@@ -278,7 +281,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 						pipe(
 							r.data,
 							Arr.map((p) => ({
-								bucket: DateTime.formatIso(p.bucket),
+								bucket: warehouseDateTimeToIso(p.bucket),
 								count: Number(p.count),
 							})),
 						),
@@ -322,7 +325,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 				logs: pipe(
 					errorFirstLogs(
 						(logsResults[i]?.data ?? []).map((l) => ({
-							timestamp: l.timestamp,
+							timestamp: String(l.timestamp),
 							severityText: l.severityText || "INFO",
 							body: l.body,
 						})),
@@ -341,7 +344,7 @@ const relatedFingerprints = Effect.fn("Observability.errorDetail.related")(funct
 	traces: ReadonlyArray<ErrorDetailTracesOutput>,
 ) {
 	if (traces.length === 0) return []
-	const starts = traces.map((t) => DateTime.toEpochMillis(t.startTime))
+	const starts = traces.map((t) => parseWarehouseDateTime(t.startTime)).filter((ms) => !Number.isNaN(ms))
 	if (starts.length === 0) return []
 	const maxDurationMs = Math.max(...traces.map((t) => t.durationMicros / 1000))
 	const executor = yield* WarehouseExecutor

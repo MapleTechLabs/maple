@@ -183,7 +183,9 @@ describe("get_session_transcript", () => {
 		expect(text).toContain("NET   POST 500 /api/pay (120ms)")
 		// The first event's timestamp rides along so `inspect_trace` prunes to the right day.
 		expect(text).toMatch(
-			new RegExp(`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:0\\d"\\\``),
+			new RegExp(
+				`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:0\\d\\.000Z"\\\``,
+			),
 		)
 
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })

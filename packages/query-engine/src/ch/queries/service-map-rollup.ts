@@ -14,12 +14,19 @@
 
 import { Schema, Effect } from "effect"
 import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { compile, dateTimeString } from "@maple-dev/effect-orm/clickhouse"
+import { compile } from "@maple-dev/effect-orm/clickhouse"
+import { utcAsWireString } from "./utc-bridge"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { ServiceAddressResolutionsHourly, ServiceMapEdgesHourly, Traces, orgIdParam } from "../tables"
+import {
+	ServiceAddressResolutionsHourly,
+	ServiceMapEdgesHourly,
+	Traces,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { serviceMapEdgeJoinQuery } from "./service-map"
 import { CHNumber } from "../schema"
@@ -143,8 +150,8 @@ export function serviceMapEdgesExistingHoursSQL(params: {
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lt(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("hourTs")
 		.format("JSON")
@@ -181,8 +188,8 @@ export function serviceMapResolutionsExistingHoursSQL(params: {
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lt(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("hourTs")
 		.format("JSON")
@@ -207,8 +214,8 @@ export function serviceMapEdgesRollupSQL(
 	params: ServiceMapEdgesRollupParams,
 ): Effect.Effect<CompiledQuery<ServiceMapEdgesHourlyOutput>, QueryBuilderError> {
 	const query = serviceMapEdgeJoinQuery({
-		rangeStart: CH.toDateTime(param.dateTimeString("hourStart")),
-		rangeEnd: CH.toDateTime(param.dateTimeString("hourEnd")),
+		rangeStart: CH.toDateTime(param.dateTime("hourStart")),
+		rangeEnd: CH.toDateTime(param.dateTime("hourEnd")),
 	}).format("JSON")
 
 	// Scope is derived from both join sources filtering OrgId — see
@@ -291,7 +298,7 @@ export function serviceMapResolutionsRollupSQL(
 		.select(($) => ({
 			OrgId: $.OrgId,
 			// Rows go to `ingest` as they are, so `Hour` stays the wire string.
-			Hour: CH.makeExpr(CH.toFragment(CH.toStartOfHour($.Timestamp)), dateTimeString.schema),
+			Hour: utcAsWireString(CH.toStartOfHour($.Timestamp)),
 			SourceService: $.ServiceName,
 			ParentServerAddress: $.ServerAddress,
 			ResolvedTargetService: $.c.ServiceName,

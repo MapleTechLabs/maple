@@ -1,6 +1,7 @@
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
-import type { SpanSearchOutput, TracesRootListOutput } from "../ch"
+import type { SpanSearchOutput } from "../ch"
+import type { ListTracesOutput } from "@maple/domain/tinybird"
 import { WarehouseValidationError } from "@maple/domain/http/warehouse-errors"
 import {
 	WarehouseExecutor,
@@ -111,7 +112,7 @@ const spanLevelSearch = (
 				statusMessage: row.statusMessage ?? "",
 				attributes: row.spanAttributes ?? {},
 				resourceAttributes: row.resourceAttributes ?? {},
-				timestamp: row.timestamp,
+				timestamp: String(row.timestamp),
 			})),
 	)
 }
@@ -155,7 +156,7 @@ const rootLevelSearch = (
 	}
 
 	return Effect.map(
-		executor.query<TracesRootListOutput>("list_traces", params, { profile: "list" }),
+		executor.query<ListTracesOutput>("list_traces", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> => pipe(result.data, Arr.map(toSpanResult)),
 	)
 }

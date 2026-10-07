@@ -25,7 +25,7 @@
 // row schemas are built from `CHNumber` — compile with them or BYO-CH orgs get
 // arithmetic over strings.
 
-import { Schema } from "effect"
+import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	from,
@@ -35,8 +35,15 @@ import {
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { Logs, MetricCatalog, ServiceOperationsMinutely, ServiceOverviewSpans, orgIdParam, utcSecondsParam } from "../tables"
-import { hourFloor } from "./query-helpers"
+import {
+	Logs,
+	MetricCatalog,
+	ServiceOperationsMinutely,
+	ServiceOverviewSpans,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
+import { utcHourFloor } from "./query-helpers"
 
 export interface ServiceLivenessOutput {
 	/** Distinct minutes in the window that carried at least one span. */
@@ -45,8 +52,8 @@ export interface ServiceLivenessOutput {
 	readonly estimatedSpanCount: number
 	readonly errorCount: number
 	readonly estimatedErrorCount: number
-	/** ClickHouse datetime literal; '1970-01-01 00:00:00' when the window is empty. */
-	readonly lastSeen: string
+	/** The newest minute with spans; the Unix epoch when the window is empty. */
+	readonly lastSeen: DateTime.Utc
 }
 
 export interface ServiceLivenessOpts {
@@ -57,10 +64,6 @@ export interface ServiceLivenessOpts {
 /**
  * Group-less volume aggregate for one service over a bounded window. No
  * groupBy, so this is a single row and a near-empty scan.
- *
- * `lastSeen` is stringified for the same reason the pulse union does it, and
- * because a raw DateTime round-trips inconsistently across the managed and BYO
- * backends.
  */
 export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
 	return from(ServiceOperationsMinutely)
@@ -70,13 +73,13 @@ export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
 			estimatedSpanCount: CH.sum($.EstimatedSpanCount),
 			errorCount: CH.sum($.ErrorCount),
 			estimatedErrorCount: CH.sum($.EstimatedErrorCount),
-			lastSeen: CH.toString_(CH.max_($.Minute)),
+			lastSeen: CH.max_($.Minute),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
-			$.Minute.gte(param.dateTimeSeconds("startTime")),
-			$.Minute.lte(param.dateTimeSeconds("endTime")),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.scopeToEnvironment, () => $.DeploymentEnv.eq(param.string("deploymentEnv"))),
 		])
 		.format("JSON")
@@ -115,8 +118,8 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 
 	const logs = from(Logs)
@@ -152,8 +155,8 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Minute.gte(param.dateTimeSeconds("startTime")),
-			$.Minute.lte(param.dateTimeSeconds("endTime")),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lte(utcSecondsParam("endTime")),
 		])
 
 	const metrics = from(MetricCatalog)
@@ -165,8 +168,8 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			lastSeen: CH.toString_(
 				CH.max_(
 					CH.if_(
-						$.LastSeen.gt(param.dateTimeSeconds("endTime")),
-						CH.toDateTime(param.dateTimeString("endTime")),
+						$.LastSeen.gt(utcSecondsParam("endTime")),
+						CH.toDateTime(utcSecondsParam("endTime")),
 						$.LastSeen,
 					),
 				),
@@ -174,10 +177,10 @@ export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
-			$.LastSeen.gte(param.dateTimeSeconds("startTime")),
-			$.FirstSeen.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+			$.LastSeen.gte(utcSecondsParam("startTime")),
+			$.FirstSeen.lte(utcSecondsParam("endTime")),
 		])
 
 	return unionAll(traces, metrics).format("JSON")

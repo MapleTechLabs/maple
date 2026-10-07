@@ -58,6 +58,9 @@ export interface BuilderFixture {
 const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
+/** The same window for builders whose bounds are `DateTime.Utc`. */
+const START_UTC = DateTime.makeUnsafe("2026-01-01T10:30:00Z")
+const END_UTC = DateTime.makeUnsafe("2026-01-03T14:15:00Z")
 const SESSION_ID = "sess_0af7651916cd43dd"
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const SPAN_ID = "b7ad6b7169203331"
@@ -666,7 +669,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "getSessionReplayQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.getSessionReplayQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.getSessionReplayQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -676,7 +679,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplayChunkIndexQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionReplayChunkIndexQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionReplayChunkIndexQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -686,7 +689,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplayEventsQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionReplayEventsQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionReplayEventsQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -700,8 +703,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.sessionReplayEventsQuery({
-					startTime: START_TIME,
-					endTime: END_TIME,
+					startTime: START_UTC,
+					endTime: END_UTC,
 					fromChunkSeq: 16,
 					toChunkSeq: 31,
 					limit: 40,
@@ -736,7 +739,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionTranscriptQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionTranscriptQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionTranscriptQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -746,7 +749,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionActivityQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionActivityQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionActivityQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -1480,8 +1483,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTimeString("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTimeString("hourEnd")),
+					rangeStart: CH.toDateTime(CH.param.dateTime("hourStart")),
+					rangeEnd: CH.toDateTime(CH.param.dateTime("hourEnd")),
 				}).format("JSON"),
 				{ orgId: ORG_ID, hourStart: START_TIME, hourEnd: END_TIME },
 			),
@@ -1495,8 +1498,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTimeString("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTimeString("hourEnd")),
+					rangeStart: CH.toDateTime(CH.param.dateTime("hourStart")),
+					rangeEnd: CH.toDateTime(CH.param.dateTime("hourEnd")),
 					deploymentEnv: "production",
 					parentServiceName: "web",
 				}).format("JSON"),

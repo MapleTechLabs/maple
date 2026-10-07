@@ -17,7 +17,7 @@ import type { AttributeFilter } from "@maple/domain/query-engine"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import type { AttributeIndexMode, LogBodySearchMode } from "../../capabilities"
-import { edgeCondition, interiorConditions } from "./rollup-splice"
+import { edgeCondition, utcInteriorConditions } from "./rollup-splice"
 import { inclusionCondition, inclusionValues, severitySpellings, soleValue } from "./query-helpers"
 
 // Shared options
@@ -342,16 +342,17 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 		// `trimSparseLeadingBuckets`, keeping behavior symmetric across edges.
 		const mv = from(LogsAggregatesHourly)
 			.select(($) => ({
+				// The raw path still returns string buckets and owns the output type.
 				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
 				groupName: buildLogsGroupNameExpr($, groupByService, groupBySeverity),
 				count: CH.sum($.Count),
 			}))
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
-				$.Hour.gte(param.dateTimeSeconds("startTime")),
-				// `param.dateTimeString("endTime")` substitutes as a quoted string literal;
+				$.Hour.gte(utcSecondsParam("startTime")),
+				// `param.dateTime("endTime")` substitutes as a quoted string literal;
 				// `toStartOfHour` only accepts Date/DateTime, so wrap with `toDateTime`.
-				$.Hour.lt(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("endTime")))),
+				$.Hour.lt(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
 				...mvFacetConditions($, opts),
 			])
 			.groupBy("bucket", "groupName")
@@ -485,7 +486,11 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 			name: logsBreakdownName($, opts.groupBy),
 			count: CH.sum($.Count),
 		}))
-		.where(($) => [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour), ...mvFacetConditions($, opts)])
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			...utcInteriorConditions($.Hour),
+			...mvFacetConditions($, opts),
+		])
 		.groupBy("name")
 
 	const combined = fromUnion(unionAll(rawEdges, mvInterior), "breakdown")
@@ -543,7 +548,11 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 		.select(($) => ({
 			total: CH.sum($.Count),
 		}))
-		.where(($) => [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour), ...mvFacetConditions($, opts)])
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			...utcInteriorConditions($.Hour),
+			...mvFacetConditions($, opts),
+		])
 
 	const combined = fromUnion(unionAll(rawEdges, mvInterior), "counts")
 		.select(($) => ({
@@ -751,7 +760,7 @@ export function errorRateByServiceQuery() {
 			bucketErrorLogs: CH.sumIf($.Count, CH.inList($.SeverityText, ["ERROR", "FATAL"])),
 			errorRate: CH.lit(0),
 		}))
-		.where(($) => [$.OrgId.eq(orgIdParam), ...interiorConditions($.Hour)])
+		.where(($) => [$.OrgId.eq(orgIdParam), ...utcInteriorConditions($.Hour)])
 		.groupBy("serviceName")
 
 	return fromUnion(unionAll(rawEdges, mvInterior), "rates")
@@ -803,8 +812,8 @@ function logsFacetsQueryFromMv(
 		$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
 	): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
-		$.Hour.gte(param.dateTimeSeconds("startTime")),
-		$.Hour.lte(param.dateTimeSeconds("endTime")),
+		$.Hour.gte(utcSecondsParam("startTime")),
+		$.Hour.lte(utcSecondsParam("endTime")),
 		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),
 		opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,

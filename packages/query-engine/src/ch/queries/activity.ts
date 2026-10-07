@@ -17,7 +17,7 @@
 // The discovery window must be a SUPERSET of the per-org scan window so no
 // active org is missed for the tick.
 
-import { from, param } from "@maple-dev/effect-orm/clickhouse"
+import { from } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
 import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly, utcSecondsParam } from "../tables"
 
@@ -42,7 +42,7 @@ export function activeOrgsByErrorEventsQuery() {
 export function activeOrgsByTracesQuery() {
 	return from(TracesAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Hour.gte(param.dateTimeSeconds("startTime"))])
+		.where(($) => [$.Hour.gte(utcSecondsParam("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
 		.route("ingest")
@@ -53,7 +53,7 @@ export function activeOrgsByTracesQuery() {
 export function activeOrgsByLogsQuery() {
 	return from(LogsAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Hour.gte(param.dateTimeSeconds("startTime"))])
+		.where(($) => [$.Hour.gte(utcSecondsParam("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
 		.route("ingest")

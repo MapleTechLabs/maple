@@ -1,12 +1,11 @@
-import { DateTime } from "effect"
 import { describe, expect, it } from "vitest"
-import type { TracesRootListOutput } from "../ch"
+import type { ListTracesOutput } from "@maple/domain/tinybird"
 import { toSpanResult } from "./row-mappers"
 
-const row = (overrides: Partial<TracesRootListOutput> = {}): TracesRootListOutput => ({
+const row = (overrides: Partial<ListTracesOutput> = {}): ListTracesOutput => ({
 	traceId: "0af7651916cd43dd8448eb211c80319c",
-	startTime: DateTime.makeUnsafe("2026-04-03T12:00:00.123Z"),
-	endTime: DateTime.makeUnsafe("2026-04-03T12:00:00.123Z"),
+	startTime: "2026-04-03 12:00:00.123456789",
+	endTime: "2026-04-03 12:00:00.123456789",
 	durationMicros: 12_500,
 	spanCount: 1,
 	services: ["checkout"],
@@ -19,6 +18,8 @@ const row = (overrides: Partial<TracesRootListOutput> = {}): TracesRootListOutpu
 	rootHttpRoute: "/orders",
 	rootHttpStatusCode: "201",
 	rootSpanAttributes: '{"http.method":"POST","http.route":"/orders","url.full":""}',
+	rootDeploymentEnv: "",
+	rootServiceVersion: "",
 	hasError: 0,
 	...overrides,
 })

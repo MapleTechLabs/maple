@@ -6,11 +6,11 @@
 // missing column becomes an error. Coercing again downstream only hid which
 // layer was responsible.
 
-import { DateTime, Option, Schema } from "effect"
+import { Option, Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
-import type { ListLogsOutput, ErrorsByTypeOutput } from "@maple/domain/tinybird"
-import type { TracesRootListOutput } from "../ch"
+import type { ListLogsOutput, ListTracesOutput, ErrorsByTypeOutput } from "@maple/domain/tinybird"
 import type { SpanResult, LogEntry, ErrorSummary } from "./types"
+import { warehouseDateTimeToIso } from "../datetime"
 
 const decodeAttributeMap = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
@@ -32,7 +32,7 @@ export const parseProjectedAttributes = (raw: string): Record<string, string> =>
  * case `Ok`/`Error`/`Unset`), matching the span-level, slow-trace and
  * inspect-trace paths. Resource attributes are not read on this path.
  */
-export const toSpanResult = (t: TracesRootListOutput): SpanResult => ({
+export const toSpanResult = (t: ListTracesOutput): SpanResult => ({
 	traceId: Schema.decodeSync(TraceId)(t.traceId),
 	spanId: Option.getOrNull(Schema.decodeUnknownOption(SpanId)(t.rootSpanId)),
 	spanName: t.rootSpanName,
@@ -63,5 +63,5 @@ export const toErrorSummary = (e: ErrorsByTypeOutput): ErrorSummary => ({
 	sampleMessage: e.sampleMessage ?? "",
 	count: e.count,
 	affectedServicesCount: e.affectedServicesCount,
-	lastSeen: DateTime.formatIso(e.lastSeen),
+	lastSeen: warehouseDateTimeToIso(e.lastSeen),
 })
