@@ -604,7 +604,6 @@ export const releaseErrorFingerprints = defineQuery({
 				endTime: payload.endTime,
 				serviceVersion: payload.commitSha,
 			},
-			{ rowSchema: CH.releaseErrorFingerprintsRowSchema },
 		),
 })
 

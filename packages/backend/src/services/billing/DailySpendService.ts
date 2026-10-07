@@ -1,6 +1,6 @@
 import { DailySpendResponse, DailyVolume, WarehouseQueryError } from "@maple/domain/http"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, Effect, Layer } from "effect"
+import { Context, DateTime, Effect, Layer } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -87,7 +87,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				const byDay = new Map<string, { logsGB: number; tracesGB: number; metricsGB: number }>()
 				for (const row of signalRows) {
-					byDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), {
+					byDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), {
 						logsGB: row.logBytes / BYTES_PER_BILLED_GB,
 						tracesGB: row.traceBytes / BYTES_PER_BILLED_GB,
 						metricsGB: row.metricBytes / BYTES_PER_BILLED_GB,

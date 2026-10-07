@@ -40,7 +40,7 @@ import {
 } from "@maple/db"
 import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Ref, Schema } from "effect"
+import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
@@ -312,7 +312,7 @@ const make: Effect.Effect<
 		}
 
 		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
-			startTime: formatWarehouseDateTime(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
+			startTime: DateTime.makeUnsafe(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
 		})
 		return yield* warehouse
 			.crossOrgQuery(systemTenant(knownOrgs[0]!), compiled, {
@@ -1175,8 +1175,8 @@ const make: Effect.Effect<
 			Effect.gen(function* () {
 				const tickParams = {
 					orgId,
-					startTime: formatWarehouseDateTime(windowStartMs),
-					endTime: formatWarehouseDateTime(endMs),
+					startTime: DateTime.makeUnsafe(windowStartMs),
+					endTime: DateTime.makeUnsafe(endMs),
 				}
 				const issuesCompiled = tickWindow.isBootstrap
 					? CH.compile(CH.errorTickBootstrapIssuesQuery(), tickParams)
@@ -1243,8 +1243,8 @@ const make: Effect.Effect<
 				? raw.serviceVersions.map((version) => String(version)).filter((version) => version !== "")
 				: [],
 			count: Number(raw.count ?? 0),
-			firstSeen: String(raw.firstSeen ?? ""),
-			lastSeen: String(raw.lastSeen ?? ""),
+			firstSeenMs: DateTime.toEpochMillis(raw.firstSeen),
+			lastSeenMs: DateTime.toEpochMillis(raw.lastSeen),
 		}))
 
 		const persistence = yield* dbExecute((db) =>
@@ -1260,8 +1260,8 @@ const make: Effect.Effect<
 					topFrame: row.topFrame,
 					serviceVersions: row.serviceVersions,
 					count: row.count,
-					firstSeenMs: parseWarehouseDateTime(row.firstSeen),
-					lastSeenMs: parseWarehouseDateTime(row.lastSeen),
+					firstSeenMs: row.firstSeenMs,
+					lastSeenMs: row.lastSeenMs,
 				})),
 				policy,
 				destinationIds: parsePolicyDestinations(policy.destinationIdsJson),
@@ -1622,8 +1622,8 @@ const make: Effect.Effect<
 							systemTenant(row.orgId),
 							CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
 								orgId: row.orgId,
-								startTime: formatWarehouseDateTime(fromMs),
-								endTime: formatWarehouseDateTime(cutoffMs),
+								startTime: DateTime.makeUnsafe(fromMs),
+								endTime: DateTime.makeUnsafe(cutoffMs),
 							}),
 							{ profile: "discovery", context: "errorTickFirstErrorMinute" },
 						)
@@ -1640,14 +1640,7 @@ const make: Effect.Effect<
 						)
 					}
 					const first = rows[0]
-					const firstErrorMs = first === undefined ? null : parseWarehouseDateTime(first.minute)
-					// A minute that does not parse must not reach the cursor update.
-					if (Number.isNaN(firstErrorMs)) {
-						yield* Effect.logWarning(
-							"Idle error tick cursor lookup returned an unreadable minute",
-						).pipe(Effect.annotateLogs({ orgId: row.orgId, rawMinute: first?.minute }))
-						return []
-					}
+					const firstErrorMs = first === undefined ? null : DateTime.toEpochMillis(first.minute)
 					return [{ orgId: row.orgId, firstErrorMs }]
 				}).pipe(
 					Effect.catchCause((cause) =>

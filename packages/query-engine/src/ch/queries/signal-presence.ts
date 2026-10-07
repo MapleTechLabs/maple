@@ -25,7 +25,7 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "../tables"
-import { hourFloor } from "./query-helpers"
+import { utcHourFloor } from "./query-helpers"
 
 /** The signals an empty state can be missing. Stable — the UI keys copy on these. */
 export type TelemetrySignal = "traces" | "logs" | "metrics" | "sessions" | "product_events"
@@ -61,8 +61,8 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.TraceCount.gt(0),
 		])
 
@@ -75,8 +75,8 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.LogCount.gt(0),
 		])
 
@@ -95,8 +95,8 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.SumMetricCount.add($.GaugeMetricCount)
 				.add($.HistogramMetricCount)
 				.add($.ExpHistogramMetricCount)

@@ -14,7 +14,14 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly, orgIdParam } from "../tables"
+import type { DateTime } from "effect"
+import {
+	ErrorEventsByTime,
+	LogsAggregatesHourly,
+	TracesAggregatesHourly,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
@@ -121,8 +128,8 @@ export function anomalyErrorSpikeCurrentQuery(opts: { limit?: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash", "deploymentEnv")
 		.orderBy(["count", "desc"])
@@ -151,8 +158,8 @@ export function anomalyErrorSpikeBaselineQuery(opts: { limit?: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lt(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash", "deploymentEnv", "h")
 
@@ -235,7 +242,7 @@ export function anomalyLogVolumeTimeseriesQuery() {
 }
 
 export interface AnomalyErrorSpikeTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 
@@ -255,8 +262,8 @@ export function anomalyErrorSpikeTimeseriesQuery() {
 				$.OrgId.eq(orgIdParam),
 				$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 				$.DeploymentEnv.eq(param.string("deploymentEnv")),
-				$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-				$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+				$.Timestamp.gte(utcSecondsParam("startTime")),
+				$.Timestamp.lte(utcSecondsParam("endTime")),
 			])
 			.groupBy("bucket")
 			.orderBy(["bucket", "asc"])
@@ -283,8 +290,8 @@ export function anomalyErrorSpikeServiceTimeseriesQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])

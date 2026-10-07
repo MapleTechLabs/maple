@@ -18,18 +18,18 @@
 // sums are UInt64 and arrive as JSON strings on BYO-ClickHouse, so both row
 // schemas are built from `CHNumber`.
 
-import { Schema } from "effect"
+import { Schema, type DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { hourFloor } from "@maple/query-engine/ch/query-helpers"
+import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 
 const DAY_SECONDS = 86_400
 
 export interface DailySignalVolumeOutput {
-	/** ClickHouse datetime literal at the UTC day boundary, e.g. `2026-07-29 00:00:00`. */
-	readonly day: string
+	/** The UTC day boundary. */
+	readonly day: DateTime.Utc
 	readonly logBytes: number
 	readonly traceBytes: number
 	readonly metricBytes: number
@@ -59,8 +59,8 @@ export function dailySignalVolumeQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("day")
 		.orderBy(["day", "asc"])

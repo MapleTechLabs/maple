@@ -4,6 +4,8 @@
 // by @maple/query-engine — these types exist solely for consumers that import
 // output/param shapes (apps/web, observability layer).
 
+import type { DateTime } from "effect"
+
 // list_traces
 
 export interface ListTracesOutput {
@@ -411,8 +413,8 @@ export interface ErrorsByTypeOutput {
 	readonly sampleMessage: string
 	readonly count: number
 	readonly affectedServicesCount: number
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 }
 
 export interface ErrorsByTypeParams {
@@ -433,7 +435,7 @@ export interface ErrorsByTypeParams {
 // errors_timeseries
 
 export interface ErrorsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 

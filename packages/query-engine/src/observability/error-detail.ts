@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, pipe } from "effect"
+import { Array as Arr, DateTime, Effect, pipe } from "effect"
 import type { ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import type { ErrorDetailTracesOutput } from "../ch/queries/errors"
 import { parseWarehouseDateTime, formatWarehouseDateTime } from "../datetime"
@@ -173,10 +173,10 @@ const ANCHOR_SLACK_MS = 60 * 1000
 const RELATED_SLACK_MS = 5 * 60 * 1000
 
 /** The same width as `range`, ending just after `lastSeen`. */
-const rangeEndingAt = (range: TimeRange, lastSeen: string): TimeRange | undefined => {
-	const lastMs = parseWarehouseDateTime(lastSeen)
+const rangeEndingAt = (range: TimeRange, lastSeen: DateTime.Utc): TimeRange | undefined => {
+	const lastMs = DateTime.toEpochMillis(lastSeen)
 	const width = parseWarehouseDateTime(range.endTime) - parseWarehouseDateTime(range.startTime)
-	if (Number.isNaN(lastMs) || Number.isNaN(width)) return undefined
+	if (Number.isNaN(width)) return undefined
 	return {
 		startTime: formatWarehouseDateTime(lastMs - width),
 		endTime: formatWarehouseDateTime(lastMs + ANCHOR_SLACK_MS),
@@ -281,7 +281,10 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 					Effect.map((r) =>
 						pipe(
 							r.data,
-							Arr.map((p) => ({ bucket: String(p.bucket), count: Number(p.count) })),
+							Arr.map((p) => ({
+								bucket: DateTime.formatIso(p.bucket),
+								count: Number(p.count),
+							})),
 						),
 					),
 				)
@@ -293,8 +296,8 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 			: {
 					timeRange: summaryRange,
 					occurrences: summaryRow.occurrences,
-					firstSeen: summaryRow.firstSeen,
-					lastSeen: summaryRow.lastSeen,
+					firstSeen: DateTime.formatIso(summaryRow.firstSeen),
+					lastSeen: DateTime.formatIso(summaryRow.lastSeen),
 					services: summaryRow.services,
 					serviceCount: summaryRow.serviceCount,
 					noExceptionCount: summaryRow.noExceptionCount,

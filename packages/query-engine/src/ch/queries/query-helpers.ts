@@ -3,6 +3,7 @@
 // Reusable expression builders and WHERE condition helpers used across
 // traces, alerts, services, and metrics queries.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -147,6 +148,11 @@ export function inclusionValues(
  */
 export function hourFloor(name: string): CH.Expr<string> {
 	return CH.toStartOfHour(CH.toDateTime(param.dateTimeString(name)))
+}
+
+/** {@link hourFloor} for an `Hour` column that decodes to `DateTime.Utc`. */
+export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
+	return CH.toStartOfHour(CH.toDateTime(param.dateTime(name)))
 }
 
 /**

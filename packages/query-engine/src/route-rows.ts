@@ -14,7 +14,7 @@
  * driver — the one input a shaper needs beyond its rows is the window's
  * duration, and the caller hands that in.
  */
-import { Option, Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
 
@@ -274,6 +274,12 @@ export interface ErrorByType {
 	lastSeen: Date
 }
 
+/** A decoded `DateTime.Utc` in process, or its string form once it has crossed JSON. */
+const toDate = (value: unknown): Date =>
+	DateTime.isDateTime(value)
+		? DateTime.toDateUtc(value)
+		: new Date(warehouseDateTimeToIso(String(value ?? "")))
+
 export function coerceErrorsByTypeRows(rows: ReadonlyArray<Record<string, unknown>>): ErrorByType[] {
 	return rows.map((raw) => ({
 		fingerprintHash: String(raw.fingerprintHash ?? ""),
@@ -281,8 +287,8 @@ export function coerceErrorsByTypeRows(rows: ReadonlyArray<Record<string, unknow
 		sampleMessage: String(raw.sampleMessage ?? ""),
 		count: Number(raw.count),
 		affectedServicesCount: Number(raw.affectedServicesCount),
-		firstSeen: new Date(warehouseDateTimeToIso(String(raw.firstSeen ?? ""))),
-		lastSeen: new Date(warehouseDateTimeToIso(String(raw.lastSeen ?? ""))),
+		firstSeen: toDate(raw.firstSeen),
+		lastSeen: toDate(raw.lastSeen),
 	}))
 }
 

@@ -2,8 +2,8 @@ import { MAX_VERIFICATION_ATTEMPTS, type VerificationVerdict, type OrgId } from 
 import { RoleName, UserId } from "@maple/domain/primitives"
 import { errorIssuePullRequests, errorIssues, type ErrorIssueVerificationRow } from "@maple/db"
 import { and, eq } from "drizzle-orm"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { CH } from "@maple/query-engine"
+import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -156,8 +156,8 @@ const make: Effect.Effect<
 		const compiled = CH.compile(CH.errorIssueVersionsSinceQuery({ limit: VERSION_SCAN_LIMIT }), {
 			orgId: row.orgId,
 			fingerprintHash,
-			startTime: formatWarehouseDateTime(mergedAtMs),
-			endTime: formatWarehouseDateTime(nowMs),
+			startTime: DateTime.makeUnsafe(mergedAtMs),
+			endTime: DateTime.makeUnsafe(nowMs),
 		})
 		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
 			context: "errorIssueVersionsSince",
