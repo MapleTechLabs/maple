@@ -116,26 +116,30 @@ const isNotFound = (result: TbResult): boolean =>
 	/not found|does not exist|no branch|unknown branch/i.test(`${result.stdout}\n${result.stderr}`)
 
 /**
- * The branch's admin token, from the environments API: each entry carries the
- * branch's own `token`, and the workspace admin token may read the list.
+ * The branch's id and admin token, from the environments API: each entry carries
+ * the branch's own `token`, and the workspace admin token may read the list.
  * `tb token ls --branch=…` used to do this, but see the auth note above.
  */
-const resolveBranchAdminToken = async (
+const resolveBranch = async (
 	parent: { host: string; token: string },
 	branchName: string,
-): Promise<string> => {
+): Promise<{ id: string; token: string }> => {
 	const response = await fetch(`${parent.host}/v1/environments`, {
 		headers: { Authorization: `Bearer ${parent.token}` },
 	})
 	if (!response.ok) {
 		fail(`Could not list Tinybird branches (HTTP ${response.status}).`)
 	}
-	const parsed = (await response.json()) as { environments?: { name?: string; token?: string }[] }
-	const token = parsed.environments?.find((entry) => entry.name === branchName)?.token?.trim()
-	if (!token) {
-		fail(`Branch ${branchName} is not in the environments list, or has no token.`)
+	const parsed = (await response.json()) as {
+		environments?: { id?: string; name?: string; token?: string }[]
 	}
-	return token as string
+	const entry = parsed.environments?.find((candidate) => candidate.name === branchName)
+	const id = entry?.id?.trim()
+	const token = entry?.token?.trim()
+	if (!id || !token) {
+		fail(`Branch ${branchName} is not in the environments list, or has no id or token.`)
+	}
+	return { id: id as string, token: token as string }
 }
 
 const exportToGithubEnv = (vars: Record<string, string>): void => {
@@ -168,7 +172,8 @@ const up = async (branchName: string): Promise<void> => {
 
 	// 2. The branch's admin token (read + append scopes): the deploy below runs as
 	//    the branch, and the workers bind to it afterwards.
-	const branch = { host: parent.host, token: await resolveBranchAdminToken(parent, branchName) }
+	const { id: branchId, token: branchToken } = await resolveBranch(parent, branchName)
+	const branch = { host: parent.host, token: branchToken }
 
 	// 3. Deploy this PR's datasources/MVs into the branch. The branch is ephemeral,
 	//    so destructive schema iteration is acceptable.
@@ -182,8 +187,14 @@ const up = async (branchName: string): Promise<void> => {
 
 	// 4. Hand the branch creds to the rest of the workflow. The branch is reached on
 	//    the same regional host as its parent — the branch-scoped token does the
-	//    routing — so only the token changes.
-	exportToGithubEnv({ TINYBIRD_HOST: branch.host, TINYBIRD_TOKEN: branch.token })
+	//    routing, so only the token changes. Raw-SQL JWTs are signed with the
+	//    branch's admin token and name the branch, or they would query the parent.
+	exportToGithubEnv({
+		TINYBIRD_HOST: branch.host,
+		TINYBIRD_TOKEN: branch.token,
+		TINYBIRD_SIGNING_KEY: branch.token,
+		TINYBIRD_WORKSPACE_ID: branchId,
+	})
 	console.log(`✓ Tinybird branch ${branchName} ready; preview stack will bind to it.`)
 }
 

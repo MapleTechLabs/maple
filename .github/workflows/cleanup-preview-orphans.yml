@@ -22,7 +22,7 @@ concurrency:
 jobs:
     sweep:
         runs-on: ubuntu-latest
-        timeout-minutes: 20
+        timeout-minutes: 120
         # STOPGAP: borrows `pr-preview` only so the OIDC subject matches Infisical's allowlist.
         # Do not add required reviewers to `pr-preview` (cron would park). Fix: allowlist
         # `repo:<org>/<repo>:ref:refs/heads/main`, then drop this line.
@@ -33,9 +33,6 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - name: Setup mise (toolchain)
-              uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-
             # Before secrets load, so the installer never sees them. `continue-on-error` so a
             # tinybird.co outage skips only the Tinybird sweep, not all of them.
             - name: Install Tinybird CLI
@@ -43,24 +40,37 @@ jobs:
               continue-on-error: true
               run: curl https://tinybird.co | sh
 
-            - name: Load deployment secrets from Infisical
-              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+            # Toolchain, Infisical secrets, AWS OIDC credentials, deps. The deploy role must
+            # trust `repo:<org>/<repo>:environment:pr-preview`, as for deploy-pr-preview.yml.
+            - name: Deploy setup
+              id: setup
+              uses: ./.github/actions/deploy-setup
               with:
-                  method: "oidc"
-                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  env-slug: ${{ env.INFISICAL_ENV_SLUG }}
-                  export-type: "env"
-                  secret-path: "/"
+                  infisical-env-slug: ${{ env.INFISICAL_ENV_SLUG }}
+                  infisical-identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  infisical-project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+                  ingest-binary: "false"
 
-            - name: Install dependencies
-              run: bun install --frozen-lockfile
+            - name: Build alchemy deps
+              id: build-deps
+              run: bun run alchemy:build-deps
 
             - name: Sweep orphaned Tinybird PR branches
               if: ${{ !cancelled() && env.TINYBIRD_TOKEN != '' && steps.install-tinybird-cli.outcome == 'success' }}
               env:
                   GITHUB_TOKEN: ${{ github.token }}
               run: bun scripts/tinybird-pr-branch.ts sweep
+
+            # Whole closed-PR stages (AWS included) via `alchemy destroy`, then their Neon
+            # branch and retained R2 bucket. Before the Worker/Hyperdrive sweeps: alchemy
+            # destroy wants its resources present.
+            - name: Tear down orphaned preview stages
+              if: ${{ !cancelled() && steps.build-deps.outcome == 'success' && env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
+              run: bun scripts/preview-stage-orphan-sweep.ts
 
             # Workers before Hyperdrive (zombie crons on a deleted config flood logs), and
             # Queues before Workers (a registered consumer can't be deleted, error 10064).
@@ -70,7 +80,7 @@ jobs:
                   GITHUB_TOKEN: ${{ github.token }}
               run: bun scripts/cloudflare-worker-orphan-sweep.ts
 
-            # Residual: previews no longer create Hyperdrive configs, but leaked
+            # Each preview creates one; leaked
             # `maple-db-pr-*` configs count against the 25-per-account cap.
             - name: Sweep orphaned Hyperdrive PR configs
               if: ${{ !cancelled() && env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}

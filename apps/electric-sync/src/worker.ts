@@ -4,30 +4,34 @@
  */
 import {
 	cachedRecoverable,
+	type MapleDomains,
 	type MapleRegion,
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
-import { authEnv, merge, optionalPlain, optionalSecret, selfObservabilityEnv } from "@maple/infra/env"
+import {
+	authEnv,
+	derived,
+	merge,
+	optionalPlain,
+	optionalSecret,
+	selfObservabilityEnv,
+} from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 
-const configuredEnv = (stage: MapleStage, region: MapleRegion) =>
+const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		authEnv,
 		optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-		// PR previews get no Electric config: shared `dev` credentials would serve another
-		// stage's data. Unset ELECTRIC_URL means 503 and the web app falls back to fetches.
-		...(stage.kind === "pr"
-			? []
-			: [
-					optionalPlain("ELECTRIC_URL"),
-					optionalPlain("ELECTRIC_SOURCE_ID"),
-					optionalSecret("ELECTRIC_SECRET"),
-				]),
+		// A preview proxies its own Electric, never the shared `dev` one (another stage's data).
+		stage.kind === "pr" && domains.electric
+			? derived("ELECTRIC_URL", `https://${domains.electric}`)
+			: merge(optionalPlain("ELECTRIC_URL"), optionalPlain("ELECTRIC_SOURCE_ID")),
+		optionalSecret("ELECTRIC_SECRET"),
 		selfObservabilityEnv(stage, region),
 	)
 
@@ -42,7 +46,7 @@ const props = Effect.gen(function* () {
 		workersDev: true,
 		// Custom domain, not a zone route: routes create no DNS, so pr hosts would NXDOMAIN.
 		domain: domains.sync,
-		env: yield* configuredEnv(stage, region),
+		env: yield* configuredEnv(stage, region, domains),
 	}
 })
 

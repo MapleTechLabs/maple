@@ -12,8 +12,8 @@ Maple stores relational application state in PostgreSQL with a schema defined by
   `localConnectionString`.
 - **Non-Worker local entrypoints and tests:** embedded PGlite. `MAPLE_DB_URL` is a PGlite data
   directory, or `memory://` for an ephemeral database. It is not a remote database URL.
-- **PR previews:** no application database while preview deploys are disabled. Routes that
-  need `Database` fail normally; DB-free routes such as health checks continue to work.
+- **PR previews:** a Neon branch `pr-<n>` per preview, migrated by the deploy like prd's
+  `main` and deleted on teardown, behind one Hyperdrive config (`docs/pr-previews.md`).
 
 Application code keeps timestamps as epoch-millisecond numbers and converts at the Drizzle
 boundary. Use `msToDate` / `dateToMs` from `packages/backend/src/platform/time.ts` instead of bare
@@ -109,8 +109,9 @@ SELECT rolname FROM pg_roles WHERE rolname LIKE 'pscale\_api\_%' AND NOT pg_has_
 The ingest gateway's credential is declared rather than minted: `Planetscale.PostgresRole` in
 `alchemy.run.ts` inherits `postgres`, its pooled 6432 URL is the fleet's `maple-pg-url` secret, and
 its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
-deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
-without a database branch (PR previews).
+deletes the old role. A preview's gateway logs in to its Neon branch's pooled endpoint instead.
+`MAPLE_INGEST_PG_URL` in Infisical remains only for a stage that deploys a fleet without a declared
+database, which no profile does today.
 
 Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric-db-role", {
 withReplication: true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`).

@@ -33,7 +33,8 @@ import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSo
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		selfObservabilityEnv(stage, region),
-		connectorConfigEnv,
+		// Not on previews: no webhook hostname, and a socket would fight dev's bot session.
+		...(stage.kind === "pr" ? [] : [connectorConfigEnv]),
 		// App link base, and the chart-image signing key (without it charts render as text).
 		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),

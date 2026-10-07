@@ -1,6 +1,6 @@
 import { MapleFlush } from "@maple-dev/effect-sdk/client"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { ingestUrl } from "./ingest-url"
+import { selfIngestUrl } from "./ingest-url"
 
 // Buffer-backed client telemetry with flush-on-unload. `Maple.layer`
 // (`Otlp.layerJson`) exports on a 5s timer and never flushes on `pagehide`, so
@@ -14,7 +14,7 @@ import { ingestUrl } from "./ingest-url"
 // the flushable config has no dedicated field for it.
 const telemetry = MapleFlush.make({
 	serviceName: "maple-web",
-	endpoint: ingestUrl,
+	endpoint: selfIngestUrl,
 	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
 	environment: import.meta.env.MODE,
 	serviceVersion: import.meta.env.VITE_COMMIT_SHA,

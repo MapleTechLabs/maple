@@ -69,10 +69,10 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
     "migratesDatabase": false,
   },
   "pr-12": {
-    "database": "none",
+    "database": "preview",
     "deploys": {
       "collector": false,
-      "electric": false,
+      "electric": true,
       "ingest": true,
       "replayBlobs": false,
       "sandbox": false,
@@ -99,7 +99,7 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
         "memory": 3072,
       },
     },
-    "migratesDatabase": false,
+    "migratesDatabase": true,
   },
   "prd": {
     "database": "ref",

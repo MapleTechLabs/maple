@@ -2,7 +2,6 @@ import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
 import * as Output from "alchemy/Output"
-import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
 import {
 	COLLECTOR_DNS_LABEL,
@@ -17,7 +16,7 @@ import {
 } from "@maple/infra/aws"
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
 import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
-import type { MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
+import type { MapleDbLogin, MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
 	resolveDeploymentEnvironment,
 	resolveStorageJurisdiction,
@@ -85,8 +84,8 @@ export interface CreateMapleIngestOptions extends Pick<
 	MapleStackContext,
 	"stage" | "region" | "domains" | "profile"
 > {
-	/** prd's gateway role; a stage without a database branch reads `MAPLE_INGEST_PG_URL` instead. */
-	dbRole?: Planetscale.PostgresRole
+	/** The declared database's gateway login; a stage without one reads `MAPLE_INGEST_PG_URL` instead. */
+	dbLogin?: MapleDbLogin
 }
 
 /**
@@ -115,7 +114,7 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, ena
  * ARM64 EC2 hosts with the WAL on local NVMe, behind a public ALB, plus an OTel
  * collector for the gateway's own telemetry, reached by Cloud Map private DNS.
  */
-export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
 		const replayBlobs = yield* replayBlobWriterCredentials(stage, region, profile.deploys.replayBlobs)
 		const { desiredCount, scaling, instanceType, taskSize, collectorTaskSize, selfTraceSampleRatio } =
@@ -267,8 +266,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 		const tinybirdToken = yield* secret("tinybird-token", yield* requiredPlain("TINYBIRD_TOKEN"))
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
 		// ingest keys through the pooler as its own role.
-		const pgUrl = dbRole
-			? yield* secret("maple-pg-url", pgUrlRequireSsl(dbRole.connectionUrlPooled))
+		const pgUrl = dbLogin
+			? yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
 			: yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
 		const keyEncryptionKey = yield* secret(
 			"ingest-key-encryption-key",
@@ -514,7 +513,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbRole }: C
 				INGEST_KEY_STORE_BACKEND: "postgres",
 				// A replaced role changes the task definition, so the fleet rolls onto the
 				// new secret before alchemy deletes the old role.
-				...(dbRole && { MAPLE_PG_ROLE_ID: dbRole.id }),
+				...(dbLogin && { MAPLE_PG_ROLE_ID: dbLogin.id }),
 
 				// Trust `Cf-IPCountry` (fills `session_replays.Country`) only where the ALB admits
 				// nothing but Cloudflare; a preview's open ALB would let any client set it.

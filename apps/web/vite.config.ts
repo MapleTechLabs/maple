@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
 	const overrideKeys = [
 		"VITE_API_BASE_URL",
 		"VITE_INGEST_URL",
+		"VITE_MAPLE_SELF_INGEST_URL",
 		"VITE_ELECTRIC_SYNC_URL",
 		"VITE_MAPLE_REGION",
 		"VITE_MAPLE_REGION_APP_URLS",
