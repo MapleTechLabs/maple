@@ -20,7 +20,7 @@ describe("trust pages", () => {
 		const contact = JSON.stringify(contactPage)
 		expect(about).toContain("Makisuo, Inc.")
 		expect(contact).toContain("mailto:support@maple.dev")
-		expect(contact).toContain("mailto:privacy@getmaple.dev")
+		expect(contact).toContain("mailto:privacy@maple.dev")
 	})
 
 	it("render .md twins with absolute links and the same headings", async () => {
