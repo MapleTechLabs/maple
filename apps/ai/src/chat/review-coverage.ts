@@ -13,6 +13,8 @@ export interface ReviewCoverage {
 	readonly observe: (tool: string, answer: string) => void
 	/** Reviewed files with a patch whose diff no `pr_file_diff` answer has shown yet, in listing order. */
 	readonly unread: () => ReadonlyArray<string>
+	/** How many reviewed files are due and how many of those were read, for the live status. */
+	readonly counts: () => { readonly due: number; readonly read: number }
 }
 
 /**
@@ -35,6 +37,7 @@ export const makeReviewCoverage = (kickoff: string): ReviewCoverage => {
 			}
 		},
 		unread: () => [...due].filter((path) => !read.has(path)),
+		counts: () => ({ due: due.size, read: [...due].filter((path) => read.has(path)).length }),
 	}
 }
 
