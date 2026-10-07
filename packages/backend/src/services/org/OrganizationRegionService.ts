@@ -38,6 +38,12 @@ export interface OrganizationRegionServiceApi {
 	readonly region: MapleRegion
 	/** Fails when the organization lives in another region. Never fails on a Clerk outage. */
 	readonly ensureServedHere: (orgId: OrgId) => Effect.Effect<void, OrganizationWrongRegionError>
+	/**
+	 * Whether this instance is the organization's home. `None` when Clerk could not say: for
+	 * background work that every region receives and exactly one must do, which has to wait
+	 * rather than be served on a guess.
+	 */
+	readonly servedHere: (orgId: OrgId) => Effect.Effect<Option.Option<boolean>>
 }
 
 export class OrganizationRegionService extends Context.Service<
@@ -111,7 +117,15 @@ export class OrganizationRegionService extends Context.Service<
 			})
 		})
 
-		return { region, ensureServedHere } satisfies OrganizationRegionServiceApi
+		const servedHere: OrganizationRegionServiceApi["servedHere"] = Effect.fn(
+			"OrganizationRegionService.servedHere",
+		)(function* (orgId) {
+			// No directory means one instance, which serves everything.
+			if (clerk === undefined) return Option.some(true)
+			return Option.map(yield* read(orgId), (metadata) => organizationHomeRegion(metadata) === region)
+		})
+
+		return { region, ensureServedHere, servedHere } satisfies OrganizationRegionServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
@@ -120,5 +134,6 @@ export class OrganizationRegionService extends Context.Service<
 	static readonly servesAll = Layer.succeed(this, {
 		region: "us",
 		ensureServedHere: () => Effect.void,
+		servedHere: () => Effect.succeed(Option.some(true)),
 	})
 }
