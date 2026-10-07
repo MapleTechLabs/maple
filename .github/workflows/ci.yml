@@ -706,7 +706,7 @@ jobs:
         needs: changes
         if: ${{ needs.changes.outputs.web == 'true' }}
         runs-on: ubuntu-latest
-        timeout-minutes: 12
+        timeout-minutes: 15
         # One Playwright worker per machine (playwright.config.ts) so concurrent
         # browsers cannot distort frame timings. service-map (~125s of tests) is split
         # across two machines and the two non-Chromium smokes get one each; the short
@@ -810,11 +810,22 @@ jobs:
             #
             # If chromium ever fails to launch here, the runner image dropped a library:
             # re-enable this for chromium rather than debugging the browser.
+            #
+            # The apt mirror sometimes stalls a connection instead of failing it, which
+            # hung apt for 11 minutes and timed the job out. Cap each read and each
+            # attempt so a stalled mirror costs a retry, not the run.
             - name: Install Playwright system deps
               if: ${{ matrix.browser != 'chromium' }}
               env:
                   PW_BROWSER: ${{ matrix.browser }}
-              run: bunx playwright install-deps "$PW_BROWSER"
+              run: |
+                  printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' \
+                      | sudo tee /etc/apt/apt.conf.d/99ci-timeouts > /dev/null
+                  for attempt in 1 2 3; do
+                      timeout 180 bunx playwright install-deps "$PW_BROWSER" && exit 0
+                      echo "::warning::playwright install-deps attempt $attempt failed"
+                  done
+                  exit 1
               working-directory: apps/web
 
             - name: Run perf shard
