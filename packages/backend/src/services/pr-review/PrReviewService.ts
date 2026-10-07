@@ -197,6 +197,15 @@ export interface PrReviewServiceApi {
 	 * head that was already reviewed is reviewed again. Never fails, like the webhook entry.
 	 */
 	readonly reviewNow: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
+	/**
+	 * Show a running review's progress on its comment. Never fails and never touches the check run:
+	 * it is a feed, and a late write must not undo a finished check.
+	 */
+	readonly recordProgress: (
+		orgId: OrgId,
+		reviewId: PrReviewId,
+		progress: PrReviewProgress,
+	) => Effect.Effect<void>
 	/** The turn ended without a report. */
 	readonly failReview: (
 		orgId: OrgId,
@@ -425,9 +434,25 @@ export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string
 const STATUS_OPEN = "<!-- maple-pr-review:status"
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
 
+/** What a running review has done so far, as its comment shows it while it works. */
+export interface PrReviewProgress {
+	readonly startedAt: number
+	readonly updatedAt: number
+	readonly stepCount: number
+	/** The latest tool calls as lines of English, oldest first. */
+	readonly steps: ReadonlyArray<{ readonly label: string; readonly at: number }>
+	/** Reviewed files with a diff, and how many of those the pass has read; 0 due before the listing. */
+	readonly filesDue: number
+	readonly filesRead: number
+	/** Findings saved with `record_finding` so far, by severity. */
+	readonly findings: Readonly<Record<PrReviewSeverity, number>>
+	/** The pass stopped without a report and the close-out is writing up what it found. */
+	readonly closingOut: boolean
+}
+
 /** What a review's comment says before its result replaces it. */
 export type PrReviewStatusNotice =
-	| { readonly kind: "reviewing"; readonly headSha: string }
+	| { readonly kind: "reviewing"; readonly headSha: string; readonly progress?: PrReviewProgress }
 	| { readonly kind: "failed"; readonly headSha: string; readonly reason?: PrReviewFailureReason }
 	| { readonly kind: "superseded"; readonly headSha: string }
 
@@ -435,11 +460,78 @@ export type PrReviewStatusNotice =
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
 	`The review of ${sha} could not finish.${reason === undefined ? "" : ` ${PR_REVIEW_FAILURE_COPY[reason]}`}`
 
+/** `45s`, `4m 05s`, `1h 02m`. */
+export const formatElapsed = (ms: number): string => {
+	const seconds = Math.max(0, Math.floor(ms / 1000))
+	if (seconds < 60) return `${seconds}s`
+	const minutes = Math.floor(seconds / 60)
+	if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`
+	return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`
+}
+
+/** Steps the comment lists under "Recent steps". */
+const LISTED_STEPS = 8
+
+/**
+ * A step label (`Sandbox grep · a|b`) with its argument in a code span: the argument is the model's
+ * text, and a bare `@name` or markdown in it would mention someone or break the comment.
+ */
+const stepText = (label: string): string => {
+	const split = label.indexOf(" · ")
+	const phrase = (split === -1 ? label : label.slice(0, split)).replace(/[^\w\s-]/g, "")
+	if (split === -1) return phrase
+	return `${phrase} \`${label
+		.slice(split + 3)
+		.replace(/`/g, "'")
+		.replace(/\n/g, " ")}\``
+}
+
+/** The live part of a "reviewing" notice: where the pass is, what it found, what it just did. */
+const progressLines = (progress: PrReviewProgress): ReadonlyArray<string> => {
+	const files =
+		progress.filesDue === 0
+			? "not listed yet"
+			: `${Math.min(progress.filesRead, progress.filesDue)} of ${progress.filesDue}`
+	const found = (["critical", "warn", "info"] as const)
+		.filter((severity) => progress.findings[severity] > 0)
+		.map((severity) => `${SEVERITY_MARK[severity]} ${progress.findings[severity]}`)
+	const latest = progress.steps.at(-1)
+	const now = progress.closingOut
+		? "Writing up what it found; the review pass ended before it filed a report"
+		: latest === undefined
+			? "Starting"
+			: stepText(latest.label)
+	const recent = progress.steps.slice(-LISTED_STEPS).reverse()
+	return [
+		"",
+		"| Elapsed | Diffs read | Findings so far | Tool calls |",
+		"| --- | --- | --- | --- |",
+		`| ${formatElapsed(progress.updatedAt - progress.startedAt)} | ${files} | ${found.length === 0 ? "none" : found.join(" ")} | ${progress.stepCount} |`,
+		"",
+		`**Now:** ${now}`,
+		...(recent.length === 0
+			? []
+			: [
+					"",
+					"<details><summary>Recent steps</summary>",
+					"",
+					...recent.map(
+						(step) =>
+							`- \`+${formatElapsed(step.at - progress.startedAt)}\` ${stepText(step.label)}`,
+					),
+					"",
+					"</details>",
+				]),
+		"",
+		`<sub>Last activity ${new Date(progress.updatedAt).toISOString().slice(11, 19)} UTC</sub>`,
+	]
+}
+
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
  *
- * `undefined` leaves the comment alone: a failure or a supersede only replaces its own
- * "reviewing" notice, so a late one cannot overwrite a summary that was already published.
+ * `undefined` leaves the comment alone: a failure, a supersede or a progress update only replaces its
+ * own "reviewing" notice, so a late one cannot overwrite a summary that was already published.
  */
 export const withReviewStatus = (
 	existing: string | undefined,
@@ -447,10 +539,8 @@ export const withReviewStatus = (
 	notice: PrReviewStatusNotice,
 	mention: string,
 ): string | undefined => {
-	if (
-		notice.kind !== "reviewing" &&
-		!(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)
-	) {
+	const updatesOnly = notice.kind !== "reviewing" || notice.progress !== undefined
+	if (updatesOnly && !(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)) {
 		return undefined
 	}
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
@@ -458,6 +548,9 @@ export const withReviewStatus = (
 		reviewing: [
 			"> [!NOTE]",
 			`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
+			...(notice.kind === "reviewing" && notice.progress !== undefined
+				? progressLines(notice.progress)
+				: []),
 		],
 		failed: [
 			"> [!WARNING]",
@@ -889,7 +982,9 @@ export const buildPublication = (input: {
 		// finished, found nothing to address and is confident the change is safe.
 		conclusion: blocking
 			? "failure"
-			: hasIssues || input.partial || (confidence !== undefined && prReviewConfidenceTone(confidence.confidence) !== "safe")
+			: hasIssues ||
+				  input.partial ||
+				  (confidence !== undefined && prReviewConfidenceTone(confidence.confidence) !== "safe")
 				? "neutral"
 				: "success",
 		annotations,
@@ -1285,6 +1380,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								}),
 							),
 						)
+					// Progress is the comment's alone: the check already says "Reviewing".
+					const progress = notice.kind === "reviewing" && notice.progress !== undefined
 					yield* Effect.all(
 						[
 							provider
@@ -1295,13 +1392,17 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										withReviewStatus(existing, marker, notice, provider.reviewerMention),
 								})
 								.pipe(warn("comment")),
-							provider
-								.writePullRequestCheck(
-									installation,
-									ref,
-									reviewCheckFor(notice, provider.reviewerMention),
-								)
-								.pipe(warn("check run")),
+							...(progress
+								? []
+								: [
+										provider
+											.writePullRequestCheck(
+												installation,
+												ref,
+												reviewCheckFor(notice, provider.reviewerMention),
+											)
+											.pipe(warn("check run")),
+									]),
 						],
 						{ concurrency: "unbounded", discard: true },
 					)
@@ -2530,6 +2631,36 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				},
 			)
 
+			const recordProgress: PrReviewServiceApi["recordProgress"] = (orgId, reviewId, progress) =>
+				Effect.gen(function* () {
+					const review = yield* getReview(orgId, reviewId)
+					// Only an active review has a "reviewing" notice worth updating.
+					if (Option.isNone(review) || !ACTIVE_STATUSES.includes(review.value.status)) return
+					const repository = yield* repositories
+						.getRepositoryById(orgId, review.value.repositoryId)
+						.pipe(Effect.mapError(toPersistence))
+					if (Option.isNone(repository)) return
+					yield* postReviewStatus(orgId, reviewId, repository.value, review.value.number, {
+						kind: "reviewing",
+						headSha: review.value.headSha,
+						// The row's clock, so a turn restarted after a deploy keeps counting from the start.
+						progress: { ...progress, startedAt: review.value.startedAt ?? progress.startedAt },
+					})
+				}).pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("[PrReview] could not record the review progress").pipe(
+							Effect.annotateLogs({ orgId, reviewId, error: error.message }),
+						),
+					),
+					Effect.withSpan("PrReviewService.recordProgress", {
+						attributes: {
+							orgId,
+							"maple.pr_review.id": reviewId,
+							"maple.pr_review.step_count": progress.stepCount,
+						},
+					}),
+				)
+
 			const reviewTarget: PrReviewServiceApi["reviewTarget"] = Effect.fn(
 				"PrReviewService.reviewTarget",
 			)(function* (orgId, reviewId) {
@@ -2569,6 +2700,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				reviewNow,
 				getReview,
 				submitReview,
+				recordProgress,
 				failReview,
 			} satisfies PrReviewServiceApi
 		}),

@@ -35,12 +35,20 @@ const SALIENT_KEYS = [
 	"service_name",
 	"service",
 	"path",
+	"paths",
+	"title",
+	"command",
 	"sql",
 ] as const
 
 const asText = (value: unknown): string | null => {
 	if (typeof value === "string") return value.trim() || null
 	if (typeof value === "number" || typeof value === "boolean") return String(value)
+	// `paths: ["a.ts", "b.ts", "c.ts"]` reads as `a.ts +2`.
+	if (Array.isArray(value)) {
+		const first = asText(value[0])
+		return first === null ? null : value.length > 1 ? `${first} +${value.length - 1}` : first
+	}
 	return null
 }
 
@@ -80,9 +88,14 @@ export interface ProgressRecorder {
 	readonly step: (tool: string, input: ToolCallInput, nowMs: number) => InvestigationProgress | undefined
 	/** The record as it stands, for the flush a run's end owes its last steps. */
 	readonly pending: () => InvestigationProgress | undefined
+	/** The record as it stands, written or not, for a write the run forces at a phase change. */
+	readonly current: () => InvestigationProgress
 }
 
-export const makeProgressRecorder = (): ProgressRecorder => {
+/** A review edits a GitHub comment per write, so it beats slower than an investigation's row. */
+export const REVIEW_PROGRESS_HEARTBEAT_MS = 30_000
+
+export const makeProgressRecorder = (heartbeatMs = PROGRESS_HEARTBEAT_MS): ProgressRecorder => {
 	let steps: Array<InvestigationStep> = []
 	let stepCount = 0
 	let lastWriteMs: number | undefined
@@ -102,13 +115,17 @@ export const makeProgressRecorder = (): ProgressRecorder => {
 			)
 			dirty = true
 			// The first step always writes; making a reader wait a heartbeat for it is the whole complaint.
-			if (lastWriteMs !== undefined && nowMs - lastWriteMs < PROGRESS_HEARTBEAT_MS) return undefined
+			if (lastWriteMs !== undefined && nowMs - lastWriteMs < heartbeatMs) return undefined
 			lastWriteMs = nowMs
 			dirty = false
 			return snapshot()
 		},
 		pending: () => {
 			if (!dirty) return undefined
+			dirty = false
+			return snapshot()
+		},
+		current: () => {
 			dirty = false
 			return snapshot()
 		},

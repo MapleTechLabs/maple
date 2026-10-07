@@ -18,6 +18,12 @@ describe("stepLabel", () => {
 		)
 	})
 
+	it("names a batch of review files by the first and a count", () => {
+		expect(stepLabel("pr_file_diff", { repository: "o/r", paths: ["a.ts", "b.ts", "c.ts"] })).toBe(
+			"Pr file diff · a.ts +2",
+		)
+	})
+
 	/** A label padded with whichever key came first reads as detail while carrying none. */
 	it("says nothing extra when the arguments are only time bounds", () => {
 		expect(stepLabel("find_errors", { start_time: "a", end_time: "b", limit: 50 })).toBe("Find errors")

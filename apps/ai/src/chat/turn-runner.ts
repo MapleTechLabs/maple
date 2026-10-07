@@ -22,6 +22,7 @@ import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
+import type { PrReviewProgress } from "@maple/backend/services/pr-review/PrReviewService"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
@@ -33,10 +34,10 @@ import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
 import { CLOSE_OUT_PROMPT, PR_REPLY_CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
-import { makeProgressRecorder, parseToolInput } from "./progress"
-import { makeReviewCoverage } from "./review-coverage"
+import { makeProgressRecorder, parseToolInput, REVIEW_PROGRESS_HEARTBEAT_MS } from "./progress"
+import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import { reviewFailureError, reviewFailureReason } from "./review-failure"
-import { makeReviewLedger } from "./review-ledger"
+import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
 import {
 	investigationForSession,
 	isAutonomousTurn,
@@ -45,6 +46,7 @@ import {
 	prReviewForSession,
 	savedFindingsRequest,
 	SUBMIT_DIAGNOSIS,
+	SUBMIT_REVIEW,
 } from "./tools"
 
 /**
@@ -326,11 +328,60 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		)
 	}
 
+	// A review's pass shows on its pull request comment the same way, on a slower beat since each
+	// write edits the comment. Chained on the same promise, so one drain awaits both feeds.
+	const reviewProgress = makeProgressRecorder(REVIEW_PROGRESS_HEARTBEAT_MS)
+	const reviewStartedAt = Date.now()
+	let reviewSource: { readonly coverage: ReviewCoverage; readonly ledger: ReviewLedger } | undefined
+	let closingOut = false
+	// Set once the report is on its way: a progress edit landing after it would hide the summary.
+	let reviewProgressClosed = false
+	const writeReviewProgress = (record: InvestigationProgress | undefined) => {
+		if (record === undefined || prReviewId === undefined || reviewSource === undefined) return
+		if (reviewProgressClosed) return
+		const { due, read } = reviewSource.coverage.counts()
+		const findings = reviewSource.ledger
+			.findings()
+			.reduce((counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }), {
+				critical: 0,
+				warn: 0,
+				info: 0,
+			})
+		const snapshot: PrReviewProgress = {
+			startedAt: reviewStartedAt,
+			updatedAt: record.updatedAt || Date.now(),
+			stepCount: record.stepCount,
+			steps: record.steps.map((step) => ({ label: step.label, at: step.at })),
+			filesDue: due,
+			filesRead: read,
+			findings,
+			closingOut,
+		}
+		progressWrites = progressWrites.then((): Promise<void> =>
+			runtime
+				.runPromiseExit(
+					PrReviewService.pipe(
+						Effect.flatMap((service) =>
+							service.recordProgress(tenant.orgId, prReviewId, snapshot),
+						),
+					),
+				)
+				.then(() => undefined),
+		)
+	}
+
 	// Flush the steps the heartbeat swallowed and await whatever is in flight. Called before
 	// `failInvestigation` so the tail lands while the row is still `investigating`, and again
 	// from `ensuring` so an interrupted pass never disposes the runtime mid-write.
 	const drainProgress = Effect.suspend(() => {
 		writeProgress(progress.pending())
+		writeReviewProgress(reviewProgress.pending())
+		return Effect.promise(() => progressWrites)
+	})
+
+	// Stop the review feed and wait out a write in flight, so the report's own edit lands last.
+	const closeReviewProgress = Effect.suspend(() => {
+		reviewProgressClosed = true
 		return Effect.promise(() => progressWrites)
 	})
 
@@ -438,6 +489,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			prReviewId !== undefined && autonomous
 				? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
 				: undefined
+		reviewSource = review
 		// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
 		let failure: PrReviewFailureReason | undefined
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
@@ -458,7 +510,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				toolExecutor,
 				model,
 				submitDiagnosis: investigations.submitDiagnosis,
-				submitReview: reviews.submitReview,
+				submitReview: (orgId, reviewId, request) =>
+					closeReviewProgress.pipe(Effect.andThen(reviews.submitReview(orgId, reviewId, request))),
 				submitReply: conversations.submitReply,
 				stageEdit: conversations.stageEdit,
 				...(turn.closeOut === true ? { closeOut: true } : undefined),
@@ -479,6 +532,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						event.name !== SUBMIT_DIAGNOSIS
 					) {
 						writeProgress(progress.step(event.name, parseToolInput(event.input), Date.now()))
+					}
+					if (
+						event.type === "tool-call" &&
+						event.proposed !== true &&
+						event.name !== SUBMIT_REVIEW
+					) {
+						writeReviewProgress(
+							reviewProgress.step(event.name, parseToolInput(event.input), Date.now()),
+						)
 					}
 					if (event.type === "turn-end" && event.task === undefined) {
 						observability.outcome = event.reason
@@ -531,6 +593,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
 		if (!submitted && holdsTurn()) {
 			held = undefined
+			// Say on the pull request that the pass is over and the write-up is under way.
+			closingOut = true
+			writeReviewProgress(reviewProgress.current())
 			const closeOut = yield* recoverAutonomousFailure(
 				run({
 					text:
@@ -581,6 +646,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// Findings the pass saved are posted as a partial rather than lost with the report.
 			const saved = review?.ledger.findings() ?? []
 			if (!submitted && prReviewId !== undefined && review !== undefined && saved.length > 0) {
+				yield* closeReviewProgress
 				submitted = yield* reviews
 					.submitReview(
 						tenant.orgId,
