@@ -960,8 +960,7 @@ export const persistErrorTickWindow = (
 					bootstrapCompleted: true,
 					claimToken: null,
 					claimExpiresAt: null,
-					// `updated_at` stays at the claim's wall clock: `claimTickWindow`
-					// reads it to tell an org that was skipped from one being scanned.
+					updatedAt: windowEnd,
 				})
 				.where(
 					and(
