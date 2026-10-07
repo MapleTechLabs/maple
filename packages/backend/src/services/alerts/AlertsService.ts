@@ -2653,23 +2653,34 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 							}
 
-							yield* queueIncidentNotifications(
-								orgId,
-								normalized,
-								{
-									...incident,
-									status: "resolved",
-									resolvedAt: new Date(timestamp),
-									holdReason: null,
-									heldSince: null,
-									updatedAt: new Date(timestamp),
-								},
-								syntheticEvaluation,
-								"resolve",
-								timestamp,
-								pushBudget,
-								afterHold(incident, gate.heldForMs),
-							)
+							// Same rule as the lifecycle core's resolution plan: an incident
+							// whose trigger was flap-suppressed carries an inherited
+							// notification anchor and no delivered event. Announcing its
+							// all-clear would also refresh that anchor, muting the trigger of
+							// every later reopen while the resolves keep arriving.
+							if (incident.lastDeliveredEventType == null && incident.lastNotifiedAt != null) {
+								yield* Effect.logInfo(
+									"Skipping resolve notification for flapping incident",
+								).pipe(Effect.annotateLogs({ ruleId, incidentId: incident.id, groupKey }))
+							} else {
+								yield* queueIncidentNotifications(
+									orgId,
+									normalized,
+									{
+										...incident,
+										status: "resolved",
+										resolvedAt: new Date(timestamp),
+										holdReason: null,
+										heldSince: null,
+										updatedAt: new Date(timestamp),
+									},
+									syntheticEvaluation,
+									"resolve",
+									timestamp,
+									pushBudget,
+									afterHold(incident, gate.heldForMs),
+								)
+							}
 
 							yield* dbExecute((db) =>
 								db

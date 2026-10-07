@@ -4573,6 +4573,46 @@ describe("AlertsService held incidents", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
 	})
 
+	it.effect("suppresses the resolve of an orphaned group whose trigger was flap-suppressed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			rows: [breaching("checkout"), breaching("payments")],
+			liveness: { observed: 19, onset: 172, priorDay: 22, failProbe: false, nowMs: 0 },
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + DAY_MS)
+			state.liveness.nowMs = DEFAULT_CLOCK_EPOCH_MS + DAY_MS
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_orphan_flap")
+			const userId = asUserId("user_orphan_flap")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createTwoServiceRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			// Flap 1: the group drops out and its all-clear is delivered.
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+			// Flap 2 inside the renotify interval: the reopen's trigger is
+			// suppressed, so its orphan resolve must stay quiet too.
+			state.rows = [breaching("checkout"), breaching("payments")]
+			yield* tickAfter(state, alerts, 1)
+			state.rows = [breaching("checkout")]
+			yield* tickAfter(state, alerts, 1)
+
+			const payments = (yield* alerts.listIncidents(orgId)).incidents.filter(
+				(incident) => incident.groupKey === "payments",
+			)
+			assert.lengthOf(payments, 2)
+			assert.isTrue(payments.every((incident) => incident.status === "resolved"))
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				events.events.map((event: { eventType: string }) => event.eventType).sort(),
+				["resolve", "trigger", "trigger"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("a breach ends the hold and a later hold starts a fresh clock", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
