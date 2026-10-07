@@ -2512,6 +2512,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 	it.effect("parks a cursor only once it trails the parking point by a full window, with no lookup", () => {
 		const h = makeIdleTickHarness()
+		const AT_CUTOFF = asOrgId("org_at_cutoff")
 		const AT_PARK = asOrgId("org_at_park")
 		const SHORT = asOrgId("org_short_of_a_window")
 		const FULL_WINDOW = asOrgId("org_a_full_window_behind")
@@ -2519,6 +2520,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T)
 			yield* seedIdleOrgs([
+				{ orgId: AT_CUTOFF, cursorMs: cutoffAt(T) },
 				{ orgId: AT_PARK, cursorMs: parkedAt(T) },
 				{ orgId: SHORT, cursorMs: parkedAt(T) - 4 * MINUTE_MS },
 				{ orgId: FULL_WINDOW, cursorMs: parkedAt(T) - 5 * MINUTE_MS },
@@ -2527,6 +2529,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 			const result = yield* tickAt(T)
 
+			assert.strictEqual(yield* cursorOf(AT_CUTOFF), cutoffAt(T))
 			assert.strictEqual(yield* cursorOf(AT_PARK), parkedAt(T))
 			assert.strictEqual(yield* cursorOf(SHORT), parkedAt(T) - 4 * MINUTE_MS)
 			assert.strictEqual(yield* cursorOf(FULL_WINDOW), parkedAt(T))
@@ -2880,6 +2883,33 @@ describe("ErrorsService.runTick idle cursors", () => {
 		},
 	)
 
+	// A gap that leaves the cursor exactly at the start of the discovery window is
+	// covered by discovery (the org turns active); a minute longer and it is the
+	// lookup that finds the same error.
+	for (const gap of [
+		{ minutes: 9, lookups: 0 },
+		{ minutes: 10, lookups: 1 },
+	]) {
+		it.effect(
+			`an error right after the parked cursor is scanned when the tick resumes ${gap.minutes} minutes later`,
+			() => {
+				const h = makeIdleTickHarness()
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T)
+					yield* seedIdleOrgs([{ orgId: IDLE, cursorMs: parkedAt(T) }])
+					yield* tickAt(T)
+
+					h.errors.push({ orgId: IDLE, atMs: parkedAt(T) + 20_000 })
+					yield* tickAt(T + gap.minutes * MINUTE_MS)
+
+					assert.lengthOf(yield* candidatesOf(IDLE), 1)
+					assert.lengthOf(h.callsTo(LOOKUP), gap.lookups)
+					assert.strictEqual(yield* cursorOf(IDLE), parkedAt(T) + 5 * MINUTE_MS)
+				}).pipe(Effect.provide(h.layer))
+			},
+		)
+	}
+
 	it.effect("an event that arrives late but inside the trail is scanned when the org returns", () => {
 		const h = makeIdleTickHarness()
 		return Effect.gen(function* () {
@@ -3185,46 +3215,67 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 	// The lookup cap and statement chunking
 
-	it.effect("looks up at most 40 stale cursors a tick, most recent first, and the rest on the next", () => {
-		const h = makeIdleTickHarness()
-		const orgs = Array.from({ length: 45 }, (_, index) => ({
-			orgId: asOrgId(`org_stale_${String(index).padStart(2, "0")}`),
-			cursorMs: T - (20 + index) * MINUTE_MS,
-		}))
-		return Effect.gen(function* () {
-			yield* TestClock.setTime(T)
-			// Seeded oldest first, so the pick cannot follow insertion order.
-			yield* seedIdleOrgs(orgs.toReversed())
+	it.effect(
+		"looks up at most 40 stale cursors a tick, four at a time, most recent first, the rest on the next",
+		() => {
+			let inFlight = 0
+			let peak = 0
+			const h = makeIdleTickHarness({
+				onWarehouseCall: (call) =>
+					call.context === LOOKUP
+						? Effect.sync(() => {
+								inFlight += 1
+								peak = Math.max(peak, inFlight)
+							}).pipe(
+								Effect.andThen(Effect.yieldNow),
+								Effect.andThen(
+									Effect.sync(() => {
+										inFlight -= 1
+									}),
+								),
+							)
+						: Effect.void,
+			})
+			const orgs = Array.from({ length: 45 }, (_, index) => ({
+				orgId: asOrgId(`org_stale_${String(index).padStart(2, "0")}`),
+				cursorMs: T - (20 + index) * MINUTE_MS,
+			}))
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T)
+				// Seeded oldest first, so the pick cannot follow insertion order.
+				yield* seedIdleOrgs(orgs.toReversed())
 
-			yield* tickAt(T)
+				yield* tickAt(T)
 
-			assert.sameMembers(
-				h.callsTo(LOOKUP).map((call) => call.orgId),
-				orgs.slice(0, 40).map((org) => org.orgId),
-			)
-			const afterFirst = yield* tickStates
-			for (const org of orgs.slice(0, 40)) {
-				assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough.getTime(), parkedAt(T))
-			}
-			for (const org of orgs.slice(40)) {
-				assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough.getTime(), org.cursorMs)
-			}
-
-			yield* tickAt(T + MINUTE_MS)
-
-			assert.sameMembers(
-				h.callsTo(LOOKUP).map((call) => call.orgId),
-				orgs.map((org) => org.orgId),
-			)
-			const afterSecond = yield* tickStates
-			for (const org of orgs.slice(40)) {
-				assert.strictEqual(
-					afterSecond.get(org.orgId)?.processedThrough.getTime(),
-					parkedAt(T + MINUTE_MS),
+				assert.sameMembers(
+					h.callsTo(LOOKUP).map((call) => call.orgId),
+					orgs.slice(0, 40).map((org) => org.orgId),
 				)
-			}
-		}).pipe(Effect.provide(h.layer))
-	})
+				assert.strictEqual(peak, 4)
+				const afterFirst = yield* tickStates
+				for (const org of orgs.slice(0, 40)) {
+					assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough.getTime(), parkedAt(T))
+				}
+				for (const org of orgs.slice(40)) {
+					assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough.getTime(), org.cursorMs)
+				}
+
+				yield* tickAt(T + MINUTE_MS)
+
+				assert.sameMembers(
+					h.callsTo(LOOKUP).map((call) => call.orgId),
+					orgs.map((org) => org.orgId),
+				)
+				const afterSecond = yield* tickStates
+				for (const org of orgs.slice(40)) {
+					assert.strictEqual(
+						afterSecond.get(org.orgId)?.processedThrough.getTime(),
+						parkedAt(T + MINUTE_MS),
+					)
+				}
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
 
 	it.effect("quarantined orgs do not use up the tick's lookups", () => {
 		const first = T - 2 * HOUR_MS
