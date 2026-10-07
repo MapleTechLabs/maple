@@ -88,12 +88,10 @@ it("lets a page built on a signal describe itself, keeping the signal's setup ad
 	})
 
 	expect(
-		screen.getByText(/Errors groups failed spans into issues\. They come from an OpenTelemetry SDK/),
+		screen.getByText(/Errors groups failed spans into issues\. Send spans from an OpenTelemetry SDK/),
 	).toBeTruthy()
 	expect(screen.getByRole("link", { name: /Setup guide/ }).getAttribute("href")).toBe(
 		"https://maple.dev/docs/instrumentation",
 	)
-	expect(screen.getByRole("link", { name: /Read the docs/ }).getAttribute("href")).toBe(
-		"https://maple.dev/docs/errors/overview",
-	)
+	expect(screen.queryByRole("link", { name: /Read the docs/ })).toBeNull()
 })

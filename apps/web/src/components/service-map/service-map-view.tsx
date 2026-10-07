@@ -696,7 +696,7 @@ function ServiceMapEmptyState() {
 						signal="traces"
 						presence={tracesPresence}
 						noun="service calls"
-						purpose="The service map draws which services call each other, from the spans they send."
+						purpose="See which services call each other, drawn from the spans they send."
 						guideDocs="serviceMap"
 						className="flex-none bg-transparent py-0"
 					/>

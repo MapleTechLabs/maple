@@ -176,7 +176,7 @@ export function AgentToolsView({
 				<SignalEmptyState
 					signal="traces"
 					noun="agent tool calls"
-					purpose="Agent tools shows every tool your AI agents call, with volume, latency and failures per tool."
+					purpose="See every tool your AI agents call, with volume, latency and failures."
 					guideDocs="agentSessions"
 					className="px-6 py-16"
 				/>
