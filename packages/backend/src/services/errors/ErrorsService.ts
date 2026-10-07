@@ -311,10 +311,12 @@ const make: Effect.Effect<
 			})
 			.pipe(
 				Effect.map((rows) => {
-					const withRecentErrors = new Set<OrgId>(rows.map((row) => row.orgId))
+					const seen = rows.map((row) => row.orgId)
 					return {
-						active: new Set<OrgId>([...byo, ...withRecentErrors]) as ReadonlySet<OrgId>,
-						withRecentErrors: withRecentErrors as ReadonlySet<OrgId>,
+						active: new Set<OrgId>([...byo, ...seen]) as ReadonlySet<OrgId>,
+						// A BYO org's errors live in its own warehouse, so a row here
+						// (data from before it moved) says nothing about its gap.
+						withRecentErrors: new Set(seen.filter((org) => !byo.has(org))) as ReadonlySet<OrgId>,
 					}
 				}),
 				Effect.tap(({ active }) =>
