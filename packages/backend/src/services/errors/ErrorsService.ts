@@ -40,7 +40,7 @@ import {
 } from "@maple/db"
 import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Ref, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
@@ -119,17 +119,6 @@ const NOTIFICATION_MAX_ATTEMPTS = 5
  *  with recent errors still gets scanned, with slack for
  *  cron jitter and MV write lag. */
 const ERROR_ACTIVE_DISCOVERY_WINDOW_MS = 15 * 60_000
-/** Skipped orgs whose cursor fell behind the discovery window that are replayed
- *  per tick. Bounds the extra scans when many go stale at once (the tick after a
- *  discovery outage), which is when the warehouse can least afford a fan-out. */
-const TICK_LAGGING_IDLE_ORGS = 10
-/** How far behind the cutoff a skipped org's cursor is parked. An error that is
- *  ingested this long after its timestamp is still ahead of the cursor when the
- *  org is scanned again; the price is that many minutes of replay on return.
- *  With `TICK_MAX_WINDOW_MS` of drift before the next move it must stay inside
- *  `ERROR_ACTIVE_DISCOVERY_WINDOW_MS`. */
-const TICK_IDLE_CURSOR_TRAIL_MS = 5 * TICK_MINUTE_MS
-const TICK_CURSOR_UPDATE_CHUNK = 500
 // Last-known active-org set, cached so a discovery failure can fail CLOSED
 // (reuse the previous active set) instead of fanning out to every known org —
 // the latter melts the warehouse exactly when it is already struggling. Keyed
@@ -290,6 +279,8 @@ const make: Effect.Effect<
 	// state are still scanned by the caller (`withState`), so auto-resolution
 	// keeps working even when discovery is down.
 
+	const noOrgs: ReadonlySet<OrgId> = new Set()
+
 	const resolveActiveOrgs = Effect.fn("ErrorsService.resolveActiveOrgs")(function* (
 		knownOrgs: ReadonlyArray<OrgId>,
 		nowMs: number,
@@ -297,15 +288,12 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
-		).pipe(Effect.option)
-		// Without the BYO set an org on its own warehouse reads as idle, and
-		// managed discovery says nothing about its data: not a discovered result.
-		const byoKnown = Option.isSome(byoRows)
-		const byo = new Set<OrgId>(Option.getOrElse(byoRows, () => []).map((r) => r.orgId))
+		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: OrgId }>))
+		const byo = new Set<OrgId>(byoRows.map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
 			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
-			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
+			return { active: byo as ReadonlySet<OrgId>, withRecentErrors: noOrgs }
 		}
 
 		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
@@ -323,11 +311,11 @@ const make: Effect.Effect<
 			})
 			.pipe(
 				Effect.map((rows) => {
-					const active = new Set<OrgId>(byo)
-					for (const row of rows) {
-						active.add(row.orgId)
+					const withRecentErrors = new Set<OrgId>(rows.map((row) => row.orgId))
+					return {
+						active: new Set<OrgId>([...byo, ...withRecentErrors]) as ReadonlySet<OrgId>,
+						withRecentErrors: withRecentErrors as ReadonlySet<OrgId>,
 					}
-					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
 				}),
 				Effect.tap(({ active }) =>
 					Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
@@ -371,7 +359,8 @@ const make: Effect.Effect<
 									activeOrgs: active.size,
 									failedClosed: true,
 								})
-								return { active: active as ReadonlySet<string>, discovered: false }
+								// A reused set says nothing about this tick's window.
+								return { active: active as ReadonlySet<string>, withRecentErrors: noOrgs }
 							}),
 				),
 			)
@@ -1042,12 +1031,26 @@ const make: Effect.Effect<
 		return expired.length
 	})
 
+	// `skipIdleGap` is set for an org the tick only scans while it has recent
+	// errors. Such an org is skipped once discovery finds its last fifteen minutes
+	// empty, and stays skipped while that holds, so the time between its cursor
+	// and its return holds nothing to process. Without the jump it would replay
+	// that whole gap, five minutes a tick, before reaching the errors that brought
+	// it back. `updated_at` is the wall clock of the last claim: recent means the
+	// org was being scanned (catching up, or failing), and then the gap is backlog
+	// that must be replayed, not skipped.
 	const claimTickWindow = Effect.fn("ErrorsService.claimTickWindow")(function* (
 		orgId: OrgId,
 		cutoffMs: number,
 		nowMs: number,
+		skipIdleGap: boolean,
 	) {
 		const claimToken = randomUUID()
+		const idleSince = new Date(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS).toISOString()
+		const gapEnd = new Date(cutoffMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS).toISOString()
+		const resumeFrom = skipIdleGap
+			? sql<Date>`case when ${errorTickStates.updatedAt} < ${idleSince}::timestamptz and ${errorTickStates.processedThrough} < ${gapEnd}::timestamptz then ${gapEnd}::timestamptz else ${errorTickStates.processedThrough} end`
+			: sql<Date>`${errorTickStates.processedThrough}`
 		const initialProcessedThrough = new Date(cutoffMs - TICK_BOOTSTRAP_WINDOW_MS)
 		const claim = yield* dbExecute((db) =>
 			Effect.gen(function* () {
@@ -1090,6 +1093,7 @@ const make: Effect.Effect<
 						claimToken,
 						claimExpiresAt: new Date(nowMs + TICK_CLAIM_TTL_MS),
 						updatedAt: new Date(nowMs),
+						processedThrough: resumeFrom,
 					})
 					.where(inArray(errorTickStates.orgId, claimable))
 					.returning({
@@ -1123,9 +1127,10 @@ const make: Effect.Effect<
 		cutoffMs: number,
 		nowMs: number,
 		runRetention: boolean,
+		skipIdleGap: boolean,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
-		const tickWindow = yield* claimTickWindow(orgId, cutoffMs, nowMs)
+		const tickWindow = yield* claimTickWindow(orgId, cutoffMs, nowMs, skipIdleGap)
 		if (!tickWindow) {
 			return {
 				issuesTouched: 0,
@@ -1492,85 +1497,6 @@ const make: Effect.Effect<
 		}
 	})
 
-	// A skipped org's cursor must not freeze: `claimTickWindow` resumes from it,
-	// so an org that returns after a quiet month would replay that month five
-	// minutes per tick before reaching the errors it has now.
-	//
-	// The discovery scan that skipped these orgs proved they have no error events
-	// inside its window, so a cursor inside that window moves forward without a
-	// scan. It is parked `TICK_IDLE_CURSOR_TRAIL_MS` short of the cutoff, for
-	// errors that arrive late, and moved only once it trails that by a full
-	// window, which keeps this to one write per idle org every few minutes. A
-	// cursor older than the discovery window covers time this tick did not check
-	// (discovery was down, or the org was last skipped before this existed);
-	// those orgs are returned to be scanned until they are back inside it.
-	// Callers skip this when discovery failed: the reused set proves nothing
-	// about the current window.
-	const settleIdleCursors = Effect.fn("ErrorsService.settleIdleCursors")(function* (
-		idleOrgs: ReadonlySet<OrgId>,
-		cutoffMs: number,
-		nowMs: number,
-	) {
-		if (idleOrgs.size === 0) return []
-		const discoveryStartMs = nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
-		const parkedAt = new Date(cutoffMs - TICK_IDLE_CURSOR_TRAIL_MS)
-		const cursors = (yield* dbExecute((db) =>
-			db
-				.select({
-					orgId: errorTickStates.orgId,
-					processedThrough: errorTickStates.processedThrough,
-				})
-				.from(errorTickStates)
-				.where(
-					lte(errorTickStates.processedThrough, new Date(parkedAt.getTime() - TICK_MAX_WINDOW_MS)),
-				),
-		)).filter((row) => idleOrgs.has(row.orgId))
-
-		const insideWindow = (row: { readonly processedThrough: Date }) =>
-			row.processedThrough.getTime() >= discoveryStartMs
-		const provenEmpty = cursors.filter(insideWindow)
-		const lagging = cursors.filter((row) => !insideWindow(row))
-		yield* Effect.forEach(
-			Arr.chunksOf(
-				provenEmpty.map((row) => row.orgId),
-				TICK_CURSOR_UPDATE_CHUNK,
-			),
-			(chunk) =>
-				dbExecute((db) =>
-					db
-						.update(errorTickStates)
-						.set({ processedThrough: parkedAt, updatedAt: new Date(nowMs) })
-						.where(
-							and(
-								inArray(errorTickStates.orgId, chunk),
-								lt(errorTickStates.processedThrough, parkedAt),
-								// A held token means a tick may still commit this org's
-								// window, even past its lease; its checkpoint would then
-								// set the cursor back. Left alone, the row is replayed.
-								isNull(errorTickStates.claimToken),
-							),
-						),
-				),
-			{ discard: true },
-		)
-
-		// Closest to caught up first, so short gaps drain and leave the set
-		// instead of queueing behind a cursor that is weeks old. A quarantined
-		// org is not scanned this tick, so it must not hold a slot either.
-		const replay: Array<OrgId> = []
-		for (const row of lagging.toSorted(
-			(a, b) => b.processedThrough.getTime() - a.processedThrough.getTime(),
-		)) {
-			if (replay.length === TICK_LAGGING_IDLE_ORGS) break
-			if (!(yield* isOrgWarehouseQuarantined(edgeCache, row.orgId))) replay.push(row.orgId)
-		}
-		yield* Effect.annotateCurrentSpan({
-			idleCursorsAdvanced: provenEmpty.length,
-			idleCursorsLagging: lagging.length,
-		})
-		return replay
-	})
-
 	// Align to the latest completed minute. Per-org cursor leases serialize
 	// overlapping cron invocations; the cursor advances atomically with issue,
 	// incident, audit-event, and notification-outbox writes.
@@ -1595,7 +1521,7 @@ const make: Effect.Effect<
 		)
 		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...ingestOrgs.map((r) => r.orgId)])
 
-		const { active: activeOrgs, discovered } = yield* resolveActiveOrgs([...knownOrgs], nowMs)
+		const { active: activeOrgs, withRecentErrors } = yield* resolveActiveOrgs([...knownOrgs], nowMs)
 		// Orgs that hold issue/incident state must be scanned even with no recent
 		// errors: the scan returning empty is what drives auto-resolution and
 		// aging. Only pure ingest-key-only orgs with neither recent errors nor
@@ -1608,9 +1534,7 @@ const make: Effect.Effect<
 		// any of those is in `withState` by construction. Visiting the rest cost 5
 		// Postgres round-trips each per minute — ~1.6M/day, most of the statement
 		// volume on the database — to discover nothing.
-		const idleOrgs = new Set([...knownOrgs].filter((org) => !isActive(org)))
-		const laggingIdleOrgs = discovered ? yield* settleIdleCursors(idleOrgs, cutoffMs, nowMs) : []
-		const scanOrgs = [...[...knownOrgs].filter(isActive), ...laggingIdleOrgs]
+		const scanOrgs = [...knownOrgs].filter(isActive)
 
 		const emptyResult = {
 			issuesTouched: 0,
@@ -1636,7 +1560,13 @@ const make: Effect.Effect<
 						)
 						return emptyResult
 					}
-					return yield* processOrg(org, cutoffMs, nowMs, retentionRan)
+					return yield* processOrg(
+						org,
+						cutoffMs,
+						nowMs,
+						retentionRan,
+						withRecentErrors.has(org) && !withState.has(org),
+					)
 				}).pipe(
 					// Isolate genuine per-org failures/defects so one bad org can't fail the
 					// whole tick. Interrupts (isolate teardown) are NOT per-org failures —

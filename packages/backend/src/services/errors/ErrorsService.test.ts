@@ -34,7 +34,6 @@ import {
 import { eq } from "drizzle-orm"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
-import { quarantineOrgWarehouse } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { isRetryablePostgresContention } from "@maple/backend/platform/postgres-errors"
@@ -1033,132 +1032,74 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true, scanned })))
 	})
 
-	const seedCursor = (orgId: string, processedThroughMs: number, claimToken: string | null = null) =>
+	const DAY = 24 * 60 * 60_000
+	const MINUTE = 60_000
+
+	/** A cursor row as a past tick left it: `lastClaimedMs` is that tick's wall clock. */
+	const seedCursor = (processedThroughMs: number, lastClaimedMs: number) =>
 		Effect.gen(function* () {
 			const database = yield* Database
 			yield* database.execute((db) =>
 				db.insert(errorTickStates).values({
-					orgId: asOrgId(orgId),
+					orgId: ORG,
 					processedThrough: new Date(processedThroughMs),
 					bootstrapCompleted: true,
-					claimToken,
-					claimExpiresAt: claimToken === null ? null : new Date(processedThroughMs),
-					updatedAt: new Date(processedThroughMs),
+					updatedAt: new Date(lastClaimedMs),
 				}),
 			)
 		})
 
-	const cursorOf = (orgId: string) =>
-		Effect.gen(function* () {
-			const database = yield* Database
-			const rows = yield* database.execute((db) =>
-				db
-					.select()
-					.from(errorTickStates)
-					.where(eq(errorTickStates.orgId, asOrgId(orgId))),
-			)
-			return rows[0]?.processedThrough.getTime()
-		})
+	const cursor = Effect.gen(function* () {
+		const database = yield* Database
+		const rows = yield* database.execute((db) =>
+			db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+		)
+		return rows[0]
+	})
 
-	it.effect(
-		"a skipped org's cursor inside the discovery window is parked behind the cutoff unscanned",
-		() => {
-			const scanned = new Set<string>()
-			return Effect.gen(function* () {
-				const errors = yield* ErrorsService
-				yield* TestClock.setTime(TICK_MS)
-				yield* seedIngestKey(ORG)
-				yield* seedCursor(ORG, TICK_MS - 12 * 60_000)
-
-				yield* errors.runTick()
-
-				assert.isFalse(scanned.has(ORG))
-				// Five minutes short of the cutoff, which itself trails the clock by one.
-				assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 6 * 60_000)
-			}).pipe(Effect.provide(makeGatingLayer({ scanned })))
-		},
-	)
-
-	it.effect("a parked cursor is not rewritten until it trails by a full window", () =>
+	it.effect("an org returning with no issue state skips the gap it was idle for", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIngestKey(ORG)
-			yield* seedCursor(ORG, TICK_MS - 10 * 60_000)
+			yield* seedCursor(TICK_MS - 30 * DAY, TICK_MS - 30 * DAY)
 
 			yield* errors.runTick()
 
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 10 * 60_000)
-		}).pipe(Effect.provide(makeGatingLayer({}))),
+			// Resumes fifteen minutes before the cutoff and applies one window.
+			const row = yield* cursor
+			assert.strictEqual(row?.processedThrough.getTime(), TICK_MS - MINUTE - 10 * MINUTE)
+			// The claim's wall clock, which is what marks the org as scanned next tick.
+			assert.strictEqual(row?.updatedAt.getTime(), TICK_MS)
+		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
 	)
 
-	it.effect("a skipped org's cursor still held by a claim token is not moved", () => {
-		return Effect.gen(function* () {
+	it.effect("an org that was scanned within the discovery window replays its backlog", () =>
+		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIngestKey(ORG)
-			// Lease long expired, token never released: a tick may still commit it.
-			yield* seedCursor(ORG, TICK_MS - 12 * 60_000, "held")
+			// An hour behind, but claimed a minute ago: catching up, not idle.
+			yield* seedCursor(TICK_MS - 60 * MINUTE, TICK_MS - MINUTE)
 
 			yield* errors.runTick()
 
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 12 * 60_000)
-		}).pipe(Effect.provide(makeGatingLayer({})))
-	})
+			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 55 * MINUTE)
+		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
+	)
 
-	it.effect("a skipped org's cursor older than the discovery window is replayed, not jumped", () => {
-		const scanned = new Set<string>()
-		return Effect.gen(function* () {
+	it.effect("an org with issue state replays a stale cursor instead of skipping", () =>
+		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
-			yield* seedIngestKey(ORG)
-			yield* seedCursor(ORG, TICK_MS - 60 * 60_000)
+			yield* seedIssue(asIssueId(randomUUID()))
+			yield* seedCursor(TICK_MS - 60 * MINUTE, TICK_MS - 60 * MINUTE)
 
 			yield* errors.runTick()
 
-			assert.isTrue(scanned.has(ORG))
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 55 * 60_000)
-		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
-	})
-
-	it.effect("a quarantined org does not take a replay slot from a scannable one", () => {
-		const backend = makeMemoryBackend()
-		// One more lagging org than there are slots, nearest to caught up first.
-		const orgs = Array.from({ length: 11 }, (_, i) => asOrgId(`org_idle_lagging_${i}`))
-		const cursorMs = (i: number) => TICK_MS - (60 + i) * 60_000
-		return Effect.gen(function* () {
-			const errors = yield* ErrorsService
-			yield* TestClock.setTime(TICK_MS)
-			yield* Effect.forEach(orgs, (org, i) =>
-				Effect.andThen(seedIngestKey(org), seedCursor(org, cursorMs(i))),
-			)
-			yield* quarantineOrgWarehouse(makeEdgeCacheService(backend), orgs[0]!, TICK_MS)
-
-			yield* errors.runTick()
-
-			assert.strictEqual(yield* cursorOf(orgs[0]!), cursorMs(0))
-			assert.strictEqual(yield* cursorOf(orgs[10]!), cursorMs(10) + 5 * 60_000)
-		}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, backend)))
-	})
-
-	it.effect("a failed discovery leaves skipped orgs' cursors alone", () => {
-		const scanned = new Set<string>()
-		const STALE = asOrgId("org_idle_stale_cursor")
-		return Effect.gen(function* () {
-			const errors = yield* ErrorsService
-			yield* TestClock.setTime(TICK_MS)
-			yield* seedIngestKey(ORG)
-			yield* seedIngestKey(STALE)
-			yield* seedCursor(ORG, TICK_MS - 12 * 60_000)
-			yield* seedCursor(STALE, TICK_MS - 60 * 60_000)
-
-			yield* errors.runTick()
-
-			assert.strictEqual(scanned.size, 0)
-			assert.strictEqual(yield* cursorOf(ORG), TICK_MS - 12 * 60_000)
-			assert.strictEqual(yield* cursorOf(STALE), TICK_MS - 60 * 60_000)
-		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true, scanned })))
-	})
+			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 55 * MINUTE)
+		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
+	)
 
 	it.effect("discovery uses the 5s profile; the minutely tick scan uses aggregation", () => {
 		const profiles = new Map<string, string | undefined>()
