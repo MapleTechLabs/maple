@@ -203,14 +203,39 @@ const numberOrNull = (value: unknown): number | null => (typeof value === "numbe
 /** Number of time labels along the empty strip's baseline. */
 const EMPTY_STRIP_TICKS = 5
 
+/** Ghost bars behind the empty strip's caption: a silhouette of the histogram, not data. */
+const EMPTY_STRIP_BARS = 64
+
+/**
+ * Deterministic ghost bars (heights as a fraction of the strip) so the
+ * silhouette is the same on every render — a random one would flicker like
+ * it was loading. Two slow sine waves give a soft, plausibly log-like contour,
+ * and each bar is split into severity slices bottom-up the way the real
+ * histogram stacks them: mostly info, a thin warn band, an occasional error cap.
+ */
+const EMPTY_STRIP_BARS_STACKED = Array.from({ length: EMPTY_STRIP_BARS }, (_, i) => {
+	const t = i / (EMPTY_STRIP_BARS - 1)
+	const wave = 0.5 + 0.3 * Math.sin(t * Math.PI * 3.1 + 0.8) + 0.2 * Math.sin(t * Math.PI * 7.3 + 2.1)
+	const total = 0.18 + wave * 0.45
+	const warn = total * (0.08 + 0.1 * (0.5 + 0.5 * Math.sin(t * Math.PI * 5.7 + 1.3)))
+	// Errors cluster: a few bars carry a cap, most carry none.
+	const errorPulse = Math.max(0, Math.sin(t * Math.PI * 9.4 + 0.4) - 0.55)
+	const error = total * errorPulse * 0.5
+	return [
+		{ severity: "INFO", height: total - warn - error },
+		{ severity: "WARN", height: warn },
+		{ severity: "ERROR", height: error },
+	]
+})
+
 /**
  * What the volume strip shows when the window holds no logs.
  *
  * The real plot degenerates here — no series means no x domain, so the axis
  * loses its time labels and `niceLinearDomain` invents a 0/0.5/1 count axis.
  * Rather than a chart of nothing, keep the strip's height and gutter so the
- * page does not jump when logs arrive. No ghost bars: a silhouette of a
- * histogram next to "0 logs" reads as data that isn't there.
+ * page does not jump when logs arrive, and use the space to say what the
+ * histogram is: the window along the baseline, and the severities it stacks.
  */
 function EmptyVolumeStrip({
 	startTime,
@@ -235,6 +260,8 @@ function EmptyVolumeStrip({
 		}
 	})
 
+	const legend = SEVERITY_ORDER.filter((s) => s !== "WARNING")
+
 	return (
 		<div
 			style={{ height: LOGS_VOLUME_CHART_HEIGHT }}
@@ -248,8 +275,34 @@ function EmptyVolumeStrip({
 				<div className="relative flex-1">
 					<div className="absolute inset-x-0 top-0 border-t border-dashed border-border/60" />
 					<div className="absolute inset-x-0 top-1/2 border-t border-dashed border-border/60" />
-					<div className="absolute inset-0 flex items-center justify-center">
+					<div aria-hidden className="absolute inset-0 flex items-end gap-px opacity-[0.18]">
+						{EMPTY_STRIP_BARS_STACKED.map((slices, i) => (
+							<div key={i} className="flex h-full min-w-0 flex-1 flex-col-reverse">
+								{slices.map((slice) => (
+									<div
+										key={slice.severity}
+										style={{
+											height: `${slice.height * 100}%`,
+											backgroundColor: SEVERITY_COLORS[slice.severity],
+										}}
+									/>
+								))}
+							</div>
+						))}
+					</div>
+					<div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
 						<span className="text-xs">No log volume in this window</span>
+						<ul className="flex items-center gap-3 text-3xs uppercase tracking-wide opacity-60">
+							{legend.map((severity) => (
+								<li key={severity} className="flex items-center gap-1.5">
+									<span
+										className="size-1.5 rounded-xs"
+										style={{ backgroundColor: SEVERITY_COLORS[severity] }}
+									/>
+									{severity}
+								</li>
+							))}
+						</ul>
 					</div>
 				</div>
 				<div className="relative h-[18px] border-t border-border">

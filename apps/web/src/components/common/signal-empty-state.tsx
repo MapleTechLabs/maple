@@ -70,8 +70,9 @@ export const SIGNAL_COPY = {
 	logs: {
 		noun: "logs",
 		icon: FileIcon,
-		purpose: "Logs are searchable here and linked to the trace that wrote them.",
-		source: "They come from an OTLP log bridge under your existing logger. Logging to stdout alone never reaches Maple.",
+		purpose:
+			"Search every log line, filter by service and severity, and jump straight to the trace that wrote it.",
+		source: "Add an OpenTelemetry log exporter to the logger you already use. Logs printed to stdout don't reach Maple on their own.",
 		action: "Set up logging",
 		setupDocs: "instrumentation",
 		guideDocs: "logs",
@@ -153,9 +154,7 @@ export function SignalEmptyStateView({
 	// for — even on an org that has never sent the signal, where the setup advice is also true but
 	// answers a question they did not ask.
 	if (filtered) {
-		return (
-			<FilteredEmpty noun={subject} onClear={onClearFilters} detail={detail} className={className} />
-		)
+		return <FilteredEmpty noun={subject} onClear={onClearFilters} detail={detail} className={className} />
 	}
 
 	if (presence.status === "absent") {

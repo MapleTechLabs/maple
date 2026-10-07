@@ -21,7 +21,7 @@ it("tells a user who has never sent the signal how to send it", async () => {
 	await renderState({ signal: "logs", presence: { status: "absent", lastSeen: null } })
 
 	expect(screen.getByText("No logs yet")).toBeTruthy()
-	expect(screen.getByText(/OTLP log bridge/)).toBeTruthy()
+	expect(screen.getByText(/OpenTelemetry log exporter/)).toBeTruthy()
 	expect(screen.getByText("Set up logging")).toBeTruthy()
 })
 
@@ -31,7 +31,7 @@ it("tells a user whose signal is wired up that the window is quiet, and when it 
 
 	expect(screen.getByText("No logs in this time range")).toBeTruthy()
 	// The distinction the whole feature exists for: never advise setup to someone already set up.
-	expect(screen.queryByText(/OTLP log bridge/)).toBeNull()
+	expect(screen.queryByText(/OpenTelemetry log exporter/)).toBeNull()
 	expect(screen.getByText(/Maple last received logs/)).toBeTruthy()
 })
 
