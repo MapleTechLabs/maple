@@ -2468,7 +2468,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 
 				const keys = new Map(findings.map((finding) => [finding.handle ?? "", randomUUID()] as const))
-				if (findings.length > 0) {
+				// A partial's findings are never posted, so they are not tracked: a later review must not
+				// carry them forward or drop its own as repeats of findings nobody saw.
+				const tracksFindings = request.partial !== true && findings.length > 0
+				if (tracksFindings) {
 					yield* database
 						.execute((db) =>
 							db.insert(prReviewFindings).values(
@@ -2495,7 +2498,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The vectors a later review compares against. Losing them only weakens a later filter,
 				// so a failed write is logged rather than failing a review that is already stored.
 				const vectors = feedback.vectors
-				if (embedder !== undefined && vectors !== undefined && findings.length > 0) {
+				if (embedder !== undefined && vectors !== undefined && tracksFindings) {
 					yield* database
 						.execute((db) =>
 							db

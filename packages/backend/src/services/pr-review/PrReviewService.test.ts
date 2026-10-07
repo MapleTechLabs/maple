@@ -787,6 +787,28 @@ describe("PrReviewService.submitReview", () => {
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.equal(stored.status, "completed")
 			assert.equal(stored.report?.findings.length, 1)
+
+			// The next review posts the same finding as new, never as one carried from the partial.
+			const next = yield* reviews.onPullRequestEvent(orgId, job({ headSha: HEAD_2 }))
+			yield* reviews.submitReview(
+				orgId,
+				next.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						{
+							path: "src/routes/orders.ts",
+							line: 12,
+							category: "observability",
+							severity: "warn",
+							title: "POST /orders has no server span",
+							body: "Wrap the handler in withSpan.",
+						},
+					]),
+				}),
+			)
+			assert.equal(published.length, 1)
+			assert.equal(published[0]!.comments.length, 1)
+			assert.notInclude(published[0]!.summaryComment.body, "Still open from earlier reviews")
 		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
 	})
 
