@@ -90,6 +90,11 @@ export interface EnvConfig {
 	/** Comma-separated Slack user ids of the Maple team, added to every new support channel. */
 	readonly MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: Option.Option<string>
 	/**
+	 * Channel in Maple's own workspace that plan-cancellation reports are posted to, with the
+	 * support bot token above (the bot must be in the channel). Unset → no report is produced.
+	 */
+	readonly MAPLE_CANCELLATION_SLACK_CHANNEL_ID: Option.Option<string>
+	/**
 	 * Self-observability ingest key (`@maple-dev/effect-sdk` reads the same variable
 	 * for OTLP export). Also the default credential for server-side product events.
 	 */
@@ -220,6 +225,7 @@ const envConfig = Config.all({
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
 	MAPLE_SUPPORT_SLACK_BOT_TOKEN: optionalRedacted("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 	MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: optionalString("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
+	MAPLE_CANCELLATION_SLACK_CHANNEL_ID: optionalString("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
 	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),
 	MAPLE_ENDPOINT: optionalString("MAPLE_ENDPOINT"),
 	MAPLE_PRODUCT_EVENTS_INGEST_KEY: optionalRedacted("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),

@@ -1,8 +1,11 @@
-import { Effect, Option } from "effect"
+import { OrgId } from "@maple/domain/http"
+import { Clock, Effect, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import {
 	AUTUMN_BILLING_UPDATED,
+	cancellationsFromBillingUpdated,
 	decodeAutumnBillingUpdated,
 	decodeAutumnEnvelope,
 	planEventsFromBillingUpdated,
@@ -15,13 +18,20 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  * / `plan_cancelled` product events, `group_id` = the Autumn customer id, which
  * is the Maple org id. Public route; authenticity is the Svix signature
  * (`AUTUMN_WEBHOOK_SECRET`). Other event types are acknowledged with 200.
+ *
+ * A cancelled plan is also queued for its review (`CancellationReviewService`).
+ * The queue send comes first and answers 503 when it fails, so Svix redelivers
+ * and nothing about the delivery has been recorded twice.
  */
 const ROUTE = "/webhooks/autumn"
+
+const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 
 export const AutumnWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
 		const productEvents = yield* ProductEventsService
+		const cancellationReviews = yield* CancellationReviewQueue
 
 		const handle = Effect.fn("AutumnWebhook.receive")(function* (
 			req: HttpServerRequest.HttpServerRequest,
@@ -56,6 +66,40 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 					Effect.option,
 				)
 				if (Option.isSome(data)) {
+					const receivedAt = yield* Clock.currentTimeMillis
+					const cancellations = cancellationsFromBillingUpdated(data.value)
+					const queued = yield* Effect.forEach(
+						cancellations,
+						({ orgId: rawOrgId, ...cancellation }) =>
+							Option.match(decodeOrgId(rawOrgId), {
+								// Not an id this instance could have issued; nothing to review.
+								onNone: () => Effect.void,
+								onSome: (orgId) =>
+									cancellationReviews.send({
+										kind: "cancellation-review",
+										orgId,
+										...cancellation,
+										receivedAt,
+									}),
+							}),
+						{ discard: true },
+					).pipe(
+						Effect.as(true),
+						Effect.catch((error) =>
+							Effect.logError("Could not queue a cancellation review").pipe(
+								Effect.annotateLogs({ orgId: data.value.customer_id, error: error.message }),
+								Effect.as(false),
+							),
+						),
+					)
+					if (!queued) {
+						yield* Effect.annotateCurrentSpan({
+							orgId: data.value.customer_id,
+							"http.response.status_code": 503,
+							"maple.webhook.outcome": "queue_failed",
+						})
+						return webhookText("Could not queue the cancellation review", 503)
+					}
 					const events = planEventsFromBillingUpdated(data.value, {
 						id: envelope.value.id ?? received.messageId,
 						occurred_at: envelope.value.occurred_at,
@@ -64,6 +108,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 						orgId: data.value.customer_id,
 						"maple.webhook.outcome": "handled",
 						"maple.webhook.emitted": events.length,
+						"maple.webhook.cancellations": cancellations.length,
 					})
 					yield* Effect.forEach(events, (event) => productEvents.track(event), { discard: true })
 				} else {

@@ -44,6 +44,7 @@ import { ScrapeTargetsService } from "@maple/backend/services/integrations/Scrap
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
+import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -98,6 +99,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
 	LiveActivitiesService.layer,
 	PlanetScaleWebhookQueue.layer,
+	CancellationReviewQueue.layer,
 	ScrapeTargetsService.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,

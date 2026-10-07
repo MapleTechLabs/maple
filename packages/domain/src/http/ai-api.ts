@@ -1,4 +1,5 @@
 import { HttpApi, OpenApi } from "effect/http-api"
+import { CancellationReviewApiGroup } from "./cancellation-review"
 import { ChatApiGroup } from "./chat"
 import { IncidentTriageApiGroup } from "./incident-triage"
 import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
@@ -25,6 +26,8 @@ export class MapleAiApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
 	// Worker-to-Worker only: alerting asks before an incident earns an investigation.
 	.add(IncidentTriageApiGroup)
+	// Worker-to-Worker only: api asks what a cancelling org's usage points to.
+	.add(CancellationReviewApiGroup)
 	.middleware(V1SchemaErrors)
 	.middleware(V1UnexpectedErrors)
 	.annotateMerge(

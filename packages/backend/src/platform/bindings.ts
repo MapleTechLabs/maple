@@ -44,6 +44,12 @@ export class PlanetScaleWebhookQueueProducer extends Context.Service<
 	QueueProducer
 >()("@maple/api/platform/PlanetScaleWebhookQueueProducer") {}
 
+/** Plan cancellations waiting for their review, decoupled from the Autumn webhook. */
+export class CancellationReviewQueueProducer extends Context.Service<
+	CancellationReviewQueueProducer,
+	QueueProducer
+>()("@maple/api/platform/CancellationReviewQueueProducer") {}
+
 /** Org audit-log entries on their way to the warehouse. */
 export class AuditEventsQueueProducer extends Context.Service<AuditEventsQueueProducer, QueueProducer>()(
 	"@maple/api/platform/AuditEventsQueueProducer",
