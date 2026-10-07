@@ -18,7 +18,7 @@ import {
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
-import { ConfigProvider, Effect, Schema } from "effect"
+import { ConfigProvider, Effect, Logger, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
@@ -360,6 +360,36 @@ describe("meterTurn AI credits", () => {
 			charged.map((c) => c.key),
 			[`${ORG}:default:msg-1:chat:credits:0`, `${ORG}:default:msg-1:chat:credits:0`],
 		)
+	})
+
+	it("treats a 409 as a charge Autumn already counted, and warns on any other refusal", async () => {
+		// A retried turn reuses its keys, so Autumn's 409 is the expected answer, not a failure.
+		const warningsFor = async (status: number) => {
+			const warnings: Array<unknown> = []
+			globalThis.fetch = async () => new Response("{}", { status })
+			await Effect.runPromise(
+				meterTurn(
+					turn(`${ORG}:default`, "msg-1"),
+					tenant,
+					{ kind: "app" },
+					{
+						input: 1000,
+						output: 200,
+						charges: [charge(GLM, 1000, 200)],
+					},
+				).pipe(
+					Effect.provide(config),
+					Effect.provideService(FetchHttpClient.Fetch, (input, init) =>
+						globalThis.fetch(input, init),
+					),
+					Effect.provide(Logger.layer([Logger.make(({ message }) => void warnings.push(message))])),
+				),
+			)
+			return warnings
+		}
+
+		assert.deepEqual(await warningsFor(409), [])
+		assert.isNotEmpty(await warningsFor(400))
 	})
 
 	it("skips a charge that spent nothing, without shifting the others' keys", async () => {
