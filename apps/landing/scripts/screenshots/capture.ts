@@ -239,6 +239,7 @@ const command = Command.make(
 ).pipe(Command.withDescription("Capture landing screenshots from the seeded local stack"))
 
 Command.run(command, { version: "1.0.0" }).pipe(
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
 	NodeRuntime.runMain,
 )
