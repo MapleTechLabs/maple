@@ -2,7 +2,7 @@
  * The cancellation report as a Slack message. Block Kit, built as plain data so
  * what a reader sees is asserted in a test rather than eyeballed in a channel.
  */
-import type { CancellationAssessment, CancellationReason, CancellationSnapshot } from "@maple/domain/http"
+import type { CancellationReason, CancellationSnapshot } from "@maple/domain/http"
 import { type CancellationSignal, formatGB, totalGB } from "./signals"
 
 /** What only the posting side knows about the org; never part of the snapshot. */
@@ -18,10 +18,8 @@ export interface CancellationReportSubject {
 export interface CancellationReport {
 	readonly subject: CancellationReportSubject
 	readonly snapshot: CancellationSnapshot
-	readonly ruleReason: CancellationReason
+	readonly reason: CancellationReason
 	readonly signals: ReadonlyArray<CancellationSignal>
-	/** Null when the decision model did not answer. */
-	readonly assessment: CancellationAssessment | null
 }
 
 const REASON_LABELS = {
@@ -42,8 +40,6 @@ const TONE_EMOJI = {
 /** Slack reads `&`, `<` and `>` as markup; an org name is free text. */
 const escape = (text: string): string =>
 	text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-
-const percent = (value: number): string => `${Math.round(value * 100)}%`
 
 const day = (epochMs: number): string =>
 	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
@@ -120,21 +116,10 @@ const unread = (snapshot: CancellationSnapshot): ReadonlyArray<string> =>
 export const buildCancellationMessage = (
 	report: CancellationReport,
 ): { readonly text: string; readonly blocks: ReadonlyArray<Record<string, unknown>> } => {
-	const { subject, snapshot, ruleReason, signals, assessment } = report
+	const { subject, snapshot, reason, signals } = report
 	const title = `${snapshot.plan.phase === "ended" ? "Plan ended" : "Plan cancelled"}: ${subject.orgName}`
 
-	const verdict = [field("Likely reason", REASON_LABELS[ruleReason])]
-	if (assessment !== null) {
-		verdict.push(
-			field(
-				"Model read",
-				`${REASON_LABELS[assessment.reason]} (${percent(assessment.reasonConfidence)})${
-					assessment.reason === ruleReason ? "" : " :warning: differs"
-				}`,
-			),
-			field("Win-back odds", percent(assessment.winBack)),
-		)
-	}
+	const verdict = [field("Likely reason", REASON_LABELS[reason])]
 	if (subject.contactEmail !== null) verdict.push(field("Contact", escape(subject.contactEmail)))
 
 	const blocks: Array<Record<string, unknown>> = [
@@ -154,12 +139,14 @@ export const buildCancellationMessage = (
 	const usage = usageFields(snapshot)
 	if (usage.length > 0) blocks.push({ type: "divider" }, { type: "section", fields: usage })
 
-	const footer = [
-		...(unread(snapshot).length > 0 ? [`Could not read: ${unread(snapshot).join(", ")}`] : []),
-		assessment === null ? "No model read" : `Model: ${assessment.model}`,
-	]
-	blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: footer.join("  ·  ") }] })
+	const missing = unread(snapshot)
+	if (missing.length > 0) {
+		blocks.push({
+			type: "context",
+			elements: [{ type: "mrkdwn", text: `Could not read: ${missing.join(", ")}` }],
+		})
+	}
 
 	// Unlike the header's plain text, the fallback is mrkdwn: an org name is escaped here.
-	return { text: `${escape(title)} (${REASON_LABELS[ruleReason]})`, blocks }
+	return { text: `${escape(title)} (${REASON_LABELS[reason]})`, blocks }
 }

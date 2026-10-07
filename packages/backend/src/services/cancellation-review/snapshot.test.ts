@@ -93,7 +93,6 @@ describe("summarizeBilling", () => {
 			invoices: [invoice(1, 39), invoice(3, 212), invoice(4, 999, "draft"), invoice(2, 45)],
 		})
 		expect(billing).toEqual({
-			invoices: 3,
 			lastInvoiceTotal: 212,
 			previousInvoiceTotal: 45,
 			overAllowance: [],

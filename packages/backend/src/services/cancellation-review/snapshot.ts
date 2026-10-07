@@ -120,7 +120,6 @@ export const summarizeBilling = ({ balances, invoices }: BillingInputs): Billing
 		.map(([featureId]) => featureId)
 		.toSorted()
 	return {
-		invoices: billed.length,
 		lastInvoiceTotal: billed[0]?.total ?? null,
 		previousInvoiceTotal: billed[1]?.total ?? null,
 		overAllowance,

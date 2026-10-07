@@ -3,12 +3,10 @@
  * a plan, gathered once when Autumn reports the cancellation.
  *
  * The snapshot is numbers and flags only. Names and addresses stay on the side
- * that posts the report; nothing here identifies a person, so the snapshot can
- * be handed to a model and stored as it is.
+ * that posts the report; nothing here identifies a person, so the snapshot is
+ * stored as it is.
  */
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { IncidentTriageUnauthorizedError, TriageProbability } from "./incident-triage"
 
 /** A count or a number of days: a whole number, never negative. */
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -59,7 +57,6 @@ export class CancellationSnapshot extends Schema.Class<CancellationSnapshot>("Ca
 		Schema.Struct({
 			ageDays: Schema.NullOr(Count),
 			members: Schema.NullOr(Count),
-			onboardingCompleted: Schema.Boolean,
 			/** Telemetry reached the org at some point in the last year. */
 			everReceivedData: Schema.Boolean,
 			supportChannel: Schema.Boolean,
@@ -85,15 +82,11 @@ export class CancellationSnapshot extends Schema.Class<CancellationSnapshot>("Ca
 		Schema.Struct({
 			dashboards: Count,
 			alertRules: Count,
-			alertDestinations: Count,
-			apiKeys: Count,
 			integrations: Count,
-			investigations: Count,
 		}),
 	),
 	billing: Schema.NullOr(
 		Schema.Struct({
-			invoices: Count,
 			/** Dollars; a credit note is negative. Null with no invoice yet. */
 			lastInvoiceTotal: Schema.NullOr(Schema.Finite),
 			previousInvoiceTotal: Schema.NullOr(Schema.Finite),
@@ -117,36 +110,3 @@ export const CancellationReason = Schema.Literals([
 	"unclear",
 ]).annotate({ identifier: "@maple/CancellationReason", title: "Cancellation Reason" })
 export type CancellationReason = Schema.Schema.Type<typeof CancellationReason>
-
-export class CancellationAssessment extends Schema.Class<CancellationAssessment>("CancellationAssessment")({
-	reason: CancellationReason,
-	/** The model's own probability for the reason it chose. */
-	reasonConfidence: TriageProbability,
-	/** How likely a personal note keeps or wins back the org. */
-	winBack: TriageProbability,
-	/** The model id that answered. */
-	model: Schema.String,
-}) {}
-
-/** The decision model did not answer. The report is posted without an assessment. */
-export class CancellationAssessmentModelError extends Schema.TaggedError<CancellationAssessmentModelError>()(
-	"@maple/http/errors/CancellationAssessmentModelError",
-	{ message: Schema.String },
-	{ httpApiStatus: 502 },
-) {}
-
-/**
- * The assessment as maple-ai serves it to the api Worker's cancellation
- * consumer: internal service token, no tenant, nothing of the org's read or
- * written.
- */
-export class CancellationReviewApiGroup extends HttpApiGroup.make("cancellation")
-	.add(
-		HttpApiEndpoint.post("assess", "/assess", {
-			headers: Schema.Struct({ authorization: Schema.String }),
-			payload: CancellationSnapshot,
-			success: CancellationAssessment,
-			error: [IncidentTriageUnauthorizedError, CancellationAssessmentModelError],
-		}),
-	)
-	.prefix("/internal/cancellation") {}

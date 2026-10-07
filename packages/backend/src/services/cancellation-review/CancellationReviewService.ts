@@ -2,19 +2,19 @@
  * The cancellation review: one cancelled subscription in, one Slack report out.
  *
  * Gathers what the org's own usage looks like around the cancellation, reads it
- * with fixed rules and with the decision model, and posts both to Maple's own
- * workspace. Every source but Autumn is optional: a section that cannot be read
- * is `null` in the snapshot and named in the report, because a report missing
- * its visit numbers is worth more than no report.
+ * with fixed rules, and posts the result to Maple's own workspace. Every source
+ * but Autumn is optional: a section that cannot be read is `null` in the
+ * snapshot and named in the report, because a report missing its visit numbers
+ * is worth more than no report.
+ *
+ * It runs inside the Autumn webhook's request. A failure answers 503 and Svix
+ * redelivers, which is the only retry there is.
  */
 import {
-	alertDestinations,
 	alertRules,
-	apiKeys,
 	cancellationReviews,
 	chatWorkspaces,
 	dashboards,
-	investigations,
 	oauthConnections,
 	orgSupportChannels,
 	vcsInstallations,
@@ -28,7 +28,7 @@ import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { msToDate } from "@maple/backend/platform/time"
+import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -38,10 +38,9 @@ import { OrganizationRegionService } from "@maple/backend/services/org/Organizat
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import type { PlanCancellation } from "@maple/backend/services/product-events/autumn-events"
 import { SupportSlackClient } from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { CancellationAssessor } from "./CancellationAssessor"
-import type { CancellationReviewJob } from "./CancellationReviewQueue"
 import { deriveSignals, ruleReason } from "./signals"
 import { buildCancellationMessage } from "./slack-message"
 import {
@@ -53,6 +52,20 @@ import {
 	summarizeVisits,
 	visitsWindow,
 } from "./snapshot"
+
+/** A cancellation as the webhook read it, for an org id this instance could have issued. */
+export interface CancellationToReview extends Omit<PlanCancellation, "orgId"> {
+	readonly orgId: OrgId
+	/** Epoch ms the delivery arrived; stands in for a cancellation time Autumn did not send. */
+	readonly receivedAt: number
+}
+
+/**
+ * How long an unposted review belongs to the delivery that claimed it. A review
+ * outlasting Svix's timeout is redelivered while it is still running, and the
+ * second delivery must wait rather than post beside it.
+ */
+const CLAIM_LEASE_MS = 2 * 60 * 1000
 
 /** A failure worth another delivery: Clerk, Autumn, Postgres or Slack did not answer. */
 export class CancellationReviewError extends Schema.TaggedError<CancellationReviewError>()(
@@ -68,6 +81,8 @@ export type CancellationReviewOutcome =
 	| "posted"
 	/** This subscription's cancellation was already reported. */
 	| "duplicate"
+	/** Slack refused the post for a reason no retry fixes (bot not in the channel, bad channel id). */
+	| "refused"
 	/** The org lives on another region's instance, which reports it. */
 	| "other_region"
 	/** An add-on going away is not the org leaving. */
@@ -79,7 +94,7 @@ export type CancellationReviewOutcome =
 
 export interface CancellationReviewServiceApi {
 	readonly review: (
-		job: CancellationReviewJob,
+		cancellation: CancellationToReview,
 	) => Effect.Effect<CancellationReviewOutcome, CancellationReviewError>
 }
 
@@ -110,7 +125,7 @@ const CustomerBilling = Schema.Struct({
 	),
 })
 
-/** The upstream's own words, so the consumer's log says why and not only where. */
+/** The upstream's own words, so the log says why and not only where. */
 const failedAt =
 	(step: CancellationReviewError["step"], message: string) =>
 	(cause: unknown): CancellationReviewError =>
@@ -135,7 +150,6 @@ export class CancellationReviewService extends Context.Service<
 		const warehouse = yield* WarehouseQueryService
 		const ingestKeys = yield* OrgIngestKeysService
 		const autumn = yield* AutumnClient
-		const assessor = yield* CancellationAssessor
 		const slack = yield* SupportSlackClient
 
 		/** A source that could not be read is `null` in the report, never the end of it. */
@@ -188,9 +202,6 @@ export class CancellationReviewService extends Context.Service<
 				{
 					dashboards: count(dashboards, eq(dashboards.orgId, orgId)),
 					alertRules: count(alertRules, eq(alertRules.orgId, orgId)),
-					alertDestinations: count(alertDestinations, eq(alertDestinations.orgId, orgId)),
-					apiKeys: count(apiKeys, and(eq(apiKeys.orgId, orgId), eq(apiKeys.revoked, false))),
-					investigations: count(investigations, eq(investigations.orgId, orgId)),
 					oauth: count(
 						oauthConnections,
 						and(eq(oauthConnections.orgId, orgId), isNull(oauthConnections.revokedAt)),
@@ -272,7 +283,7 @@ export class CancellationReviewService extends Context.Service<
 		 * send no start; the cancellation's own timestamp then names it, which a
 		 * scheduled cancellation and its later expiry still share.
 		 */
-		const claim = (job: CancellationReviewJob, nowMs: number) =>
+		const claim = (job: CancellationToReview, nowMs: number) =>
 			database
 				.execute((db) =>
 					Effect.gen(function* () {
@@ -290,12 +301,13 @@ export class CancellationReviewService extends Context.Service<
 							})
 							.onConflictDoNothing()
 							.returning({ id: cancellationReviews.id })
-						if (inserted[0] !== undefined) return { id: inserted[0].id, posted: false }
+						if (inserted[0] !== undefined) return { id: inserted[0].id, state: "claimed" as const }
 						const [existing] = yield* db
 							.select({
 								id: cancellationReviews.id,
 								postedAt: cancellationReviews.postedAt,
 								canceledAt: cancellationReviews.canceledAt,
+								updatedAt: cancellationReviews.updatedAt,
 							})
 							.from(cancellationReviews)
 							.where(
@@ -306,7 +318,7 @@ export class CancellationReviewService extends Context.Service<
 								),
 							)
 							.limit(1)
-						if (existing === undefined) return undefined
+						if (existing === undefined) return { id: "", state: "busy" as const }
 						// Cancelled, kept after all, then cancelled again: a new decision on
 						// the same subscription, and the one that counts.
 						const cancelledAgain =
@@ -314,7 +326,25 @@ export class CancellationReviewService extends Context.Service<
 							job.canceledAt !== null &&
 							existing.canceledAt !== null &&
 							job.canceledAt > existing.canceledAt
-						return { id: existing.id, posted: existing.postedAt !== null && !cancelledAgain }
+						if (existing.postedAt !== null && !cancelledAgain) {
+							return { id: existing.id, state: "posted" as const }
+						}
+						// Unposted and recently touched: another delivery is on it.
+						if (existing.postedAt === null && nowMs - dateToMs(existing.updatedAt) < CLAIM_LEASE_MS) {
+							return { id: existing.id, state: "busy" as const }
+						}
+						// Take it over, unless another delivery took it between the read and here.
+						const taken = yield* db
+							.update(cancellationReviews)
+							.set({ postedAt: null, updatedAt: msToDate(nowMs) })
+							.where(
+								and(
+									eq(cancellationReviews.id, existing.id),
+									eq(cancellationReviews.updatedAt, existing.updatedAt),
+								),
+							)
+							.returning({ id: cancellationReviews.id })
+						return { id: existing.id, state: taken.length === 0 ? ("busy" as const) : ("claimed" as const) }
 					}),
 				)
 				.pipe(Effect.mapError(failedAt("claim", "Could not claim the cancellation review")))
@@ -374,7 +404,13 @@ export class CancellationReviewService extends Context.Service<
 
 				const nowMs = yield* Clock.currentTimeMillis
 				const claimed = yield* claim(job, nowMs)
-				if (claimed === undefined || claimed.posted) return yield* outcome("duplicate")
+				if (claimed.state === "posted") return yield* outcome("duplicate")
+				if (claimed.state === "busy") {
+					return yield* new CancellationReviewError({
+						message: "Another delivery is already reviewing this cancellation",
+						step: "claim",
+					})
+				}
 
 				// The moment the org decided, which for a scheduled cancellation is
 				// well before the plan ends.
@@ -423,7 +459,6 @@ export class CancellationReviewService extends Context.Service<
 											? null
 											: Math.max(0, Math.floor((atMs - org.info.createdAtMs) / DAY_MS)),
 									members: org.members,
-									onboardingCompleted: org.state?.onboardingCompletedAt != null,
 									everReceivedData:
 										org.state?.firstDataReceivedAt != null ||
 										(ingest !== null && ingest.daysSinceLastData !== null),
@@ -436,7 +471,6 @@ export class CancellationReviewService extends Context.Service<
 				})
 
 				const reason = ruleReason(snapshot)
-				const assessment = yield* assessor.assess(snapshot)
 				const message = buildCancellationMessage({
 					subject: {
 						orgId,
@@ -445,19 +479,31 @@ export class CancellationReviewService extends Context.Service<
 						expiresAt: job.expiresAt,
 					},
 					snapshot,
-					ruleReason: reason,
+					reason,
 					signals: deriveSignals(snapshot),
-					assessment,
 				})
 
-				yield* slack
+				const delivered = yield* slack
 					.call("chat.postMessage", {
 						channel: channel.value,
 						text: message.text,
 						blocks: JSON.stringify(message.blocks),
 						unfurl_links: false,
 					})
-					.pipe(Effect.mapError(failedAt("post", "Could not post the cancellation report to Slack")))
+					.pipe(
+						Effect.as(true),
+						// Slack answered and said no: redelivering changes nothing, and failing
+						// here would hold this delivery's plan events back for hours. The row
+						// stays unposted, so a scheduled cancellation is tried again at expiry.
+						Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (error) =>
+							Effect.logError("Slack refused the cancellation report; it was not posted").pipe(
+								Effect.annotateLogs({ slackError: error.error }),
+								Effect.as(false),
+							),
+						),
+						Effect.mapError(failedAt("post", "Could not post the cancellation report to Slack")),
+					)
+				if (!delivered) return yield* outcome("refused")
 
 				yield* database
 					.execute((db) =>
@@ -466,7 +512,6 @@ export class CancellationReviewService extends Context.Service<
 							.set({
 								snapshotJson: snapshot,
 								ruleReason: reason,
-								assessmentJson: assessment,
 								canceledAt: job.canceledAt,
 								postedAt: msToDate(nowMs),
 								updatedAt: msToDate(nowMs),
@@ -483,8 +528,7 @@ export class CancellationReviewService extends Context.Service<
 					)
 
 				yield* Effect.annotateCurrentSpan({
-					"maple.cancellation.rule_reason": reason,
-					"maple.cancellation.model_reason": assessment?.reason ?? "none",
+					"maple.cancellation.reason": reason,
 					// A report can go out missing sections; this is how that shows on the span.
 					"maple.cancellation.unread_sources": Object.entries({ org, ingest, visits, adoption, billing })
 						.filter(([, section]) => section === null)
@@ -511,7 +555,6 @@ export class CancellationReviewService extends Context.Service<
 				WarehouseQueryService.layer,
 				OrgIngestKeysService.layer,
 				AutumnClient.layer,
-				CancellationAssessor.layer,
 				SupportSlackClient.layer,
 			),
 		),

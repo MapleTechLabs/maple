@@ -9,7 +9,7 @@ const fixture = (id: string) => {
 }
 
 describe("ruleReason", () => {
-	it.each(CANCELLATION_FIXTURES.filter((candidate) => !candidate.judgement).map((c) => [c.id, c] as const))(
+	it.each(CANCELLATION_FIXTURES.map((candidate) => [candidate.id, candidate] as const))(
 		"reads %s as its expected reason",
 		(_id, { snapshot, expected }) => {
 			expect(ruleReason(snapshot)).toBe(expected)
@@ -46,7 +46,7 @@ describe("ruleReason", () => {
 		const { snapshot } = fixture("healthy-team")
 		const firstCharge = {
 			...snapshot,
-			billing: { invoices: 2, lastInvoiceTotal: 39, previousInvoiceTotal: 0, overAllowance: [] },
+			billing: { lastInvoiceTotal: 39, previousInvoiceTotal: 0, overAllowance: [] },
 		}
 		expect(ruleReason(firstCharge)).toBe("unclear")
 	})
@@ -62,12 +62,23 @@ describe("ruleReason", () => {
 		expect(ruleReason(fixture("quieter-month").snapshot)).toBe("unclear")
 	})
 
-	it("leaves visits that are fading, but not yet gone, to the model", () => {
-		// The known limit of fixed thresholds: nine days since the last visit is
-		// under the cut-off, so the rules answer `unclear` where a reader would not.
-		const { snapshot, expected } = fixture("drifting-away")
-		expect(expected).toBe("not_engaged")
-		expect(ruleReason(snapshot)).toBe("unclear")
+	it("reads visits that fell away from a real habit as nobody using it", () => {
+		const { snapshot } = fixture("drifting-away")
+		expect(ruleReason(snapshot)).toBe("not_engaged")
+		expect(deriveSignals(snapshot)[1]).toEqual({
+			tone: "concern",
+			text: "Visits fell away: in the app on 1 day of the last 30, 14 the month before",
+		})
+		// A handful of visits either month is not a habit to fall away from.
+		const occasional = {
+			...snapshot,
+			visits: {
+				recent: { activeDays: 1, peakDailyUsers: 1 },
+				prior: { activeDays: 4, peakDailyUsers: 1 },
+				daysSinceLastVisit: 9,
+			},
+		}
+		expect(ruleReason(occasional)).toBe("unclear")
 	})
 })
 

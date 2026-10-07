@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain/http"
 import { Clock, Effect, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
+import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
 import {
 	AUTUMN_BILLING_UPDATED,
 	cancellationsFromBillingUpdated,
@@ -19,9 +19,9 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  * is the Maple org id. Public route; authenticity is the Svix signature
  * (`AUTUMN_WEBHOOK_SECRET`). Other event types are acknowledged with 200.
  *
- * A cancelled plan is also queued for its review (`CancellationReviewService`).
- * The queue send comes first and answers 503 when it fails, so Svix redelivers
- * and nothing about the delivery has been recorded twice.
+ * A cancelled plan is also reviewed (`CancellationReviewService`), before the
+ * product events are recorded: a review that could not finish answers 503, so
+ * Svix redelivers and nothing about the delivery has been recorded twice.
  */
 const ROUTE = "/webhooks/autumn"
 
@@ -31,7 +31,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
 		const productEvents = yield* ProductEventsService
-		const cancellationReviews = yield* CancellationReviewQueue
+		const cancellationReviews = yield* CancellationReviewService
 
 		const handle = Effect.fn("AutumnWebhook.receive")(function* (
 			req: HttpServerRequest.HttpServerRequest,
@@ -67,44 +67,43 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 				)
 				if (Option.isSome(data)) {
 					const receivedAt = yield* Clock.currentTimeMillis
-					// Nothing reads the queue's output without a channel to post to.
+					// A review ends in a Slack post; without a channel there is nothing to do.
 					const cancellations = Option.isSome(env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID)
 						? cancellationsFromBillingUpdated(data.value)
 						: []
-					const queued = yield* Effect.forEach(
+					const reviewed = yield* Effect.forEach(
 						cancellations,
 						({ orgId: rawOrgId, ...cancellation }) =>
 							Option.match(decodeOrgId(rawOrgId), {
 								// Not an id this instance could have issued; nothing to review.
 								onNone: () =>
-									Effect.logWarning("Autumn customer id is not an org id; cancellation not queued").pipe(
+									Effect.logWarning("Autumn customer id is not an org id; cancellation not reviewed").pipe(
 										Effect.annotateLogs({ rawOrgId }),
 									),
 								onSome: (orgId) =>
-									cancellationReviews.send({
-										kind: "cancellation-review",
-										orgId,
-										...cancellation,
-										receivedAt,
-									}),
+									cancellationReviews.review({ ...cancellation, orgId, receivedAt }),
 							}),
 						{ discard: true },
 					).pipe(
 						Effect.as(true),
-						Effect.catchTag("@maple/api/platform/QueueSendError", (error) =>
-							Effect.logError("Could not queue a cancellation review").pipe(
-								Effect.annotateLogs({ orgId: data.value.customer_id, error: error.message }),
+						Effect.catchTag("@maple/backend/cancellation-review/CancellationReviewError", (error) =>
+							Effect.logWarning("Cancellation review did not finish; asking Svix to redeliver").pipe(
+								Effect.annotateLogs({
+									orgId: data.value.customer_id,
+									step: error.step,
+									error: error.message,
+								}),
 								Effect.as(false),
 							),
 						),
 					)
-					if (!queued) {
+					if (!reviewed) {
 						yield* Effect.annotateCurrentSpan({
 							orgId: data.value.customer_id,
 							"http.response.status_code": 503,
-							"maple.webhook.outcome": "queue_failed",
+							"maple.webhook.outcome": "review_failed",
 						})
-						return webhookText("Could not queue the cancellation review", 503)
+						return webhookText("Could not review the cancellation", 503)
 					}
 					const events = planEventsFromBillingUpdated(data.value, {
 						id: envelope.value.id ?? received.messageId,

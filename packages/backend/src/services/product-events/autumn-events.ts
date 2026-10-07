@@ -116,9 +116,9 @@ export const planEventsFromBillingUpdated = (
  * newly set while the plan stays active until `expires_at`. `ended` is the plan
  * actually going away, which is the only signal for an immediate cancel or a
  * subscription Stripe gave up collecting on. A scheduled cancel later produces
- * its own `ended`; the consumer keys on `(orgId, planId, startedAt)` so one
+ * its own `ended`; the review keys on `(orgId, planId, startedAt)` so one
  * subscription is looked at once. A plan switch also ends the old plan: the
- * consumer tells that apart by asking Autumn what the org holds now.
+ * review tells that apart by asking Autumn what the org holds now.
  */
 export interface PlanCancellation {
 	readonly orgId: string

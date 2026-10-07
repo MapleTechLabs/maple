@@ -8,21 +8,10 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { renamedFrom } from "alchemy/Rename"
 import { Effect, Layer, Stream } from "effect"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
-import {
-	AuditEventsDlq,
-	AuditEventsQueue,
-	CancellationReviewQueue,
-	PlanetScaleWebhookQueue,
-	VcsSyncQueue,
-} from "../resources/queues"
+import { AuditEventsDlq, AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent } from "./events"
-import {
-	auditEventsModule,
-	cancellationReviewModule,
-	planetScaleWebhookModule,
-	vcsSyncModule,
-} from "./modules"
+import { auditEventsModule, planetScaleWebhookModule, vcsSyncModule } from "./modules"
 
 // Consumer settings. The audit consumer's `maxRetries` must stay in sync with
 // AUDIT_EVENTS_MAX_RETRIES in audit-events-runtime.ts, which logs the drop on
@@ -34,18 +23,6 @@ const VCS_SYNC_CONSUMER = {
 	maxWaitTime: "5 seconds",
 } satisfies Cloudflare.Queues.MessagesProps
 const PLANETSCALE_WEBHOOKS_CONSUMER = VCS_SYNC_CONSUMER
-// One review is a dozen reads and a model call, and cancellations are rare:
-// one at a time. Retries are half an hour apart, so the five of them outlast an
-// Autumn or Slack outage of a couple of hours. `maxRetries` must
-// stay in sync with CANCELLATION_REVIEWS_MAX_RETRIES in
-// cancellation-review-runtime.ts, which logs the drop on the final attempt.
-const CANCELLATION_REVIEWS_CONSUMER = {
-	batchSize: 1,
-	maxConcurrency: 1,
-	maxRetries: 5,
-	maxWaitTime: "5 seconds",
-	retryDelay: "30 minutes",
-} satisfies Cloudflare.Queues.MessagesProps
 // Audit entries tolerate a few seconds of delivery latency; batch wider and
 // wait longer so one insert round-trip covers many entries.
 const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Queues.MessagesProps => ({
@@ -57,7 +34,7 @@ const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Qu
 })
 
 /**
- * Attaches the consumers to the host at plan time and their listeners
+ * Attaches the three consumers to the host at plan time and their listeners
  * at runtime. Needs `Queues.EventSourceLive`. `renamedFrom` carries the
  * consumer resources over from the ids the api factory declared them under,
  * so the deploy migrates their state rows instead of re-creating the
@@ -109,22 +86,4 @@ export const registerQueueConsumers = (ports: ApiPortsLayer) =>
 					),
 				),
 		).pipe(renamedFrom({ fqn: "audit-events-consumer" }))
-		yield* Cloudflare.Queues.consumeQueueMessages(
-			yield* CancellationReviewQueue,
-			CANCELLATION_REVIEWS_CONSUMER,
-			(stream) =>
-				Effect.flatMap(
-					cancellationReviewModule,
-					({ CancellationReviewLive, processCancellationReviewBatch, cancellationReviewTelemetry }) =>
-						Effect.flatMap(Stream.runCollect(stream), (messages) =>
-							runEvent(
-								processCancellationReviewBatch({ messages }),
-								CancellationReviewLive.pipe(
-									Layer.provideMerge(cancellationReviewTelemetry),
-									Layer.provideMerge(ports),
-								),
-							),
-						),
-				),
-		)
 	})

@@ -26,7 +26,7 @@ import { classifyIncident } from "../../triage/incident-classifier"
  * makes for the chat agent. Compares UTF-8 bytes, because `timingSafeEqual`
  * throws on unequal buffer lengths.
  */
-export const isValidServiceBearer = (authorization: string, expected: string): boolean => {
+const isValidServiceBearer = (authorization: string, expected: string): boolean => {
 	const [scheme, token] = authorization.split(" ")
 	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return false
 	if (!token.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)) return false

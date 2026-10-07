@@ -1,6 +1,6 @@
 /**
- * The deterministic half of a cancellation review: what the snapshot says in
- * plain sentences, and the reason those sentences point to.
+ * Reading a cancellation snapshot: what it says in plain sentences, and the
+ * reason those sentences point to.
  *
  * Every threshold is here, in one file, because the report is only as
  * trustworthy as the reader's ability to check why it said what it said.
@@ -22,6 +22,9 @@ const STOPPED_AFTER_DAYS = 7
 const WOUND_DOWN_RATIO = 0.2
 /** Two weeks without a visit while telemetry flows is nobody looking. */
 const UNVISITED_AFTER_DAYS = 14
+/** So is a month in the app on a quarter of the days of the month before, from a real habit. */
+const VISITS_COLLAPSED_RATIO = 0.25
+const VISITS_HABIT_DAYS = 8
 /** An invoice this many times the one before, and at least `BILL_JUMP_MIN_DOLLARS` more. */
 const BILL_JUMP_RATIO = 1.5
 const BILL_JUMP_MIN_DOLLARS = 20
@@ -36,6 +39,15 @@ const billJumped = (billing: NonNullable<CancellationSnapshot["billing"]>): bool
 	billing.previousInvoiceTotal > 0 &&
 	billing.lastInvoiceTotal >= billing.previousInvoiceTotal * BILL_JUMP_RATIO &&
 	billing.lastInvoiceTotal - billing.previousInvoiceTotal >= BILL_JUMP_MIN_DOLLARS
+
+type Visits = NonNullable<CancellationSnapshot["visits"]>
+
+const unvisited = (visits: Visits): boolean =>
+	visits.daysSinceLastVisit === null || visits.daysSinceLastVisit >= UNVISITED_AFTER_DAYS
+
+const visitsCollapsed = (visits: Visits): boolean =>
+	visits.prior.activeDays >= VISITS_HABIT_DAYS &&
+	visits.recent.activeDays <= visits.prior.activeDays * VISITS_COLLAPSED_RATIO
 
 /**
  * The reason the metrics alone support, most specific first. `unclear` is what
@@ -65,12 +77,7 @@ export const ruleReason = (snapshot: CancellationSnapshot): CancellationReason =
 			totalGB(ingest.prior) > 0 && totalGB(ingest.recent) < totalGB(ingest.prior) * WOUND_DOWN_RATIO
 		if (silent || woundDown) return "stopped_sending"
 
-		if (
-			visits !== null &&
-			(visits.daysSinceLastVisit === null || visits.daysSinceLastVisit >= UNVISITED_AFTER_DAYS)
-		) {
-			return "not_engaged"
-		}
+		if (visits !== null && (unvisited(visits) || visitsCollapsed(visits))) return "not_engaged"
 	}
 	return "unclear"
 }
@@ -123,6 +130,11 @@ export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<Can
 			add("concern", "Nobody opened the app in the last 60 days")
 		} else if (visits.daysSinceLastVisit >= UNVISITED_AFTER_DAYS) {
 			add("concern", `Nobody opened the app in ${days(visits.daysSinceLastVisit)}`)
+		} else if (visitsCollapsed(visits)) {
+			add(
+				"concern",
+				`Visits fell away: in the app on ${days(visits.recent.activeDays)} of the last 30, ${visits.prior.activeDays} the month before`,
+			)
 		} else {
 			add(
 				visits.recent.activeDays >= 8 ? "healthy" : "neutral",

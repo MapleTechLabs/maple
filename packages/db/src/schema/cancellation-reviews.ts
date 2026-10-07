@@ -1,14 +1,15 @@
 import type { OrgId } from "@maple/domain"
-import type { CancellationAssessment, CancellationReason, CancellationSnapshot } from "@maple/domain/http"
+import type { CancellationReason, CancellationSnapshot } from "@maple/domain/http"
 import { bigint, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
 /**
  * One review per cancelled subscription: the usage snapshot taken when Autumn
- * reported the cancellation, and what was made of it.
+ * reported the cancellation, and the reason read from it.
  *
  * The row is written before anything is gathered, and the unique index is what
  * makes a redelivered webhook, or the `expired` that follows a scheduled
- * cancellation weeks later, a no-op instead of a second report.
+ * cancellation weeks later, a no-op instead of a second report. Until the report
+ * is posted, `updatedAt` is the lease of whichever delivery is working on it.
  */
 export const cancellationReviews = pgTable(
 	"cancellation_reviews",
@@ -22,8 +23,6 @@ export const cancellationReviews = pgTable(
 		canceledAt: bigint("canceled_at", { mode: "number" }),
 		snapshotJson: jsonb("snapshot_json").$type<CancellationSnapshot>(),
 		ruleReason: text("rule_reason").$type<CancellationReason>(),
-		/** Null when the decision model did not answer. */
-		assessmentJson: jsonb("assessment_json").$type<CancellationAssessment>(),
 		/** Null until the report reached Slack; a retry picks an unposted row back up. */
 		postedAt: timestamp("posted_at", { withTimezone: true, mode: "date" }),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),

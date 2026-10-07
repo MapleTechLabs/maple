@@ -1,4 +1,3 @@
-import { CancellationAssessment } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
@@ -15,9 +14,8 @@ const report = (id: string, overrides: Partial<CancellationReport> = {}): Cancel
 			expiresAt: Date.parse("2026-10-19T00:00:00Z"),
 		},
 		snapshot: fixture.snapshot,
-		ruleReason: ruleReason(fixture.snapshot),
+		reason: ruleReason(fixture.snapshot),
 		signals: deriveSignals(fixture.snapshot),
-		assessment: null,
 		...overrides,
 	}
 }
@@ -43,24 +41,9 @@ describe("buildCancellationMessage", () => {
 			],
 		})
 		expect(text(message)).toContain(":red_circle:  Stopped sending telemetry 24 days ago")
-		expect(text(message)).toContain("No model read")
-	})
-
-	it("shows the model's read beside the rule's and flags a disagreement", () => {
-		const message = buildCancellationMessage(
-			report("drifting-away", {
-				assessment: new CancellationAssessment({
-					reason: "not_engaged",
-					reasonConfidence: 0.81,
-					winBack: 0.34,
-					model: "@cf/cloudflare/clef",
-				}),
-			}),
-		)
-		expect(text(message)).toContain("*Likely reason*\\nNot visible in usage")
-		expect(text(message)).toContain("*Model read*\\nNobody was using it (81%) :warning: differs")
-		expect(text(message)).toContain("*Win-back odds*\\n34%")
-		expect(text(message)).toContain("Model: @cf/cloudflare/clef")
+		expect(text(message)).toContain("*Likely reason*\\nStopped sending telemetry")
+		expect(text(message)).toContain("*Contact*\\ndev@example.com")
+		expect(text(message)).not.toContain("Could not read")
 	})
 
 	it("names the sections it could not read instead of showing zeros", () => {

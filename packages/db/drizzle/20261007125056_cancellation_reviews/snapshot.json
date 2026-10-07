@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "ad42d0e3-fc45-4780-921d-e970cb6bd1e8",
+  "id": "a9ce02f8-139d-4eb9-bf09-315c5936b0fa",
   "prevIds": [
     "92119332-972c-45fa-948d-25fdcb3eb855"
   ],
@@ -3158,19 +3158,6 @@
       "generated": null,
       "identity": null,
       "name": "rule_reason",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "cancellation_reviews"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "assessment_json",
       "entityType": "columns",
       "schema": "public",
       "table": "cancellation_reviews"

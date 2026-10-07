@@ -11,17 +11,20 @@ cancellation and posts a report to a Slack channel in Maple's workspace.
    `MAPLE_SUPPORT_SLACK_BOT_TOKEN`, and `MAPLE_CANCELLATION_SLACK_CHANNEL_ID`.
 3. Invite the support bot to that channel.
 
-Without a channel id nothing is queued; without the bot token the consumer does nothing.
+Without a channel id nothing is reviewed.
 
 ## What triggers one
 
 `billing.updated` with a subscription whose `canceled_at` was just set (cancels at period end),
-or one that `expired` (immediate cancel, failed payment). The consumer then asks Autumn what the
+or one that `expired` (immediate cancel, failed payment). The review then asks Autumn what the
 org holds now: an add-on, or a plan that ended while another plan is active, is skipped. A
 cancellation is reported once: the `expired` that follows a scheduled cancellation is a no-op,
 while cancelling again after keeping the plan is a new review.
 
-A failed review is retried five times, half an hour apart, then logged as abandoned.
+The review runs inside the webhook request (`CancellationReviewService`). If Clerk, Autumn,
+Postgres or Slack does not answer, the route answers 503 and Svix redelivers. If Slack answers
+but refuses the post (bot not in the channel, wrong channel id), that is logged as an error and
+not retried; a scheduled cancellation is tried once more when the plan expires.
 
 ## What it reads
 
@@ -31,25 +34,20 @@ a year, so an org that switched off months ago is not read as one that never sta
 | Section  | Source                                                                    |
 | -------- | ------------------------------------------------------------------------- |
 | plan     | the webhook payload                                                       |
-| org      | Clerk (name, age, members), onboarding state, support channel             |
+| org      | Clerk (name, age, members), signup contact, support channel               |
 | ingest   | billable volume per day (`DailySpendService`)                             |
 | visits   | the org's page views in the app (`product_events` under Maple's own org)  |
-| adoption | counts of dashboards, alert rules, destinations, API keys, integrations   |
+| adoption | counts of dashboards, alert rules, integrations                           |
 | billing  | Autumn: the two latest invoices, features past their included allowance   |
 
-A section that cannot be read is `null` and named in the report. Only the Autumn customer read is
-required; without it the job is retried.
+A section that cannot be read is `null` and named in the report. Only the region lookup and the
+Autumn customer read are required.
 
 ## How the reason is decided
 
-- `signals.ts` turns the snapshot into sentences and one reason by fixed thresholds. This is the
-  report's "Likely reason" and always present.
-- The decision model (`apps/ai/src/cancellation/assess.ts`) reads the same snapshot plus those
-  sentences and answers the same question, with a probability, and how likely a personal note is
-  to win the org back. The report shows it beside the rule's answer and marks a disagreement.
+`signals.ts` turns the snapshot into sentences and one reason, by fixed thresholds that all live
+in that file. `fixtures.ts` holds one synthetic org per way of leaving; add a case there when a
+real cancellation is read wrongly.
 
-The rules settle the clear cases. The model is there for the ones thresholds miss, such as visits
-fading but not yet past the cut-off. Both are judged on the shared cases in `fixtures.ts`; add a
-case there when a real cancellation is read wrongly.
-
-The snapshot, both answers and the post time are kept in `cancellation_reviews`.
+The snapshot, the reason and the post time are kept in `cancellation_reviews`. Once there are real
+cancellations whose reasons are known, those rows are what a model's read could be tested against.

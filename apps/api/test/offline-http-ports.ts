@@ -5,7 +5,6 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
-	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	EmailSender,
 	MapleDbConnection,
@@ -22,7 +21,6 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(VcsSyncQueueProducer, queue),
 	Layer.succeed(PlanetScaleWebhookQueueProducer, queue),
 	Layer.succeed(AuditEventsQueueProducer, queue),
-	Layer.succeed(CancellationReviewQueueProducer, queue),
 	Layer.succeed(ApiV2RateLimit, limiter),
 	Layer.succeed(CliAuthRateLimit, limiter),
 	Layer.succeed(McpOAuthRateLimit, limiter),

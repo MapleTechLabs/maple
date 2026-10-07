@@ -13,7 +13,6 @@ import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
-	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	EmailSender,
 	McpOAuthRateLimit,
@@ -38,12 +37,7 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
-import {
-	AuditEventsQueue,
-	CancellationReviewQueue,
-	PlanetScaleWebhookQueue,
-	VcsSyncQueue,
-} from "../resources/queues"
+import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
 /**
@@ -57,7 +51,6 @@ export const bindApiClients = Effect.gen(function* () {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
-		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewQueue),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
@@ -176,7 +169,6 @@ export const apiPorts = (
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
-		Layer.succeed(CancellationReviewQueueProducer, producer(clients.cancellationReviews)),
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),

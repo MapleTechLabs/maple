@@ -1,12 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
-import { QueueSendError } from "@maple/backend/platform/bindings"
 import { Env } from "@maple/backend/platform/Env"
 import {
-	CancellationReviewQueue,
-	type CancellationReviewJob,
-} from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
+	CancellationReviewError,
+	CancellationReviewService,
+	type CancellationToReview,
+} from "@maple/backend/services/cancellation-review/CancellationReviewService"
 import {
 	ProductEventsService,
 	type ProductEventInput,
@@ -93,18 +93,19 @@ const recordingRevocation = (fail = false) => {
 	return { calls, layer }
 }
 
-/** Records the cancellation reviews the Autumn route queues, and can be made to refuse them. */
+/** Records the cancellations the Autumn route hands to the review, which can be made to fail. */
 const recordingCancellationReviews = (fail = false) => {
-	const queued: Array<CancellationReviewJob> = []
-	const layer = Layer.succeed(CancellationReviewQueue, {
-		send: (job) =>
+	const reviewed: Array<CancellationToReview> = []
+	const layer = Layer.succeed(CancellationReviewService, {
+		review: (cancellation) =>
 			fail
-				? Effect.fail(new QueueSendError({ message: "queue down", cause: "queue down" }))
+				? Effect.fail(new CancellationReviewError({ message: "Autumn did not answer", step: "billing" }))
 				: Effect.sync(() => {
-						queued.push(job)
+						reviewed.push(cancellation)
+						return "posted" as const
 					}),
 	})
-	return { queued, layer }
+	return { reviewed, layer }
 }
 
 const makeRouterLayer = (
@@ -113,7 +114,7 @@ const makeRouterLayer = (
 	productEvents: Layer.Layer<ProductEventsService>,
 	revocation: Layer.Layer<MembershipRevocationService> = recordingRevocation().layer,
 	audit: Layer.Layer<AuditLogService> = recordingAudit().layer,
-	cancellationReviews: Layer.Layer<CancellationReviewQueue> = recordingCancellationReviews().layer,
+	cancellationReviews: Layer.Layer<CancellationReviewService> = recordingCancellationReviews().layer,
 ) =>
 	router.pipe(
 		Layer.provide(productEvents),
@@ -460,7 +461,7 @@ const AUTUMN_CANCEL_SCHEDULED = JSON.stringify({
 })
 
 describe("AutumnWebhookRouter", () => {
-	it.effect("queues a review for a scheduled cancellation", () =>
+	it.effect("reviews a scheduled cancellation", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const reviews = recordingCancellationReviews()
@@ -480,10 +481,9 @@ describe("AutumnWebhookRouter", () => {
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
 				assert.deepStrictEqual(
-					reviews.queued.map(({ receivedAt: _receivedAt, ...job }) => job),
+					reviews.reviewed.map(({ receivedAt: _receivedAt, ...cancellation }) => cancellation),
 					[
 						{
-							kind: "cancellation-review",
 							orgId: "org_42",
 							planId: "startup",
 							phase: "scheduled",
@@ -504,7 +504,7 @@ describe("AutumnWebhookRouter", () => {
 		}),
 	)
 
-	it.effect("queues nothing on a deployment with no channel to report to", () =>
+	it.effect("reviews nothing on a deployment with no channel to report to", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const reviews = recordingCancellationReviews()
@@ -523,13 +523,13 @@ describe("AutumnWebhookRouter", () => {
 				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
-				assert.deepStrictEqual(reviews.queued, [])
+				assert.deepStrictEqual(reviews.reviewed, [])
 				assert.strictEqual(events.tracked.length, 1)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}),
 	)
 
-	it.effect("answers 503 and records nothing when the review cannot be queued", () =>
+	it.effect("answers 503 and records nothing when the review could not finish", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const { handler, dispose } = HttpRouter.toWebHandler(

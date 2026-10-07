@@ -6,7 +6,6 @@ CREATE TABLE "cancellation_reviews" (
 	"canceled_at" bigint,
 	"snapshot_json" jsonb,
 	"rule_reason" text,
-	"assessment_json" jsonb,
 	"posted_at" timestamp with time zone,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL

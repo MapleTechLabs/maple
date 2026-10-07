@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { CancellationAssessment, DailySpendResponse, DailyVolume, OrgId } from "@maple/domain/http"
+import { DailySpendResponse, DailyVolume, OrgId } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -18,12 +18,11 @@ import { OrganizationRegionService } from "@maple/backend/services/org/Organizat
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import { SupportSlackClient, SupportSlackRefusedError } from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
-import { CancellationAssessor } from "./CancellationAssessor"
-import type { CancellationReviewJob } from "./CancellationReviewQueue"
-import { CancellationReviewService } from "./CancellationReviewService"
+import { CancellationReviewService, type CancellationToReview } from "./CancellationReviewService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -33,8 +32,7 @@ const OWN_ORG = Schema.decodeUnknownSync(OrgId)("org_maple")
 const CANCELED_AT = Date.parse("2026-10-07T15:30:00Z")
 const DAY_MS = 86_400_000
 
-const job: CancellationReviewJob = {
-	kind: "cancellation-review",
+const job: CancellationToReview = {
 	orgId: ORG,
 	planId: "startup",
 	phase: "scheduled",
@@ -53,7 +51,8 @@ interface World {
 	/** Autumn's HTTP status, and the subscriptions it reports the org holding now. */
 	autumnStatus: number
 	subscriptions: Array<{ planId: string; status: string; addOn?: boolean }>
-	slackFails: boolean
+	/** `refused`: Slack answered no. `unreachable`: it did not answer. */
+	slack: "ok" | "refused" | "unreachable"
 	warehouseDown: boolean
 	/** The org's own page views, and whether anyone at all has page views under Maple's org. */
 	visitRows: Array<{ bucket: string; groupName: string; value: number; eventCount: number }>
@@ -67,7 +66,7 @@ const freshWorld = (): World => ({
 	servedHere: true,
 	autumnStatus: 200,
 	subscriptions: [{ planId: "startup", status: "active" }],
-	slackFails: false,
+	slack: "ok",
 	warehouseDown: false,
 	visitRows: [{ bucket: "2026-09-17 00:00:00", groupName: "", value: 3, eventCount: 40 }],
 	anyPageViews: true,
@@ -156,25 +155,19 @@ const stubs = (world: World) =>
 					},
 				}),
 		}),
-		Layer.succeed(CancellationAssessor, {
-			assess: () =>
-				Effect.succeed(
-					new CancellationAssessment({
-						reason: "stopped_sending",
-						reasonConfidence: 0.9,
-						winBack: 0.2,
-						model: "test-model",
-					}),
-				),
-		}),
 		Layer.succeed(SupportSlackClient, {
 			configured: true,
 			teamUserIds: [],
 			call: (method, body) =>
 				Effect.suspend(() => {
-					if (world.slackFails) {
+					if (world.slack === "refused") {
 						return Effect.fail(
 							new SupportSlackRefusedError({ message: "refused", method, error: "not_in_channel" }),
+						)
+					}
+					if (world.slack === "unreachable") {
+						return Effect.fail(
+							new SupportChannelUnavailableError({ message: "Slack did not answer", operation: method }),
 						)
 					}
 					world.posts.push(body)
@@ -209,14 +202,14 @@ const config = (world: World) =>
 		? BASE_CONFIG
 		: { ...BASE_CONFIG, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }
 
-const review = (world: World, testDb: TestDb, input: CancellationReviewJob = job, nowMs = CANCELED_AT + 1_000) =>
+const review = (world: World, testDb: TestDb, input: CancellationToReview = job, nowMs = CANCELED_AT + 1_000) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(nowMs)
 		return yield* CancellationReviewService.use((service) => service.review(input))
 	}).pipe(Effect.provide(makeLayer(world, testDb)))
 
 /** The step a review failed at. */
-const failedStep = (world: World, testDb: TestDb, input: CancellationReviewJob = job) =>
+const failedStep = (world: World, testDb: TestDb, input: CancellationToReview = job) =>
 	review(world, testDb, input).pipe(
 		Effect.flip,
 		Effect.map((error) => error.step),
@@ -399,17 +392,38 @@ describe("CancellationReviewService", () => {
 		}),
 	)
 
-	it.effect("retries a report Slack refused, and posts it on the next delivery", () =>
+	it.effect("fails a report Slack could not be reached for, and posts it once the lease is over", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
-			world.slackFails = true
+			world.slack = "unreachable"
 			const testDb = createTestDb(trackedDbs)
 
 			assert.strictEqual(yield* failedStep(world, testDb), "post")
 			assert.isNull((yield* storedReview(testDb))?.posted_at)
 
-			world.slackFails = false
-			assert.strictEqual(yield* review(world, testDb), "posted")
+			world.slack = "ok"
+			// A redelivery seconds later finds the first delivery's claim still fresh and waits.
+			assert.strictEqual(yield* failedStep(world, testDb), "claim")
+			assert.strictEqual(world.posts.length, 0)
+			// Svix's next attempt, minutes on, takes the review over.
+			assert.strictEqual(yield* review(world, testDb, job, CANCELED_AT + 5 * 60_000), "posted")
+		}),
+	)
+
+	it.effect("does not ask for a redelivery when Slack answers no, and tries again at expiry", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.slack = "refused"
+			const testDb = createTestDb(trackedDbs)
+
+			// Bot not in the channel: a retry changes nothing, so the webhook is not held up.
+			assert.strictEqual(yield* review(world, testDb), "refused")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+
+			world.slack = "ok"
+			world.subscriptions = [{ planId: "startup", status: "expired" }]
+			const expiry = { ...job, phase: "ended" as const }
+			assert.strictEqual(yield* review(world, testDb, expiry, CANCELED_AT + 12 * DAY_MS), "posted")
 		}),
 	)
 

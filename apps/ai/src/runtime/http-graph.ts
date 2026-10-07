@@ -14,8 +14,6 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
- *   - `/internal/cancellation/assess` — the same model's read of a cancelling
- *     org's usage, for api's cancellation consumer, over the same binding.
  *
  * The api still owns the hostname. It forwards all three here over a service
  * binding, which is what keeps `/mcp`'s OAuth issuer and RFC 8707 resource
@@ -28,7 +26,6 @@ import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
-import { HttpCancellationLive } from "../routes/internal/cancellation.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
@@ -77,7 +74,7 @@ const rawRoutes = <Routes extends Layer.Any>(
 const RawRoutes = rawRoutes(Layer.mergeAll(HealthRouter, ChatSessionsRouter, McpLive))
 
 /**
- * The decision model the triage and cancellation routes ask, built once per isolate from the
+ * The decision model the triage route asks, built once per isolate from the
  * Worker's config: the same layers the investigation turn builds per turn in
  * `turn-runner.ts`, on the same AI Gateway binding.
  */
@@ -85,7 +82,7 @@ const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisio
 
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
-	Layer.provide(Layer.mergeAll(HttpTriageLive, HttpCancellationLive).pipe(Layer.provide(DecisionModelLive))),
+	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
 	Layer.provide(V1ErrorBoundaryLive),
 )
 
