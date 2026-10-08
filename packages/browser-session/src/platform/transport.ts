@@ -81,50 +81,79 @@ export function warnDropped(what: string, error: unknown): void {
  * Combined budget for this SDK's in-flight `keepalive` bodies.
  *
  * The Fetch spec caps the *combined* in-flight keepalive body at 64 KiB per
- * page, and the browser rejects a request that would cross it. On the way out
- * up to three of our writes go at once (metadata row, final events batch, last
- * replay chunk), so the budget has to be shared rather than checked per
- * request. It stops short of 64 KiB because the OTLP trace exporter spends
- * from the same page-wide allowance under its own accounting.
+ * document, and the browser rejects a request that would cross it. On the way
+ * out several of our writes go at once (the session's final metadata row and
+ * events batch, a replay chunk, the Effect SDK's OTLP flush), so the budget
+ * has to be shared rather than checked per request. OTLP's own share is
+ * capped ({@link OTLP_KEEPALIVE_BYTES}), which keeps room for the session rows
+ * whichever is issued first.
  *
- * Over the budget a write goes out as a normal request, which the page may or
- * may not survive long enough to finish: strictly better than a guaranteed
+ * The budget stops short of 64 KiB for keepalive requests it cannot count.
+ * That is headroom, not a guarantee: the browser SDK's OpenTelemetry trace
+ * exporter allows itself 60 KiB of its own, so with it on the page the total
+ * can still cross the limit.
+ *
+ * Over the budget a write goes out as a normal request, which the browser
+ * terminates if the document unloads first: still better than a guaranteed
  * rejection.
  */
 const KEEPALIVE_BUDGET_BYTES = 48 * 1024
 
-/** On `globalThis`: two bundled SDK copies still share one page-wide allowance. */
+/** The most of the budget that OTLP requests hold between them. */
+export const OTLP_KEEPALIVE_BYTES = 32 * 1024
+
+/**
+ * Largest body of newest items an OTLP flush sends first from a hidden or
+ * unloading document. Two signals' worth leaves about 4 KiB of OTLP's share
+ * for a metrics snapshot.
+ */
+export const OTLP_UNLOAD_TAIL_BYTES = 14 * 1024
+
+/** On `globalThis`: two bundled SDK copies still share one per-document allowance. */
 const KEEPALIVE_KEY = "__MAPLE_KEEPALIVE_INFLIGHT__"
 
-function keepaliveInflight(): { bytes: number } {
+/** `otlpBytes` is absent on a holder created by an SDK copy that predates it. */
+function keepaliveInflight(): { bytes: number; otlpBytes?: number } {
 	const owner = globalThis as Record<string, unknown>
-	const existing = owner[KEEPALIVE_KEY] as { bytes: number } | undefined
+	const existing = owner[KEEPALIVE_KEY] as { bytes: number; otlpBytes?: number } | undefined
 	if (existing) return existing
 	const fresh = { bytes: 0 }
 	owner[KEEPALIVE_KEY] = fresh
 	return fresh
 }
 
+/** Keepalive bytes an OTLP request could reserve right now: its own share and the total both apply. */
+export function otlpKeepaliveRoom(): number {
+	const inflight = keepaliveInflight()
+	return Math.max(
+		0,
+		Math.min(OTLP_KEEPALIVE_BYTES - (inflight.otlpBytes ?? 0), KEEPALIVE_BUDGET_BYTES - inflight.bytes),
+	)
+}
+
 /**
  * Reserve `bytes` of the shared keepalive budget. Returns the release function
- * when the request may use `keepalive`, `undefined` when it must not.
+ * when the request may use `keepalive`, `undefined` when it must not. `otlp`
+ * marks an OTLP request, which also counts against {@link OTLP_KEEPALIVE_BYTES}.
  */
-export function reserveKeepalive(requested: boolean, bytes: number): (() => void) | undefined {
+export function reserveKeepalive(requested: boolean, bytes: number, otlp = false): (() => void) | undefined {
 	if (!requested) return undefined
 	const inflight = keepaliveInflight()
-	if (inflight.bytes + bytes > KEEPALIVE_BUDGET_BYTES) return undefined
+	if (bytes > (otlp ? otlpKeepaliveRoom() : KEEPALIVE_BUDGET_BYTES - inflight.bytes)) return undefined
 	inflight.bytes += bytes
+	if (otlp) inflight.otlpBytes = (inflight.otlpBytes ?? 0) + bytes
 	let released = false
 	return () => {
 		if (released) return
 		released = true
 		inflight.bytes = Math.max(0, inflight.bytes - bytes)
+		if (otlp) inflight.otlpBytes = Math.max(0, (inflight.otlpBytes ?? 0) - bytes)
 	}
 }
 
 /** Test seam. */
 export function resetKeepaliveBudgetForTests(): void {
-	keepaliveInflight().bytes = 0
+	Object.assign(keepaliveInflight(), { bytes: 0, otlpBytes: 0 })
 }
 
 /** Body size in bytes: the keepalive limit counts bytes, and `string.length` counts UTF-16 units. */
@@ -136,23 +165,34 @@ function byteLength(body: string | Uint8Array): number {
  * POST to ingest, spending the shared keepalive budget when `keepalive` is
  * requested. Resolves with the status only: the response body is cancelled
  * before the reservation is released, because the browser counts a keepalive
- * request against the page-wide limit until its response body ends, not
- * until headers arrive. Rejects exactly as `fetch` does; callers own the
- * error policy.
+ * request against the per-document limit until its response body ends, not
+ * until headers arrive. Rejects exactly as `fetch` does, including when
+ * `signal` aborts; callers own the error policy.
  */
 export async function postToIngest(
 	url: string,
 	headers: Record<string, string>,
 	body: string | Uint8Array,
 	keepalive: boolean,
+	options: {
+		readonly signal?: AbortSignal | undefined
+		/** See {@link reserveKeepalive}. */
+		readonly otlp?: boolean | undefined
+	} = {},
 ): Promise<{ readonly ok: boolean; readonly status: number }> {
-	const release = reserveKeepalive(keepalive, byteLength(body))
+	// `length` never exceeds the byte size, so a body already past the budget is
+	// not encoded only to be refused.
+	const release =
+		body.length > KEEPALIVE_BUDGET_BYTES
+			? undefined
+			: reserveKeepalive(keepalive, byteLength(body), options.otlp)
 	try {
 		const response = await fetch(url, {
 			method: "POST",
 			headers,
 			body: body as BodyInit,
 			keepalive: release !== undefined,
+			signal: options.signal,
 		})
 		// Nothing reads ingest's body; ending it here is what ends the request.
 		await response.body?.cancel().catch(() => {})

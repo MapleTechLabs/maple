@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	gzip,
+	otlpKeepaliveRoom,
 	postToIngest,
 	reserveKeepalive,
 	resetKeepaliveBudgetForTests,
@@ -44,6 +45,25 @@ describe("reserveKeepalive", () => {
 		expect(reserveKeepalive(true, 30 * 1024)).toBeTypeOf("function")
 	})
 
+	it("caps OTLP's own share and leaves the rest of the budget to the others", () => {
+		expect(reserveKeepalive(true, 30 * 1024, true)).toBeTypeOf("function")
+		expect(reserveKeepalive(true, 4 * 1024, true)).toBeUndefined()
+		expect(reserveKeepalive(true, 16 * 1024)).toBeTypeOf("function")
+	})
+
+	it("lets OTLP reserve next to session writes that came first", () => {
+		// Other writes count against the total only, not against OTLP's share.
+		const session = reserveKeepalive(true, 28 * 1024)
+		expect(otlpKeepaliveRoom()).toBe(20 * 1024)
+		const otlp = reserveKeepalive(true, 16 * 1024, true)
+		expect(otlp).toBeTypeOf("function")
+		expect(otlpKeepaliveRoom()).toBe(4 * 1024)
+		session?.()
+		expect(otlpKeepaliveRoom()).toBe(16 * 1024)
+		otlp?.()
+		expect(otlpKeepaliveRoom()).toBe(32 * 1024)
+	})
+
 	it("never turns keepalive on for a caller that didn't ask", () => {
 		expect(reserveKeepalive(false, 1)).toBeUndefined()
 	})
@@ -72,6 +92,7 @@ describe("transport", () => {
 	let fetchMock: ReturnType<typeof vi.fn>
 
 	beforeEach(() => {
+		resetKeepaliveBudgetForTests()
 		fetchMock = vi.fn(async () => new Response(null, { status: 202 }))
 		vi.stubGlobal("fetch", fetchMock)
 	})
@@ -114,6 +135,22 @@ describe("transport", () => {
 	it("keeps keepalive on a normal-sized row", async () => {
 		await postSessionMeta(CONFIG, { session_id: "s1" }, true)
 
+		expect(lastInit(fetchMock).keepalive).toBe(true)
+	})
+
+	it("hands the caller's abort signal to fetch", async () => {
+		const { signal } = new AbortController()
+		await postToIngest("https://ingest.test/x", {}, "x", true, { signal })
+
+		expect(lastInit(fetchMock).signal).toBe(signal)
+	})
+
+	it("sends an OTLP body past OTLP's share without keepalive", async () => {
+		const body = "x".repeat(40 * 1024)
+		await postToIngest("https://ingest.test/x", {}, body, true, { otlp: true })
+		expect(lastInit(fetchMock).keepalive).toBe(false)
+
+		await postToIngest("https://ingest.test/x", {}, body, true)
 		expect(lastInit(fetchMock).keepalive).toBe(true)
 	})
 
