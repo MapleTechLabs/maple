@@ -1,5 +1,4 @@
 import { useMemo, useRef } from "react"
-import { useContainerSize } from "@maple/ui/hooks/use-container-size"
 import { cn } from "@maple/ui/lib/utils"
 import { containerKeyFor, groupWidgetsByContainer, ROOT_CONTAINER_KEY } from "@maple/domain/http"
 import type { DashboardSection } from "@maple/widgets/dashboard"
@@ -10,6 +9,7 @@ import {
 	type WidgetRendererComponent,
 } from "@/components/dashboard-builder/canvas/dashboard-canvas"
 import { tierForWidth } from "@/components/dashboard-builder/canvas/grid-breakpoints"
+import { useContainerWidth } from "@/components/dashboard-builder/canvas/use-container-width"
 import { DashboardSectionView } from "@/components/dashboard-builder/sections/dashboard-section"
 import { useDashboardActionsOptional } from "@/components/dashboard-builder/dashboard-actions-context"
 import { resolveSectionView, type SectionViewSearch } from "@/lib/dashboards/section-view-state"
@@ -50,9 +50,9 @@ export function DashboardSections<W extends CanvasWidget>({
 	const mode = useDashboardActionsOptional()?.mode ?? "view"
 
 	const containerRef = useRef<HTMLDivElement>(null)
-	const { width: measuredWidth } = useContainerSize(containerRef)
-	// Rounded so subpixel container widths don't re-lay-out every grid.
-	const width = Math.round(measuredWidth)
+	// Whole px, measured before first paint, so the grids appear in the same
+	// frame as the page rather than one frame later.
+	const width = useContainerWidth(containerRef)
 	const measured = width > 0
 
 	// Only the canonical tier's layout is authored and persisted; narrower ones

@@ -99,6 +99,7 @@ import { Route as InfraPlanetscaleDbNameRouteImport } from './routes/infra/plane
 import { Route as InfraRailwayIndexRouteImport } from './routes/infra/railway/index'
 import { Route as InfraRailwayServiceIdRouteImport } from './routes/infra/railway/$serviceId'
 import { Route as LabBenchAgentTranscriptRouteImport } from './routes/lab/bench/agent-transcript'
+import { Route as LabBenchDashboardGridRouteImport } from './routes/lab/bench/dashboard-grid'
 import { Route as LabBenchInfraRouteImport } from './routes/lab/bench/infra'
 import { Route as LabBenchLogsRouteImport } from './routes/lab/bench/logs'
 import { Route as LabBenchOverviewRouteImport } from './routes/lab/bench/overview'
@@ -569,6 +570,11 @@ const LabBenchAgentTranscriptRoute = LabBenchAgentTranscriptRouteImport.update({
   path: '/bench/agent-transcript',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabBenchDashboardGridRoute = LabBenchDashboardGridRouteImport.update({
+  id: '/bench/dashboard-grid',
+  path: '/bench/dashboard-grid',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabBenchInfraRoute = LabBenchInfraRouteImport.update({
   id: '/bench/infra',
   path: '/bench/infra',
@@ -737,6 +743,7 @@ export interface FileRoutesByFullPath {
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
+  '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
   '/lab/bench/overview': typeof LabBenchOverviewRoute
@@ -843,6 +850,7 @@ export interface FileRoutesByTo {
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
+  '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
   '/lab/bench/overview': typeof LabBenchOverviewRoute
@@ -951,6 +959,7 @@ export interface FileRoutesById {
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
+  '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
   '/lab/bench/overview': typeof LabBenchOverviewRoute
@@ -1060,6 +1069,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
+    | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
     | '/lab/bench/overview'
@@ -1166,6 +1176,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
+    | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
     | '/lab/bench/overview'
@@ -1273,6 +1284,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
+    | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
     | '/lab/bench/overview'
@@ -2011,6 +2023,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabBenchAgentTranscriptRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/bench/dashboard-grid': {
+      id: '/lab/bench/dashboard-grid'
+      path: '/bench/dashboard-grid'
+      fullPath: '/lab/bench/dashboard-grid'
+      preLoaderRoute: typeof LabBenchDashboardGridRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/bench/infra': {
       id: '/lab/bench/infra'
       path: '/bench/infra'
@@ -2141,6 +2160,7 @@ interface LabRouteRouteChildren {
   LabWidgetsRoute: typeof LabWidgetsRoute
   LabIndexRoute: typeof LabIndexRoute
   LabBenchAgentTranscriptRoute: typeof LabBenchAgentTranscriptRoute
+  LabBenchDashboardGridRoute: typeof LabBenchDashboardGridRoute
   LabBenchInfraRoute: typeof LabBenchInfraRoute
   LabBenchLogsRoute: typeof LabBenchLogsRoute
   LabBenchOverviewRoute: typeof LabBenchOverviewRoute
@@ -2171,6 +2191,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabWidgetsRoute: LabWidgetsRoute,
   LabIndexRoute: LabIndexRoute,
   LabBenchAgentTranscriptRoute: LabBenchAgentTranscriptRoute,
+  LabBenchDashboardGridRoute: LabBenchDashboardGridRoute,
   LabBenchInfraRoute: LabBenchInfraRoute,
   LabBenchLogsRoute: LabBenchLogsRoute,
   LabBenchOverviewRoute: LabBenchOverviewRoute,
