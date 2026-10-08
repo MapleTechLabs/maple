@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	gzip,
+	otlpKeepaliveRoom,
 	postToIngest,
 	reserveKeepalive,
 	resetKeepaliveBudgetForTests,
@@ -44,10 +45,23 @@ describe("reserveKeepalive", () => {
 		expect(reserveKeepalive(true, 30 * 1024)).toBeTypeOf("function")
 	})
 
-	it("keeps the budget above a caller's ceiling free for the others", () => {
-		expect(reserveKeepalive(true, 30 * 1024, 32 * 1024)).toBeTypeOf("function")
-		expect(reserveKeepalive(true, 4 * 1024, 32 * 1024)).toBeUndefined()
+	it("caps OTLP's own share and leaves the rest of the budget to the others", () => {
+		expect(reserveKeepalive(true, 30 * 1024, true)).toBeTypeOf("function")
+		expect(reserveKeepalive(true, 4 * 1024, true)).toBeUndefined()
 		expect(reserveKeepalive(true, 16 * 1024)).toBeTypeOf("function")
+	})
+
+	it("lets OTLP reserve next to session writes that came first", () => {
+		// Other writes count against the total only, not against OTLP's share.
+		const session = reserveKeepalive(true, 28 * 1024)
+		expect(otlpKeepaliveRoom()).toBe(20 * 1024)
+		const otlp = reserveKeepalive(true, 16 * 1024, true)
+		expect(otlp).toBeTypeOf("function")
+		expect(otlpKeepaliveRoom()).toBe(4 * 1024)
+		session?.()
+		expect(otlpKeepaliveRoom()).toBe(16 * 1024)
+		otlp?.()
+		expect(otlpKeepaliveRoom()).toBe(32 * 1024)
 	})
 
 	it("never turns keepalive on for a caller that didn't ask", () => {
@@ -131,12 +145,12 @@ describe("transport", () => {
 		expect(lastInit(fetchMock).signal).toBe(signal)
 	})
 
-	it("sends a body past the caller's ceiling without keepalive", async () => {
-		const body = "x".repeat(20 * 1024)
-		await postToIngest("https://ingest.test/x", {}, body, true, { keepaliveCeiling: 16 * 1024 })
+	it("sends an OTLP body past OTLP's share without keepalive", async () => {
+		const body = "x".repeat(40 * 1024)
+		await postToIngest("https://ingest.test/x", {}, body, true, { otlp: true })
 		expect(lastInit(fetchMock).keepalive).toBe(false)
 
-		await postToIngest("https://ingest.test/x", {}, body, true, { keepaliveCeiling: 32 * 1024 })
+		await postToIngest("https://ingest.test/x", {}, body, true)
 		expect(lastInit(fetchMock).keepalive).toBe(true)
 	})
 

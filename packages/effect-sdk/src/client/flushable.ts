@@ -2,13 +2,15 @@
 // buffered traces, logs, and metric snapshots. Transport uses keepalive fetch:
 // unlike sendBeacon it can carry the ingest key's Authorization header. The
 // browser caps a document's in-flight keepalive bodies at 64 KiB combined, so
-// every POST reserves from the budget shared with the session writes, up to a
-// ceiling of its own, and goes out as a plain request past that.
+// every POST reserves from the budget shared with the session writes, within
+// OTLP's share of it, and goes out as a plain request past that.
 
 import {
 	hasConsent,
 	type MapleRegion,
 	onConsentChange,
+	OTLP_UNLOAD_TAIL_BYTES,
+	otlpKeepaliveRoom,
 	postToIngest,
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
@@ -40,12 +42,6 @@ const DEFAULT_AUTO_FLUSH_MS = 5_000
 /** Abort a POST after this long, plus an allowance per KiB of body, so it cannot block the flush queue. */
 const POST_TIMEOUT_MS = 30_000
 const POST_TIMEOUT_MS_PER_KIB = 10
-
-/** OTLP's ceiling within the shared 48 KiB keepalive budget; the rest stays free for the session's final rows. */
-const KEEPALIVE_CEILING_BYTES = 32 * 1024
-
-/** Max body of the newest items a hidden or unloading document sends first. */
-const UNLOAD_TAIL_BYTES = 16 * 1024
 
 const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
@@ -174,10 +170,9 @@ const postOtlp = (url: string, headers: Record<string, string>, body: unknown) =
 		() => controller.abort(new Error(`OTLP POST timed out after ${Math.round(timeoutMs / 1000)}s`)),
 		timeoutMs,
 	)
-	return postToIngest(url, headers, json, true, {
-		signal: controller.signal,
-		keepaliveCeiling: KEEPALIVE_CEILING_BYTES,
-	}).finally(() => clearTimeout(timer))
+	return postToIngest(url, headers, json, true, { signal: controller.signal, otlp: true }).finally(() =>
+		clearTimeout(timer),
+	)
 }
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
@@ -286,16 +281,25 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
 
-	// Between `pagehide` and `pageshow` (a back/forward-cache restore) a rejected
-	// request is not restored, cooled down or logged: an unloading document
-	// rejects keepalive fetches that ingest still receives. It also terminates
-	// its plain requests, and those are not sent again after a restore either.
+	// A request rejected around `pagehide` is not restored, cooled down or
+	// logged: an unloading document rejects keepalive fetches that ingest still
+	// receives. It also terminates its plain requests, and those are not sent
+	// again after a back/forward-cache restore either. "Around" means sent
+	// between `pagehide` and `pageshow`, or in flight when a `pagehide` fired.
 	let unloading = false
+	let pageHides = 0
 	const transport: FlushTransport = {
 		post: async (url, headers, body) => {
-			const res = await postOtlp(url, headers, body).catch((cause: unknown) =>
-				unloading ? undefined : Promise.reject(cause),
-			)
+			const sentUnloading = unloading
+			const sentPageHides = pageHides
+			const res = await postOtlp(url, headers, body).catch(async (cause: unknown) => {
+				// The browser can reject between two listeners of one `pagehide`,
+				// before ours has run. A task later they all have, and a document
+				// that is gone never gets that far.
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				if (sentUnloading || pageHides !== sentPageHides) return undefined
+				throw cause
+			})
 			// A non-2xx is ingest's answer: it throws so the signal cools down.
 			if (res && !res.ok) throw new Error(`OTLP ${res.status}`)
 		},
@@ -320,7 +324,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				metricsState,
 				transport,
 				logPrefix: "[MapleClientSDK]",
-				tailBytes: unload && UNLOAD_TAIL_BYTES,
+				// The newest items get the keepalive room that is left at that moment.
+				tailBytes: unload && (() => Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())),
 				ignoreCooldown: unload?.ignoreCooldown,
 			})
 		})
@@ -404,6 +409,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 
 	const onPageHide = (): void => {
 		unloading = true
+		pageHides += 1
 		void pageHideFlush()
 	}
 	const onPageShow = (): void => {

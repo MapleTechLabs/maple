@@ -1,6 +1,12 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { describe, it } from "@effect/vitest"
-import { postToIngest, resetConsentForTests, setConsent } from "@maple/browser-session"
+import {
+	OTLP_KEEPALIVE_BYTES,
+	OTLP_UNLOAD_TAIL_BYTES,
+	postToIngest,
+	resetConsentForTests,
+	setConsent,
+} from "@maple/browser-session"
 import { Effect, Metric } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
@@ -71,10 +77,6 @@ const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 		).resourceSpans[0].scopeSpans[0].spans.map((span) => span.name),
 	)
 
-// Mirror the client's keepalive ceiling and the size of its newest-first unload request.
-const KEEPALIVE_CEILING_BYTES = 32 * 1024
-const UNLOAD_TAIL_BYTES = 16 * 1024
-
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
 const setupDom = () => {
@@ -97,6 +99,14 @@ const setupDom = () => {
 		fire: (type: string) => {
 			for (const fn of listeners[type] ?? []) (fn as () => void)()
 		},
+		// A browser runs a microtask checkpoint after each listener; `fire` does not.
+		fireWithCheckpoints: async (type: string) => {
+			for (const fn of listeners[type] ?? []) {
+				;(fn as () => void)()
+				for (let turn = 0; turn < 50; turn++) await Promise.resolve()
+			}
+		},
+		listen: (type: string, fn: () => void) => void (listeners[type] ??= new Set()).add(fn),
 		setHidden: () => {
 			doc.visibilityState = "hidden"
 		},
@@ -514,7 +524,7 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, numbered("big", 400))
 		await telemetry.flush()
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(KEEPALIVE_CEILING_BYTES)
+		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(OTLP_KEEPALIVE_BYTES)
 		// The browser would reject this body with keepalive set, whatever the server says.
 		expect(traceCalls(calls)[0].keepalive).toBe(false)
 
@@ -639,7 +649,7 @@ describe("MapleFlush.make (client)", () => {
 		const tail = spanNames([newest])
 		expect(tail.length).toBeGreaterThan(1)
 		expect(tail).toEqual(names.slice(-tail.length))
-		expect(newest.bytes).toBeLessThanOrEqual(UNLOAD_TAIL_BYTES)
+		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
 		expect(newest.keepalive).toBe(true)
 		// Everything older is one request, which no keepalive budget could hold.
 		expect(spanNames([older])).toEqual(names.slice(0, -tail.length))
@@ -649,7 +659,43 @@ describe("MapleFlush.make (client)", () => {
 		await tick()
 	})
 
-	it("keeps its keepalive bodies under a ceiling that leaves room for the session's final row", async () => {
+	it("sizes the newest-first request to the keepalive room a periodic flush leaves", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+		const names = numbered("tail", 40)
+
+		await recordSpans(telemetry, numbered("periodic", 70))
+		const periodic = telemetry.flush()
+		await tick()
+		await recordSpans(telemetry, names)
+		dom.fire("pagehide")
+
+		const [inFlight, newest, older] = traceCalls(calls)
+		expect(inFlight.keepalive).toBe(true)
+		// The newest spans take what is left of OTLP's share; the older ones go plain.
+		const tail = spanNames([newest])
+		expect(tail).toEqual(names.slice(-tail.length))
+		expect(newest.keepalive).toBe(true)
+		expect(inFlight.bytes + newest.bytes).toBeLessThanOrEqual(OTLP_KEEPALIVE_BYTES)
+		expect(spanNames([older])).toEqual(names.slice(0, -tail.length))
+		expect(older.keepalive).toBe(false)
+
+		// OTLP's share leaves room for the session's final row.
+		const row = JSON.stringify("x".repeat(8 * 1024))
+		const sessionRow = postToIngest("https://collector.test/v1/sessionReplays/meta", {}, row, true)
+		expect(calls.at(-1)?.keepalive).toBe(true)
+
+		inflight.resolveAll()
+		await Promise.all([periodic, sessionRow])
+	})
+
+	it("still gets keepalive when session writes reserved first", async () => {
 		const inflight = pendingResponses()
 		const { calls, restore: rf } = setupFetch(inflight.responder)
 		const dom = setupDom()
@@ -659,25 +705,46 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make({ ...baseConfig, flushOnUnload: true })
 
-		await recordSpans(telemetry, numbered("periodic", 80))
-		const periodic = telemetry.flush()
-		await tick()
-		await recordSpans(telemetry, numbered("tail", 40))
+		const rows = JSON.stringify("x".repeat(30 * 1024))
+		const sessionRows = postToIngest("https://collector.test/v1/sessionEvents", {}, rows, true)
+		await recordSpans(telemetry, numbered("span", 40))
 		dom.fire("pagehide")
 
-		const [first, second] = traceCalls(calls)
-		expect(first.keepalive).toBe(true)
-		// The shared budget alone would have taken both; the ceiling does not.
-		expect(first.bytes + second.bytes).toBeGreaterThan(KEEPALIVE_CEILING_BYTES)
-		expect(first.bytes + second.bytes).toBeLessThan(48 * 1024)
-		expect(second.keepalive).toBe(false)
-
-		const row = JSON.stringify("x".repeat(8 * 1024))
-		const sessionRow = postToIngest("https://collector.test/v1/sessionReplays/meta", {}, row, true)
-		expect(calls.at(-1)?.keepalive).toBe(true)
+		// Session bytes count against the shared total, not against OTLP's share.
+		expect(traceCalls(calls)).toHaveLength(1)
+		expect(traceCalls(calls)[0].keepalive).toBe(true)
 
 		inflight.resolveAll()
-		await Promise.all([periodic, sessionRow])
+		await sessionRows
+	})
+
+	it("ignores a periodic POST the browser rejects before this pagehide listener has run", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		// Another listener of the same event runs first, and the rejection is
+		// handled at the microtask checkpoint right after it.
+		dom.listen("pagehide", inflight.rejectAll)
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await tick()
+		await dom.fireWithCheckpoints("pagehide")
+		await periodic
+
+		// Sent once: not put back for the pagehide flush or for a later one.
+		dom.fire("pageshow")
+		await telemetry.flush()
+		expect(spanNames(calls)).toEqual(["periodic"])
+		expect(errorSpy).not.toHaveBeenCalled()
+		expect(warnSpy).not.toHaveBeenCalled()
 	})
 
 	it("ignores a rejection seen after pagehide, until pageshow", async () => {
@@ -751,6 +818,8 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, ["hidden"])
 		dom.setHidden()
 		dom.fire("visibilitychange")
+		// The rejection is judged one task after it arrives.
+		await tick()
 		await tick()
 		expect(errorSpy).toHaveBeenCalledTimes(1)
 
