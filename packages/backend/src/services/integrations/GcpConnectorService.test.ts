@@ -180,6 +180,35 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 
+	it.effect("forgets the last push when log forwarding is switched back on", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE gcp_connectors SET last_received_at = $1, last_error = $2 WHERE id = $3",
+					["2026-10-08T09:12:00.000Z", "payload was not a LogEntry", connector.id],
+				),
+			)
+			const lastPush = {
+				lastLogReceivedAt: Date.parse("2026-10-08T09:12:00.000Z"),
+				lastLogError: "payload was not a LogEntry",
+			}
+
+			// Kept while logs stay on, and while they are off.
+			const stillOn = yield* gcp.update(orgId, connector.id, { logsEnabled: true })
+			assert.deepStrictEqual(stillOn, { ...connector, ...lastPush })
+			const off = yield* gcp.update(orgId, connector.id, { logsEnabled: false })
+			assert.deepStrictEqual(off, { ...connector, ...lastPush, logsEnabled: false })
+
+			const backOn = yield* gcp.update(orgId, connector.id, { logsEnabled: true })
+			assert.deepStrictEqual(backOn, connector)
+			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [connector])
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
 	it.effect("reports what the ingest gateway recorded for the last push", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
