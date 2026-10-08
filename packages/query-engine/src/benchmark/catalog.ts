@@ -1236,7 +1236,7 @@ export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): R
 }
 
 const ROW_SOURCE_RE = /\b(?:FROM|JOIN|UNION ALL|AS)[\s(]*$/
-const STRING_LITERAL_RE = /'(?:[^'\\]|\\.|'')*'/g
+const STRING_LITERAL_RE = /'(?:[^'\\]|\\.)*'/g
 
 /**
  * `sql` without the subqueries it only consults. A scalar or `IN (SELECT …)`
