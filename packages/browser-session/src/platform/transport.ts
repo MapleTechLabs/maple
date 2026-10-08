@@ -83,15 +83,13 @@ export function warnDropped(what: string, error: unknown): void {
  * The Fetch spec caps the *combined* in-flight keepalive body at 64 KiB per
  * document, and the browser rejects a request that would cross it. On the way
  * out several of our writes go at once (the session's final metadata row and
- * events batch, a replay chunk, the Effect SDK's OTLP flush), so the budget
- * has to be shared rather than checked per request. The OTLP flush reserves
- * under a lower ceiling, which keeps a share for the session rows whichever
- * is issued first.
+ * events batch, a replay chunk, either SDK's OTLP export), so the budget has
+ * to be shared rather than checked per request. An OTLP export reserves under
+ * a lower ceiling, which keeps a share for the session rows whichever is
+ * issued first.
  *
- * The budget stops short of 64 KiB for keepalive requests it cannot count.
- * That is headroom, not a guarantee: the browser SDK's OpenTelemetry trace
- * exporter allows itself 60 KiB of its own, so with it on the page the total
- * can still cross the limit.
+ * The budget stops short of 64 KiB for keepalive requests it cannot count,
+ * the host page's own among them. That is headroom, not a guarantee.
  *
  * Over the budget a write goes out as a normal request, which the browser
  * terminates if the document unloads first: still better than a guaranteed

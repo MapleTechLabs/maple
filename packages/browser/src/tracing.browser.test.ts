@@ -14,10 +14,12 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 // Capture what the batch processor actually hands to the exporter, so the
 // unload flush can be asserted on exported spans rather than on a spy.
 const exported: ReadableSpan[] = []
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
+		constructor(private readonly url: string) {}
 		export(spans: ReadableSpan[], callback: (result: { code: number }) => void): void {
-			exported.push(...spans)
+			if (this.url.endsWith("/v1/traces")) exported.push(...spans)
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {

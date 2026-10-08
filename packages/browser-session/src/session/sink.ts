@@ -24,8 +24,8 @@ const observedTraceIdsBySession = new Map<string, Set<string>>()
  * unbounded — and the whole set is serialized into the `ended` metadata row,
  * which is written with `keepalive` on the way out. The Fetch spec caps the
  * *combined* keepalive body across in-flight requests at 64 KiB, shared here
- * with the final events flush, a replay chunk and the Effect SDK's OTLP
- * flush, so an app emitting a span a second would silently lose its entire
+ * with the final events flush, a replay chunk and either SDK's OTLP
+ * export, so an app emitting a span a second would silently lose its entire
  * session row after ~30 minutes.
  *
  * Keep-first rather than keep-last: the ids are a join key for "show me this

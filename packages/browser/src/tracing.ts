@@ -17,10 +17,10 @@ import {
 	type TracerProvider,
 	trace,
 } from "@opentelemetry/api"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
 import { XMLHttpRequestInstrumentation } from "@opentelemetry/instrumentation-xml-http-request"
+import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import { resourceFromAttributes } from "@opentelemetry/resources"
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
@@ -30,6 +30,7 @@ import type { ResolvedConfig } from "./config"
 import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
+import { flushUnloading, newestFirstOnExit, OtlpExporter } from "./otlp"
 import { SessionSampler } from "./sampling"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -168,15 +169,19 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
  * live id per span instead.
  */
 export function setupTracing(config: ResolvedConfig): () => Promise<void> {
-	const otlp = new OTLPTraceExporter({
-		url: `${config.endpoint}/v1/traces`,
+	const otlp = new OtlpExporter(
+		`${config.endpoint}/v1/traces`,
 		// The same auth + `x-maple-sdk` headers as every session write; a page
 		// cannot set `user-agent`, so ingest reads the SDK from the latter.
-		headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-	})
+		ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+		JsonTraceSerializer,
+	)
 	const exporter = new ConsentSpanExporter(
 		new HttpStatusExporter(
-			config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
+			newestFirstOnExit(
+				config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
+				JsonTraceSerializer,
+			),
 			config.errorFilters.captureHttpStatus,
 		),
 	)
@@ -237,7 +242,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			if (span.isRecording()) span.end(endTime)
 		}
 		settledRequests.clear()
-		onExit()
+		flushUnloading(onExit)
 	}
 	// Runs as the response settles, right before the instrumentation schedules
 	// the span's deferred end. Pruning here keeps the map to spans still waiting.

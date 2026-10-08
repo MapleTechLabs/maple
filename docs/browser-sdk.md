@@ -153,7 +153,10 @@ The `ended` row carries the session duration, the click count, and the **trace i
 during the session**. Those ids power trace↔replay correlation and the user/session
 columns in Maple's session list and detail views. The unload write uses `keepalive`, so it
 survives the page going away as long as it fits the browser's limit: 64 KiB of in-flight
-`keepalive` bodies per document, shared with every other request the page sends that way.
+`keepalive` bodies per document, shared with every other request the page sends that way. The
+SDK's own span and log exports count against the same allowance and leave room for this row: on
+the way out the newest spans and logs go first with `keepalive`, and older ones follow in a
+second request that a closing page may not complete.
 
 ### Accessing the session id
 
