@@ -225,6 +225,10 @@ export function useGridInteraction({ layout, geometry, enabled, onCommit }: Opti
 		const container = containerRef.current
 		if (!session || !container) return
 		session.frame = 0
+		// Scroll before measuring, so this frame's transform already accounts
+		// for it. Scrolling after would leave the tile a step off the pointer
+		// for a frame, every frame: a jitter while the board auto-scrolls.
+		const scrolled = autoScroll(session.scroller, session.lastY)
 		const grid = container.getBoundingClientRect()
 		// Scrolling moves the grid under a still pointer; fold that in so the tile
 		// stays under the cursor while the board auto-scrolls.
@@ -261,7 +265,7 @@ export function useGridInteraction({ layout, geometry, enabled, onCommit }: Opti
 			session.preview = next
 			publish(next)
 		}
-		if (autoScroll(session.scroller, session.lastY)) session.frame = requestAnimationFrame(step)
+		if (scrolled) session.frame = requestAnimationFrame(step)
 	}
 
 	const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {

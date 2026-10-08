@@ -284,6 +284,51 @@ describe("pointer drag", () => {
 		})
 	})
 
+	// Auto-scroll moves the grid under a still pointer. The tile has to be
+	// repositioned for the scroll in the same frame, or it rides the scroll for
+	// a frame and snaps back: a 12px jitter for as long as the board scrolls.
+	it("keeps the carried tile under a still pointer while the board auto-scrolls", async () => {
+		const widgets = Array.from({ length: 12 }, (_, index) => widget(`t${index}`, 0, index * 4, 12, 4))
+		const view = render(
+			<div data-testid="scroller" style={{ height: 400, overflowY: "auto", width: WIDTH }}>
+				<DashboardGrid
+					widgets={widgets}
+					width={WIDTH}
+					tier={CANONICAL}
+					editable
+					renderWidget={TestTile}
+					onLayoutCommit={vi.fn()}
+				/>
+			</div>,
+		)
+		const scroller = view.getByTestId("scroller")
+		const grip = view.container.querySelector<HTMLElement>("[data-grid-item='t0'] .widget-drag-handle")!
+		const tile = view.container.querySelector<HTMLElement>("[data-grid-item='t0']")!
+		const start = grip.getBoundingClientRect()
+		// Where the tile sits relative to the pointer when grabbed. It must keep
+		// that offset however far the board scrolls.
+		const grabOffset = tile.getBoundingClientRect().top - (start.top + 2)
+		const edge = scroller.getBoundingClientRect().bottom - 10
+		await act(async () => pointer("pointerdown", grip, start.left + 2, start.top + 2))
+		await act(async () => {
+			pointer("pointermove", document.body, start.left + 2, edge)
+			await nextFrame()
+		})
+		const offsets: number[] = []
+		for (let frame = 0; frame < 20; frame++) {
+			await act(async () => {
+				await nextFrame()
+			})
+			offsets.push(tile.getBoundingClientRect().top - edge - grabOffset)
+		}
+		expect(scroller.scrollTop).toBeGreaterThan(100)
+		for (const offset of offsets) expect(Math.abs(offset)).toBeLessThanOrEqual(1)
+		await act(async () => {
+			pointer("pointerup", document.body, start.left + 2, edge)
+			await nextFrame()
+		})
+	})
+
 	it("puts everything back and commits nothing on Escape", async () => {
 		const { handle, box, onLayoutCommit } = mount({})
 		await dragBy(handle("a"), column * 6, 0, { release: false })
