@@ -97,8 +97,8 @@ export const resourceTimingAttributes = (
 		"maple.fetch.dns_ms": dns,
 		"maple.fetch.connect_ms": connect,
 		"maple.fetch.tls_ms": tls,
-		// Time before the request went out that no named phase covers: queueing,
-		// connection-pool waits, service worker. The "before" gap nobody could see.
+		// Time before the request went out that no named phase covers. Includes an
+		// uncached CORS preflight round trip, plus queueing and connection-pool waits.
 		"maple.fetch.stalled_ms": ms(entry.requestStart - entry.startTime - dns - connect - tls),
 		"maple.fetch.ttfb_ms": ms(entry.responseStart - entry.requestStart),
 		"maple.fetch.download_ms": ms(entry.responseEnd - entry.responseStart),
