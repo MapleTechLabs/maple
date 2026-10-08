@@ -14,6 +14,7 @@ import {
 import { plainFrom } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
+import { API_PROXY_PREFIX } from "./api-proxy"
 
 const rootDir = new URL("..", import.meta.url).pathname
 
@@ -27,6 +28,8 @@ const props = Effect.gen(function* () {
 		assets: {
 			// Deep links serve the shell in place; otherwise hard reloads 307 to "/".
 			notFoundHandling: "single-page-application" as const,
+			// The API proxy (`handler.ts`) must reach the Worker, not the SPA fallback.
+			runWorkerFirst: [`${API_PROXY_PREFIX}/*`],
 		},
 		// Also hash the `@maple/*` sources; `lockfile` is restated because `include` drops it.
 		memo: {
@@ -41,7 +44,14 @@ const props = Effect.gen(function* () {
 			...(urls.api === "" ? undefined : { MAPLE_API_BASE_URL: urls.api }),
 			API: api,
 			// Client build inputs: a change here rebuilds with no source change.
-			VITE_API_BASE_URL: urls.api,
+			// Same-origin through the proxy when this stage has its own app domain, which
+			// spares every API call a CORS preflight. Dev stages keep the direct URL.
+			VITE_API_BASE_URL:
+				domains.web !== undefined && urls.api !== ""
+					? `https://${domains.web}${API_PROXY_PREFIX}`
+					: urls.api,
+			// The API's public URL, for what users copy or hand to other tools (MCP, curl).
+			VITE_API_PUBLIC_URL: urls.api,
 			VITE_INGEST_URL: urls.ingest,
 			// The app's own telemetry. A preview's gateway knows none of Maple's internal keys.
 			VITE_MAPLE_SELF_INGEST_URL:

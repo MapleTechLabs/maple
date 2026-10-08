@@ -31,7 +31,7 @@ import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { RelativeTime } from "@/components/common/relative-time"
 import { ArrowPathIcon, CodeIcon, KeyIcon, PlusIcon, SquareTerminalIcon, TrashIcon } from "@/components/icons"
-import { apiBaseUrl } from "@/lib/services/common/api-base-url"
+import { apiPublicUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
 import { SyncUnavailable } from "@/components/common/sync-unavailable"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
@@ -400,9 +400,9 @@ const SCOPE_FAMILY_ROWS = [
 	{ id: "organization", label: "Organization", description: "Read the organization's identity" },
 ] as const
 
-const docsUrl = `${apiBaseUrl}/v2/docs`
+const docsUrl = `${apiPublicUrl}/v2/docs`
 
-const curlExample = `curl ${apiBaseUrl}/v2/alerts/rules \\
+const curlExample = `curl ${apiPublicUrl}/v2/alerts/rules \\
   -H "Authorization: Bearer maple_ak_..."`
 
 /**
@@ -428,7 +428,7 @@ function ApiReference() {
 				}
 			>
 				<div className="space-y-4">
-					<CopyableField label="Base URL" value={`${apiBaseUrl}/v2`} />
+					<CopyableField label="Base URL" value={`${apiPublicUrl}/v2`} />
 					<div className="space-y-1">
 						<span className="text-xs text-muted-foreground">Quick start</span>
 						<Panel tone="muted" className="flex-row items-start justify-between gap-2 px-3 py-2">
