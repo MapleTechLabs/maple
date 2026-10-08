@@ -374,7 +374,7 @@ const checkFunnelWidget = (
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
 		Effect.map((rows): FunnelCheck => {
-			const count = (step: number) => Number(rows.find((r) => Number(r.step) === step)?.count) || 0
+			const count = (step: number) => Number(rows.find((r) => r.step === step)?.count) || 0
 			return { ok: true, steps, first: count(1), last: count(steps) }
 		}),
 		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),

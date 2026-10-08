@@ -408,7 +408,7 @@ function OverviewTab({
 		<div className="flex flex-col gap-3">
 			<MetricsGrid
 				items={metrics}
-				waiting={!!isWaiting}
+				waiting={isWaiting}
 				syncId={`service-${serviceName}`}
 				overlay={commitMarkers}
 				// Pin every chart's plot to one left edge so the commit markers group the

@@ -423,7 +423,7 @@ function LensBody({
 								) : (
 									<PodTable
 										pods={response.data}
-										waiting={Boolean(holder.waiting)}
+										waiting={holder.waiting}
 										referenceTime={endTime}
 									/>
 								),

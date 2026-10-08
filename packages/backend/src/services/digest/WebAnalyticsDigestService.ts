@@ -263,15 +263,14 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				// Summary
 				const summaryOf = (rows: ReadonlyArray<CH.WebAnalyticsSummaryOutput>) => {
 					const row = rows[0]
-					const identified = Number(row?.identifiedSessions) || 0
+					const identified = row?.identifiedSessions || 0
 					return {
-						visitors: Number(row?.visitors) || 0,
-						sessions: Number(row?.sessions) || 0,
+						visitors: row?.visitors || 0,
+						sessions: row?.sessions || 0,
 						identified,
 						// Bounce is only measurable over sessions that report page views.
-						bounceRate:
-							identified > 0 ? ((Number(row?.bouncedSessions) || 0) / identified) * 100 : null,
-						avgDurationMs: Number(row?.avgDurationMs) || 0,
+						bounceRate: identified > 0 ? ((row?.bouncedSessions || 0) / identified) * 100 : null,
+						avgDurationMs: row?.avgDurationMs || 0,
 					}
 				}
 				const cur = summaryOf(curSummary)
@@ -280,16 +279,14 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				let curPageViews = 0
 				let prevPageViews = 0
 				for (const row of pageviewSeries) {
-					const views = Number(row.pageViews) || 0
+					const views = row.pageViews || 0
 					if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
 					else prevPageViews += views
 				}
 
 				// Pages
 				const prevViewsByPage = new Map(
-					prevPages.map(
-						(row) => [`${row.host}${row.pagePath}`, Number(row.pageViews) || 0] as const,
-					),
+					prevPages.map((row) => [`${row.host}${row.pagePath}`, row.pageViews || 0] as const),
 				)
 				// Last week's list is capped, so a page missing from a FULL list may
 				// just have ranked lower: its baseline is unknown, not zero.
@@ -302,7 +299,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const pageLabel = pageLabels(curPages.map((row) => ({ host: row.host, path: row.pagePath })))
 				const topPages = withShares(
 					curPages.map((row) => {
-						const views = Number(row.pageViews) || 0
+						const views = row.pageViews || 0
 						return {
 							icon: null,
 							label: pageLabel({ host: row.host, path: row.pagePath }),
@@ -321,7 +318,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 						.map((row) => ({
 							icon: sourceIcon(row.name),
 							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : row.name,
-							value: Number(row.count) || 0,
+							value: row.count || 0,
 						}))
 						.sort((a, b) => b.value - a.value)
 						.slice(0, TOP_ROWS),
@@ -334,7 +331,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					for (const row of aiReferrals) {
 						if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent)
 							continue
-						totals.set(row.product, (totals.get(row.product) ?? 0) + (Number(row.sessions) || 0))
+						totals.set(row.product, (totals.get(row.product) ?? 0) + (row.sessions || 0))
 					}
 					return totals
 				}
@@ -357,18 +354,15 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 				let crawlerStats: WebAnalyticsDigestProps["ai"]["crawlers"] = null
 				if (crawlers !== null) {
-					const requests = sum(crawlers.cur.map((row) => Number(row.requests) || 0))
+					const requests = sum(crawlers.cur.map((row) => row.requests || 0))
 					crawlerStats = {
 						requests,
-						delta: computeDelta(
-							requests,
-							sum(crawlers.prev.map((row) => Number(row.requests) || 0)),
-						),
+						delta: computeDelta(requests, sum(crawlers.prev.map((row) => row.requests || 0))),
 						byCrawler: withShares(
 							crawlers.cur.slice(0, TOP_ROWS).map((row) => ({
 								icon: aiProductIcon(crawlerProduct.get(row.crawler) ?? ""),
 								label: row.crawler,
-								value: Number(row.requests) || 0,
+								value: row.requests || 0,
 							})),
 							requests,
 						),

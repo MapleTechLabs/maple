@@ -282,7 +282,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 							r.data,
 							Arr.map((p) => ({
 								bucket: warehouseDateTimeToIso(p.bucket),
-								count: Number(p.count),
+								count: p.count,
 							})),
 						),
 					),

@@ -50,7 +50,7 @@ const decodeTraceId = Schema.decodeSync(TraceId)
  * a backstop for the pre-cutover inline rows, not the effective limit.
  */
 const assertRangeFitsBudget = (rows: ReadonlyArray<{ readonly byteSize: number }>) => {
-	const total = rows.reduce((sum, row) => sum + Number(row.byteSize), 0)
+	const total = rows.reduce((sum, row) => sum + row.byteSize, 0)
 	return total <= MAX_REPLAY_RANGE_PAYLOAD_BYTES
 		? Effect.void
 		: Effect.fail(V2SessionReplayRangeTooLarge.make(undefined, { param: "to_chunk_seq" }))
@@ -218,7 +218,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 							click_count: row.clickCount,
 							error_count: row.errorCount,
 							// `length()` is UInt64 — ClickHouse JSON-quotes it as a string.
-							trace_count: Number(row.traceCount),
+							trace_count: row.traceCount,
 							tags: sessionTagsOf(row),
 						})),
 						has_more: hasMore,
@@ -285,7 +285,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						group_id: data.groupId,
 						group_name: data.groupName,
 						visitor_id: data.visitorId,
-						visitor_is_new: Number(data.visitorIsNew) === 1,
+						visitor_is_new: data.visitorIsNew === 1,
 						user_traits: data.userTraits,
 						referrer: data.referrer,
 						referrer_host: data.referrerHost,
@@ -313,8 +313,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						trace_ids: data.traceIds.map((traceId) => decodeTraceId(traceId)),
 						resource_attributes: data.resourceAttributes,
 						// UInt64 → coerce before Schema.Number validates.
-						active_time_ms: activity ? Number(activity.activeTimeMs) : null,
-						idle_time_ms: activity ? Number(activity.idleTimeMs) : null,
+						active_time_ms: activity ? activity.activeTimeMs : null,
+						idle_time_ms: activity ? activity.idleTimeMs : null,
 					} satisfies V2SessionReplay
 					return replay
 				}),
@@ -345,12 +345,12 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const chunks = rows.slice(0, MAX_REPLAY_MANIFEST_CHUNKS).map(
 						(row) =>
 							({
-								chunk_seq: Number(row.chunkSeq),
+								chunk_seq: row.chunkSeq,
 								timestamp: isoOf(row.timestamp),
-								duration_ms: Number(row.durationMs),
-								event_count: Number(row.eventCount),
-								byte_size: Number(row.byteSize),
-								is_checkpoint: Number(row.isCheckpoint) !== 0,
+								duration_ms: row.durationMs,
+								event_count: row.eventCount,
+								byte_size: row.byteSize,
+								is_checkpoint: row.isCheckpoint !== 0,
 							}) satisfies V2SessionReplayChunkMeta,
 					)
 					yield* Effect.annotateCurrentSpan({
@@ -454,12 +454,12 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 									Effect.map((rows): ReadonlyArray<V2SessionReplayChunk> =>
 										rows.map((row) => ({
 											object: "session_replay.event_chunk" as const,
-											chunk_seq: Number(row.chunkSeq),
+											chunk_seq: row.chunkSeq,
 											timestamp: isoOf(row.timestamp),
-											duration_ms: Number(row.durationMs),
-											event_count: Number(row.eventCount),
-											byte_size: Number(row.byteSize),
-											is_checkpoint: Number(row.isCheckpoint) !== 0,
+											duration_ms: row.durationMs,
+											event_count: row.eventCount,
+											byte_size: row.byteSize,
+											is_checkpoint: row.isCheckpoint !== 0,
 											events: row.events,
 										})),
 									),

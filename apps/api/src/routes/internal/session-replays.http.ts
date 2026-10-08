@@ -66,14 +66,12 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 						const pick = (facetType: string) =>
 							rows
 								.filter((row) => row.facetType === facetType)
-								.map((row) => ({ name: row.name, count: Number(row.count) }))
+								.map((row) => ({ name: row.name, count: row.count }))
 						// The percentile branches ride the same {name, count} shape as the
 						// facets, with the quantile in `count` — read them back by label.
 						const stat = (name: string) =>
-							Number(
-								rows.find((row) => row.facetType === "durationStat" && row.name === name)
-									?.count ?? 0,
-							)
+							rows.find((row) => row.facetType === "durationStat" && row.name === name)
+								?.count ?? 0
 						return new ReplaysFacetsResponse({
 							services: pick("service"),
 							browsers: pick("browser"),
@@ -82,9 +80,9 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							groups: pick("group"),
 							pages: pick("page"),
 							tags: pick("tag"),
-							errorCount: Number(rows.find((row) => row.facetType === "error")?.count ?? 0),
-							totalSessions: Number(rows.find((row) => row.facetType === "total")?.count ?? 0),
-							liveSessions: Number(rows.find((row) => row.facetType === "live")?.count ?? 0),
+							errorCount: rows.find((row) => row.facetType === "error")?.count ?? 0,
+							totalSessions: rows.find((row) => row.facetType === "total")?.count ?? 0,
+							liveSessions: rows.find((row) => row.facetType === "live")?.count ?? 0,
 							durationBuckets: pick("durationBucket"),
 							durationP50: stat("p50"),
 							durationP95: stat("p95"),
@@ -122,7 +120,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 								traceId: decodeTraceId(row.traceId),
 								// `count()` is UInt64 — same ClickHouse JSON-string coercion as
 								// listReplays' traceCount; coerce before Schema.Number validates.
-								spanCount: Number(row.spanCount),
+								spanCount: row.spanCount,
 							})),
 						})
 					}),

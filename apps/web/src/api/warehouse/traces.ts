@@ -714,7 +714,7 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 
 	const toItem = (row: { name: string; count: number }): FacetItem => ({
 		name: row.name,
-		count: Number(row.count),
+		count: row.count,
 	})
 	const byType = (type: string) => facetsData.filter((r) => r.facetType === type).map(toItem)
 	const errorRow = facetsData.find((r) => r.facetType === "errorCount")

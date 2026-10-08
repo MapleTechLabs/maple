@@ -462,7 +462,7 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 		return bucket.toISOString()
 	}
 
-	const raw = String(bucket).trim()
+	const raw = bucket.trim()
 	if (!raw) {
 		return raw
 	}
@@ -791,14 +791,14 @@ function groupAllMetricsTimeSeriesRows<
 			series = {}
 			bucketMap.set(bucket, series)
 		}
-		series[metricKey("count", row.groupName)] = Number(row.count)
-		series[metricKey("avg_duration", row.groupName)] = Number(row.avgDuration)
-		series[metricKey("p50_duration", row.groupName)] = Number(row.p50Duration)
-		series[metricKey("p95_duration", row.groupName)] = Number(row.p95Duration)
-		series[metricKey("p99_duration", row.groupName)] = Number(row.p99Duration)
-		series[metricKey("error_rate", row.groupName)] = Number(row.errorRate)
-		series[metricKey("apdex", row.groupName)] = Number(row.apdexScore)
-		series[metricKey("estimated_span_count", row.groupName)] = Number(row.estimatedSpanCount)
+		series[metricKey("count", row.groupName)] = row.count
+		series[metricKey("avg_duration", row.groupName)] = row.avgDuration
+		series[metricKey("p50_duration", row.groupName)] = row.p50Duration
+		series[metricKey("p95_duration", row.groupName)] = row.p95Duration
+		series[metricKey("p99_duration", row.groupName)] = row.p99Duration
+		series[metricKey("error_rate", row.groupName)] = row.errorRate
+		series[metricKey("apdex", row.groupName)] = row.apdexScore
+		series[metricKey("estimated_span_count", row.groupName)] = row.estimatedSpanCount
 		if (!fillOptions && !bucketOrder.includes(bucket)) {
 			bucketOrder.push(bucket)
 		}
@@ -838,16 +838,16 @@ function collapseMetricTimeseriesRows(
 		const bucket = normalizeBucket(row.bucket)
 		const current = bucketMap.get(bucket)
 		if (current) {
-			current.sumValue += Number(row.sumValue)
-			current.dataPointCount += Number(row.dataPointCount)
-			current.minValue = Math.min(current.minValue, Number(row.minValue))
-			current.maxValue = Math.max(current.maxValue, Number(row.maxValue))
+			current.sumValue += row.sumValue
+			current.dataPointCount += row.dataPointCount
+			current.minValue = Math.min(current.minValue, row.minValue)
+			current.maxValue = Math.max(current.maxValue, row.maxValue)
 		} else {
 			bucketMap.set(bucket, {
-				sumValue: Number(row.sumValue),
-				dataPointCount: Number(row.dataPointCount),
-				minValue: Number(row.minValue),
-				maxValue: Number(row.maxValue),
+				sumValue: row.sumValue,
+				dataPointCount: row.dataPointCount,
+				minValue: row.minValue,
+				maxValue: row.maxValue,
 			})
 		}
 	}
@@ -1075,7 +1075,7 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 			const name =
 				groupByAttributeKey || groupByResourceAttributeKey ? row.attributeValue : row.serviceName
 			if (name === "") continue
-			totals.set(name, (totals.get(name) ?? 0) + Number(row.increaseValue))
+			totals.set(name, (totals.get(name) ?? 0) + row.increaseValue)
 		}
 		return [...totals]
 			.map(([name, increase]) => ({
@@ -1582,7 +1582,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "timeseries",
 					source: "logs",
-					data: groupTimeSeriesRows(rows, (row) => Number(row.count), fillOptions),
+					data: groupTimeSeriesRows(rows, (row) => row.count, fillOptions),
 				},
 			})
 		}
@@ -1607,7 +1607,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "timeseries",
 					source: "product_events",
-					data: groupTimeSeriesRows(rows, (row) => Number(row.value), fillOptions),
+					data: groupTimeSeriesRows(rows, (row) => row.value, fillOptions),
 				},
 			})
 		}
@@ -1726,9 +1726,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				if (points.length === 0) pointsByMetric.set(row.metricName, points)
 				points.push({
 					bucket: DateTime.formatIso(row.bucket),
-					avgValue: Number(row.avgValue),
-					sumValue: Number(row.sumValue),
-					dataPointCount: Number(row.dataPointCount),
+					avgValue: row.avgValue,
+					sumValue: row.sumValue,
+					dataPointCount: row.dataPointCount,
 				})
 			}
 
@@ -1807,7 +1807,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "logs",
 					data: rows.map((row) => ({
 						name: row.name,
-						value: Number(row.count),
+						value: row.count,
 					})),
 				},
 			})
@@ -1827,7 +1827,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "product_events",
-					data: rows.map((row) => ({ name: row.name, value: Number(row.value) })),
+					data: rows.map((row) => ({ name: row.name, value: row.value })),
 				},
 			})
 		}
@@ -1880,14 +1880,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							traceId: row.traceId,
 							startTime: DateTime.formatIso(row.startTime),
 							endTime: DateTime.formatIso(row.endTime),
-							durationMs: Number(row.durationMicros) / 1000,
-							spanCount: Number(row.spanCount),
+							durationMs: row.durationMicros / 1000,
+							spanCount: row.spanCount,
 							services: row.services.map(String),
 							rootSpanName: row.rootSpanName,
 							rootSpanKind: row.rootSpanKind,
 							rootSpanStatusCode: row.rootSpanStatusCode,
 							rootSpanAttributes: parseProjectedAttributes(row.rootSpanAttributes),
-							hasError: Number(row.hasError) === 1,
+							hasError: row.hasError === 1,
 						})),
 					},
 				})
@@ -1982,10 +1982,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						parentSpanId: row.parentSpanId,
 						serviceName: row.serviceName,
 						spanName: row.spanName,
-						durationMs: Number(row.durationMs),
+						durationMs: row.durationMs,
 						statusCode: row.statusCode,
 						spanKind: row.spanKind,
-						hasError: Number(row.hasError) === 1,
+						hasError: row.hasError === 1,
 						services: servicesForTraceRow(row.serviceName, servicesByTraceId.get(row.traceId)),
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
@@ -2042,7 +2042,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeKeys",
 					source: "product_events",
-					data: rows.map((row) => ({ key: row.attributeKey, count: Number(row.usageCount) })),
+					data: rows.map((row) => ({ key: row.attributeKey, count: row.usageCount })),
 				},
 			})
 		}
@@ -2063,7 +2063,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: "product_events",
-					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
+					data: rows.map((row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2105,7 +2105,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: request.query.source,
 					data: rows.map((row) => ({
 						key: row.attributeKey,
-						count: Number(row.usageCount),
+						count: row.usageCount,
 					})),
 				},
 			})
@@ -2139,7 +2139,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						data: rows.map((row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2182,7 +2182,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 										: row.facetType === "namespace"
 											? row.namespace
 											: row.serviceName,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2219,7 +2219,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						data: rows.map((row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2241,7 +2241,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						data: rows.map((row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2271,10 +2271,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "traces",
 					data: row
 						? {
-								minDurationMs: Number(row.minDurationMs),
-								maxDurationMs: Number(row.maxDurationMs),
-								p50DurationMs: Number(row.p50DurationMs),
-								p95DurationMs: Number(row.p95DurationMs),
+								minDurationMs: row.minDurationMs,
+								maxDurationMs: row.maxDurationMs,
+								p50DurationMs: row.p50DurationMs,
+								p95DurationMs: row.p95DurationMs,
 							}
 						: { minDurationMs: 0, maxDurationMs: 0, p50DurationMs: 0, p95DurationMs: 0 },
 				},
@@ -2316,7 +2316,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: request.query.source,
-					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
+					data: rows.map((row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2359,7 +2359,7 @@ export const reducePerGroupObservations = (
 	const result: Array<GroupedAlertObservation> = []
 	for (const [groupKey, observations] of byGroup.entries()) {
 		const reducedValue = applyAlertReducer(observations, reducer)
-		const totalSampleCount = observations.reduce((sum, o) => sum + Number(o.sampleCount), 0)
+		const totalSampleCount = observations.reduce((sum, o) => sum + o.sampleCount, 0)
 		const hasData = observations.some((o) => o.hasData)
 		result.push({
 			groupKey,
@@ -2486,7 +2486,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			// confidence guard and must see rows actually observed. They differ only
 			// under sampling, and only the hourly rollup (which stores no raw count)
 			// falls back to the estimate.
-			const sampleCount = Number(row.spanCount ?? row.count ?? 0)
+			const sampleCount = row.spanCount
 			const value = sampleCount > 0 ? tracesAggregateValueForMetric(query.metric, row) : null
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
@@ -2506,7 +2506,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			logsTimeseries.id,
 		)
 		for (const row of rows) {
-			const sampleCount = Number(row.count ?? 0)
+			const sampleCount = row.count
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
@@ -2526,11 +2526,11 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 		)
 		for (const row of rows) {
 			// `value` may be a uniq; the sample count is the rows behind it.
-			const sampleCount = Number(row.eventCount ?? 0)
+			const sampleCount = row.eventCount
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
-				value: sampleCount > 0 ? Number(row.value ?? 0) : null,
+				value: sampleCount > 0 ? row.value : null,
 				sampleCount,
 			})
 		}
@@ -2543,7 +2543,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			{ value: "metricsAlertEval", rate: "metricsRateIncreaseAlertEval" },
 		)
 		for (const row of execution.rows) {
-			const sampleCount = Number(row.dataPointCount ?? 0)
+			const sampleCount = row.dataPointCount
 			const value = sampleCount > 0 ? metricsAggregateValueForMetric(query.metric, row) : null
 			const groupKey = composeMetricsGroupKey(
 				query.groupBy as readonly string[] | undefined,
