@@ -8,20 +8,20 @@ import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { NotFoundRouter } from "@/routes/discovery.http"
 import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
-// Select the already-decorated group: its session auth and v1 error middleware
+// Select the already-decorated group: its session auth and error middleware
 // are exactly those of the complete internal API. The service key keeps the API id.
 const QueryApi = HttpApi.make("MapleInternalApi").add(MapleInternalApi.groups.queryEngine)
 export const QueryRoutes = Layer.mergeAll(
 	HttpApiBuilder.layer(QueryApi).pipe(
 		Layer.provide(HttpQueryEngineLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 	),
 	// Raw route registration is a side effect on this router, not a shared service.
 	Layer.fresh(NotFoundRouter),

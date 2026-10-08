@@ -1,11 +1,11 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleApi } from "@maple/domain/http"
+import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 
 export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
-	MapleApi,
+	MapleInternalApi,
 	"orgClickHouseSettings",
 	(handlers) =>
 		Effect.gen(function* () {

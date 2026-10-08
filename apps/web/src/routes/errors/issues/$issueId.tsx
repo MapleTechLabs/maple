@@ -35,7 +35,7 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAsyncAction, useMutationAction } from "@/hooks/use-mutation-action"
 import { ResultView } from "@/components/common/result-view"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { errorIssueDetailFromV2 } from "@/lib/services/error-issues"
@@ -159,7 +159,7 @@ function IssueDetailContent() {
 	const detailResult = useAtomValue(detailQueryAtom)
 	const refreshDetail = useAtomRefresh(detailQueryAtom)
 
-	const eventsQueryAtom = retainedQuery("errors", "listIssueEvents", {
+	const eventsQueryAtom = retainedInternalQuery("errors", "listIssueEvents", {
 		params: { issueId },
 		query: { limit: 200 },
 		reactivityKeys: ["errorIssues", `errorIssue:${issueId}:events`],
@@ -171,12 +171,12 @@ function IssueDetailContent() {
 		reactivityKeys: ["investigations", `errorIssue:${issueId}:investigations`],
 	})
 	const investigationsResult = useAtomValue(investigationsQueryAtom)
-	const pullRequestsQueryAtom = retainedQuery("errors", "listIssuePullRequests", {
+	const pullRequestsQueryAtom = retainedInternalQuery("errors", "listIssuePullRequests", {
 		params: { issueId },
 		reactivityKeys: [`errorIssue:${issueId}:pull-requests`],
 	})
 	const pullRequestsResult = useAtomValue(pullRequestsQueryAtom)
-	const verificationsQueryAtom = retainedQuery("errors", "listIssueVerifications", {
+	const verificationsQueryAtom = retainedInternalQuery("errors", "listIssueVerifications", {
 		params: { issueId },
 		// Shares the events key: a verdict lands as a timeline event and a
 		// verification-row update in the same tick, so one invalidation refreshes both.
@@ -184,7 +184,7 @@ function IssueDetailContent() {
 	})
 	const verificationsResult = useAtomValue(verificationsQueryAtom)
 
-	const escalationQueryAtom = retainedQuery("errors", "listIssueEscalations", {
+	const escalationQueryAtom = retainedInternalQuery("errors", "listIssueEscalations", {
 		params: { issueId },
 		reactivityKeys: [`errorIssue:${issueId}:escalations`],
 	})
@@ -192,43 +192,49 @@ function IssueDetailContent() {
 	const { result: destinationsResult } = useAlertDestinationsList()
 
 	const [transitionIssue, transitioning] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "transitionIssue"),
+		MapleInternalAtomClient.mutation("errors", "transitionIssue"),
 		{ error: "State change failed" },
 	)
-	const [claimIssue, claiming] = useMutationAction(MapleApiAtomClient.mutation("errors", "claimIssue"), {
-		success: "Claimed",
-		error: "Claim failed",
-	})
+	const [claimIssue, claiming] = useMutationAction(
+		MapleInternalAtomClient.mutation("errors", "claimIssue"),
+		{
+			success: "Claimed",
+			error: "Claim failed",
+		},
+	)
 	const [heartbeatIssue, heartbeating] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "heartbeatIssue"),
+		MapleInternalAtomClient.mutation("errors", "heartbeatIssue"),
 		{ success: "Lease extended", error: "Heartbeat failed" },
 	)
 	const [releaseIssue, releasing] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "releaseIssue"),
+		MapleInternalAtomClient.mutation("errors", "releaseIssue"),
 		{
 			success: "Released",
 			error: "Release failed",
 		},
 	)
 	const [commentOnIssue, commenting] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "commentOnIssue"),
+		MapleInternalAtomClient.mutation("errors", "commentOnIssue"),
 		{ success: "Comment added", error: "Comment failed", onSuccess: () => setCommentDraft("") },
 	)
 	const [setIssueSeverity, settingSeverity] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "setIssueSeverity"),
+		MapleInternalAtomClient.mutation("errors", "setIssueSeverity"),
 		{ error: "Severity change failed" },
 	)
-	const evaluateEscalation = useAtomSet(MapleApiAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
-		mode: "promiseExit",
-	})
+	const evaluateEscalation = useAtomSet(
+		MapleInternalAtomClient.mutation("errors", "evaluateEscalationPolicy"),
+		{
+			mode: "promiseExit",
+		},
+	)
 	const createInvestigation = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
 	})
-	const linkPullRequest = useAtomSet(MapleApiAtomClient.mutation("errors", "linkIssuePullRequest"), {
+	const linkPullRequest = useAtomSet(MapleInternalAtomClient.mutation("errors", "linkIssuePullRequest"), {
 		mode: "promiseExit",
 	})
 	const [unlinkPullRequest, detachingPullRequest] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "unlinkIssuePullRequest"),
+		MapleInternalAtomClient.mutation("errors", "unlinkIssuePullRequest"),
 		{ success: "Pull request detached", error: "Could not detach the pull request" },
 	)
 

@@ -8,7 +8,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ErrorState } from "@/components/common/error-state"
 import { HazelIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { HAZEL_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useRequiredIntegrationConnect } from "./integration-connect"
 import {
@@ -23,13 +23,13 @@ import {
 import { useIntegrationDisconnect } from "./use-integration-disconnect"
 
 export function HazelIntegrationCard() {
-	const statusAtom = retainedQuery("integrations", "hazelStatus", {
+	const statusAtom = retainedInternalQuery("integrations", "hazelStatus", {
 		reactivityKeys: ["hazelIntegrationStatus"],
 	})
 	const statusResult = useAtomValue(statusAtom)
 	const refreshStatus = useAtomRefresh(statusAtom)
 
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelDisconnect"), {
 		mode: "promiseExit",
 	})
 

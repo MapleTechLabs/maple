@@ -2420,7 +2420,7 @@ export class QueryEngineValidationError extends HttpTaggedError<QueryEngineValid
 ) {}
 
 /**
- * Legacy v1 contract member. Production query execution now preserves the
+ * Internal-API contract member. Production query execution now preserves the
  * underlying warehouse tag, so v2 endpoints must not advertise this wrapper.
  */
 export class QueryEngineExecutionError extends HttpTaggedError<QueryEngineExecutionError>()(

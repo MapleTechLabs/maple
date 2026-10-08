@@ -28,8 +28,8 @@ const isV2Request = (request: HttpClientRequest.HttpClientRequest): boolean => {
 
 // v2 retryability lives in the decoded public error body. This transport layer
 // cannot consume that body without stealing it from HttpApi decoding, so it
-// never infers v2 retry behavior from status. Legacy response behavior remains
-// unchanged until v1 is migrated separately.
+// never infers v2 retry behavior from status. `/api` and `/internal` responses
+// keep the status-based rule below.
 export const isRetryableResponse = (response: HttpClientResponse.HttpClientResponse): boolean =>
 	isIdempotentRequest(response.request) &&
 	!isV2Request(response.request) &&
