@@ -190,7 +190,7 @@ export const mapGcpTimeSeries = (
 			exemplars_filtered_attributes: [],
 		})
 		for (const point of item.points ?? []) {
-			const endMs = Date.parse(point.interval.endTime)
+			const endMs = timestampMs(point.interval.endTime)
 			if (!(endMs > query.startMs && endMs <= query.endMs)) continue
 			if (metric.kind === "quantiles") {
 				for (const q of QUANTILES) {
