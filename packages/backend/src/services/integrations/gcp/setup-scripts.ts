@@ -108,15 +108,18 @@ gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
 // Removal must not take "could not look" for "not there": a sink the caller may not see would
 // otherwise be left routing into a topic the next step deletes.
 const REMOVAL_HELPERS = `
-# exists <gcloud ... describe ...>: whether a resource is there. NOT_FOUND, or an API that was
-# never enabled, means it is not. Any other failure (a missing permission, for example) is shown
-# and makes this script end with an error, because the resource may still be there.
+# exists <gcloud ... describe ...>: whether a resource is there. NOT_FOUND means it is not, and so
+# does a disabled API for the host project's own resources, which cannot exist without it (a
+# sink can). Any other failure (a missing permission, for example) is shown and makes this script
+# end with an error, because the resource may still be there.
 INCOMPLETE=0
 exists() {
   local output
   if output="$("$@" 2>&1)"; then return 0; fi
-  case "$output" in
-    *NOT_FOUND* | *"has not been used"* | *"is disabled"*) ;;
+  case "$2:$output" in
+    *NOT_FOUND*) ;;
+    logging:*) echo "$output" >&2; INCOMPLETE=1 ;;
+    *"has not been used"* | *"is disabled"*) ;;
     *) echo "$output" >&2; INCOMPLETE=1 ;;
   esac
   return 1

@@ -74,6 +74,7 @@ case "$*" in
     case "$GCLOUD_DESCRIBE" in
       missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
       denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
+      api_off) echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2; exit 1 ;;
     esac ;;
   *"remove-iam-policy-binding"*) exit "$GCLOUD_REMOVE_BINDING_STATUS" ;;
 esac
@@ -87,7 +88,7 @@ afterEach(() => {
 /** Run a rendered script in bash against the fake gcloud; returns the commands it issued. */
 const run = (
 	script: string,
-	options: { describe?: "found" | "missing" | "denied"; removeBindingStatus?: number } = {},
+	options: { describe?: "found" | "missing" | "denied" | "api_off"; removeBindingStatus?: number } = {},
 ) => {
 	const dir = mkdtempSync(join(tmpdir(), "maple-gcp-script-"))
 	tempDirs.push(dir)
@@ -246,6 +247,15 @@ describe("renderGcpSetupScript", () => {
 			describe: "denied",
 		})
 		expect(setup.status).toBe(0)
+	})
+
+	it("reads a disabled API as nothing to remove in the host project, but not for the sink", () => {
+		const { status, stderr, commands } = run(renderGcpCleanupScript(SCOPES.organization.target), {
+			describe: "api_off",
+		})
+		expect(commands.every((command) => command.includes(" describe "))).toBe(true)
+		expect(stderr.match(/has not been used/g)).toHaveLength(1)
+		expect(status).toBe(1)
 	})
 
 	it("hands gcloud each value as one argument", () => {
