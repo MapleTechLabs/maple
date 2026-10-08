@@ -46,6 +46,7 @@ use hmac::{Hmac, Mac};
 use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
+use maple_ingest::gcp_logging;
 use maple_ingest::metrics;
 use maple_ingest::otel::{
     accept_internal_span, auth_internal_span, build_resource, decode_internal_span,
@@ -772,6 +773,28 @@ struct CloudflareConnectorResolver {
     routing: Arc<OrgRoutingResolver>,
 }
 
+const CLOUDFLARE_CONNECTORS_TABLE: &str = "cloudflare_logpush_connectors";
+const GCP_CONNECTORS_TABLE: &str = "gcp_connectors";
+
+/// How often one connector's health columns are rewritten per outcome. Pub/Sub
+/// pushes one log entry per request, so an unthrottled write is one UPDATE per
+/// log line.
+const GCP_CONNECTOR_HEALTH_WRITE_INTERVAL: Duration = Duration::from_mins(1);
+
+struct GcpConnectorResolver {
+    store: Arc<dyn KeyStore>,
+    lookup_hmac_key: String,
+    /// Keyed on (connector id, secret hash).
+    cache: Cache<(String, String), GcpConnectorIdentity>,
+    // A deleted connector's subscription keeps pushing every log line, and
+    // Pub/Sub redelivers each 401; this keeps that off Postgres.
+    negative_cache: Cache<(String, String), ()>,
+    routing: Arc<OrgRoutingResolver>,
+    /// (connector id, succeeded) pairs already written within
+    /// `GCP_CONNECTOR_HEALTH_WRITE_INTERVAL`.
+    recent_health_writes: Cache<(String, bool), ()>,
+}
+
 struct OrgRoutingResolver {
     store: Arc<dyn KeyStore>,
     cache: Cache<String, OrgRouting>,
@@ -847,6 +870,12 @@ trait KeyStore: Send + Sync {
         secret_hash: &str,
     ) -> Result<Option<ConnectorRow>, String>;
 
+    async fn fetch_gcp_connector(
+        &self,
+        connector_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<GcpConnectorRow>, String>;
+
     async fn fetch_sampling_policy(
         &self,
         org_id: &str,
@@ -864,11 +893,17 @@ trait KeyStore: Send + Sync {
 
     async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String>;
 
-    async fn record_connector_success(&self, connector_id: &str, now_ms: i64)
-        -> Result<(), String>;
+    /// `table` is one of the `*_CONNECTORS_TABLE` constants, never user input.
+    async fn record_connector_success(
+        &self,
+        table: &'static str,
+        connector_id: &str,
+        now_ms: i64,
+    ) -> Result<(), String>;
 
     async fn record_connector_failure(
         &self,
+        table: &'static str,
         connector_id: &str,
         error: &str,
         now_ms: i64,
@@ -888,6 +923,14 @@ struct ConnectorRow {
     service_name: String,
     zone_name: String,
     dataset: String,
+    self_managed: bool,
+    clickhouse_ready: bool,
+}
+
+#[derive(Clone, Debug)]
+struct GcpConnectorRow {
+    org_id: String,
+    logs_enabled: bool,
     self_managed: bool,
     clickhouse_ready: bool,
 }
@@ -947,6 +990,28 @@ impl CloudflareConnectorIdentity {
             secret_key_id: self.secret_key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct GcpConnectorIdentity {
+    org_id: String,
+    secret_key_id: String,
+    logs_enabled: bool,
+}
+
+impl GcpConnectorIdentity {
+    fn into_resolved(self, routing: &OrgRouting) -> ResolvedGcpConnector {
+        ResolvedGcpConnector {
+            logs_enabled: self.logs_enabled,
+            key: ResolvedIngestKey {
+                org_id: self.org_id,
+                key_type: IngestKeyType::Connector,
+                key_id: self.secret_key_id,
+                self_managed: routing.self_managed,
+                clickhouse_ready: routing.clickhouse_ready,
+            },
         }
     }
 }
@@ -1112,6 +1177,7 @@ struct AppState {
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
     cloudflare_resolver: CloudflareConnectorResolver,
+    gcp_resolver: GcpConnectorResolver,
     autumn_tracker: Option<AutumnTracker>,
     autumn_entitlements: Option<AutumnEntitlements>,
     /// Per-org ingest volume, on its own delta-temporality provider. Recorded
@@ -1155,6 +1221,21 @@ struct ResolvedCloudflareConnector {
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
     clickhouse_ready: bool,
+}
+
+struct ResolvedGcpConnector {
+    /// False once the org turns log forwarding off; the sink may still push.
+    logs_enabled: bool,
+    key: ResolvedIngestKey,
+}
+
+/// What an acked GCP push did.
+enum GcpPushOutcome {
+    Accepted,
+    /// The body can never parse, so redelivering it is pointless.
+    NotALogEntry,
+    /// The connector has log forwarding turned off.
+    LogsDisabled,
 }
 
 #[derive(Clone, Copy)]
@@ -1661,9 +1742,9 @@ async fn request_timeout_middleware(
 ) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_owned();
-    // The metric gets the matched route pattern, not the raw path: one route
-    // carries a path parameter (`/v1/logpush/cloudflare/http_requests/{connector_id}`),
-    // and labelling by raw path would add a metric series per connector. This
+    // The metric gets the matched route pattern, not the raw path: the logpush
+    // routes carry a path parameter (`/v1/logpush/gcp/{connector_id}`), and
+    // labelling by raw path would add a metric series per connector. This
     // layer sits on the `Router`, so routing has already run and the extension is
     // populated; "unknown" only appears if that ever stops being true.
     let matched_path = request
@@ -2412,8 +2493,14 @@ async fn main() {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
             cache: cloudflare_connector_cache,
-            routing: org_routing_resolver,
+            routing: Arc::clone(&org_routing_resolver),
         },
+        gcp_resolver: GcpConnectorResolver::new(
+            Arc::clone(&store),
+            config.lookup_hmac_key.clone(),
+            org_routing_resolver,
+            Duration::from_secs(config.ingest_key_cache_ttl_secs),
+        ),
         telemetry_pipeline,
         http_client,
         config: config.clone(),
@@ -2470,6 +2557,7 @@ async fn main() {
             "/v1/logpush/cloudflare/http_requests/{connector_id}",
             post(handle_cloudflare_logpush_http_requests),
         )
+        .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
         .layer(cors)
         .layer(DefaultBodyLimit::max(config.max_request_body_bytes))
         .with_state(state);
@@ -4032,14 +4120,14 @@ struct AcceptedBody {
 }
 
 #[derive(Deserialize)]
-struct CloudflareLogpushQuery {
+struct LogpushQuery {
     secret: Option<String>,
 }
 
 async fn handle_cloudflare_logpush_http_requests(
     State(state): State<Arc<AppState>>,
     Path(connector_id): Path<String>,
-    Query(query): Query<CloudflareLogpushQuery>,
+    Query(query): Query<LogpushQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -4630,6 +4718,236 @@ async fn handle_cloudflare_logpush_inner(
             Ok((response, item_count, resolved.org_id.clone(), false))
         }
     }
+}
+
+/// Receives a Cloud Logging sink's Pub/Sub push subscription: one `LogEntry`
+/// per request, unwrapped. Pub/Sub acks on 102/200/201/202/204 and redelivers
+/// on anything else until the message's retention expires.
+async fn handle_gcp_logpush(
+    State(state): State<Arc<AppState>>,
+    Path(connector_id): Path<String>,
+    Query(query): Query<LogpushQuery>,
+    body: Bytes,
+) -> Response {
+    let start = Instant::now();
+
+    metrics::request_started();
+    let _guard = InFlightGuard;
+
+    let span = tracing::info_span!(
+        "gcp_logpush",
+        otel.name = "POST /v1/logpush/gcp/{connector_id}",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+        "maple.ingest.reject_reason" = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/logpush/gcp/{connector_id}",
+        "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
+        "maple.signal" = "logs",
+        "maple.org_id" = tracing::field::Empty,
+        "maple.gcp.connector_id" = tracing::field::Empty,
+        "maple.ingest.self_managed" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.item_count" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+
+    let result = handle_gcp_logpush_inner(&state, &connector_id, query.secret.as_deref(), body)
+        .instrument(span)
+        .await;
+    let duration = start.elapsed().as_secs_f64();
+
+    match result {
+        Ok((response, outcome)) => {
+            span_handle.record("http.response.status_code", response.status().as_u16());
+            match outcome {
+                GcpPushOutcome::Accepted => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.item_count", 1);
+                    metrics::request_completed("logs", "ok", "none", duration);
+                    metrics::gcp_entry();
+                }
+                GcpPushOutcome::NotALogEntry => {
+                    // Acked, but the entry is gone: an `Error` like every other
+                    // rejection that loses the sender's data.
+                    span_handle.record("error.type", "decode");
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "decode",
+                        gcp_logging::NOT_A_LOG_ENTRY,
+                    );
+                    metrics::request_completed("logs", "error", "decode", duration);
+                    metrics::gcp_parse_failure();
+                }
+                GcpPushOutcome::LogsDisabled => {
+                    // The org asked for this, so it is neither an error nor
+                    // data loss: `Ok`, told apart by the reject reason.
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "logs_disabled",
+                        "Log forwarding is turned off for this connector",
+                    );
+                    metrics::request_completed("logs", "ok", "none", duration);
+                    metrics::gcp_disabled_drop();
+                }
+            }
+            response
+        }
+        Err((error, error_kind)) => {
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error_kind);
+            record_rejection_reason(&span_handle, status, error_kind, error.reason().as_str());
+            metrics::request_completed("logs", "error", error_kind, duration);
+            if error_kind == "auth" {
+                metrics::gcp_auth_failure();
+            }
+            error.into_response()
+        }
+    }
+}
+
+/// Returns Ok((ack response, what the ack means)) or
+/// Err((ApiError, error_kind_label)).
+async fn handle_gcp_logpush_inner(
+    state: &AppState,
+    connector_id: &str,
+    secret: Option<&str>,
+    body: Bytes,
+) -> Result<(Response, GcpPushOutcome), (ApiError, &'static str)> {
+    let unauthorized = || {
+        (
+            ApiError::unauthorized("Invalid connector credentials"),
+            "auth",
+        )
+    };
+    let secret = secret.map(str::trim).filter(|value| !value.is_empty());
+    let (Some(secret), true) = (secret, is_connector_id(connector_id)) else {
+        warn!("Missing GCP connector secret or malformed connector id");
+        return Err(unauthorized());
+    };
+    Span::current().record("maple.gcp.connector_id", connector_id);
+
+    let resolved = state
+        .gcp_resolver
+        .resolve_connector(connector_id, secret)
+        .await
+        .map_err(|error| {
+            error!(error = %error, connector_id, "GCP connector resolution failed");
+            (
+                ApiError::service_unavailable("Connector authentication unavailable"),
+                "auth",
+            )
+        })?
+        .ok_or_else(|| {
+            warn!(connector_id, "Invalid GCP connector credentials");
+            unauthorized()
+        })?;
+    let org_id = resolved.key.org_id.as_str();
+
+    Span::current().record("maple.org_id", org_id);
+    Span::current().record("maple.ingest.self_managed", resolved.key.self_managed);
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved.key.clickhouse_ready,
+    );
+
+    // Acked, not rejected: the sink keeps pushing until the customer removes
+    // it, and Pub/Sub would redeliver every refused entry for its retention.
+    // Ahead of the entitlement check and metering, so nothing is billed.
+    if !resolved.logs_enabled {
+        debug!(
+            org_id,
+            connector_id, "GCP log forwarding is off; entry acked and dropped"
+        );
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::LogsDisabled));
+    }
+
+    let _org_inflight_permit = state
+        .org_inflight_limiter
+        .try_acquire(org_id)
+        .ok_or_else(|| {
+            warn!(
+                org_id,
+                connector_id, "Per-org in-flight ingest limit exceeded"
+            );
+            (
+                ApiError::too_many_requests("Per-org ingest limit exceeded"),
+                "throttle",
+            )
+        })?;
+
+    let Some(entry) = gcp_logging::parse_log_entry(&body) else {
+        // Not `warn!`: a wrapped subscription fails this way on every log line.
+        debug!(
+            org_id,
+            connector_id,
+            body_bytes = body.len(),
+            "GCP push payload is not a LogEntry; acked and dropped"
+        );
+        metrics::org_data_loss(org_id, Signal::Logs.path(), "decode");
+        state
+            .gcp_resolver
+            .record_health(connector_id, Some(gcp_logging::NOT_A_LOG_ENTRY))
+            .await;
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::NotALogEntry));
+    };
+
+    if let Some(error) = entitlement_rejection(state, org_id, Signal::Logs.path()).await {
+        return Err((error, "billing_limit"));
+    }
+    let request = gcp_logging::build_logs_request(
+        &entry,
+        &gcp_logging::Connector {
+            id: connector_id,
+            org_id,
+        },
+        current_time_unix_nano(),
+    );
+    let response = match process_decoded_payload(
+        state,
+        Signal::Logs,
+        PayloadFormat::Protobuf,
+        None,
+        &DecodedPayload::Logs(request),
+        &resolved.key,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            state
+                .gcp_resolver
+                .record_health(connector_id, Some(error.message.as_str()))
+                .await;
+            return Err((error, "forward"));
+        }
+    };
+    state.gcp_resolver.record_health(connector_id, None).await;
+
+    if let Some(usage) = &state.usage_metrics {
+        usage.record(org_id, Signal::Logs.path(), body.len() as u64, 1);
+    }
+    if let Some(tracker) = &state.autumn_tracker {
+        tracker.track(org_id, Signal::Logs.path(), billable_gb(body.len() as u64));
+    }
+
+    Ok((response, GcpPushOutcome::Accepted))
+}
+
+/// Connector ids are generated by the API; anything outside this alphabet is
+/// refused before it reaches this handler's span, its logs, or Postgres.
+fn is_connector_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 enum ParsedCloudflarePayload {
@@ -5617,7 +5935,11 @@ impl CloudflareConnectorResolver {
     async fn record_success(&self, connector_id: &str) {
         if let Err(error) = self
             .store
-            .record_connector_success(connector_id, current_time_millis())
+            .record_connector_success(
+                CLOUDFLARE_CONNECTORS_TABLE,
+                connector_id,
+                current_time_millis(),
+            )
             .await
         {
             debug!(connector_id, error, "Failed to record connector success");
@@ -5627,10 +5949,112 @@ impl CloudflareConnectorResolver {
     async fn record_failure(&self, connector_id: &str, error_message: &str) {
         if let Err(error) = self
             .store
-            .record_connector_failure(connector_id, error_message, current_time_millis())
+            .record_connector_failure(
+                CLOUDFLARE_CONNECTORS_TABLE,
+                connector_id,
+                error_message,
+                current_time_millis(),
+            )
             .await
         {
             debug!(connector_id, error, "Failed to record connector failure");
+        }
+    }
+}
+
+impl GcpConnectorResolver {
+    fn new(
+        store: Arc<dyn KeyStore>,
+        lookup_hmac_key: String,
+        routing: Arc<OrgRoutingResolver>,
+        cache_ttl: Duration,
+    ) -> Self {
+        Self {
+            store,
+            lookup_hmac_key,
+            cache: Cache::builder()
+                .time_to_live(cache_ttl)
+                .max_capacity(10_000)
+                .build(),
+            negative_cache: Cache::builder()
+                .time_to_live(Duration::from_secs(30))
+                .max_capacity(10_000)
+                .build(),
+            routing,
+            recent_health_writes: Cache::builder()
+                .time_to_live(GCP_CONNECTOR_HEALTH_WRITE_INTERVAL)
+                .max_capacity(20_000)
+                .build(),
+        }
+    }
+
+    async fn resolve_connector(
+        &self,
+        connector_id: &str,
+        raw_secret: &str,
+    ) -> Result<Option<ResolvedGcpConnector>, String> {
+        let secret_hash = hash_ingest_key(raw_secret, &self.lookup_hmac_key)?;
+        let cache_key = (connector_id.to_owned(), secret_hash);
+        if let Some(identity) = self.cache.get(&cache_key).await {
+            let routing = self.routing.resolve_org_routing(&identity.org_id).await?;
+            return Ok(Some(identity.into_resolved(&routing)));
+        }
+        if self.negative_cache.contains_key(&cache_key) {
+            return Ok(None);
+        }
+
+        let Some(row) = self
+            .store
+            .fetch_gcp_connector(connector_id, &cache_key.1)
+            .await?
+        else {
+            self.negative_cache.insert(cache_key, ()).await;
+            return Ok(None);
+        };
+
+        let routing = OrgRouting {
+            self_managed: row.self_managed,
+            clickhouse_ready: row.clickhouse_ready,
+        };
+        let identity = GcpConnectorIdentity {
+            org_id: row.org_id,
+            secret_key_id: cache_key.1.chars().take(16).collect(),
+            logs_enabled: row.logs_enabled,
+        };
+
+        self.cache.insert(cache_key, identity.clone()).await;
+        self.routing
+            .remember_org_routing(&identity.org_id, routing.clone())
+            .await;
+
+        Ok(Some(identity.into_resolved(&routing)))
+    }
+
+    /// Writes `last_received_at` (`error == None`) or `last_error`, at most
+    /// once per connector and outcome per interval. Best-effort: the request's
+    /// outcome is already decided, so a failed write is only logged.
+    async fn record_health(&self, connector_id: &str, error: Option<&str>) {
+        let throttle_key = (connector_id.to_owned(), error.is_none());
+        let throttle = self.recent_health_writes.entry(throttle_key).or_insert(());
+        if !throttle.await.is_fresh() {
+            return;
+        }
+
+        let now_ms = current_time_millis();
+        let written = match error {
+            None => {
+                self.store
+                    .record_connector_success(GCP_CONNECTORS_TABLE, connector_id, now_ms)
+                    .await
+            }
+            Some(error) => {
+                self.store
+                    .record_connector_failure(GCP_CONNECTORS_TABLE, connector_id, error, now_ms)
+                    .await
+            }
+        };
+        if let Err(error) = written {
+            debug!(connector_id, error, "Failed to record GCP connector health");
         }
     }
 }
@@ -6064,6 +6488,43 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn fetch_gcp_connector(
+        &self,
+        connector_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<GcpConnectorRow>, String> {
+        let revision = required_schema_revision();
+        let client = self.client().await?;
+        // No `enabled` column: deleting the row is how a connector is turned off.
+        let sql = format!(
+            "SELECT c.org_id, c.logs_enabled, \
+                    COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+             FROM gcp_connectors c \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             WHERE c.id = $2 AND c.secret_hash = $3 LIMIT 1"
+        );
+        let rows = client
+            .query(&sql, &[&revision, &connector_id, &secret_hash])
+            .instrument(postgres_client_span(
+                "fetch_gcp_connector",
+                "SELECT",
+                GCP_CONNECTORS_TABLE,
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_gcp_connector failed: {error}"))?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(Some(GcpConnectorRow {
+            org_id: row.get("org_id"),
+            logs_enabled: row.get("logs_enabled"),
+            self_managed: row.get("self_managed"),
+            clickhouse_ready: row.get("clickhouse_ready"),
+        }))
+    }
+
     async fn fetch_sampling_policy(
         &self,
         org_id: &str,
@@ -6191,23 +6652,26 @@ impl KeyStore for PostgresKeyStore {
 
     async fn record_connector_success(
         &self,
+        table: &'static str,
         connector_id: &str,
         now_ms: i64,
     ) -> Result<(), String> {
         let client = self.client().await?;
         client
             .execute(
-                "UPDATE cloudflare_logpush_connectors \
-                 SET last_received_at = to_timestamp($1::bigint / 1000.0), \
-                     last_error = NULL, \
-                     updated_at = to_timestamp($1::bigint / 1000.0) \
-                 WHERE id = $2",
+                &format!(
+                    "UPDATE {table} \
+                     SET last_received_at = to_timestamp($1::bigint / 1000.0), \
+                         last_error = NULL, \
+                         updated_at = to_timestamp($1::bigint / 1000.0) \
+                     WHERE id = $2"
+                ),
                 &[&now_ms, &connector_id],
             )
             .instrument(postgres_client_span(
                 "record_connector_success",
                 "UPDATE",
-                "cloudflare_logpush_connectors",
+                table,
                 &self.target,
             ))
             .await
@@ -6217,6 +6681,7 @@ impl KeyStore for PostgresKeyStore {
 
     async fn record_connector_failure(
         &self,
+        table: &'static str,
         connector_id: &str,
         error: &str,
         now_ms: i64,
@@ -6224,15 +6689,17 @@ impl KeyStore for PostgresKeyStore {
         let client = self.client().await?;
         client
             .execute(
-                "UPDATE cloudflare_logpush_connectors \
-                 SET last_error = $1, updated_at = to_timestamp($2::bigint / 1000.0) \
-                 WHERE id = $3",
+                &format!(
+                    "UPDATE {table} \
+                     SET last_error = $1, updated_at = to_timestamp($2::bigint / 1000.0) \
+                     WHERE id = $3"
+                ),
                 &[&error, &now_ms, &connector_id],
             )
             .instrument(postgres_client_span(
                 "record_connector_failure",
                 "UPDATE",
-                "cloudflare_logpush_connectors",
+                table,
                 &self.target,
             ))
             .await
@@ -6243,7 +6710,7 @@ impl KeyStore for PostgresKeyStore {
 
 // Local-dev / single-tenant KeyStore: every well-formed ingest key resolves to
 // the configured org. No DB, no network. Connector flows are no-ops since
-// Cloudflare Logpush is a production-only integration.
+// the logpush receivers need connector rows, which only Postgres holds.
 struct StaticKeyStore {
     org_id: String,
 }
@@ -6267,6 +6734,14 @@ impl KeyStore for StaticKeyStore {
         _connector_id: &str,
         _secret_hash: &str,
     ) -> Result<Option<ConnectorRow>, String> {
+        Ok(None)
+    }
+
+    async fn fetch_gcp_connector(
+        &self,
+        _connector_id: &str,
+        _secret_hash: &str,
+    ) -> Result<Option<GcpConnectorRow>, String> {
         Ok(None)
     }
 
@@ -6297,6 +6772,7 @@ impl KeyStore for StaticKeyStore {
 
     async fn record_connector_success(
         &self,
+        _table: &'static str,
         _connector_id: &str,
         _now_ms: i64,
     ) -> Result<(), String> {
@@ -6305,6 +6781,7 @@ impl KeyStore for StaticKeyStore {
 
     async fn record_connector_failure(
         &self,
+        _table: &'static str,
         _connector_id: &str,
         _error: &str,
         _now_ms: i64,
@@ -7399,6 +7876,11 @@ mod tests {
     struct FakeKeyStore {
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
+        gcp_connectors:
+            std::sync::Mutex<std::collections::HashMap<(String, String), GcpConnectorRow>>,
+        connector_successes: AtomicU64,
+        /// (table, error) of every `record_connector_failure` call.
+        connector_failures: std::sync::Mutex<Vec<(&'static str, String)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
         targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
         ingest_key_fetches: AtomicU64,
@@ -7434,6 +7916,21 @@ mod tests {
                 },
             );
             self.connectors
+                .lock()
+                .unwrap()
+                .insert((connector_id.to_owned(), hash), row);
+        }
+
+        fn insert_gcp_connector(&self, connector_id: &str, raw_secret: &str, row: GcpConnectorRow) {
+            let hash = hash_ingest_key(raw_secret, "test-hmac-key").unwrap();
+            self.set_org_routing(
+                &row.org_id,
+                OrgRouting {
+                    self_managed: row.self_managed,
+                    clickhouse_ready: row.clickhouse_ready,
+                },
+            );
+            self.gcp_connectors
                 .lock()
                 .unwrap()
                 .insert((connector_id.to_owned(), hash), row);
@@ -7479,6 +7976,18 @@ mod tests {
                 .get(&(connector_id.to_owned(), secret_hash.to_owned()))
                 .cloned())
         }
+        async fn fetch_gcp_connector(
+            &self,
+            connector_id: &str,
+            secret_hash: &str,
+        ) -> Result<Option<GcpConnectorRow>, String> {
+            Ok(self
+                .gcp_connectors
+                .lock()
+                .unwrap()
+                .get(&(connector_id.to_owned(), secret_hash.to_owned()))
+                .cloned())
+        }
         async fn fetch_sampling_policy(
             &self,
             _org_id: &str,
@@ -7507,17 +8016,24 @@ mod tests {
         }
         async fn record_connector_success(
             &self,
+            _table: &'static str,
             _connector_id: &str,
             _now_ms: i64,
         ) -> Result<(), String> {
+            self.connector_successes.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
         async fn record_connector_failure(
             &self,
+            table: &'static str,
             _connector_id: &str,
-            _error: &str,
+            error: &str,
             _now_ms: i64,
         ) -> Result<(), String> {
+            self.connector_failures
+                .lock()
+                .unwrap()
+                .push((table, error.to_owned()));
             Ok(())
         }
     }
@@ -7806,14 +8322,20 @@ mod tests {
                     .build(),
             },
             cloudflare_resolver: CloudflareConnectorResolver {
-                store: key_store,
+                store: Arc::clone(&key_store),
                 lookup_hmac_key: "test-hmac-key".to_owned(),
                 cache: Cache::builder()
                     .time_to_live(Duration::from_mins(1))
                     .max_capacity(16)
                     .build(),
-                routing,
+                routing: Arc::clone(&routing),
             },
+            gcp_resolver: GcpConnectorResolver::new(
+                key_store,
+                "test-hmac-key".to_owned(),
+                routing,
+                Duration::from_mins(1),
+            ),
             autumn_tracker: None,
             autumn_entitlements: None,
             usage_metrics: None,
@@ -8767,6 +9289,199 @@ mod tests {
             "connector identity should stay cached while routing refreshes"
         );
         assert_eq!(store.routing_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    const GCP_LOG_ENTRY: &str = r#"{
+        "logName": "projects/my-project/logs/run.googleapis.com%2Fstdout",
+        "insertId": "insert-1",
+        "timestamp": "2025-03-07T12:34:56.123456789Z",
+        "severity": "WARNING",
+        "textPayload": "cache miss",
+        "resource": {
+            "type": "cloud_run_revision",
+            "labels": {
+                "project_id": "my-project",
+                "service_name": "checkout",
+                "revision_name": "checkout-00042-abc",
+                "location": "europe-west4"
+            }
+        }
+    }"#;
+
+    async fn spawn_fake_clickhouse() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<FakeClickHouseImport>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new()
+            .route("/", post(fake_clickhouse_import))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, rx)
+    }
+
+    /// One org with two connectors: `gcp_conn_1`, and `gcp_conn_off` whose log
+    /// forwarding is turned off.
+    async fn gcp_logpush_state(
+        name: &str,
+        clickhouse_url: &str,
+    ) -> (Arc<AppState>, Arc<FakeKeyStore>, PathBuf) {
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        for (connector_id, secret, logs_enabled) in [
+            ("gcp_conn_1", "gcp-secret", true),
+            ("gcp_conn_off", "gcp-secret-off", false),
+        ] {
+            store.insert_gcp_connector(
+                connector_id,
+                secret,
+                GcpConnectorRow {
+                    org_id: "org_gcp".to_owned(),
+                    logs_enabled,
+                    self_managed: true,
+                    clickhouse_ready: true,
+                },
+            );
+        }
+        store.insert_clickhouse_target(
+            "org_gcp",
+            ClickHouseTargetRow {
+                ch_url: clickhouse_url.to_owned(),
+                ch_user: "ingest".to_owned(),
+                ch_password_ciphertext: None,
+                ch_password_iv: None,
+                ch_password_tag: None,
+                ch_database: "maple".to_owned(),
+                schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
+            },
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_mins(1),
+        )
+        .await;
+        (Arc::new(state), store, queue_dir)
+    }
+
+    async fn gcp_push(
+        state: &Arc<AppState>,
+        connector_id: &str,
+        secret: Option<&str>,
+        body: &'static str,
+    ) -> Response {
+        handle_gcp_logpush(
+            State(Arc::clone(state)),
+            Path(connector_id.to_owned()),
+            Query(LogpushQuery {
+                secret: secret.map(str::to_owned),
+            }),
+            Bytes::from_static(body.as_bytes()),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_rejects_bad_credentials() {
+        let (state, _store, queue_dir) =
+            gcp_logpush_state("gcp-logpush-auth", "http://127.0.0.1:1").await;
+
+        for (case, connector_id, secret) in [
+            ("missing secret", "gcp_conn_1", None),
+            ("wrong secret", "gcp_conn_1", Some("wrong-secret")),
+            ("unknown connector", "gcp_conn_unknown", Some("gcp-secret")),
+            ("malformed id", "not/a connector id", Some("gcp-secret")),
+        ] {
+            let response = gcp_push(&state, connector_id, secret, GCP_LOG_ENTRY).await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{case}");
+        }
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_stores_a_log_entry_and_acks_a_poison_payload() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-accept", &ch_url).await;
+
+        let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let stored = tokio::time::timeout(Duration::from_secs(2), ch_rx.recv())
+            .await
+            .expect("the entry should reach the org's ClickHouse")
+            .expect("ClickHouse channel should stay open");
+        assert!(stored.query.starts_with("INSERT INTO logs"));
+        assert!(stored.body.contains("cache miss"), "{}", stored.body);
+        assert!(
+            stored.body.contains(r#""service_name":"checkout""#),
+            "{}",
+            stored.body
+        );
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 1);
+        assert!(store.connector_failures.lock().unwrap().is_empty());
+
+        // The wrapped Pub/Sub envelope can never parse, and Pub/Sub redelivers
+        // anything but an ack, so it is acked. Sent twice: the connector's
+        // `last_error` write is throttled to one.
+        for _ in 0..2 {
+            let poison = gcp_push(
+                &state,
+                "gcp_conn_1",
+                Some("gcp-secret"),
+                r#"{"message":{"data":"e30=","messageId":"1"},"subscription":"s"}"#,
+            )
+            .await;
+            assert_eq!(poison.status(), StatusCode::OK);
+        }
+        assert_eq!(
+            *store.connector_failures.lock().unwrap(),
+            [(
+                GCP_CONNECTORS_TABLE,
+                gcp_logging::NOT_A_LOG_ENTRY.to_owned()
+            )]
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "a poison payload must not be stored"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_acks_and_drops_while_log_forwarding_is_off() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-off", &ch_url).await;
+
+        // Acked: a non-2xx would have Pub/Sub redeliver the entry for the
+        // subscription's whole retention.
+        let dropped = gcp_push(
+            &state,
+            "gcp_conn_off",
+            Some("gcp-secret-off"),
+            GCP_LOG_ENTRY,
+        )
+        .await;
+        assert_eq!(dropped.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be stored while log forwarding is off"
+        );
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
+        assert!(store.connector_failures.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     /// Regression for the gateway going silent in its own traces: a global
