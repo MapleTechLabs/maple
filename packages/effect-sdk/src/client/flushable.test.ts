@@ -75,11 +75,6 @@ const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 const KEEPALIVE_CEILING_BYTES = 32 * 1024
 const UNLOAD_TAIL_BYTES = 16 * 1024
 
-/** Bytes the shared keepalive budget currently counts as in flight. */
-const inflightKeepaliveBytes = (): number =>
-	(globalThis as unknown as Record<string, { bytes: number } | undefined>)["__MAPLE_KEEPALIVE_INFLIGHT__"]
-		?.bytes ?? 0
-
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
 const setupDom = () => {
@@ -552,9 +547,11 @@ describe("MapleFlush.make (client)", () => {
 
 		expect(calls).toHaveLength(1)
 		expect(String(errorSpy.mock.calls[0]?.[1])).toContain("OTLP POST timed out after 30s")
-		expect(inflightKeepaliveBytes()).toBe(0)
 
 		answer = true
+		// The aborted request gave its reservation back: a body the size of the whole budget fits.
+		await postToIngest("https://collector.test/x", {}, JSON.stringify("x".repeat(48 * 1024 - 2)), true)
+		expect(calls.pop()?.keepalive).toBe(true)
 		await vi.advanceTimersByTimeAsync(60_000)
 		await telemetry.flush()
 		expect(spanNames(calls.slice(1))).toEqual(["stuck"])
