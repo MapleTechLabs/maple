@@ -570,6 +570,8 @@ export interface LogsListOpts extends LogsQueryOpts {
 	cursor?: string
 	limit?: number
 	offset?: number
+	/** `asc` reads oldest-first from `startTime` (a log's surrounding context). Cursors are desc-only. */
+	order?: "asc" | "desc"
 	cursorIdentity?: {
 		/** The boundary row's `exactTimestamp`. */
 		timestamp: string
@@ -612,6 +614,7 @@ export interface LogsListOutput {
 export function logsListQuery(opts: LogsListOpts) {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
+	const order = opts.order ?? "desc"
 
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
@@ -655,9 +658,11 @@ export function logsListQuery(opts: LogsListOpts) {
 	const cutoffInner = from(Logs)
 		.select(($) => ({ ts: $.Timestamp }))
 		.where(baseWhere)
-		.orderBy(["ts", "desc"])
+		.orderBy(["ts", order])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	// Ascending reads the Nth-oldest instead, so the cutoff is the max and the gate flips.
+	const cutoffAgg = order === "asc" ? "max" : "min"
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT ${cutoffAgg}(ts) FROM (${sql}))`)
 
 	// Stage 2: heavy columns read only for rows at/after the cutoff timestamp.
 	let query = from(Logs)
@@ -674,9 +679,9 @@ export function logsListQuery(opts: LogsListOpts) {
 			logAttributes: CH.toJSONString($.LogAttributes),
 			resourceAttributes: CH.toJSONString($.ResourceAttributes),
 		}))
-		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])
+		.where(($) => [...baseWhere($), order === "asc" ? $.Timestamp.lte(cutoff) : $.Timestamp.gte(cutoff)])
 		.orderBy(
-			["timestamp", "desc"],
+			["timestamp", order],
 			["serviceName", "asc"],
 			["traceId", "asc"],
 			["spanId", "asc"],

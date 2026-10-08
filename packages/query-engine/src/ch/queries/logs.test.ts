@@ -631,6 +631,38 @@ describe("logsListQuery", () => {
 		expect(sql.match(/SeverityText IN \('ERROR', 'Error', 'error'\)/g)).toHaveLength(2)
 		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
 	})
+
+	it("reads oldest-first with a max cutoff when order is asc", () => {
+		const { sql } = compileUnsafe(logsListQuery({ limit: 25, order: "asc" }), baseParams)
+		const cutoffMatch = sql.match(/SELECT max\(ts\) FROM \(([\s\S]*?)\)\)/)
+		expect(cutoffMatch).not.toBeNull()
+		expect(cutoffMatch?.[1]).toContain("ORDER BY ts ASC")
+		expect(cutoffMatch?.[1]).toContain("LIMIT 25")
+		expect(sql).toContain("Timestamp <= (SELECT max(ts) FROM (")
+		expect(sql).toContain(
+			"ORDER BY timestamp ASC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC",
+		)
+		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+	})
+
+	it("keeps the desc query unchanged when order is explicit", () => {
+		const implicit = compileUnsafe(logsListQuery({ limit: 25 }), baseParams).sql
+		const explicit = compileUnsafe(logsListQuery({ limit: 25, order: "desc" }), baseParams).sql
+		expect(explicit).toBe(implicit)
+		expect(explicit).not.toContain("max(ts)")
+	})
+
+	it("scopes to one instance through a resource attribute filter", () => {
+		const { sql } = compileUnsafe(
+			logsListQuery({
+				serviceName: "api",
+				resourceAttributeFilters: [{ key: "k8s.pod.name", value: "api-7f9", mode: "equals" }],
+			}),
+			baseParams,
+		)
+		expect(sql.match(/'k8s\.pod\.name'/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+		expect(sql).toContain("'api-7f9'")
+	})
 })
 
 // getLogByKeyQuery
