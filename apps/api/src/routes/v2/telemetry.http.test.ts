@@ -91,6 +91,12 @@ const hierarchyRow = {
 	relationship: "related",
 }
 
+const boundsHold = (sql: string, at: string) => {
+	const [, start] = /Timestamp >= '([^']+)'/.exec(sql) ?? []
+	const [, end] = /Timestamp <= '([^']+)'/.exec(sql) ?? []
+	return start === undefined || end === undefined || (start <= at && at <= end)
+}
+
 const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 	if (sql.includes("FROM trace_list_mv")) {
 		const rows = [
@@ -127,6 +133,8 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		]
 		return sql.includes("TraceId <") ? rows.slice(1) : rows
 	}
+	// By-id reads try the recent days first; a bounded read answers only when it holds the span.
+	if (sql.includes("FROM trace_detail_spans") && !boundsHold(sql, hierarchyRow.startTime)) return []
 	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
 	if (
 		sql.includes("FROM trace_detail_spans") &&
@@ -637,11 +645,40 @@ describe("v2 telemetry reads over HTTP", () => {
 		observedSql.length = 0
 		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
 		expect(trace.status).toBe(200)
-		const hierarchySql = observedSql.find((sql) => sql.includes("FROM trace_detail_spans"))
-		expect(hierarchySql).toContain(`TraceId = '${TRACE_ID}'`)
-		expect(hierarchySql).not.toContain("Timestamp >=")
-		expect(hierarchySql).not.toContain("Timestamp <=")
-		expect(hierarchySql).toContain("LIMIT 5001")
+		expect(trace.body.spans).toHaveLength(1)
+		// The fixture trace is months old: the recent days miss, then the unbounded read finds it.
+		const [recentSql, unboundedSql, ...rest] = observedSql.filter((sql) =>
+			sql.includes("FROM trace_detail_spans"),
+		)
+		expect(rest).toHaveLength(0)
+		expect(recentSql).toContain("Timestamp >=")
+		expect(unboundedSql).toContain(`TraceId = '${TRACE_ID}'`)
+		expect(unboundedSql).not.toContain("Timestamp >=")
+		expect(unboundedSql).not.toContain("Timestamp <=")
+		expect(unboundedSql).toContain("LIMIT 5001")
+		await harness.dispose()
+	})
+
+	it("reads a recent trace from the recent days alone", async () => {
+		const observedSql: string[] = []
+		const recentRow = {
+			...hierarchyRow,
+			startTime: new Date(Date.now() - 2 * 3_600_000).toISOString().replace("T", " ").slice(0, 23),
+		}
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (_tenant, compiled) => {
+				const query = compiledQueryOf(compiled)
+				observedSql.push(query.sql)
+				return query.decodeRows(boundsHold(query.sql, recentRow.startTime) ? [recentRow] : [])
+			},
+		})
+		const key = await harness.bootstrapKey()
+
+		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
+		expect(trace.status).toBe(200)
+		expect(trace.body.spans).toHaveLength(1)
+		expect(observedSql).toHaveLength(1)
 		await harness.dispose()
 	})
 

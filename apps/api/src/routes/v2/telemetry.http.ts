@@ -45,6 +45,7 @@ import {
 	formatWarehouseDateTimeMs,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
+import { hasRootInside, lookupByTraceId } from "@maple/query-engine/observability"
 import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
 import {
 	computeBucketSeconds,
@@ -55,7 +56,7 @@ import {
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 } from "@maple/query-engine/runtime"
-import { DateTime, Effect, Option, Result, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -452,16 +453,24 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 			tenant: CurrentTenant.TenantSchema,
 			traceId: string,
 		) {
-			const compiled = CH.compile(
-				CH.spanHierarchyQuery({ traceId, limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1 }),
-				{
-					orgId: tenant.orgId,
-				},
-			)
-			return yield* warehouse.compiledQuery(tenant, compiled, {
-				profile: "list",
-				context: "v2GetTrace",
+			const { rows } = yield* lookupByTraceId({
+				nowMs: yield* Clock.currentTimeMillis,
+				read: (window) =>
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(
+							CH.spanHierarchyQuery({
+								traceId,
+								limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1,
+								narrowByTime: window !== undefined,
+							}),
+							window ? { orgId: tenant.orgId, ...window } : { orgId: tenant.orgId },
+						),
+						{ profile: "list", context: "v2GetTrace" },
+					),
+				whole: hasRootInside,
 			})
+			return rows
 		})
 
 		return handlers
@@ -650,19 +659,24 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 			.handle("retrieveSpan", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const detail = yield* warehouse
-						.compiledQueryFirst(
-							tenant,
-							CH.compile(
-								CH.spanDetailQuery({
-									traceId: params.trace_id,
-									spanId: params.span_id,
-								}),
-								{ orgId: tenant.orgId },
+					const { rows } = yield* lookupByTraceId({
+						nowMs: yield* Clock.currentTimeMillis,
+						read: (window) =>
+							warehouse.compiledQuery(
+								tenant,
+								CH.compile(
+									CH.spanDetailQuery({
+										traceId: params.trace_id,
+										spanId: params.span_id,
+										narrowByTime: window !== undefined,
+									}),
+									window ? { orgId: tenant.orgId, ...window } : { orgId: tenant.orgId },
+								),
+								// The unbounded read seeks every partition; the list budget lets it finish.
+								{ profile: window ? "discovery" : "list", context: "v2GetSpan" },
 							),
-							{ profile: "discovery", context: "v2GetSpan" },
-						)
-						.pipe(Effect.map(Option.getOrNull))
+					})
+					const detail = rows[0]
 					if (!detail) return yield* Effect.fail(V2SpanNotFound.make())
 					return toSpan(detail)
 				}),
