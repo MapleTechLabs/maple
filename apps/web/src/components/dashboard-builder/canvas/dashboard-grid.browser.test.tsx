@@ -270,6 +270,20 @@ describe("pointer drag", () => {
 		expect(cell("a").style.transform).toBe("")
 	})
 
+	// A glide animates `transform`, which is also what keeps the carried tile
+	// under the pointer; one on the carried tile yanks it back toward its slot
+	// at every cell boundary, which reads as flicker.
+	it("never animates the carried tile, only the tiles it displaces", async () => {
+		const { handle, cell } = mount({})
+		await dragBy(handle("a"), column * 6, 0, { release: false })
+		expect(cell("a").getAnimations()).toHaveLength(0)
+		expect(cell("b").getAnimations().length).toBeGreaterThan(0)
+		await act(async () => {
+			pointer("pointerup", document.body, 0, 0)
+			await nextFrame()
+		})
+	})
+
 	it("puts everything back and commits nothing on Escape", async () => {
 		const { handle, box, onLayoutCommit } = mount({})
 		await dragBy(handle("a"), column * 6, 0, { release: false })

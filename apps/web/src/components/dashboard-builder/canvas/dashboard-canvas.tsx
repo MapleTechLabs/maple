@@ -98,6 +98,8 @@ function useGlide(
 	geometry: GridGeometry,
 	gliding: RefObject<boolean>,
 	dropFrom: Drop | null,
+	/** Carried by the pointer: its transform is the pointer's, never a glide's. */
+	carried: boolean,
 ) {
 	const previous = useRef(item)
 	const consumedDrop = useRef<Drop | null>(null)
@@ -109,7 +111,7 @@ function useGlide(
 		const freshDrop = dropFrom !== null && dropFrom !== consumedDrop.current ? dropFrom : null
 		if (freshDrop) consumedDrop.current = freshDrop
 		const element = ref.current
-		if (!element || prefersReducedMotion()) return
+		if (!element || carried || prefersReducedMotion()) return
 		// Same box: a store echo or a re-projection hands over new objects for
 		// tiles that did not move.
 		const moved = before.x !== item.x || before.y !== item.y
@@ -129,7 +131,7 @@ function useGlide(
 			[{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
 			GLIDE,
 		)
-	}, [ref, item, geometry, gliding, dropFrom])
+	}, [ref, item, geometry, gliding, dropFrom, carried])
 }
 
 interface GridCellProps {
@@ -159,7 +161,7 @@ const GridCell = memo(function GridCell({
 	gliding,
 }: GridCellProps) {
 	const ref = useRef<HTMLDivElement>(null)
-	useGlide(ref, item, geometry, gliding, dropFrom)
+	useGlide(ref, item, geometry, gliding, dropFrom, lifted !== null)
 
 	// A lifted cell leaves the grid flow and is drawn where it was picked up;
 	// the pointer moves it from there with a transform, outside React.
@@ -208,7 +210,7 @@ function Placeholder({
 	gliding: RefObject<boolean>
 }) {
 	const ref = useRef<HTMLDivElement>(null)
-	useGlide(ref, item, geometry, gliding, null)
+	useGlide(ref, item, geometry, gliding, null, false)
 	return (
 		<div
 			ref={ref}
