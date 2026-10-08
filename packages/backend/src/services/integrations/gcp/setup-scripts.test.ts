@@ -63,13 +63,21 @@ const setupInput = (
 })
 
 // A `gcloud` that records its commands, and each argument on its own line so a value split by
-// bad quoting shows. `describe` answers as the test says: found, missing, or denied. The sink's
-// writer identity is the one value a script reads back.
+// bad quoting shows. `describe` answers as the test says: found, missing, or denied, and so does
+// the service account list (a missing account is an empty list). The sink's writer identity is
+// the one value a script reads back.
 const FAKE_GCLOUD = `#!/usr/bin/env bash
 echo "$*" >> "$GCLOUD_LOG"
 printf "%s\\n" "$@" >> "$GCLOUD_LOG.args"
 case "$*" in
   *"sinks describe"*"--format"*) echo "${WRITER}" ;;
+  *"service-accounts list"*)
+    case "$GCLOUD_DESCRIBE" in
+      found) echo "${ACCOUNT}" ;;
+      missing) echo "Listed 0 items." >&2 ;;
+      denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
+      api_off) echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2; exit 1 ;;
+    esac ;;
   *" describe "*)
     case "$GCLOUD_DESCRIBE" in
       missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
@@ -81,6 +89,17 @@ case "$*" in
       absent) echo "ERROR: Policy binding with the specified principal, role, and condition not found!" >&2; exit 1 ;;
       denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
     esac ;;
+esac
+`
+
+// A service account an earlier run deleted: what Google answers for 30 days, even to an Owner.
+const FAKE_GCLOUD_ACCOUNT_DELETED = `#!/usr/bin/env bash
+echo "$*" >> "$GCLOUD_LOG"
+case "$*" in
+  *"sinks describe"*"--format"*) echo "${WRITER}" ;;
+  *"service-accounts describe"*) echo "ERROR: (gcloud) PERMISSION_DENIED: Permission 'iam.serviceAccounts.get' denied on resource (or it may not exist)." >&2; exit 1 ;;
+  *"service-accounts list"*) echo "Listed 0 items." >&2 ;;
+  *" describe "*) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
 esac
 `
 
@@ -157,8 +176,13 @@ const logsRemovalCommands = (scope: (typeof SCOPES)[keyof typeof SCOPES]) => [
 	`pubsub topics delete ${NAME} --project=acme-host --quiet`,
 ]
 
+const ACCOUNT_LOOKUP = `iam service-accounts list --project=acme-host --filter=email=${ACCOUNT} --format=value(email)`
+
+/** A command that only looks: a describe, or the service account list. */
+const isLookup = (command: string) => command.includes(" describe ") || command === ACCOUNT_LOOKUP
+
 const metricsRemovalCommands = (scope: (typeof SCOPES)[keyof typeof SCOPES]) => [
-	`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
+	ACCOUNT_LOOKUP,
 	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
 	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 	`projects remove-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
@@ -215,7 +239,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 
 		const fresh = run(script)
 		expect(fresh.status).toBe(0)
-		expect(fresh.commands.every((command) => command.includes(" describe "))).toBe(true)
+		expect(fresh.commands.every(isLookup)).toBe(true)
 	})
 })
 
@@ -261,7 +285,7 @@ case "$*" in *"sinks describe"*) echo "ERROR: PERMISSION_DENIED" >&2; exit 1 ;; 
 
 	it("does not take a resource it may not look at for one that is gone", () => {
 		const cleanup = run(renderGcpCleanupScript(SCOPES.organization.target), { describe: "denied" })
-		expect(cleanup.commands.every((command) => command.includes(" describe "))).toBe(true)
+		expect(cleanup.commands.every(isLookup)).toBe(true)
 		expect(cleanup.stderr).toContain("PERMISSION_DENIED")
 		expect(cleanup.stderr).toContain("Not everything could be removed")
 		expect(cleanup.status).toBe(1)
@@ -277,9 +301,37 @@ case "$*" in *"sinks describe"*) echo "ERROR: PERMISSION_DENIED" >&2; exit 1 ;; 
 		const { status, stderr, commands } = run(renderGcpCleanupScript(SCOPES.organization.target), {
 			describe: "api_off",
 		})
-		expect(commands.every((command) => command.includes(" describe "))).toBe(true)
+		expect(commands.every(isLookup)).toBe(true)
 		expect(stderr.match(/has not been used/g)).toHaveLength(1)
 		expect(status).toBe(1)
+	})
+
+	it("finishes when the service account was deleted by an earlier run", () => {
+		const cleanup = run(renderGcpCleanupScript(SCOPES.project.target), {
+			gcloud: FAKE_GCLOUD_ACCOUNT_DELETED,
+		})
+		expect(cleanup.stdout).toContain("Maple cleanup complete.")
+		expect(cleanup.status).toBe(0)
+		expect(cleanup.commands.every(isLookup)).toBe(true)
+
+		// So does a setup script with metrics off, run a second time.
+		const metricsOff = run(renderGcpSetupScript(setupInput("project", { logs: true, metrics: false })), {
+			gcloud: FAKE_GCLOUD_ACCOUNT_DELETED,
+		})
+		expect(metricsOff.status).toBe(0)
+		expect(metricsOff.commands.at(-1)).toBe(ACCOUNT_LOOKUP)
+	})
+
+	it("creates the service account again after an earlier run deleted it", () => {
+		const { status, commands } = run(
+			renderGcpSetupScript(setupInput("folder", { logs: false, metrics: true })),
+			{ gcloud: FAKE_GCLOUD_ACCOUNT_DELETED },
+		)
+		expect(status).toBe(0)
+		// The new account has none of the deleted one's roles: all four grants are made again.
+		expect(commands.slice(-metricsSetupCommands(SCOPES.folder).length)).toEqual(
+			metricsSetupCommands(SCOPES.folder),
+		)
 	})
 
 	it("hands gcloud each value as one argument", () => {

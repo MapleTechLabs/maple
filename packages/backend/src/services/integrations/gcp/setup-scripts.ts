@@ -125,6 +125,22 @@ exists() {
   return 1
 }
 
+# listed <gcloud ... list --filter=... --format='value(...)'>: whether the list names the
+# resource. A list that fails is read like a failed describe above.
+listed() {
+  local output
+  if output="$("$@" 2>/dev/null)"; then
+    [ -n "$output" ]
+    return
+  fi
+  output="$("$@" 2>&1 || true)"
+  case "$output" in
+    *"has not been used"* | *"is disabled"*) ;;
+    *) echo "$output" >&2; INCOMPLETE=1 ;;
+  esac
+  return 1
+}
+
 # unbind <gcloud ... remove-iam-policy-binding ...>: a binding that is already gone is fine.
 unbind() {
   local output
@@ -175,6 +191,9 @@ MAPLE_SERVICE_ACCOUNT=${sh(mapleServiceAccountEmail)}
 gcloud services enable monitoring.googleapis.com cloudasset.googleapis.com \\
   iam.googleapis.com iamcredentials.googleapis.com --project="$PROJECT_ID"
 
+# A service account that an earlier run deleted (metrics switched off) fails this describe as
+# well and is created again. Google makes that a new account under the same name, with none of
+# the old one's roles, so every grant below is made for it.
 if ! gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
     --display-name="Maple metrics and resource reader"
@@ -213,7 +232,10 @@ retry gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL
 
 const metricsRemoval = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: off. Remove what an earlier run created. ----
-if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+# Looked up in the list: for 30 days after a service account is deleted, describing it answers
+# PERMISSION_DENIED even to an Owner, which would read as "may still be there" on every re-run.
+if listed gcloud iam service-accounts list --project="$PROJECT_ID" \\
+  --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name, so
   # the account stays until every one of them is gone.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
