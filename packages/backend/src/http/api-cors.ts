@@ -28,11 +28,7 @@ export const API_CORS_RESPONSE_HEADERS = {
 	"access-control-expose-headers": API_CORS_OPTIONS.exposedHeaders.join(","),
 } as const
 
-/**
- * `Timing-Allow-Origin` for every API response, same origins as CORS. Without it a
- * cross-origin PerformanceResourceTiming entry reports each phase as 0, so the
- * browser cannot split a slow call into dns/tls/ttfb.
- */
+/** Without it the browser reports every cross-origin timing phase as 0. */
 export const API_TIMING_ALLOW_ORIGIN = API_CORS_OPTIONS.allowedOrigins.join(",")
 
 /**

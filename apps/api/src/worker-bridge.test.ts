@@ -324,7 +324,6 @@ describe("the api Worker through alchemy's bridge", () => {
 			)
 			assert.strictEqual(response.status, 204)
 			assert.include(response.headers.get("access-control-allow-headers") ?? "", "Authorization")
-			// Effect's CORS middleware sets none, and the preflight stays byte-equal to it.
 			assert.isNull(response.headers.get("timing-allow-origin"))
 		}),
 	)

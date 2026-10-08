@@ -239,10 +239,9 @@ export const makeFetch = (
 
 			return response
 		}).pipe(
-			// HttpRouter.cors sets no Timing-Allow-Origin, so every response gets it here.
 			Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)),
 		)
-		// The preflight answers outside that wrapper, so it stays byte-equal to HttpRouter.cors.
+		// Outside the wrapper, so the preflight stays byte-equal to HttpRouter.cors.
 		return Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest
 			if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
