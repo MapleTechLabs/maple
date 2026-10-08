@@ -5,7 +5,7 @@ vi.mock("../session/session", () => ({
 	markActivity: vi.fn(),
 	noteNavigation: vi.fn(),
 }))
-const postSessionEvents = vi.fn(async () => {})
+const postSessionEvents = vi.fn(async () => "accepted")
 vi.mock("../platform/transport", () => ({ postSessionEvents }))
 
 const { track } = await import("./track")
