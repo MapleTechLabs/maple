@@ -33,6 +33,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useWidgetActions } from "@/components/dashboard-builder/widgets/widget-actions-context"
 import { MoveWidgetToSectionMenu } from "@/components/dashboard-builder/sections/move-widget-to-section-menu"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
+import { useGridHandleDescription } from "@/components/dashboard-builder/canvas/grid-handle-context"
 import {
 	useWidgetTimeRangeOverride,
 	widgetTimeRangeLabel,
@@ -92,6 +93,7 @@ export function WidgetShell({
 	// the resolved value. Outside a dashboard (widget lab) this is a no-op.
 	const variablesContext = useDashboardVariablesOptional()
 	const displayTitle = variablesContext ? interpolateDisplayText(title, variablesContext.values) : title
+	const gridInstructionsId = useGridHandleDescription()
 
 	// A tile pinned to its own window says so in the header. Without the label a
 	// reader has no way to tell that one card on a 7-day board is showing the
@@ -112,12 +114,20 @@ export function WidgetShell({
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
 						// Hidden when the canvas is showing a generated (non-authored)
-						// layout — see `is-layout-locked` in dashboard-canvas. Outside a
+						// layout (`is-layout-locked` in dashboard-sections). Outside a
 						// canvas (widget lab, previews) the group never matches, so the
-						// grip renders as before.
-						<div className="widget-drag-handle cursor-grab text-muted-foreground group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:cursor-grabbing">
+						// grip renders as before. A button so the grid's keyboard
+						// rearranging can reach it; `touch-none` so a touch drag moves
+						// the tile instead of scrolling the page.
+						<button
+							type="button"
+							aria-label={`Move ${displayTitle}`}
+							aria-describedby={gridInstructionsId}
+							data-grid-label={displayTitle}
+							className="widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+						>
 							<GripDotsIcon size={14} />
-						</div>
+						</button>
 					)}
 					<Eyebrow variant="label" render={<CardTitle />} className="min-w-0 truncate">
 						{displayTitle}

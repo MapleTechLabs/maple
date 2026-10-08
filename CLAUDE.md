@@ -139,4 +139,5 @@ Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches w
 
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
-`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`.
+`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`).
