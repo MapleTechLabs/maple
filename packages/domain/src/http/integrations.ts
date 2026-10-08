@@ -1,6 +1,13 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
+import {
+	ExternalUserId,
+	GcpProjectId,
+	GcpResourceNumber,
+	GcpScopeType,
+	ScrapeTargetId,
+	UserId,
+} from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
@@ -1024,6 +1031,42 @@ export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFo
 		title: "Integration not found",
 		retry: "never",
 		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The organization already has a connector for this Google Cloud project, folder or organization. */
+export class GcpScopeAlreadyConnectedError extends HttpTaggedError<GcpScopeAlreadyConnectedError>()(
+	"@maple/http/errors/GcpScopeAlreadyConnectedError",
+	{
+		scopeType: GcpScopeType,
+		scopeId: Schema.Union([GcpProjectId, GcpResourceNumber]),
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_scope_already_connected",
+		title: "Already connected",
+		param: "scope_id",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** Metrics were requested on a deployment that has no Google identity to collect them with. */
+export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavailableError>()(
+	"@maple/http/errors/GcpMetricsUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_metrics_unavailable",
+		title: "Metrics collection is not available",
+		param: "metrics_enabled",
+		retry: "never",
+		recovery: "none",
 		exposure: "public_message",
 	},
 ) {}

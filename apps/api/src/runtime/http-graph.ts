@@ -48,6 +48,7 @@ import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
 import { HttpV2ErrorIssuesLive } from "@/routes/v2/error-issues.http"
 import { HttpV2IngestKeysLive } from "@/routes/v2/ingest-keys.http"
 import { HttpV2ChatIntegrationsLive } from "@/routes/v2/integrations-chat.http"
+import { HttpV2GcpIntegrationsLive } from "@/routes/v2/integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "@/routes/v2/integrations.http"
 import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2AgentFeedbackLive } from "@/routes/v2/agent-feedback.http"
@@ -154,6 +155,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2IngestKeysLive,
 			HttpV2ChatIntegrationsLive,
 			HttpV2PlanetScaleIntegrationsLive,
+			HttpV2GcpIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
 			HttpV2AuditLogLive,

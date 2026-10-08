@@ -11,6 +11,7 @@
 		"./billing": "./src/billing.ts",
 		"./billing-tax-ids": "./src/billing-tax-ids.ts",
 		"./format": "./src/format.ts",
+		"./gcp": "./src/gcp.ts",
 		"./gen-ai": "./src/gen-ai.ts",
 		"./glob": "./src/glob.ts",
 		"./http": "./src/http/index.ts",

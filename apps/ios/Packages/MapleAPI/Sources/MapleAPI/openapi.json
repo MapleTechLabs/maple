@@ -7738,6 +7738,10 @@
       "name": "PlanetScale Integration"
     },
     {
+      "description": "Connect Google Cloud projects, folders or organizations: register a connector, choose whether it forwards logs and whether Maple may read metrics and resources, fetch the `gcloud` scripts that set it up, and see whether logs are arriving.",
+      "name": "Google Cloud Integration"
+    },
+    {
       "description": "Deduplicated errors and alert-backed issues tracked through Maple's triage workflow.",
       "name": "Error Issues"
     },

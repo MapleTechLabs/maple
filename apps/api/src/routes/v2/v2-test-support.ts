@@ -39,7 +39,9 @@ import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
 import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
+import { HttpV2GcpIntegrationsLive } from "./integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
@@ -152,6 +154,8 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
 		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
+		// Same, plus the Env every harness provides as well.
+		HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer)),
 		HttpV2SessionReplaysLive,
 		HttpV2TracesLive,
 		HttpV2LogsLive,

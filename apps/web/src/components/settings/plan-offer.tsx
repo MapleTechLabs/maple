@@ -42,6 +42,7 @@ const includedRun = (plan: CatalogPlan): string =>
 	plan.items
 		.flatMap((item) => {
 			if (!item.featureId || item.included == null) return []
+			if (item.featureId === "ai_credits") return [`$${formatCount(Number(item.included))} AI usage`]
 			const unit = featureUnit(item.featureId)
 			const amount = formatCount(Number(item.included))
 			return [unit === "GB" ? `${amount} GB ${item.featureId}` : `${amount} ${unit}`]
