@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http"
 import { GcpConnectorId, type GcpProjectId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { and, asc, eq } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -17,7 +17,7 @@ import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-script
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
-	readonly projectId: string
+	readonly projectId: GcpProjectId
 	readonly createdAt: number
 	/** Last log push the ingest gateway accepted from this project. Null until the first one. */
 	readonly lastLogReceivedAt: number | null
@@ -51,7 +51,7 @@ export interface GcpConnectorServiceApi {
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
 	) => Effect.Effect<
-		{ readonly projectId: string; readonly cleanupScript: string },
+		{ readonly projectId: GcpProjectId; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
 }
@@ -61,13 +61,11 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Google Cloud connector database error",
 )
 
-const decodeConnectorId = Schema.decodeUnknownSync(GcpConnectorId)
-
 // Binds the ciphertext to its row, so a stored secret cannot be moved onto another connector.
 const secretAad = (connectorId: string) => Buffer.from(`gcp_connectors:v1:${connectorId}`, "utf8")
 
 const toConnector = (row: GcpConnectorRow): GcpConnector => ({
-	id: decodeConnectorId(row.id),
+	id: row.id,
 	projectId: row.projectId,
 	createdAt: dateToMs(row.createdAt),
 	lastLogReceivedAt: dateToMs(row.lastReceivedAt),
@@ -99,6 +97,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
 			const status = Effect.fn("GcpConnectorService.status")(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
 					db
 						.select()
@@ -117,7 +116,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				userId: UserId,
 				projectId: GcpProjectId,
 			) {
-				const id = randomUUID()
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.project_id": projectId })
+				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
 				const encrypted = yield* encryptAes256Gcm(
 					secret,
@@ -159,6 +159,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				connectorId: GcpConnectorId,
 				options: { readonly excludeGkeContainerLogs: boolean },
 			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const rows = yield* dbExecute((db) =>
 					db
 						.select()
@@ -193,6 +194,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				orgId: OrgId,
 				connectorId: GcpConnectorId,
 			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const rows = yield* dbExecute((db) =>
 					db
 						.delete(gcpConnectors)

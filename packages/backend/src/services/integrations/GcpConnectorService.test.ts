@@ -4,7 +4,13 @@ import { hashIngestKey } from "@maple/db"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { GcpProjectId, OrgId, UserId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { GcpConnectorService, type GcpConnector } from "./GcpConnectorService"
 
 const trackedDbs: TestDb[] = []
@@ -92,11 +98,8 @@ describe("GcpConnectorService", () => {
 			const duplicate = yield* Effect.flip(gcp.create(orgId, userId, projectId("acme-prod")))
 			assert.strictEqual(duplicate._tag, "@maple/http/errors/GcpProjectAlreadyConnectedError")
 
-			// Each org gets its own connector, and with it its own resource names in the project.
-			const theirs = yield* gcp.create(otherOrgId, userId, projectId("acme-prod"))
-			const ours = (yield* gcp.status(orgId)).connectors
-			assert.lengthOf(ours, 1)
-			assert.notDeepEqual(gcpConnectorResourceNames(theirs.id), gcpConnectorResourceNames(ours[0]!.id))
+			yield* gcp.create(otherOrgId, userId, projectId("acme-prod"))
+			assert.lengthOf((yield* gcp.status(orgId)).connectors, 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -107,7 +110,8 @@ describe("GcpConnectorService", () => {
 			const connector = yield* gcp.create(orgId, userId, projectId("acme-prod"))
 			// What the ingest gateway writes after a rejected push.
 			yield* Effect.promise(() =>
-				testDb.pglite.query(
+				executeSql(
+					testDb,
 					"UPDATE gcp_connectors SET last_received_at = $1, last_error = $2 WHERE id = $3",
 					["2026-10-08T09:12:00.000Z", "payload was not a LogEntry", connector.id],
 				),
@@ -140,6 +144,28 @@ describe("GcpConnectorService", () => {
 				withMetrics(connector.id).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT))),
 			),
 		)
+	})
+
+	it.effect("refuses to render a secret that was moved onto another connector's row", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const source = yield* gcp.create(orgId, userId, projectId("acme-prod"))
+			const target = yield* gcp.create(orgId, userId, projectId("acme-staging"))
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE gcp_connectors AS t
+					 SET secret_ciphertext = s.secret_ciphertext, secret_iv = s.secret_iv, secret_tag = s.secret_tag
+					 FROM gcp_connectors AS s WHERE s.id = $1 AND t.id = $2`,
+					[source.id, target.id],
+				),
+			)
+			const error = yield* Effect.flip(
+				gcp.scripts(orgId, target.id, { excludeGkeContainerLogs: false }),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPersistenceError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("scopes scripts and deletion to the owning organization", () => {

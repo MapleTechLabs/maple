@@ -1,12 +1,10 @@
 import type { GcpConnectorId } from "./primitives"
 
 /**
- * Names of the resources a connector's setup script creates in the customer's Google Cloud
- * project. Derived from the connector id alone, so nothing extra is stored and the names cannot
- * be chosen by a caller: the metrics reader of one connector is never the account another
- * organization's connector impersonates.
- *
- * 24 hex characters of the id keep the service account id at Google's 30-character limit.
+ * Names of what a connector's setup script creates in the customer's Google Cloud project.
+ * Derived from the connector id alone, so a caller can never pick them: one connector's metrics
+ * account is not the one another organization's connector impersonates. 24 hex characters keep
+ * the service account id at Google's 30-character limit.
  */
 export const gcpConnectorResourceNames = (connectorId: GcpConnectorId) => {
 	const name = `maple-${connectorId.replaceAll("-", "").slice(0, 24)}`

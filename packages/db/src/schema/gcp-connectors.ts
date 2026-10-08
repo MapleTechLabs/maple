@@ -1,4 +1,4 @@
-import type { OrgId } from "@maple/domain"
+import type { GcpConnectorId, GcpProjectId, OrgId } from "@maple/domain"
 import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
 // One row per connected Google Cloud project. The ingest gateway's `/v1/logpush/gcp/...` receiver
@@ -6,9 +6,9 @@ import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 export const gcpConnectors = pgTable(
 	"gcp_connectors",
 	{
-		id: text("id").notNull().primaryKey(),
+		id: text("id").$type<GcpConnectorId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
-		projectId: text("project_id").notNull(),
+		projectId: text("project_id").$type<GcpProjectId>().notNull(),
 		secretCiphertext: text("secret_ciphertext").notNull(),
 		secretIv: text("secret_iv").notNull(),
 		secretTag: text("secret_tag").notNull(),

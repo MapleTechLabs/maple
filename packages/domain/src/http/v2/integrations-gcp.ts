@@ -12,14 +12,9 @@ import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 
-// Google Cloud integration. There is no OAuth: an org registers a connector for one Google Cloud
-// project and its owner runs the generated `gcloud` script in Cloud Shell. The script routes the
-// project's logs through Pub/Sub to Maple's ingest gateway and, where this deployment has a Google
-// identity, creates a read-only metrics account Maple may impersonate.
-//
-// Public v2 from the start: infrastructure-as-code setups create connectors with a scoped API key,
-// which only v2 has (docs/api-v2.md). The log receiver itself is a provider-facing route on the
-// ingest gateway, not part of this group.
+// Google Cloud integration. No OAuth: an org registers a connector per Google Cloud project and
+// its owner runs the generated `gcloud` script, which routes the project's logs through Pub/Sub
+// to the ingest gateway. Public v2 from the start so scripted setups can use a scoped API key.
 
 /** `gcpc_…` public ID ⇄ internal `GcpConnectorId` (raw UUID). */
 export const GcpConnectorPublicId = PublicId(PublicIdPrefixes.gcpConnector, GcpConnectorId)
@@ -116,11 +111,11 @@ export const V2GcpSetupScripts = Schema.Struct({
 	setup_script: Schema.String.annotate({
 		description:
 			"A bash script for Cloud Shell, run by a project owner. It embeds the connector's push secret, so treat it as a credential. Safe to re-run; the log filter is an editable variable at the top.",
-		examples: ["#!/usr/bin/env bash\nset -euo pipefail\n…"],
+		examples: ["#!/usr/bin/env bash\n…"],
 	}),
 	cleanup_script: Schema.String.annotate({
 		description: "A bash script that removes everything the setup script created. Carries no secret.",
-		examples: ["#!/usr/bin/env bash\nset -euo pipefail\n…"],
+		examples: ["#!/usr/bin/env bash\n…"],
 	}),
 }).annotate({
 	identifier: "GcpSetupScripts",
@@ -129,8 +124,8 @@ export const V2GcpSetupScripts = Schema.Struct({
 	examples: [
 		wireExample({
 			object: "gcp_connector.setup_scripts",
-			setup_script: "#!/usr/bin/env bash\nset -euo pipefail\n…",
-			cleanup_script: "#!/usr/bin/env bash\nset -euo pipefail\n…",
+			setup_script: "#!/usr/bin/env bash\n…",
+			cleanup_script: "#!/usr/bin/env bash\n…",
 		}),
 	],
 })
@@ -147,7 +142,7 @@ export const V2GcpConnectorDeleteResponse = Schema.Struct({
 	cleanup_script: Schema.String.annotate({
 		description:
 			"A bash script that removes the resources the setup script created. Maple has no write access to the project, so the project owner runs it.",
-		examples: ["#!/usr/bin/env bash\nset -euo pipefail\n…"],
+		examples: ["#!/usr/bin/env bash\n…"],
 	}),
 }).annotate({
 	identifier: "GcpConnectorDeleteResponse",
@@ -158,7 +153,7 @@ export const V2GcpConnectorDeleteResponse = Schema.Struct({
 			id: connectorExample.id,
 			object: "gcp_connector",
 			deleted: true,
-			cleanup_script: "#!/usr/bin/env bash\nset -euo pipefail\n…",
+			cleanup_script: "#!/usr/bin/env bash\n…",
 		}),
 	],
 })

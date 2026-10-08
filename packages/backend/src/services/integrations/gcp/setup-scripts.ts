@@ -1,14 +1,13 @@
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
-import type { GcpConnectorId } from "@maple/domain/primitives"
+import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
 
 /** Single-quote a value for bash. Every value that reaches a script goes through here. */
 const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
-// Data Access audit logs record every API read, and health-check probes repeat every few
-// seconds per backend: both are high volume and say little about the workload.
+// Data Access audit logs record every API read, and load balancer health-check probes hit each
+// backend every few seconds: both are high volume and say little about the workload.
 const DEFAULT_LOG_FILTER = [
 	'NOT log_id("cloudaudit.googleapis.com/data_access")',
-	'NOT log_id("compute.googleapis.com/healthchecks")',
 	'NOT httpRequest.userAgent:"GoogleHC"',
 ]
 
@@ -17,7 +16,7 @@ export const gcpLogFilter = (excludeGkeContainerLogs: boolean): string =>
 		" AND ",
 	)
 
-const logVariables = (connectorId: GcpConnectorId, projectId: string): string => {
+const logVariables = (connectorId: GcpConnectorId, projectId: GcpProjectId): string => {
 	const names = gcpConnectorResourceNames(connectorId)
 	return `PROJECT_ID=${sh(projectId)}
 TOPIC=${sh(names.topic)}
@@ -58,7 +57,7 @@ retry gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL
 
 export interface GcpSetupScriptInput {
 	readonly connectorId: GcpConnectorId
-	readonly projectId: string
+	readonly projectId: GcpProjectId
 	/** The ingest gateway's receiver URL for this connector, including its secret. */
 	readonly pushEndpoint: string
 	/** Maple's own Google service account. Undefined renders a logs-only script. */
@@ -118,8 +117,10 @@ else
   gcloud logging sinks create "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" --project="$PROJECT_ID"
 fi
 
-# The sink writes as its own Google-managed identity, which needs to publish to the topic.
+# The sink writes as a Google-managed identity, which needs to route logs and publish to the topic.
 WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" --project="$PROJECT_ID" --format='value(writerIdentity)')"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
+  --member="$WRITER_IDENTITY" --role=roles/logging.logWriter --condition=None >/dev/null
 gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
   --member="$WRITER_IDENTITY" --role=roles/pubsub.publisher >/dev/null
 ${mapleAccount === undefined ? "" : metricsSteps(input.connectorId, mapleAccount)}
@@ -128,11 +129,12 @@ echo "Maple setup complete for $PROJECT_ID. Logs start arriving in Maple within 
 }
 
 /** Removes what the setup script created. Carries no secret, so it outlives the connector. */
-export const renderGcpCleanupScript = (connectorId: GcpConnectorId, projectId: string): string =>
+export const renderGcpCleanupScript = (connectorId: GcpConnectorId, projectId: GcpProjectId): string =>
 	`#!/usr/bin/env bash
 # Maple: remove what the Maple setup script created in this Google Cloud project.
 # Run in Cloud Shell as a project owner. No "set -e": every step runs, and a
-# NOT_FOUND error only means that resource is already gone.
+# NOT_FOUND error only means that resource is already gone. The logging service
+# agent keeps its Logs Writer role: every sink in the project shares that identity.
 set -uo pipefail
 
 ${logVariables(connectorId, projectId)}

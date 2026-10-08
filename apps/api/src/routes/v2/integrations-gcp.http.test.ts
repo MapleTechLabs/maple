@@ -246,7 +246,7 @@ describe("v2 gcp integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("rejects anything that is not a Google Cloud project id or a gcpc_ id before the service", async () => {
+	it("answers malformed project and connector ids with 400, an unknown connector with 404", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 
@@ -262,8 +262,9 @@ describe("v2 gcp integration over HTTP", () => {
 		const { status } = await harness.request("DELETE", `${BASE}/connectors/${wrongPrefix}`, admin.secret)
 		expect(status).toBe(400)
 
-		const empty = await harness.request("GET", BASE, admin.secret)
-		expect(empty.body.connectors).toEqual([])
+		const unknown = encodePublicId("gcpc", "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const missing = await harness.request("DELETE", `${BASE}/connectors/${unknown}`, admin.secret)
+		expect(missing.status).toBe(404)
 		await harness.dispose()
 	})
 })

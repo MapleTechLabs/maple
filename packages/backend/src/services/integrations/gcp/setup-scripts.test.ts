@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { GcpConnectorId } from "@maple/domain/primitives"
+import { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
 import {
 	gcpLogFilter,
 	renderGcpCleanupScript,
@@ -13,6 +13,7 @@ import {
 } from "./setup-scripts"
 
 const connectorId = Schema.decodeUnknownSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+const projectId = Schema.decodeUnknownSync(GcpProjectId)("acme-prod")
 const NAME = "maple-018f2b3c4d5e4f708192a3b4"
 const SECRET = "maple_gcp_s3cr3t-value"
 const WRITER = "serviceAccount:service-1@gcp-sa-logging.iam.gserviceaccount.com"
@@ -20,7 +21,7 @@ const MAPLE_ACCOUNT = "collector@maple-prod.iam.gserviceaccount.com"
 
 const input: GcpSetupScriptInput = {
 	connectorId,
-	projectId: "acme-prod",
+	projectId,
 	pushEndpoint: `https://ingest.test/v1/logpush/gcp/${connectorId}?secret=${SECRET}`,
 	mapleServiceAccountEmail: MAPLE_ACCOUNT,
 	excludeGkeContainerLogs: false,
@@ -83,6 +84,7 @@ describe("renderGcpSetupScript", () => {
 			`logging sinks describe ${NAME} --project=acme-prod`,
 			`logging sinks create ${NAME} pubsub.googleapis.com/projects/acme-prod/topics/${NAME} --log-filter=${gcpLogFilter(false)} --project=acme-prod`,
 			`logging sinks describe ${NAME} --project=acme-prod --format=value(writerIdentity)`,
+			`projects add-iam-policy-binding acme-prod --member=${WRITER} --role=roles/logging.logWriter --condition=None`,
 			`pubsub topics add-iam-policy-binding ${NAME} --project=acme-prod --member=${WRITER} --role=roles/pubsub.publisher`,
 			`iam service-accounts describe ${NAME}@acme-prod.iam.gserviceaccount.com --project=acme-prod`,
 			`iam service-accounts create ${NAME} --project=acme-prod --display-name=Maple metrics reader`,
@@ -115,9 +117,9 @@ describe("renderGcpSetupScript", () => {
 		expect(commands.at(-1)).toContain("pubsub topics add-iam-policy-binding")
 	})
 
-	it("excludes data-access audit logs and health checks by default, GKE containers on request", () => {
+	it("excludes data-access audit logs and health-check probes by default, GKE containers on request", () => {
 		expect(gcpLogFilter(false)).toBe(
-			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT log_id("compute.googleapis.com/healthchecks") AND NOT httpRequest.userAgent:"GoogleHC"',
+			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC"',
 		)
 		expect(gcpLogFilter(true)).toBe(`${gcpLogFilter(false)} AND NOT resource.type="k8s_container"`)
 		expect(renderGcpSetupScript({ ...input, excludeGkeContainerLogs: true })).toContain(
@@ -127,15 +129,17 @@ describe("renderGcpSetupScript", () => {
 
 	it("passes interpolated values to gcloud verbatim, whatever they contain", () => {
 		const hostile = `x'; touch pwned; echo '$(touch pwned)`
-		const { dir, status, commands } = run(renderGcpSetupScript({ ...input, projectId: hostile }))
+		const { dir, status, commands } = run(
+			renderGcpSetupScript({ ...input, mapleServiceAccountEmail: hostile }),
+		)
 		expect(status).toBe(0)
-		expect(commands[0]).toContain(`--project=${hostile}`)
+		expect(commands.at(-1)).toContain(`--member=serviceAccount:${hostile} `)
 		expect(existsSync(join(dir, "pwned"))).toBe(false)
 	})
 })
 
 describe("renderGcpCleanupScript", () => {
-	const script = renderGcpCleanupScript(connectorId, "acme-prod")
+	const script = renderGcpCleanupScript(connectorId, projectId)
 
 	it("carries the secret in the setup script only", () => {
 		expect(renderGcpSetupScript(input)).toContain(SECRET)
