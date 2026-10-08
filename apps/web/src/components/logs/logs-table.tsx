@@ -18,7 +18,7 @@ import { LogsTableToolbar } from "./logs-table-toolbar"
 import type { LogsSearchParams } from "@/routes/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useLogsViewPreferences, type LogsDensity } from "@/hooks/use-logs-view-preferences"
-import { formatCompactTimeInTimezone } from "@/lib/timezone-format"
+import { LogTime } from "./log-time"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
@@ -28,7 +28,7 @@ import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
 import { shortId } from "@maple/ui/lib/ids"
-import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, PulseIcon } from "@/components/icons"
+import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, LinkIcon, PulseIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
@@ -40,6 +40,7 @@ import {
 } from "@/components/time-range-picker/search"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { logPermalink } from "@/lib/log-key"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const ROW_HEIGHT = 30
@@ -143,19 +144,6 @@ interface LogRowProps {
 	onToggleExpand: (index: number) => void
 }
 
-/** `HH:MM:SS` at full strength, the milliseconds a step back: the eye reads seconds first. */
-function LogTime({ timestamp, timeZone }: { timestamp: string; timeZone: string }) {
-	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
-	const dot = formatted.lastIndexOf(".")
-	if (dot === -1) return formatted
-	return (
-		<>
-			{formatted.slice(0, dot)}
-			<span className="text-muted-foreground/50">{formatted.slice(dot)}</span>
-		</>
-	)
-}
-
 const LogRow = React.memo(function LogRow({
 	log,
 	index,
@@ -190,6 +178,7 @@ const LogRow = React.memo(function LogRow({
 	const severity = log.severityText.toUpperCase()
 	const severityColor = getSeverityColor(log.severityText)
 	const { copy } = useCopy({ successMessage: "Copied log message" })
+	const { copy: copyLink } = useCopy({ successMessage: "Copied link to log" })
 
 	return (
 		<div
@@ -324,6 +313,15 @@ const LogRow = React.memo(function LogRow({
 						}}
 					>
 						<CopyIcon size={13} />
+					</RowAction>
+					<RowAction
+						label="Copy link to log"
+						onClick={(e) => {
+							e.stopPropagation()
+							void copyLink(logPermalink(log))
+						}}
+					>
+						<LinkIcon size={13} />
 					</RowAction>
 					{log.traceId && (
 						<Link

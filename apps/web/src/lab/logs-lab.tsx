@@ -4,6 +4,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { LogContextFixtureProvider } from "@/components/logs/log-context-panel"
 import { LogsTableView } from "@/components/logs/logs-table"
 import type { LogsDensity } from "@/hooks/use-logs-view-preferences"
 import { buildLogsLabFixture } from "@/lab/logs-fixture"
@@ -69,19 +70,21 @@ export function LogsLab() {
 						</DashboardLayout.Header>
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Fill>
-						<LogsTableView
-							allData={empty ? [] : logs}
-							isFetchingNextPage={false}
-							hasNextPage={false}
-							isCapped={false}
-							fetchNextPage={() => {}}
-							waiting={false}
-							wrap={wrap}
-							density={density}
-							pinnedColumns={pinned}
-							searchText={search}
-							embedded
-						/>
+						<LogContextFixtureProvider logs={logs}>
+							<LogsTableView
+								allData={empty ? [] : logs}
+								isFetchingNextPage={false}
+								hasNextPage={false}
+								isCapped={false}
+								fetchNextPage={() => {}}
+								waiting={false}
+								wrap={wrap}
+								density={density}
+								pinnedColumns={pinned}
+								searchText={search}
+								embedded
+							/>
+						</LogContextFixtureProvider>
 					</DashboardLayout.Fill>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
