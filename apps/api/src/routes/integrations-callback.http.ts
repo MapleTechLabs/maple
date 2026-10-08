@@ -264,9 +264,10 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				label: "PlanetScale",
 			})
 
-		const handle = Effect.fn("integrations.hazelOAuthCallback")(function* (
-			req: HttpServerRequest.HttpServerRequest,
-		) {
+		const handle = Effect.fn("integrations.hazelOAuthCallback", {
+			kind: "server",
+			attributes: { "http.route": HAZEL_CALLBACK_PATH, "http.request.method": "GET" },
+		})(function* (req: HttpServerRequest.HttpServerRequest) {
 			const urlOption = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
 			if (Option.isNone(urlOption)) {
 				return htmlResponse(
@@ -501,9 +502,10 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const cloudflareErrorPage = (message: string) =>
 			htmlResponse(cloudflareCallbackPage({ status: "error", message, returnTo: null }), 400)
 
-		const handleCloudflare = Effect.fn("integrations.cloudflareOAuthCallback")(function* (
-			req: HttpServerRequest.HttpServerRequest,
-		) {
+		const handleCloudflare = Effect.fn("integrations.cloudflareOAuthCallback", {
+			kind: "server",
+			attributes: { "http.route": CLOUDFLARE_CALLBACK_PATH, "http.request.method": "GET" },
+		})(function* (req: HttpServerRequest.HttpServerRequest) {
 			const urlOption = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
 			if (Option.isNone(urlOption)) {
 				return cloudflareErrorPage("Malformed callback URL")
@@ -586,9 +588,10 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const planetscaleErrorPage = (message: string) =>
 			htmlResponse(planetscaleCallbackPage({ status: "error", message, returnTo: null }), 400)
 
-		const handlePlanetScale = Effect.fn("integrations.planetscaleOAuthCallback")(function* (
-			req: HttpServerRequest.HttpServerRequest,
-		) {
+		const handlePlanetScale = Effect.fn("integrations.planetscaleOAuthCallback", {
+			kind: "server",
+			attributes: { "http.route": PLANETSCALE_CALLBACK_PATH, "http.request.method": "GET" },
+		})(function* (req: HttpServerRequest.HttpServerRequest) {
 			const urlOption = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
 			if (Option.isNone(urlOption)) {
 				return planetscaleErrorPage("Malformed callback URL")
