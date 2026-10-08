@@ -502,6 +502,22 @@ describe("logsListQuery", () => {
 		expect(sql).toContain("FORMAT JSON")
 	})
 
+	it("applies filter-in and filter-out attribute predicates with escaped user input", () => {
+		const { sql } = compileUnsafe(
+			logsListQuery({
+				attributeFilters: [
+					{ key: "http.route", value: "/a", mode: "equals" },
+					{ key: "o'k", value: "x' OR 1=1", mode: "equals", negated: true },
+				],
+				resourceAttributeFilters: [{ key: "k8s.pod.name", value: "p1", mode: "equals" }],
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("LogAttributes['http.route'] = '/a'")
+		expect(sql).toContain("NOT (LogAttributes['o\\'k'] = 'x\\' OR 1=1')")
+		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] = 'p1'")
+	})
+
 	it("applies cursor pagination", () => {
 		const q = logsListQuery({ cursor: "2024-01-01 12:00:00.123456789" })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -806,6 +822,17 @@ describe("logsFacetsQuery", () => {
 		// Same outer shape as the full union: count-desc, limit 500.
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 500")
+	})
+
+	it("takes the raw-`logs` path and applies attribute filters when they are set", () => {
+		const q = logsFacetsQuery({
+			attributeFilters: [{ key: "http.route", value: "/a", mode: "equals" }],
+			resourceAttributeFilters: [{ key: "k8s.pod.name", value: "p1", mode: "equals", negated: true }],
+		})
+		const { sql } = compileUnionUnsafe(q, baseParams)
+		expect(sql).not.toContain("logs_aggregates_hourly")
+		expect(sql).toContain("LogAttributes['http.route'] = '/a'")
+		expect(sql).toContain("NOT (ResourceAttributes['k8s.pod.name'] = 'p1')")
 	})
 
 	it("facet scoping follows the raw-`logs` fallback path", () => {
