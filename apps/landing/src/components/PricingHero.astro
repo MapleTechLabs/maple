@@ -15,7 +15,7 @@ import * as m from "../paraglide/messages.js";
 import { HeroCta } from "./HeroCta";
 import PixelIcon from "./icons/PixelIcon.astro";
 import RegionChip from "./RegionChip.astro";
-import { getOffer, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
+import { getOffer, isUsageCredit, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
 
 const offer = await getOffer();
 
@@ -30,6 +30,7 @@ const gbRate = gbSignal?.rate ?? 0;
 const RATE_SLOT = "%RATE%";
 const rateSentence = (a: Allotment): string => {
 	if (a.unlimited) return m.pricing_free_beta();
+	if (isUsageCredit(a)) return m.pricing_rate_ai_usage();
 	if (a.rate === undefined) return "";
 	const rendered =
 		a.unit === "gb"
@@ -131,6 +132,13 @@ const RETENTION_DAYS = 30;
 									<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
 										{m.pricing_unlimited()}
 									</span>
+								) : isUsageCredit(a) ? (
+									<>
+										<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
+											{volume(a, a.included)}
+										</span>
+										<span class="font-mono text-[11px] text-fg-muted">{m.pricing_ai_usage_included()}</span>
+									</>
 								) : (
 									<>
 										<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
@@ -147,7 +155,7 @@ const RETENTION_DAYS = 30;
 								)}
 							</div>
 							<div class="mt-2 text-[11.5px] text-fg-muted">
-								{a.unlimited
+								{a.unlimited || isUsageCredit(a)
 									? rateSentence(a)
 									: m.pricing_rate_included({ amount: volume(a, a.included) })}
 							</div>

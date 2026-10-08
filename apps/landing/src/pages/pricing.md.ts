@@ -10,6 +10,7 @@ import type { APIRoute } from "astro"
 import { blocks, docHeader, markdown, table } from "../lib/page-markdown"
 import {
 	getOffer,
+	isUsageCredit,
 	money,
 	platformFeatures,
 	rateBlock,
@@ -34,9 +35,11 @@ export const GET: APIRoute = async () => {
 			volume(a, a.included),
 			a.unlimited
 				? m.pricing_free_beta()
-				: a.rate === undefined
-					? "n/a"
-					: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
+				: isUsageCredit(a)
+					? m.pricing_rate_ai_usage()
+					: a.rate === undefined
+						? "n/a"
+						: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
 		]),
 	)
 
