@@ -62,13 +62,19 @@ const setupInput = (
 	excludeGkeContainerLogs: false,
 })
 
-// A `gcloud` that records its arguments. `describe` reports "not found" unless the test says
-// the resources exist, and the sink's writer identity is the one value a script reads back.
+// A `gcloud` that records its commands, and each argument on its own line so a value split by
+// bad quoting shows. `describe` answers as the test says: found, missing, or denied. The sink's
+// writer identity is the one value a script reads back.
 const FAKE_GCLOUD = `#!/usr/bin/env bash
 echo "$*" >> "$GCLOUD_LOG"
+printf "%s\\n" "$@" >> "$GCLOUD_LOG.args"
 case "$*" in
   *"sinks describe"*"--format"*) echo "${WRITER}" ;;
-  *" describe "*) [ "$GCLOUD_EXISTS" = 1 ] || exit 1 ;;
+  *" describe "*)
+    case "$GCLOUD_DESCRIBE" in
+      missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
+      denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
+    esac ;;
   *"remove-iam-policy-binding"*) exit "$GCLOUD_REMOVE_BINDING_STATUS" ;;
 esac
 `
@@ -79,7 +85,10 @@ afterEach(() => {
 })
 
 /** Run a rendered script in bash against the fake gcloud; returns the commands it issued. */
-const run = (script: string, options: { exists?: boolean; removeBindingStatus?: number } = {}) => {
+const run = (
+	script: string,
+	options: { describe?: "found" | "missing" | "denied"; removeBindingStatus?: number } = {},
+) => {
 	const dir = mkdtempSync(join(tmpdir(), "maple-gcp-script-"))
 	tempDirs.push(dir)
 	writeFileSync(join(dir, "gcloud"), FAKE_GCLOUD)
@@ -93,7 +102,7 @@ const run = (script: string, options: { exists?: boolean; removeBindingStatus?: 
 			...process.env,
 			PATH: `${dir}:${process.env.PATH}`,
 			GCLOUD_LOG: log,
-			GCLOUD_EXISTS: options.exists === true ? "1" : "0",
+			GCLOUD_DESCRIBE: options.describe ?? "missing",
 			GCLOUD_REMOVE_BINDING_STATUS: String(options.removeBindingStatus ?? 0),
 		},
 	})
@@ -101,7 +110,9 @@ const run = (script: string, options: { exists?: boolean; removeBindingStatus?: 
 		dir,
 		status: result.status,
 		stdout: result.stdout,
+		stderr: result.stderr,
 		commands: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [],
+		args: existsSync(`${log}.args`) ? readFileSync(`${log}.args`, "utf8").split("\n") : [],
 	}
 }
 
@@ -125,7 +136,7 @@ const metricsSetupCommands = (scope: (typeof SCOPES)[keyof typeof SCOPES]) => [
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 	`projects add-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
-	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator`,
+	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 ]
 
 const logsRemovalCommands = (scope: (typeof SCOPES)[keyof typeof SCOPES]) => [
@@ -160,7 +171,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 	it("with logs only, sets up logs and removes an earlier metrics setup", () => {
 		const script = renderGcpSetupScript(setupInput(scopeType, { logs: true, metrics: false }))
 		expect(script).not.toContain(MAPLE_ACCOUNT)
-		const { status, commands } = run(script, { exists: true })
+		const { status, commands } = run(script, { describe: "found" })
 		expect(status).toBe(0)
 		// Everything exists already, so the log pipeline is updated in place.
 		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
@@ -177,7 +188,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 		const script = renderGcpSetupScript(setupInput(scopeType, { logs: false, metrics: true }))
 		expect(script).not.toContain(SECRET)
 		expect(script).not.toContain("LOG_FILTER")
-		const { status, commands } = run(script, { exists: true })
+		const { status, commands } = run(script, { describe: "found" })
 		expect(status).toBe(0)
 		expect(commands.slice(0, logsRemovalCommands(scope).length)).toEqual(logsRemovalCommands(scope))
 		expect(commands).not.toContainEqual(expect.stringContaining("pubsub.googleapis.com logging"))
@@ -189,7 +200,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 	it("cleans up everything, and touches nothing when nothing exists", () => {
 		const script = renderGcpCleanupScript(scope.target)
 		expect(script).not.toContain("secret")
-		const existing = run(script, { exists: true })
+		const existing = run(script, { describe: "found" })
 		expect(existing.status).toBe(0)
 		expect(existing.commands).toEqual([...logsRemovalCommands(scope), ...metricsRemovalCommands(scope)])
 
@@ -215,11 +226,39 @@ describe("renderGcpSetupScript", () => {
 
 	it("still deletes the service account when one of its role bindings is already gone", () => {
 		const { status, commands } = run(renderGcpCleanupScript(SCOPES.folder.target), {
-			exists: true,
+			describe: "found",
 			removeBindingStatus: 1,
 		})
-		expect(status).toBe(0)
+		// Deleted, and reported: the failed removal may have left a binding behind.
 		expect(commands.at(-1)).toBe(`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`)
+		expect(status).toBe(1)
+	})
+
+	it("does not take a resource it may not look at for one that is gone", () => {
+		const cleanup = run(renderGcpCleanupScript(SCOPES.organization.target), { describe: "denied" })
+		expect(cleanup.commands.every((command) => command.includes(" describe "))).toBe(true)
+		expect(cleanup.stderr).toContain("PERMISSION_DENIED")
+		expect(cleanup.stderr).toContain("Not everything could be removed")
+		expect(cleanup.status).toBe(1)
+
+		// Setting up still works: a failed look falls through to the create, which reports for itself.
+		const setup = run(renderGcpSetupScript(setupInput("organization", { logs: true, metrics: true })), {
+			describe: "denied",
+		})
+		expect(setup.status).toBe(0)
+	})
+
+	it("hands gcloud each value as one argument", () => {
+		const { args } = run(renderGcpSetupScript(setupInput("folder", { logs: true, metrics: true })))
+		expect(args).toEqual(
+			expect.arrayContaining([
+				`--log-filter=${gcpLogFilter(false)}`,
+				`--push-endpoint=${PUSH_ENDPOINT}`,
+				"--display-name=Maple metrics and resource reader",
+				"--format=value(writerIdentity)",
+				`--member=${WRITER}`,
+			]),
+		)
 	})
 
 	it("excludes data-access audit logs and health-check probes by default, GKE containers on request", () => {

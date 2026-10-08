@@ -1,10 +1,5 @@
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
-import type {
-	GcpConnectorId,
-	GcpProjectId,
-	GcpResourceNumber,
-	GcpScopeType,
-} from "@maple/domain/primitives"
+import type { GcpConnectorId, GcpProjectId, GcpResourceNumber, GcpScopeType } from "@maple/domain/primitives"
 
 /** Single-quote a value for bash. Every value that reaches a script goes through here. */
 const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
@@ -110,17 +105,42 @@ gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
   --member="$WRITER_IDENTITY" --role=roles/pubsub.publisher >/dev/null
 `
 
+// Removal must not take "could not look" for "not there": a sink the caller may not see would
+// otherwise be left routing into a topic the next step deletes.
+const REMOVAL_HELPERS = `
+# exists <gcloud ... describe ...>: whether a resource is there. NOT_FOUND, or an API that was
+# never enabled, means it is not. Any other failure (a missing permission, for example) is shown
+# and makes this script end with an error, because the resource may still be there.
+INCOMPLETE=0
+exists() {
+  local output
+  if output="$("$@" 2>&1)"; then return 0; fi
+  case "$output" in
+    *NOT_FOUND* | *"has not been used"* | *"is disabled"*) ;;
+    *) echo "$output" >&2; INCOMPLETE=1 ;;
+  esac
+  return 1
+}
+`
+
+const REMOVAL_CHECK = `
+if [ "$INCOMPLETE" = 1 ]; then
+  echo "Not everything could be removed. See the errors above, then re-run." >&2
+  exit 1
+fi
+`
+
 const logsRemoval = (scopeType: GcpScopeType): string => `
 # ---- Logs: off. Remove what an earlier run created. ----
 # The Logs Writer grant on the host project stays: the sink wrote as the logging service agent
 # of the ${scopeType}, an identity every other sink there shares.
-if gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} >/dev/null 2>&1; then
+if exists gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink}; then
   gcloud logging sinks delete "$SINK" ${SCOPES[scopeType].sink} --quiet
 fi
-if gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+if exists gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID"; then
   gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
 fi
-if gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID" >/dev/null 2>&1; then
+if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
 fi
 `
@@ -156,6 +176,8 @@ retry() {
 # Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
 #   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list)
 #   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
+# These are the narrowest predefined roles for the two calls. Both are read-only, and broader
+# than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
 for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
   retry ${SCOPES[scopeType].iam} add-iam-policy-binding "$SCOPE_ID" \\
     ${serviceAccountMember} --role="$ROLE" --condition=None >/dev/null
@@ -166,21 +188,23 @@ retry gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
   ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None >/dev/null
 
 # Maple's own account may mint short-lived tokens for this one service account, nothing else.
+# If an organization policy rejects this (domain-restricted sharing,
+# constraints/iam.allowedPolicyMemberDomains), allow Maple's account there and re-run.
 retry gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
-  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator >/dev/null
+  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
+  --condition=None >/dev/null
 `
 
 const metricsRemoval = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: off. Remove what an earlier run created. ----
-if gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
-  # Role bindings first, or the deleted account would stay listed in the IAM policy. A binding
-  # that is already gone is reported and skipped.
+if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+  # Role bindings first, or the deleted account would stay listed in the IAM policy.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
     ${SCOPES[scopeType].iam} remove-iam-policy-binding "$SCOPE_ID" \\
-      ${serviceAccountMember} --role="$ROLE" --condition=None >/dev/null || true
+      ${serviceAccountMember} --role="$ROLE" --condition=None >/dev/null || INCOMPLETE=1
   done
   gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
-    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None >/dev/null || true
+    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None >/dev/null || INCOMPLETE=1
   gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
 fi
 `
@@ -215,6 +239,7 @@ LOG_FILTER=${sh(gcpLogFilter(input.excludeGkeContainerLogs))}
 				section: logsSetup(input.scopeType, input.pushEndpoint),
 			}
 		: { note: "", filter: "", section: logsRemoval(input.scopeType) }
+	const removes = !input.logsEnabled || mapleAccount === undefined
 	return `#!/usr/bin/env bash
 # Maple: connect a Google Cloud ${input.scopeType} to Maple.
 #   Logs:                  ${input.logsEnabled ? "on" : "off"}
@@ -226,11 +251,11 @@ ${SCOPES[input.scopeType].needs}
 ${logs.note}set -euo pipefail
 ${logs.filter}
 ${variables(input)}
-${logs.section}${
+${removes ? REMOVAL_HELPERS : ""}${logs.section}${
 		mapleAccount === undefined
 			? metricsRemoval(input.scopeType)
 			: metricsSetup(input.scopeType, mapleAccount)
-	}
+	}${removes ? REMOVAL_CHECK : ""}
 echo "Maple setup complete."
 `
 }
@@ -246,6 +271,6 @@ ${SCOPES[target.scopeType].needs}
 set -euo pipefail
 
 ${variables(target)}
-${logsRemoval(target.scopeType)}${metricsRemoval(target.scopeType)}
+${REMOVAL_HELPERS}${logsRemoval(target.scopeType)}${metricsRemoval(target.scopeType)}${REMOVAL_CHECK}
 echo "Maple cleanup complete."
 `
