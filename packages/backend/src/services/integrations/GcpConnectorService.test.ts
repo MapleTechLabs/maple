@@ -292,11 +292,26 @@ describe("GcpConnectorService", () => {
 			// Both were created in the same test-clock instant, so their order is by id.
 			assert.sameDeepMembers([...(yield* gcp.status(orgId)).connectors], [polled, other])
 
-			// Switching a flag leaves the poller's state as it is.
+			// Switching metrics off leaves the poller's state as it is.
 			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, { metricsEnabled: false }), {
 				...polled,
 				metricsEnabled: false,
 			})
+			// Back on, the connection waits for its first metrics again; the poller continues
+			// from its watermark.
+			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, { metricsEnabled: true }), {
+				...polled,
+				lastMetricsReceivedAt: null,
+				lastMetricsError: null,
+			})
+			const kept = yield* Effect.promise(() =>
+				queryFirstRow<{ metrics_watermark_at: Date | null }>(
+					testDb,
+					"SELECT metrics_watermark_at FROM gcp_connectors WHERE id = $1",
+					[connector.id],
+				),
+			)
+			assert.strictEqual(kept?.metrics_watermark_at?.getTime(), Date.parse("2026-10-08T09:10:00.000Z"))
 
 			// The inventory goes with its connector.
 			yield* gcp.delete(orgId, connector.id)

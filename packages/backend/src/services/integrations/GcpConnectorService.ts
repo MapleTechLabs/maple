@@ -302,6 +302,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								...(flags.logsEnabled && !current.logsEnabled
 									? { lastReceivedAt: null, lastError: null }
 									: undefined),
+								// Only what the card shows: the poller's watermark and lease stay.
+								...(flags.metricsEnabled && !current.metricsEnabled
+									? { lastMetricsReceivedAt: null, lastMetricsError: null }
+									: undefined),
 							}
 							if (invalid === undefined) {
 								yield* tx
