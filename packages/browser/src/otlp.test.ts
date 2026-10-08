@@ -120,7 +120,7 @@ describe("OtlpExporter", () => {
 		const exporter = otlp()
 		exportBatch(exporter, spans(16, KIB))
 		exportBatch(exporter, spans(16, KIB))
-		// Two bodies of about 20 KiB pass the 32 KiB ceiling: the second goes out plain.
+		// Two bodies of about 20 KiB pass OTLP's 32 KiB share: the second goes out plain.
 		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
 
 		// The session's rows still have the rest of the 48 KiB budget.
@@ -198,6 +198,14 @@ describe("OtlpExporter", () => {
 		expect(closed).toBe(true)
 	})
 
+	it("contains a callback that throws, so shutdown still resolves", async () => {
+		const exporter = otlp()
+		exporter.export(spans(1), () => {
+			throw new Error("callback failed")
+		})
+		await expect(exporter.shutdown()).resolves.toBeUndefined()
+	})
+
 	it("queues a batch for the offline resend only when the exporter gave up on it", async () => {
 		vi.useFakeTimers()
 		const stashed: string[][] = []
@@ -245,7 +253,7 @@ describe("newestFirstOnExit", () => {
 		expect(tail?.names).toEqual(names(batch).slice(-tailCount))
 		// As many as fit: one more span would have passed the limit.
 		expect(size(batch.slice(-tailCount - 1))).toBeGreaterThan(UNLOAD_TAIL_BYTES)
-		// Past the ceiling, so plain; and no span is in both requests.
+		// Past OTLP's share, so plain; and no span is in both requests.
 		expect(older?.keepalive).toBe(false)
 		expect(older?.names).toEqual(names(batch).slice(0, -tailCount))
 	})
@@ -261,11 +269,62 @@ describe("newestFirstOnExit", () => {
 		expect(sent.map((request) => request.names)).toEqual([["s0", "s1", "s2"]])
 	})
 
-	it("sends a single span larger than the tail limit on its own", () => {
+	it("gives both parts keepalive when together they fit OTLP's share", () => {
+		vi.useFakeTimers()
+		answers = ["pending"]
 		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
+		flushUnloading(() => exportBatch(exporter, spans(20, KIB)))
+
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
+		const total = (sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)
+		expect(total).toBeGreaterThan(UNLOAD_TAIL_BYTES)
+		expect(total).toBeLessThanOrEqual(32 * KIB)
+	})
+
+	it("sizes the tail to the room an export in flight has left", () => {
+		vi.useFakeTimers()
+		answers = ["pending"]
+		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
+		// A periodic export still in flight when the document unloads.
+		exportBatch(exporter, spans(18, KIB))
+		const room = 32 * KIB - (sent[0]?.bytes ?? 0)
+		expect(sent[0]?.keepalive).toBe(true)
+		expect(room).toBeLessThan(UNLOAD_TAIL_BYTES)
+
+		const batch = spans(16, KIB)
+		flushUnloading(() => exportBatch(exporter, batch))
+		const [, tail, older] = sent
+		const tailCount = tail?.names.length ?? 0
+		expect(tail?.keepalive).toBe(true)
+		expect(tail?.bytes).toBeLessThanOrEqual(room)
+		expect(tailCount).toBeGreaterThan(0)
+		expect(tail?.names).toEqual(names(batch).slice(-tailCount))
+		expect(older).toMatchObject({ keepalive: false, names: names(batch).slice(0, -tailCount) })
+	})
+
+	it("sends one request when not even the newest span fits", () => {
+		vi.useFakeTimers()
+		answers = ["pending"]
+		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
+		// Larger than the tail limit: it would not get keepalive as a tail of its own.
 		flushUnloading(() => exportBatch(exporter, [...spans(2), ...spans(1, 20 * KIB)]))
-		expect(sent.map((request) => request.names.length)).toEqual([1, 2])
-		expect(sent[0]?.bytes).toBeGreaterThan(UNLOAD_TAIL_BYTES)
+		expect(sent.map((request) => [request.keepalive, request.names.length])).toEqual([[true, 3]])
+
+		// Larger than the room the request above has left.
+		flushUnloading(() => exportBatch(exporter, spans(3, 12 * KIB)))
+		expect(sent.slice(1).map((request) => [request.keepalive, request.names.length])).toEqual([
+			[false, 3],
+		])
+	})
+
+	it("stops splitting once an unload flush that threw has returned", () => {
+		expect(() =>
+			flushUnloading(() => {
+				throw new Error("flush failed")
+			}),
+		).toThrow("flush failed")
+		exportBatch(newestFirstOnExit(otlp(), JsonTraceSerializer), spans(60, KIB))
+		expect(sent).toHaveLength(1)
 	})
 
 	it("reports one result for the batch and queues only the part that failed", async () => {

@@ -2,14 +2,8 @@
 // every keepalive request this SDK sends spends from one budget. The browser
 // caps a document's in-flight keepalive bodies at 64 KiB combined; an exporter
 // keeping an account of its own could push a session row past that.
-import { postToIngest } from "@maple/browser-session"
+import { OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom, postToIngest } from "@maple/browser-session"
 import type { ISerializer } from "@opentelemetry/otlp-transformer"
-
-/** OTLP's ceiling within the shared 48 KiB keepalive budget; the rest stays free for the session's final rows. */
-const KEEPALIVE_CEILING_BYTES = 32 * 1024
-
-/** Max body of the newest items a hidden or unloading document sends first. */
-const UNLOAD_TAIL_BYTES = 16 * 1024
 
 // Timeout and retryable statuses of OpenTelemetry's OTLP/HTTP exporter, which this replaces.
 const EXPORT_TIMEOUT_MS = 10_000
@@ -37,10 +31,7 @@ function attempt(
 ): Promise<{ readonly error: Error; readonly retryable: boolean } | undefined> {
 	const controller = new AbortController()
 	const timer = setTimeout(() => controller.abort(), timeoutMs)
-	return postToIngest(url, headers, body, true, {
-		signal: controller.signal,
-		keepaliveCeiling: KEEPALIVE_CEILING_BYTES,
-	})
+	return postToIngest(url, headers, body, true, { signal: controller.signal, otlp: true })
 		.then(
 			(response) =>
 				response.ok
@@ -96,7 +87,10 @@ export class OtlpExporter<T> implements Exporter<T> {
 			return
 		}
 		const headers = { ...this.headers, "content-type": "application/json" }
-		const sent = send(this.url, headers, body).then(callback)
+		const sent = send(this.url, headers, body)
+			.then(callback)
+			// A callback that throws must not surface in the host page or fail a later shutdown.
+			.catch(() => {})
 		this.inflight.add(sent)
 		void sent.finally(() => this.inflight.delete(sent))
 	}
@@ -119,21 +113,29 @@ let unloading = false
  */
 export function flushUnloading(flush: () => void): void {
 	unloading = true
-	flush()
-	unloading = false
+	try {
+		flush()
+	} finally {
+		unloading = false
+	}
 }
 
-/** The newest items whose body fits `UNLOAD_TAIL_BYTES`, then everything older. A larger single item travels alone. */
+/**
+ * The newest items whose body fits what keepalive has room for right now, at
+ * most `OTLP_UNLOAD_TAIL_BYTES`, then everything older. No split when nothing
+ * or everything fits.
+ */
 function newestFirst<T>(items: T[], serializer: Serializer<T>): T[][] {
+	const limit = Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())
 	const size = (from: number): number => serializer.serializeRequest(items.slice(from))?.byteLength ?? 0
-	let start = items.length - 1
-	while (start > 0 && size(start - 1) <= UNLOAD_TAIL_BYTES) start -= 1
-	return start > 0 ? [items.slice(start), items.slice(0, start)] : [items]
+	let start = items.length
+	while (start > 0 && size(start - 1) <= limit) start -= 1
+	return start > 0 && start < items.length ? [items.slice(start), items.slice(0, start)] : [items]
 }
 
 /**
  * A hidden or unloading document may not live to see a response, and a batch
- * past the keepalive ceiling goes out as a plain request that the browser
+ * past OTLP's keepalive share goes out as a plain request that the browser
  * terminates with the document. There each batch becomes two exports: its
  * newest items first, in a body small enough for keepalive, then the rest.
  * Each goes through `inner` on its own, so only the part that failed is queued.
