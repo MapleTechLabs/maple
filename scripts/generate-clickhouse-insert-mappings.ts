@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -45,7 +46,7 @@ interface DatasourceMapping {
 	readonly inputSchema: string
 }
 
-const manifest = buildTinybirdProjectManifest()
+const manifest = Effect.runSync(buildTinybirdProjectManifest)
 const byName = new Map(manifest.datasources.map((ds) => [ds.name, ds]))
 
 const localDatasources: Record<string, DatasourceMapping> = {}
