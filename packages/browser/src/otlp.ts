@@ -34,10 +34,9 @@ let reserve = 0
 async function send(
 	url: string,
 	headers: Record<string, string>,
-	body: Uint8Array | undefined,
+	body: Uint8Array,
 	leaveFree: number,
 ): Promise<ExportResult> {
-	if (!body) return { code: 1 }
 	const deadline = Date.now() + EXPORT_TIMEOUT_MS
 	let timeoutMs = EXPORT_TIMEOUT_MS
 	let backoff = 1_000
@@ -45,28 +44,30 @@ async function send(
 		const controller = new AbortController()
 		const timer = setTimeout(() => controller.abort(), timeoutMs)
 		const keepalive = body.byteLength + leaveFree <= otlpKeepaliveRoom()
-		let retryable = false
-		const error = await postToIngest(url, headers, body, keepalive, {
+		const failure = await postToIngest(url, headers, body, keepalive, {
 			signal: controller.signal,
 			otlp: true,
 		})
 			.then(
-				(response) => {
-					retryable = RETRYABLE_STATUS.includes(response.status)
-					return response.ok ? undefined : new Error(`OTLP export failed: ${response.status}`)
-				},
-				(cause: unknown) => {
-					// A network error is a TypeError; the timeout's abort is not, and ends the export.
-					retryable = cause instanceof TypeError
-					return new Error("OTLP export failed", { cause })
-				},
+				(response) =>
+					response.ok
+						? undefined
+						: {
+								error: new Error(`OTLP export failed: ${response.status}`),
+								retryable: RETRYABLE_STATUS.includes(response.status),
+							},
+				// A network error is a TypeError; the timeout's abort is not, and ends the export.
+				(cause: unknown) => ({
+					error: new Error("OTLP export failed", { cause }),
+					retryable: cause instanceof TypeError,
+				}),
 			)
 			.finally(() => clearTimeout(timer))
-		if (!error) return { code: 0 }
+		if (!failure) return { code: 0 }
 		const wait = backoff * (0.8 + Math.random() * 0.4)
 		// A retry may run for what was left when it was scheduled.
 		timeoutMs = deadline - Date.now()
-		if (!retryable || wait > timeoutMs) return { code: 1, error }
+		if (!failure.retryable || wait > timeoutMs) return { code: 1, error: failure.error }
 		backoff *= 1.5
 		await new Promise((resolve) => setTimeout(resolve, wait))
 	}
@@ -74,8 +75,7 @@ async function send(
 
 /** Exports each batch as one OTLP/JSON request to `url`. */
 export class OtlpExporter<T> implements Exporter<T> {
-	/** Settles once every export issued so far has reported its result. */
-	private pending = Promise.resolve()
+	private readonly inflight = new Set<Promise<void>>()
 
 	constructor(
 		private readonly url: string,
@@ -85,21 +85,26 @@ export class OtlpExporter<T> implements Exporter<T> {
 
 	export(items: T[], callback: (result: ExportResult) => void): void {
 		const body = this.serializer.serializeRequest(items)
+		if (!body) {
+			callback({ code: 1 })
+			return
+		}
 		const headers = { ...this.headers, "content-type": "application/json" }
 		const sent = send(this.url, headers, body, reserve)
 			.then(callback)
 			// A callback that throws must not surface in the host page or fail a later shutdown.
 			.catch(() => {})
-		const earlier = this.pending
-		this.pending = sent.then(() => earlier)
+		this.inflight.add(sent)
+		void sent.finally(() => this.inflight.delete(sent))
 	}
 
-	forceFlush(): Promise<void> {
-		return this.pending
+	/** Resolves once every export in flight has reported its result. */
+	async forceFlush(): Promise<void> {
+		await Promise.all(this.inflight)
 	}
 
 	shutdown(): Promise<void> {
-		return this.pending
+		return this.forceFlush()
 	}
 }
 
@@ -150,7 +155,7 @@ export function newestFirstOnExit<T>(
 			const parts = unloading || hidden ? newestFirst(items, serializer) : [items]
 			let pending = parts.length
 			let failed: ExportResult | undefined
-			parts.forEach((part, index) => {
+			for (const [index, part] of parts.entries()) {
 				reserve = index > 0 ? olderReserve : 0
 				try {
 					inner.export(part, (result) => {
@@ -161,7 +166,7 @@ export function newestFirstOnExit<T>(
 				} finally {
 					reserve = 0
 				}
-			})
+			}
 		},
 		forceFlush: () => inner.forceFlush(),
 		shutdown: () => inner.shutdown(),
