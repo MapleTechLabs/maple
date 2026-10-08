@@ -2,7 +2,6 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Effect, Option, Redacted, Schema } from "effect"
 import {
 	InternalScrapeTarget,
-	OrgId,
 	ScrapeIntervalSeconds,
 	ScrapeResultReportList,
 	ScrapeTargetId,
@@ -19,7 +18,6 @@ import {
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 
 const decodeTargetIdSync = Schema.decodeUnknownSync(ScrapeTargetId)
-const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
 const decodeTargetTypeSync = Schema.decodeUnknownSync(ScrapeTargetType)
 
@@ -30,6 +28,11 @@ const decodeLabelsEffect = Schema.decodeUnknownEffect(Schema.Record(Schema.Strin
 const EMPTY_LABELS = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))({})
 /** PlanetScale's data plane authenticates with the signed URL, never a header. */
 const NO_AUTH_HEADERS: Record<string, string> = {}
+/**
+ * Rows resolved at once. Stays under the 5-connection invocation pool and caps
+ * concurrent PlanetScale discovery GETs (each cached per target for 10 minutes).
+ */
+const ROW_CONCURRENCY = 4
 
 const errorText = (message: string, status: number) =>
 	HttpServerResponse.text(message, {
@@ -148,103 +151,106 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				// One public ingest key per org (lazily created on first use, like
 				// onboarding does). The scraper ingests with this key so scraped
 				// metrics are billed and warehouse-routed identically to the org's
-				// own OTLP traffic.
-				const keyByOrg = new Map<string, string | null>()
-				const ingestKeyForOrg = (orgId: string) =>
-					Effect.gen(function* () {
-						const cached = keyByOrg.get(orgId)
-						if (cached !== undefined) return cached
-						const key: string = yield* ingestKeys
-							.getOrCreate(decodeOrgIdSync(orgId), SCRAPER_SYSTEM_USER)
-							.pipe(Effect.map((keys) => keys.publicKey))
-						keyByOrg.set(orgId, key)
-						return key
-					})
+				// own OTLP traffic. Resolved for every org in one batch.
+				const keysByOrg = yield* ingestKeys.getOrCreateMany(
+					rows.map((row) => row.orgId),
+					SCRAPER_SYSTEM_USER,
+				)
 
-				const targets: Array<InternalScrapeTarget> = []
-				yield* Effect.forEach(rows, (row) =>
-					Effect.gen(function* () {
-						const ingestKey = yield* ingestKeyForOrg(row.orgId)
-						if (ingestKey === null) {
-							yield* Effect.logWarning("Skipping scrape target (no ingest key)").pipe(
-								Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
-							)
-							return
-						}
+				// Rows are independent; most of the cost is one PlanetScale discovery
+				// GET per uncached row, so run them side by side, bounded.
+				const perRow = yield* Effect.forEach(
+					rows,
+					(row) =>
+						Effect.gen(function* () {
+							const targets: Array<InternalScrapeTarget> = []
+							const ingestKey = keysByOrg.get(row.orgId)?.publicKey
+							if (ingestKey === undefined) {
+								yield* Effect.logWarning("Skipping scrape target (no ingest key)").pipe(
+									Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
+								)
+								return targets
+							}
 
-						if (row.targetType === "planetscale") {
-							// Expand the logical target into its discovered per-branch
-							// endpoints. Discovery failure with no cache skips the row this
-							// round; the scheduler re-fetches the list every reconcile.
-							const subTargets = yield* discovery.discover(row).pipe(
+							if (row.targetType === "planetscale") {
+								// Expand the logical target into its discovered per-branch
+								// endpoints. Discovery failure with no cache skips the row this
+								// round; the scheduler re-fetches the list every reconcile.
+								const subTargets = yield* discovery.discover(row).pipe(
+									Effect.catch((error) =>
+										Effect.logWarning(
+											"Skipping PlanetScale target (discovery failed)",
+										).pipe(
+											Effect.annotateLogs({
+												scrapeTargetId: row.id,
+												orgId: row.orgId,
+												error: error.message,
+											}),
+											Effect.as([] as ReadonlyArray<PlanetScaleSubTarget>),
+										),
+									),
+								)
+								yield* Effect.forEach(subTargets, (subTarget) =>
+									Effect.gen(function* () {
+										const target = yield* toInternalScrapeTarget(
+											row,
+											ingestKey,
+											NO_AUTH_HEADERS,
+											subTarget,
+										)
+										if (Option.isSome(target)) {
+											targets.push(target.value)
+										} else {
+											yield* Effect.logWarning(
+												"Skipping scrape sub-target (invalid row)",
+											).pipe(
+												Effect.annotateLogs({
+													scrapeTargetId: row.id,
+													orgId: row.orgId,
+													subTargetKey: subTarget.subTargetKey,
+												}),
+											)
+										}
+									}),
+								)
+								return targets
+							}
+
+							// A credential that no longer decrypts (rotated master key, corrupt
+							// row) skips this target for the round rather than failing the
+							// whole list; the target's own `lastScrapeError` already tells the
+							// org, since every scrape through the old proxy hit the same wall.
+							const authHeaders = yield* service.authHeaders(row).pipe(
+								Effect.map(Option.some),
 								Effect.catch((error) =>
-									Effect.logWarning("Skipping PlanetScale target (discovery failed)").pipe(
+									Effect.logWarning(
+										"Skipping scrape target (credentials unavailable)",
+									).pipe(
 										Effect.annotateLogs({
 											scrapeTargetId: row.id,
 											orgId: row.orgId,
 											error: error.message,
 										}),
-										Effect.as([] as ReadonlyArray<PlanetScaleSubTarget>),
+										Effect.as(Option.none<Record<string, string>>()),
 									),
 								),
 							)
-							yield* Effect.forEach(subTargets, (subTarget) =>
-								Effect.gen(function* () {
-									const target = yield* toInternalScrapeTarget(
-										row,
-										ingestKey,
-										NO_AUTH_HEADERS,
-										subTarget,
-									)
-									if (Option.isSome(target)) {
-										targets.push(target.value)
-									} else {
-										yield* Effect.logWarning(
-											"Skipping scrape sub-target (invalid row)",
-										).pipe(
-											Effect.annotateLogs({
-												scrapeTargetId: row.id,
-												orgId: row.orgId,
-												subTargetKey: subTarget.subTargetKey,
-											}),
-										)
-									}
-								}),
-							)
-							return
-						}
+							if (Option.isNone(authHeaders)) return targets
 
-						// A credential that no longer decrypts (rotated master key, corrupt
-						// row) skips this target for the round rather than failing the
-						// whole list; the target's own `lastScrapeError` already tells the
-						// org, since every scrape through the old proxy hit the same wall.
-						const authHeaders = yield* service.authHeaders(row).pipe(
-							Effect.map(Option.some),
-							Effect.catch((error) =>
-								Effect.logWarning("Skipping scrape target (credentials unavailable)").pipe(
-									Effect.annotateLogs({
-										scrapeTargetId: row.id,
-										orgId: row.orgId,
-										error: error.message,
-									}),
-									Effect.as(Option.none<Record<string, string>>()),
-								),
-							),
-						)
-						if (Option.isNone(authHeaders)) return
-
-						const target = yield* toInternalScrapeTarget(row, ingestKey, authHeaders.value)
-						if (Option.isSome(target)) {
-							targets.push(target.value)
-						} else {
-							yield* Effect.logWarning("Skipping scrape target (invalid row)").pipe(
-								Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
-							)
-						}
-					}),
+							const target = yield* toInternalScrapeTarget(row, ingestKey, authHeaders.value)
+							if (Option.isSome(target)) {
+								targets.push(target.value)
+							} else {
+								yield* Effect.logWarning("Skipping scrape target (invalid row)").pipe(
+									Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
+								)
+							}
+							return targets
+						}),
+					{ concurrency: ROW_CONCURRENCY },
 				)
 
-				return yield* HttpServerResponse.json(targets)
+				return yield* HttpServerResponse.json(perRow.flat())
 			},
 			Effect.catch((error) =>
 				Effect.logError("Failed to build scraper target list").pipe(

@@ -16,7 +16,7 @@ import {
 	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
 } from "@maple/db"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import {
 	decryptAes256Gcm,
@@ -218,6 +218,47 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				return yield* toResponse(row)
 			})
 
+			// Batch form for the scraper's target list: memo hits, then one SELECT for
+			// every missing org, then the per-org create path only for orgs with no row.
+			const getOrCreateMany = Effect.fn("OrgIngestKeysService.getOrCreateMany")(function* (
+				orgIds: ReadonlyArray<OrgId>,
+				userId: UserId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const rows = new Map<OrgId, typeof orgIngestKeys.$inferSelect>()
+				const distinct = [...new Set(orgIds)]
+				distinct.forEach((orgId) => {
+					const memoized = ingestKeysMemo.get(orgId)
+					if (memoized !== undefined && memoized.expiresAt > now) rows.set(orgId, memoized.row)
+				})
+				const missing = distinct.filter((orgId) => !rows.has(orgId))
+				yield* Effect.annotateCurrentSpan({
+					"ingestKeys.requested": rows.size + missing.length,
+					"ingestKeys.memoMisses": missing.length,
+				})
+				if (missing.length > 0) {
+					const selected = yield* database
+						.execute((db) =>
+							db.select().from(orgIngestKeys).where(inArray(orgIngestKeys.orgId, missing)),
+						)
+						.pipe(Effect.mapError(toPersistenceError))
+					selected.forEach((row) => {
+						rows.set(row.orgId, row)
+						ingestKeysMemo.set(row.orgId, { row, expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS })
+					})
+				}
+				yield* Effect.forEach(
+					missing.filter((orgId) => !rows.has(orgId)),
+					(orgId) => ensureRow(orgId, userId).pipe(Effect.map((row) => rows.set(orgId, row))),
+					{ discard: true },
+				)
+				return new Map(
+					yield* Effect.forEach([...rows], ([orgId, row]) =>
+						Effect.map(toResponse(row), (response) => [orgId, response] as const),
+					),
+				)
+			})
+
 			const rerollPublic = Effect.fn("OrgIngestKeysService.rerollPublic")(function* (
 				orgId: OrgId,
 				userId: UserId,
@@ -336,6 +377,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			return {
 				getOrCreate,
+				getOrCreateMany,
 				rerollPublic,
 				rerollPrivate,
 				resolveIngestKey,

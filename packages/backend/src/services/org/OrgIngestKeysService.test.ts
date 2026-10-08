@@ -288,4 +288,41 @@ describe("OrgIngestKeysService", () => {
 			assert.instanceOf(failure, IngestKeyPersistenceError)
 		}),
 	)
+
+	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
+		const testDb = createTestDb(trackedDbs)
+		const orgs = ["org_a", "org_b", "org_c", "org_d"].map(asOrgId)
+		return Effect.gen(function* () {
+			// Seed three orgs through one instance, then read through a fresh one so
+			// its memo is cold, like a new isolate.
+			const seeded = yield* Effect.forEach(orgs.slice(0, 3), (orgId) =>
+				OrgIngestKeysService.getOrCreate(orgId, asUserId("user_a")),
+			).pipe(Effect.provide(makeLayer(testDb)))
+
+			const statements: Array<string> = []
+			const runStatement = testDb.pglite.query
+			testDb.pglite.query = function (...args: Parameters<typeof runStatement>) {
+				statements.push(args[0].trim().split(/\s+/)[0]?.toUpperCase() ?? "")
+				return runStatement.apply(testDb.pglite, args)
+			} as typeof runStatement
+
+			const keys = yield* Effect.gen(function* () {
+				const service = yield* OrgIngestKeysService
+				const first = yield* service.getOrCreateMany([...orgs, orgs[0]!], asUserId("user_a"))
+				const before = statements.length
+				// Every org is memoized now: no statements at all.
+				yield* service.getOrCreateMany(orgs, asUserId("user_a"))
+				assert.strictEqual(statements.length, before)
+				return first
+			}).pipe(Effect.provide(makeLayer(testDb)))
+
+			// One batched SELECT for all four orgs, then org_d's first-use create path.
+			assert.deepStrictEqual(statements, ["SELECT", "SELECT", "INSERT", "SELECT"])
+			assert.strictEqual(keys.size, 4)
+			seeded.forEach((response, index) => {
+				assert.strictEqual(keys.get(orgs[index]!)?.publicKey, response.publicKey)
+			})
+			assert.isTrue(keys.get(orgs[3]!)?.publicKey.startsWith("maple_pk_"))
+		})
+	})
 })

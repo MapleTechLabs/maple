@@ -67,6 +67,7 @@ const makeLayer = (testDb: TestDb) => {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asScrapeIntervalSeconds = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+const asScrapeTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 
 describe("ScrapeTargetsService", () => {
 	it.effect("authHeaders decrypts a stored bearer credential into an Authorization header", () => {
@@ -174,6 +175,73 @@ describe("ScrapeTargetsService", () => {
 
 			const updated = yield* service.get(orgId, target.id)
 			assert.strictEqual(updated.lastScrapeAt, new Date(scrapedAt).toISOString())
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("recordScrapeResults writes every target of a report in one UPDATE", () => {
+		const testDb = createTestDb(trackedDbs)
+		const statements: Array<string> = []
+		const runStatement = testDb.pglite.query
+		testDb.pglite.query = function (...args: Parameters<typeof runStatement>) {
+			statements.push(args[0].trim().split(/\s+/)[0]?.toUpperCase() ?? "")
+			return runStatement.apply(testDb.pglite, args)
+		} as typeof runStatement
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			// Seeded with SQL, not create(), whose background probe would interleave
+			// its own statements with the ones counted below.
+			const [ok, failing, stale, ...rest] = yield* Effect.forEach(
+				["ok", "failing", "stale", "t4", "t5", "t6"],
+				(name, index) => {
+					const id = asScrapeTargetId(`00000000-0000-4000-8000-00000000000${index}`)
+					return Effect.as(
+						Effect.promise(() =>
+							executeSql(
+								testDb,
+								"INSERT INTO scrape_targets (id, org_id, name, url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)",
+								[
+									id,
+									orgId,
+									name,
+									`https://${name}.example.com/metrics`,
+									new Date(0).toISOString(),
+								],
+							),
+						),
+						{ id },
+					)
+				},
+			)
+			const scrapedAt = 1750000000000
+			// A newer write already landed on `stale`; the late batch must not touch it.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE scrape_targets SET updated_at = $1 WHERE id = $2", [
+					new Date(scrapedAt + 60_000).toISOString(),
+					stale.id,
+				]),
+			)
+
+			statements.length = 0
+			yield* service.recordScrapeResults([
+				{ targetId: ok.id, scrapedAt, error: null },
+				{ targetId: failing.id, scrapedAt, error: null },
+				{ targetId: failing.id, scrapedAt: scrapedAt + 15_000, error: "HTTP 503" },
+				{ targetId: stale.id, scrapedAt, error: "HTTP 500" },
+				...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
+			])
+			// 6 targets: 1 UPDATE + 1 SELECT (org ids) + 1 INSERT (check rows).
+			assert.deepStrictEqual(statements, ["UPDATE", "SELECT", "INSERT"])
+
+			const okRow = yield* service.get(orgId, ok.id)
+			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.isNull(okRow.lastScrapeError)
+			const failingRow = yield* service.get(orgId, failing.id)
+			assert.strictEqual(failingRow.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.strictEqual(failingRow.lastScrapeError, "HTTP 503")
+			const staleRow = yield* service.get(orgId, stale.id)
+			assert.isNull(staleRow.lastScrapeAt)
+			assert.isNull(staleRow.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

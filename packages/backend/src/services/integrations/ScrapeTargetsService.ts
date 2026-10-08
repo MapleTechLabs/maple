@@ -21,7 +21,7 @@ import {
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
 import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -31,7 +31,7 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
+import { msToDate, msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	BasicCredentialsSchema,
@@ -1108,29 +1108,36 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* database
 					.execute((db) =>
 						Effect.gen(function* () {
-							for (const [targetId, outcome] of outcomeByTarget) {
-								const reportedAt = reportedAtByTarget.get(targetId) ?? outcome.updatedAt
-								// Apply only if nothing newer has touched the row. Results reach
-								// this method from two independent producers — the scraper loop,
-								// and the probe `create()` forks in the background — so a batch
-								// can land after a newer one has already been recorded. Without
-								// the guard the late writer wins: the target reports a stale
-								// `lastScrapeAt`, or resurrects an error a newer scrape cleared.
-								// `updatedAt` (not `lastScrapeAt`) is the comparison because a
-								// failing batch leaves `lastScrapeAt` untouched and so cannot
-								// order itself. Equal timestamps still apply, so re-reporting a
-								// batch stays a no-op rather than a drop, and a config edit at
-								// most costs the one in-flight scrape reported before it.
-								yield* db
-									.update(scrapeTargets)
-									.set(outcome)
-									.where(
-										and(
-											eq(scrapeTargets.id, targetId),
-											lte(scrapeTargets.updatedAt, reportedAt),
-										),
-									)
-							}
+							// One UPDATE ... FROM (VALUES ...) for every target in the report,
+							// instead of one round trip per target.
+							const values = sql.join(
+								[...outcomeByTarget].map(([targetId, outcome]) => {
+									const reportedAt = reportedAtByTarget.get(targetId) ?? outcome.updatedAt
+									const scrapeAt = outcome.lastScrapeAt
+										? msToSqlTimestamp(outcome.lastScrapeAt.getTime())
+										: null
+									return sql`(${targetId}::text, ${scrapeAt}::timestamptz, ${scrapeAt !== null}::boolean, ${outcome.lastScrapeError ?? null}::text, ${outcome.lastScrapeError !== undefined}::boolean, ${msToSqlTimestamp(outcome.updatedAt.getTime())}::timestamptz, ${msToSqlTimestamp(reportedAt.getTime())}::timestamptz)`
+								}),
+								sql`, `,
+							)
+							// Apply only if nothing newer has touched the row. Results reach
+							// this method from two independent producers (the scraper loop,
+							// and the probe `create()` forks in the background), so a batch
+							// can land after a newer one has already been recorded. Without
+							// the guard the late writer wins: the target reports a stale
+							// `lastScrapeAt`, or resurrects an error a newer scrape cleared.
+							// `updatedAt` (not `lastScrapeAt`) is the comparison because a
+							// failing batch leaves `lastScrapeAt` untouched and so cannot
+							// order itself. Equal timestamps still apply, so re-reporting a
+							// batch stays a no-op rather than a drop, and a config edit at
+							// most costs the one in-flight scrape reported before it.
+							yield* db.execute(sql`
+								UPDATE ${scrapeTargets} AS t SET
+									last_scrape_at = CASE WHEN v.set_scrape_at THEN v.last_scrape_at ELSE t.last_scrape_at END,
+									last_scrape_error = CASE WHEN v.set_error THEN v.last_scrape_error ELSE t.last_scrape_error END,
+									updated_at = v.updated_at
+								FROM (VALUES ${values}) AS v(id, last_scrape_at, set_scrape_at, last_scrape_error, set_error, updated_at, reported_at)
+								WHERE t.id = v.id AND t.updated_at <= v.reported_at`)
 
 							if (!recordChecks) return
 
