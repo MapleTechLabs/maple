@@ -326,14 +326,14 @@ export class AlertReadModelsService extends Context.Service<
 						const rawTransition =
 							r.incidentTransition == null || r.incidentTransition === ""
 								? "none"
-								: String(r.incidentTransition)
+								: r.incidentTransition
 						return new AlertCheckDocument({
 							timestamp: isoOf(r.timestamp),
 							groupKey: String(r.groupKey ?? ""),
-							status: decodeAlertCheckStatusSync(String(r.status)),
+							status: decodeAlertCheckStatusSync(r.status),
 							skipReason: Option.getOrNull(decodeAlertSkipReason(r.skipReason)),
-							signalType: decodeAlertSignalTypeSync(String(r.signalType)),
-							comparator: decodeAlertComparatorSync(String(r.comparator)),
+							signalType: decodeAlertSignalTypeSync(r.signalType),
+							comparator: decodeAlertComparatorSync(r.comparator),
 							threshold: Number(r.threshold),
 							// thresholdUpper not yet recorded in the Tinybird alert_checks
 							// datasource — schema column will be backfilled with the
@@ -349,17 +349,13 @@ export class AlertReadModelsService extends Context.Service<
 							incidentId:
 								r.incidentId == null || r.incidentId === ""
 									? null
-									: decodeAlertIncidentIdSync(String(r.incidentId)),
+									: decodeAlertIncidentIdSync(r.incidentId),
 							incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
 							evaluationDurationMs: Number(r.evaluationDurationMs ?? 0),
 							errorMessage:
-								r.errorMessage == null || r.errorMessage === ""
-									? null
-									: String(r.errorMessage),
+								r.errorMessage == null || r.errorMessage === "" ? null : r.errorMessage,
 							errorCategory:
-								r.errorCategory == null || r.errorCategory === ""
-									? null
-									: String(r.errorCategory),
+								r.errorCategory == null || r.errorCategory === "" ? null : r.errorCategory,
 						})
 					}),
 				catch: (error) =>
@@ -394,7 +390,10 @@ export class AlertReadModelsService extends Context.Service<
 			const since = optionalInstant(options.since)
 			const until = optionalInstant(options.until)
 			const maxRangeMs = 365 * 24 * 60 * 60 * 1000
-			const rangeMs = since != null && until != null ? Duration.toMillis(DateTime.distance(since, until)) : Number.NaN
+			const rangeMs =
+				since != null && until != null
+					? Duration.toMillis(DateTime.distance(since, until))
+					: Number.NaN
 			if (!(rangeMs > 0 && rangeMs <= maxRangeMs) || since == null || until == null) {
 				return yield* Effect.fail(
 					makeValidationError("Alert check summaries require a valid range of at most 365 days"),

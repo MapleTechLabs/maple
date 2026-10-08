@@ -1933,7 +1933,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			)
 
 			const traceIds = Array.from(
-				new Set(rows.map((row) => String(row.traceId)).filter((traceId) => traceId.length > 0)),
+				new Set(rows.map((row) => row.traceId).filter((traceId) => traceId.length > 0)),
 			)
 			const wantsTraceServices = requestedColumns?.includes("services") === true
 			const serviceRows: ReadonlyArray<CH.TraceServicesByTraceIdsOutput> =
@@ -1966,7 +1966,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						)
 					: []
 			const servicesByTraceId = new Map(
-				serviceRows.map((row) => [String(row.traceId), row.services.map(String)] as const),
+				serviceRows.map((row) => [row.traceId, row.services.map(String)] as const),
 			)
 
 			return new QueryEngineExecuteResponse({
@@ -1986,10 +1986,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						statusCode: row.statusCode,
 						spanKind: row.spanKind,
 						hasError: Number(row.hasError) === 1,
-						services: servicesForTraceRow(
-							String(row.serviceName),
-							servicesByTraceId.get(String(row.traceId)),
-						),
+						services: servicesForTraceRow(row.serviceName, servicesByTraceId.get(row.traceId)),
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
 					})),

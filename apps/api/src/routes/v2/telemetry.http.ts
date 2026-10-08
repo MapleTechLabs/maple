@@ -1092,7 +1092,7 @@ const toOverviewPoints = (
 	}))
 
 const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
-	name: String(row.spanName),
+	name: row.spanName,
 	span_count: Number(row.spanCount),
 	estimated_span_count: Number(row.estimatedSpanCount),
 	error_count: Number(row.errorCount),
