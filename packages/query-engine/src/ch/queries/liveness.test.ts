@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
 import { OrgId } from "@maple/domain"
@@ -41,7 +41,7 @@ describe("serviceLivenessQuery", () => {
 		expect(sql).toContain("sum(service_operations_minutely.ErrorCount) AS errorCount")
 		expect(sql).toContain("sum(service_operations_minutely.EstimatedErrorCount) AS estimatedErrorCount")
 		expect(sql).toContain("uniq(service_operations_minutely.Minute) AS minutesWithData")
-		expect(sql).toContain("toString(max(service_operations_minutely.Minute)) AS lastSeen")
+		expect(sql).toContain("max(service_operations_minutely.Minute) AS lastSeen")
 	})
 
 	it("is a group-less single-row aggregate", () => {
@@ -77,6 +77,7 @@ describe("serviceLivenessQuery", () => {
 		])
 		expect(byo?.spanCount).toBe(14203)
 		expect(byo?.errorCount).toBe(0)
+		expect(byo && DateTime.formatIso(byo.lastSeen)).toBe("2024-01-01T00:29:00.000Z")
 
 		const [managed] = decodeRows(compiled, [
 			{

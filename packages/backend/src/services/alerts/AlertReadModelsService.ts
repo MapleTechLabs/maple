@@ -36,16 +36,16 @@ import {
 	type AlertIncidentRow,
 } from "@maple/db"
 import { and, desc, eq } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import { systemTenant } from "./system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { parseWarehouseDateTime } from "@maple/query-engine"
+import { parseUtc } from "@maple/query-engine"
 
 export interface AlertChecksSummaryPoint {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupKey: string
 	readonly totalCount: number
 	readonly breachedCount: number
@@ -179,12 +179,12 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
 	})
 
-const toTinybirdSqlDateTime64 = (iso: string) => {
-	const d = new Date(iso)
-	if (Number.isNaN(d.getTime())) return null
-	const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
-	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
-}
+/** An optional request bound, or `null` when it does not parse (the filter is then skipped). */
+const optionalInstant = (input: string | undefined): DateTime.Utc | null =>
+	input == null ? null : Option.getOrNull(parseUtc(input))
+
+/** A warehouse row timestamp as the ISO string the HTTP document carries. */
+const isoOf = (value: DateTime.Utc) => decodeIsoDateTimeStringSync(DateTime.formatIso(value))
 
 export class AlertReadModelsService extends Context.Service<
 	AlertReadModelsService,
@@ -282,10 +282,9 @@ export class AlertReadModelsService extends Context.Service<
 			}
 			const limit = clamp(options.limit, 1, 2000, 500)
 
-			const since = options.since != null ? toTinybirdSqlDateTime64(options.since) : null
-			const until = options.until != null ? toTinybirdSqlDateTime64(options.until) : null
-			const beforeTimestamp =
-				options.beforeTimestamp != null ? toTinybirdSqlDateTime64(options.beforeTimestamp) : null
+			const since = optionalInstant(options.since)
+			const until = optionalInstant(options.until)
+			const beforeTimestamp = optionalInstant(options.beforeTimestamp)
 			const hasGroupKey = options.groupKey != null && options.groupKey !== ""
 
 			const compiled = CH.compile(
@@ -327,14 +326,14 @@ export class AlertReadModelsService extends Context.Service<
 						const rawTransition =
 							r.incidentTransition == null || r.incidentTransition === ""
 								? "none"
-								: String(r.incidentTransition)
+								: r.incidentTransition
 						return new AlertCheckDocument({
-							timestamp: decodeIsoDateTimeStringSync(String(r.timestamp)),
+							timestamp: isoOf(r.timestamp),
 							groupKey: String(r.groupKey ?? ""),
-							status: decodeAlertCheckStatusSync(String(r.status)),
+							status: decodeAlertCheckStatusSync(r.status),
 							skipReason: Option.getOrNull(decodeAlertSkipReason(r.skipReason)),
-							signalType: decodeAlertSignalTypeSync(String(r.signalType)),
-							comparator: decodeAlertComparatorSync(String(r.comparator)),
+							signalType: decodeAlertSignalTypeSync(r.signalType),
+							comparator: decodeAlertComparatorSync(r.comparator),
 							threshold: Number(r.threshold),
 							// thresholdUpper not yet recorded in the Tinybird alert_checks
 							// datasource — schema column will be backfilled with the
@@ -343,24 +342,20 @@ export class AlertReadModelsService extends Context.Service<
 							observedValue: r.observedValue == null ? null : Number(r.observedValue),
 							sampleCount: Number(r.sampleCount ?? 0),
 							windowMinutes: Number(r.windowMinutes ?? 0),
-							windowStart: decodeIsoDateTimeStringSync(String(r.windowStart)),
-							windowEnd: decodeIsoDateTimeStringSync(String(r.windowEnd)),
+							windowStart: isoOf(r.windowStart),
+							windowEnd: isoOf(r.windowEnd),
 							consecutiveBreaches: Number(r.consecutiveBreaches ?? 0),
 							consecutiveHealthy: Number(r.consecutiveHealthy ?? 0),
 							incidentId:
 								r.incidentId == null || r.incidentId === ""
 									? null
-									: decodeAlertIncidentIdSync(String(r.incidentId)),
+									: decodeAlertIncidentIdSync(r.incidentId),
 							incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
 							evaluationDurationMs: Number(r.evaluationDurationMs ?? 0),
 							errorMessage:
-								r.errorMessage == null || r.errorMessage === ""
-									? null
-									: String(r.errorMessage),
+								r.errorMessage == null || r.errorMessage === "" ? null : r.errorMessage,
 							errorCategory:
-								r.errorCategory == null || r.errorCategory === ""
-									? null
-									: String(r.errorCategory),
+								r.errorCategory == null || r.errorCategory === "" ? null : r.errorCategory,
 						})
 					}),
 				catch: (error) =>
@@ -392,28 +387,22 @@ export class AlertReadModelsService extends Context.Service<
 				})
 			}
 
-			const startMs = parseWarehouseDateTime(options.since)
-			const endMs = parseWarehouseDateTime(options.until)
+			const since = optionalInstant(options.since)
+			const until = optionalInstant(options.until)
 			const maxRangeMs = 365 * 24 * 60 * 60 * 1000
-			if (
-				!Number.isFinite(startMs) ||
-				!Number.isFinite(endMs) ||
-				endMs <= startMs ||
-				endMs - startMs > maxRangeMs
-			) {
+			const rangeMs =
+				since != null && until != null
+					? Duration.toMillis(DateTime.distance(since, until))
+					: Number.NaN
+			if (!(rangeMs > 0 && rangeMs <= maxRangeMs) || since == null || until == null) {
 				return yield* Effect.fail(
 					makeValidationError("Alert check summaries require a valid range of at most 365 days"),
 				)
 			}
-			const since = toTinybirdSqlDateTime64(options.since)
-			const until = toTinybirdSqlDateTime64(options.until)
-			if (since == null || until == null) {
-				return yield* Effect.fail(makeValidationError("Invalid alert check summary range"))
-			}
 
 			// At most 720 time buckets; minute alignment keeps the boundaries
 			// stable across refreshes and matches alert evaluation granularity.
-			const bucketSeconds = Math.max(1, Math.ceil((endMs - startMs) / 1000 / 720 / 60)) * 60
+			const bucketSeconds = Math.max(1, Math.ceil(rangeMs / 1000 / 720 / 60)) * 60
 			const tenant = systemTenant(orgId)
 			const groupRows = yield* warehouse.compiledQuery(
 				tenant,
@@ -439,7 +428,7 @@ export class AlertReadModelsService extends Context.Service<
 			)
 
 			const points: AlertChecksSummaryPoint[] = rows.map((row) => ({
-				bucket: String(row.bucket),
+				bucket: row.bucket,
 				groupKey: String(row.groupKey ?? ""),
 				totalCount: Number(row.totalCount ?? 0),
 				breachedCount: Number(row.breachedCount ?? 0),

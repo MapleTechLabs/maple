@@ -314,7 +314,6 @@ export {
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,
-	releaseErrorFingerprintsRowSchema,
 	RELEASES_LIST_CAP,
 	PLACEHOLDER_COMMIT_SHAS,
 	type ReleasesListOpts,

@@ -20,7 +20,7 @@ import { lazy, Suspense, useMemo } from "react"
 
 import { Result, useAtom, useAtomValue } from "@/lib/effect-atom"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { serviceMapLayoutAtomFamily } from "@/atoms/service-map-layout-atoms"
 import { serviceMapViewPrefsAtomFamily } from "@/atoms/service-map-view-prefs-atoms"
@@ -1543,7 +1543,7 @@ export function ServiceMapView({
 		}),
 	)
 	const hyperdriveInventoryResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareHyperdrives", {
+		retainedInternalQuery("integrations", "cloudflareHyperdrives", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)

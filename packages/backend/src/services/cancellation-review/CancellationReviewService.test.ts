@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { DailySpendResponse, DailyVolume, OrgId } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -19,7 +19,10 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
-import { SupportSlackClient, SupportSlackRefusedError } from "@maple/backend/services/support/SupportSlackClient"
+import {
+	SupportSlackClient,
+	SupportSlackRefusedError,
+} from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { CancellationReviewService, type CancellationToReview } from "./CancellationReviewService"
@@ -55,7 +58,7 @@ interface World {
 	slack: "ok" | "refused" | "unreachable"
 	warehouseDown: boolean
 	/** The org's own page views, and whether anyone at all has page views under Maple's org. */
-	visitRows: Array<{ bucket: string; groupName: string; value: number; eventCount: number }>
+	visitRows: Array<{ bucket: DateTime.Utc; groupName: string; value: number; eventCount: number }>
 	anyPageViews: boolean
 	queries: Array<{ orgId: string; sql: string }>
 	posts: Array<Record<string, unknown>>
@@ -68,7 +71,9 @@ const freshWorld = (): World => ({
 	subscriptions: [{ planId: "startup", status: "active" }],
 	slack: "ok",
 	warehouseDown: false,
-	visitRows: [{ bucket: "2026-09-17 00:00:00", groupName: "", value: 3, eventCount: 40 }],
+	visitRows: [
+		{ bucket: DateTime.makeUnsafe("2026-09-17T00:00:00Z"), groupName: "", value: 3, eventCount: 40 },
+	],
 	anyPageViews: true,
 	queries: [],
 	posts: [],
@@ -129,7 +134,14 @@ const stubs = (world: World) =>
 						const rows = sql.includes(ORG)
 							? world.visitRows
 							: world.anyPageViews
-								? [{ bucket: "2026-08-08 00:00:00", groupName: "", value: 9, eventCount: 900 }]
+								? [
+										{
+											bucket: DateTime.makeUnsafe("2026-08-08T00:00:00Z"),
+											groupName: "",
+											value: 9,
+											eventCount: 900,
+										},
+									]
 								: []
 						return Effect.succeed(rows as ReadonlyArray<never>)
 					}),
@@ -162,12 +174,19 @@ const stubs = (world: World) =>
 				Effect.suspend(() => {
 					if (world.slack === "refused") {
 						return Effect.fail(
-							new SupportSlackRefusedError({ message: "refused", method, error: "not_in_channel" }),
+							new SupportSlackRefusedError({
+								message: "refused",
+								method,
+								error: "not_in_channel",
+							}),
 						)
 					}
 					if (world.slack === "unreachable") {
 						return Effect.fail(
-							new SupportChannelUnavailableError({ message: "Slack did not answer", operation: method }),
+							new SupportChannelUnavailableError({
+								message: "Slack did not answer",
+								operation: method,
+							}),
 						)
 					}
 					world.posts.push(body)
@@ -179,7 +198,11 @@ const stubs = (world: World) =>
 const makeLayer = (world: World, testDb: TestDb) =>
 	Layer.effect(CancellationReviewService, CancellationReviewService.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(stubs(world), OnboardingService.layer.pipe(Layer.provide(testDb.layer)), testDb.layer),
+			Layer.mergeAll(
+				stubs(world),
+				OnboardingService.layer.pipe(Layer.provide(testDb.layer)),
+				testDb.layer,
+			),
 		),
 		Layer.provide(Env.layer),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config(world)))),
@@ -202,7 +225,12 @@ const config = (world: World) =>
 		? BASE_CONFIG
 		: { ...BASE_CONFIG, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }
 
-const review = (world: World, testDb: TestDb, input: CancellationToReview = job, nowMs = CANCELED_AT + 1_000) =>
+const review = (
+	world: World,
+	testDb: TestDb,
+	input: CancellationToReview = job,
+	nowMs = CANCELED_AT + 1_000,
+) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(nowMs)
 		return yield* CancellationReviewService.use((service) => service.review(input))

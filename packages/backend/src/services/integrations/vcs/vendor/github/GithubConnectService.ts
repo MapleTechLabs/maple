@@ -6,7 +6,6 @@ import {
 	IntegrationsValidationError,
 	isInstallationProcessable,
 	type OrgId,
-	type PrReviewListItem,
 	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type UserId,
@@ -160,13 +159,6 @@ export interface GithubConnectServiceApi {
 		settings: PrReviewOrgSettings,
 		updatedBy: UserId,
 	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError | IntegrationsValidationError>
-	readonly listPrReviews: (
-		orgId: OrgId,
-		repositoryId: VcsRepositoryId,
-	) => Effect.Effect<
-		ReadonlyArray<PrReviewListItem>,
-		IntegrationsPersistenceError | IntegrationsValidationError
-	>
 }
 
 // Repo / queue / state errors all carry a `message`; collapse them to the
@@ -841,14 +833,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return cleaned
 			})
 
-			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
-				orgId: OrgId,
-				repositoryId: VcsRepositoryId,
-			) {
-				yield* requireRepository(orgId, repositoryId)
-				return yield* asPersistence(repo.listPrReviews(orgId, repositoryId, 50))
-			})
-
 			return {
 				startConnect,
 				completeConnect,
@@ -861,7 +845,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				getPrReviewSettings,
 				setPrReviewSettings,
 				setPrReviewConfig,
-				listPrReviews,
 			} satisfies GithubConnectServiceApi
 		}),
 	},

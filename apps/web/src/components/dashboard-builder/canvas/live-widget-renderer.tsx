@@ -24,9 +24,9 @@ import { toPanelType } from "@/lib/query-builder/panel-types"
  * Latches `true` the first time the element scrolls into (near) the viewport,
  * then stays latched. Tiles fetch their data lazily on first reveal and keep it
  * — unlatching would unmount the tile's atom, and a non-sticky flag would then
- * refetch every time it scrolled back into view. The 200ms debounce absorbs
- * react-grid-layout's mount-time reflow, where tiles can briefly flash into
- * view before the layout settles.
+ * refetch every time it scrolled back into view. The 200ms debounce skips
+ * tiles a fast scroll only passes over, so flinging down a long board does not
+ * fire every query on the way.
  */
 function useInViewportSticky() {
 	const ref = useRef<HTMLDivElement>(null)

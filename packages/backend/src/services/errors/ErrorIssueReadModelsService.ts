@@ -25,13 +25,8 @@ import {
 } from "@maple/domain/http"
 import { errorIncidents, type ErrorIncidentRow, errorIssues } from "@maple/db"
 import { and, desc, eq, gt, gte, ilike, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm"
-import {
-	CH,
-	formatWarehouseDateTime,
-	parseWarehouseDateTime,
-	warehouseDateTimeToIso,
-} from "@maple/query-engine"
-import { Clock, Context, Effect, Layer, Match, Schema } from "effect"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { Clock, Context, DateTime, Effect, Layer, Match, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -460,7 +455,7 @@ const make: Effect.Effect<
 			const timeseries = timeseriesRows.map(
 				(row) =>
 					new ErrorIssueTimeseriesPoint({
-						bucket: decodeIsoDateTimeStringSync(warehouseDateTimeToIso(String(row.bucket))),
+						bucket: decodeIsoDateTimeStringSync(DateTime.formatIso(row.bucket)),
 						count: Number(row.count ?? 0),
 					}),
 			)
@@ -470,7 +465,7 @@ const make: Effect.Effect<
 						traceId: row.traceId,
 						spanId: row.spanId,
 						serviceName: row.serviceName,
-						timestamp: decodeIsoDateTimeStringSync(warehouseDateTimeToIso(String(row.timestamp))),
+						timestamp: decodeIsoDateTimeStringSync(DateTime.formatIso(row.timestamp)),
 						exceptionMessage: row.exceptionMessage,
 						durationMicros: row.durationMicros,
 					}),

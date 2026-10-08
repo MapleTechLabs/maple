@@ -6,6 +6,7 @@ import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
 import { useMountEffect } from "../../hooks/use-mount-effect"
 import { Eyebrow } from "../ui/eyebrow"
+import { MinusIcon, PlusIcon } from "../icons"
 import { HoverCard, HoverCardContent } from "../ui/hover-card"
 import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
@@ -41,6 +42,12 @@ export interface LogAttributeChipProps {
 	attrKey: string
 	value: string
 	tone: ChipTone
+	className?: string
+	/**
+	 * Adds "Filter in" / "Filter out" to the card. `negated` is true for filter out.
+	 * Omit it and the card only shows and copies the pair.
+	 */
+	onFilter?: (attrKey: string, value: string, negated: boolean) => void
 }
 
 /**
@@ -67,7 +74,7 @@ export interface LogAttributeChipProps {
  * the stable button rather than by Base UI's hover machinery, which is the price
  * of not having a Base UI trigger for that machinery to attach to.
  */
-export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps) {
+export function LogAttributeChip({ attrKey, value, tone, className, onFilter }: LogAttributeChipProps) {
 	const [open, setOpen] = useState(false)
 	const triggerRef = useRef<HTMLButtonElement>(null)
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -151,13 +158,15 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 					}
 				}}
 				className={cn(
-					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					TONE_CLASSES[tone],
+					className,
 				)}
 			>
-				<span className="opacity-70">{displayKey}</span>
-				<span className="opacity-40">:</span>
-				<span>{displayValue}</span>
+				<span className="shrink-0 opacity-70">{displayKey}</span>
+				<span className="shrink-0 opacity-40">:</span>
+				{/* Ellipsizes only when a caller caps the chip's width. */}
+				<span className="min-w-0 truncate">{displayValue}</span>
 			</button>
 			{open && (
 				<HoverCard open onOpenChange={(next) => !next && closeNow()}>
@@ -188,9 +197,60 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 								)}
 							</div>
 						</div>
+						{/* A JSON blob is not a filterable value, same rule as the attributes table. */}
+						{onFilter && parsed === null && (
+							<div className="flex items-center gap-1 border-t px-2 py-1.5">
+								<ChipFilterAction
+									label={`Filter in ${attrKey} = ${value}`}
+									onClick={() => {
+										closeNow()
+										onFilter(attrKey, value, false)
+									}}
+								>
+									<PlusIcon size={10} />
+									Filter in
+								</ChipFilterAction>
+								<ChipFilterAction
+									label={`Filter out ${attrKey} = ${value}`}
+									onClick={() => {
+										closeNow()
+										onFilter(attrKey, value, true)
+									}}
+								>
+									<MinusIcon size={10} />
+									Filter out
+								</ChipFilterAction>
+							</div>
+						)}
 					</HoverCardContent>
 				</HoverCard>
 			)}
 		</>
+	)
+}
+
+/** A card action. Stops the click there: the card renders inside the row, which toggles on click. */
+function ChipFilterAction({
+	label,
+	onClick,
+	children,
+}: {
+	label: string
+	onClick: () => void
+	children: React.ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			onPointerDown={(e) => e.stopPropagation()}
+			onClick={(e) => {
+				e.stopPropagation()
+				onClick()
+			}}
+			className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+		>
+			{children}
+		</button>
 	)
 }

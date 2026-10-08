@@ -162,7 +162,7 @@ export interface FlushableTelemetry {
 }
 
 /** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
-const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
+const postOtlp = (url: string, headers: Record<string, string>, body: unknown, keepalive: boolean) => {
 	const json = JSON.stringify(body)
 	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
 	const controller = new AbortController()
@@ -170,8 +170,8 @@ const postOtlp = (url: string, headers: Record<string, string>, body: unknown) =
 		() => controller.abort(new Error(`OTLP POST timed out after ${Math.round(timeoutMs / 1000)}s`)),
 		timeoutMs,
 	)
-	return postToIngest(url, headers, json, true, { signal: controller.signal, otlp: true }).finally(() =>
-		clearTimeout(timer),
+	return postToIngest(url, headers, json, keepalive, { signal: controller.signal, otlp: true }).finally(
+		() => clearTimeout(timer),
 	)
 }
 
@@ -289,10 +289,10 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	let unloading = false
 	let pageHides = 0
 	const transport: FlushTransport = {
-		post: async (url, headers, body) => {
+		post: async (url, headers, body, keepalive) => {
 			const sentUnloading = unloading
 			const sentPageHides = pageHides
-			const res = await postOtlp(url, headers, body).catch(async (cause: unknown) => {
+			const res = await postOtlp(url, headers, body, keepalive).catch(async (cause: unknown) => {
 				// The browser can reject between two listeners of one `pagehide`,
 				// before ours has run. A task later they all have, and a document
 				// that is gone never gets that far.
@@ -324,7 +324,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				metricsState,
 				transport,
 				logPrefix: "[MapleClientSDK]",
-				// The newest items get the keepalive room that is left at that moment.
+				// The newest items of each signal get the keepalive room that is left
+				// at that moment; older ones are sent without keepalive.
 				tailBytes: unload && (() => Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())),
 				ignoreCooldown: unload?.ignoreCooldown,
 			})

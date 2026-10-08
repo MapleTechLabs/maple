@@ -30,7 +30,8 @@ function page(body: string, cursor: string | null = "next"): LogsResponse {
 	return {
 		data: [
 			{
-				timestamp: "2026-09-01 12:00:00",
+				timestamp: "2026-09-01T12:00:00.000Z",
+				exactTimestamp: "2026-09-01 12:00:00",
 				severityText: "INFO",
 				severityNumber: 9,
 				serviceName: "api",

@@ -233,7 +233,7 @@ export const BoxPlotSpike = memo(function BoxPlotSpike({
 
 				const heading = (
 					<div className="border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight">
-						{String(datum.category)}
+						{datum.category}
 					</div>
 				)
 
