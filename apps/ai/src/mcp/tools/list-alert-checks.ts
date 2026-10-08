@@ -40,9 +40,6 @@ const formatSkipped = (output: {
 	return parts.length > 0 ? `${output.skipped} skipped [${parts.join(", ")}]` : `${output.skipped} skipped`
 }
 
-/** Window bounds are `YYYY-MM-DD HH:mm:ss` UTC; the read model parses ISO 8601. */
-const toIso = (value: string): string => `${value.replace(" ", "T")}Z`
-
 export function registerListAlertChecksTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_checks",
@@ -71,8 +68,8 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				.listRuleChecks(tenant.orgId, ruleId, {
 					groupKey: params.group_key,
 					status: params.status,
-					since: toIso(st),
-					until: toIso(et),
+					since: st,
+					until: et,
 					limit: params.limit,
 				})
 				.pipe(

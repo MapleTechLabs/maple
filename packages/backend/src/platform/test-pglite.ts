@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema, Tracer } from "effect"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
@@ -111,6 +111,29 @@ export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string
 	}
 	track?.push(db)
 	return db
+}
+
+const decodeQueryText = Schema.decodeUnknownSync(Schema.String)
+
+/**
+ * A tracer recording `Database.execute` spans. `verbs()` lists the leading keyword
+ * of every statement those calls ran, in order, read from `db.query.text`.
+ */
+export const makeStatementRecorder = () => {
+	const spans: Array<Tracer.NativeSpan> = []
+	const tracer = Tracer.make({
+		span(options) {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
+	const verbs = () =>
+		spans
+			.filter((span) => span.attributes.get("db.system.name") === "postgresql")
+			.flatMap((span) => decodeQueryText(span.attributes.get("db.query.text")).split(";\n"))
+			.map((statement) => statement.trim().split(/\s+/)[0]?.toUpperCase() ?? "")
+	return { tracer, verbs }
 }
 
 export const cleanupTestDbs = async (dbs: TestDb[]): Promise<void> => {

@@ -1,6 +1,13 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { ExternalUserId, GcpProjectId, ScrapeTargetId, UserId } from "../primitives"
+import {
+	ExternalUserId,
+	GcpProjectId,
+	GcpResourceNumber,
+	GcpScopeType,
+	ScrapeTargetId,
+	UserId,
+} from "../primitives"
 import { Authorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewListItem, PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
@@ -1043,20 +1050,38 @@ export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFo
 	},
 ) {}
 
-/** The organization already has a connector for this Google Cloud project. */
-export class GcpProjectAlreadyConnectedError extends HttpTaggedError<GcpProjectAlreadyConnectedError>()(
-	"@maple/http/errors/GcpProjectAlreadyConnectedError",
+/** The organization already has a connector for this Google Cloud project, folder or organization. */
+export class GcpScopeAlreadyConnectedError extends HttpTaggedError<GcpScopeAlreadyConnectedError>()(
+	"@maple/http/errors/GcpScopeAlreadyConnectedError",
 	{
-		projectId: GcpProjectId,
+		scopeType: GcpScopeType,
+		scopeId: Schema.Union([GcpProjectId, GcpResourceNumber]),
 		message: Schema.String,
 	},
 	{
 		status: 409,
-		code: "gcp_project_already_connected",
-		title: "Project already connected",
-		param: "project_id",
+		code: "gcp_scope_already_connected",
+		title: "Already connected",
+		param: "scope_id",
 		retry: "never",
 		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** Metrics were requested on a deployment that has no Google identity to collect them with. */
+export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavailableError>()(
+	"@maple/http/errors/GcpMetricsUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_metrics_unavailable",
+		title: "Metrics collection is not available",
+		param: "metrics_enabled",
+		retry: "never",
+		recovery: "none",
 		exposure: "public_message",
 	},
 ) {}

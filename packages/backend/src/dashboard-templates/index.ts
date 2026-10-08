@@ -1,5 +1,6 @@
 import { chartFamilyForChartId, widgetTypeByVisualization } from "@maple/domain/http"
 import type { DashboardTemplateId, DashboardTemplatePreviewKind } from "@maple/domain/http"
+import { memoize } from "effect/Function"
 import { blankTemplate } from "./application/blank"
 import { errorTrackingTemplate } from "./application/error-tracking"
 import { grpcServiceTemplate } from "./application/grpc-service"
@@ -89,10 +90,8 @@ export function buildTemplatePreview(template: TemplateDefinition): TemplatePrev
 	}))
 }
 
-// Previews are derived from the (pure, deterministic) template builds; compute once.
-const TEMPLATE_PREVIEWS = new Map<string, TemplatePreviewWidget[]>(
-	DASHBOARD_TEMPLATES.map((t) => [t.id, buildTemplatePreview(t)]),
-)
+// Previews are derived from the (pure, deterministic) template builds; compute once, on first use.
+const templatePreview = memoize(buildTemplatePreview)
 
 export function listTemplateMetadata(): TemplateMetadata[] {
 	return DASHBOARD_TEMPLATES.map((t) => ({
@@ -107,7 +106,7 @@ export function listTemplateMetadata(): TemplateMetadata[] {
 		requirement: t.requirement ?? null,
 		requiredMetricPrefixes: t.requiredMetricPrefixes ?? [],
 		parameters: t.parameters,
-		preview: TEMPLATE_PREVIEWS.get(t.id) ?? [],
+		preview: templatePreview(t),
 	}))
 }
 

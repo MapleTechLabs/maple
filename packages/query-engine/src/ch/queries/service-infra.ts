@@ -30,7 +30,7 @@ import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, ServicePlatformsHourly, orgIdParam } from "../tables"
+import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
@@ -127,8 +127,8 @@ export function serviceWorkloadsSQL(
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.inList($.ServiceName, opts.services),
 		])
 		.groupBy("serviceName")
@@ -174,8 +174,8 @@ export function serviceWorkloadsSQL(
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.inList($.MetricName, [
 				"k8s.pod.cpu.usage",
 				"k8s.pod.cpu_limit_utilization",

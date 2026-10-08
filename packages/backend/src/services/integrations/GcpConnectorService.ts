@@ -1,11 +1,20 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import { gcpConnectors, hashIngestKey, parseIngestKeyLookupHmacKey, type GcpConnectorRow } from "@maple/db"
 import {
-	GcpProjectAlreadyConnectedError,
+	GcpMetricsUnavailableError,
+	GcpScopeAlreadyConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
+	IntegrationsValidationError,
 } from "@maple/domain/http"
-import { GcpConnectorId, type GcpProjectId, type OrgId, type UserId } from "@maple/domain/primitives"
+import {
+	GcpConnectorId,
+	type GcpProjectId,
+	type GcpResourceNumber,
+	type GcpScopeType,
+	type OrgId,
+	type UserId,
+} from "@maple/domain/primitives"
 import { and, asc, eq } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -17,17 +26,31 @@ import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-script
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
+	readonly scopeType: GcpScopeType
+	/** The project id, or the numeric folder / organization id. */
+	readonly scopeId: GcpProjectId | GcpResourceNumber
+	/** The host project, where Maple's own resources live. Equals `scopeId` for a project scope. */
 	readonly projectId: GcpProjectId
+	readonly logsEnabled: boolean
+	/** Covers metrics and resource collection. */
+	readonly metricsEnabled: boolean
 	readonly createdAt: number
-	/** Last log push the ingest gateway accepted from this project. Null until the first one. */
+	/** Last log push the ingest gateway accepted from this connector. Null until the first one. */
 	readonly lastLogReceivedAt: number | null
 	readonly lastLogError: string | null
 }
 
+export type CreateGcpConnectorInput = Pick<
+	GcpConnector,
+	"scopeType" | "scopeId" | "projectId" | "logsEnabled" | "metricsEnabled"
+>
+
+type GcpCapabilityError = GcpMetricsUnavailableError | IntegrationsValidationError
+
 export interface GcpConnectorServiceApi {
 	readonly status: (orgId: OrgId) => Effect.Effect<
 		{
-			/** False when this deployment has no Google identity, so connectors are logs-only. */
+			/** False when this deployment has no Google identity to read metrics with. */
 			readonly metricsAvailable: boolean
 			readonly connectors: ReadonlyArray<GcpConnector>
 		},
@@ -36,8 +59,20 @@ export interface GcpConnectorServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		userId: UserId,
-		projectId: GcpProjectId,
-	) => Effect.Effect<GcpConnector, GcpProjectAlreadyConnectedError | IntegrationsPersistenceError>
+		input: CreateGcpConnectorInput,
+	) => Effect.Effect<
+		GcpConnector,
+		GcpScopeAlreadyConnectedError | GcpCapabilityError | IntegrationsPersistenceError
+	>
+	/** Omitted flags are unchanged. Google Cloud only follows once the setup script is re-run. */
+	readonly update: (
+		orgId: OrgId,
+		connectorId: GcpConnectorId,
+		patch: { readonly logsEnabled?: boolean | undefined; readonly metricsEnabled?: boolean | undefined },
+	) => Effect.Effect<
+		GcpConnector,
+		IntegrationsNotFoundError | GcpCapabilityError | IntegrationsPersistenceError
+	>
 	readonly scripts: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
@@ -46,12 +81,12 @@ export interface GcpConnectorServiceApi {
 		{ readonly setupScript: string; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
-	/** Deleting the row is the disconnect: the ingest gateway stops accepting the project's pushes. */
+	/** Deleting the row is the disconnect: the ingest gateway stops accepting the connector's pushes. */
 	readonly delete: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
 	) => Effect.Effect<
-		{ readonly projectId: GcpProjectId; readonly cleanupScript: string },
+		{ readonly connector: GcpConnector; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
 }
@@ -66,7 +101,11 @@ const secretAad = (connectorId: string) => Buffer.from(`gcp_connectors:v1:${conn
 
 const toConnector = (row: GcpConnectorRow): GcpConnector => ({
 	id: row.id,
+	scopeType: row.scopeType,
+	scopeId: row.scopeId,
 	projectId: row.projectId,
+	logsEnabled: row.logsEnabled,
+	metricsEnabled: row.metricsEnabled,
 	createdAt: dateToMs(row.createdAt),
 	lastLogReceivedAt: dateToMs(row.lastReceivedAt),
 	lastLogError: row.lastError,
@@ -96,6 +135,42 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
+			const checkCapabilities = (
+				flags: { readonly logsEnabled: boolean; readonly metricsEnabled: boolean },
+				turningMetricsOn: boolean,
+			): Effect.Effect<void, GcpCapabilityError> => {
+				if (!flags.logsEnabled && !flags.metricsEnabled) {
+					return Effect.fail(
+						new IntegrationsValidationError({
+							message:
+								"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
+						}),
+					)
+				}
+				if (turningMetricsOn && mapleServiceAccountEmail === undefined) {
+					return Effect.fail(
+						new GcpMetricsUnavailableError({
+							message:
+								"Metrics and resource collection is not available on this Maple deployment.",
+						}),
+					)
+				}
+				return Effect.void
+			}
+
+			const selectRow = (orgId: OrgId, connectorId: GcpConnectorId) =>
+				dbExecute((db) =>
+					db
+						.select()
+						.from(gcpConnectors)
+						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
+						.limit(1),
+				).pipe(
+					Effect.flatMap(([row]) =>
+						row === undefined ? Effect.fail(notFound()) : Effect.succeed(row),
+					),
+				)
+
 			const status = Effect.fn("GcpConnectorService.status")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
@@ -114,9 +189,14 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const create = Effect.fn("GcpConnectorService.create")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				projectId: GcpProjectId,
+				input: CreateGcpConnectorInput,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.project_id": projectId })
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.gcp.scope_type": input.scopeType,
+					"maple.gcp.scope_id": input.scopeId,
+				})
+				yield* checkCapabilities(input, input.metricsEnabled)
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
 				const encrypted = yield* encryptAes256Gcm(
@@ -126,13 +206,13 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					secretAad(id),
 				)
 				const now = msToDate(yield* Clock.currentTimeMillis)
-				const rows = yield* dbExecute((db) =>
+				const [row] = yield* dbExecute((db) =>
 					db
 						.insert(gcpConnectors)
 						.values({
 							id,
 							orgId,
-							projectId,
+							...input,
 							secretCiphertext: encrypted.ciphertext,
 							secretIv: encrypted.iv,
 							secretTag: encrypted.tag,
@@ -141,16 +221,45 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							createdAt: now,
 							updatedAt: now,
 						})
-						.onConflictDoNothing({ target: [gcpConnectors.orgId, gcpConnectors.projectId] })
+						.onConflictDoNothing({
+							target: [gcpConnectors.orgId, gcpConnectors.scopeType, gcpConnectors.scopeId],
+						})
 						.returning(),
 				)
-				const row = rows[0]
 				if (row === undefined) {
-					return yield* new GcpProjectAlreadyConnectedError({
-						projectId,
-						message: `Google Cloud project ${projectId} is already connected.`,
+					return yield* new GcpScopeAlreadyConnectedError({
+						scopeType: input.scopeType,
+						scopeId: input.scopeId,
+						message: `The Google Cloud ${input.scopeType} ${input.scopeId} is already connected.`,
 					})
 				}
+				return toConnector(row)
+			})
+
+			const update = Effect.fn("GcpConnectorService.update")(function* (
+				orgId: OrgId,
+				connectorId: GcpConnectorId,
+				patch: {
+					readonly logsEnabled?: boolean | undefined
+					readonly metricsEnabled?: boolean | undefined
+				},
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				const current = yield* selectRow(orgId, connectorId)
+				const flags = {
+					logsEnabled: patch.logsEnabled ?? current.logsEnabled,
+					metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
+				}
+				yield* checkCapabilities(flags, patch.metricsEnabled === true)
+				const updatedAt = msToDate(yield* Clock.currentTimeMillis)
+				const [row] = yield* dbExecute((db) =>
+					db
+						.update(gcpConnectors)
+						.set({ ...flags, updatedAt })
+						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
+						.returning(),
+				)
+				if (row === undefined) return yield* notFound()
 				return toConnector(row)
 			})
 
@@ -160,15 +269,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				options: { readonly excludeGkeContainerLogs: boolean },
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(gcpConnectors)
-						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-						.limit(1),
-				)
-				const row = rows[0]
-				if (row === undefined) return yield* notFound()
+				const row = yield* selectRow(orgId, connectorId)
 				const secret = yield* decryptAes256Gcm(
 					{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
 					encryptionKey,
@@ -178,15 +279,22 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						}),
 					secretAad(row.id),
 				)
+				const target = {
+					connectorId,
+					scopeType: row.scopeType,
+					scopeId: row.scopeId,
+					projectId: row.projectId,
+				}
 				return {
 					setupScript: renderGcpSetupScript({
-						connectorId,
-						projectId: row.projectId,
+						...target,
 						pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
 						mapleServiceAccountEmail,
+						logsEnabled: row.logsEnabled,
+						metricsEnabled: row.metricsEnabled,
 						excludeGkeContainerLogs: options.excludeGkeContainerLogs,
 					}),
-					cleanupScript: renderGcpCleanupScript(connectorId, row.projectId),
+					cleanupScript: renderGcpCleanupScript(target),
 				}
 			})
 
@@ -195,21 +303,31 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				connectorId: GcpConnectorId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const rows = yield* dbExecute((db) =>
+				const [row] = yield* dbExecute((db) =>
 					db
 						.delete(gcpConnectors)
 						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-						.returning({ projectId: gcpConnectors.projectId }),
+						.returning(),
 				)
-				const row = rows[0]
 				if (row === undefined) return yield* notFound()
 				return {
-					projectId: row.projectId,
-					cleanupScript: renderGcpCleanupScript(connectorId, row.projectId),
+					connector: toConnector(row),
+					cleanupScript: renderGcpCleanupScript({
+						connectorId,
+						scopeType: row.scopeType,
+						scopeId: row.scopeId,
+						projectId: row.projectId,
+					}),
 				}
 			})
 
-			return { status, create, scripts, delete: deleteConnector } satisfies GcpConnectorServiceApi
+			return {
+				status,
+				create,
+				update,
+				scripts,
+				delete: deleteConnector,
+			} satisfies GcpConnectorServiceApi
 		}),
 	},
 ) {

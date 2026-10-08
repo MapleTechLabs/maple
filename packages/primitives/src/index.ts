@@ -111,6 +111,17 @@ export const GcpProjectId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-
 )
 export type GcpProjectId = Schema.Schema.Type<typeof GcpProjectId>
 
+/** The numeric id of a Google Cloud folder or organization. */
+export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/u)).pipe(
+	Schema.brand("@maple/GcpResourceNumber"),
+	Schema.annotate({ identifier: "@maple/GcpResourceNumber", title: "Google Cloud Resource Number" }),
+)
+export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
+
+/** What a Google Cloud connector covers: one project, or everything under a folder or organization. */
+export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
+export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>
+
 export const AlertDestinationId = MapleUuidId("@maple/AlertDestinationId", "Alert Destination ID")
 export type AlertDestinationId = Schema.Schema.Type<typeof AlertDestinationId>
 

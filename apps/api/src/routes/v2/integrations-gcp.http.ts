@@ -16,16 +16,29 @@ import {
 } from "@maple/backend/services/integrations/GcpConnectorService"
 
 // Reading the status is open to every member. Everything else is admin-only: a connector decides
-// which project may write logs into the org, and its setup script carries the push secret.
+// what may write logs into the org and what Maple reads, and its setup script carries the push
+// secret.
 const adminOnly = () => V2InsufficientPermissions.make("Only org admins can manage Google Cloud connectors")
 
 const toV2Connector = (connector: GcpConnector): V2GcpConnector => ({
 	id: connector.id,
 	object: "gcp_connector",
+	scope_type: connector.scopeType,
+	scope_id: connector.scopeId,
 	project_id: connector.projectId,
+	logs_enabled: connector.logsEnabled,
+	metrics_enabled: connector.metricsEnabled,
 	created_at: isoTimestamp(connector.createdAt),
 	last_log_received_at: isoTimestampOrNull(connector.lastLogReceivedAt),
 	last_log_error: connector.lastLogError,
+})
+
+const auditMetadata = (connector: GcpConnector) => ({
+	scope_type: connector.scopeType,
+	scope_id: connector.scopeId,
+	project_id: connector.projectId,
+	logs_enabled: connector.logsEnabled,
+	metrics_enabled: connector.metricsEnabled,
 })
 
 export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIntegration", (handlers) =>
@@ -48,10 +61,32 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
-					const connector = yield* gcp.create(tenant.orgId, tenant.userId, payload.project_id)
+					const connector = yield* gcp.create(tenant.orgId, tenant.userId, {
+						scopeType: payload.scope_type,
+						scopeId: payload.scope_id,
+						// A project hosts its own resources; the contract rejects any other value.
+						projectId: payload.scope_type === "project" ? payload.scope_id : payload.project_id,
+						logsEnabled: payload.logs_enabled ?? true,
+						metricsEnabled: payload.metrics_enabled ?? false,
+					})
 					yield* recordHttpAudit("gcp_connector.created", {
 						resourceId: connector.id,
-						metadata: { project_id: connector.projectId },
+						metadata: auditMetadata(connector),
+					})
+					return toV2Connector(connector)
+				}),
+			)
+			.handle("updateConnector", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles, adminOnly)
+					const connector = yield* gcp.update(tenant.orgId, params.id, {
+						logsEnabled: payload.logs_enabled,
+						metricsEnabled: payload.metrics_enabled,
+					})
+					yield* recordHttpAudit("gcp_connector.updated", {
+						resourceId: connector.id,
+						metadata: auditMetadata(connector),
 					})
 					return toV2Connector(connector)
 				}),
@@ -77,7 +112,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					const deleted = yield* gcp.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("gcp_connector.deleted", {
 						resourceId: params.id,
-						metadata: { project_id: deleted.projectId },
+						metadata: auditMetadata(deleted.connector),
 					})
 					return {
 						id: params.id,

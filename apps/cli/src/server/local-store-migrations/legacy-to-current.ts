@@ -419,8 +419,8 @@ const inventory = async (
 		table: table.name,
 		rowCount: numberString(row.rowCount),
 		retentionStartAt: lowerBound,
-		minTime: row.minTime === null ? null : String(row.minTime),
-		maxTime: row.maxTime === null ? null : String(row.maxTime),
+		minTime: row.minTime === null ? null : row.minTime,
+		maxTime: row.maxTime === null ? null : row.maxTime,
 		hashSum: numberString(row.hashSum),
 		hashXor: numberString(row.hashXor),
 	}
