@@ -119,11 +119,37 @@ interface StubOptions {
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-const googleError = (status: number, code: string) =>
+const googleError = (status: number, code: string, details?: ReadonlyArray<unknown>) =>
 	json(
-		{ error: { code: status, status: code, message: `details that must not be stored: ${code}` } },
+		{
+			error: {
+				code: status,
+				status: code,
+				message: `details that must not be stored: ${code}`,
+				...(details === undefined ? undefined : { details }),
+			},
+		},
 		status,
 	)
+
+/** Google's machine-readable cause of a refusal, as `error.details` carries it. */
+const errorInfo = (reason: string) => ({
+	"@type": "type.googleapis.com/google.rpc.ErrorInfo",
+	reason,
+	domain: "googleapis.com",
+	metadata: { consumer: "projects/123456789012", service: "monitoring.googleapis.com" },
+})
+
+// What Cloud Monitoring answered for a host project without billing on 2026-10-08, with the
+// project number replaced: the cause is in the text only.
+const NO_BILLING_ANSWER = {
+	error: {
+		code: 403,
+		message:
+			"This API method requires billing to be enabled. Please enable billing on project #123456789012 by visiting https://console.developers.google.com/billing/enable?project=123456789012 then retry. If you enabled billing for this project recently, wait a few minutes for the action to propagate to our systems and retry.",
+		status: "PERMISSION_DENIED",
+	},
+}
 
 /** One Cloud Run series with two points inside the first poll's window. */
 const requestCountSeries = (projectId = "acme-prod") => ({
@@ -784,6 +810,86 @@ describe("GcpMetricsService", () => {
 				)
 				assert.isNull(state.metrics_watermark_at)
 			}),
+		)
+	})
+
+	it.effect("names missing billing or a disabled API only where Google gives the reason as a code", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const recorder = makeRecorder()
+		let monitoring = () => json(NO_BILLING_ANSWER, 403)
+		let impersonate: () => Response | undefined = () => undefined
+		const stub = stubFetch(calls, {
+			impersonate: () => impersonate(),
+			monitoring: () => monitoring(),
+			assets: () =>
+				googleError(403, "PERMISSION_DENIED", [
+					{ "@type": "type.googleapis.com/google.rpc.Help", links: [] },
+					errorInfo("SERVICE_DISABLED"),
+				]),
+		})
+		const metricsError = pollState(testDb, CONNECTOR_A).pipe(
+			Effect.map((state) => state.last_metrics_error),
+		)
+		const hint =
+			"Run the setup script in Cloud Shell to grant Maple read access; if it already ran, wait a few minutes for the grant to apply."
+		const generic = `Cloud Monitoring returned 403 PERMISSION_DENIED. ${hint}`
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* pollAll
+				assert.strictEqual(yield* metricsError, generic)
+				assert.strictEqual(
+					(yield* pollState(testDb, CONNECTOR_A)).last_resources_error,
+					"Cloud Asset Inventory returned 403 PERMISSION_DENIED (SERVICE_DISABLED). This API is not enabled in the host project acme-prod; run the setup script again.",
+				)
+
+				monitoring = () => googleError(403, "PERMISSION_DENIED", [errorInfo("BILLING_DISABLED")])
+				yield* TestClock.setTime(now + 5 * minute)
+				yield* pollAll
+				assert.strictEqual(
+					yield* metricsError,
+					"Cloud Monitoring returned 403 PERMISSION_DENIED (BILLING_DISABLED). This API requires billing to be enabled on the host project acme-prod.",
+				)
+
+				// A reason that does not read like one of Google's codes is dropped.
+				monitoring = () =>
+					googleError(403, "PERMISSION_DENIED", [errorInfo("billing: see example.com")])
+				yield* TestClock.setTime(now + 10 * minute)
+				yield* pollAll
+				assert.strictEqual(yield* metricsError, generic)
+
+				// Signing in as the reader does not go through the host project.
+				impersonate = () => googleError(403, "PERMISSION_DENIED", [errorInfo("SERVICE_DISABLED")])
+				yield* TestClock.setTime(now + 15 * minute)
+				yield* pollAll
+				assert.strictEqual(
+					yield* metricsError,
+					`Google IAM returned 403 PERMISSION_DENIED (SERVICE_DISABLED). ${hint}`,
+				)
+
+				// Details of another form cost neither the status code nor the poll.
+				impersonate = () => undefined
+				monitoring = () =>
+					json({ error: { status: "PERMISSION_DENIED", details: "BILLING_DISABLED" } }, 403)
+				yield* TestClock.setTime(now + 20 * minute)
+				yield* pollAll
+				assert.strictEqual(yield* metricsError, generic)
+
+				const recorded = recorder.text()
+				assert.include(recorded, "BILLING_DISABLED")
+				for (const text of [
+					"Please enable billing",
+					"must not be stored",
+					"example.com",
+					"123456789012",
+				]) {
+					assert.notInclude(recorded, text)
+				}
+			}),
+			{ recorder },
 		)
 	})
 

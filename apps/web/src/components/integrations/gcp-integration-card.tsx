@@ -412,7 +412,13 @@ function GcpSetup({
 							framed
 							label="Exclude GKE container logs"
 							description="Turn on if your pods already send their logs to Maple through an OpenTelemetry collector."
-							control={<Switch checked={excludeGke} onCheckedChange={setExcludeGke} />}
+							control={
+								<Switch
+									aria-label="Exclude GKE container logs"
+									checked={excludeGke}
+									onCheckedChange={setExcludeGke}
+								/>
+							}
 						/>
 					) : null}
 					{script !== null ? (

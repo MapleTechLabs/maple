@@ -391,13 +391,25 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
 							}
 							const invalid = capabilityError(flags, patch.metricsEnabled === true)
+							// Switched back on, a capability has nothing set up in Google Cloud until the
+							// script is re-run: what it last reported no longer describes the connection.
+							const changes = {
+								...flags,
+								...(flags.logsEnabled && !current.logsEnabled
+									? { lastReceivedAt: null, lastError: null }
+									: undefined),
+								// Only what the card shows: the poller's watermark and lease stay.
+								...(flags.metricsEnabled && !current.metricsEnabled
+									? { lastMetricsReceivedAt: null, lastMetricsError: null }
+									: undefined),
+							}
 							if (invalid === undefined) {
 								yield* tx
 									.update(gcpConnectors)
-									.set({ ...flags, updatedAt })
+									.set({ ...changes, updatedAt })
 									.where(eq(gcpConnectors.id, connectorId))
 							}
-							return { row: { ...current, ...flags }, invalid }
+							return { row: { ...current, ...changes }, invalid }
 						}),
 					),
 				)
