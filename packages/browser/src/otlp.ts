@@ -53,7 +53,7 @@ async function send(
 					response.ok
 						? undefined
 						: {
-								error: new Error(`OTLP export failed with status ${response.status}`),
+								error: new Error(`OTLP export failed: ${response.status}`),
 								retryable: RETRYABLE_STATUS.includes(response.status),
 							},
 				// A network error is a TypeError; the timeout's abort is not, and ends the export.
@@ -86,7 +86,7 @@ export class OtlpExporter<T> implements Exporter<T> {
 	export(items: T[], callback: (result: ExportResult) => void): void {
 		const body = this.serializer.serializeRequest(items)
 		if (!body) {
-			callback({ code: 1, error: new Error("Nothing to send") })
+			callback({ code: 1 })
 			return
 		}
 		const headers = { ...this.headers, "content-type": "application/json" }
@@ -151,7 +151,7 @@ export function newestFirstOnExit<T>(
 ): Exporter<T> {
 	return {
 		export(items, callback) {
-			const hidden = typeof document !== "undefined" && document.visibilityState === "hidden"
+			const hidden = globalThis.document?.visibilityState === "hidden"
 			const parts = unloading || hidden ? newestFirst(items, serializer) : [items]
 			let pending = parts.length
 			let failed: ExportResult | undefined
