@@ -161,14 +161,13 @@ export interface FlushableTelemetry {
 	readonly dispose: () => Promise<void>
 }
 
-/** Keepalive-budgeted POST (see file header). Throws on non-2xx so the signal cools down. */
-const postOtlp: FlushTransport["post"] = async (url, headers, body) => {
+/** Keepalive-budgeted POST (see file header), aborted after {@link POST_TIMEOUT_MS}. */
+const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
 	const controller = new AbortController()
 	const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS)
-	const res = await postToIngest(url, headers, JSON.stringify(body), true, controller.signal).finally(() =>
+	return postToIngest(url, headers, JSON.stringify(body), true, controller.signal).finally(() =>
 		clearTimeout(timer),
 	)
-	if (!res.ok) throw new Error(`OTLP ${res.status}`)
 }
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
@@ -282,10 +281,13 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	// fetches that ingest still receives. It is not restored, cooled down or logged.
 	let unloading = false
 	const transport: FlushTransport = {
-		post: (url, headers, body) =>
-			postOtlp(url, headers, body).catch((cause: unknown) =>
+		post: async (url, headers, body) => {
+			const res = await postOtlp(url, headers, body).catch((cause: unknown) =>
 				unloading ? undefined : Promise.reject(cause),
-			),
+			)
+			// A non-2xx is ingest's answer: it throws so the signal cools down.
+			if (res && !res.ok) throw new Error(`OTLP ${res.status}`)
+		},
 	}
 
 	// Never rejects: fired as `void` from the auto-flush timer and the unload handlers.

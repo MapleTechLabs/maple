@@ -663,6 +663,23 @@ describe("MapleFlush.make (client)", () => {
 		expect(warnSpy).not.toHaveBeenCalled()
 	})
 
+	it("still treats an error status after pagehide as a failed flush", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const { restore: rf } = setupFetch(() => new Response(null, { status: 503 }))
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["refused"])
+		dom.fire("pagehide")
+		await tick()
+		// Ingest answered, so this is not the unloading page's own rejection.
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+	})
+
 	it("restores and cools down when the flush fails on a page that is only hidden", async () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 		vi.useFakeTimers({ toFake: ["Date"] })
