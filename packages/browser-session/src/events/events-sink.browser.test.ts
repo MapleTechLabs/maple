@@ -259,6 +259,21 @@ describe("startEventSink resend after a failed flush", () => {
 		},
 	)
 
+	it("does not re-queue a flush cut off by the unload of an already hidden page", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-hidden")
+		// Hidden before the POST starts, so the unload brings no `visibilitychange`.
+		document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
+		post.mockImplementationOnce(async () => {
+			window.dispatchEvent(new Event("pagehide"))
+			return "failed"
+		})
+		await sink.flush()
+		await sink.flush()
+
+		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+
 	it("drops queued rows on pagehide", async () => {
 		// A navigation can abort the POST before `pagehide` fires.
 		const sink = startEventSink(CONFIG, "sess-retry-6")
