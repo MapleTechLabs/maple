@@ -29,6 +29,13 @@ export const API_CORS_RESPONSE_HEADERS = {
 } as const
 
 /**
+ * `Timing-Allow-Origin` for every API response, same origins as CORS. Without it a
+ * cross-origin PerformanceResourceTiming entry reports each phase as 0, so the
+ * browser cannot split a slow call into dns/tls/ttfb.
+ */
+export const API_TIMING_ALLOW_ORIGIN = API_CORS_OPTIONS.allowedOrigins.join(",")
+
+/**
  * Bootstrap-safe equivalent of Effect's global CORS middleware for OPTIONS.
  *
  * The configured origin and header policies are static, so preflights do not

@@ -10,7 +10,11 @@ import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope } from "effe
 import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
-import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "@maple/backend/http/api-cors"
+import {
+	API_CORS_RESPONSE_HEADERS,
+	API_TIMING_ALLOW_ORIGIN,
+	apiCorsPreflightResponse,
+} from "@maple/backend/http/api-cors"
 import { aiUnavailableResponse, forwardsToAi, forwardToAi } from "./ai-forward"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import { AiWorkerFetcher, type MapleDbConnection } from "@maple/backend/platform/bindings"
@@ -237,6 +241,8 @@ export const makeFetch = (
 
 			return response
 		}).pipe(
+			// HttpRouter.cors sets no Timing-Allow-Origin, so every response gets it here.
+			Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)),
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
 			Effect.provide(ports),
 		),

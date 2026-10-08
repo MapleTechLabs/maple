@@ -2,6 +2,7 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 import { Clock, Duration, Effect, Layer } from "effect"
 import { apiBaseUrl } from "./api-base-url"
 import { getMapleAuthHeaders } from "./auth-headers"
+import { trackFetch } from "./fetch-timing"
 import { noteReachable, noteUnreachable, originOf } from "./peer-reachability"
 
 const CLIENT_TIMEOUT = Duration.seconds(45)
@@ -14,9 +15,14 @@ const resolveRequestUrl = (input: RequestInfo | URL): string => {
 
 const mapleFetch: typeof globalThis.fetch = async (input, init) => {
 	const headers = new Headers(init?.headers)
+	const url = resolveRequestUrl(input)
+	let authWaitMs: number | undefined
 
-	if (resolveRequestUrl(input).startsWith(apiBaseUrl)) {
+	if (url.startsWith(apiBaseUrl)) {
+		// Clerk token resolution runs inside the http.client span, before the request leaves.
+		const authStartedAt = performance.now()
 		const authHeaders = await getMapleAuthHeaders()
+		authWaitMs = performance.now() - authStartedAt
 		for (const [name, value] of Object.entries(authHeaders)) {
 			if (!headers.has(name)) {
 				headers.set(name, value)
@@ -24,13 +30,14 @@ const mapleFetch: typeof globalThis.fetch = async (input, init) => {
 		}
 	}
 
-	const origin = originOf(resolveRequestUrl(input))
+	const origin = originOf(url)
 	// Every API call the app makes passes through here, so this is where the app
 	// learns whether an origin is reachable at all — the same clock `tracedFetch`
 	// feeds from the ShapeStream side, since a blip takes both down at once. It
 	// only observes; `normalizeWarehouseError` is what reads it to decide whether
 	// a failure is the network's fault. An abort is evidence of nothing either
 	// way: we stopped listening.
+	trackFetch({ url, startedAt: performance.now(), traceparent: headers.get("traceparent"), authWaitMs })
 	return globalThis.fetch(input, { ...init, headers }).then(
 		(response) => {
 			noteReachable(origin)
