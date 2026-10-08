@@ -11,10 +11,16 @@ import {
 } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { runScrapeCheckRetention } from "@maple/backend/services/integrations/scrape-check-retention"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	makeStatementRecorder,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { ScrapeTargetsService } from "./ScrapeTargetsService"
+import { ScrapeTargetsService, summarizeScrapeResults } from "./ScrapeTargetsService"
 
 const trackedDbs: TestDb[] = []
 const originalFetch = globalThis.fetch
@@ -67,6 +73,7 @@ const makeLayer = (testDb: TestDb) => {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asScrapeIntervalSeconds = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+const asScrapeTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 
 describe("ScrapeTargetsService", () => {
 	it.effect("authHeaders decrypts a stored bearer credential into an Authorization header", () => {
@@ -174,6 +181,69 @@ describe("ScrapeTargetsService", () => {
 
 			const updated = yield* service.get(orgId, target.id)
 			assert.strictEqual(updated.lastScrapeAt, new Date(scrapedAt).toISOString())
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("recordScrapeResults writes every target of a report in one UPDATE", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorder = makeStatementRecorder()
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			// Seeded with SQL, not create(), whose background probe would run its own
+			// recordScrapeResults alongside the one under test.
+			const [ok, failing, stale, ...rest] = yield* Effect.forEach(
+				["ok", "failing", "stale", "t4", "t5", "t6"],
+				(name, index) => {
+					const id = asScrapeTargetId(`00000000-0000-4000-8000-00000000000${index}`)
+					return Effect.as(
+						Effect.promise(() =>
+							executeSql(
+								testDb,
+								"INSERT INTO scrape_targets (id, org_id, name, url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)",
+								[
+									id,
+									orgId,
+									name,
+									`https://${name}.example.com/metrics`,
+									new Date(0).toISOString(),
+								],
+							),
+						),
+						{ id },
+					)
+				},
+			)
+			const scrapedAt = 1750000000000
+			// A newer write already landed on `stale`; the late batch must not touch it.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE scrape_targets SET updated_at = $1 WHERE id = $2", [
+					new Date(scrapedAt + 60_000).toISOString(),
+					stale.id,
+				]),
+			)
+
+			yield* service
+				.recordScrapeResults([
+					{ targetId: ok.id, scrapedAt, error: null },
+					{ targetId: failing.id, scrapedAt, error: null },
+					{ targetId: failing.id, scrapedAt: scrapedAt + 15_000, error: "HTTP 503" },
+					{ targetId: stale.id, scrapedAt, error: "HTTP 500" },
+					...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
+				])
+				.pipe(Effect.withTracer(recorder.tracer))
+			// 6 targets: 1 UPDATE + 1 SELECT (org ids) + 1 INSERT (check rows).
+			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "INSERT"])
+
+			const okRow = yield* service.get(orgId, ok.id)
+			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.isNull(okRow.lastScrapeError)
+			const failingRow = yield* service.get(orgId, failing.id)
+			assert.strictEqual(failingRow.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.strictEqual(failingRow.lastScrapeError, "HTTP 503")
+			const staleRow = yield* service.get(orgId, stale.id)
+			assert.isNull(staleRow.lastScrapeAt)
+			assert.isNull(staleRow.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -727,5 +797,53 @@ describe("ScrapeTargetsService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/ScrapeTargetValidationError")
 			assert.include(error.message, "only valid for PlanetScale targets")
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})
+
+describe("summarizeScrapeResults", () => {
+	it("folds each target's results in input order without losing the newest report", () => {
+		const a = asScrapeTargetId("11111111-1111-4111-8111-111111111111")
+		const b = asScrapeTargetId("22222222-2222-4222-8222-222222222222")
+		const summary = summarizeScrapeResults([
+			{ targetId: a, scrapedAt: 3_000, error: null },
+			{ targetId: b, scrapedAt: 2_000, error: "timeout", subTargetKey: "main" },
+			{ targetId: a, scrapedAt: 1_000, error: "connection refused" },
+			{ targetId: b, scrapedAt: 1_500, error: "boom" },
+		])
+
+		assert.strictEqual(summary.size, 2)
+		// Success then failure: the error wins, lastScrapeAt stays at the good scrape,
+		// updatedAt follows the last applied result while reportedAt is the max.
+		assert.deepStrictEqual(summary.get(a), {
+			lastScrapeAt: new Date(3_000),
+			lastScrapeError: "connection refused",
+			updatedAt: new Date(1_000),
+			reportedAt: new Date(3_000),
+		})
+		assert.deepStrictEqual(summary.get(b), {
+			lastScrapeAt: null,
+			lastScrapeError: "boom",
+			updatedAt: new Date(1_500),
+			reportedAt: new Date(2_000),
+		})
+	})
+
+	it("prefixes sub-target errors and clears the error on a later success", () => {
+		const a = asScrapeTargetId("11111111-1111-4111-8111-111111111111")
+		const failed = summarizeScrapeResults([
+			{ targetId: a, scrapedAt: 1_000, error: "timeout", subTargetKey: "dev" },
+		])
+		assert.strictEqual(failed.get(a)?.lastScrapeError, "[branch:dev] timeout")
+
+		const recovered = summarizeScrapeResults([
+			{ targetId: a, scrapedAt: 1_000, error: "timeout", subTargetKey: "dev" },
+			{ targetId: a, scrapedAt: 2_000, error: null, subTargetKey: "dev" },
+		])
+		assert.deepStrictEqual(recovered.get(a), {
+			lastScrapeAt: new Date(2_000),
+			lastScrapeError: null,
+			updatedAt: new Date(2_000),
+			reportedAt: new Date(2_000),
+		})
 	})
 })

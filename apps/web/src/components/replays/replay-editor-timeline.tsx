@@ -19,7 +19,7 @@ import {
 	getSpanHierarchyResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { type DisplayMarker, useReplayPlayer, type ReplayPlayerContextValue } from "./replay-player-context"
-import { spanDisplayRange, type Timeline } from "./replay-timeline"
+import { parseChTimestampMs, spanDisplayRange, type Timeline } from "./replay-timeline"
 import { formatClock, MARKER_STYLES, type ReplayPartitionWindow } from "./replay-format"
 import {
 	ChevronRightIcon,
@@ -561,7 +561,7 @@ function TraceSpanLane({
 }
 
 function spanOffset(span: SpanRow, recordingStartEpochMs: number): number {
-	return new Date(span.startTime.replace(" ", "T") + "Z").getTime() - recordingStartEpochMs
+	return parseChTimestampMs(span.startTime) - recordingStartEpochMs
 }
 
 function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {

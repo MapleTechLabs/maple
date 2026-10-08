@@ -105,8 +105,6 @@ interface ErrorsByTypeRow {
 	sampleMessage: string
 	count: number
 	affectedServicesCount: number
-	firstSeen: string
-	lastSeen: string
 }
 
 interface TracesTimeseriesRow {
@@ -268,10 +266,10 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(previous.map((row) => [String(row.name), Number(row.count) || 0] as const))
+	const previousByName = new Map(previous.map((row) => [row.name, Number(row.count) || 0] as const))
 	return current
 		.map((row) => {
-			const label = String(row.name)
+			const label = row.name
 			const requests = Number(row.count) || 0
 			return {
 				label,
@@ -598,7 +596,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// membership the scope resolved to — the same approximation the web app
 			// makes in `scopeServicesToNamespaces`. A service emitting under two
 			// namespaces stays counted in both.
-			const scopedServiceNames = [...new Set(curOverviewData.map((r) => String(r.serviceName)))]
+			const scopedServiceNames = [...new Set(curOverviewData.map((r) => r.serviceName))]
 			const isScoped = scope.environments.length > 0 || scope.namespaces.length > 0
 			const membership = csv(scopedServiceNames)
 
@@ -709,7 +707,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					const requests = Number(s.estimatedSpanCount) || 0
 					const errors = Number(s.estimatedErrorCount) || 0
 					return {
-						name: String(s.serviceName),
+						name: s.serviceName,
 						environment: String(s.environment ?? ""),
 						namespace: String(s.serviceNamespace ?? ""),
 						requests,
@@ -741,7 +739,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// that exact, unlike diffing against the previous week's top 100.
 			const currentErrors = (topErrors.data as Array<ErrorsByTypeRow>).slice(0, 5)
 			const currentFingerprints = currentErrors
-				.map((e) => String(e.fingerprintHash))
+				.map((e) => e.fingerprintHash)
 				.filter((hash) => hash !== "")
 			const prevErrorFingerprints = yield* currentFingerprints.length === 0
 				? Effect.succeed(new Set<string>())
@@ -761,8 +759,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							Effect.map(
 								(response) =>
 									new Set(
-										(response.data as Array<ErrorsByTypeRow>).map((e) =>
-											String(e.fingerprintHash),
+										(response.data as Array<ErrorsByTypeRow>).map(
+											(e) => e.fingerprintHash,
 										),
 									),
 							),
@@ -777,7 +775,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				message: String(e.errorLabel || e.sampleMessage || "Unknown error"),
 				count: Number(e.count) || 0,
 				affectedServices: Number(e.affectedServicesCount) || 0,
-				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(String(e.fingerprintHash)) : false,
+				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(e.fingerprintHash) : false,
 			}))
 
 			// Daily request/error buckets (one row per UTC day) for the sparkline.
@@ -787,7 +785,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			}
 			const series = (seriesResponse.data as Array<TracesTimeseriesRow>)
 				.slice()
-				.sort((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
+				.sort((a, b) => a.bucket.localeCompare(b.bucket))
 				// Guard against any boundary off-by-one — keep the 7 most recent days.
 				.slice(-7)
 				.map((r) => {

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { DbQueryVolumeOutput } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -76,7 +76,7 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 					errorCount: row.errorCount,
 					avgMs: row.avgDurationMs,
 					p95Ms: row.p95DurationMs,
-					lastSeen: row.lastSeen,
+					lastSeen: DateTime.formatIso(row.lastSeen),
 				})),
 			}
 		}),

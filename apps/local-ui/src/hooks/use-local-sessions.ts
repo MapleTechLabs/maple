@@ -1,4 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import type { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import type { FilterOption } from "@maple/ui/components/filters/filter-section"
 import { boundsKey, executeLocalCompiledQuery, localParams, noCursor } from "@/lib/query"
@@ -7,7 +8,7 @@ import type { TimeBounds } from "../lib/time"
 const PAGE_SIZE = 50
 
 interface SessionCursor {
-	startTime: string
+	startTime: DateTime.Utc
 	sessionId: string
 }
 

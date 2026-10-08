@@ -1,4 +1,4 @@
-import { Effect, Schema, SchemaTransformation } from "effect"
+import { DateTime, Effect, Schema, SchemaTransformation } from "effect"
 import { GetSessionTranscriptOutput, SessionTranscriptEventType } from "@maple/domain/mcp-outputs"
 import { getSessionTranscript } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -46,7 +46,8 @@ const describeFilters = (filters: TranscriptFilters): string => {
 
 /** One transcript row as `time  TYPE detail (trace)`. */
 const formatLine = (ev: TranscriptEvent): string => {
-	const time = ev.timestamp.split(" ")[1] ?? ev.timestamp
+	// `HH:mm:ss.SSS` out of the ISO timestamp.
+	const time = ev.timestamp.slice(11, 23) || ev.timestamp
 	const trace = ev.traceId ? ` ⟶ ${ev.traceId.slice(0, 12)}…` : ""
 	const detail = (() => {
 		switch (ev.type) {
@@ -126,7 +127,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			return {
 				sessionId: params.session_id,
 				events: events.map((e) => ({
-					timestamp: e.timestamp,
+					timestamp: DateTime.formatIso(e.timestamp),
 					type: e.type,
 					url: truncate(e.url, 256),
 					traceId: e.traceId,

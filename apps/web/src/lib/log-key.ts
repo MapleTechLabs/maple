@@ -18,7 +18,8 @@ export interface LogKey {
 }
 
 interface EncodableLog {
-	timestamp: string
+	/** The row's `exactTimestamp`: the stored DateTime64 literal, nanoseconds kept. */
+	exactTimestamp: string
 	serviceName: string
 	traceId: string | undefined
 	spanId: string | undefined
@@ -42,7 +43,7 @@ function fromBase64Url(token: string): string {
 export function encodeLogKey(log: EncodableLog): string {
 	// Tuple form keeps the token compact; order is [ts, svc, traceId, spanId].
 	const payload: [string, string, string, string] = [
-		log.timestamp,
+		log.exactTimestamp,
 		log.serviceName,
 		log.traceId ?? "",
 		log.spanId ?? "",

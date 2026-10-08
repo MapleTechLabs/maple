@@ -191,7 +191,11 @@ export const rowWithNull = (row: Record<string, unknown>, columnName: string): R
 })
 
 const sampleValue = (type: string, quote64Bit: boolean): unknown => {
-	const inner = type.replace(/^(?:Nullable|LowCardinality)\((.*)\)$/, "$1")
+	// `min(FirstSeen)` over a `SimpleAggregateFunction(min, DateTime)` column keeps
+	// that type in DESCRIBE, but its wire value is the plain DateTime.
+	const inner = type
+		.replace(/^SimpleAggregateFunction\([^,]+,\s*(.*)\)$/, "$1")
+		.replace(/^(?:Nullable|LowCardinality)\((.*)\)$/, "$1")
 	if (inner.startsWith("Array(")) return []
 	if (inner.startsWith("Map(")) return {}
 	if (inner.startsWith("Tuple(")) return []
