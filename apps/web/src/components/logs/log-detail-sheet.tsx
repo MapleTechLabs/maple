@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import type { Log } from "@/api/warehouse/logs"
+import type { LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
@@ -18,6 +19,8 @@ interface LogDetailSheetProps {
 	log: Log | null
 	open: boolean
 	onOpenChange: (open: boolean) => void
+	/** Filter in / out from an attribute row. Omit and the rows only copy. */
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 /**
@@ -26,7 +29,7 @@ interface LogDetailSheetProps {
  * into a tabbed layout. The same panels back the standalone `/logs/$logId`
  * page; only the chrome (drawer vs. full page) differs.
  */
-export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps) {
+export function LogDetailSheet({ log, open, onOpenChange, onAttributeFilter }: LogDetailSheetProps) {
 	const { effectiveTimezone } = useTimezonePreference()
 	// `viewedLog` may diverge from `log` when the user clicks through the trace
 	// timeline. Sync it from the incoming prop during render (no effect).
@@ -79,7 +82,11 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 					<TabsContent value="attributes" className="flex-1 min-h-0 mt-0">
 						<ScrollArea className="h-full">
 							<div className="p-3">
-								<LogAttributesPanel key={logKey} log={viewedLog} />
+								<LogAttributesPanel
+									key={logKey}
+									log={viewedLog}
+									onAttributeFilter={onAttributeFilter}
+								/>
 							</div>
 						</ScrollArea>
 					</TabsContent>

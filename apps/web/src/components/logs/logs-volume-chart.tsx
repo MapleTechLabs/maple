@@ -25,6 +25,7 @@ import { formatBucketLabel, formatNumber, inferBucketSeconds } from "@maple/ui/l
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { LogsSearchParams } from "@/routes/logs"
+import { logAttributeQueryFilters } from "@/lib/logs/log-attribute-filters"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 
 /**
@@ -382,6 +383,7 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 							? [...filters.excludedNamespaces]
 							: undefined,
 					traceId: filters?.traceId,
+					...logAttributeQueryFilters(filters?.attrs),
 				},
 			},
 		}),

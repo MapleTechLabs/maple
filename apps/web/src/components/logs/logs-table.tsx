@@ -4,7 +4,8 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { logFilterChips } from "@/lib/logs/log-filter-chips"
+import { logFilterChips, withoutChips } from "@/lib/logs/log-filter-chips"
+import { addLogAttributeFilter, type LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
@@ -95,6 +96,8 @@ interface LogsTableViewProps {
 	onClearFilters?: () => void
 	/** Absent when the range is already wide or custom. */
 	onWidenRange?: () => void
+	/** Filter in / out on one attribute value, from a chip or an attribute row. Omit off /logs. */
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 interface LogsTableProps {
@@ -141,6 +144,7 @@ interface LogRowProps {
 	measureRef?: (node: Element | null) => void
 	onClick: (log: Log) => void
 	onToggleExpand: (index: number) => void
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 /** `HH:MM:SS` at full strength, the milliseconds a step back: the eye reads seconds first. */
@@ -171,6 +175,7 @@ const LogRow = React.memo(function LogRow({
 	measureRef,
 	onClick,
 	onToggleExpand,
+	onAttributeFilter,
 }: LogRowProps) {
 	// Only chips that add to the message: resource attributes (region, env, pod)
 	// repeat down the whole stream, and a value the body already spells out
@@ -303,6 +308,17 @@ const LogRow = React.memo(function LogRow({
 									value={chip.value}
 									tone={chip.tone}
 									className="max-w-full"
+									onFilter={
+										onAttributeFilter
+											? (key, value, negated) =>
+													onAttributeFilter({
+														source: chip.source,
+														key,
+														value,
+														negated,
+													})
+											: undefined
+									}
 								/>
 							))}
 						</span>
@@ -349,7 +365,12 @@ const LogRow = React.memo(function LogRow({
 				</span>
 			</div>
 			{isExpanded && (
-				<LogRowExpanded log={log} highlight={highlight} onOpenDetail={() => onClick(log)} />
+				<LogRowExpanded
+					log={log}
+					highlight={highlight}
+					onOpenDetail={() => onClick(log)}
+					onAttributeFilter={onAttributeFilter}
+				/>
 			)}
 		</div>
 	)
@@ -422,10 +443,19 @@ export function LogsTableView({
 	filtered = excludedValues.length > 0,
 	onClearFilters,
 	onWidenRange,
+	onAttributeFilter,
 }: LogsTableViewProps) {
 	const [selectedLog, setSelectedLog] = React.useState<Log | null>(null)
 	const [sheetOpen, setSheetOpen] = React.useState(false)
 	const [expandedRows, setExpandedRows] = React.useState<ReadonlySet<number>>(() => new Set())
+	// Expansion is keyed by index, so a new result set (a filter applied from an
+	// expanded row, a refresh) would hand it to another log. Reset during render.
+	const firstLog = allData[0]
+	const [expandedFor, setExpandedFor] = React.useState(firstLog)
+	if (firstLog !== expandedFor) {
+		setExpandedFor(firstLog)
+		setExpandedRows(new Set())
+	}
 	const { effectiveTimezone } = useTimezonePreference()
 	const scrollContainerRef = React.useRef<HTMLDivElement>(null)
 	// This pane owns its scroller (the route mounts it under `DashboardLayout.Fill`,
@@ -690,6 +720,7 @@ export function LogsTableView({
 										measureRef={measureElement}
 										onClick={handleRowClick}
 										onToggleExpand={toggleExpanded}
+										onAttributeFilter={onAttributeFilter}
 									/>
 								)
 							})}
@@ -708,7 +739,12 @@ export function LogsTableView({
 				/>
 			</div>
 
-			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={handleSheetOpenChange} />
+			<LogDetailSheet
+				log={selectedLog}
+				open={sheetOpen}
+				onOpenChange={handleSheetOpenChange}
+				onAttributeFilter={onAttributeFilter}
+			/>
 		</>
 	)
 }
@@ -725,21 +761,17 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 	// An empty list under an exclusion cannot explain itself — see `ExcludedEmptyHint`.
 	const excludedChips = logFilterChips(filters ?? {}).filter((chip) => chip.negated)
 	const excludedValues = excludedChips.flatMap((chip) => chip.values)
-	const clearExclusions = () =>
-		navigateLogs({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
-			}),
-		})
+	const clearExclusions = () => navigateLogs({ search: (prev) => withoutChips(prev, excludedChips) })
 	const filterChips = logFilterChips(filters ?? {})
-	const clearFilters = () =>
-		navigateLogs({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(filterChips.map((chip) => [chip.param, undefined])),
+	const clearFilters = () => navigateLogs({ search: (prev) => withoutChips(prev, filterChips) })
+	// Stable, so the memoized rows do not re-render on every parent render.
+	const addAttributeFilter = React.useCallback(
+		(filter: LogAttributeFilter) =>
+			navigateLogs({
+				search: (prev) => ({ ...prev, attrs: addLogAttributeFilter(prev.attrs, filter) }),
 			}),
-		})
+		[navigateLogs],
+	)
 	const canWiden = !embedded && canWidenTimeRange(filters ?? {}, "")
 	const widenRange = () =>
 		navigateLogs({ search: (prev) => applyTimeRangeSearch(prev, { presetValue: WIDEN_TIME_PRESET }) })
@@ -782,6 +814,7 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 				filtered={filterChips.length > 0}
 				onClearFilters={embedded ? undefined : clearFilters}
 				onWidenRange={canWiden ? widenRange : undefined}
+				onAttributeFilter={embedded ? undefined : addAttributeFilter}
 			/>
 		))
 		.render()
