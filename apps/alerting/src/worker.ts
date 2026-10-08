@@ -36,6 +36,7 @@ import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { HttpServerResponse } from "effect/http"
+import { authorizeTickRequest, dispatchTick, internalTokenFor, SELF_BINDING } from "./tick-dispatch.ts"
 
 /**
  * Runtime env, imported type-only by `./scheduled.ts`. Config vars stay `unknown` since they are
@@ -82,10 +83,15 @@ const props = Effect.gen(function* () {
 		...mapleWorkerProps("alerting", stack),
 		workersDev: false,
 		build: { pure: WORKER_PURE_OPTIONS },
+		// Ticks run in the fetch handler (`./tick-dispatch.ts`), which gets 30 s CPU by default where
+		// an hourly cron got 15 min. The paid-plan ceiling keeps the long ticks within budget.
+		limits: { cpuMs: 300_000 },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...mapleDbEnv(db, "alerting"),
 			AI_WORKER: ai,
+			// Cron fires hop through it so their ticks run where placement applies.
+			[SELF_BINDING]: Cloudflare.Workers.Self,
 			...env,
 			...devEnv,
 		},
@@ -135,6 +141,21 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 
+		const runTick = (cron: string, env: Record<string, unknown>) =>
+			Effect.gen(function* () {
+				const { runScheduled } = yield* scheduled
+				yield* runScheduled(cron, env, email, chatSessions)
+			}).pipe(
+				// Interrupts are isolate teardown, not a failed run.
+				Effect.catchCause((cause) =>
+					Cause.hasInterruptsOnly(cause)
+						? Effect.void
+						: Effect.logError("Alerting scheduled run failed", cause).pipe(
+								Effect.annotateLogs({ "maple.alerting.cron": cron }),
+							),
+				),
+			)
+
 		const onFire = (controller: ScheduledController) =>
 			Effect.gen(function* () {
 				const env = yield* Cloudflare.WorkerEnvironment
@@ -150,26 +171,43 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 					}
 					return
 				}
-				const { runScheduled } = yield* scheduled
-				yield* runScheduled(controller.cron, env, email, chatSessions).pipe(
-					// Interrupts are isolate teardown, not a failed run.
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.void
-							: Effect.logError("Alerting scheduled run failed", cause).pipe(
-									Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
-								),
+				// A failed hop is not retried inline: the placed handler may have run part of the tick.
+				const dispatched = yield* dispatchTick(controller.cron, env).pipe(
+					Effect.catchTag("@maple/alerting/errors/TickDispatchError", (error) =>
+						Effect.logError("Placed alerting tick failed", error).pipe(
+							Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
+							Effect.as("failed" as const),
+						),
 					),
 				)
+				if (dispatched === "unavailable") {
+					yield* runTick(controller.cron, env).pipe(
+						Effect.annotateSpans("maple.alerting.dispatch", "inline"),
+					)
+				}
 			})
+
+		// Reached only through `SELF_BINDING`: the Worker has no route and no workers.dev URL.
+		const fetch = Effect.gen(function* () {
+			const request = yield* Cloudflare.Request
+			const env = yield* Cloudflare.WorkerEnvironment
+			const tick = authorizeTickRequest(request, yield* internalTokenFor(env), ALERTING_CRONS)
+			if (typeof tick === "number") return HttpServerResponse.empty({ status: tick })
+			yield* runTick(tick.cron, env).pipe(
+				Effect.annotateSpans({
+					"maple.alerting.dispatch": "placed",
+					"maple.colo": tick.colo,
+					"maple.placement": tick.placement,
+				}),
+			)
+			return HttpServerResponse.empty({ status: 204 })
+		})
 
 		for (const cron of ALERTING_CRONS) {
 			yield* Cloudflare.Workers.cron(cron, onFire)
 		}
 
-		return {
-			fetch: Effect.succeed(HttpServerResponse.text("maple-alerting: scheduled only", { status: 404 })),
-		}
+		return { fetch }
 	}).pipe(
 		// The init is the entry point: the cron source needs the host Worker.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
