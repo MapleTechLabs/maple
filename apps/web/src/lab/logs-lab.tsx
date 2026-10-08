@@ -41,7 +41,9 @@ export function LogsLab() {
 								<Toggle
 									label="Comfortable"
 									on={density === "comfortable"}
-									onClick={() => setDensity(density === "compact" ? "comfortable" : "compact")}
+									onClick={() =>
+										setDensity(density === "compact" ? "comfortable" : "compact")
+									}
 								/>
 								<Toggle
 									label="Search “pool”"
