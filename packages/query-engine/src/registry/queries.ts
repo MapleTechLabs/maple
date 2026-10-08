@@ -340,6 +340,7 @@ export const listLogs = defineQuery({
 					})),
 				),
 				limit: payload.limit,
+				order: payload.order,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),

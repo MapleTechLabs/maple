@@ -5,6 +5,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { LogContextFixtureProvider } from "@/components/logs/log-context-panel"
 import { LogsTableView } from "@/components/logs/logs-table"
 import type { LogsDensity } from "@/hooks/use-logs-view-preferences"
 import { buildLogsLabFixture } from "@/lab/logs-fixture"
@@ -102,22 +103,24 @@ export function LogsLab() {
 							onClearAll={() => setAttrs(undefined)}
 							className="mx-4 mt-3 mb-0"
 						/>
-						<LogsTableView
-							allData={empty ? [] : filteredLogs}
-							isFetchingNextPage={false}
-							hasNextPage={false}
-							isCapped={false}
-							fetchNextPage={() => {}}
-							waiting={false}
-							wrap={wrap}
-							density={density}
-							pinnedColumns={pinned}
-							searchText={search}
-							embedded
-							filtered={chips.length > 0}
-							onClearFilters={() => setAttrs(undefined)}
-							onAttributeFilter={addAttributeFilter}
-						/>
+						<LogContextFixtureProvider logs={logs}>
+							<LogsTableView
+								allData={empty ? [] : filteredLogs}
+								isFetchingNextPage={false}
+								hasNextPage={false}
+								isCapped={false}
+								fetchNextPage={() => {}}
+								waiting={false}
+								wrap={wrap}
+								density={density}
+								pinnedColumns={pinned}
+								searchText={search}
+								embedded
+								filtered={chips.length > 0}
+								onClearFilters={() => setAttrs(undefined)}
+								onAttributeFilter={addAttributeFilter}
+							/>
+						</LogContextFixtureProvider>
 					</DashboardLayout.Fill>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>

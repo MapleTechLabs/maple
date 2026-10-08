@@ -55,6 +55,7 @@ const ListLogsInputSchema = Schema.Struct({
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 })
 
 export type ListLogsInput = (typeof ListLogsInputSchema)["Encoded"]
@@ -114,6 +115,7 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 					namespaceMatchMode: input.namespaceMatchMode,
 					attributeFilters: input.attributeFilters,
 					resourceAttributeFilters: input.resourceAttributeFilters,
+					order: input.order,
 				}),
 			})
 		}),
