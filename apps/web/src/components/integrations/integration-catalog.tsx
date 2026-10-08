@@ -26,7 +26,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { docsUrl } from "@/lib/docs"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
 import { gcpLogState, gcpScopeLabel, type GcpLogState } from "./gcp-connector-state"
@@ -288,7 +288,7 @@ const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "
  */
 export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStatus | null>> {
 	const cloudflareAccountResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -299,17 +299,17 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		}),
 	)
 	const hazelResult = useAtomValue(
-		retainedQuery("integrations", "hazelStatus", {
+		retainedInternalQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
 	const githubResult = useAtomValue(
-		retainedQuery("integrations", "githubStatus", {
+		retainedInternalQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
 	const railwayResult = useAtomValue(
-		retainedQuery("integrations", "railwayStatus", {
+		retainedInternalQuery("integrations", "railwayStatus", {
 			reactivityKeys: ["railwayIntegrationStatus"],
 		}),
 	)
@@ -536,7 +536,7 @@ const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null 
 
 export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOverview> {
 	const cloudflareResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -553,17 +553,17 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		}),
 	)
 	const hazelResult = useAtomValue(
-		retainedQuery("integrations", "hazelStatus", {
+		retainedInternalQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
 	const githubResult = useAtomValue(
-		retainedQuery("integrations", "githubStatus", {
+		retainedInternalQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
 	const railwayResult = useAtomValue(
-		retainedQuery("integrations", "railwayStatus", {
+		retainedInternalQuery("integrations", "railwayStatus", {
 			reactivityKeys: ["railwayIntegrationStatus"],
 		}),
 	)

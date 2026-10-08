@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import type { NavSurface } from "@/components/dashboard/nav-items"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { infraPresenceResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
@@ -54,7 +54,7 @@ export function useInfraSurfaces(window?: {
 
 	const presenceResult = useAtomValue(infraPresenceResultAtom({ data: { startTime, endTime } }))
 	const cloudflareResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -64,7 +64,7 @@ export function useInfraSurfaces(window?: {
 		}),
 	)
 	const railwayResult = useAtomValue(
-		retainedQuery("integrations", "railwayStatus", {
+		retainedInternalQuery("integrations", "railwayStatus", {
 			reactivityKeys: ["railwayIntegrationStatus"],
 		}),
 	)

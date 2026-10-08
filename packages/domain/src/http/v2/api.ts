@@ -84,9 +84,9 @@ const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
  * `{error:{type,code,message}}` error envelope, snake_case wire fields,
  * ISO-8601 timestamps, and scoped API keys.
  *
- * Mounted alongside the internal v1 `MapleApi`; groups are added here as they
- * are promoted to the public surface. Dashboard-only operations move to the
- * internal Effect RPC tier instead — they never appear in this API.
+ * Mounted alongside the unversioned `MapleApi` (auth protocols) and the
+ * session-only `MapleInternalApi`; groups are added here as they are promoted
+ * to the public surface. Dashboard-only operations go to `MapleInternalApi`.
  */
 export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2ApiKeysApiGroup)

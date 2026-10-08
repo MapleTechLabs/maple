@@ -40,7 +40,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { Env } from "@maple/backend/platform/Env"
-import { resolveHttpMcpTenant } from "../../mcp/lib/query-warehouse"
+import { resolveHttpMcpTenant } from "../mcp/lib/query-warehouse"
 
 const json = (body: unknown, status = 200) =>
 	HttpServerResponse.text(JSON.stringify(body), {
