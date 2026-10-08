@@ -3,12 +3,7 @@ import { DateTime, Effect, Schema, SchemaAST } from "effect"
 import { compile, from, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import {
-	errorDetailTracesQuery,
-	spanDetailQuery,
-	spanHierarchyQuery,
-	traceTimeProbeQuery,
-} from "./errors"
+import { errorDetailTracesQuery, spanDetailQuery, spanHierarchyQuery, traceTimeProbeQuery } from "./errors"
 import { getLogByKeyQuery, logsListQuery, logsTimeseriesQuery } from "./logs"
 import { sessionTraceSummariesQuery } from "./session-replays"
 import { Traces, orgIdParam } from "../tables"
@@ -70,6 +65,17 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 			yield* decodesUtc(compile(traceListQuery({}), params), ["startTime", "endTime"])
 			yield* decodesUtc(compile(spanSearchQuery({}), params), ["timestamp"])
 			yield* decodesUtc(compile(spanSearchQuery({ traceId: "t1" }), params), ["timestamp"])
+			yield* decodesUtc(
+				compile(
+					spanSearchQuery({
+						spanName: "x",
+						matchModes: { spanName: "contains" },
+						spanNameRollup: true,
+					}),
+					params,
+				),
+				["timestamp"],
+			)
 		}),
 	)
 
@@ -95,14 +101,22 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 	it.effect("trace detail reads", () =>
 		Effect.gen(function* () {
 			yield* decodesUtc(compile(spanHierarchyQuery({ traceId: "t1" }), params), ["startTime"])
-			yield* decodesUtc(compile(spanDetailQuery({ traceId: "t1", spanId: "s1" }), params), ["startTime"])
+			yield* decodesUtc(compile(spanDetailQuery({ traceId: "t1", spanId: "s1" }), params), [
+				"startTime",
+			])
 			yield* decodesUtc(compile(traceTimeProbeQuery({ traceId: "t1" }), params), ["timestamp"])
 			// The error_events side still takes string bounds.
-			const stringBounds = { ...params, startTime: "2024-01-01 00:00:00", endTime: "2024-01-02 00:00:00" }
+			const stringBounds = {
+				...params,
+				startTime: "2024-01-01 00:00:00",
+				endTime: "2024-01-02 00:00:00",
+			}
 			yield* decodesUtc(compile(errorDetailTracesQuery({ fingerprintHash: "1" }), stringBounds), [
 				"startTime",
 			])
-			yield* decodesUtc(compile(sessionTraceSummariesQuery({ traceIds: ["t1"] }), params), ["startTime"])
+			yield* decodesUtc(compile(sessionTraceSummariesQuery({ traceIds: ["t1"] }), params), [
+				"startTime",
+			])
 		}),
 	)
 
