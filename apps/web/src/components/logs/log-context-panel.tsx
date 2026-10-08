@@ -33,9 +33,9 @@ function instanceAttribute(log: Log): InstanceAttribute | undefined {
 	return key ? { key, value: log.resourceAttributes[key] ?? "" } : undefined
 }
 
-/** Same identity the drawer uses: logs carry no id, so timestamp + span + body stand in. */
+/** Logs carry no id, so the stored nanosecond timestamp + span + body stand in. */
 function contextKey(log: Log): string {
-	return `${log.timestamp}|${log.spanId ?? ""}|${log.body}`
+	return `${log.exactTimestamp}|${log.spanId ?? ""}|${log.body}`
 }
 
 function timestampMs(timestamp: string): number {
@@ -145,8 +145,10 @@ interface ContextSourceProps {
 function contextInputs(log: Log, instance: InstanceAttribute | undefined) {
 	const ms = timestampMs(log.timestamp)
 	if (Number.isNaN(ms)) return undefined
-	// The log's own timestamp keeps its sub-second part; an ISO one is rewritten to match.
-	const at = WAREHOUSE_DATETIME.test(log.timestamp) ? log.timestamp : formatWarehouseDateTimeMs(ms)
+	// Both sides include this instant; rows read twice are deduped by `contextKey`.
+	const at = WAREHOUSE_DATETIME.test(log.exactTimestamp)
+		? log.exactTimestamp
+		: formatWarehouseDateTimeMs(ms)
 	const shared: ListLogsInput = {
 		services: [log.serviceName],
 		// One extra per side: the selected log itself comes back and is dropped.
