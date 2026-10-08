@@ -189,24 +189,34 @@ describe("trace export on the way out", () => {
 })
 
 describe("log export on the way out", () => {
-	it("still gets keepalive for the exit logs after about 30 KiB of spans", async () => {
+	it("gives the newest exit logs the keepalive room that about 30 KiB of spans left", async () => {
 		const stopTracing = setupTracing(CONFIG)
 		const stopLogs = startLogs(CONFIG)
 		shutdown = async () => {
 			await stopLogs()
 			await stopTracing()
 		}
-		endSpans(24)
+		endSpans(22)
 		const names = Array.from({ length: 20 }, (_, i) => `l${i}`)
-		for (const body of names) emitLog({ severityNumber: 9, severityText: "INFO", body })
+		for (const body of names) {
+			emitLog({ severityNumber: 9, severityText: "INFO", body, attributes: { pad: "x".repeat(300) } })
+		}
 
 		// A real unload: `pagehide` flushes the spans, the `visibilitychange` after it the logs.
 		window.dispatchEvent(new Event("pagehide"))
-		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
-		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeGreaterThan(28 * KIB)
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
+		const room = 32 * KIB - (sent[0]?.bytes ?? 0) - (sent[1]?.bytes ?? 0)
+		expect(room).toBeLessThan(5 * KIB)
+
 		hide()
-		await vi.waitFor(() => expect(sent).toHaveLength(3))
-		expect(sent[2]).toMatchObject({ url: "https://ingest.test/v1/logs", keepalive: true, names })
+		await vi.waitFor(() => expect(sent).toHaveLength(4))
+		const [, , newest, older] = sent
+		const newestCount = newest?.names.length ?? 0
+		expect(newest).toMatchObject({ url: "https://ingest.test/v1/logs", keepalive: true })
+		expect(newest?.bytes).toBeLessThanOrEqual(room)
+		expect(newestCount).toBeGreaterThan(0)
+		expect(newest?.names).toEqual(names.slice(-newestCount))
+		expect(older).toMatchObject({ keepalive: false, names: names.slice(0, -newestCount) })
 	})
 
 	it("sends the newest records under keepalive when the document is hidden, then the rest", async () => {

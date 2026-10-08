@@ -268,16 +268,17 @@ describe("newestFirstOnExit", () => {
 		expect(sent.map((request) => request.names)).toEqual([["s0", "s1", "s2"]])
 	})
 
-	it("sends the older part without keepalive even when OTLP's share has room for it", () => {
+	it("gives both parts keepalive when together they fit OTLP's share", () => {
 		vi.useFakeTimers()
 		answers = ["pending"]
 		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
 		flushUnloading(() => exportBatch(exporter, spans(16, KIB)))
 
-		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
 		expect(sent[0]?.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
-		// Both would have fitted the 32 KiB share; the rest is left for the next signal.
-		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeLessThanOrEqual(32 * KIB)
+		const total = (sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)
+		expect(total).toBeGreaterThan(OTLP_UNLOAD_TAIL_BYTES)
+		expect(total).toBeLessThanOrEqual(32 * KIB)
 	})
 
 	it("sizes the tail to the room an export in flight has left", () => {
@@ -301,19 +302,17 @@ describe("newestFirstOnExit", () => {
 		expect(older).toMatchObject({ keepalive: false, names: names(batch).slice(0, -tailCount) })
 	})
 
-	it("sends one request without keepalive when not even the newest span fits", () => {
+	it("sends one request when not even the newest span fits", () => {
 		vi.useFakeTimers()
 		answers = ["pending"]
 		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
-		// Larger than the tail limit.
+		// Larger than the tail limit: no tail of its own, the whole batch asks for keepalive.
 		flushUnloading(() => exportBatch(exporter, [...spans(2), ...spans(1, 20 * KIB)]))
-		expect(sent.map((request) => [request.keepalive, request.names.length])).toEqual([[false, 3]])
+		expect(sent.map((request) => [request.keepalive, request.names.length])).toEqual([[true, 3]])
 
-		// Larger than the room an export in flight has left.
-		exportBatch(exporter, spans(22, KIB))
-		expect(sent[1]?.keepalive).toBe(true)
-		flushUnloading(() => exportBatch(exporter, spans(3, 6 * KIB)))
-		expect(sent.slice(2).map((request) => [request.keepalive, request.names.length])).toEqual([
+		// Larger than the room the request above has left.
+		flushUnloading(() => exportBatch(exporter, spans(3, 12 * KIB)))
+		expect(sent.slice(1).map((request) => [request.keepalive, request.names.length])).toEqual([
 			[false, 3],
 		])
 	})
