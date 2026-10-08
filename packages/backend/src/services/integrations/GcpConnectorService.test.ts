@@ -284,10 +284,13 @@ describe("GcpConnectorService", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const gcp = yield* GcpConnectorService
-				const wide = yield* gcp.create(orgId, userId, { ...organizationScope, metricsEnabled: false })
+				const metrics = { metricsEnabled: true }
+				const wide = yield* gcp.create(orgId, userId, organizationScope)
 				// A project inside the organization: both connectors list its resources.
-				const narrow = yield* gcp.create(orgId, userId, projectScope("acme-shop"))
-				const foreign = yield* gcp.create(otherOrgId, userId, projectScope("elsewhere"))
+				const narrow = yield* gcp.create(orgId, userId, projectScope("acme-shop", metrics))
+				// Metrics were switched off after a sync: what it listed is stale.
+				const stopped = yield* gcp.create(orgId, userId, projectScope("acme-old"))
+				const foreign = yield* gcp.create(otherOrgId, userId, projectScope("elsewhere", metrics))
 
 				const PROJECT = "cloudresourcemanager.googleapis.com/Project"
 				const RUN = "run.googleapis.com/Service"
@@ -312,6 +315,7 @@ describe("GcpConnectorService", () => {
 						"acme-shop",
 					],
 					[narrow, orgId, api, RUN, "acme-shop"],
+					[stopped, orgId, "//run.googleapis.com/projects/acme-old/services/old", RUN, "acme-old"],
 					[
 						foreign,
 						otherOrgId,
@@ -376,7 +380,7 @@ describe("GcpConnectorService", () => {
 					theirs.resources.map((resource) => resource.projectId),
 					["elsewhere"],
 				)
-			}).pipe(Effect.provide(makeLayer(testDb)))
+			}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 		},
 	)
 

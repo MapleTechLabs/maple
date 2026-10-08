@@ -24,7 +24,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { and, asc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -246,9 +246,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				filter: GcpResourceFilter,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				// Reached through the org's connectors, which is what the primary key covers.
-				// Overlapping scopes list a resource once per connector: it counts and shows once.
-				const ofOrg = eq(gcpConnectors.orgId, orgId)
+				// Reached through the org's connectors, which is what the primary key covers. One
+				// that stopped collecting keeps its last inventory, which is left out. Overlapping
+				// scopes list a resource once per connector: it counts and shows once.
+				const ofOrg = and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.metricsEnabled, true))
 				const counts = yield* dbExecute((db) =>
 					db
 						.select({
@@ -285,7 +286,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 									: eq(gcpResources.projectId, filter.projectId),
 							),
 						)
-						.orderBy(asc(gcpResources.assetType), asc(gcpResources.name))
+						.orderBy(
+							asc(gcpResources.assetType),
+							asc(gcpResources.name),
+							desc(gcpResources.lastSeenAt),
+						)
 						.limit(GCP_RESOURCES_LIMIT),
 				)
 				const byType = new Map<string, number>()

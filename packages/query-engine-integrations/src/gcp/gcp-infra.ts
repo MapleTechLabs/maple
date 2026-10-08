@@ -26,9 +26,11 @@ type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccesso
 
 /**
  * Every curated metric of one service: one row per workload (`keys`, the values of the service's
- * `identity`), metric and `label` (the metric's label value or quantile, empty without one).
- * `total` sums the window's points and `samples` counts them: a counter reads as `total`, a
- * gauge or percentile as the mean `total / samples`.
+ * `identity`), metric and `label` (the metric's label value or quantile, empty without one; for
+ * Compute Engine it repeats the instance name). `total` sums the window's points and `samples`
+ * counts them: a counter reads as `total`, a gauge or percentile as the mean `total / samples`.
+ *
+ * Connections with overlapping scopes store a series once each, which multiplies its counters.
  */
 export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 	const metrics = gcpInfraMetrics(service)
@@ -47,15 +49,17 @@ export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 		),
 		value: $.Value,
 	})
-	const inWindow = ($: MetricsAccessor, sums: boolean) => [
-		$.OrgId.eq(orgIdParam),
-		CH.inList(
-			$.MetricName,
-			metrics.filter((metric) => (metric.kind === "sum") === sums).map((metric) => metric.name),
-		),
-		$.TimeUnix.gte(param.dateTime("startTime")),
-		$.TimeUnix.lte(param.dateTime("endTime")),
-	]
+	// A tuple, so the params of each condition stay in the query's type.
+	const inWindow = ($: MetricsAccessor, sums: boolean) =>
+		[
+			$.OrgId.eq(orgIdParam),
+			CH.inList(
+				$.MetricName,
+				metrics.filter((metric) => (metric.kind === "sum") === sums).map((metric) => metric.name),
+			),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+		] as const
 	return fromUnion(
 		unionAll(
 			from(MetricsSum)

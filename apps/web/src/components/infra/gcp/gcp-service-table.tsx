@@ -28,7 +28,7 @@ function Columns({ service, sort }: { service: GcpInfraServiceId; sort?: SortCon
 	return (
 		<>
 			<ColumnHead<string>
-				label={GCP_INFRA_SERVICES[service].identity[0]?.[0] ?? "Name"}
+				label={GCP_INFRA_SERVICES[service].identity[0][0]}
 				sortKey={GCP_NAME_SORT}
 				{...sort}
 				width={NAME_WIDTH}
@@ -80,7 +80,7 @@ export function GcpServiceTable({
 	const columns = GCP_INFRA_COLUMNS[service]
 	const [query, setQuery] = useState("")
 	const { sortKey, sortDir, handleSort } = useSortState<string>({
-		initialKey: columns[0]?.label ?? GCP_NAME_SORT,
+		initialKey: columns[0].label,
 		stringKeys: [GCP_NAME_SORT],
 	})
 
@@ -133,7 +133,7 @@ export function GcpServiceTable({
 								items={workload.keys.slice(1)}
 								title={identity
 									.slice(1)
-									.map(([label], index) => `${label}: ${workload.keys[index + 1] ?? ""}`)
+									.map(([label], index) => `${label}: ${workload.keys[index + 1]}`)
 									.join(" · ")}
 							/>
 						</div>

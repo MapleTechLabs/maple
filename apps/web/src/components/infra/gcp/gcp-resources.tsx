@@ -8,7 +8,9 @@ import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 import { ColumnHead, DataTable, MetaChip } from "@/components/common/data-table"
 import { ResultView } from "@/components/common/result-view"
 import { CircleWarningIcon } from "@/components/icons"
+import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { gcpAssetTypeLabel, gcpResourceName } from "./tabs"
@@ -19,6 +21,8 @@ export interface GcpResourceFilter {
 }
 
 const ALL = "all"
+/** Re-reads while the inventory is empty, so the first sync shows up without a reload. */
+const EMPTY_REFRESH_MS = 30_000
 const MAX_LABELS = 3
 
 function FilterSelect({
@@ -180,12 +184,16 @@ export function GcpResources({
 	/** Why the latest inventory sync was incomplete, if it was. */
 	syncError: string | null
 }) {
-	const result = useRefreshableAtomValue(
-		retainedInternalQuery("integrations", "gcpResources", {
-			query: { assetType: filter.type, projectId: filter.project },
-			reactivityKeys: ["gcpResources"],
-		}),
-	)
+	// Keyed like the connector status, so changing or removing a connection re-reads it.
+	const query = retainedInternalQuery("integrations", "gcpResources", {
+		query: { assetType: filter.type, projectId: filter.project },
+		reactivityKeys: ["gcpIntegration"],
+	})
+	const result = useRefreshableAtomValue(query)
+	const empty = Result.builder(result)
+		.onSuccess((inventory) => inventory.types.length === 0)
+		.orElse(() => false)
+	useIntervalRefresh(useAtomRefresh(query), { intervalMs: EMPTY_REFRESH_MS, enabled: empty })
 
 	return (
 		<div className="space-y-4">

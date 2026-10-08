@@ -5,6 +5,7 @@
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
@@ -15,7 +16,14 @@ import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../pl
 import { railwayInScope } from "../railway/railway-service-table"
 import type { Tone } from "../severity-tokens"
 
-export type SourceId = "hosts" | "containers" | "kubernetes" | "cloudflare" | "railway" | "planetscale"
+export type SourceId =
+	| "hosts"
+	| "containers"
+	| "kubernetes"
+	| "cloudflare"
+	| "railway"
+	| "planetscale"
+	| "gcp"
 
 export type FindingTone = Extract<Tone, "crit" | "warn"> | "stale"
 
@@ -267,6 +275,20 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 				: "all under 60% of limit",
 		headlineTone: worstTone(findings),
 		findings,
+	}
+}
+
+/** Google Cloud has no thresholds yet: the row names what reports and opens its tables. */
+export function summarizeGcp(services: ReadonlyArray<GcpInfraServiceId>): SourceSummary {
+	return {
+		resources: countLabel(services.length, "service"),
+		segments: [],
+		headline:
+			services.length > 0
+				? services.map((service) => GCP_INFRA_SERVICES[service].title).join(", ")
+				: "no metrics in this window",
+		headlineTone: "neutral",
+		findings: [],
 	}
 }
 

@@ -16,6 +16,7 @@ import {
 	ChevronRightIcon,
 	CloudflareIcon,
 	DockerIcon,
+	GoogleCloudIcon,
 	KubernetesIcon,
 	PlanetScaleIcon,
 	RailwayIcon,
@@ -28,6 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	cloudflareZonesResultAtom,
 	containersSummaryResultAtom,
+	gcpInfraPresenceResultAtom,
 	getServiceMapPlanetScaleResultAtom,
 	listHostsResultAtom,
 	podsSummaryResultAtom,
@@ -43,6 +45,7 @@ import {
 	type SourceSummary,
 	summarizeCloudflare,
 	summarizeContainers,
+	summarizeGcp,
 	summarizeHosts,
 	summarizePlanetScale,
 	summarizePods,
@@ -61,6 +64,7 @@ export const SOURCE_ORDER: ReadonlyArray<SourceId> = [
 	"cloudflare",
 	"railway",
 	"planetscale",
+	"gcp",
 ]
 
 export const SOURCE_TITLE: Record<SourceId, string> = {
@@ -70,6 +74,7 @@ export const SOURCE_TITLE: Record<SourceId, string> = {
 	cloudflare: "Cloudflare",
 	railway: "Railway",
 	planetscale: "PlanetScale",
+	gcp: "Google Cloud",
 } satisfies Record<SourceId, string>
 
 /**
@@ -84,6 +89,7 @@ const SOURCE_ICON: Record<SourceId, IconComponent> = {
 	cloudflare: CloudflareIcon,
 	railway: RailwayIcon,
 	planetscale: PlanetScaleIcon,
+	gcp: GoogleCloudIcon,
 } satisfies Record<SourceId, IconComponent>
 
 function SourceMark({ id, size }: { id: SourceId; size: number }) {
@@ -98,6 +104,7 @@ const SOURCE_SURFACES: Record<SourceId, ReadonlyArray<NavSurface>> = {
 	cloudflare: ["cloudflare"],
 	railway: ["railway"],
 	planetscale: ["planetscale"],
+	gcp: ["gcp"],
 } satisfies Record<SourceId, ReadonlyArray<NavSurface>>
 
 /** The sources an org has. Unknown presence (`null`) shows every source rather than hiding one. */
@@ -150,6 +157,11 @@ function PlanetScaleData({ window, render }: { window: OverviewWindow; render: R
 	return render(toState(result, (response) => summarizePlanetScale(response.databases)))
 }
 
+function GcpData({ window, render }: { window: OverviewWindow; render: RenderState }) {
+	const result = useAtomValue(gcpInfraPresenceResultAtom({ data: window }))
+	return render(toState(result, (response) => summarizeGcp(response.services)))
+}
+
 /**
  * One source's summary, handed to `render`. The findings list and the sources
  * table each mount this for the same source; both read one cached atom.
@@ -168,6 +180,8 @@ function SourceData({ id, window, render }: { id: SourceId; window: OverviewWind
 			return <RailwayData window={window} render={render} />
 		case "planetscale":
 			return <PlanetScaleData window={window} render={render} />
+		case "gcp":
+			return <GcpData window={window} render={render} />
 	}
 }
 
@@ -471,6 +485,12 @@ export function SourceLink({
 		case "planetscale":
 			return (
 				<Link to="/infra/planetscale" search={timeSearch} className={className}>
+					{children}
+				</Link>
+			)
+		case "gcp":
+			return (
+				<Link to="/infra/gcp" search={timeSearch} className={className}>
 					{children}
 				</Link>
 			)

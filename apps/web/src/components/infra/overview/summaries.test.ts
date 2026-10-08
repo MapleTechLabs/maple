@@ -7,6 +7,7 @@ import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 import type { HostRow } from "../host-table"
 import {
 	summarizeCloudflare,
+	summarizeGcp,
 	summarizeHosts,
 	summarizePlanetScale,
 	summarizePods,
@@ -139,6 +140,18 @@ describe("summarizeRailway", () => {
 			{ key: "saturated", count: 0 },
 			{ key: "unbounded", count: 1 },
 		])
+	})
+})
+
+describe("summarizeGcp", () => {
+	it("names the services that report and raises nothing", () => {
+		expect(summarizeGcp(["cloudRun", "cloudSql"])).toMatchObject({
+			resources: "2 services",
+			headline: "Cloud Run, Cloud SQL",
+			headlineTone: "neutral",
+			findings: [],
+		})
+		expect(summarizeGcp([]).headline).toBe("no metrics in this window")
 	})
 })
 

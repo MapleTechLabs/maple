@@ -102,7 +102,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Memory p95", "bytes", (m) => m.mean(`${FUNCTION}.user_memory_bytes`, "0.95")),
 	],
 	gke: [
-		// A point is the CPU seconds used in one minute.
+		// A point is the CPU seconds used in one minute: the mean covers the minutes it ran.
 		column("CPU cores", "decimal", (m) => {
 			const seconds = m.mean(`${CONTAINER}.cpu.core_usage_time`)
 			return seconds === undefined ? undefined : seconds / 60
@@ -208,7 +208,7 @@ export function sortGcpWorkloads(
 	const sign = sort.dir === "asc" ? 1 : -1
 	const index = GCP_INFRA_COLUMNS[service].findIndex((spec) => spec.label === sort.key)
 	return [...workloads].sort((a, b) => {
-		if (sort.key === GCP_NAME_SORT) return sign * (a.keys[0] ?? "").localeCompare(b.keys[0] ?? "")
+		if (sort.key === GCP_NAME_SORT) return sign * a.keys[0].localeCompare(b.keys[0])
 		const left = a.values[index]
 		const right = b.values[index]
 		if (left === undefined || right === undefined) {

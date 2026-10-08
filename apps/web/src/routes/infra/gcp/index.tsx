@@ -135,11 +135,8 @@ function GcpPage() {
 	)
 }
 
-/** Re-reads while a new connection has delivered nothing, so the page fills in without a reload. */
+/** Re-reads while nothing has arrived, so the page fills in without a reload. */
 const WAITING_REFRESH_MS = 30_000
-
-/** Stable empty fallback, so the notice does not recompute on every render. */
-const NO_SERVICES: ReadonlyArray<GcpInfraServiceId> = []
 
 function GcpInfra({
 	connectors,
@@ -162,22 +159,26 @@ function GcpInfra({
 
 	const reporting = Result.builder(presenceResult)
 		.onSuccess((presence) => presence.services)
-		.orElse(() => NO_SERVICES)
+		.orElse((): ReadonlyArray<GcpInfraServiceId> => [])
 	const notice = Result.isSuccess(presenceResult) ? gcpInfraNotice(connectors, reporting.length > 0) : null
 	const waiting = notice?.kind === "waiting"
-	useIntervalRefresh(refreshPresence, { intervalMs: WAITING_REFRESH_MS, enabled: waiting })
+	// The first read flips the status before its metrics are queryable, so a quiet page keeps
+	// looking. A fixed range is left alone: it cannot gain new metrics.
+	const quiet = notice?.kind === "quiet" && search.startTime === undefined
+	useIntervalRefresh(refreshPresence, { intervalMs: WAITING_REFRESH_MS, enabled: waiting || quiet })
 	useIntervalRefresh(refreshStatus, { intervalMs: WAITING_REFRESH_MS, enabled: waiting })
 
 	const tabs = gcpInfraTabs(reporting, search.tab)
-	const tab = search.tab ?? tabs[0] ?? GCP_RESOURCES_TAB
+	const tab = search.tab ?? tabs[0]
 
 	return (
 		<ResultView result={presenceResult} loading={<Skeleton className="h-64 w-full" />}>
 			{() => (
 				<div className="space-y-6">
 					{notice === null ? null : <GcpNotice notice={notice} />}
-					<Tabs value={tab} className="min-w-0 overflow-x-auto">
-						<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
+					{/* The strip scrolls sideways on a phone; the bottom pixel is the active underline. */}
+					<Tabs value={tab} className="-mx-2 overflow-x-auto pb-px">
+						<TabsList variant="underline" className="gap-x-1 py-0">
 							{tabs.map((candidate) => (
 								<TabsTrigger
 									key={candidate}
