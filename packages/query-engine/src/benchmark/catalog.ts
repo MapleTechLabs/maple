@@ -1236,7 +1236,13 @@ export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): R
 }
 
 const ROW_SOURCE_RE = /\b(?:FROM|JOIN|UNION ALL|AS)[\s(]*$/
-const STRING_LITERAL_RE = /'(?:[^'\\]|\\.)*'/g
+
+/** Index just past the string literal that opens at `start`. */
+const literalEnd = (sql: string, start: number): number => {
+	let i = start + 1
+	while (i < sql.length && sql[i] !== "'") i += sql[i] === "\\" ? 2 : 1
+	return i + 1
+}
 
 /**
  * `sql` without the subqueries it only consults. A scalar or `IN (SELECT …)`
@@ -1247,21 +1253,27 @@ const STRING_LITERAL_RE = /'(?:[^'\\]|\\.)*'/g
  * possibly behind more opening parentheses.
  */
 function withoutLookupSubqueries(sql: string): string {
-	// A parenthesis inside a literal would unbalance the scan below.
-	const text = sql.replace(STRING_LITERAL_RE, "''")
 	let kept = ""
-	for (let i = 0; i < text.length; i++) {
-		if (!text.startsWith("(SELECT", i) || ROW_SOURCE_RE.test(text.slice(0, i))) {
-			kept += text[i]
-			continue
+	let i = 0
+	while (i < sql.length) {
+		if (sql[i] === "'") {
+			// Literal contents are dropped: a parenthesis inside one would unbalance the scan.
+			i = literalEnd(sql, i)
+			kept += "''"
+		} else if (sql.startsWith("(SELECT", i) && !ROW_SOURCE_RE.test(kept)) {
+			let depth = 0
+			do {
+				if (sql[i] === "'") {
+					i = literalEnd(sql, i)
+				} else {
+					if (sql[i] === "(") depth++
+					else if (sql[i] === ")") depth--
+					i++
+				}
+			} while (depth > 0 && i < sql.length)
+		} else {
+			kept += sql[i++]
 		}
-		let depth = 0
-		do {
-			if (text[i] === "(") depth++
-			else if (text[i] === ")") depth--
-			i++
-		} while (depth > 0 && i < text.length)
-		i--
 	}
 	return kept
 }
