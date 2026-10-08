@@ -16,8 +16,7 @@ import {
 import { router, type RouterAuthContext } from "./router"
 import { AppErrorBoundary } from "./components/app-error-boundary"
 import { BootSplash } from "./components/boot-splash"
-import { appRegistry, mapleRuntime } from "./lib/registry"
-import { startFetchTimingReporter } from "./lib/services/common/fetch-timing"
+import { appRegistry } from "./lib/registry"
 import { clearChunkReloadGuard, shouldAttemptChunkReload } from "./lib/chunk-reload"
 import { initPerfVitals } from "./lib/perf-vitals"
 import "./styles.css"
@@ -42,8 +41,6 @@ window.addEventListener("load", () => {
 // Web Vitals + long-frame RUM for the dashboard itself (prod only) — the
 // signal that makes frontend lag/freeze regressions visible in Maple.
 initPerfVitals()
-// DNS/TLS/TTFB phases of each API call, as child spans of its http.client span.
-startFetchTimingReporter((effect) => mapleRuntime.runFork(effect))
 
 const root = document.getElementById("app")
 
