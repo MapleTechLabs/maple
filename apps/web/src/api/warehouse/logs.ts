@@ -116,7 +116,8 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 	)
 
 	const logs = coerceLogRows(logsResult.data)
-	const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].timestamp : null
+	// The exact stored literal: a millisecond cursor would skip rows sharing the boundary millisecond.
+	const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].exactTimestamp : null
 
 	return {
 		data: logs,

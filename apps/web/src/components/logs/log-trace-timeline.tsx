@@ -93,7 +93,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 					<ErrorState error={error} title="Failed to load trace logs" variant="inline" />
 				))
 				.onSuccess((data) => {
-					const logs = data.data.toSorted((a, b) => a.timestamp.localeCompare(b.timestamp))
+					const logs = data.data.toSorted((a, b) => a.exactTimestamp.localeCompare(b.exactTimestamp))
 
 					if (logs.length <= 1) {
 						return <EmptyMessage>No other logs in this trace</EmptyMessage>

@@ -26,7 +26,7 @@ import type {
 	ColumnDefs,
 	JoinedColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import { Schema } from "effect"
+import { type DateTime, Schema } from "effect"
 import { ProductEvents, IdentityLinks, SessionReplays, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
@@ -49,7 +49,7 @@ export function flag(cond: CH.Condition): CH.Expr<number> {
 // timestamp as epoch milliseconds and the window is `windowSeconds * 1000`.
 // Milliseconds rather than `toDateTime()` so two events in the same second
 // (page load → track()) keep their real order instead of tying.
-export function epochMs(ts: CH.Expr<string>): CH.Expr<number> {
+export function epochMs(ts: CH.Expr<DateTime.Utc>): CH.Expr<number> {
 	return CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Milli", ts))
 }
 
@@ -408,8 +408,8 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				}))
 				.where(($) => [
 					$.OrgId.eq(orgIdParam),
-					$.StartTime.gte(param.dateTimeString("startTime")),
-					$.StartTime.lte(param.dateTimeString("endTime")),
+					$.StartTime.gte(param.dateTime("startTime")),
+					$.StartTime.lte(param.dateTime("endTime")),
 				])
 				.groupBy("SessionId")
 		: undefined
@@ -456,8 +456,8 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 			)
 			return [
 				$.OrgId.eq(orgIdParam),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 				anyStep,
 				key.neq(""),
 				hasPopulationFilter(filters)
@@ -505,8 +505,8 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			return [
 				$.OrgId.eq(orgIdParam),
-				$.StartTime.gte(param.dateTimeString("startTime")),
-				$.StartTime.lte(param.dateTimeString("endTime")),
+				$.StartTime.gte(param.dateTime("startTime")),
+				$.StartTime.lte(param.dateTime("endTime")),
 				sessionDimensionColumn($, step.dimension).eq(step.value),
 				key.neq(""),
 				hasPopulationFilter(filters)
@@ -683,8 +683,8 @@ export function productEventNamesQuery(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			CH.when(filters.host, (v: string) => $.Host.eq(v)),
 			needsSessionSemiJoin(filters) || filters.pagePath !== undefined
 				? inSubquery(
@@ -711,7 +711,7 @@ export function productEventNamesQuery(
 // already derives, so a declared copy would only drift.
 
 export interface ProductEventForTraceOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly eventName: string
 	readonly spanId: string
 	readonly serviceName: string
@@ -749,8 +749,8 @@ export function productEventsForTraceQuery(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.TraceId.eq(param.string("traceId")),
 		])
 		.orderBy(["timestamp", "asc"], ["spanId", "asc"])
@@ -761,7 +761,7 @@ export function productEventsForTraceQuery(
 export interface ProductEventTraceSampleOutput {
 	readonly traceId: string
 	readonly spanId: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly serviceName: string
 	readonly userId: string
 	readonly visitorId: string
@@ -790,8 +790,8 @@ export function productEventTraceSamplesQuery(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.EventName.eq(param.string("eventName")),
 			$.TraceId.neq(""),
 		])
@@ -831,8 +831,8 @@ function personEventsBranch(plan: FunnelPlan) {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			return [
 				$.OrgId.eq(orgIdParam),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 				key.neq(""),
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))

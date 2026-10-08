@@ -38,8 +38,6 @@ export const TELEMETRY_WINDOW_DAYS = 7
 const OPEN_ISSUE_WINDOW = Duration.days(14)
 
 /** A deployed version's first-seen time, decoded where the warehouse string enters. */
-const decodeFirstSeen = Schema.decodeUnknownEffect(Schema.DateTimeUtcFromString)
-
 /** Issues no longer anyone's problem. */
 const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
 const ISSUE_SCAN_LIMIT = 500
@@ -361,19 +359,15 @@ export class PrReviewTelemetryService extends Context.Service<
 					),
 				{ concurrency: 4 },
 			).pipe(
-				// Each version's first-seen time decoded at the warehouse boundary: a malformed one fails
-				// the read, which the tick retries, rather than dropping the deploy.
-				Effect.flatMap((perService) =>
-					Effect.forEach(perService.flat(), (row) =>
-						decodeFirstSeen(row.firstSeen).pipe(
-							Effect.map((firstSeen): Deployment => ({
-								service: row.serviceName,
-								environment: row.environment,
-								commitSha: row.commitSha,
-								firstSeen,
-							})),
-						),
-					),
+				// `firstSeen` is decoded by the row schema: a malformed one fails the read, which the
+				// tick retries, rather than dropping the deploy.
+				Effect.map((perService) =>
+					perService.flat().map((row): Deployment => ({
+						service: row.serviceName,
+						environment: row.environment,
+						commitSha: row.commitSha,
+						firstSeen: row.firstSeen,
+					})),
 				),
 				Effect.map((versions) =>
 					versions

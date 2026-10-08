@@ -12,6 +12,7 @@
 // removing, or retyping a selected column without touching the interface is a
 // typecheck error here.
 
+import type { DateTime } from "effect"
 import { expectTypeOf } from "expect-type"
 import type {
 	ErrorDetailTracesOutput,
@@ -54,8 +55,11 @@ import {
 	serviceUsageQuery,
 } from "./queries/services"
 
-/** The output a query builder produces, for a function returning one. */
-type OutputOf<F extends (...args: never) => object> = InferQueryOutput<ReturnType<F>>
+/** A decoded row in wire form: the pipe executor encodes a `DateTime.Utc` back to its string. */
+type Wire<Row> = { readonly [K in keyof Row]: Row[K] extends DateTime.Utc ? string : Row[K] }
+
+/** The wire output a query builder produces, for a function returning one. */
+type OutputOf<F extends (...args: never) => object> = Wire<InferQueryOutput<ReturnType<F>>>
 
 /**
  * `true` only when two objects have exactly the same keys.

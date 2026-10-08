@@ -439,9 +439,9 @@ const getErrorsSparkEffect = Effect.fn("QueryEngine.getErrorsSpark")(function* (
 
 	const byFingerprint = new Map<string, ErrorsTimeseriesItem[]>()
 	for (const raw of result.data) {
-		const hash = String(raw.fingerprintHash)
+		const hash = raw.fingerprintHash
 		const points = byFingerprint.get(hash)
-		const point = { bucket: String(raw.bucket), count: Number(raw.count) }
+		const point = { bucket: raw.bucket, count: Number(raw.count) }
 		if (points) points.push(point)
 		else byFingerprint.set(hash, [point])
 	}

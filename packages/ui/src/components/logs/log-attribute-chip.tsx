@@ -41,6 +41,7 @@ export interface LogAttributeChipProps {
 	attrKey: string
 	value: string
 	tone: ChipTone
+	className?: string
 }
 
 /**
@@ -67,7 +68,7 @@ export interface LogAttributeChipProps {
  * the stable button rather than by Base UI's hover machinery, which is the price
  * of not having a Base UI trigger for that machinery to attach to.
  */
-export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps) {
+export function LogAttributeChip({ attrKey, value, tone, className }: LogAttributeChipProps) {
 	const [open, setOpen] = useState(false)
 	const triggerRef = useRef<HTMLButtonElement>(null)
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -151,13 +152,15 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 					}
 				}}
 				className={cn(
-					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					TONE_CLASSES[tone],
+					className,
 				)}
 			>
-				<span className="opacity-70">{displayKey}</span>
-				<span className="opacity-40">:</span>
-				<span>{displayValue}</span>
+				<span className="shrink-0 opacity-70">{displayKey}</span>
+				<span className="shrink-0 opacity-40">:</span>
+				{/* Ellipsizes only when a caller caps the chip's width. */}
+				<span className="min-w-0 truncate">{displayValue}</span>
 			</button>
 			{open && (
 				<HoverCard open onOpenChange={(next) => !next && closeNow()}>
