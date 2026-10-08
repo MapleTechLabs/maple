@@ -33,9 +33,9 @@ function instanceAttribute(log: Log): InstanceAttribute | undefined {
 	return key ? { key, value: log.resourceAttributes[key] ?? "" } : undefined
 }
 
-/** Logs carry no id, so the stored nanosecond timestamp + span + body stand in. */
+/** The query's record hash when the row has one; else nanosecond timestamp + span + body. */
 function contextKey(log: Log): string {
-	return `${log.exactTimestamp}|${log.spanId ?? ""}|${log.body}`
+	return log.recordIdentity ?? `${log.exactTimestamp}|${log.spanId ?? ""}|${log.body}`
 }
 
 function timestampMs(timestamp: string): number {

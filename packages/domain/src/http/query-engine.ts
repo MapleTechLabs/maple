@@ -1119,7 +1119,7 @@ export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequ
 	/** Scopes a log's surrounding context to one instance (`k8s.pod.name`, `service.instance.id`). */
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	limit: Schema.optional(Schema.Number),
-	/** `asc` reads oldest-first from `startTime`. Defaults to newest-first; `cursor` is desc-only. */
+	/** `asc` reads oldest-first from `startTime`. Defaults to newest-first; `cursor` follows the order. */
 	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 }) {}
 

@@ -201,6 +201,8 @@ const LogRow = React.memo(function LogRow({
 				role="listitem"
 				onClick={() => onClick(log)}
 				onKeyDown={(e) => {
+					// Keys pressed on a nested control (chips, row actions) belong to it, not the row.
+					if (e.target !== e.currentTarget) return
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault()
 						onClick(log)

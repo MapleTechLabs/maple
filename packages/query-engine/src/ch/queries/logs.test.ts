@@ -645,6 +645,15 @@ describe("logsListQuery", () => {
 		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
 	})
 
+	it("continues an asc page past its cursor, not behind it", () => {
+		const cursor = "2026-10-08 14:30:00.123456789"
+		const asc = compileUnsafe(logsListQuery({ limit: 25, order: "asc", cursor }), baseParams).sql
+		expect(asc).toMatch(/Timestamp > '2026-10-08 14:30:00\.123456789'/)
+		expect(asc).not.toMatch(/Timestamp < '2026-10-08 14:30:00\.123456789'/)
+		const desc = compileUnsafe(logsListQuery({ limit: 25, cursor }), baseParams).sql
+		expect(desc).toMatch(/Timestamp < '2026-10-08 14:30:00\.123456789'/)
+	})
+
 	it("keeps the desc query unchanged when order is explicit", () => {
 		const implicit = compileUnsafe(logsListQuery({ limit: 25 }), baseParams).sql
 		const explicit = compileUnsafe(logsListQuery({ limit: 25, order: "desc" }), baseParams).sql

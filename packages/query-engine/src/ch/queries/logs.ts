@@ -566,11 +566,11 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 
 export interface LogsListOpts extends LogsQueryOpts {
 	minSeverity?: number
-	/** A previous row's `exactTimestamp`: only rows older than it. */
+	/** A previous row's `exactTimestamp`: only rows past it in `order` (older for desc, newer for asc). */
 	cursor?: string
 	limit?: number
 	offset?: number
-	/** `asc` reads oldest-first from `startTime` (a log's surrounding context). Cursors are desc-only. */
+	/** `asc` reads oldest-first from `startTime` (a log's surrounding context). Cursors follow it. */
 	order?: "asc" | "desc"
 	cursorIdentity?: {
 		/** The boundary row's `exactTimestamp`. */
@@ -615,6 +615,11 @@ export function logsListQuery(opts: LogsListOpts) {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
 	const order = opts.order ?? "desc"
+	// Pages continue in the read direction; the tie-breakers below sort ascending either way.
+	const pastCursor = ($: ColumnAccessor<typeof Logs.columns>, exactTimestamp: string) =>
+		order === "asc"
+			? $.Timestamp.gt(exactDateTime64(exactTimestamp))
+			: $.Timestamp.lt(exactDateTime64(exactTimestamp))
 
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
@@ -626,9 +631,9 @@ export function logsListQuery(opts: LogsListOpts) {
 		opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
 		CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
 		CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
-		CH.when(opts.cursor, (v: string) => $.Timestamp.lt(exactDateTime64(v))),
+		CH.when(opts.cursor, (v: string) => pastCursor($, v)),
 		opts.cursorIdentity
-			? $.Timestamp.lt(exactDateTime64(opts.cursorIdentity.timestamp)).or(
+			? pastCursor($, opts.cursorIdentity.timestamp).or(
 					$.Timestamp.eq(exactDateTime64(opts.cursorIdentity.timestamp)).and(
 						$.ServiceName.gt(opts.cursorIdentity.serviceName).or(
 							$.ServiceName.eq(opts.cursorIdentity.serviceName).and(
