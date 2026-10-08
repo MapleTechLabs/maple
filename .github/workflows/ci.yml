@@ -122,6 +122,8 @@ jobs:
                         # it. Without these two the PR that broke every main chart
                         # would still skip the only job that could have caught it.
                         - 'packages/query-engine/**'
+                        # The sweep analyzes the integration builders too.
+                        - 'packages/query-engine-integrations/**'
                         - 'packages/domain/src/clickhouse/**'
                         - 'packages/domain/src/tinybird/**'
                         # The migrations this job replays, and the datasource
