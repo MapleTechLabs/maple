@@ -208,11 +208,11 @@ describe("startEventSink resend after a failed flush", () => {
 		sink.stop()
 	})
 
-	it("does not resend a flush that was in flight across pagehide", async () => {
+	it("does not resend a flush that was in flight when the page was hidden", async () => {
 		const sink = startEventSink(CONFIG, "sess-retry-4")
 		// An unloading document sees the POST reject even when ingest answered it.
 		post.mockImplementationOnce(async () => {
-			window.dispatchEvent(new Event("pagehide"))
+			document.dispatchEvent(new Event("visibilitychange"))
 			return "failed"
 		})
 		await sink.flush()

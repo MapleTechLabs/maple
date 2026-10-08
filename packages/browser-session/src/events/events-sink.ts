@@ -135,12 +135,14 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 	let clickCount = 0
 	let errorCount = 0
 
-	let pageHides = 0
-	const onPageHide = (): void => {
-		pageHides++
+	// Bumped when the page is hidden (which every unload does first) or shown
+	// again; `flush` reads it to tell whether a POST was in flight across one.
+	let visibilityChanges = 0
+	const onVisibilityChange = (): void => {
+		visibilityChanges++
 	}
-	const pageHideTarget = typeof window === "undefined" ? undefined : window
-	pageHideTarget?.addEventListener("pagehide", onPageHide)
+	const visibilityTarget = typeof document === "undefined" ? undefined : document
+	visibilityTarget?.addEventListener("visibilitychange", onVisibilityChange)
 
 	const flush = async (keepalive = false): Promise<void> => {
 		if (buffer.length === 0 && retry.length === 0) return
@@ -148,14 +150,15 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		retry = []
 		buffer = []
 		bufferBytes = 0
-		const hidesAtSend = pageHides
+		const changesAtSend = visibilityChanges
 		const rows = batch.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
 		const outcome = await postSessionEvents(config, rows, keepalive)
 		// `session_events` has no dedup, so a row sent twice is counted twice:
-		// resend only when no response came back from a live page. A POST sent on
-		// the way out (keepalive), or in flight across `pagehide`, rejects in the
-		// unloading document even when ingest answered it.
-		if (outcome !== "failed" || keepalive || pageHides !== hidesAtSend) return
+		// resend only when no response came back and the page stayed in view. A
+		// POST sent on the way out (keepalive), or in flight when the page was
+		// hidden, can reject even though ingest answered it: an unloading document
+		// never sees the response.
+		if (outcome !== "failed" || keepalive || visibilityChanges !== changesAtSend) return
 		// Newest first, so the byte cap drops the oldest.
 		let bytes = 0
 		retry = [...batch, ...retry]
@@ -218,7 +221,7 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		flush,
 		stop: () => {
 			clearInterval(flushTimer)
-			pageHideTarget?.removeEventListener("pagehide", onPageHide)
+			visibilityTarget?.removeEventListener("visibilitychange", onVisibilityChange)
 			stopNavigation()
 			stopBaselineCapture()
 			if (holder()[SINK_KEY]?.sink === sink) holder()[SINK_KEY] = undefined
