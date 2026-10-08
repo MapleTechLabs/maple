@@ -152,27 +152,22 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
-			const checkCapabilities = (
+			const capabilityError = (
 				flags: { readonly logsEnabled: boolean; readonly metricsEnabled: boolean },
 				turningMetricsOn: boolean,
-			): Effect.Effect<void, GcpCapabilityError> => {
+			): GcpCapabilityError | undefined => {
 				if (!flags.logsEnabled && !flags.metricsEnabled) {
-					return Effect.fail(
-						new IntegrationsValidationError({
-							message:
-								"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
-						}),
-					)
+					return new IntegrationsValidationError({
+						message:
+							"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
+					})
 				}
 				if (turningMetricsOn && mapleServiceAccountEmail === undefined) {
-					return Effect.fail(
-						new GcpMetricsUnavailableError({
-							message:
-								"Metrics and resource collection is not available on this Maple deployment.",
-						}),
-					)
+					return new GcpMetricsUnavailableError({
+						message: "Metrics and resource collection is not available on this Maple deployment.",
+					})
 				}
-				return Effect.void
+				return undefined
 			}
 
 			const selectRow = (orgId: OrgId, connectorId: GcpConnectorId) =>
@@ -233,7 +228,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					"maple.gcp.scope_type": input.scopeType,
 					"maple.gcp.scope_id": input.scopeId,
 				})
-				yield* checkCapabilities(input, input.metricsEnabled)
+				const invalid = capabilityError(input, input.metricsEnabled)
+				if (invalid !== undefined) return yield* Effect.fail(invalid)
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
 				const encrypted = yield* encryptAes256Gcm(
@@ -282,21 +278,36 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const current = yield* selectRow(orgId, connectorId)
-				const flags = {
-					logsEnabled: patch.logsEnabled ?? current.logsEnabled,
-					metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
-				}
-				yield* checkCapabilities(flags, patch.metricsEnabled === true)
 				const updatedAt = msToDate(yield* Clock.currentTimeMillis)
-				const [row] = yield* dbExecute((db) =>
-					db
-						.update(gcpConnectors)
-						.set({ ...flags, updatedAt })
-						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-						.returning(),
+				const outcome = yield* dbExecute((db) =>
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							// The row lock keeps one capability on when two updates race.
+							const [current] = yield* tx
+								.select()
+								.from(gcpConnectors)
+								.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
+								.limit(1)
+								.for("update")
+							if (current === undefined) return undefined
+							const flags = {
+								logsEnabled: patch.logsEnabled ?? current.logsEnabled,
+								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
+							}
+							const invalid = capabilityError(flags, patch.metricsEnabled === true)
+							if (invalid === undefined) {
+								yield* tx
+									.update(gcpConnectors)
+									.set({ ...flags, updatedAt })
+									.where(eq(gcpConnectors.id, connectorId))
+							}
+							return { row: { ...current, ...flags }, invalid }
+						}),
+					),
 				)
-				if (row === undefined) return yield* notFound()
+				if (outcome === undefined) return yield* notFound()
+				if (outcome.invalid !== undefined) return yield* Effect.fail(outcome.invalid)
+				const { row } = outcome
 				return toConnector(row, (yield* projectCounts([row.id])).get(row.id))
 			})
 
