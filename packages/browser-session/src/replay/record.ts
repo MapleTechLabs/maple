@@ -70,9 +70,11 @@ export interface Recorder {
 // recorder start of its session: the next page load, or this page shown again.
 // A keepalive flush holds under FLUSH_BYTES of events, which bounds what is stored.
 //
-// An earlier page's chunk older than this is discarded instead of sent: consent
-// withdrawn by a reload is never seen as a revoke, and must not be outlived by
-// long. This page's own chunk has no such gap, since a revoke here removes it.
+// An earlier page's chunk is sent only to its own session and only this young:
+// consent withdrawn by a reload is never seen as a revoke, and must not be
+// outlived by long. This page's own chunk has no such gap (a revoke here removes
+// it), so it is sent whenever the page is shown again, under its own session
+// even if that one rotated out while the page was hidden.
 const MAX_PENDING_AGE_MS = 10 * 60_000
 const PAGE_STARTED_AT = Date.now()
 
@@ -137,15 +139,15 @@ function takePending(meta: ChunkMeta): boolean {
 	return chunk?.sessionId === meta.sessionId && chunk.chunkSeq === meta.chunkSeq && clearPendingChunk()
 }
 
-/** Send the chunk an earlier flush of this session left behind; any other stored chunk is dropped. */
+/** Send the chunk an earlier flush left behind, if it is still this recorder's to send; otherwise drop it. */
 function sendPendingChunk(config: IngestConfig, sessionId: string): void {
 	const chunk = readPending()
 	if (!chunk) return
 	const sendable =
-		chunk.sessionId === sessionId &&
 		chunk.target === targetOf(config) &&
 		chunk.createdAt > consentRevokedAt() &&
-		(chunk.createdAt >= PAGE_STARTED_AT || Date.now() - chunk.createdAt <= MAX_PENDING_AGE_MS)
+		(chunk.createdAt >= PAGE_STARTED_AT ||
+			(chunk.sessionId === sessionId && Date.now() - chunk.createdAt <= MAX_PENDING_AGE_MS))
 	// Left stored until the POST, like the flush that stored it: a revoke can still
 	// discard it, and a page gone mid-compression leaves it for the start after.
 	if (sendable) void compressAndPost(config, chunk, chunk.body, false, true)

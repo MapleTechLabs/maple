@@ -365,6 +365,8 @@ describe("startRecording", () => {
 		})
 
 		it("is dropped by a recorder of another session, endpoint or ingest key", async () => {
+			// Before this module loaded: stored by an earlier page of the tab.
+			vi.setSystemTime(Date.now() - 60 * 60_000)
 			unloadFlush("session-1", 7)
 			await nextStart("session-2")
 			expect(stored()).toBeUndefined()
@@ -425,11 +427,14 @@ describe("startRecording", () => {
 			expect(postedSeqs()).toEqual([7])
 		})
 
-		it("is still sent when this page stored it and was then hidden for longer than that", async () => {
+		it("is still sent, under its own session, when this page stored it and is shown again long after", async () => {
 			unloadFlush("session-1", 7)
-			await vi.advanceTimersByTimeAsync(20 * 60_000)
-			await nextStart()
-			expect(postedSeqs()).toEqual([7])
+			await vi.advanceTimersByTimeAsync(40 * 60_000)
+			// Hidden past the idle timeout: the page resumes under a rotated session.
+			await nextStart("session-2")
+			expect(posted.map((chunk) => [chunk.meta.sessionId, chunk.meta.chunkSeq])).toEqual([
+				["session-1", 7],
+			])
 		})
 
 		it("uploads as before when sessionStorage refuses the write", async () => {
