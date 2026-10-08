@@ -110,8 +110,10 @@ export const consentHttpClientLayer = (requireConsent: boolean) =>
 		Effect.map(HttpClient.HttpClient, (inner) =>
 			HttpClient.make((request) => {
 				const filtered = filterOtlpRequestForConsent(request, requireConsent)
+				// Effect's OTLP exporter sets its own `user-agent`, which a page must
+				// not send (see `buildResolved`).
 				return filtered
-					? inner.execute(filtered)
+					? inner.execute(HttpClientRequest.removeHeader(filtered, "user-agent"))
 					: Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 200 })))
 			}),
 		),

@@ -74,7 +74,10 @@ export const buildResolved = (
 		readonly tracesPath?: string | undefined
 		readonly logsPath?: string | undefined
 		readonly metricsPath?: string | undefined
+		/** `<sdk>/<version>`, always sent as `x-maple-sdk`. */
 		readonly userAgent: string
+		/** Also send it as `user-agent`. Off for the browser client, see below. */
+		readonly sendUserAgent: boolean
 		readonly keyless: "disable" | "send"
 	},
 ): Resolved => {
@@ -87,12 +90,14 @@ export const buildResolved = (
 	const metricsUrl = `${baseUrl}${opts.metricsPath ?? "/v1/metrics"}`
 	const headers: Record<string, string> = {
 		"content-type": "application/json",
-		"user-agent": opts.userAgent,
-		// Browsers refuse to let a page set `user-agent`, so the same
-		// `<sdk>/<version>` also rides a header they do allow. Ingest records it
-		// as `maple.sdk`; its CORS allow-list must include it (it does).
+		// Ingest records it as `maple.sdk`; its CORS allow-list must include it
+		// (it does).
 		"x-maple-sdk": opts.userAgent,
 	} satisfies Record<string, string>
+	// A page must not set `user-agent`: Chromium drops it, but Firefox sends it,
+	// and a cross-origin endpoint whose CORS policy does not allow the header
+	// then fails the preflight and with it every POST.
+	if (opts.sendUserAgent) headers["user-agent"] = opts.userAgent
 	if (r.ingestKey) headers.authorization = `Bearer ${Redacted.value(r.ingestKey)}`
 	return {
 		tracesUrl,

@@ -158,6 +158,9 @@ describe("MapleFlush.make (client)", () => {
 		expect(traceCall).toBeDefined()
 		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
 		expect(traceCall!.headers.authorization).toBe("Bearer secret")
+		// A script-set `user-agent` needs CORS approval where the browser sends it.
+		expect(traceCall!.headers["x-maple-sdk"]).toMatch(/^maple-effect-sdk-client\//)
+		expect(Object.keys(traceCall!.headers).map((name) => name.toLowerCase())).not.toContain("user-agent")
 		// Must use fetch(keepalive), not sendBeacon — see flushable.ts header.
 		expect(traceCall!.keepalive).toBe(true)
 		const body = traceCall!.body as {

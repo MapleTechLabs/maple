@@ -12,14 +12,12 @@ import { makeLogBuffer } from "./flushable-logger.js"
 import { makeMetricBuffer } from "./flushable-metrics.js"
 import { makeSpanBuffer } from "./flushable-tracer.js"
 
-const resolved = buildResolved(
-	{
-		endpoint: "https://collector.test",
-		ingestKey: Redacted.make("test-key"),
-		resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
-	},
-	{ userAgent: "test", keyless: "disable" },
-)
+const keyed = {
+	endpoint: "https://collector.test",
+	ingestKey: Redacted.make("test-key"),
+	resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
+}
+const resolved = buildResolved(keyed, { userAgent: "test", sendUserAgent: true, keyless: "disable" })
 
 const recordSpan = (spans: ReturnType<typeof makeSpanBuffer>, name: string) =>
 	Effect.succeed(undefined).pipe(Effect.withSpan(name), Effect.provide(spans.tracerLayer))
@@ -28,11 +26,17 @@ const recordLog = (logs: ReturnType<typeof makeLogBuffer>, message: string) =>
 	Effect.logInfo(message).pipe(Effect.provide(logs.loggerLayer))
 
 describe("buildResolved", () => {
-	vitestIt("stamps the SDK identity on a header browsers allow, alongside user-agent", () => {
-		// A page cannot set `user-agent`; ingest reads `x-maple-sdk` as `maple.sdk`.
+	vitestIt("stamps the SDK identity as x-maple-sdk, alongside user-agent", () => {
+		// Ingest reads `x-maple-sdk` as `maple.sdk`.
 		expect(resolved.headers["user-agent"]).toBe("test")
 		expect(resolved.headers["x-maple-sdk"]).toBe("test")
 		expect(resolved.headers.authorization).toBe("Bearer test-key")
+	})
+
+	vitestIt("leaves user-agent to the browser for the client preset", () => {
+		const { headers } = buildResolved(keyed, { userAgent: "test", sendUserAgent: false, keyless: "send" })
+		expect(headers["x-maple-sdk"]).toBe("test")
+		expect(headers).not.toHaveProperty("user-agent")
 	})
 
 	vitestIt("applies each preset's keyless policy: disable, or send without Authorization", () => {
@@ -41,8 +45,10 @@ describe("buildResolved", () => {
 			ingestKey: undefined,
 			resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
 		}
-		expect(buildResolved(keyless, { userAgent: "test", keyless: "disable" }).noOp).toBe(true)
-		const sent = buildResolved(keyless, { userAgent: "test", keyless: "send" })
+		expect(
+			buildResolved(keyless, { userAgent: "test", sendUserAgent: true, keyless: "disable" }).noOp,
+		).toBe(true)
+		const sent = buildResolved(keyless, { userAgent: "test", sendUserAgent: false, keyless: "send" })
 		expect(sent.noOp).toBe(false)
 		expect(sent.headers).not.toHaveProperty("authorization")
 	})
