@@ -4,11 +4,7 @@
 
 import type { DateTime } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
-import {
-	subqueryCond,
-	subqueryExpr,
-	untypedSubqueryExpr,
-} from "@maple-dev/effect-orm/clickhouse"
+import { subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -1275,9 +1271,10 @@ export interface TracesRootListOpts extends TracesQueryOpts {
 	offset?: number
 	/**
 	 * Keyset pagination cursor. When set, only root spans with `Timestamp < cursor`
-	 * are returned. Strictly preferred over `offset` for deep pagination.
+	 * are returned. Strictly preferred over `offset` for deep pagination. Pass
+	 * `exactDateTime64(...)` to keep the nanoseconds a `DateTime.Utc` drops.
 	 */
-	cursor?: DateTime.Utc
+	cursor?: DateTime.Utc | CH.Expr<DateTime.Utc>
 }
 
 export interface TracesRootListOutput {
@@ -1460,7 +1457,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
-		CH.when(cursor, (v: DateTime.Utc) => $.Timestamp.lt(v)),
+		CH.when(cursor, (v: DateTime.Utc | CH.Expr<DateTime.Utc>) => $.Timestamp.lt(v)),
 	]
 
 	// Stage 1: cheap scan — only `Timestamp` is read, sharing the same WHERE
