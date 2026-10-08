@@ -15,6 +15,16 @@ export const gcpConnectors = pgTable(
 		secretHash: text("secret_hash").notNull(),
 		lastReceivedAt: timestamp("last_received_at", { withTimezone: true, mode: "date" }),
 		lastError: text("last_error"),
+		// Metrics poller: end of the last minute it ingested. Null until the first successful poll.
+		metricsWatermarkAt: timestamp("metrics_watermark_at", { withTimezone: true, mode: "date" }),
+		lastMetricsReceivedAt: timestamp("last_metrics_received_at", { withTimezone: true, mode: "date" }),
+		lastMetricsError: text("last_metrics_error"),
+		// A tick claims the connector by moving this past now, and it is never cleared: it also
+		// orders the next tick, least recently polled first.
+		metricsLeaseUntil: timestamp("metrics_lease_until", { withTimezone: true, mode: "date" }),
+		// Last complete sync of `gcp_resources`, and why the latest attempt fell short.
+		resourcesSyncedAt: timestamp("resources_synced_at", { withTimezone: true, mode: "date" }),
+		lastResourcesError: text("last_resources_error"),
 		createdBy: text("created_by").notNull(),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
