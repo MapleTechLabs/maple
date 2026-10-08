@@ -398,6 +398,7 @@ const SCOPE_FAMILY_ROWS = [
 	{ id: "service_map", label: "Service map", description: "Service-to-service topology" },
 	{ id: "query", label: "Query", description: "Structured telemetry queries" },
 	{ id: "organization", label: "Organization", description: "Read the organization's identity" },
+	{ id: "audit_log", label: "Audit log", description: "Read the audit log (org admins only)" },
 ] as const
 
 const docsUrl = `${apiBaseUrl}/v2/docs`
