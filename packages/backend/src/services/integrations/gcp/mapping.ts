@@ -126,12 +126,16 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 	const attribute = result.additionalAttributes?.projectId
 	const projectId = Predicate.isString(attribute) ? attribute : /\/projects\/([^/]+)/.exec(result.name)?.[1]
 	if (projectId === undefined) return undefined
+	// Pub/Sub answers its full path (`projects/<p>/topics/<id>`) as the display name.
+	const displayName = result.displayName?.startsWith("projects/")
+		? result.displayName.slice(result.displayName.lastIndexOf("/") + 1)
+		: result.displayName
 	return {
 		name: result.name,
 		assetType: result.assetType,
 		projectId,
 		location: result.location ?? null,
-		displayName: result.displayName ?? null,
+		displayName: displayName ?? null,
 		state: result.state ?? null,
 		labels: result.labels ?? {},
 		resourceCreatedAt: toDate(result.createTime),
