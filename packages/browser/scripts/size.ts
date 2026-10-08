@@ -71,8 +71,9 @@ const BUDGET = {
 	 * offline queue's exporter wrapper, 18.5 for `tracing.captureHeaders`. 19 for
 	 * `@maple/sdk-core`'s page-wide coordination with the Effect SDK (~0.45 kB).
 	 * 19.5 for the linear stack-frame parser that replaced a backtracking regex (CodeQL).
+	 * 20: the OTLP exporter moved from an external dependency into first-party code; eager fell 43.67 → 41.28 kB.
 	 */
-	firstParty: 19.5,
+	firstParty: 20,
 }
 
 /** How close to a ceiling counts as worth warning about. */
