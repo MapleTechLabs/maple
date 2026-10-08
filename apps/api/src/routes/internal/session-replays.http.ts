@@ -6,11 +6,15 @@ import {
 	SessionTraceSummariesResponse,
 	TraceId,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
-import { CH } from "@maple/query-engine"
+import { DateTime, Effect, Option, Schema } from "effect"
+import { CH, parseUtc } from "@maple/query-engine"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
+
+/** An optional, already validated window bound as a `DateTime.Utc`. */
+const optionalUtc = (value: string | undefined) =>
+	value === undefined ? undefined : Option.getOrUndefined(parseUtc(value))
 
 /**
  * Dashboard-only session-replay helpers.
@@ -102,8 +106,8 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 						const compiled = CH.compile(
 							CH.sessionTraceSummariesQuery({
 								traceIds: payload.traceIds,
-								startTime: payload.windowStart,
-								endTime: payload.windowEnd,
+								startTime: optionalUtc(payload.windowStart),
+								endTime: optionalUtc(payload.windowEnd),
 							}),
 							{ orgId: tenant.orgId },
 						)
@@ -114,6 +118,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 						return new SessionTraceSummariesResponse({
 							data: rows.map((row) => ({
 								...row,
+								startTime: DateTime.formatIso(row.startTime),
 								traceId: decodeTraceId(row.traceId),
 								// `count()` is UInt64 — same ClickHouse JSON-string coercion as
 								// listReplays' traceCount; coerce before Schema.Number validates.

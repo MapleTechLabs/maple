@@ -62,6 +62,7 @@ const testConfig = () =>
 
 const logRow = {
 	timestamp: "2026-07-15 12:00:01.123",
+	exactTimestamp: "2026-07-15 12:00:01.123456789",
 	severityText: "ERROR",
 	severityNumber: 17,
 	serviceName: "api",

@@ -1,4 +1,5 @@
 import { WorkerPlatformLive, isolateContext } from "@maple/infra/worker-http"
+import { IsolateAge } from "@maple/infra/isolate-age"
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
@@ -203,6 +204,8 @@ const event = (
 	headers?: Record<string, string>,
 ) =>
 	Effect.gen(function* () {
+		// A fresh isolate per event, so every request here is its isolate's first.
+		const fetch = yield* makeFetch(app, noPorts).pipe(Effect.provide(IsolateAge.layer))
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
 		globalThis.fetch = stubFetch(recorded)
@@ -224,7 +227,7 @@ const event = (
 		// Alchemy currently erases this helper's return type to any. Restore its boundary contract.
 		const fetchEvent:
 			| Effect.Effect<Response, never, Scope.Scope | Cloudflare.WorkerEnvironment>
-			| undefined = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
+			| undefined = Cloudflare.Workers.makeRequestHandler(fetch)({
 			kind: "Cloudflare.Workers.WorkerEvent",
 			type: "fetch",
 			input: new Request(`http://api.maple.test${path}`, { method, headers }),

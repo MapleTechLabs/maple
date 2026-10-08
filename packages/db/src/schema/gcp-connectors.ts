@@ -1,14 +1,21 @@
-import type { GcpConnectorId, GcpProjectId, OrgId } from "@maple/domain"
-import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import type { GcpConnectorId, GcpProjectId, GcpResourceNumber, GcpScopeType, OrgId } from "@maple/domain"
+import { boolean, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
-// One row per connected Google Cloud project. The ingest gateway's `/v1/logpush/gcp/...` receiver
-// authenticates a push by `id` + `secret_hash` and writes `last_received_at` / `last_error`.
+// One row per connected Google Cloud scope: a project, or everything under a folder or
+// organization. `project_id` is the host project, where Maple's own resources live (Pub/Sub topic,
+// subscription, service account); for a project scope it equals `scope_id`. The ingest gateway's
+// `/v1/logpush/gcp/...` receiver authenticates a push by `id` + `secret_hash` and writes
+// `last_received_at` / `last_error`. `metrics_enabled` covers metrics and resource collection.
 export const gcpConnectors = pgTable(
 	"gcp_connectors",
 	{
 		id: text("id").$type<GcpConnectorId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
+		scopeType: text("scope_type").$type<GcpScopeType>().notNull(),
+		scopeId: text("scope_id").$type<GcpProjectId | GcpResourceNumber>().notNull(),
 		projectId: text("project_id").$type<GcpProjectId>().notNull(),
+		logsEnabled: boolean("logs_enabled").notNull().default(true),
+		metricsEnabled: boolean("metrics_enabled").notNull().default(false),
 		secretCiphertext: text("secret_ciphertext").notNull(),
 		secretIv: text("secret_iv").notNull(),
 		secretTag: text("secret_tag").notNull(),
@@ -20,7 +27,7 @@ export const gcpConnectors = pgTable(
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("gcp_connectors_org_project_idx").on(table.orgId, table.projectId),
+		uniqueIndex("gcp_connectors_org_scope_idx").on(table.orgId, table.scopeType, table.scopeId),
 		uniqueIndex("gcp_connectors_secret_hash_unique").on(table.secretHash),
 	],
 )

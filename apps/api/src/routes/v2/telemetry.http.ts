@@ -41,6 +41,7 @@ import {
 	CH,
 	QueryEngineExecuteRequest,
 	formatWarehouseDateTime,
+	parseUtc,
 	formatWarehouseDateTimeMs,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
@@ -54,7 +55,7 @@ import {
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 } from "@maple/query-engine/runtime"
-import { Effect, Option, Result, Schema } from "effect"
+import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -198,8 +199,8 @@ const expandHexId = (value: string): Option.Option<string> => {
 	if (Result.isFailure(decoded)) return Option.none()
 	return Option.some([...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join(""))
 }
-const logKey = (row: { timestamp: string; recordIdentity: string }) =>
-	JSON.stringify([compactTimestamp(row.timestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
+const logKey = (row: { exactTimestamp: string; recordIdentity: string }) =>
+	JSON.stringify([compactTimestamp(row.exactTimestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
 
 const decodeLogKeyParts = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
@@ -222,7 +223,8 @@ const parseLogKey = (value: string) =>
 	)
 
 const toLog = (row: {
-	timestamp: string
+	timestamp: DateTime.Utc
+	exactTimestamp: string
 	severityText: string
 	severityNumber: number
 	serviceName: string
@@ -235,7 +237,7 @@ const toLog = (row: {
 }): V2Log => ({
 	id: logKey(row),
 	object: "log",
-	timestamp: chToIso(row.timestamp),
+	timestamp: timestamp(DateTime.formatIso(row.timestamp)),
 	severity_text: row.severityText,
 	severity_number: Number(row.severityNumber),
 	service_name: decodeServiceName(row.serviceName),
@@ -248,7 +250,7 @@ const toLog = (row: {
 
 const toTraceSummary = (row: {
 	traceId: string
-	startTime: string
+	startTime: DateTime.Utc
 	durationMs: number
 	rootSpanName: string
 	rootSpanKind: string
@@ -263,7 +265,7 @@ const toTraceSummary = (row: {
 }): V2TraceSummary => ({
 	id: decodeTraceId(row.traceId),
 	object: "trace",
-	start_time: chToIso(row.startTime),
+	start_time: timestamp(DateTime.formatIso(row.startTime)),
 	duration_ms: Number(row.durationMs),
 	root_span_name: row.rootSpanName,
 	root_span_kind: row.rootSpanKind,
@@ -285,7 +287,7 @@ const toSpan = (row: {
 	serviceName: string
 	spanKind: string
 	durationMs: number
-	startTime: string
+	startTime: DateTime.Utc
 	statusCode: string
 	statusMessage: string
 	spanAttributes: string
@@ -298,7 +300,7 @@ const toSpan = (row: {
 	name: row.spanName,
 	service_name: row.serviceName,
 	kind: row.spanKind,
-	start_time: chToIso(row.startTime),
+	start_time: timestamp(DateTime.formatIso(row.startTime)),
 	duration_ms: Number(row.durationMs),
 	status_code: row.statusCode,
 	status_message: row.statusMessage || null,
@@ -493,7 +495,12 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 							resourceAttributeFilters: internalFilters?.resourceAttributeFilters,
 							limit: limit + 1,
 							cursor: cursorParts
-								? { timestamp: cursorParts[0]!, traceId: cursorParts[1]! }
+								? Option.getOrUndefined(
+										Option.map(parseUtc(cursorParts[0]!), (at) => ({
+											timestamp: at,
+											traceId: cursorParts[1]!,
+										})),
+									)
 								: undefined,
 						}),
 						{ orgId: tenant.orgId, ...window },
@@ -512,7 +519,10 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 						has_more: hasMore,
 						next_cursor:
 							hasMore && last
-								? encodeKeysetCursor("trc", [last.startTime, last.traceId])
+								? encodeKeysetCursor("trc", [
+										formatWarehouseDateTime(DateTime.toEpochMillis(last.startTime)),
+										last.traceId,
+									])
 								: null,
 					}
 				}),
@@ -709,7 +719,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 						next_cursor:
 							hasMore && last
 								? encodeKeysetCursor("log", [
-										last.timestamp,
+										last.exactTimestamp,
 										last.serviceName,
 										last.traceId,
 										last.spanId,
@@ -875,8 +885,8 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 											unit: row.metricUnit,
 											is_monotonic: Number(row.isMonotonic) !== 0,
 											data_point_count: Number(row.dataPointCount),
-											first_seen: chToIso(row.firstSeen),
-											last_seen: chToIso(row.lastSeen),
+											first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
+											last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
 										})),
 									),
 								)
@@ -1082,7 +1092,7 @@ const toOverviewPoints = (
 	}))
 
 const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
-	name: String(row.spanName),
+	name: row.spanName,
 	span_count: Number(row.spanCount),
 	estimated_span_count: Number(row.estimatedSpanCount),
 	error_count: Number(row.errorCount),

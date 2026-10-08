@@ -171,6 +171,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/attribute_mappings/{id}",
 			"PATCH /v2/dashboards/{id}",
 			"PATCH /v2/integrations/chat_workspaces/{id}",
+			"PATCH /v2/integrations/gcp/connectors/{id}",
 			"PATCH /v2/scrape_targets/{id}",
 			"POST /v2/agent_feedback",
 			"POST /v2/alerts/destinations",

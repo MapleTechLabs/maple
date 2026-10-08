@@ -21,8 +21,8 @@ import {
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
 import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
-import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm"
+import { Array as Arr, Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
@@ -31,7 +31,7 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
+import { msToDate, msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	BasicCredentialsSchema,
@@ -52,16 +52,68 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
-/**
- * Accumulated row state for one target across a batch of scrape results — the
- * value a sequence of per-result UPDATEs would have converged on. `lastScrapeAt`
- * is absent when the batch held no success, leaving the stored value untouched.
- */
-interface ScrapeTargetOutcome {
-	lastScrapeAt?: Date
-	lastScrapeError?: string | null
-	updatedAt: Date
+/** One scrape attempt as reported by the scraper loop or a manual probe. */
+export interface ScrapeResultReport {
+	readonly targetId: ScrapeTargetId
+	readonly scrapedAt: number
+	readonly error: string | null
+	readonly subTargetKey?: string | null
 }
+
+/**
+ * Row state one target converges on after applying its results in order.
+ * `lastScrapeAt` is null when no result succeeded, leaving the stored value untouched.
+ */
+export interface ScrapeTargetSummary {
+	readonly lastScrapeAt: Date | null
+	readonly lastScrapeError: string | null
+	readonly updatedAt: Date
+	/** Newest `scrapedAt`, the furthest the write may advance the row to. */
+	readonly reportedAt: Date
+}
+
+const applyScrapeResult = (
+	previous: ScrapeTargetSummary | undefined,
+	result: ScrapeResultReport,
+): ScrapeTargetSummary => {
+	// Discovered sub-targets roll up: any branch failure surfaces branch-prefixed.
+	// Per-branch health stays visible in check history via the per-branch `instance`.
+	const error =
+		result.error !== null && result.subTargetKey
+			? `[branch:${result.subTargetKey}] ${result.error}`
+			: result.error
+	const scrapedAt = new Date(result.scrapedAt)
+	return {
+		// Failure keeps lastScrapeAt at the last good scrape so data gaps stay visible.
+		lastScrapeAt: error === null ? scrapedAt : (previous?.lastScrapeAt ?? null),
+		lastScrapeError: error,
+		updatedAt: scrapedAt,
+		reportedAt:
+			previous !== undefined && previous.reportedAt > scrapedAt ? previous.reportedAt : scrapedAt,
+	}
+}
+
+/**
+ * Folds a report into the row state per target that one UPDATE per result, in
+ * order, would have left behind. Only that final state was ever durable, so the
+ * old per-result writes cost ~95k UPDATEs a day to persist ~8k outcomes.
+ */
+export const summarizeScrapeResults = (
+	results: ReadonlyArray<ScrapeResultReport>,
+): ReadonlyMap<ScrapeTargetId, ScrapeTargetSummary> =>
+	new Map(
+		Object.values(Arr.groupBy(results, (result) => result.targetId)).map(
+			(group) =>
+				[
+					Arr.headNonEmpty(group).targetId,
+					Arr.reduce(
+						Arr.tailNonEmpty(group),
+						applyScrapeResult(undefined, Arr.headNonEmpty(group)),
+						applyScrapeResult,
+					),
+				] as const,
+		),
+	)
 
 /**
  * Mutation options for the scrape-target write paths. Integration-owned rows
@@ -1062,42 +1114,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				if (results.length === 0) return
 
-				// Fold each target's results into the single row state that applying
-				// them in order would have left behind. The previous implementation
-				// issued one UPDATE per result, but each overwrote the previous one, so
-				// only this accumulated value was ever durable — ~95k writes a day to
-				// persist ~8k outcomes.
-				const outcomeByTarget = new Map<ScrapeTargetId, ScrapeTargetOutcome>()
-				// Newest `scrapedAt` per target, which is what the write below is
-				// allowed to advance the row to. Kept separate from the outcome
-				// because that object is handed straight to drizzle as the SET clause.
-				const reportedAtByTarget = new Map<ScrapeTargetId, Date>()
-				for (const result of results) {
-					// Rollup for discovered sub-targets: any branch success advances
-					// lastScrapeAt; any branch failure surfaces (branch-prefixed) as
-					// lastScrapeError. Per-branch health stays visible in check history
-					// via the per-branch `instance`.
-					const error =
-						result.error !== null && result.subTargetKey
-							? `[branch:${result.subTargetKey}] ${result.error}`
-							: result.error
-					const scrapedAt = new Date(result.scrapedAt)
-					const outcome = outcomeByTarget.get(result.targetId) ?? { updatedAt: scrapedAt }
-					if (error === null) {
-						outcome.lastScrapeAt = scrapedAt
-						outcome.lastScrapeError = null
-					} else {
-						// Failure keeps lastScrapeAt at the last good scrape so data gaps
-						// stay visible alongside the error.
-						outcome.lastScrapeError = error
-					}
-					outcome.updatedAt = scrapedAt
-					outcomeByTarget.set(result.targetId, outcome)
-					const reportedAt = reportedAtByTarget.get(result.targetId)
-					if (reportedAt === undefined || scrapedAt > reportedAt) {
-						reportedAtByTarget.set(result.targetId, scrapedAt)
-					}
-				}
+				const summaryByTarget = summarizeScrapeResults(results)
 
 				const recordChecks = options?.recordChecks !== false
 
@@ -1108,29 +1125,26 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* database
 					.execute((db) =>
 						Effect.gen(function* () {
-							for (const [targetId, outcome] of outcomeByTarget) {
-								const reportedAt = reportedAtByTarget.get(targetId) ?? outcome.updatedAt
-								// Apply only if nothing newer has touched the row. Results reach
-								// this method from two independent producers — the scraper loop,
-								// and the probe `create()` forks in the background — so a batch
-								// can land after a newer one has already been recorded. Without
-								// the guard the late writer wins: the target reports a stale
-								// `lastScrapeAt`, or resurrects an error a newer scrape cleared.
-								// `updatedAt` (not `lastScrapeAt`) is the comparison because a
-								// failing batch leaves `lastScrapeAt` untouched and so cannot
-								// order itself. Equal timestamps still apply, so re-reporting a
-								// batch stays a no-op rather than a drop, and a config edit at
-								// most costs the one in-flight scrape reported before it.
-								yield* db
-									.update(scrapeTargets)
-									.set(outcome)
-									.where(
-										and(
-											eq(scrapeTargets.id, targetId),
-											lte(scrapeTargets.updatedAt, reportedAt),
-										),
-									)
-							}
+							const values = sql.join(
+								[...summaryByTarget].map(([targetId, summary]) => {
+									const scrapeAt =
+										summary.lastScrapeAt === null
+											? null
+											: msToSqlTimestamp(summary.lastScrapeAt.getTime())
+									return sql`(${targetId}::text, ${scrapeAt}::timestamptz, ${scrapeAt !== null}::boolean, ${summary.lastScrapeError}::text, ${msToSqlTimestamp(summary.updatedAt.getTime())}::timestamptz, ${msToSqlTimestamp(summary.reportedAt.getTime())}::timestamptz)`
+								}),
+								sql`, `,
+							)
+							// One UPDATE for the report, skipping rows something newer already wrote
+							// (the scraper loop and create()'s probe both report). Compares `updated_at`:
+							// a failing batch never moves `last_scrape_at`. Equal timestamps still apply.
+							yield* db.execute(sql`
+								UPDATE ${scrapeTargets} AS t SET
+									last_scrape_at = CASE WHEN v.set_scrape_at THEN v.last_scrape_at ELSE t.last_scrape_at END,
+									last_scrape_error = v.last_scrape_error,
+									updated_at = v.updated_at
+								FROM (VALUES ${values}) AS v(id, last_scrape_at, set_scrape_at, last_scrape_error, updated_at, reported_at)
+								WHERE t.id = v.id AND t.updated_at <= v.reported_at`)
 
 							if (!recordChecks) return
 
@@ -1140,7 +1154,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							const targetRows = yield* db
 								.select({ id: scrapeTargets.id, orgId: scrapeTargets.orgId })
 								.from(scrapeTargets)
-								.where(inArray(scrapeTargets.id, [...outcomeByTarget.keys()]))
+								.where(inArray(scrapeTargets.id, [...summaryByTarget.keys()]))
 							const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
 
 							const checkRows = results.flatMap((result) => {

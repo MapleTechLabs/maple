@@ -233,7 +233,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 						data: funnelWidgetBreakdownRows(
 							payload.steps,
 							rows.map((row) => ({
-								group: String(row.group),
+								group: row.group,
 								step: Number(row.step),
 								count: Number(row.count) || 0,
 							})),
@@ -269,7 +269,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 							})),
 							leavers.map((row) => ({
 								step: Number(row.step),
-								next: String(row.next),
+								next: row.next,
 								count: Number(row.count) || 0,
 							})),
 						),
@@ -310,8 +310,8 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				const rows = yield* runQuery(Queries.productEventsPaths, context.tenant, payload)
 				const data: ReadonlyArray<PathsWidgetRow> = rows.map((row) => ({
 					hop: Number(row.hop) || 0,
-					fromNode: String(row.fromNode),
-					toNode: String(row.toNode),
+					fromNode: row.fromNode,
+					toNode: row.toNode,
 					count: Number(row.count) || 0,
 				}))
 				return { data }

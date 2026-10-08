@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { GetSessionTracesOutput } from "@maple/domain/mcp-outputs"
 import { getSessionTraces } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
@@ -42,8 +42,8 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			return {
 				session: {
 					sessionId: session.sessionId,
-					startTime: session.startTime,
-					endTime: session.endTime,
+					startTime: DateTime.formatIso(session.startTime),
+					endTime: session.endTime === null ? null : DateTime.formatIso(session.endTime),
 					durationMs: session.durationMs != null ? Number(session.durationMs) : null,
 					status: session.status,
 					userId: session.userId,
@@ -62,7 +62,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 				totalTraceCount: Number(totalTraceCount),
 				traces: traces.map((t) => ({
 					traceId: t.traceId,
-					startTime: t.startTime,
+					startTime: DateTime.formatIso(t.startTime),
 					durationMs: Number(t.durationMs),
 					rootSpanName: t.rootSpanName,
 					rootServiceName: t.rootServiceName,
