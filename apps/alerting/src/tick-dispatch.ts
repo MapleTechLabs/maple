@@ -27,6 +27,12 @@ export class TickDispatchError extends Schema.TaggedError<TickDispatchError>()(
 const isFetcher = (value: unknown): value is Fetcher =>
 	typeof value === "object" && value !== null && "fetch" in value && typeof value.fetch === "function"
 
+/** Surfaces a 3xx as the response instead of following it, so the bearer never leaves the hop. */
+const withManualRedirects = (binding: Fetcher): Fetcher => ({
+	fetch: (input, init) => binding.fetch(input, { ...init, redirect: "manual" }),
+	connect: (address, options) => binding.connect(address, options),
+})
+
 /** The internal token as this invocation's env says; unreadable reads as unset. */
 export const internalTokenFor = (env: Record<string, unknown>) =>
 	Config.option(Config.Redacted("INTERNAL_SERVICE_TOKEN")).pipe(
@@ -49,7 +55,7 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	const token = yield* internalTokenFor(env)
 	if (!isFetcher(binding) || Option.isNone(token)) return "unavailable" as const
 
-	const client = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding))
+	const client = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(withManualRedirects(binding)))
 	const request = HttpClientRequest.post(TICK_URL).pipe(
 		HttpClientRequest.setUrlParam("cron", cron),
 		HttpClientRequest.bearerToken(token.value),

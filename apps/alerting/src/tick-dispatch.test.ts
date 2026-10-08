@@ -96,6 +96,18 @@ describe("dispatchTick", () => {
 		}),
 	)
 
+	it.effect("does not follow a redirect, so the bearer stays on the hop", () =>
+		Effect.gen(function* () {
+			const { binding, seen } = fakeBinding(302)
+			const error = yield* dispatchTick("* * * * *", {
+				[SELF_BINDING]: binding,
+				INTERNAL_SERVICE_TOKEN: TOKEN,
+			}).pipe(Effect.flip)
+			expect(seen[0]?.redirect).toBe("manual")
+			expect(error.status).toBe(302)
+		}),
+	)
+
 	it.effect("fails on a handler error, so the caller does not rerun a partial tick", () =>
 		Effect.gen(function* () {
 			const { binding } = fakeBinding(500)

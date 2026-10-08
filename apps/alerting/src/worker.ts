@@ -176,6 +176,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 					Effect.catchTag("@maple/alerting/errors/TickDispatchError", (error) =>
 						Effect.logError("Placed alerting tick failed", error).pipe(
 							Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
+							Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "failed")),
 							Effect.as("failed" as const),
 						),
 					),
@@ -203,9 +204,9 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 			return HttpServerResponse.empty({ status: 204 })
 		})
 
-		for (const cron of ALERTING_CRONS) {
-			yield* Cloudflare.Workers.cron(cron, onFire)
-		}
+		yield* Effect.forEach(ALERTING_CRONS, (cron) => Cloudflare.Workers.cron(cron, onFire), {
+			discard: true,
+		})
 
 		return { fetch }
 	}).pipe(
