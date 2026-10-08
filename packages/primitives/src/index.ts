@@ -101,6 +101,16 @@ export type PostgresTransactionId = Schema.Schema.Type<typeof PostgresTransactio
 export const ScrapeTargetId = MapleUuidId("@maple/ScrapeTargetId", "Scrape Target ID")
 export type ScrapeTargetId = Schema.Schema.Type<typeof ScrapeTargetId>
 
+export const GcpConnectorId = MapleUuidId("@maple/GcpConnectorId", "GCP Connector ID")
+export type GcpConnectorId = Schema.Schema.Type<typeof GcpConnectorId>
+
+// Google's project id rules. The id is interpolated into a shell script, so nothing looser.
+export const GcpProjectId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u)).pipe(
+	Schema.brand("@maple/GcpProjectId"),
+	Schema.annotate({ identifier: "@maple/GcpProjectId", title: "Google Cloud Project ID" }),
+)
+export type GcpProjectId = Schema.Schema.Type<typeof GcpProjectId>
+
 export const AlertDestinationId = MapleUuidId("@maple/AlertDestinationId", "Alert Destination ID")
 export type AlertDestinationId = Schema.Schema.Type<typeof AlertDestinationId>
 

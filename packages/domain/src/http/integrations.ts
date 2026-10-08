@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
+import { ExternalUserId, GcpProjectId, ScrapeTargetId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewListItem, PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
@@ -1037,6 +1037,24 @@ export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFo
 		status: 404,
 		code: "integration_not_found",
 		title: "Integration not found",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The organization already has a connector for this Google Cloud project. */
+export class GcpProjectAlreadyConnectedError extends HttpTaggedError<GcpProjectAlreadyConnectedError>()(
+	"@maple/http/errors/GcpProjectAlreadyConnectedError",
+	{
+		projectId: GcpProjectId,
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_project_already_connected",
+		title: "Project already connected",
+		param: "project_id",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",

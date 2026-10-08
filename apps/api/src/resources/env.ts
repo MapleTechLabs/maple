@@ -79,4 +79,5 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 	)
