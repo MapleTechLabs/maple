@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { GcpConnectorId, GcpProjectId, GcpResourceNumber, GcpScopeType } from "../../primitives"
+import { GcpConnectorId, GcpLogFilter, GcpProjectId, GcpResourceNumber, GcpScopeType } from "../../primitives"
 import {
 	GcpMetricsUnavailableError,
 	GcpScopeAlreadyConnectedError,
@@ -34,6 +34,9 @@ const connectorExample = {
 	created_at: "2026-10-01T12:00:00.000Z",
 	last_log_received_at: "2026-10-08T09:12:00.000Z",
 	last_log_error: null,
+	applied_logs_enabled: true,
+	applied_metrics_enabled: true,
+	setup_reported_at: "2026-10-01T12:05:00.000Z",
 } as const
 
 export const V2GcpConnector = Schema.Struct({
@@ -72,6 +75,20 @@ export const V2GcpConnector = Schema.Struct({
 	last_log_error: Schema.NullOr(Schema.String).annotate({
 		description: "Why the most recent log push was rejected, or `null`.",
 		examples: [null],
+	}),
+	applied_logs_enabled: Schema.NullOr(Schema.Boolean).annotate({
+		description:
+			"Whether log forwarding is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. While it differs from `logs_enabled`, the setup script has to run again.",
+		examples: [true],
+	}),
+	applied_metrics_enabled: Schema.NullOr(Schema.Boolean).annotate({
+		description:
+			"Whether metrics and resource access is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. While it differs from `metrics_enabled`, the setup script has to run again.",
+		examples: [true],
+	}),
+	setup_reported_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When a setup or cleanup script run last reported to Maple, or `null`. A run reports within seconds of finishing, before its first log or metric arrives.",
 	}),
 }).annotate({
 	identifier: "GcpConnector",
@@ -174,17 +191,21 @@ export const V2GcpUpdateConnectorRequest = Schema.Struct({
 export type V2GcpUpdateConnectorRequest = Schema.Schema.Type<typeof V2GcpUpdateConnectorRequest>
 
 export const V2GcpSetupScriptsRequest = Schema.Struct({
-	exclude_gke_container_logs: Schema.optionalKey(Schema.Boolean).annotate({
+	log_filter: Schema.optionalKey(GcpLogFilter).annotate({
 		description:
-			"Leave GKE container logs out of the log filter. Set it when pods already ship their logs to Maple through an OpenTelemetry collector, so they are not ingested twice. Defaults to `false`.",
-		examples: [false],
+			"The log filter the setup script carries. `keep` (the default): a sink that already exists keeps its filter, and a new one gets Maple's default. `default`: the script sets Maple's default, which leaves out Data Access audit logs and load balancer health checks. `exclude_gke_container_logs`: the script sets the default without GKE container logs, for pods that already ship their logs to Maple through an OpenTelemetry collector.",
+		examples: ["keep"],
 	}),
 }).annotate({
 	identifier: "GcpSetupScriptsRequest",
 	title: "Google Cloud setup scripts request",
 	description: "Options for rendering a connector's scripts.",
-	examples: [wireExample({ exclude_gke_container_logs: true })],
+	examples: [wireExample({ log_filter: "exclude_gke_container_logs" })],
 })
+
+// What a script field holds: the script as a here-document for a bash process of its own.
+const SCRIPT_EXAMPLE =
+	" { …\nbash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'\n#!/usr/bin/env bash\n…\nMAPLE_SETUP_SCRIPT\n}\n"
 export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScriptsRequest>
 
 export const V2GcpSetupScripts = Schema.Struct({
@@ -193,12 +214,13 @@ export const V2GcpSetupScripts = Schema.Struct({
 	}),
 	setup_script: Schema.String.annotate({
 		description:
-			"A bash script for Cloud Shell. It sets up what the connector has enabled and removes what it has not, so re-run it after changing `logs_enabled` or `metrics_enabled`. With logs enabled it embeds the connector's push secret: treat it as a credential.",
-		examples: ["#!/usr/bin/env bash\n…"],
+			"Text to paste into Cloud Shell: a bash script, wrapped so that it runs in a bash process of its own. It sets up what the connector has enabled, removes what it has not, and tells Maple what it applied, so run it again after changing `logs_enabled` or `metrics_enabled`. It embeds the connector's push secret: treat it as a credential.",
+		examples: [SCRIPT_EXAMPLE],
 	}),
 	cleanup_script: Schema.String.annotate({
-		description: "A bash script that removes everything the setup script created. Carries no secret.",
-		examples: ["#!/usr/bin/env bash\n…"],
+		description:
+			"Text to paste into Cloud Shell that removes everything the setup script created and tells Maple that it ran. It embeds the connector's push secret: treat it as a credential.",
+		examples: [SCRIPT_EXAMPLE],
 	}),
 }).annotate({
 	identifier: "GcpSetupScripts",
@@ -207,8 +229,8 @@ export const V2GcpSetupScripts = Schema.Struct({
 	examples: [
 		wireExample({
 			object: "gcp_connector.setup_scripts",
-			setup_script: "#!/usr/bin/env bash\n…",
-			cleanup_script: "#!/usr/bin/env bash\n…",
+			setup_script: SCRIPT_EXAMPLE,
+			cleanup_script: SCRIPT_EXAMPLE,
 		}),
 	],
 })
@@ -224,8 +246,8 @@ export const V2GcpConnectorDeleteResponse = Schema.Struct({
 	}),
 	cleanup_script: Schema.String.annotate({
 		description:
-			"A bash script that removes the resources the setup script created. Maple has no write access to Google Cloud, so an administrator runs it.",
-		examples: ["#!/usr/bin/env bash\n…"],
+			"Text to paste into Cloud Shell that removes the resources the setup script created. Maple has no write access to Google Cloud, so an administrator runs it. The connector is gone, so this copy carries no secret.",
+		examples: [SCRIPT_EXAMPLE],
 	}),
 }).annotate({
 	identifier: "GcpConnectorDeleteResponse",
@@ -236,7 +258,7 @@ export const V2GcpConnectorDeleteResponse = Schema.Struct({
 			id: connectorExample.id,
 			object: "gcp_connector",
 			deleted: true,
-			cleanup_script: "#!/usr/bin/env bash\n…",
+			cleanup_script: SCRIPT_EXAMPLE,
 		}),
 	],
 })
@@ -261,7 +283,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "getGcpIntegration",
 				summary: "Retrieve Google Cloud integration status",
 				description:
-					"Returns the organization's Google Cloud connectors with the time and outcome of their latest log push, and whether metrics collection is available. Requires the `integrations:read` scope.",
+					"Returns the organization's Google Cloud connectors with what their setup script last reported and the time and outcome of their latest log push, and whether metrics collection is available. Requires the `integrations:read` scope.",
 			}),
 		),
 	)
@@ -317,7 +339,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "renderGcpConnectorSetupScripts",
 				summary: "Render a connector's setup and cleanup scripts",
 				description:
-					"Returns the `gcloud` scripts for one connector. Rendering changes nothing, but the setup script carries the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+					"Returns the `gcloud` scripts for one connector. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)
