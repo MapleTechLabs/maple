@@ -1,3 +1,4 @@
+import { IsolateAge } from "@maple/infra/isolate-age"
 import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
  * The api Worker's request path: the route graph built once per isolate on
@@ -5,7 +6,7 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  */
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import type { HttpEffect } from "alchemy/Http"
-import { Cause, Clock, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
+import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
@@ -164,16 +165,6 @@ const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unk
 }
 
 /**
- * Ordinary request ordinals include successful requests and graph-build failures,
- * so production can compare cold and warm traffic without conditioning on errors.
- */
-const recordIsolateAge = (isolate: { readonly ageMs: number; readonly ordinal: number }) =>
-	Effect.annotateCurrentSpan({
-		"maple.isolate.age_ms": isolate.ageMs,
-		"maple.isolate.request_ordinal": isolate.ordinal,
-	})
-
-/**
  * The request handler the bridge serves. Liveness and preflights answer before
  * the route graph exists: neither needs the domain graph, authentication, the
  * database scope or the route codecs, and a cold isolate can report health
@@ -184,72 +175,69 @@ export const makeFetch = (
 	app: Effect.Effect<HttpEffect, unknown>,
 	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
 	queryApp: Effect.Effect<HttpEffect, unknown> = app,
-) => {
-	// Isolate-scoped: the Worker's init calls `makeFetch` once. The unattributed 500s all landed
-	// within ~60ms of an isolate's first request, so the span has to carry that shape.
-	let firstRequestAt: number | undefined
-	let served = 0
-	return Effect.gen(function* () {
-		const request = yield* HttpServerRequest.HttpServerRequest
-		const path = pathOf(request.url)
-		if (request.method === "GET" && path === "/health") {
-			// The revision this isolate is running, so the deploy that just
-			// uploaded a script can assert the script is the one now serving.
-			// Alchemy isolates per-resource failures, so a red deploy still
-			// leaves every sibling Worker updated and this one on the old
-			// bundle — the body stays `OK` and the answer stays graph-free.
-			const revision = yield* Config.option(Config.String("COMMIT_SHA")).pipe(
-				Effect.map(Option.filter((sha) => sha.length > 0)),
-				Effect.orElseSucceed(Option.none<string>),
-			)
-			return HttpServerResponse.text("OK", {
-				headers: Option.match(revision, {
-					onNone: () => API_CORS_RESPONSE_HEADERS,
-					onSome: (sha) => ({ ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": sha }),
-				}),
-			})
-		}
-		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
+) =>
+	IsolateAge.useSync((isolateAge) =>
+		Effect.gen(function* () {
+			const request = yield* HttpServerRequest.HttpServerRequest
+			const path = pathOf(request.url)
+			if (request.method === "GET" && path === "/health") {
+				// The revision this isolate is running, so the deploy that just
+				// uploaded a script can assert the script is the one now serving.
+				// Alchemy isolates per-resource failures, so a red deploy still
+				// leaves every sibling Worker updated and this one on the old
+				// bundle. The body stays `OK` and the answer stays graph-free.
+				const revision = yield* Config.option(Config.String("COMMIT_SHA")).pipe(
+					Effect.map(Option.filter((sha) => sha.length > 0)),
+					Effect.orElseSucceed(Option.none<string>),
+				)
+				return HttpServerResponse.text("OK", {
+					headers: Option.match(revision, {
+						onNone: () => API_CORS_RESPONSE_HEADERS,
+						onSome: (sha) => ({ ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": sha }),
+					}),
+				})
+			}
+			if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
 
-		// The agent surfaces moved to maple-ai; this origin keeps serving them.
-		// Ahead of the route graph on purpose — that is the whole point of the
-		// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
-		// What the forward preserves, and the one header it replaces, is spelled
-		// out in `ai-forward.ts`.
-		if (forwardsToAi(path)) {
-			const aiWorker = yield* AiWorkerFetcher
-			if (Option.isNone(aiWorker)) {
-				yield* Effect.logError("AI worker binding is missing").pipe(
+			// The agent surfaces moved to maple-ai; this origin keeps serving them.
+			// Ahead of the route graph on purpose: that is the whole point of the
+			// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
+			// What the forward preserves, and the one header it replaces, is spelled
+			// out in `ai-forward.ts`.
+			if (forwardsToAi(path)) {
+				const aiWorker = yield* AiWorkerFetcher
+				if (Option.isNone(aiWorker)) {
+					yield* Effect.logError("AI worker binding is missing").pipe(
+						Effect.annotateLogs({ method: request.method, path }),
+					)
+					return aiUnavailableResponse()
+				}
+				return yield* forwardToAi(aiWorker.value, request)
+			}
+
+			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
+			// span carries that shape. Counted before the graph builds, so build failures count too.
+			yield* isolateAge.record
+
+			const selectedApp =
+				path === "/internal/query-engine" || path.startsWith("/internal/query-engine/")
+					? queryApp
+					: app
+			const built = yield* Effect.exit(selectedApp)
+			if (Exit.isFailure(built)) {
+				yield* Effect.logError("API worker route graph failed to build", built.cause).pipe(
 					Effect.annotateLogs({ method: request.method, path }),
 				)
-				return aiUnavailableResponse()
+				return unavailableResponse(path)
 			}
-			return yield* forwardToAi(aiWorker.value, request)
-		}
 
-		const startedAt = yield* Clock.currentTimeMillis
-		firstRequestAt ??= startedAt
-		const ordinal = ++served
-
-		yield* recordIsolateAge({ ageMs: startedAt - firstRequestAt, ordinal })
-
-		const selectedApp =
-			path === "/internal/query-engine" || path.startsWith("/internal/query-engine/") ? queryApp : app
-		const built = yield* Effect.exit(selectedApp)
-		if (Exit.isFailure(built)) {
-			yield* Effect.logError("API worker route graph failed to build", built.cause).pipe(
-				Effect.annotateLogs({ method: request.method, path }),
+			const response = yield* withPgConnectionScope(built.value).pipe(
+				Effect.tapCause((cause) => recordEscapedCause(request.method, path, cause)),
 			)
-			return unavailableResponse(path)
-		}
 
-		const response = yield* withPgConnectionScope(built.value).pipe(
-			Effect.tapCause((cause) => recordEscapedCause(request.method, path, cause)),
-		)
-
-		return response
-	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
-		Effect.provide(ports),
+			return response
+		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
+			Effect.provide(ports),
+		),
 	)
-}
