@@ -71,6 +71,7 @@ const SCOPE_FAMILIES = [
 	{ id: "service_map", label: "Service map" },
 	{ id: "query", label: "Query" },
 	{ id: "organization", label: "Organization" },
+	{ id: "audit_log", label: "Audit log" },
 ] as const
 
 type ScopeLevel = "none" | "read" | "write"
