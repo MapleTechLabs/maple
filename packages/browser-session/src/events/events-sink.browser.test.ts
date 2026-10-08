@@ -243,7 +243,7 @@ describe("startEventSink resend after a failed flush", () => {
 	})
 
 	// The page going away cuts the POST off whether or not ingest stored it.
-	it.each(["visibilitychange", "pagehide"])(
+	it.each(["beforeunload", "visibilitychange", "pagehide"])(
 		"does not re-queue a flush in flight across %s",
 		async (type) => {
 			const sink = startEventSink(CONFIG, `sess-retry-${type}`)
@@ -271,6 +271,21 @@ describe("startEventSink resend after a failed flush", () => {
 		await sink.flush()
 
 		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+
+	it("keeps the queue and resends as usual after a navigation that was cancelled", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-cancelled")
+		post.mockResolvedValueOnce("failed").mockResolvedValueOnce("failed")
+		await sink.flush()
+		// The navigation starts and the user stays: no `pagehide` follows.
+		window.dispatchEvent(new Event("beforeunload"))
+		sink.emit({ type: "custom", message: "later" })
+		await sink.flush()
+		await sink.flush()
+
+		expect(rowsOf(1).slice(0, rowsOf(0).length)).toEqual(rowsOf(0))
+		expect(messagesOf(2)).toEqual(["later"])
 		sink.stop()
 	})
 

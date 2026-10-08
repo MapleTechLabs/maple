@@ -53,6 +53,8 @@ export function onSessionEvent(listener: SessionEventListener): () => void {
 
 const FLUSH_INTERVAL_MS = 5_000
 const FLUSH_BYTES = 64 * 1024
+/** Events across which an in-flight POST can fail although ingest stored it. */
+const PAGE_TRANSITIONS = ["beforeunload", "pagehide", "visibilitychange"]
 
 export { setActiveTraceIdProvider } from "./trace-id"
 
@@ -139,8 +141,10 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 	// `session_events` has no dedup, so a row sent twice is counted twice, and a
 	// POST cut off by the page going away rejects even when ingest stored it.
 	// `flush` therefore re-queues nothing that was in flight across a hide, show
-	// or unload. A navigation can also abort the POST before `pagehide` (the
-	// page is still visible then), so `pagehide` drops what is queued as well.
+	// or unload. `beforeunload` is counted because a navigation can abort the
+	// POST as soon as it starts, long before `pagehide`; it never prevents the
+	// unload, and it keeps the queue since the navigation may be cancelled.
+	// `pagehide` drops the queue: what is in it may already be stored.
 	let pageTransitions = 0
 	const onPageTransition = (event: Event): void => {
 		pageTransitions++
@@ -148,8 +152,7 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 	}
 	// `visibilitychange` is fired at the document and bubbles to the window.
 	const pageTarget = typeof globalThis.addEventListener === "function" ? globalThis : undefined
-	pageTarget?.addEventListener("pagehide", onPageTransition)
-	pageTarget?.addEventListener("visibilitychange", onPageTransition)
+	for (const type of PAGE_TRANSITIONS) pageTarget?.addEventListener(type, onPageTransition)
 
 	const flush = async (keepalive = false): Promise<void> => {
 		const fresh = buffer.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
@@ -218,8 +221,7 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		flush,
 		stop: () => {
 			clearInterval(flushTimer)
-			pageTarget?.removeEventListener("pagehide", onPageTransition)
-			pageTarget?.removeEventListener("visibilitychange", onPageTransition)
+			for (const type of PAGE_TRANSITIONS) pageTarget?.removeEventListener(type, onPageTransition)
 			stopNavigation()
 			stopBaselineCapture()
 			if (holder()[SINK_KEY]?.sink === sink) holder()[SINK_KEY] = undefined
