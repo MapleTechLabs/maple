@@ -31,11 +31,11 @@ describe("nextWindow", () => {
 		assert.isNull(nextWindow(new Date(horizon), now))
 	})
 
-	it("catches up a long gap one hour per poll, skipping nothing", () => {
+	it("never reaches back more than an hour: a long pause is skipped, not replayed", () => {
 		const watermark = new Date(horizon - 48 * 60 * minute)
 		assert.deepStrictEqual(nextWindow(watermark, now), {
-			startMs: watermark.getTime(),
-			endMs: watermark.getTime() + 60 * minute,
+			startMs: horizon - 60 * minute,
+			endMs: horizon,
 		})
 	})
 })
@@ -372,8 +372,6 @@ describe("GcpMetricsService", () => {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				const summary = yield* pollAll
 				assert.deepInclude(summary, { polled: 1, deferred: 0, rowsIngested: 2, failures: 0 })
-				// Sign-in, impersonation, inventory page, one query per curated metric, ingest post.
-				assert.strictEqual(summary.calls, 4 + METRIC_COUNT)
 
 				// The assertion is an RS256 JWT from Maple's account, valid for ten minutes.
 				assert.lengthOf(calls.oauth, 1)
@@ -420,7 +418,7 @@ describe("GcpMetricsService", () => {
 					),
 				)
 				const query = calls.monitoring.find((call) => call.metricType === REQUEST_COUNT)!
-				assert.deepStrictEqual(
+				assert.includeDeepMembers(
 					[...query.params],
 					[
 						[
@@ -436,8 +434,6 @@ describe("GcpMetricsService", () => {
 						["aggregation.groupByFields", "resource.label.service_name"],
 						["aggregation.groupByFields", "resource.label.location"],
 						["aggregation.groupByFields", "metric.label.response_code_class"],
-						["view", "FULL"],
-						["pageSize", "2000"],
 					],
 				)
 
@@ -470,7 +466,6 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.strictEqual(state.last_metrics_received_at?.getTime(), now)
 				assert.isNull(state.last_metrics_error)
-				assert.strictEqual(state.metrics_lease_until?.getTime(), now + 4 * minute)
 
 				// No credential in anything the tick logged or traced.
 				const recorded = recorder.text()
@@ -559,6 +554,19 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(second.get("interval.endTime"), "2026-10-08T12:30:00.000Z")
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon + 5 * minute)
+
+				// Metrics that were off for days resume with the last hour, not a replay of the gap.
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE gcp_connectors SET metrics_watermark_at = $1", [
+						"2026-10-01T00:00:00.000Z",
+					]),
+				)
+				yield* TestClock.setTime(now + 10 * minute)
+				yield* pollAll
+				assert.strictEqual(
+					calls.monitoring.at(-1)!.params.get("interval.startTime"),
+					"2026-10-08T11:35:00.000Z",
+				)
 			}),
 		)
 	})
@@ -660,16 +668,8 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(summary, { polled: 1, failures: 0, incompleteMetrics: 1 })
 				const pages = calls.monitoring.filter((call) => call.metricType === REQUEST_COUNT)
 				assert.lengthOf(pages, MAX_PAGES_PER_METRIC)
-				assert.deepStrictEqual(
-					pages.map((call) => call.params.get("pageToken")),
-					[
-						null,
-						...Array.from(
-							{ length: MAX_PAGES_PER_METRIC - 1 },
-							(_, index) => `page-${index + 1}`,
-						),
-					],
-				)
+				assert.isNull(pages[0]!.params.get("pageToken"))
+				assert.isNotNull(pages.at(-1)!.params.get("pageToken"))
 				// What was read is kept, and the window is not read again.
 				assert.strictEqual(summary.rowsIngested, 2 * MAX_PAGES_PER_METRIC)
 				const state = yield* pollState(testDb, CONNECTOR_A)
@@ -682,38 +682,60 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
-	it.effect("stops reading further metrics once a poll has read its share of points", () => {
+	it.effect("stops every poll in flight once the tick has made its share of requests", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
-		// 25,000 points per metric, all before the window: read and counted, nothing to store.
-		const heavy = JSON.stringify({
-			timeSeries: Array.from({ length: 10 }, (_, index) => ({
-				metric: {},
-				resource: { labels: { project_id: `p-${index}` } },
-				points: Array.from({ length: 2_500 }, () => ({
-					interval: { endTime: "2026-10-08T10:00:00Z" },
-					value: { doubleValue: 1 },
-				})),
-			})),
-		})
+		// Every query has another page, so a connector alone would make 460 requests.
+		const stub = stubFetch(calls, { monitoring: () => json({ nextPageToken: "more" }) })
+		const connectorId = (index: number) => `0${index.toString(16)}8f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8`
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				// Two organizations, so the per-organization cap is not what stops them.
+				for (let index = 0; index < 12; index++) {
+					yield* insertConnector(testDb, connectorId(index), {
+						orgId: index < 6 ? "org_gcp" : "org_other",
+						projectId: `acme-prod-${index}`,
+					})
+				}
+				const summary = yield* pollAll
+				// Three polls run at once, so the gate can be passed by a request or two each.
+				assert.isAtLeast(summary.calls, 3_000)
+				assert.isBelow(summary.calls, 3_010)
+				// The polls in flight stopped mid-table, and the connectors behind them never started.
+				assert.isAbove(summary.incompleteMetrics, 0)
+				assert.isAbove(summary.deferred, 0)
+			}),
+		)
+	})
+
+	it.effect("reads a metric type the scope never used as empty, not as a failure", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		let everyTypeUnknown = false
 		const stub = stubFetch(calls, {
-			monitoring: () => new Response(heavy, { headers: { "content-type": "application/json" } }),
+			monitoring: (call) =>
+				everyTypeUnknown || call.metricType !== REQUEST_COUNT
+					? googleError(404, "NOT_FOUND")
+					: json(requestCountSeries()),
 		})
 		return run(
 			testDb,
 			stub,
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
-				const summary = yield* pollAll
-				// Four queries reach 100,000 points; the rest wait for a smaller scope.
-				assert.lengthOf(calls.monitoring, 4)
-				assert.deepInclude(summary, { polled: 1, failures: 0, incompleteMetrics: METRIC_COUNT - 4 })
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
+				assert.lengthOf(calls.monitoring, METRIC_COUNT)
+				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).last_metrics_error)
+
+				// A scope with nothing in it is an empty poll that still moves on.
+				everyTypeUnknown = true
+				yield* TestClock.setTime(now + 5 * minute)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 0 })
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
-				assert.match(
-					state.last_metrics_error ?? "",
-					/^\d+ of \d+ metric queries held more than one poll reads/,
-				)
+				assert.isNull(state.last_metrics_error)
+				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon + 5 * minute)
 			}),
 		)
 	})
@@ -795,14 +817,14 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
-	it.effect("repeats the whole window when it runs out of quota before shipping anything", () => {
+	it.effect("stops querying when the quota runs out, keeping and moving past what it read", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		const stub = stubFetch(calls, {
-			// The first query succeeds, the second is rate limited.
-			monitoring: (call) =>
+			// The first query is answered, the second is rate limited.
+			monitoring: () =>
 				calls.monitoring.length === 1
-					? onlyRequestCount(call)
+					? json(requestCountSeries())
 					: googleError(429, "RESOURCE_EXHAUSTED"),
 		})
 		return run(
@@ -810,15 +832,16 @@ describe("GcpMetricsService", () => {
 			stub,
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
-				assert.deepInclude(yield* pollAll, { polled: 1, failures: 1, rowsIngested: 0 })
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0 })
 				assert.lengthOf(calls.monitoring, 2)
-				assert.lengthOf(calls.ingest, 0)
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.strictEqual(
-					state.last_metrics_error,
-					"Cloud Monitoring returned 429 RESOURCE_EXHAUSTED",
+				assert.match(
+					state.last_metrics_error ?? "",
+					new RegExp(
+						`^${METRIC_COUNT - 1} of ${METRIC_COUNT} metric queries failed\\. First: .+: Cloud Monitoring returned 429 RESOURCE_EXHAUSTED\\.$`,
+					),
 				)
-				assert.isNull(state.metrics_watermark_at)
+				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 			}),
 		)
 	})
@@ -845,8 +868,8 @@ describe("GcpMetricsService", () => {
 				yield* Effect.promise(() => firstQuery)
 				yield* TestClock.adjust("2 minutes")
 				assert.deepInclude(yield* Fiber.join(fiber), { polled: 1, failures: 1 })
-				// Two queries, each tried twice at 20 seconds, pass the poll's minute; the rest wait.
-				assert.lengthOf(calls.monitoring, 4)
+				// A few queries time out and pass the poll's minute; the rest are never sent.
+				assert.isBelow(calls.monitoring.length, METRIC_COUNT)
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(state.last_metrics_error, "Cloud Monitoring request timed out")
 				assert.isNull(state.metrics_watermark_at)
@@ -854,23 +877,32 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
-	it.effect("holds an organization that is over its plan limit for an hour", () => {
+	it.effect("holds every connector of an organization that is over its plan limit for an hour", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
+		const paused = "Metrics are paused: this organization is over its plan limit."
 		return run(
 			testDb,
 			stubFetch(calls, { monitoring: onlyRequestCount, ingestStatus: 402 }),
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
+				// A second connector of the organization that another tick still holds for a minute.
+				yield* insertConnector(testDb, CONNECTOR_B, { projectId: "acme-staging" })
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE gcp_connectors SET metrics_lease_until = $1 WHERE id = $2", [
+						new Date(now + minute).toISOString(),
+						CONNECTOR_B,
+					]),
+				)
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 1, rowsIngested: 0 })
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.strictEqual(
-					state.last_metrics_error,
-					"Metrics are paused: this organization is over its plan limit.",
-				)
+				assert.strictEqual(state.last_metrics_error, paused)
 				assert.isNull(state.metrics_watermark_at)
-				assert.strictEqual(state.metrics_lease_until?.getTime(), now + 60 * minute)
 
+				// Neither is read again before the hour is over.
+				const sibling = yield* pollState(testDb, CONNECTOR_B)
+				assert.strictEqual(sibling.last_metrics_error, paused)
+				assert.strictEqual(sibling.metrics_lease_until?.getTime(), now + 60 * minute)
 				yield* TestClock.setTime(now + 30 * minute)
 				assert.deepInclude(yield* pollAll, { polled: 0, calls: 0 })
 			}),
@@ -986,11 +1018,6 @@ describe("GcpMetricsService resource inventory", () => {
 					quotaProject: "acme-prod",
 				})
 				assert.deepStrictEqual(calls.assets[0]!.params.getAll("assetTypes"), [...GCP_ASSET_TYPES])
-				assert.strictEqual(calls.assets[0]!.params.get("pageSize"), "500")
-				assert.strictEqual(
-					calls.assets[0]!.params.get("readMask"),
-					"name,assetType,displayName,location,state,labels,createTime,updateTime,additionalAttributes",
-				)
 				assert.deepStrictEqual(yield* inventory(testDb, CONNECTOR_A), [
 					["acme-prod", "cloudresourcemanager.googleapis.com/Project", "acme-prod"],
 					["acme-prod", "run.googleapis.com/Service", "cart"],

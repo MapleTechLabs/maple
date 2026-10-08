@@ -13,14 +13,15 @@ export interface GcpMetric {
 	readonly type: string
 	/** Metric name in Maple: the type under a `gcp.` prefix, e.g. `gcp.run.request_count`. */
 	readonly name: string
-	readonly unit: string
-	readonly description: string
 	/**
 	 * What Maple stores: `sum` is a delta counter per minute, `gauge` a sampled value, and
-	 * `quantiles` are p50/p95/p99 gauges (attribute `quantile`) computed from a distribution.
+	 * `quantiles` are p50/p95/p99 gauges (attribute `quantile`) of a distribution summed over the
+	 * group. A gauge is aligned by mean, the other two as deltas.
 	 */
 	readonly kind: "sum" | "gauge" | "quantiles"
-	readonly aligner: "ALIGN_DELTA" | "ALIGN_MEAN"
+	readonly unit: string
+	readonly description: string
+	/** How the series a group folds together are combined. */
 	readonly reducer: "REDUCE_SUM" | "REDUCE_MEAN"
 	/** Metric labels kept as attributes under their Cloud Monitoring names. */
 	readonly labels: ReadonlyArray<string>
@@ -36,59 +37,32 @@ export interface GcpMetricGroup {
 	readonly metrics: ReadonlyArray<GcpMetric>
 }
 
-/** `run.googleapis.com/request_count` -> `gcp.run.request_count`. */
-const mapleName = (type: string): string => {
+export const gcpMetricAligner = (metric: GcpMetric) =>
+	metric.kind === "gauge" ? "ALIGN_MEAN" : "ALIGN_DELTA"
+
+const metric = (
+	kind: GcpMetric["kind"],
+	type: string,
+	unit: string,
+	description: string,
+	options: Partial<Pick<GcpMetric, "reducer" | "labels" | "scale">> = {},
+): GcpMetric => {
+	// `run.googleapis.com/request_count` -> `gcp.run.request_count`.
 	const [domain = "", ...path] = type.split("/")
-	return ["gcp", domain.split(".")[0], ...path].join(".")
+	return {
+		type,
+		name: ["gcp", domain.split(".")[0], ...path].join("."),
+		kind,
+		unit,
+		description,
+		reducer: "REDUCE_SUM",
+		labels: [],
+		scale: 1,
+		...options,
+	}
 }
 
-const counter = (
-	type: string,
-	unit: string,
-	description: string,
-	labels: ReadonlyArray<string> = [],
-): GcpMetric => ({
-	type,
-	name: mapleName(type),
-	unit,
-	description,
-	kind: "sum",
-	aligner: "ALIGN_DELTA",
-	reducer: "REDUCE_SUM",
-	labels,
-	scale: 1,
-})
-
-const gauge = (
-	type: string,
-	unit: string,
-	description: string,
-	reducer: GcpMetric["reducer"],
-	labels: ReadonlyArray<string> = [],
-): GcpMetric => ({
-	type,
-	name: mapleName(type),
-	unit,
-	description,
-	kind: "gauge",
-	aligner: "ALIGN_MEAN",
-	reducer,
-	labels,
-	scale: 1,
-})
-
-/** A distribution, summed across the group so the percentiles cover every instance in it. */
-const quantiles = (type: string, unit: string, description: string, scale = 1): GcpMetric => ({
-	type,
-	name: mapleName(type),
-	unit,
-	description,
-	kind: "quantiles",
-	aligner: "ALIGN_DELTA",
-	reducer: "REDUCE_SUM",
-	labels: [],
-	scale,
-})
+const MEAN = { reducer: "REDUCE_MEAN" } as const
 
 /**
  * Cloud Asset Inventory types kept in the resource inventory: the projects in a connector's
@@ -113,43 +87,48 @@ export const GCP_ASSET_TYPES: ReadonlyArray<string> = [
 	"compute.googleapis.com/ForwardingRule",
 ]
 
+const RUN = "run.googleapis.com"
+const FUNCTIONS = "cloudfunctions.googleapis.com/function"
+const GKE = "kubernetes.io"
+const GCE = "compute.googleapis.com/instance"
+const SQL = "cloudsql.googleapis.com/database"
+const PUBSUB = "pubsub.googleapis.com"
+const LB = "loadbalancing.googleapis.com/https"
+
+const INSTANCE = { labels: ["instance_name"] } as const
+
 export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 	{
 		// Cloud Run services, and Cloud Functions (2nd gen), which run on Cloud Run.
 		resourceType: "cloud_run_revision",
 		resourceLabels: ["service_name", "location"],
 		metrics: [
-			counter("run.googleapis.com/request_count", "{request}", "Requests that reached the service", [
-				"response_code_class",
-			]),
-			quantiles("run.googleapis.com/request_latencies", "ms", "Request latency"),
-			gauge(
-				"run.googleapis.com/container/instance_count",
-				"{instance}",
-				"Container instances",
-				"REDUCE_SUM",
-				["state"],
-			),
-			quantiles(
-				"run.googleapis.com/container/cpu/utilizations",
+			metric("sum", `${RUN}/request_count`, "{request}", "Requests that reached the service", {
+				labels: ["response_code_class"],
+			}),
+			metric("quantiles", `${RUN}/request_latencies`, "ms", "Request latency"),
+			metric("gauge", `${RUN}/container/instance_count`, "{instance}", "Container instances", {
+				labels: ["state"],
+			}),
+			metric(
+				"quantiles",
+				`${RUN}/container/cpu/utilizations`,
 				"1",
 				"CPU utilization across container instances",
 			),
-			quantiles(
-				"run.googleapis.com/container/memory/utilizations",
+			metric(
+				"quantiles",
+				`${RUN}/container/memory/utilizations`,
 				"1",
 				"Memory utilization across container instances",
 			),
-			quantiles(
-				"run.googleapis.com/container/max_request_concurrencies",
+			metric(
+				"quantiles",
+				`${RUN}/container/max_request_concurrencies`,
 				"{request}",
 				"Peak concurrent requests per container instance",
 			),
-			counter(
-				"run.googleapis.com/container/billable_instance_time",
-				"s",
-				"Billable container instance time",
-			),
+			metric("sum", `${RUN}/container/billable_instance_time`, "s", "Billable container instance time"),
 		],
 	},
 	{
@@ -157,36 +136,18 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "cloud_function",
 		resourceLabels: ["function_name", "region"],
 		metrics: [
-			counter(
-				"cloudfunctions.googleapis.com/function/execution_count",
-				"{execution}",
-				"Function executions",
-				["status"],
-			),
+			metric("sum", `${FUNCTIONS}/execution_count`, "{execution}", "Function executions", {
+				labels: ["status"],
+			}),
 			// Reported in nanoseconds.
-			quantiles(
-				"cloudfunctions.googleapis.com/function/execution_times",
-				"ms",
-				"Function execution time",
-				1e-6,
-			),
-			gauge(
-				"cloudfunctions.googleapis.com/function/instance_count",
-				"{instance}",
-				"Function instances",
-				"REDUCE_SUM",
-				["state"],
-			),
-			quantiles(
-				"cloudfunctions.googleapis.com/function/user_memory_bytes",
-				"By",
-				"Peak memory used per execution",
-			),
-			counter(
-				"cloudfunctions.googleapis.com/function/network_egress",
-				"By",
-				"Outgoing network traffic",
-			),
+			metric("quantiles", `${FUNCTIONS}/execution_times`, "ms", "Function execution time", {
+				scale: 1e-6,
+			}),
+			metric("gauge", `${FUNCTIONS}/instance_count`, "{instance}", "Function instances", {
+				labels: ["state"],
+			}),
+			metric("quantiles", `${FUNCTIONS}/user_memory_bytes`, "By", "Peak memory used per execution"),
+			metric("sum", `${FUNCTIONS}/network_egress`, "By", "Outgoing network traffic"),
 		],
 	},
 	{
@@ -194,24 +155,25 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "k8s_container",
 		resourceLabels: ["cluster_name", "location", "namespace_name", "container_name"],
 		metrics: [
-			counter("kubernetes.io/container/cpu/core_usage_time", "s", "CPU time used"),
-			gauge(
-				"kubernetes.io/container/cpu/limit_utilization",
+			metric("sum", `${GKE}/container/cpu/core_usage_time`, "s", "CPU time used"),
+			metric(
+				"gauge",
+				`${GKE}/container/cpu/limit_utilization`,
 				"1",
 				"Fraction of the CPU limit in use, averaged over pods",
-				"REDUCE_MEAN",
+				MEAN,
 			),
-			gauge("kubernetes.io/container/memory/used_bytes", "By", "Memory in use", "REDUCE_SUM", [
-				"memory_type",
-			]),
-			gauge(
-				"kubernetes.io/container/memory/limit_utilization",
+			metric("gauge", `${GKE}/container/memory/used_bytes`, "By", "Memory in use", {
+				labels: ["memory_type"],
+			}),
+			metric(
+				"gauge",
+				`${GKE}/container/memory/limit_utilization`,
 				"1",
 				"Fraction of the memory limit in use, averaged over pods",
-				"REDUCE_MEAN",
-				["memory_type"],
+				{ ...MEAN, labels: ["memory_type"] },
 			),
-			counter("kubernetes.io/container/restart_count", "{restart}", "Container restarts"),
+			metric("sum", `${GKE}/container/restart_count`, "{restart}", "Container restarts"),
 		],
 	},
 	{
@@ -219,18 +181,19 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "k8s_node",
 		resourceLabels: ["cluster_name", "location"],
 		metrics: [
-			gauge(
-				"kubernetes.io/node/cpu/allocatable_utilization",
+			metric(
+				"gauge",
+				`${GKE}/node/cpu/allocatable_utilization`,
 				"1",
 				"Fraction of allocatable CPU in use, averaged over nodes",
-				"REDUCE_MEAN",
+				MEAN,
 			),
-			gauge(
-				"kubernetes.io/node/memory/allocatable_utilization",
+			metric(
+				"gauge",
+				`${GKE}/node/memory/allocatable_utilization`,
 				"1",
 				"Fraction of allocatable memory in use, averaged over nodes",
-				"REDUCE_MEAN",
-				["memory_type"],
+				{ ...MEAN, labels: ["memory_type"] },
 			),
 		],
 	},
@@ -239,86 +202,37 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "gce_instance",
 		resourceLabels: ["instance_id", "zone"],
 		metrics: [
-			gauge(
-				"compute.googleapis.com/instance/cpu/utilization",
-				"1",
-				"Fraction of the allocated CPU in use",
-				"REDUCE_MEAN",
-				["instance_name"],
-			),
+			metric("gauge", `${GCE}/cpu/utilization`, "1", "Fraction of the allocated CPU in use", {
+				...MEAN,
+				...INSTANCE,
+			}),
 			// E2 machine types only.
-			gauge(
-				"compute.googleapis.com/instance/memory/balloon/ram_used",
-				"By",
-				"Memory in use",
-				"REDUCE_SUM",
-				["instance_name"],
-			),
-			counter("compute.googleapis.com/instance/network/received_bytes_count", "By", "Bytes received", [
-				"instance_name",
-			]),
-			counter("compute.googleapis.com/instance/network/sent_bytes_count", "By", "Bytes sent", [
-				"instance_name",
-			]),
-			counter("compute.googleapis.com/instance/disk/read_bytes_count", "By", "Bytes read from disk", [
-				"instance_name",
-			]),
-			counter("compute.googleapis.com/instance/disk/write_bytes_count", "By", "Bytes written to disk", [
-				"instance_name",
-			]),
+			metric("gauge", `${GCE}/memory/balloon/ram_used`, "By", "Memory in use", INSTANCE),
+			metric("sum", `${GCE}/network/received_bytes_count`, "By", "Bytes received", INSTANCE),
+			metric("sum", `${GCE}/network/sent_bytes_count`, "By", "Bytes sent", INSTANCE),
+			metric("sum", `${GCE}/disk/read_bytes_count`, "By", "Bytes read from disk", INSTANCE),
+			metric("sum", `${GCE}/disk/write_bytes_count`, "By", "Bytes written to disk", INSTANCE),
 		],
 	},
 	{
 		resourceType: "cloudsql_database",
 		resourceLabels: ["database_id", "region"],
 		metrics: [
-			gauge(
-				"cloudsql.googleapis.com/database/cpu/utilization",
-				"1",
-				"Fraction of the reserved CPU in use",
-				"REDUCE_MEAN",
-			),
-			gauge(
-				"cloudsql.googleapis.com/database/memory/utilization",
-				"1",
-				"Fraction of the memory quota in use",
-				"REDUCE_MEAN",
-			),
-			gauge(
-				"cloudsql.googleapis.com/database/disk/utilization",
-				"1",
-				"Fraction of the disk quota in use",
-				"REDUCE_MEAN",
-			),
+			metric("gauge", `${SQL}/cpu/utilization`, "1", "Fraction of the reserved CPU in use", MEAN),
+			metric("gauge", `${SQL}/memory/utilization`, "1", "Fraction of the memory quota in use", MEAN),
+			metric("gauge", `${SQL}/disk/utilization`, "1", "Fraction of the disk quota in use", MEAN),
 			// MySQL and SQL Server.
-			gauge(
-				"cloudsql.googleapis.com/database/network/connections",
-				"{connection}",
-				"Connections to the instance",
-				"REDUCE_SUM",
-			),
+			metric("gauge", `${SQL}/network/connections`, "{connection}", "Connections to the instance"),
 			// PostgreSQL, summed over databases.
-			gauge(
-				"cloudsql.googleapis.com/database/postgresql/num_backends",
-				"{connection}",
-				"Connections to the instance",
-				"REDUCE_SUM",
-			),
-			counter(
-				"cloudsql.googleapis.com/database/disk/read_ops_count",
-				"{operation}",
-				"Disk read operations",
-			),
-			counter(
-				"cloudsql.googleapis.com/database/disk/write_ops_count",
-				"{operation}",
-				"Disk write operations",
-			),
-			gauge(
-				"cloudsql.googleapis.com/database/replication/replica_lag",
+			metric("gauge", `${SQL}/postgresql/num_backends`, "{connection}", "Connections to the instance"),
+			metric("sum", `${SQL}/disk/read_ops_count`, "{operation}", "Disk read operations"),
+			metric("sum", `${SQL}/disk/write_ops_count`, "{operation}", "Disk write operations"),
+			metric(
+				"gauge",
+				`${SQL}/replication/replica_lag`,
 				"s",
 				"How far a read replica is behind its primary",
-				"REDUCE_MEAN",
+				MEAN,
 			),
 		],
 	},
@@ -326,36 +240,36 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "pubsub_subscription",
 		resourceLabels: ["subscription_id"],
 		metrics: [
-			gauge(
-				"pubsub.googleapis.com/subscription/num_undelivered_messages",
+			metric(
+				"gauge",
+				`${PUBSUB}/subscription/num_undelivered_messages`,
 				"{message}",
 				"Unacknowledged messages",
-				"REDUCE_SUM",
 			),
-			gauge(
-				"pubsub.googleapis.com/subscription/oldest_unacked_message_age",
+			metric(
+				"gauge",
+				`${PUBSUB}/subscription/oldest_unacked_message_age`,
 				"s",
 				"Age of the oldest unacknowledged message",
-				"REDUCE_MEAN",
+				MEAN,
 			),
-			counter(
-				"pubsub.googleapis.com/subscription/sent_message_count",
+			metric(
+				"sum",
+				`${PUBSUB}/subscription/sent_message_count`,
 				"{message}",
 				"Messages sent to subscribers",
 			),
-			counter(
-				"pubsub.googleapis.com/subscription/ack_message_count",
-				"{message}",
-				"Messages acknowledged",
-			),
-			counter(
-				"pubsub.googleapis.com/subscription/push_request_count",
+			metric("sum", `${PUBSUB}/subscription/ack_message_count`, "{message}", "Messages acknowledged"),
+			metric(
+				"sum",
+				`${PUBSUB}/subscription/push_request_count`,
 				"{request}",
 				"Push delivery attempts",
-				["response_class"],
+				{ labels: ["response_class"] },
 			),
-			counter(
-				"pubsub.googleapis.com/subscription/dead_letter_message_count",
+			metric(
+				"sum",
+				`${PUBSUB}/subscription/dead_letter_message_count`,
 				"{message}",
 				"Messages moved to the dead-letter topic",
 			),
@@ -365,9 +279,9 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "pubsub_topic",
 		resourceLabels: ["topic_id"],
 		metrics: [
-			counter("pubsub.googleapis.com/topic/send_request_count", "{request}", "Publish requests", [
-				"response_class",
-			]),
+			metric("sum", `${PUBSUB}/topic/send_request_count`, "{request}", "Publish requests", {
+				labels: ["response_class"],
+			}),
 		],
 	},
 	{
@@ -375,35 +289,26 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 		resourceType: "https_lb_rule",
 		resourceLabels: ["url_map_name", "backend_target_name"],
 		metrics: [
-			counter("loadbalancing.googleapis.com/https/request_count", "{request}", "Requests served", [
-				"response_code_class",
-			]),
-			quantiles(
-				"loadbalancing.googleapis.com/https/total_latencies",
+			metric("sum", `${LB}/request_count`, "{request}", "Requests served", {
+				labels: ["response_code_class"],
+			}),
+			metric(
+				"quantiles",
+				`${LB}/total_latencies`,
 				"ms",
 				"Latency from the request reaching the proxy to the last response byte",
 			),
-			quantiles(
-				"loadbalancing.googleapis.com/https/backend_latencies",
+			metric(
+				"quantiles",
+				`${LB}/backend_latencies`,
 				"ms",
 				"Latency from the proxy sending the request to the backend to the last response byte",
 			),
-			counter(
-				"loadbalancing.googleapis.com/https/backend_request_count",
-				"{request}",
-				"Requests sent to backends",
-				["response_code_class"],
-			),
-			counter(
-				"loadbalancing.googleapis.com/https/request_bytes_count",
-				"By",
-				"Request bytes received from clients",
-			),
-			counter(
-				"loadbalancing.googleapis.com/https/response_bytes_count",
-				"By",
-				"Response bytes sent to clients",
-			),
+			metric("sum", `${LB}/backend_request_count`, "{request}", "Requests sent to backends", {
+				labels: ["response_code_class"],
+			}),
+			metric("sum", `${LB}/request_bytes_count`, "By", "Request bytes received from clients"),
+			metric("sum", `${LB}/response_bytes_count`, "By", "Response bytes sent to clients"),
 		],
 	},
 ]

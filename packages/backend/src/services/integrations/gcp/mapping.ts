@@ -28,13 +28,6 @@ export interface GcpMetricRows {
 	readonly gaugeRows: Array<MetricGaugeRow>
 }
 
-const cloudPlatform = (resourceType: string): string | undefined => {
-	if (resourceType === "cloud_run_revision") return "gcp_cloud_run"
-	if (resourceType === "cloud_function") return "gcp_cloud_functions"
-	if (resourceType === "gce_instance") return "gcp_compute_engine"
-	return resourceType.startsWith("k8s_") ? "gcp_kubernetes_engine" : undefined
-}
-
 /** `labels` are the series' resource labels: the project plus the group's `resourceLabels`. */
 export const gcpResourceAttributes = (
 	resourceType: string,
@@ -46,7 +39,6 @@ export const gcpResourceAttributes = (
 		if (value) attributes[key] = value
 	}
 	set("cloud.account.id", labels.project_id)
-	set("cloud.platform", cloudPlatform(resourceType))
 
 	// `location` names a zone for zonal resources and a region otherwise.
 	const location = labels.zone ?? labels.location ?? labels.region
@@ -57,19 +49,24 @@ export const gcpResourceAttributes = (
 	let workload: string | undefined
 	if (resourceType === "cloud_run_revision") {
 		workload = labels.service_name
+		set("cloud.platform", "gcp_cloud_run")
 		set("faas.name", workload)
 	} else if (resourceType === "cloud_function") {
 		workload = labels.function_name
+		set("cloud.platform", "gcp_cloud_functions")
 		set("faas.name", workload)
 	} else if (resourceType === "k8s_container") {
 		workload = labels.container_name
+		set("cloud.platform", "gcp_kubernetes_engine")
 		set("k8s.cluster.name", labels.cluster_name)
 		set("k8s.namespace.name", labels.namespace_name)
 		set("k8s.container.name", workload)
 	} else if (resourceType === "k8s_node") {
+		set("cloud.platform", "gcp_kubernetes_engine")
 		set("k8s.cluster.name", labels.cluster_name)
 	} else if (resourceType === "gce_instance") {
 		workload = metricLabels.instance_name
+		set("cloud.platform", "gcp_compute_engine")
 		set("host.id", labels.instance_id)
 		set("host.name", workload)
 	}

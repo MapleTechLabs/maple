@@ -22,7 +22,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -189,14 +189,14 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				)
 
 			/** Projects in each connector's inventory. One the poller has not synced yet is absent. */
-			const projectCounts = (orgId: OrgId) =>
+			const projectCounts = (connectorIds: ReadonlyArray<GcpConnectorId>) =>
 				dbExecute((db) =>
 					db
 						.select({ connectorId: gcpResources.connectorId, count: sql<number>`count(*)::int` })
 						.from(gcpResources)
 						.where(
 							and(
-								eq(gcpResources.orgId, orgId),
+								inArray(gcpResources.connectorId, [...connectorIds]),
 								eq(gcpResources.assetType, GCP_PROJECT_ASSET_TYPE),
 							),
 						)
@@ -212,7 +212,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						.where(eq(gcpConnectors.orgId, orgId))
 						.orderBy(asc(gcpConnectors.createdAt), asc(gcpConnectors.id)),
 				)
-				const counts = yield* projectCounts(orgId)
+				// An empty `IN ()` is not valid SQL.
+				const counts =
+					rows.length === 0
+						? new Map<GcpConnectorId, number>()
+						: yield* projectCounts(rows.map((row) => row.id))
 				return {
 					metricsAvailable: mapleServiceAccountEmail !== undefined,
 					connectors: rows.map((row) => toConnector(row, counts.get(row.id))),
@@ -288,25 +292,12 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				const [row] = yield* dbExecute((db) =>
 					db
 						.update(gcpConnectors)
-						.set({
-							...flags,
-							// Switching metrics restarts the poller from a fresh window: it does not
-							// replay the time they were off, or keep an error from before.
-							...(flags.metricsEnabled === current.metricsEnabled
-								? undefined
-								: {
-										metricsWatermarkAt: null,
-										lastMetricsError: null,
-										resourcesSyncedAt: null,
-										lastResourcesError: null,
-									}),
-							updatedAt,
-						})
+						.set({ ...flags, updatedAt })
 						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
 						.returning(),
 				)
 				if (row === undefined) return yield* notFound()
-				return toConnector(row, (yield* projectCounts(orgId)).get(row.id))
+				return toConnector(row, (yield* projectCounts([row.id])).get(row.id))
 			})
 
 			const scripts = Effect.fn("GcpConnectorService.scripts")(function* (

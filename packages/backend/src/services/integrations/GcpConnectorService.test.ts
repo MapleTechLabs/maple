@@ -202,7 +202,7 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("reports what the poller recorded, and restarts it when metrics are switched", () => {
+	it.effect("reports what the poller recorded and how many projects it found", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
@@ -263,20 +263,11 @@ describe("GcpConnectorService", () => {
 			// Both were created in the same test-clock instant, so their order is by id.
 			assert.sameDeepMembers([...(yield* gcp.status(orgId)).connectors], [polled, other])
 
-			// A change that leaves metrics alone keeps the poller's position.
-			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, { logsEnabled: true }), polled)
-
-			// Off and on again: no replay of the gap, no error from before, a fresh inventory sync.
-			const off = yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
-			assert.deepInclude(off, { lastMetricsError: null, lastResourcesError: null })
-			const state = yield* Effect.promise(() =>
-				queryFirstRow<{ metrics_watermark_at: unknown; resources_synced_at: unknown }>(
-					testDb,
-					"SELECT metrics_watermark_at, resources_synced_at FROM gcp_connectors WHERE id = $1",
-					[connector.id],
-				),
-			)
-			assert.deepStrictEqual(state, { metrics_watermark_at: null, resources_synced_at: null })
+			// Switching a flag leaves the poller's state as it is.
+			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, { metricsEnabled: false }), {
+				...polled,
+				metricsEnabled: false,
+			})
 
 			// The inventory goes with its connector.
 			yield* gcp.delete(orgId, connector.id)

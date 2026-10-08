@@ -29,7 +29,8 @@ export const gcpConnectors = pgTable(
 		// A tick claims the connector by moving this past now, and it is never cleared: it also
 		// orders the next tick, least recently polled first.
 		metricsLeaseUntil: timestamp("metrics_lease_until", { withTimezone: true, mode: "date" }),
-		// Last complete sync of `gcp_resources`, and why the latest attempt fell short.
+		// Last sync of `gcp_resources` that Google answered, whole or cut short at a cap; the next
+		// one is due an hour later. The error says why the latest attempt fell short.
 		resourcesSyncedAt: timestamp("resources_synced_at", { withTimezone: true, mode: "date" }),
 		lastResourcesError: text("last_resources_error"),
 		createdBy: text("created_by").notNull(),

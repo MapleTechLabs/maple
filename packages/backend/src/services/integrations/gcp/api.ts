@@ -1,18 +1,17 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 /**
- * The Google calls the metrics poller makes, over WebCrypto and `fetch` so they run in a Worker:
- * sign in as Maple's service account, mint a short-lived token for the customer's reader
- * account, and read Cloud Monitoring and Cloud Asset Inventory with it.
- *
- * Nothing here may leak a credential. Tokens stay `Redacted`, and a failure is described by the
- * HTTP status and Google's error code only: never the response body, the transport error (it
- * holds the request and its Authorization header) or a schema issue (it quotes its input).
- *
- * Untraced on purpose: the HTTP client already records a span per request, and a scope that is
- * not set up yet is an expected state, not an exception on Maple's own traces.
+ * The Google calls the poller makes, over WebCrypto and `fetch` so they run in a Worker. Nothing
+ * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and
+ * Google's error code only, never a response body, transport error or schema issue. Untraced on
+ * purpose: the HTTP client records a span per request, and "not set up yet" is not an exception.
  */
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
-import { GCP_ASSET_TYPES, type GcpMetric, type GcpMetricGroup } from "@maple/domain/gcp-metrics"
+import {
+	GCP_ASSET_TYPES,
+	gcpMetricAligner,
+	type GcpMetric,
+	type GcpMetricGroup,
+} from "@maple/domain/gcp-metrics"
 import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
 import { Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
@@ -22,7 +21,6 @@ const IAM_SCOPE = "https://www.googleapis.com/auth/iam"
 // Cloud Asset Inventory accepts no narrower scope. What the token can do is bounded by the
 // reader account's roles, which the setup script keeps to read-only viewers.
 const READER_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
-/** Lifetime of both tokens. A tick is done long before. */
 const TOKEN_LIFETIME_SECONDS = 600
 const REQUEST_TIMEOUT = Duration.seconds(20)
 /**
@@ -30,8 +28,7 @@ const REQUEST_TIMEOUT = Duration.seconds(20)
  * connectors decoding a page each stay far below the Worker's 128 MB.
  */
 const TIME_SERIES_PAGE_SIZE = 2_000
-/** Cloud Asset Inventory's maximum. */
-const RESOURCE_PAGE_SIZE = 500
+export const RESOURCE_PAGE_SIZE = 500
 
 export class GcpApiError extends Schema.TaggedError<GcpApiError>()("@maple/api/integrations/GcpApiError", {
 	message: Schema.String,
@@ -168,12 +165,8 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 	]
 		.map((part) => base64Url(JSON.stringify(part)))
 		.join(".")
-	const signature = yield* Effect.tryPromise(() =>
+	const signature = yield* Effect.promise(() =>
 		crypto.subtle.sign("RSASSA-PKCS1-v1_5", signer.key, new TextEncoder().encode(signingInput)),
-	).pipe(
-		Effect.mapError(
-			() => new GcpApiError({ message: "Signing the Google OAuth assertion failed", kind: "invalid" }),
-		),
 	)
 	const response = yield* call(
 		httpClient,
@@ -317,7 +310,7 @@ export const listTimeSeriesPage = (
 				"interval.startTime": new Date(query.startMs).toISOString(),
 				"interval.endTime": new Date(query.endMs).toISOString(),
 				"aggregation.alignmentPeriod": "60s",
-				"aggregation.perSeriesAligner": query.metric.aligner,
+				"aggregation.perSeriesAligner": gcpMetricAligner(query.metric),
 				"aggregation.crossSeriesReducer": query.metric.reducer,
 				"aggregation.groupByFields": [
 					"resource.label.project_id",
@@ -356,7 +349,6 @@ const decodeResourcePage = Schema.decodeUnknownEffect(
 	}),
 )
 
-/** One page of the curated asset types in the scope. */
 export const searchResourcesPage = (
 	httpClient: HttpClient.HttpClient,
 	reader: GcpReader,
