@@ -7,10 +7,7 @@ export const apiBaseUrl =
 
 const configuredApiPublicUrl = import.meta.env.VITE_API_PUBLIC_URL?.trim()
 
-/**
- * The API's own public URL, for anything a user copies or another tool calls.
- * `apiBaseUrl` can be this app's same-origin proxy, which only the app should use.
- */
+/** The API's real URL, for what users copy. `apiBaseUrl` can be the same-origin proxy. */
 export const apiPublicUrl =
 	configuredApiPublicUrl && configuredApiPublicUrl.length > 0
 		? configuredApiPublicUrl.replace(/\/$/, "")

@@ -15,7 +15,6 @@ import { Effect } from "effect"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
 
-// Traces the `/_api/*` hop. Built at module scope: the buffers are per isolate.
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "maple-web-worker",
 	serviceNamespace: "core",

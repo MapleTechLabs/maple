@@ -28,7 +28,6 @@ export interface WebWorkerEnv {
 	 * through the public domain.
 	 */
 	readonly API?: { fetch: (request: Request) => Promise<Response> }
-	/** Self-observability (`MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT`, ...), read by the tracer by name. */
 	readonly [key: string]: unknown
 }
 

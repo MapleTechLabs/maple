@@ -12,16 +12,7 @@ export class ApiProxyForwardError extends Schema.TaggedError<ApiProxyForwardErro
 	},
 ) {}
 
-/**
- * Forwards one `/_api/*` call to the API, as a server span (the browser's call
- * arriving) with a client span (the hop to the API) under it. The API's own
- * server span then parents to that client span, so the trace reads browser,
- * web Worker, API.
- *
- * Re-addressed to the API's own URL, so the API sees the Host, path and origin
- * it always has (OAuth callbacks and MCP metadata are built from them). Method,
- * headers and the streamed body carry over, `cf-connecting-ip` included.
- */
+/** Forwards a `/_api/*` call to the API's own URL, so its Host and OAuth callbacks are unchanged. */
 export const forwardToApi = (
 	request: Request,
 	url: URL,
@@ -35,7 +26,7 @@ export const forwardToApi = (
 		{
 			kind: "server",
 			parent: Option.getOrUndefined(incoming),
-			// The path only: a query can carry a token (unsubscribe links do).
+			// No query: it can carry a token.
 			attributes: {
 				"http.request.method": request.method,
 				"http.route": `${API_PROXY_PREFIX}/*`,
@@ -44,8 +35,7 @@ export const forwardToApi = (
 		},
 		(server) =>
 			(api === undefined
-				? // A deploy without the API binding: a 503 marks the span `Error` instead of hiding it.
-					Effect.succeed(new Response(null, { status: 503 }))
+				? Effect.succeed(new Response(null, { status: 503 }))
 				: forwardOverBinding(request, url, api, path, server)
 			).pipe(
 				Effect.tap((response) =>
@@ -80,7 +70,6 @@ const forwardOverBinding = (
 		},
 		(client) => {
 			const forwarded = new Request(target, request)
-			// The API's server span parents to this hop, not straight to the browser.
 			Object.entries(HttpTraceContext.toHeaders(client)).forEach(([name, value]) =>
 				forwarded.headers.set(name, value),
 			)
@@ -99,8 +88,6 @@ const forwardOverBinding = (
 			)
 		},
 	).pipe(
-		// Recorded on the client span already; the browser gets a gateway error, not a hang.
-		// A 5xx marks the server span `Error`; a 4xx is the API's answer and stays `Ok`.
 		Effect.catchTag("@maple/web/ApiProxyForwardError", () =>
 			Effect.succeed(new Response(null, { status: 502 })),
 		),

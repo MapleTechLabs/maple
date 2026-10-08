@@ -78,11 +78,10 @@ const applyShareOgMeta = async (
 	return meta === undefined ? response : shareOgMetaRewriter(meta, url.origin).transform(response)
 }
 
-/** One request against the built SPA: the API proxy, OG images, the share preview, security headers, the shell fallback. */
+/** One request against the built SPA: OG images, the share preview, security headers, the shell fallback. */
 export const handleRequest = async (
 	request: Request,
 	env: WebWorkerEnv,
-	// The entry provides the Worker's tracer here; without one the spans go nowhere.
 	runTraced: (effect: Effect.Effect<Response>) => Promise<Response> = Effect.runPromise,
 ): Promise<Response> => {
 	const url = new URL(request.url)
