@@ -1,11 +1,15 @@
 // Browser telemetry preset with explicit and unload-triggered flushes for
 // buffered traces, logs, and metric snapshots. Transport uses keepalive fetch:
-// unlike sendBeacon it can carry the ingest key's Authorization header.
+// unlike sendBeacon it can carry the ingest key's Authorization header. The
+// browser caps a page's in-flight keepalive bodies at 64 KiB combined, so every
+// POST spends from the budget shared with the session writes and goes out as a
+// plain request once that is used up.
 
 import {
 	hasConsent,
 	type MapleRegion,
 	onConsentChange,
+	postToIngest,
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
@@ -19,6 +23,7 @@ import {
 	type Resolved,
 	type ResourceInput,
 	runFlush,
+	runUnloadFlush,
 	type SignalState,
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
@@ -32,6 +37,12 @@ import type { PrivacyOptions } from "./track.js"
 
 /** Default auto-flush cadence (ms), matching `Otlp.layerJson`'s 5s export interval. */
 const DEFAULT_AUTO_FLUSH_MS = 5_000
+
+/** A POST unanswered for this long is aborted, so it cannot hold up the flushes queued behind it. */
+const POST_TIMEOUT_MS = 30_000
+
+/** Body size of one unload request: small enough that several fit the keepalive budget next to the session writes. */
+const UNLOAD_CHUNK_BYTES = 16 * 1024
 
 const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
@@ -145,23 +156,20 @@ export interface FlushableTelemetry {
 	 * anything. It is narrowed on the way into the exception event.
 	 */
 	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
-	/** Drain the buffers and POST them now (keepalive). Never rejects. */
+	/** Drain the buffers and POST them now (keepalive while the body fits the budget). Never rejects. */
 	readonly flush: () => Promise<void>
 	/** Remove unload listeners, stop the auto-flush timer, then do one final flush. */
 	readonly dispose: () => Promise<void>
 }
 
-/** `fetch(keepalive)` transport — see file header for why not `sendBeacon`. */
-const keepaliveTransport: FlushTransport = {
-	post: async (url, headers, body) => {
-		const res = await fetch(url, {
-			method: "POST",
-			headers,
-			body: JSON.stringify(body),
-			keepalive: true,
-		})
-		if (!res.ok) throw new Error(`OTLP ${res.status} ${res.statusText}`)
-	},
+/** Keepalive-budgeted POST (see file header). Throws on non-2xx so the signal cools down. */
+const postOtlp: FlushTransport["post"] = async (url, headers, body) => {
+	const controller = new AbortController()
+	const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS)
+	const res = await postToIngest(url, headers, JSON.stringify(body), true, controller.signal).finally(() =>
+		clearTimeout(timer),
+	)
+	if (!res.ok) throw new Error(`OTLP ${res.status}`)
 }
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
@@ -270,29 +278,45 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
 
-	// Never rejects — fired from `pagehide`/`visibilitychange` handlers and the
-	// auto-flush timer as `void flush()`.
+	// True from `pagehide` until `pageshow` (a back/forward-cache restore). An
+	// unloading page rejects its keepalive fetches even when ingest accepted
+	// them, so a failure seen in that window is neither retried nor reported.
+	let unloading = false
+	const flushArgs = {
+		resolved,
+		spans,
+		logs,
+		metrics,
+		tracesState,
+		logsState,
+		metricsState,
+		transport: {
+			post: (url, headers, body) =>
+				postOtlp(url, headers, body).catch((cause: unknown) =>
+					unloading ? undefined : Promise.reject(cause),
+				),
+		} satisfies FlushTransport,
+		logPrefix: "[MapleClientSDK]",
+	}
+	const dropWithoutConsent = (): boolean => {
+		if (hasConsent()) return false
+		spans.drain()
+		logs.drain()
+		metrics.drain()
+		return true
+	}
+
+	// Never rejects — fired from the auto-flush timer as `void flush()`.
 	const flush = makeSerializedFlush(
 		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
-			if (!hasConsent()) {
-				spans.drain()
-				logs.drain()
-				metrics.drain()
-				return
-			}
-			await runFlush({
-				resolved,
-				spans,
-				logs,
-				metrics,
-				tracesState,
-				logsState,
-				metricsState,
-				transport: keepaliveTransport,
-				logPrefix: "[MapleClientSDK]",
-			})
+			if (!dropWithoutConsent()) await runFlush(flushArgs)
 		}),
 	)
+	// The page may not live to see a queued flush start, so this one skips the
+	// queue and issues its requests inside the event handler that called it.
+	const flushOnUnload = guardFlush("[MapleClientSDK]", async (): Promise<void> => {
+		if (!dropWithoutConsent()) await runUnloadFlush({ ...flushArgs, maxChunkBytes: UNLOAD_CHUNK_BYTES })
+	})
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -367,14 +391,19 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	const onPageHide = (): void => {
-		void flush()
+		unloading = true
+		void flushOnUnload()
+	}
+	const onPageShow = (): void => {
+		unloading = false
 	}
 	const onVisibilityChange = (): void => {
-		if (browserDocument()?.visibilityState === "hidden") void flush()
+		if (browserDocument()?.visibilityState === "hidden") void flushOnUnload()
 	}
 	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
 	if (canListen) {
 		globalThis.addEventListener("pagehide", onPageHide)
+		globalThis.addEventListener("pageshow", onPageShow)
 		globalThis.addEventListener("visibilitychange", onVisibilityChange)
 	}
 
@@ -385,6 +414,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		}
 		if (canListen) {
 			globalThis.removeEventListener("pagehide", onPageHide)
+			globalThis.removeEventListener("pageshow", onPageShow)
 			globalThis.removeEventListener("visibilitychange", onVisibilityChange)
 		}
 		if (canCaptureGlobals) {

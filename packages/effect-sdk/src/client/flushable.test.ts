@@ -10,9 +10,13 @@ interface FetchCall {
 	readonly headers: Record<string, string>
 	readonly body: unknown
 	readonly keepalive: boolean | undefined
+	readonly bytes: number
 }
 
-const setupFetch = (responder: (url: string) => Response = () => new Response(null, { status: 200 })) => {
+const setupFetch = (
+	responder: (url: string, init?: RequestInit) => Response | Promise<Response> = () =>
+		new Response(null, { status: 200 }),
+) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -26,12 +30,50 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
 		}
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
-		calls.push({ url, headers, body, keepalive: init?.keepalive })
-		return responder(url)
+		const text = typeof init?.body === "string" ? init.body : ""
+		calls.push({
+			url,
+			headers,
+			body: text ? JSON.parse(text) : undefined,
+			keepalive: init?.keepalive,
+			bytes: new TextEncoder().encode(text).byteLength,
+		})
+		return responder(url, init)
 	}) as typeof fetch
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
+
+/** A responder whose requests stay in flight until the test settles them. */
+const pendingResponses = () => {
+	const pending: Array<{ resolve: (response: Response) => void; reject: (cause: unknown) => void }> = []
+	return {
+		responder: () => new Promise<Response>((resolve, reject) => pending.push({ resolve, reject })),
+		resolveAll: () => pending.splice(0).forEach((p) => p.resolve(new Response(null, { status: 200 }))),
+		rejectAll: () => pending.splice(0).forEach((p) => p.reject(new TypeError("Failed to fetch"))),
+	}
+}
+
+const recordSpans = (telemetry: ReturnType<typeof make>, names: ReadonlyArray<string>) =>
+	Effect.runPromise(
+		Effect.forEach(names, (name) => Effect.succeed(undefined).pipe(Effect.withSpan(name)), {
+			discard: true,
+		}).pipe(Effect.provide(telemetry.layer)),
+	)
+
+const numbered = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix}-${i}`)
+
+const traceCalls = (calls: ReadonlyArray<FetchCall>) => calls.filter((c) => c.url.endsWith("/v1/traces"))
+
+const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
+	traceCalls(calls).flatMap((c) =>
+		(
+			c.body as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }> }
+		).resourceSpans[0].scopeSpans[0].spans.map((span) => span.name),
+	)
+
+// Mirrors `KEEPALIVE_BUDGET_BYTES` in @maple/browser-session and the unload chunk cap.
+const KEEPALIVE_BUDGET_BYTES = 56 * 1024
+const UNLOAD_CHUNK_BYTES = 16 * 1024
 
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
@@ -84,6 +126,9 @@ describe("MapleFlush.make (client)", () => {
 	afterEach(() => {
 		restore?.()
 		delete (globalThis as Record<string, unknown>)["__MAPLE_BROWSER_SESSION__"]
+		// Tests that leave requests in flight would otherwise leak their reservation.
+		delete (globalThis as Record<string, unknown>)["__MAPLE_KEEPALIVE_INFLIGHT__"]
+		vi.restoreAllMocks()
 		setConsent(false)
 		resetConsentForTests()
 		vi.useRealTimers()
@@ -457,5 +502,185 @@ describe("MapleFlush.make (client)", () => {
 		expect(calls.length).toBe(0)
 		await telemetry.dispose()
 		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
+	})
+
+	it("sends a batch over the keepalive budget as a plain request, and keeps flushing after it", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make(baseConfig)
+
+		await recordSpans(telemetry, numbered("big", 400))
+		await telemetry.flush()
+		expect(traceCalls(calls)).toHaveLength(1)
+		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(KEEPALIVE_BUDGET_BYTES)
+		// The browser would reject this body with keepalive set, whatever the server says.
+		expect(traceCalls(calls)[0].keepalive).toBe(false)
+
+		await recordSpans(telemetry, ["small"])
+		await telemetry.flush()
+		expect(traceCalls(calls)).toHaveLength(2)
+		expect(traceCalls(calls)[1].keepalive).toBe(true)
+		expect(spanNames(calls)).toHaveLength(401)
+	})
+
+	it("aborts a POST that never answers, so the flushes queued behind it still run", async () => {
+		vi.useFakeTimers()
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const { calls, restore: r } = setupFetch(
+			(_url, init) =>
+				new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))
+				}),
+		)
+		restore = r
+		const telemetry = make(baseConfig)
+
+		await recordSpans(telemetry, ["stuck"])
+		const stuck = telemetry.flush()
+		const queued = telemetry.flush()
+		await vi.advanceTimersByTimeAsync(30_000)
+		await Promise.all([stuck, queued])
+
+		expect(calls).toHaveLength(1)
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("flushes on unload while a periodic flush is still in flight", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await recordSpans(telemetry, ["tail"])
+		dom.fire("pagehide")
+		// No await: the request has to leave inside the event handler.
+		expect(spanNames(calls)).toEqual(["periodic", "tail"])
+
+		inflight.resolveAll()
+		await periodic
+	})
+
+	it("flushes on unload during a cooldown", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		let status = 503
+		const { calls, restore: rf } = setupFetch(() => new Response(null, { status }))
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["rejected"])
+		await telemetry.flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+		await telemetry.flush()
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+		expect(traceCalls(calls)).toHaveLength(1)
+
+		status = 200
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		expect(traceCalls(calls)).toHaveLength(2)
+		expect(spanNames([traceCalls(calls)[1]])).toEqual(["rejected"])
+	})
+
+	it("splits the unload flush into chunks that stay within the shared keepalive budget", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+		const names = numbered("unload", 400)
+
+		await recordSpans(telemetry, names)
+		await Effect.runPromise(Effect.logInfo("last words").pipe(Effect.provide(telemetry.layer)))
+		dom.fire("pagehide")
+
+		const traces = traceCalls(calls)
+		expect(traces.length).toBeGreaterThan(4)
+		for (const call of calls) expect(call.bytes).toBeLessThanOrEqual(UNLOAD_CHUNK_BYTES)
+		expect(spanNames(calls)).toEqual(names)
+		// Traces go first; logs are issued in the same handler, after them.
+		expect(calls.at(-1)?.url).toBe("https://collector.test/v1/logs")
+		const keepalive = calls.filter((call) => call.keepalive)
+		expect(keepalive.length).toBeGreaterThan(1)
+		expect(keepalive.reduce((sum, call) => sum + call.bytes, 0)).toBeLessThanOrEqual(
+			KEEPALIVE_BUDGET_BYTES,
+		)
+		// Past the budget a chunk still goes out, without keepalive.
+		expect(calls.some((call) => call.keepalive === false)).toBe(true)
+
+		inflight.resolveAll()
+		await tick()
+	})
+
+	it("treats a rejection after pagehide as final: no restore, no cooldown, no console output", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await recordSpans(telemetry, ["tail"])
+		dom.fire("pagehide")
+		// An unloading document rejects keepalive fetches the server still receives.
+		inflight.rejectAll()
+		await periodic
+		await tick()
+
+		// Restored from the back/forward cache: nothing was put back, nothing is cooling down.
+		dom.fire("pageshow")
+		await recordSpans(telemetry, ["after-restore"])
+		const next = telemetry.flush()
+		await tick()
+		inflight.resolveAll()
+		await next
+		expect(spanNames(calls)).toEqual(["periodic", "tail", "after-restore"])
+		expect(errorSpy).not.toHaveBeenCalled()
+		expect(warnSpy).not.toHaveBeenCalled()
+	})
+
+	it("restores and cools down when the flush fails on a page that is only hidden", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] })
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		let fail = true
+		const { calls, restore: rf } = setupFetch(() =>
+			fail ? Promise.reject(new TypeError("Failed to fetch")) : new Response(null, { status: 200 }),
+		)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["hidden"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		await tick()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		fail = false
+		vi.advanceTimersByTime(60_000)
+		await telemetry.flush()
+		expect(spanNames([traceCalls(calls)[1]])).toEqual(["hidden"])
 	})
 })

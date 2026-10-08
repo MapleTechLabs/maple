@@ -82,16 +82,17 @@ export function warnDropped(what: string, error: unknown): void {
  *
  * The Fetch spec caps the *combined* in-flight keepalive body at 64 KiB per
  * page, and the browser rejects a request that would cross it. On the way out
- * up to three of our writes go at once (metadata row, final events batch, last
- * replay chunk), so the budget has to be shared rather than checked per
- * request. It stops short of 64 KiB because the OTLP trace exporter spends
- * from the same page-wide allowance under its own accounting.
+ * several of our writes go at once (metadata row, final events batch, last
+ * replay chunk, the Effect SDK's OTLP flush), so the budget has to be shared
+ * rather than checked per request: all of them go through
+ * {@link postToIngest}. It stops short of 64 KiB to leave room for keepalive
+ * requests and beacons the host page sends itself.
  *
  * Over the budget a write goes out as a normal request, which the page may or
  * may not survive long enough to finish: strictly better than a guaranteed
  * rejection.
  */
-const KEEPALIVE_BUDGET_BYTES = 48 * 1024
+const KEEPALIVE_BUDGET_BYTES = 56 * 1024
 
 /** On `globalThis`: two bundled SDK copies still share one page-wide allowance. */
 const KEEPALIVE_KEY = "__MAPLE_KEEPALIVE_INFLIGHT__"
@@ -137,14 +138,15 @@ function byteLength(body: string | Uint8Array): number {
  * requested. Resolves with the status only: the response body is cancelled
  * before the reservation is released, because the browser counts a keepalive
  * request against the page-wide limit until its response body ends, not
- * until headers arrive. Rejects exactly as `fetch` does; callers own the
- * error policy.
+ * until headers arrive. Rejects exactly as `fetch` does, including when
+ * `signal` aborts; callers own the error policy.
  */
 export async function postToIngest(
 	url: string,
 	headers: Record<string, string>,
 	body: string | Uint8Array,
 	keepalive: boolean,
+	signal?: AbortSignal,
 ): Promise<{ readonly ok: boolean; readonly status: number }> {
 	const release = reserveKeepalive(keepalive, byteLength(body))
 	try {
@@ -153,6 +155,7 @@ export async function postToIngest(
 			headers,
 			body: body as BodyInit,
 			keepalive: release !== undefined,
+			signal,
 		})
 		// Nothing reads ingest's body; ending it here is what ends the request.
 		await response.body?.cancel().catch(() => {})

@@ -44,7 +44,7 @@ export type { TrackProps } from "./events/track"
 export { track } from "./events/track"
 export { isLikelyBot, parseUserAgent } from "./platform/user-agent"
 export type { NetworkBodyOptions } from "./platform/transport"
-export { ingestHeaders, SDK_HINT_HEADER, sdkHint } from "./platform/transport"
+export { ingestHeaders, postToIngest, SDK_HINT_HEADER, sdkHint } from "./platform/transport"
 export { getVisitorId, isVisitorIdPersisted, setVisitorTracking } from "./identity/visitor"
 export type { MapleRegion } from "./platform/region"
 export {

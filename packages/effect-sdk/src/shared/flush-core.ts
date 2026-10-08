@@ -54,8 +54,8 @@ export interface SignalState {
 
 /**
  * How a preset delivers an encoded OTLP body. The default {@link fetchTransport}
- * is a plain POST; the browser client swaps in a `keepalive` POST so flushes on
- * `pagehide` survive the unload.
+ * is a plain POST; the browser client swaps in one that uses `keepalive`
+ * within the page's shared budget so a flush can outlive the page.
  */
 export interface FlushTransport {
 	readonly post: (url: string, headers: Record<string, string>, body: unknown) => Promise<void>
@@ -148,7 +148,7 @@ const post = async (url: string, headers: Record<string, string>, body: unknown)
 /** Default transport: plain `fetch` (server + Cloudflare). */
 export const fetchTransport: FlushTransport = { post }
 
-const flushSignal = async <A>(args: {
+interface SignalFlush<A> {
 	readonly url: string
 	readonly headers: Record<string, string>
 	readonly buffer: { readonly drain: () => Array<A>; readonly restore: (items: ReadonlyArray<A>) => void }
@@ -157,8 +157,10 @@ const flushSignal = async <A>(args: {
 	readonly signal: string
 	readonly transport: FlushTransport
 	readonly logPrefix: string
-}): Promise<void> => {
-	const { url, headers, buffer, body, state, signal, transport, logPrefix } = args
+}
+
+const flushSignal = async <A>(args: SignalFlush<A>): Promise<void> => {
+	const { buffer, state, signal, logPrefix } = args
 	if (state.disabledUntil && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
@@ -168,6 +170,12 @@ const flushSignal = async <A>(args: {
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
+	await postBatch(args, batch)
+}
+
+/** POST one drained batch. A failure restores it and starts the signal's cooldown. */
+const postBatch = async <A>(args: SignalFlush<A>, batch: ReadonlyArray<A>): Promise<void> => {
+	const { url, headers, buffer, body, state, signal, transport, logPrefix } = args
 	const posted = await Effect.runPromise(
 		Effect.result(
 			Effect.tryPromise({
@@ -181,6 +189,36 @@ const flushSignal = async <A>(args: {
 		state.disabledUntil = Date.now() + COOLDOWN_MS
 		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, posted.failure)
 	}
+}
+
+/**
+ * Split a batch so each encoded body stays within `maxBytes` of UTF-8. An item
+ * larger than that travels alone.
+ */
+const chunkByBytes = <A>(
+	items: ReadonlyArray<A>,
+	body: (items: ReadonlyArray<A>) => unknown,
+	maxBytes: number,
+): Array<Array<A>> => {
+	const encoder = new TextEncoder()
+	const bytes = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
+	const envelope = bytes([])
+	const chunks: Array<Array<A>> = []
+	let current: Array<A> = []
+	let size = envelope
+	for (const item of items) {
+		// Encoded alone to measure it; the +1 is the comma joining it to the chunk.
+		const itemBytes = bytes([item]) - envelope + 1
+		if (current.length > 0 && size + itemBytes > maxBytes) {
+			chunks.push(current)
+			current = []
+			size = envelope
+		}
+		current.push(item)
+		size += itemBytes
+	}
+	if (current.length > 0) chunks.push(current)
+	return chunks
 }
 
 /**
@@ -241,7 +279,33 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
  */
-export const runFlush = async (args: {
+export const runFlush = async (args: FlushArgs): Promise<void> => {
+	if (args.resolved.noOp) {
+		args.spans.drain()
+		args.logs.drain()
+		args.metrics.drain()
+		args.onNoOp?.()
+		return
+	}
+	await eachSignal(args, flushSignal)
+}
+
+/**
+ * Flush for a page that is going away (browser preset): every request is
+ * issued before this returns, traces first, in chunks of at most
+ * `maxChunkBytes` so several fit a keepalive budget. A signal in cooldown is
+ * sent anyway, because no later flush is coming.
+ */
+export const runUnloadFlush = (args: FlushArgs & { readonly maxChunkBytes: number }): Promise<unknown> =>
+	eachSignal(args, (signal) =>
+		Promise.all(
+			chunkByBytes(signal.buffer.drain(), signal.body, args.maxChunkBytes).map((chunk) =>
+				postBatch(signal, chunk),
+			),
+		),
+	)
+
+interface FlushArgs {
 	readonly resolved: Resolved
 	readonly spans: SpanBuffer
 	readonly logs: LogBuffer
@@ -252,58 +316,39 @@ export const runFlush = async (args: {
 	readonly transport: FlushTransport
 	readonly logPrefix: string
 	readonly onNoOp?: (() => void) | undefined
-}): Promise<void> => {
-	const {
-		resolved: r,
-		spans,
-		logs,
-		metrics,
-		tracesState,
-		logsState,
-		metricsState,
-		transport,
-		logPrefix,
-		onNoOp,
-	} = args
+}
 
-	if (r.noOp) {
-		spans.drain()
-		logs.drain()
-		metrics.drain()
-		onNoOp?.()
-		return
-	}
-
-	await Promise.all([
-		flushSignal({
+/** Run `run` for traces, logs, then metrics; each starts before the previous one settles. */
+const eachSignal = (
+	args: FlushArgs,
+	run: <A>(signal: SignalFlush<A>) => Promise<unknown>,
+): Promise<unknown> => {
+	const { resolved: r, transport, logPrefix } = args
+	const shared = { headers: r.headers, transport, logPrefix }
+	return Promise.all([
+		run({
+			...shared,
 			url: r.tracesUrl,
-			headers: r.headers,
-			buffer: spans,
+			buffer: args.spans,
 			body: (items) => makeTracesBody(items, r),
-			state: tracesState,
+			state: args.tracesState,
 			signal: "traces",
-			transport,
-			logPrefix,
 		}),
-		flushSignal({
+		run({
+			...shared,
 			url: r.logsUrl,
-			headers: r.headers,
-			buffer: logs,
+			buffer: args.logs,
 			body: (items) => makeLogsBody(items, r),
-			state: logsState,
+			state: args.logsState,
 			signal: "logs",
-			transport,
-			logPrefix,
 		}),
-		flushSignal({
+		run({
+			...shared,
 			url: r.metricsUrl,
-			headers: r.headers,
-			buffer: metrics,
+			buffer: args.metrics,
 			body: (items) => makeMetricsBody(items, r),
-			state: metricsState,
+			state: args.metricsState,
 			signal: "metrics",
-			transport,
-			logPrefix,
 		}),
 	])
 }
