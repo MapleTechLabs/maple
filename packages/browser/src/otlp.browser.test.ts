@@ -1,7 +1,12 @@
 // SAFETY-FILE: JSON parsed in this test is the OTLP body the exporter under test serialized.
 // The whole trace and log pipelines in a real document: batch processor,
 // consent and status wrappers, the unload split and the exporter, down to `fetch`.
-import { configurePrivacy, postToIngest, resetConsentForTests } from "@maple/browser-session"
+import {
+	configurePrivacy,
+	OTLP_UNLOAD_TAIL_BYTES,
+	postToIngest,
+	resetConsentForTests,
+} from "@maple/browser-session"
 import { context, trace } from "@opentelemetry/api"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetKeepaliveBudgetForTests } from "../../browser-session/src/platform/transport"
@@ -120,7 +125,7 @@ describe("trace export on the way out", () => {
 		const [tail, older] = sent
 		const tailCount = tail?.names.length ?? 0
 		expect(tail?.keepalive).toBe(true)
-		expect(tail?.bytes).toBeLessThanOrEqual(16 * KIB)
+		expect(tail?.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
 		expect(tailCount).toBeGreaterThan(5)
 		expect(tail?.names).toEqual(names.slice(-tailCount))
 		expect(older?.keepalive).toBe(false)
@@ -184,6 +189,26 @@ describe("trace export on the way out", () => {
 })
 
 describe("log export on the way out", () => {
+	it("still gets keepalive for the exit logs after about 30 KiB of spans", async () => {
+		const stopTracing = setupTracing(CONFIG)
+		const stopLogs = startLogs(CONFIG)
+		shutdown = async () => {
+			await stopLogs()
+			await stopTracing()
+		}
+		endSpans(24)
+		const names = Array.from({ length: 20 }, (_, i) => `l${i}`)
+		for (const body of names) emitLog({ severityNumber: 9, severityText: "INFO", body })
+
+		// A real unload: `pagehide` flushes the spans, the `visibilitychange` after it the logs.
+		window.dispatchEvent(new Event("pagehide"))
+		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
+		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeGreaterThan(28 * KIB)
+		hide()
+		await vi.waitFor(() => expect(sent).toHaveLength(3))
+		expect(sent[2]).toMatchObject({ url: "https://ingest.test/v1/logs", keepalive: true, names })
+	})
+
 	it("sends the newest records under keepalive when the document is hidden, then the rest", async () => {
 		shutdown = startLogs(CONFIG)
 		const names = Array.from({ length: 60 }, (_, i) => `l${i}`)
@@ -201,7 +226,7 @@ describe("log export on the way out", () => {
 		const [tail, older] = sent
 		const tailCount = tail?.names.length ?? 0
 		expect(tail?.keepalive).toBe(true)
-		expect(tail?.bytes).toBeLessThanOrEqual(16 * KIB)
+		expect(tail?.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
 		expect(tailCount).toBeGreaterThan(5)
 		expect(tail?.names).toEqual(names.slice(-tailCount))
 		expect(older).toMatchObject({ keepalive: false, names: names.slice(0, -tailCount) })

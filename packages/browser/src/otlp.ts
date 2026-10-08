@@ -22,44 +22,45 @@ interface Exporter<T> {
 	shutdown(): Promise<void>
 }
 
-/** One POST, aborted at `timeoutMs`. Resolves with what went wrong, if anything. */
-function attempt(
-	url: string,
-	headers: Record<string, string>,
-	body: Uint8Array,
-	timeoutMs: number,
-): Promise<{ readonly error: Error; readonly retryable: boolean } | undefined> {
-	const controller = new AbortController()
-	const timer = setTimeout(() => controller.abort(), timeoutMs)
-	return postToIngest(url, headers, body, true, { signal: controller.signal, otlp: true })
-		.then(
-			(response) =>
-				response.ok
-					? undefined
-					: {
-							error: new Error(`OTLP export failed with status ${response.status}`),
-							retryable: RETRYABLE_STATUS.includes(response.status),
-						},
-			// A network error is a TypeError; the timeout's abort is not, and ends the export.
-			(cause: unknown) => ({
-				error: new Error("OTLP export failed", { cause }),
-				retryable: cause instanceof TypeError,
-			}),
-		)
-		.finally(() => clearTimeout(timer))
-}
+/** True while the older part of a split is handed to the exporter, which sends it without keepalive. */
+let olderPart = false
 
 /**
  * Send one body, retrying with a jittered backoff (1s, growing 1.5x) until the
  * next wait would pass the deadline. The first request is issued before this
  * returns, which an unload flush needs.
  */
-async function send(url: string, headers: Record<string, string>, body: Uint8Array): Promise<ExportResult> {
+async function send(
+	url: string,
+	headers: Record<string, string>,
+	body: Uint8Array,
+	keepalive: boolean,
+): Promise<ExportResult> {
 	const deadline = Date.now() + EXPORT_TIMEOUT_MS
 	let timeoutMs = EXPORT_TIMEOUT_MS
 	let backoff = 1_000
 	for (;;) {
-		const failure = await attempt(url, headers, body, timeoutMs)
+		const controller = new AbortController()
+		const timer = setTimeout(() => controller.abort(), timeoutMs)
+		const failure = await postToIngest(url, headers, body, keepalive, {
+			signal: controller.signal,
+			otlp: true,
+		})
+			.then(
+				(response) =>
+					response.ok
+						? undefined
+						: {
+								error: new Error(`OTLP export failed with status ${response.status}`),
+								retryable: RETRYABLE_STATUS.includes(response.status),
+							},
+				// A network error is a TypeError; the timeout's abort is not, and ends the export.
+				(cause: unknown) => ({
+					error: new Error("OTLP export failed", { cause }),
+					retryable: cause instanceof TypeError,
+				}),
+			)
+			.finally(() => clearTimeout(timer))
 		if (!failure) return { code: 0 }
 		const wait = backoff * (0.8 + Math.random() * 0.4)
 		// A retry may run for what was left when it was scheduled.
@@ -87,7 +88,7 @@ export class OtlpExporter<T> implements Exporter<T> {
 			return
 		}
 		const headers = { ...this.headers, "content-type": "application/json" }
-		const sent = send(this.url, headers, body)
+		const sent = send(this.url, headers, body, !olderPart)
 			.then(callback)
 			// A callback that throws must not surface in the host page or fail a later shutdown.
 			.catch(() => {})
@@ -121,38 +122,47 @@ export function flushUnloading(flush: () => void): void {
 }
 
 /**
- * The newest items whose body fits what keepalive has room for right now, at
- * most `OTLP_UNLOAD_TAIL_BYTES`, then everything older. No split when nothing
- * or everything fits.
+ * Where the newest items begin that fit one body of what keepalive has room
+ * for right now, at most `OTLP_UNLOAD_TAIL_BYTES`: 0 when the whole batch
+ * fits, `items.length` when not even the newest item does.
  */
-function newestFirst<T>(items: T[], serializer: Serializer<T>): T[][] {
+function tailStart<T>(items: T[], serializer: Serializer<T>): number {
 	const limit = Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())
 	const size = (from: number): number => serializer.serializeRequest(items.slice(from))?.byteLength ?? 0
 	let start = items.length
 	while (start > 0 && size(start - 1) <= limit) start -= 1
-	return start > 0 && start < items.length ? [items.slice(start), items.slice(0, start)] : [items]
+	return start
 }
 
 /**
- * A hidden or unloading document may not live to see a response, and a batch
- * past OTLP's keepalive share goes out as a plain request that the browser
- * terminates with the document. There each batch becomes two exports: its
- * newest items first, in a body small enough for keepalive, then the rest.
- * Each goes through `inner` on its own, so only the part that failed is queued.
+ * A hidden or unloading document may not live to see a response, and a plain
+ * request is terminated with it. There a batch goes out newest items first,
+ * and only they ask for keepalive: the older rest, a second export, would take
+ * the room that the next signal's newest items need. Each part goes through
+ * `inner` on its own, so only the part that failed is queued.
  */
 export function newestFirstOnExit<T>(inner: Exporter<T>, serializer: Serializer<T>): Exporter<T> {
 	return {
 		export(items, callback) {
 			const hidden = typeof document !== "undefined" && document.visibilityState === "hidden"
-			const parts = unloading || hidden ? newestFirst(items, serializer) : [items]
+			const start = unloading || hidden ? tailStart(items, serializer) : 0
+			const parts = [
+				{ items: items.slice(start), older: false },
+				{ items: items.slice(0, start), older: true },
+			].filter((part) => part.items.length > 0)
 			let pending = parts.length
 			let failed: ExportResult | undefined
 			for (const part of parts) {
-				inner.export(part, (result) => {
-					if (result.code !== 0) failed = result
-					pending -= 1
-					if (pending === 0) callback(failed ?? result)
-				})
+				olderPart = part.older
+				try {
+					inner.export(part.items, (result) => {
+						if (result.code !== 0) failed = result
+						pending -= 1
+						if (pending === 0) callback(failed ?? result)
+					})
+				} finally {
+					olderPart = false
+				}
 			}
 		},
 		forceFlush: () => inner.forceFlush(),

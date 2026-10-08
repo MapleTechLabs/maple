@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON parsed in this test is the OTLP body the exporter under test serialized.
-import { postToIngest } from "@maple/browser-session"
+import { OTLP_UNLOAD_TAIL_BYTES, postToIngest } from "@maple/browser-session"
 import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import {
 	BasicTracerProvider,
@@ -226,7 +226,6 @@ describe("OtlpExporter", () => {
 })
 
 describe("newestFirstOnExit", () => {
-	const UNLOAD_TAIL_BYTES = 16 * KIB
 	const size = (batch: ReadableSpan[]): number =>
 		JsonTraceSerializer.serializeRequest(batch)?.byteLength ?? 0
 
@@ -249,10 +248,10 @@ describe("newestFirstOnExit", () => {
 		const [tail, older] = sent
 		const tailCount = tail?.names.length ?? 0
 		expect(tail?.keepalive).toBe(true)
-		expect(tail?.bytes).toBeLessThanOrEqual(UNLOAD_TAIL_BYTES)
+		expect(tail?.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
 		expect(tail?.names).toEqual(names(batch).slice(-tailCount))
 		// As many as fit: one more span would have passed the limit.
-		expect(size(batch.slice(-tailCount - 1))).toBeGreaterThan(UNLOAD_TAIL_BYTES)
+		expect(size(batch.slice(-tailCount - 1))).toBeGreaterThan(OTLP_UNLOAD_TAIL_BYTES)
 		// Past OTLP's share, so plain; and no span is in both requests.
 		expect(older?.keepalive).toBe(false)
 		expect(older?.names).toEqual(names(batch).slice(0, -tailCount))
@@ -269,16 +268,16 @@ describe("newestFirstOnExit", () => {
 		expect(sent.map((request) => request.names)).toEqual([["s0", "s1", "s2"]])
 	})
 
-	it("gives both parts keepalive when together they fit OTLP's share", () => {
+	it("sends the older part without keepalive even when OTLP's share has room for it", () => {
 		vi.useFakeTimers()
 		answers = ["pending"]
 		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
-		flushUnloading(() => exportBatch(exporter, spans(20, KIB)))
+		flushUnloading(() => exportBatch(exporter, spans(16, KIB)))
 
-		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
-		const total = (sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)
-		expect(total).toBeGreaterThan(UNLOAD_TAIL_BYTES)
-		expect(total).toBeLessThanOrEqual(32 * KIB)
+		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
+		expect(sent[0]?.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
+		// Both would have fitted the 32 KiB share; the rest is left for the next signal.
+		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeLessThanOrEqual(32 * KIB)
 	})
 
 	it("sizes the tail to the room an export in flight has left", () => {
@@ -289,7 +288,7 @@ describe("newestFirstOnExit", () => {
 		exportBatch(exporter, spans(18, KIB))
 		const room = 32 * KIB - (sent[0]?.bytes ?? 0)
 		expect(sent[0]?.keepalive).toBe(true)
-		expect(room).toBeLessThan(UNLOAD_TAIL_BYTES)
+		expect(room).toBeLessThan(OTLP_UNLOAD_TAIL_BYTES)
 
 		const batch = spans(16, KIB)
 		flushUnloading(() => exportBatch(exporter, batch))
@@ -302,17 +301,19 @@ describe("newestFirstOnExit", () => {
 		expect(older).toMatchObject({ keepalive: false, names: names(batch).slice(0, -tailCount) })
 	})
 
-	it("sends one request when not even the newest span fits", () => {
+	it("sends one request without keepalive when not even the newest span fits", () => {
 		vi.useFakeTimers()
 		answers = ["pending"]
 		const exporter = newestFirstOnExit(otlp(), JsonTraceSerializer)
-		// Larger than the tail limit: it would not get keepalive as a tail of its own.
+		// Larger than the tail limit.
 		flushUnloading(() => exportBatch(exporter, [...spans(2), ...spans(1, 20 * KIB)]))
-		expect(sent.map((request) => [request.keepalive, request.names.length])).toEqual([[true, 3]])
+		expect(sent.map((request) => [request.keepalive, request.names.length])).toEqual([[false, 3]])
 
-		// Larger than the room the request above has left.
-		flushUnloading(() => exportBatch(exporter, spans(3, 12 * KIB)))
-		expect(sent.slice(1).map((request) => [request.keepalive, request.names.length])).toEqual([
+		// Larger than the room an export in flight has left.
+		exportBatch(exporter, spans(22, KIB))
+		expect(sent[1]?.keepalive).toBe(true)
+		flushUnloading(() => exportBatch(exporter, spans(3, 6 * KIB)))
+		expect(sent.slice(2).map((request) => [request.keepalive, request.names.length])).toEqual([
 			[false, 3],
 		])
 	})
