@@ -208,9 +208,9 @@ Google bills Pub/Sub and Cloud Monitoring usage to your account, separately from
 
 Google bills Pub/Sub for the log entries that pass through the topic and the subscription. A narrower `LOG_FILTER` lowers it. See [Pub/Sub pricing](https://cloud.google.com/pubsub/pricing).
 
-Cloud Monitoring bills API reads by time series returned: $0.50 per million, with the first million per billing account each month free. Maple makes its reads through the host project, so they count against that project. Each connection runs 46 `timeSeries.list` queries per read, 288 reads a day. A connection that returns 500 series per read returns about 4.3 million a month, about $1.70. At 5,000 series per read it is about $21. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+Google bills Cloud Monitoring API reads to the host project. Each connection runs 46 `timeSeries.list` queries every 5 minutes, and the cost grows with the number of time series in the project, folder or organization. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
 
-Cloud Asset Inventory searches are not charged.
+Cloud Asset Inventory searches are free of charge. See [Cloud Asset Inventory pricing](https://cloud.google.com/asset-inventory/pricing).
 
 ## Limits
 
