@@ -17,7 +17,7 @@ const decodeTraceId = Schema.decodeSync(TraceId)
  *
  * Facet counts feed the replays filter sidebar and trace summaries feed a
  * session's timeline — both are shaped by what those views render, so they stay
- * off the public API (`docs/http-api-migration.md` marks them "do not lift").
+ * off the public API.
  */
 export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 	MapleInternalApi,

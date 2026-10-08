@@ -250,7 +250,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 							sessionId: params.id,
 						},
 					)
-					// Warm the route before fanning out — see the v1 handler for why.
+					// Resolve the org's route before fanning out, so the config read lands on an
+					// empty pool instead of queueing behind a sibling's fetch. No-op once memoized.
 					yield* warehouse.warmRoute(tenant)
 					const [maybeData, maybeActivity] = yield* Effect.all(
 						[

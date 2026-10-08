@@ -14,7 +14,7 @@ import {
 	PlanetScaleWebhookQueueError,
 	type PlanetScaleWebhookJob,
 } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
-import { PlanetScaleWebhookRouter } from "./planetscale-webhook.http"
+import { PlanetScaleWebhookRouter } from "./planetscale.http"
 
 const trackedDbs: TestDb[] = []
 

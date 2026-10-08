@@ -141,7 +141,7 @@ adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id
 `publish_error`, `error`, `model`, token counts and timestamps. The prd deploy applies the
 migration. The table is registered with `OrganizationService`, so an organization purge removes it.
 
-`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
+`PUT /internal/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
 their own section, **Code Review** (`/code-review`, a sidebar row behind the flag), with four tabs:
 
 - **Analytics**: pull requests reviewed, reviews, time to merge and issues caught against the
@@ -155,7 +155,7 @@ their own section, **Code Review** (`/code-review`, a sidebar row behind the fla
   (`pr_review_settings.defaults`), and per repository the switch and its overrides.
 
 A review runs with `mergePrReviewConfig(defaults, repository)`: a repository field overrides the
-organization's, and instructions and ignored paths add up. The reads are `GET /api/code-review/*`
+organization's, and instructions and ignored paths add up. The reads are `GET /internal/code-review/*`
 (`PrReviewAnalyticsService`); settings stay on the integrations endpoints.
 
 ### Observability of the reviewer
@@ -421,7 +421,7 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 
 ### Settings
 
-- `GET`/`PUT /api/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
+- `GET`/`PUT /internal/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
   paths, lenses, inline threshold, drafts and a per-repository daily limit. Stated in the kickoff
   and enforced on submit. `GET .../pr-reviews` lists the 50 newest reviews.
 - Integrations → GitHub shows the settings and the review history beside each repository's switch.
