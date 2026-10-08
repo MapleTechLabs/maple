@@ -310,6 +310,8 @@ export const listLogs = defineQuery({
 				excludedSeverities: payload.excludedSeverities,
 				excludedEnvironments: payload.excludedDeploymentEnvs,
 				excludedNamespaces: payload.excludedNamespaces,
+				attributeFilters: payload.attributeFilters,
+				resourceAttributeFilters: payload.resourceAttributeFilters,
 				minSeverity: payload.minSeverity,
 				traceId: payload.traceId,
 				spanId: payload.spanId,

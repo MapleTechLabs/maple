@@ -797,8 +797,14 @@ export function logsFacetsQuery(
 	// full raw-`logs` scans into three cheap pre-aggregated reads. The lone
 	// exception is the `contains` env match mode, which needs a substring scan on
 	// the raw map column — fall back to raw `logs` there (mirrors the
-	// `canUseLogsAggregatesHourly` guard used by the timeseries query).
-	if (opts.matchModes?.deploymentEnv === "contains" || opts.matchModes?.serviceNamespace === "contains") {
+	// `canUseLogsAggregatesHourly` guard used by the timeseries query). Attribute
+	// filters read the raw maps the MV does not carry, so they take the raw path too.
+	if (
+		opts.matchModes?.deploymentEnv === "contains" ||
+		opts.matchModes?.serviceNamespace === "contains" ||
+		opts.attributeFilters?.length ||
+		opts.resourceAttributeFilters?.length
+	) {
 		return logsFacetsQueryFromRaw(opts, facet)
 	}
 	return logsFacetsQueryFromMv(opts, facet)
@@ -894,6 +900,7 @@ function logsFacetsQueryFromRaw(
 		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),
 		environmentCondition($, opts),
 		namespaceCondition($, opts),
+		...logAttributeConditions(opts),
 	]
 
 	const severityQuery = from(Logs)
