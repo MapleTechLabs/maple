@@ -21,6 +21,7 @@ import {
 	type OrgId,
 	PrReview,
 	PrReviewFinding,
+	type PrReviewMergeStep,
 	PrReviewId,
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
@@ -84,6 +85,14 @@ import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
+	buildChecklist,
+	checklistAttributes,
+	detectMergeSteps,
+	NO_DETECTED_STEPS,
+	type NameVerdict,
+	searchVerdict,
+} from "./merge-checklist"
+import {
 	fixedContractBreaks,
 	lineStillEmits,
 	renderTelemetryKickoff,
@@ -118,6 +127,8 @@ export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
 
 /** Removed names the service searches the repository for before the review starts. */
 const MAX_CONFIRMED_BREAKS = 8
+/** Names searched for on the default branch per review; the rest are listed unverified. */
+const MAX_CHECKLIST_SEARCHES = 10
 
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
@@ -621,6 +632,38 @@ const copyAllFindings = (findings: ReadonlyArray<PrReviewFinding>, headSha: stri
 		),
 	].join("\n\n---\n\n")
 
+const MERGE_STEP_LABEL = {
+	secret: "Secret",
+	env: "Env var",
+	migration: "Migration",
+	warehouse: "Warehouse",
+	infra: "Infra",
+	manual: "Manual",
+} as const satisfies Record<PrReviewMergeStep["kind"], string>
+
+/**
+ * What has to happen outside the diff before merge, as a task list people tick off on the comment.
+ * Right under the summary: it is what gets forgotten, and it is not a finding against the code.
+ */
+export const renderBeforeMerge = (
+	steps: ReadonlyArray<PrReviewMergeStep>,
+	fileUrl: (path: string, line?: number) => string,
+): ReadonlyArray<string> =>
+	steps.length === 0
+		? []
+		: [
+				"### Before merge",
+				"",
+				...steps.map((step) => {
+					const where =
+						step.path === undefined
+							? ""
+							: ` · [\`${step.line === undefined ? step.path : `${step.path}:${step.line}`}\`](${fileUrl(step.path, step.line)})`
+					return `- [ ] **${MERGE_STEP_LABEL[step.kind]}** · ${step.title}${where}`
+				}),
+				"",
+			]
+
 /**
  * The review as markdown, most important first: the confidence and what decides it, a short summary
  * and what the change does, then each finding by severity as a collapsed entry whose title reads as
@@ -636,6 +679,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			.split("/")
 			.map(encodeURIComponent)
 			.join("/")}#L${finding.line}${finding.endLine === undefined ? "" : `-L${finding.endLine}`}`
+	const fileUrl = (path: string, line?: number) =>
+		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${path
+			.split("/")
+			.map(encodeURIComponent)
+			.join("/")}${line === undefined ? "" : `#L${line}`}`
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
 
 	const confidence = confidencePrReview(report, carried.open, input.partial)
@@ -660,6 +708,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	if (report.keyChanges !== undefined && report.keyChanges.length > 0) {
 		lines.push(...report.keyChanges.map((change) => `- ${change}`), "")
 	}
+	lines.push(...renderBeforeMerge(report.beforeMerge ?? [], fileUrl))
 	if (report.findings.length > 0) {
 		lines.push("### Findings", "")
 		for (const finding of bySeverity(report.findings)) {
@@ -1230,6 +1279,42 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							"[PrReview] could not read production telemetry; reviewing the diff alone",
 						).pipe(
 							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
+
+			/**
+			 * The reads behind the "before merge" checklist, at submit: the diff's candidates, and a
+			 * verdict for each name from a search of the default branch (5 hits, so a whole-word match
+			 * can be found among token matches). A failed search leaves the name unverified.
+			 * `undefined` when the files cannot be read; the review posts without diff steps.
+			 */
+			const mergeStepsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+				Effect.gen(function* () {
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return undefined
+					const { provider, installation, ref } = target.value
+					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
+					const detected = detectMergeSteps(files)
+					const verdicts = yield* Effect.forEach(
+						detected.names.slice(0, MAX_CHECKLIST_SEARCHES),
+						({ name }) =>
+							provider.searchCode(installation, ref, `"${name}"`, { limit: 5 }).pipe(
+								Effect.map((hits) => [[name, searchVerdict(name, hits)] as const]),
+								Effect.catchCause(() => Effect.succeed([])),
+							),
+						{ concurrency: 2 },
+					)
+					return { detected, verdicts: new Map<string, NameVerdict>(verdicts.flat()) }
+				}).pipe(
+					Effect.timeout("15 seconds"),
+					Effect.withSpan("PrReviewService.mergeStepsFor"),
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"[PrReview] could not read the diff for the before-merge steps",
+						).pipe(
+							Effect.annotateLogs({ orgId, number, cause: summarizeCause(cause) }),
 							Effect.as(undefined),
 						),
 					),
@@ -2207,15 +2292,39 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
-				// The facts read at start, with the dismissals the reviewer could prove.
-				const telemetry = yield* telemetryAtSubmit(
-					orgId,
-					reviewId,
-					review.headSha,
-					request.telemetryDismissals ?? [],
-					repository,
-					installation,
+				// The telemetry facts read at start, with the dismissals the reviewer could prove, and the
+				// checklist's reads; independent, so neither waits on the other.
+				const [telemetry, read] = yield* Effect.all(
+					[
+						telemetryAtSubmit(
+							orgId,
+							reviewId,
+							review.headSha,
+							request.telemetryDismissals ?? [],
+							repository,
+							installation,
+						),
+						Option.isNone(repository)
+							? Effect.succeed(undefined)
+							: mergeStepsFor(orgId, repository.value, review.number),
+					],
+					{ concurrency: "unbounded" },
 				)
+				const checklist = buildChecklist({
+					detected: read?.detected ?? NO_DETECTED_STEPS,
+					verdicts: read?.verdicts ?? new Map(),
+					reviewer: request.report.beforeMerge ?? [],
+					isIgnored: (path) => pathIgnored(path, config.ignorePaths),
+				})
+				const beforeMerge = checklist.steps
+				const checklistTrace = checklistAttributes(read === undefined ? "unread" : "read", checklist)
+				yield* Effect.annotateCurrentSpan(checklistTrace)
+				// One line per review that found anything, so a missed or spurious step can be traced.
+				if (checklist.trace.names.length > 0 || beforeMerge.length > 0) {
+					yield* Effect.logInfo("[PrReview] before-merge checklist").pipe(
+						Effect.annotateLogs({ orgId, reviewId, ...checklistTrace }),
+					)
+				}
 
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
@@ -2268,9 +2377,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
 				)
 				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
+				// The reviewer's steps are already merged into `beforeMerge`.
+				const { beforeMerge: _reviewerSteps, ...submitted } = request.report
 				const settled = new PrReviewReport({
-					...request.report,
+					...submitted,
 					...(telemetry === undefined ? undefined : { telemetry }),
+					...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 					findings,
 					verdict: hasIssues
 						? "issues"
@@ -2459,7 +2571,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						...(config.minInlineSeverity === undefined
 							? undefined
 							: { minInlineSeverity: config.minInlineSeverity }),
-						...(config.blockOnContractBreaks === true ? { blockOnContractBreaks: true } : undefined),
+						...(config.blockOnContractBreaks === true
+							? { blockOnContractBreaks: true }
+							: undefined),
 					})
 					const published = yield* provider.success
 						.publishPullRequestReview(installation.value, ref, publication)
@@ -2467,9 +2581,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					if (Result.isFailure(published)) {
 						// Recorded, not retried: the usual cause is the installation not having
 						// accepted `checks: write` yet, and the report itself is already safe.
-						yield* Effect.logWarning("[PrReview] could not publish the review to the provider").pipe(
-							Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }),
-						)
+						yield* Effect.logWarning(
+							"[PrReview] could not publish the review to the provider",
+						).pipe(Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }))
 						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
 						yield* update(orgId, reviewId, {
 							publishError: published.failure.message.slice(0, 500),

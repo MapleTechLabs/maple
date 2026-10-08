@@ -291,6 +291,32 @@ export const mergePrReviewConfig = (
 	)
 }
 
+/** What a step before merge is about; the comment groups and labels by it. */
+export const PrReviewMergeStepKind = Schema.Literals([
+	"secret",
+	"env",
+	"migration",
+	"warehouse",
+	"infra",
+	"manual",
+]).annotate({ identifier: "PrReviewMergeStepKind" })
+export type PrReviewMergeStepKind = Schema.Schema.Type<typeof PrReviewMergeStepKind>
+
+/**
+ * Something a person has to do outside the diff before the change can ship: a secret to add, a
+ * migration to check, a schema to deploy. `diff` steps are read off the diff by the service;
+ * `reviewer` steps are ones the agent named from what it read.
+ */
+export class PrReviewMergeStep extends Schema.Class<PrReviewMergeStep>("PrReviewMergeStep")({
+	kind: PrReviewMergeStepKind,
+	title: Schema.String,
+	/** The secret, variable or file the step is about; what a reviewer step must name to replace it. */
+	subject: Schema.optionalKey(Schema.String),
+	path: Schema.optionalKey(Schema.String),
+	line: Schema.optionalKey(Schema.Number),
+	source: Schema.Literals(["diff", "reviewer"]),
+}) {}
+
 /** The stored review: the shape a reader can rely on. */
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({
 	verdict: PrReviewVerdict,
@@ -316,6 +342,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** What production telemetry says about the change; set by the service, never by the model. */
 	telemetry: Schema.optionalKey(PrReviewTelemetry),
+	/** What has to happen outside the diff before merge; diff steps are set by the service. */
+	beforeMerge: Schema.optionalKey(Schema.Array(PrReviewMergeStep)),
 }) {}
 
 /**
@@ -366,6 +394,7 @@ export const PrReviewSubmission = Schema.Struct({
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	keyChanges: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	beforeMerge: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	checked: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	tests: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewTestSignal, Schema.String]))),
 	risk: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewRisk, Schema.String]))),
@@ -392,6 +421,7 @@ const MAX_TEXT = 4_000
 const MAX_SUMMARY = 800
 const MAX_KEY_CHANGES = 4
 const MAX_CHECKED = 3
+const MAX_BEFORE_MERGE = 6
 const MAX_BULLET = 200
 /** Removed names the reviewer may claim are still emitted; one per contract break is plenty. */
 const MAX_DISMISSALS = 20
@@ -542,6 +572,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			: submittedVerdict
 	const keyChanges = bulletsOf(submission.keyChanges, MAX_KEY_CHANGES)
 	const checked = bulletsOf(submission.checked, MAX_CHECKED)
+	const beforeMerge = bulletsOf(submission.beforeMerge, MAX_BEFORE_MERGE).map(
+		(title) => new PrReviewMergeStep({ kind: "manual", title, source: "reviewer" }),
+	)
 	const tests = typeof submission.tests === "string" ? submission.tests.trim().toLowerCase() : undefined
 	const risk = typeof submission.risk === "string" ? submission.risk.trim().toLowerCase() : undefined
 	const rawConfidence = toNumber(submission.confidence)
@@ -556,6 +589,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			summary: clip(submission.summary?.trim() || "", MAX_SUMMARY),
 			...(keyChanges.length > 0 ? { keyChanges } : undefined),
 			...(checked.length > 0 ? { checked } : undefined),
+			...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 			...(isTestSignal(tests) ? { tests } : undefined),
 			...(isRisk(risk) ? { risk } : undefined),
 			...(confidence === undefined ? undefined : { confidence }),
