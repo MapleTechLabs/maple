@@ -11,7 +11,7 @@
  * read three bindings off the environment and converted the response back.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { Effect } from "effect"
+import { ManagedRuntime } from "effect"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
 
@@ -20,6 +20,8 @@ const telemetry = MapleCloudflareSDK.make({
 	serviceNamespace: "core",
 	repositoryUrl: "https://github.com/MapleTechLabs/maple",
 })
+// One per isolate, so the tracer is not rebuilt for every request.
+const runtime = ManagedRuntime.make(telemetry.layer)
 
 interface ExecutionContext {
 	readonly waitUntil: (promise: Promise<unknown>) => void
@@ -28,8 +30,6 @@ interface ExecutionContext {
 export default {
 	fetch: (request: Request, env: WebWorkerEnv, ctx: ExecutionContext): Promise<Response> =>
 		handleRequest(request, env, (effect) =>
-			Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer))).finally(() =>
-				ctx.waitUntil(telemetry.flush(env)),
-			),
+			runtime.runPromise(effect).finally(() => ctx.waitUntil(telemetry.flush(env))),
 		),
 }
