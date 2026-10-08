@@ -1,4 +1,6 @@
+import { Effect } from "effect"
 import { apiProxyPath } from "./api-proxy"
+import { forwardToApi } from "./api-proxy-forward"
 import { ogIdFromPath, shareTokenFromPath } from "./og/share-links"
 import { chartRequestFromPath, renderChartImage } from "./og/chart-image"
 import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
@@ -76,30 +78,18 @@ const applyShareOgMeta = async (
 	return meta === undefined ? response : shareOgMetaRewriter(meta, url.origin).transform(response)
 }
 
-/**
- * Re-addressed to the API's own URL, so the API sees the Host, path and origin
- * it always has (OAuth callbacks and MCP metadata are built from them). Method,
- * headers and the streamed body carry over, `cf-connecting-ip` included.
- */
-const forwardToApi = (request: Request, url: URL, api: ApiTarget, path: string): Promise<Response> => {
-	// Assigned, not resolved: `new URL("//other.host/x", base)` would leave the API's host.
-	const target = new URL(api.baseUrl)
-	target.pathname = path
-	target.search = url.search
-	return api.fetch(new Request(target, request))
-}
-
 /** One request against the built SPA: the API proxy, OG images, the share preview, security headers, the shell fallback. */
-export const handleRequest = async (request: Request, env: WebWorkerEnv): Promise<Response> => {
+export const handleRequest = async (
+	request: Request,
+	env: WebWorkerEnv,
+	// The entry provides the Worker's tracer here; without one the spans go nowhere.
+	runTraced: (effect: Effect.Effect<Response>) => Promise<Response> = Effect.runPromise,
+): Promise<Response> => {
 	const url = new URL(request.url)
 	const api = apiTarget(env)
 
 	const apiPath = apiProxyPath(url.pathname)
-	if (apiPath !== undefined) {
-		return api === undefined
-			? new Response(null, { status: 404 })
-			: forwardToApi(request, url, api, apiPath)
-	}
+	if (apiPath !== undefined) return runTraced(forwardToApi(request, url, api, apiPath))
 
 	// Ahead of the assets lookup: this path has no asset behind it, and the
 	// 404 the assets layer returns for it would fall through to the SPA shell.

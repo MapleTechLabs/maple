@@ -1,3 +1,4 @@
+import { Effect, Layer, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
 import { apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
@@ -58,10 +59,36 @@ describe("handleRequest API proxy", () => {
 		expect(new URL(forwarded[0]?.url ?? "").host).toBe("api.maple.test")
 	})
 
-	it("404s without an API, instead of serving the SPA shell", async () => {
+	it("503s without an API, instead of serving the SPA shell", async () => {
 		const response = await handleRequest(new Request("https://app.maple.test/_api/v2/traces"), {
 			ASSETS: assets,
 		})
-		expect(response.status).toBe(404)
+		expect(response.status).toBe(503)
+	})
+
+	it("traces the hop: server span from the browser's traceparent, client span the API parents to", async () => {
+		const { env, forwarded } = recordingEnv()
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span: (options) => {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const browserTraceId = "0af7651916cd43dd8448eb211c80319c"
+		await handleRequest(
+			new Request("https://app.maple.test/_api/v2/traces", {
+				headers: { traceparent: `00-${browserTraceId}-b7ad6b7169203331-01` },
+			}),
+			env,
+			(effect) => Effect.runPromise(effect.pipe(Effect.provide(Layer.succeed(Tracer.Tracer, tracer)))),
+		)
+		const server = spans.find((span) => span.kind === "server")
+		const client = spans.find((span) => span.kind === "client")
+		expect(server?.traceId).toBe(browserTraceId)
+		expect(server?.attributes.get("http.response.status_code")).toBe(201)
+		expect(client?.attributes.get("peer.service")).toBe("maple-api")
+		expect(forwarded[0]?.headers.get("traceparent")).toBe(`00-${browserTraceId}-${client?.spanId}-01`)
 	})
 })

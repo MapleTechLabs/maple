@@ -11,7 +11,7 @@ import {
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
-import { plainFrom } from "@maple/infra/env"
+import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy"
@@ -43,6 +43,8 @@ const props = Effect.gen(function* () {
 			// Share previews go over the service binding, which still needs an absolute URL.
 			...(urls.api === "" ? undefined : { MAPLE_API_BASE_URL: urls.api }),
 			API: api,
+			// Traces the `/_api/*` hop (`worker-entry.ts`). Not `VITE_*`, so a binding, never inlined.
+			...(yield* selfObservabilityEnv(stage, region)),
 			// Client build inputs: a change here rebuilds with no source change.
 			// Same-origin through the proxy when this stage has its own app domain, which
 			// spares every API call a CORS preflight. Dev stages keep the direct URL.

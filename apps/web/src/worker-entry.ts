@@ -10,9 +10,27 @@
  * in `./handler`, and the Effect wrapper around it only unwrapped the request,
  * read three bindings off the environment and converted the response back.
  */
+import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
+import { Effect } from "effect"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
 
+// Traces the `/_api/*` hop. Built at module scope: the buffers are per isolate.
+const telemetry = MapleCloudflareSDK.make({
+	serviceName: "maple-web-worker",
+	serviceNamespace: "core",
+	repositoryUrl: "https://github.com/MapleTechLabs/maple",
+})
+
+interface ExecutionContext {
+	readonly waitUntil: (promise: Promise<unknown>) => void
+}
+
 export default {
-	fetch: (request: Request, env: WebWorkerEnv): Promise<Response> => handleRequest(request, env),
+	fetch: (request: Request, env: WebWorkerEnv, ctx: ExecutionContext): Promise<Response> =>
+		handleRequest(request, env, (effect) =>
+			Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer))).finally(() =>
+				ctx.waitUntil(telemetry.flush(env)),
+			),
+		),
 }
