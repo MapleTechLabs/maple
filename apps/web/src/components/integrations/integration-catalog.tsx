@@ -29,7 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
-import { gcpLogState, type GcpLogState } from "./gcp-connector-state"
+import { gcpLogState, gcpScopeLabel, type GcpLogState } from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -182,7 +182,8 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		category: "infrastructure",
 		isNew: true,
 		name: "Google Cloud",
-		description: "Send a Google Cloud project's logs to Maple by running one script in Cloud Shell.",
+		description:
+			"Connect a Google Cloud organization, folder or project by running one script in Cloud Shell.",
 		icon: GoogleCloudIcon,
 		monoIcon: GoogleCloudMonoIcon,
 		accent: GCP_ACCENT,
@@ -320,7 +321,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const gcp: CardStatus | null = Result.builder(gcpResult)
 		.onSuccess((status): CardStatus => {
 			if (status.connectors.length === 0) return NOT_CONNECTED
-			return { label: countLabel(status.connectors.length, "project"), variant: "ok" }
+			return { label: countLabel(status.connectors.length, "connection"), variant: "ok" }
 		})
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -579,21 +580,26 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const count = (kind: GcpLogState["kind"]) => states.filter((state) => state.kind === kind).length
 			const failing = count("error")
 			const waiting = count("waiting")
+			// A connector can collect metrics only; those have no log status to count.
+			const forwarding = connectors.length - count("off")
 			const issue =
 				failing > 0
-					? `${countLabel(failing, "project")} failing`
+					? `${countLabel(failing, "connection")} failing`
 					: waiting > 0
-						? `${countLabel(waiting, "project")} waiting for logs`
+						? `${countLabel(waiting, "connection")} waiting for logs`
 						: null
 			return {
 				kind: "connected",
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context:
-					connectors.length === 1
-						? (connectors[0]?.project_id ?? null)
-						: countLabel(connectors.length, "project"),
-				stat: `${count("receiving")} of ${countLabel(connectors.length, "project")} receiving logs`,
+					connectors[0] !== undefined && connectors.length === 1
+						? gcpScopeLabel(connectors[0])
+						: countLabel(connectors.length, "connection"),
+				stat:
+					forwarding > 0
+						? `${count("receiving")} of ${countLabel(forwarding, "connection")} receiving logs`
+						: null,
 				lastSyncLabel: syncedLabel(
 					maxMs(
 						connectors.map((connector) =>
