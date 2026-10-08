@@ -14,6 +14,7 @@ import {
 	TraceId,
 } from "../primitives"
 import {
+	AttributeFilter,
 	QueryEngineExecuteBatchRequest,
 	QueryEngineExecuteBatchResponse,
 	QueryEngineExecuteRequest,
@@ -1115,7 +1116,13 @@ export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequ
 	namespace: Schema.optional(ServiceNamespace),
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Predicates on `LogAttributes` / `ResourceAttributes`, the /logs "filter in / out" chips.
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Scopes a log's surrounding context to one instance (`k8s.pod.name`, `service.instance.id`). */
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	limit: Schema.optional(Schema.Number),
+	/** `asc` reads oldest-first from `startTime`. Defaults to newest-first; `cursor` follows the order. */
+	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 }) {}
 
 export class ListLogsResponse extends Schema.Class<ListLogsResponse>("ListLogsResponse")({

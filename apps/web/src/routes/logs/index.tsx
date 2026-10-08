@@ -19,7 +19,7 @@ import {
 	resolveRefreshIntervalSeconds,
 } from "@/lib/dashboard-controls/search-params"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
-import { logFilterChips } from "@/lib/logs/log-filter-chips"
+import { logFilterChips, withoutChips } from "@/lib/logs/log-filter-chips"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 
 const logsSearchSchema = Schema.Struct({
@@ -33,6 +33,9 @@ const logsSearchSchema = Schema.Struct({
 	excludedSeverities: OptionalStringArrayParam,
 	excludedDeploymentEnvs: OptionalStringArrayParam,
 	excludedNamespaces: OptionalStringArrayParam,
+	// Attribute filters, one entry per value: `[!]log:<key>=<value>` / `[!]res:<key>=<value>`
+	// (see `log-attribute-filters.ts`). `!` excludes.
+	attrs: OptionalStringArrayParam,
 	// Attribute keys pinned as columns in the logs stream. Shareable via URL.
 	columns: OptionalStringArrayParam,
 	search: Schema.optional(Schema.String),
@@ -85,23 +88,18 @@ function LogsPage() {
 				(chip.param !== "namespaces" && chip.param !== "excludedNamespaces"),
 		)
 		.map((chip) => ({
-			id: chip.param,
+			id: chip.attr === undefined ? chip.param : `attrs:${chip.attr}`,
 			label: chip.label,
 			values: chip.values,
 			negated: chip.negated,
 			// The chip's tooltip still carries the full ID; the trace page itself
 			// abbreviates to the same 8 characters.
 			getValueLabel: chip.param === "traceId" ? (value: string) => shortId(value, "trace") : undefined,
-			onRemove: () => navigate({ search: (prev) => ({ ...prev, [chip.param]: undefined }) }),
+			onRemove: () => navigate({ search: (prev) => withoutChips(prev, [chip]) }),
 		}))
 
 	const clearFacetFilters = () => {
-		navigate({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(logFilterChips(prev).map((chip) => [chip.param, undefined])),
-			}),
-		})
+		navigate({ search: (prev) => withoutChips(prev, logFilterChips(prev)) })
 	}
 
 	return (

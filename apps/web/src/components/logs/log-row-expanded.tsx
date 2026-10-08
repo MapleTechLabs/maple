@@ -5,6 +5,7 @@ import { tryParseJson } from "@maple/ui/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import type { Log } from "@/api/warehouse/logs"
+import type { LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { LogAttributesPanel } from "./log-attributes-panel"
 import { buildLogJsonPayload } from "./log-raw-panel"
 import { HighlightedText } from "./highlighted-text"
@@ -16,6 +17,8 @@ interface LogRowExpandedProps {
 	highlight?: string
 	/** Opens the full detail drawer (Attributes / Trace / Raw tabs). */
 	onOpenDetail: () => void
+	/** Filter in / out from an attribute row. Omit and the rows only copy. */
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 /** A JSON body, re-indented; anything else comes back as-is. */
@@ -33,7 +36,7 @@ const FRAME = /^\s+(at |File "|from )/
  * attribute via the shared `LogAttributesPanel`, in one height-bounded scroll
  * area so a wide event reads in place without leaving the stream.
  */
-export function LogRowExpanded({ log, highlight, onOpenDetail }: LogRowExpandedProps) {
+export function LogRowExpanded({ log, highlight, onOpenDetail, onAttributeFilter }: LogRowExpandedProps) {
 	const lines = React.useMemo(() => prettyBody(log.body).split("\n"), [log.body])
 
 	return (
@@ -76,7 +79,7 @@ export function LogRowExpanded({ log, highlight, onOpenDetail }: LogRowExpandedP
 						))}
 					</pre>
 				</div>
-				<LogAttributesPanel log={log} />
+				<LogAttributesPanel log={log} onAttributeFilter={onAttributeFilter} />
 			</div>
 		</div>
 	)

@@ -4,7 +4,8 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { logFilterChips } from "@/lib/logs/log-filter-chips"
+import { logFilterChips, withoutChips } from "@/lib/logs/log-filter-chips"
+import { addLogAttributeFilter, type LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
@@ -18,7 +19,7 @@ import { LogsTableToolbar } from "./logs-table-toolbar"
 import type { LogsSearchParams } from "@/routes/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useLogsViewPreferences, type LogsDensity } from "@/hooks/use-logs-view-preferences"
-import { formatCompactTimeInTimezone } from "@/lib/timezone-format"
+import { LogTime } from "./log-time"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
@@ -29,7 +30,7 @@ import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
 import { shortId } from "@maple/ui/lib/ids"
-import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, PulseIcon } from "@/components/icons"
+import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, LinkIcon, PulseIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
@@ -41,6 +42,7 @@ import {
 } from "@/components/time-range-picker/search"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { logPermalink } from "@/lib/log-key"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const ROW_HEIGHT = 30
@@ -128,6 +130,8 @@ interface LogsTableViewProps {
 	/** Fired when the reader starts or stops inspecting; optional, embedded lists have no live tail. */
 	onInspectingChange?: (state: LogsInspectState) => void
 	streamRef?: React.Ref<LogsStreamHandle>
+	/** Filter in / out on one attribute value, from a chip or an attribute row. Omit off /logs. */
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 interface LogsTableProps {
@@ -176,19 +180,7 @@ interface LogRowProps {
 	measureRef?: (node: Element | null) => void
 	onClick: (log: Log) => void
 	onToggleExpand: (index: number) => void
-}
-
-/** `HH:MM:SS` at full strength, the milliseconds a step back: the eye reads seconds first. */
-function LogTime({ timestamp, timeZone }: { timestamp: string; timeZone: string }) {
-	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
-	const dot = formatted.lastIndexOf(".")
-	if (dot === -1) return formatted
-	return (
-		<>
-			{formatted.slice(0, dot)}
-			<span className="text-muted-foreground/50">{formatted.slice(dot)}</span>
-		</>
-	)
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 const LogRow = React.memo(function LogRow({
@@ -206,6 +198,7 @@ const LogRow = React.memo(function LogRow({
 	measureRef,
 	onClick,
 	onToggleExpand,
+	onAttributeFilter,
 }: LogRowProps) {
 	// Only chips that add to the message: resource attributes (region, env, pod)
 	// repeat down the whole stream, and a value the body already spells out
@@ -225,6 +218,7 @@ const LogRow = React.memo(function LogRow({
 	const severity = log.severityText.toUpperCase()
 	const severityColor = getSeverityColor(log.severityText)
 	const { copy } = useCopy({ successMessage: "Copied log message" })
+	const { copy: copyLink } = useCopy({ successMessage: "Copied link to log" })
 
 	return (
 		<div
@@ -247,6 +241,8 @@ const LogRow = React.memo(function LogRow({
 				role="listitem"
 				onClick={() => onClick(log)}
 				onKeyDown={(e) => {
+					// Keys pressed on a nested control (chips, row actions) belong to it, not the row.
+					if (e.target !== e.currentTarget) return
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault()
 						onClick(log)
@@ -338,6 +334,17 @@ const LogRow = React.memo(function LogRow({
 									value={chip.value}
 									tone={chip.tone}
 									className="max-w-full"
+									onFilter={
+										onAttributeFilter
+											? (key, value, negated) =>
+													onAttributeFilter({
+														source: chip.source,
+														key,
+														value,
+														negated,
+													})
+											: undefined
+									}
 								/>
 							))}
 						</span>
@@ -359,6 +366,15 @@ const LogRow = React.memo(function LogRow({
 						}}
 					>
 						<CopyIcon size={13} />
+					</RowAction>
+					<RowAction
+						label="Copy link to log"
+						onClick={(e) => {
+							e.stopPropagation()
+							void copyLink(logPermalink(log))
+						}}
+					>
+						<LinkIcon size={13} />
 					</RowAction>
 					{log.traceId && (
 						<Link
@@ -384,7 +400,12 @@ const LogRow = React.memo(function LogRow({
 				</span>
 			</div>
 			{isExpanded && (
-				<LogRowExpanded log={log} highlight={highlight} onOpenDetail={() => onClick(log)} />
+				<LogRowExpanded
+					log={log}
+					highlight={highlight}
+					onOpenDetail={() => onClick(log)}
+					onAttributeFilter={onAttributeFilter}
+				/>
 			)}
 		</div>
 	)
@@ -459,6 +480,7 @@ export function LogsTableView({
 	onWidenRange,
 	onInspectingChange,
 	streamRef,
+	onAttributeFilter,
 }: LogsTableViewProps) {
 	const [selectedLog, setSelectedLog] = React.useState<Log | null>(null)
 	const [sheetOpen, setSheetOpen] = React.useState(false)
@@ -810,6 +832,7 @@ export function LogsTableView({
 										measureRef={measureElement}
 										onClick={handleRowClick}
 										onToggleExpand={toggleExpanded}
+										onAttributeFilter={onAttributeFilter}
 									/>
 								)
 							})}
@@ -828,7 +851,12 @@ export function LogsTableView({
 				/>
 			</div>
 
-			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={handleSheetOpenChange} />
+			<LogDetailSheet
+				log={selectedLog}
+				open={sheetOpen}
+				onOpenChange={handleSheetOpenChange}
+				onAttributeFilter={onAttributeFilter}
+			/>
 		</>
 	)
 }
@@ -845,21 +873,17 @@ export function LogsTable({ filters, embedded, onInspectingChange, streamRef }: 
 	// An empty list under an exclusion cannot explain itself — see `ExcludedEmptyHint`.
 	const excludedChips = logFilterChips(filters ?? {}).filter((chip) => chip.negated)
 	const excludedValues = excludedChips.flatMap((chip) => chip.values)
-	const clearExclusions = () =>
-		navigateLogs({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
-			}),
-		})
+	const clearExclusions = () => navigateLogs({ search: (prev) => withoutChips(prev, excludedChips) })
 	const filterChips = logFilterChips(filters ?? {})
-	const clearFilters = () =>
-		navigateLogs({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(filterChips.map((chip) => [chip.param, undefined])),
+	const clearFilters = () => navigateLogs({ search: (prev) => withoutChips(prev, filterChips) })
+	// Stable, so the memoized rows do not re-render on every parent render.
+	const addAttributeFilter = React.useCallback(
+		(filter: LogAttributeFilter) =>
+			navigateLogs({
+				search: (prev) => ({ ...prev, attrs: addLogAttributeFilter(prev.attrs, filter) }),
 			}),
-		})
+		[navigateLogs],
+	)
 	const canWiden = !embedded && canWidenTimeRange(filters ?? {}, "")
 	const widenRange = () =>
 		navigateLogs({ search: (prev) => applyTimeRangeSearch(prev, { presetValue: WIDEN_TIME_PRESET }) })
@@ -904,6 +928,7 @@ export function LogsTable({ filters, embedded, onInspectingChange, streamRef }: 
 				onWidenRange={canWiden ? widenRange : undefined}
 				onInspectingChange={onInspectingChange}
 				streamRef={streamRef}
+				onAttributeFilter={embedded ? undefined : addAttributeFilter}
 			/>
 		))
 		.render()

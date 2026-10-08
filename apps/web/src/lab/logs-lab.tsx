@@ -1,10 +1,12 @@
-import { useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import type { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { LogContextFixtureProvider } from "@/components/logs/log-context-panel"
 import { LogsLiveControls } from "@/components/logs/logs-live-controls"
 import { LogsTableView, type LogsInspectState, type LogsStreamHandle } from "@/components/logs/logs-table"
 import {
@@ -13,12 +15,20 @@ import {
 } from "@/components/time-range-picker/page-refresh-context"
 import type { LogsDensity } from "@/hooks/use-logs-view-preferences"
 import { buildLogsLabFixture } from "@/lab/logs-fixture"
+import {
+	addLogAttributeFilter,
+	decodeLogAttributeFilters,
+	matchesLogAttributeFilters,
+	type LogAttributeFilter,
+} from "@/lib/logs/log-attribute-filters"
+import { logFilterChips, withoutChips } from "@/lib/logs/log-filter-chips"
 
 /**
  * `/logs` stream without a warehouse behind it: the real `LogsTableView` over a
  * deterministic production-like fixture (HTTP access lines, slow queries, a
  * payment outage with stack traces, JSON bodies). The anchor is fixed so
- * screenshots line up across runs.
+ * screenshots line up across runs. Attribute filters apply to the fixture
+ * client-side, in the same `attrs` spelling the route keeps in its URL.
  */
 const ANCHOR_MS = Date.UTC(2026, 9, 8, 14, 32, 10, 482)
 
@@ -66,6 +76,25 @@ function LogsLabPage({
 	const [search, setSearch] = useState<string | undefined>(undefined)
 	const [pinned, setPinned] = useState<string[]>([])
 	const [empty, setEmpty] = useState(false)
+	const [attrs, setAttrs] = useState<string[] | undefined>(undefined)
+
+	const filteredLogs = useMemo(() => {
+		const filters = decodeLogAttributeFilters(attrs)
+		return logs.filter((log) =>
+			matchesLogAttributeFilters(filters, { log: log.logAttributes, resource: log.resourceAttributes }),
+		)
+	}, [logs, attrs])
+	const chips = logFilterChips({ attrs }).map((chip) => ({
+		id: `attrs:${chip.attr ?? chip.param}`,
+		label: chip.label,
+		values: chip.values,
+		negated: chip.negated,
+		onRemove: () => setAttrs(withoutChips({ attrs }, [chip]).attrs),
+	}))
+	const addAttributeFilter = useCallback(
+		(filter: LogAttributeFilter) => setAttrs((prev) => addLogAttributeFilter(prev, filter)),
+		[],
+	)
 
 	return (
 		<DashboardLayout.Root>
@@ -119,21 +148,31 @@ function LogsLabPage({
 						</DashboardLayout.Header>
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Fill>
-						<LogsTableView
-							allData={empty ? [] : logs}
-							isFetchingNextPage={false}
-							hasNextPage={false}
-							isCapped={false}
-							fetchNextPage={() => {}}
-							waiting={false}
-							wrap={wrap}
-							density={density}
-							pinnedColumns={pinned}
-							searchText={search}
-							embedded
-							onInspectingChange={onInspect}
-							streamRef={streamRef}
+						<ActiveFilterChips
+							chips={chips}
+							onClearAll={() => setAttrs(undefined)}
+							className="mx-4 mt-3 mb-0"
 						/>
+						<LogContextFixtureProvider logs={logs}>
+							<LogsTableView
+								allData={empty ? [] : filteredLogs}
+								isFetchingNextPage={false}
+								hasNextPage={false}
+								isCapped={false}
+								fetchNextPage={() => {}}
+								waiting={false}
+								wrap={wrap}
+								density={density}
+								pinnedColumns={pinned}
+								searchText={search}
+								embedded
+								filtered={chips.length > 0}
+								onClearFilters={() => setAttrs(undefined)}
+								onAttributeFilter={addAttributeFilter}
+								onInspectingChange={onInspect}
+								streamRef={streamRef}
+							/>
+						</LogContextFixtureProvider>
 					</DashboardLayout.Fill>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
