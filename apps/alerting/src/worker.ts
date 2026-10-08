@@ -64,6 +64,8 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
+		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 		// Outbound config for `chat` destinations' connectors.
 		...chatConnectorOutboundConfigKeys.map((key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),

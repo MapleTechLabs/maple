@@ -1,5 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto"
-import { gcpConnectors, hashIngestKey, parseIngestKeyLookupHmacKey, type GcpConnectorRow } from "@maple/db"
+import {
+	gcpConnectors,
+	gcpResources,
+	hashIngestKey,
+	parseIngestKeyLookupHmacKey,
+	type GcpConnectorRow,
+} from "@maple/db"
+import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
 	GcpMetricsUnavailableError,
 	GcpScopeAlreadyConnectedError,
@@ -15,7 +22,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { and, asc, eq } from "drizzle-orm"
+import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -38,6 +45,12 @@ export interface GcpConnector {
 	/** Last log push the ingest gateway accepted from this connector. Null until the first one. */
 	readonly lastLogReceivedAt: number | null
 	readonly lastLogError: string | null
+	/** Last poll that read the scope's metrics. Null until the first one. */
+	readonly lastMetricsReceivedAt: number | null
+	readonly lastMetricsError: string | null
+	/** Projects the last inventory sync found in the scope. */
+	readonly discoveredProjectCount: number
+	readonly lastResourcesError: string | null
 }
 
 export type CreateGcpConnectorInput = Pick<
@@ -99,7 +112,7 @@ const toPersistenceError = makePersistenceErrorMapper(
 // Binds the ciphertext to its row, so a stored secret cannot be moved onto another connector.
 const secretAad = (connectorId: string) => Buffer.from(`gcp_connectors:v1:${connectorId}`, "utf8")
 
-const toConnector = (row: GcpConnectorRow): GcpConnector => ({
+const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConnector => ({
 	id: row.id,
 	scopeType: row.scopeType,
 	scopeId: row.scopeId,
@@ -109,6 +122,10 @@ const toConnector = (row: GcpConnectorRow): GcpConnector => ({
 	createdAt: dateToMs(row.createdAt),
 	lastLogReceivedAt: dateToMs(row.lastReceivedAt),
 	lastLogError: row.lastError,
+	lastMetricsReceivedAt: dateToMs(row.lastMetricsReceivedAt),
+	lastMetricsError: row.lastMetricsError,
+	discoveredProjectCount,
+	lastResourcesError: row.lastResourcesError,
 })
 
 const notFound = () => new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
@@ -135,27 +152,22 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
-			const checkCapabilities = (
+			const capabilityError = (
 				flags: { readonly logsEnabled: boolean; readonly metricsEnabled: boolean },
 				turningMetricsOn: boolean,
-			): Effect.Effect<void, GcpCapabilityError> => {
+			): GcpCapabilityError | undefined => {
 				if (!flags.logsEnabled && !flags.metricsEnabled) {
-					return Effect.fail(
-						new IntegrationsValidationError({
-							message:
-								"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
-						}),
-					)
+					return new IntegrationsValidationError({
+						message:
+							"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
+					})
 				}
 				if (turningMetricsOn && mapleServiceAccountEmail === undefined) {
-					return Effect.fail(
-						new GcpMetricsUnavailableError({
-							message:
-								"Metrics and resource collection is not available on this Maple deployment.",
-						}),
-					)
+					return new GcpMetricsUnavailableError({
+						message: "Metrics and resource collection is not available on this Maple deployment.",
+					})
 				}
-				return Effect.void
+				return undefined
 			}
 
 			const selectRow = (orgId: OrgId, connectorId: GcpConnectorId) =>
@@ -171,6 +183,21 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					),
 				)
 
+			/** Projects in each connector's inventory. One the poller has not synced yet is absent. */
+			const projectCounts = (connectorIds: ReadonlyArray<GcpConnectorId>) =>
+				dbExecute((db) =>
+					db
+						.select({ connectorId: gcpResources.connectorId, count: sql<number>`count(*)::int` })
+						.from(gcpResources)
+						.where(
+							and(
+								inArray(gcpResources.connectorId, [...connectorIds]),
+								eq(gcpResources.assetType, GCP_PROJECT_ASSET_TYPE),
+							),
+						)
+						.groupBy(gcpResources.connectorId),
+				).pipe(Effect.map((rows) => new Map(rows.map((row) => [row.connectorId, row.count]))))
+
 			const status = Effect.fn("GcpConnectorService.status")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
@@ -180,9 +207,14 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						.where(eq(gcpConnectors.orgId, orgId))
 						.orderBy(asc(gcpConnectors.createdAt), asc(gcpConnectors.id)),
 				)
+				// An empty `IN ()` is not valid SQL.
+				const counts =
+					rows.length === 0
+						? new Map<GcpConnectorId, number>()
+						: yield* projectCounts(rows.map((row) => row.id))
 				return {
 					metricsAvailable: mapleServiceAccountEmail !== undefined,
-					connectors: rows.map(toConnector),
+					connectors: rows.map((row) => toConnector(row, counts.get(row.id))),
 				}
 			})
 
@@ -196,7 +228,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					"maple.gcp.scope_type": input.scopeType,
 					"maple.gcp.scope_id": input.scopeId,
 				})
-				yield* checkCapabilities(input, input.metricsEnabled)
+				const invalid = capabilityError(input, input.metricsEnabled)
+				if (invalid !== undefined) return yield* Effect.fail(invalid)
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
 				const encrypted = yield* encryptAes256Gcm(
@@ -245,22 +278,37 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const current = yield* selectRow(orgId, connectorId)
-				const flags = {
-					logsEnabled: patch.logsEnabled ?? current.logsEnabled,
-					metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
-				}
-				yield* checkCapabilities(flags, patch.metricsEnabled === true)
 				const updatedAt = msToDate(yield* Clock.currentTimeMillis)
-				const [row] = yield* dbExecute((db) =>
-					db
-						.update(gcpConnectors)
-						.set({ ...flags, updatedAt })
-						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-						.returning(),
+				const outcome = yield* dbExecute((db) =>
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							// The row lock keeps one capability on when two updates race.
+							const [current] = yield* tx
+								.select()
+								.from(gcpConnectors)
+								.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
+								.limit(1)
+								.for("update")
+							if (current === undefined) return undefined
+							const flags = {
+								logsEnabled: patch.logsEnabled ?? current.logsEnabled,
+								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
+							}
+							const invalid = capabilityError(flags, patch.metricsEnabled === true)
+							if (invalid === undefined) {
+								yield* tx
+									.update(gcpConnectors)
+									.set({ ...flags, updatedAt })
+									.where(eq(gcpConnectors.id, connectorId))
+							}
+							return { row: { ...current, ...flags }, invalid }
+						}),
+					),
 				)
-				if (row === undefined) return yield* notFound()
-				return toConnector(row)
+				if (outcome === undefined) return yield* notFound()
+				if (outcome.invalid !== undefined) return yield* Effect.fail(outcome.invalid)
+				const { row } = outcome
+				return toConnector(row, (yield* projectCounts([row.id])).get(row.id))
 			})
 
 			const scripts = Effect.fn("GcpConnectorService.scripts")(function* (

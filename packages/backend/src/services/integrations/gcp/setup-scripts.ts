@@ -108,18 +108,31 @@ gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
 // Removal must not take "could not look" for "not there": a sink the caller may not see would
 // otherwise be left routing into a topic the next step deletes.
 const REMOVAL_HELPERS = `
-# exists <gcloud ... describe ...>: whether a resource is there. NOT_FOUND, or an API that was
-# never enabled, means it is not. Any other failure (a missing permission, for example) is shown
-# and makes this script end with an error, because the resource may still be there.
+# exists <gcloud ... describe ...>: whether a resource is there. NOT_FOUND means it is not, and so
+# does a disabled API for the host project's own resources, which cannot exist without it (a
+# sink can). Any other failure (a missing permission, for example) is shown and makes this script
+# end with an error, because the resource may still be there.
 INCOMPLETE=0
 exists() {
   local output
   if output="$("$@" 2>&1)"; then return 0; fi
-  case "$output" in
-    *NOT_FOUND* | *"has not been used"* | *"is disabled"*) ;;
+  case "$2:$output" in
+    *NOT_FOUND*) ;;
+    logging:*) echo "$output" >&2; INCOMPLETE=1 ;;
+    *"has not been used"* | *"is disabled"*) ;;
     *) echo "$output" >&2; INCOMPLETE=1 ;;
   esac
   return 1
+}
+
+# unbind <gcloud ... remove-iam-policy-binding ...>: a binding that is already gone is fine.
+unbind() {
+  local output
+  if output="$("$@" 2>&1)"; then return 0; fi
+  case "$output" in
+    *"not found"*) ;;
+    *) echo "$output" >&2; INCOMPLETE=1 ;;
+  esac
 }
 `
 
@@ -137,11 +150,14 @@ const logsRemoval = (scopeType: GcpScopeType): string => `
 if exists gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink}; then
   gcloud logging sinks delete "$SINK" ${SCOPES[scopeType].sink} --quiet
 fi
-if exists gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID"; then
-  gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
-fi
-if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
-  gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
+# The topic stays while it is unclear whether a sink still writes to it.
+if [ "$INCOMPLETE" = 0 ]; then
+  if exists gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID"; then
+    gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
+  fi
+  if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
+    gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
+  fi
 fi
 `
 
@@ -198,21 +214,30 @@ retry gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL
 const metricsRemoval = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: off. Remove what an earlier run created. ----
 if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
-  # Role bindings first, or the deleted account would stay listed in the IAM policy.
+  # Role bindings first: once the account is deleted they can no longer be removed by name, so
+  # the account stays until every one of them is gone.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
-    ${SCOPES[scopeType].iam} remove-iam-policy-binding "$SCOPE_ID" \\
-      ${serviceAccountMember} --role="$ROLE" --condition=None >/dev/null || INCOMPLETE=1
+    unbind ${SCOPES[scopeType].iam} remove-iam-policy-binding "$SCOPE_ID" \\
+      ${serviceAccountMember} --role="$ROLE" --condition=None
   done
-  gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
-    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None >/dev/null || INCOMPLETE=1
-  gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
+  unbind gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
+    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
+  if [ "$INCOMPLETE" = 0 ]; then
+    gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
+  fi
 fi
+`
+
+// Metrics are on for the connector but this deployment has lost its Google identity. Nothing is
+// set up and, above all, nothing a customer set up earlier is removed.
+const METRICS_UNAVAILABLE = `
+# ---- Metrics and resources: on, but not available on this Maple deployment. Left as is. ----
 `
 
 export interface GcpSetupScriptInput extends GcpScriptTarget {
 	/** The ingest gateway's receiver URL for this connector, including its secret. */
 	readonly pushEndpoint: string
-	/** Maple's own Google service account. Undefined: metrics cannot be set up. */
+	/** Maple's own Google service account. Undefined: the metrics setup is left untouched. */
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
 	readonly metricsEnabled: boolean
@@ -226,7 +251,11 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
  * enabled is created or updated, what it has not is removed, so a re-run applies an opt-out.
  */
 export const renderGcpSetupScript = (input: GcpSetupScriptInput): string => {
-	const mapleAccount = input.metricsEnabled ? input.mapleServiceAccountEmail : undefined
+	const metrics = !input.metricsEnabled
+		? { state: "off", section: metricsRemoval(input.scopeType) }
+		: input.mapleServiceAccountEmail === undefined
+			? { state: "on, unavailable", section: METRICS_UNAVAILABLE }
+			: { state: "on", section: metricsSetup(input.scopeType, input.mapleServiceAccountEmail) }
 	const logs = input.logsEnabled
 		? {
 				note: "#\n# Keep this script private: PUSH_ENDPOINT contains this connector's secret.\n",
@@ -239,11 +268,11 @@ LOG_FILTER=${sh(gcpLogFilter(input.excludeGkeContainerLogs))}
 				section: logsSetup(input.scopeType, input.pushEndpoint),
 			}
 		: { note: "", filter: "", section: logsRemoval(input.scopeType) }
-	const removes = !input.logsEnabled || mapleAccount === undefined
+	const removes = !input.logsEnabled || !input.metricsEnabled
 	return `#!/usr/bin/env bash
 # Maple: connect a Google Cloud ${input.scopeType} to Maple.
 #   Logs:                  ${input.logsEnabled ? "on" : "off"}
-#   Metrics and resources: ${mapleAccount === undefined ? "off" : "on"}
+#   Metrics and resources: ${metrics.state}
 # Run in Cloud Shell. Safe to re-run: it sets up what is on and removes what is off.
 #
 # You need:
@@ -251,11 +280,7 @@ ${SCOPES[input.scopeType].needs}
 ${logs.note}set -euo pipefail
 ${logs.filter}
 ${variables(input)}
-${removes ? REMOVAL_HELPERS : ""}${logs.section}${
-		mapleAccount === undefined
-			? metricsRemoval(input.scopeType)
-			: metricsSetup(input.scopeType, mapleAccount)
-	}${removes ? REMOVAL_CHECK : ""}
+${removes ? REMOVAL_HELPERS : ""}${logs.section}${metrics.section}${removes ? REMOVAL_CHECK : ""}
 echo "Maple setup complete."
 `
 }

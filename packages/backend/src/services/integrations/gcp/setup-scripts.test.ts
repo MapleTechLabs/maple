@@ -74,8 +74,13 @@ case "$*" in
     case "$GCLOUD_DESCRIBE" in
       missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
       denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
+      api_off) echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2; exit 1 ;;
     esac ;;
-  *"remove-iam-policy-binding"*) exit "$GCLOUD_REMOVE_BINDING_STATUS" ;;
+  *"remove-iam-policy-binding"*)
+    case "$GCLOUD_UNBIND" in
+      absent) echo "ERROR: Policy binding with the specified principal, role, and condition not found!" >&2; exit 1 ;;
+      denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
+    esac ;;
 esac
 `
 
@@ -87,11 +92,15 @@ afterEach(() => {
 /** Run a rendered script in bash against the fake gcloud; returns the commands it issued. */
 const run = (
 	script: string,
-	options: { describe?: "found" | "missing" | "denied"; removeBindingStatus?: number } = {},
+	options: {
+		describe?: "found" | "missing" | "denied" | "api_off"
+		unbind?: "ok" | "absent" | "denied"
+		gcloud?: string
+	} = {},
 ) => {
 	const dir = mkdtempSync(join(tmpdir(), "maple-gcp-script-"))
 	tempDirs.push(dir)
-	writeFileSync(join(dir, "gcloud"), FAKE_GCLOUD)
+	writeFileSync(join(dir, "gcloud"), options.gcloud ?? FAKE_GCLOUD)
 	chmodSync(join(dir, "gcloud"), 0o755)
 	const log = join(dir, "gcloud.log")
 	const result = spawnSync("bash", [], {
@@ -103,7 +112,7 @@ const run = (
 			PATH: `${dir}:${process.env.PATH}`,
 			GCLOUD_LOG: log,
 			GCLOUD_DESCRIBE: options.describe ?? "missing",
-			GCLOUD_REMOVE_BINDING_STATUS: String(options.removeBindingStatus ?? 0),
+			GCLOUD_UNBIND: options.unbind ?? "ok",
 		},
 	})
 	return {
@@ -211,26 +220,42 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 })
 
 describe("renderGcpSetupScript", () => {
-	it("treats metrics as off when the deployment has no Google identity", () => {
+	it("leaves an enabled metrics setup alone when the deployment has lost its Google identity", () => {
 		const script = renderGcpSetupScript({
 			...setupInput("organization", { logs: true, metrics: true }),
 			mapleServiceAccountEmail: undefined,
 		})
-		const { status, commands } = run(script)
+		expect(script).toContain("Metrics and resources: on, unavailable")
+		const { status, commands } = run(script, { describe: "found" })
 		expect(status).toBe(0)
-		expect(commands).toEqual([
-			...logsSetupCommands(SCOPES.organization),
-			`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
-		])
+		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts"))
+		expect(commands).not.toContainEqual(expect.stringContaining("remove-iam-policy-binding"))
 	})
 
 	it("still deletes the service account when one of its role bindings is already gone", () => {
-		const { status, commands } = run(renderGcpCleanupScript(SCOPES.folder.target), {
-			describe: "found",
-			removeBindingStatus: 1,
+		const script = renderGcpCleanupScript(SCOPES.folder.target)
+		const absent = run(script, { describe: "found", unbind: "absent" })
+		expect(absent.commands.at(-1)).toBe(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
+		expect(absent.status).toBe(0)
+
+		// A binding that could not be removed keeps the account, so a later run can still name it.
+		const denied = run(script, { describe: "found", unbind: "denied" })
+		expect(denied.commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(denied.status).toBe(1)
+	})
+
+	it("keeps the topic when it cannot tell whether the sink is gone", () => {
+		const sinkDenied = `#!/usr/bin/env bash
+echo "$*" >> "$GCLOUD_LOG"
+case "$*" in *"sinks describe"*) echo "ERROR: PERMISSION_DENIED" >&2; exit 1 ;; esac
+`
+		const { status, commands } = run(renderGcpCleanupScript(SCOPES.organization.target), {
+			gcloud: sinkDenied,
 		})
-		// Deleted, and reported: the failed removal may have left a binding behind.
-		expect(commands.at(-1)).toBe(`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`)
+		expect(commands).not.toContainEqual(expect.stringContaining("pubsub"))
+		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
 		expect(status).toBe(1)
 	})
 
@@ -246,6 +271,15 @@ describe("renderGcpSetupScript", () => {
 			describe: "denied",
 		})
 		expect(setup.status).toBe(0)
+	})
+
+	it("reads a disabled API as nothing to remove in the host project, but not for the sink", () => {
+		const { status, stderr, commands } = run(renderGcpCleanupScript(SCOPES.organization.target), {
+			describe: "api_off",
+		})
+		expect(commands.every((command) => command.includes(" describe "))).toBe(true)
+		expect(stderr.match(/has not been used/g)).toHaveLength(1)
+		expect(status).toBe(1)
 	})
 
 	it("hands gcloud each value as one argument", () => {

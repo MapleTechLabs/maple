@@ -154,6 +154,11 @@ export interface EnvConfig {
 	 * metrics reader their setup script creates. Unset: the GCP integration is logs-only.
 	 */
 	readonly MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: Option.Option<string>
+	/**
+	 * A key of that service account: its JSON key file, base64-encoded. The metrics and resource
+	 * poller signs in with it. Unset: nothing is polled.
+	 */
+	readonly MAPLE_GCP_SERVICE_ACCOUNT_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_SCOPES: string
@@ -262,6 +267,7 @@ const envConfig = Config.all({
 	GITHUB_APP_WEBHOOK_SECRET: optionalRedacted("GITHUB_APP_WEBHOOK_SECRET"),
 	GITHUB_API_BASE_URL: stringWithDefault("GITHUB_API_BASE_URL", "https://api.github.com"),
 	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: optionalString("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
+	MAPLE_GCP_SERVICE_ACCOUNT_KEY: optionalRedacted("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 	CLOUDFLARE_OAUTH_CLIENT_ID: optionalString("CLOUDFLARE_OAUTH_CLIENT_ID"),
 	CLOUDFLARE_OAUTH_CLIENT_SECRET: optionalRedacted("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
 	// Cloudflare OAuth scope ids are DOT-delimited (mirroring API-token permission names;

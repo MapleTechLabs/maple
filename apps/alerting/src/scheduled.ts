@@ -15,6 +15,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
+import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetricsService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
@@ -48,6 +49,7 @@ export const buildLayer = (
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
 		CloudflareAnalyticsService.layer,
+		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		RailwayMetricsService.layer,
 		DigestService.layer,
@@ -249,6 +251,22 @@ const cloudflareAnalyticsTick = makeTick(
 	}),
 )
 
+const gcpMetricsTick = makeTick(
+	GcpMetricsService.use((gcp) => gcp.pollAll()),
+	"gcp_metrics",
+	(result) =>
+		result.polled + result.deferred > 0
+			? {
+					polled: result.polled,
+					deferred: result.deferred,
+					rowsIngested: result.rowsIngested,
+					failures: result.failures,
+					incompleteMetrics: result.incompleteMetrics,
+					calls: result.calls,
+				}
+			: undefined,
+)
+
 const planetScaleTick = makeTick(
 	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs()),
 	"planetscale",
@@ -301,6 +319,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly error: Effect.Effect<void, never, R>
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
+	readonly gcpMetrics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
@@ -322,6 +341,7 @@ export const selectScheduledProgram = <R>(
 				[
 					ticks.anomaly,
 					ticks.cloudflareAnalytics,
+					ticks.gcpMetrics,
 					ticks.planetScale,
 					ticks.railwayMetrics,
 					ticks.prReviewPostMerge,
@@ -360,6 +380,7 @@ type ScheduledServices =
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
+	| GcpMetricsService
 	| PlanetScaleService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
@@ -373,6 +394,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	error: errorTick,
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
+	gcpMetrics: gcpMetricsTick,
 	planetScale: planetScaleTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
