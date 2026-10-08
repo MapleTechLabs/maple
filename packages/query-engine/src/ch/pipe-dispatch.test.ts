@@ -239,6 +239,16 @@ describe("compilePipeQuery", () => {
 		}),
 	)
 
+	// Two root spans 400ns apart share a millisecond. A cursor truncated to ms
+	// would compare `< '...10:00:00.123'` and skip the second one on the next page.
+	it("list_traces keeps a wire cursor's nanoseconds", () => {
+		const paged = compilePipeQuery("list_traces", {
+			...baseParams(),
+			cursor: "2026-01-01 10:00:00.123456789",
+		})
+		expect(paged!.sql).toContain("Timestamp < '2026-01-01 10:00:00.123456789'")
+	})
+
 	it("injects OrgId into SQL", () => {
 		const result = compilePipeQuery("list_traces", baseParams())
 		expect(result!.sql).toContain("test-org")

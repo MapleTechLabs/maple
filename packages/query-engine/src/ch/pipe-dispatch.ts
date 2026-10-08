@@ -25,7 +25,9 @@ import {
 } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "./raw-sql"
 import { Array as A, type DateTime, Effect, Match, Option, Result, Schema } from "effect"
+import type * as CH from "@maple-dev/effect-orm/expr"
 import { parseUtc } from "../datetime"
+import { exactDateTime64 } from "./tables"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
@@ -868,9 +870,13 @@ export function compilePipeQuery(
 
 /**
  * A keyset cursor off the wire. An unparseable one is invalid input: reading
- * it as absent would silently restart paging at the first page.
+ * it as absent would silently restart paging at the first page. A wire-form
+ * cursor keeps its nanoseconds, so rows sharing the boundary millisecond are
+ * not skipped.
  */
-const pipeCursor = (raw: string | undefined): Effect.Effect<DateTime.Utc | undefined, QueryBuilderError> =>
+const pipeCursor = (
+	raw: string | undefined,
+): Effect.Effect<DateTime.Utc | CH.Expr<DateTime.Utc> | undefined, QueryBuilderError> =>
 	raw === undefined
 		? Effect.succeed(undefined)
 		: Option.match(parseUtc(raw), {
@@ -881,7 +887,10 @@ const pipeCursor = (raw: string | undefined): Effect.Effect<DateTime.Utc | undef
 							message: `cursor \`${raw}\` is not a timestamp`,
 						}),
 					),
-				onSome: (cursor) => Effect.succeed(cursor),
+				onSome: (cursor) => {
+					const exact = exactDateTime64(raw)
+					return Effect.succeed(typeof exact === "string" ? cursor : exact)
+				},
 			})
 
 // Attribute filter param helpers (numbered suffix pattern from Tinybird pipes)
