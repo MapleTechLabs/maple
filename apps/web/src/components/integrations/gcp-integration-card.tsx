@@ -39,6 +39,7 @@ import { errorMessage, showErrorToast } from "@/lib/error-toast"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
+	GCP_SCOPE_NAMES,
 	cloudShellUrl,
 	gcpCreateRequest,
 	gcpLogState,
@@ -76,21 +77,18 @@ const PROJECT_ID_RULE =
 /** The add form's scope choices, in display order. `runAs` mirrors the setup script's header. */
 const SCOPES = {
 	organization: {
-		title: "Organization",
 		description: "Every project in the organization, including ones created later.",
 		idLabel: "Organization ID",
 		idRule: "An organization ID is digits only, such as 123456789012.",
 		runAs: "Logs Configuration Writer and Organization Administrator on the organization",
 	},
 	folder: {
-		title: "Folder",
 		description: "Every project in the folder, including ones created later.",
 		idLabel: "Folder ID",
 		idRule: "A folder ID is digits only, such as 123456789012.",
 		runAs: "Logs Configuration Writer and Folder IAM Admin on the folder",
 	},
 	project: {
-		title: "Project",
 		description: "One project.",
 		idLabel: "Project ID",
 		idRule: PROJECT_ID_RULE,
@@ -163,8 +161,8 @@ function GcpConnectForm({
 		hostProjectId: "",
 	})
 	const [error, setError] = useState<string | null>(null)
-	// A rule turns red on blur, not while the first characters are being typed.
-	const [touched, setTouched] = useState(false)
+	// A rule turns red once its field was left, not while the first characters are being typed.
+	const [touched, setTouched] = useState({ scopeId: false, hostProjectId: false })
 
 	const scope = SCOPES[draft.scopeType]
 	const aggregated = draft.scopeType !== "project"
@@ -173,10 +171,11 @@ function GcpConnectForm({
 	const scopeId = draft.scopeId.trim()
 	const hostProjectId = draft.hostProjectId.trim()
 	const scopeIdInvalid =
-		touched &&
+		touched.scopeId &&
 		scopeId.length > 0 &&
 		!(aggregated ? isGcpResourceNumber(scopeId) : isGcpProjectId(scopeId))
-	const hostInvalid = touched && aggregated && hostProjectId.length > 0 && !isGcpProjectId(hostProjectId)
+	const hostInvalid =
+		touched.hostProjectId && aggregated && hostProjectId.length > 0 && !isGcpProjectId(hostProjectId)
 
 	const edit = (patch: Partial<GcpConnectorDraft>) => {
 		setDraft({ ...draft, ...patch })
@@ -198,7 +197,6 @@ function GcpConnectForm({
 
 	function handleSubmit(event: React.FormEvent) {
 		event.preventDefault()
-		setTouched(true)
 		void submit()
 	}
 
@@ -215,10 +213,13 @@ function GcpConnectForm({
 						type="radio"
 						name="gcp-scope-type"
 						checked={draft.scopeType === scopeType}
-						// The two kinds of ID never carry over, so the field starts empty.
-						onChange={() => edit({ scopeType, scopeId: "" })}
-						label={SCOPES[scopeType].title}
-						title={SCOPES[scopeType].title}
+						// The two kinds of ID never carry over, so the field starts over.
+						onChange={() => {
+							edit({ scopeType, scopeId: "" })
+							setTouched({ ...touched, scopeId: false })
+						}}
+						label={GCP_SCOPE_NAMES[scopeType]}
+						title={GCP_SCOPE_NAMES[scopeType]}
 						description={SCOPES[scopeType].description}
 					/>
 				))}
@@ -232,7 +233,7 @@ function GcpConnectForm({
 					placeholder={aggregated ? "123456789012" : "acme-prod"}
 					value={draft.scopeId}
 					onChange={(event) => edit({ scopeId: event.target.value })}
-					onBlur={() => setTouched(true)}
+					onBlur={() => setTouched({ ...touched, scopeId: true })}
 					className="font-mono"
 				/>
 				{scopeIdInvalid ? <FieldError match>{scope.idRule}</FieldError> : null}
@@ -247,7 +248,7 @@ function GcpConnectForm({
 						placeholder="acme-observability"
 						value={draft.hostProjectId}
 						onChange={(event) => edit({ hostProjectId: event.target.value })}
-						onBlur={() => setTouched(true)}
+						onBlur={() => setTouched({ ...touched, hostProjectId: true })}
 						className="font-mono"
 					/>
 					{hostInvalid ? (
@@ -337,7 +338,7 @@ function GcpSetup({
 				<Alert variant="info" size="sm">
 					<CircleInfoIcon size={14} />
 					<AlertDescription>
-						Saved. The change takes effect in Google Cloud once you run the script below again.
+						Saved. Run the script below for the change to take effect in Google Cloud.
 					</AlertDescription>
 				</Alert>
 			) : null}
@@ -502,9 +503,11 @@ function GcpConnectorRow({
 	onSetupOpenChange: (open: boolean) => void
 	onRemoved: (removed: RemovedConnector) => void
 }) {
-	const update = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "updateConnector"), {
-		mode: "promiseExit",
-	})
+	// One atom for every row, running one call at a time: a second save would cancel the first.
+	// So `updating` disables the switches of every connector while any save is in flight.
+	const updateAtom = MapleApiV2AtomClient.mutation("gcpIntegration", "updateConnector")
+	const update = useAtomSet(updateAtom, { mode: "promiseExit" })
+	const updating = useAtomValue(updateAtom).waiting
 	const remove = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "deleteConnector"), {
 		mode: "promiseExit",
 	})
@@ -516,12 +519,13 @@ function GcpConnectorRow({
 	const flags: GcpFlags = asked !== null && asked.of === connector ? asked.flags : connector
 	const label = gcpScopeLabel(connector)
 
-	// One save at a time per connector: both switches are disabled while it runs.
-	const [save, saving] = useAsyncAction(async (next: GcpFlags) => {
-		setAsked({ of: connector, flags: next })
+	// Only the flipped switch is sent: the API leaves an omitted one as it is, so a stale view of
+	// the other cannot overwrite it.
+	async function save(patch: Partial<GcpFlags>) {
+		setAsked({ of: connector, flags: { ...flags, ...patch } })
 		const result = await update({
 			params: { id: connector.id },
-			payload: next,
+			payload: patch,
 			reactivityKeys: [...REACTIVITY_KEYS, ...SCRIPT_REACTIVITY_KEYS],
 		})
 		if (Exit.isSuccess(result)) {
@@ -531,7 +535,7 @@ function GcpConnectorRow({
 		}
 		setAsked(null)
 		showErrorToast(result, { title: "Failed to save the change" })
-	})
+	}
 
 	// Resolving to `false` keeps the confirm dialog open for a retry.
 	async function handleDisconnect() {
@@ -582,7 +586,7 @@ function GcpConnectorRow({
 						<Switch
 							aria-label="Log forwarding"
 							checked={flags.logs_enabled}
-							disabled={saving || logsLock !== null}
+							disabled={updating || logsLock !== null}
 							onCheckedChange={(logs_enabled) =>
 								void save({ logs_enabled, metrics_enabled: flags.metrics_enabled })
 							}
@@ -600,7 +604,7 @@ function GcpConnectorRow({
 						<Switch
 							aria-label="Metrics and resources"
 							checked={flags.metrics_enabled}
-							disabled={saving || metricsLock !== null}
+							disabled={updating || metricsLock !== null}
 							onCheckedChange={(metrics_enabled) =>
 								void save({ logs_enabled: flags.logs_enabled, metrics_enabled })
 							}
@@ -609,7 +613,7 @@ function GcpConnectorRow({
 				}
 			>
 				<span className="text-foreground">{flags.metrics_enabled ? "On" : "Off"}</span>
-				{"· Maple reads Cloud Monitoring metrics and the resource inventory"}
+				{"· Cloud Monitoring metrics and the resource inventory"}
 			</Capability>
 			{setupOpen ? (
 				<GcpSetup connector={connector} logsEnabled={flags.logs_enabled} rerun={rerun} />
@@ -660,7 +664,7 @@ export function GcpIntegrationCard() {
 		enabled: connectors.length > 0,
 	})
 
-	if (Result.isInitial(statusResult) && status === null) {
+	if (Result.isInitial(statusResult)) {
 		return <Skeleton className="h-40 w-full rounded-lg" />
 	}
 	if (Result.isFailure(statusResult) && status === null) {

@@ -593,7 +593,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				health: issue ? "attention" : "healthy",
 				stateLabel: issue ? "Needs attention" : "Healthy",
 				context:
-					connectors[0] !== undefined && connectors.length === 1
+					connectors.length === 1
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
 				stat:
@@ -603,7 +603,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				lastSyncLabel: syncedLabel(
 					maxMs(
 						connectors.map((connector) =>
-							connector.last_log_received_at
+							connector.logs_enabled && connector.last_log_received_at
 								? Date.parse(connector.last_log_received_at)
 								: null,
 						),

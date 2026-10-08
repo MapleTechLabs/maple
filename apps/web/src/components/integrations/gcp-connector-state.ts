@@ -46,11 +46,15 @@ export function gcpSwitchLock(
 	return capability === "metrics" && !metricsAvailable ? "metrics-unavailable" : null
 }
 
-const SCOPE_NAMES = { project: "Project", folder: "Folder", organization: "Organization" } as const
+export const GCP_SCOPE_NAMES = {
+	project: "Project",
+	folder: "Folder",
+	organization: "Organization",
+} as const
 
 /** "Organization 123456789012", "Project acme-prod". */
 export const gcpScopeLabel = (connector: Pick<V2GcpConnector, "scope_type" | "scope_id">): string =>
-	`${SCOPE_NAMES[connector.scope_type]} ${connector.scope_id}`
+	`${GCP_SCOPE_NAMES[connector.scope_type]} ${connector.scope_id}`
 
 /** What the add form holds. */
 export interface GcpConnectorDraft {
