@@ -25,6 +25,7 @@ export type { SessionMetaRowInput } from "./events/meta-row"
 export { formatCHDateTime, postSessionMetaRow } from "./events/meta-row"
 export type { MetadataSessionHandle, MetadataSessionOptions } from "./session/metadata-session"
 export { startMetadataSession } from "./session/metadata-session"
+export { clearPendingChunk } from "./session/pending-chunk"
 // The session record's mutators (counts, navigation, rotation listeners) stay
 // package-internal: `startSessionLifecycle` owns those invariants, and an SDK
 // reaching past it would write counts the lifecycle then overwrites.

@@ -49,7 +49,8 @@ vi.mock("../platform/transport", () => ({
 	}),
 }))
 
-const { clearPendingChunk, startBufferedRecording, startRecording } = await import("./record")
+const { startBufferedRecording, startRecording } = await import("./record")
+const { clearPendingChunk } = await import("../session/pending-chunk")
 const { nextChunkSeq } = await import("../session/session")
 const { gzip } = await import("../platform/transport")
 

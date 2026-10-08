@@ -1,6 +1,7 @@
 import { record } from "rrweb"
 import { consentRevokedAt } from "../identity/consent"
 import { BLOCK_SELECTOR } from "../privacy-markers"
+import { clearPendingChunk, PENDING_CHUNK_KEY } from "../session/pending-chunk"
 import { markActivity, nextChunkSeq } from "../session/session"
 import { isJsonObject } from "../platform/json"
 import type { IngestConfig } from "../platform/transport"
@@ -66,7 +67,7 @@ export interface Recorder {
 // unloading document is torn down before it resolves, so the chunk waits in
 // sessionStorage (this tab, this origin, like the session record) for the next
 // recorder start of its session: the next page load, or this page shown again.
-const PENDING_KEY = "maple.replay.pending"
+//
 // A streamed flush stays near FLUSH_BYTES. A buffered segment can run to
 // megabytes and is not kept: the host app shares the origin's storage quota.
 const MAX_PENDING_CHARS = 256 * 1024
@@ -102,7 +103,7 @@ function targetOf(config: IngestConfig): string {
 
 function readPending(): PendingChunk | undefined {
 	try {
-		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "null")
+		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_CHUNK_KEY) ?? "null")
 		return isPendingChunk(parsed) ? parsed : undefined
 	} catch {
 		return undefined
@@ -116,17 +117,7 @@ function readPending(): PendingChunk | undefined {
 function storePending(chunk: PendingChunk): boolean {
 	try {
 		if (chunk.body.length > MAX_PENDING_CHARS || readPending()) return false
-		window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(chunk))
-		return true
-	} catch {
-		return false
-	}
-}
-
-/** Remove the stored chunk; a consent revoke discards it along with the buffer. */
-export function clearPendingChunk(): boolean {
-	try {
-		window.sessionStorage.removeItem(PENDING_KEY)
+		window.sessionStorage.setItem(PENDING_CHUNK_KEY, JSON.stringify(chunk))
 		return true
 	} catch {
 		return false

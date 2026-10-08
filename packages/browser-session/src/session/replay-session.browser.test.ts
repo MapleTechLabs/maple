@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 const calls: string[] = []
 vi.mock("../replay/record", () => ({
-	clearPendingChunk: () => calls.push("pending.clear"),
 	startRecording: () => {
 		calls.push("stream")
 		return { stop: () => calls.push("stream.stop"), flush: async () => {}, getClickCount: () => 0 }
@@ -93,18 +92,5 @@ describe("startReplaySession in buffer mode", () => {
 		expect(recorded(rows.at(-1))).toBe("true")
 		expect(trigger(rows.at(-1))).toBeUndefined()
 		await handle?.shutdown()
-	})
-
-	it("discards the chunk kept for the next load on a consent revoke", async () => {
-		getSession()
-		const handle = startReplaySession({
-			endpoint: "https://ingest.test",
-			sdk: "maple-test/0.0.0",
-			serviceName: "web",
-			maskAllInputs: true,
-			maskAllText: false,
-		})
-		await handle?.shutdown({ flush: false })
-		expect(calls).toContain("pending.clear")
 	})
 })
