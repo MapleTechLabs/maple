@@ -29,7 +29,7 @@ const props = Effect.gen(function* () {
 			// Deep links serve the shell in place; otherwise hard reloads 307 to "/".
 			notFoundHandling: "single-page-application" as const,
 			// Or the SPA fallback answers the API proxy.
-			runWorkerFirst: [`${API_PROXY_PREFIX}/*`],
+			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`],
 		},
 		// Also hash the `@maple/*` sources; `lockfile` is restated because `include` drops it.
 		memo: {

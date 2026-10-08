@@ -88,7 +88,11 @@ export const handleRequest = async (
 	const api = apiTarget(env)
 
 	const apiPath = apiProxyPath(url.pathname)
-	if (apiPath !== undefined) return runTraced(forwardToApi(request, url, api, apiPath))
+	if (apiPath !== undefined) {
+		// Binding only: a public `fetch` would replace the browser's `cf-connecting-ip`.
+		const proxyTarget = env.API === undefined ? undefined : api
+		return runTraced(forwardToApi(request, url, proxyTarget, apiPath))
+	}
 
 	// Ahead of the assets lookup: this path has no asset behind it, and the
 	// 404 the assets layer returns for it would fall through to the SPA shell.

@@ -59,6 +59,14 @@ describe("handleRequest API proxy", () => {
 		expect(new URL(forwarded[0]?.url ?? "").host).toBe("api.maple.test")
 	})
 
+	it("503s without the binding rather than forwarding over the public internet", async () => {
+		const response = await handleRequest(new Request("https://app.maple.test/_api/v2/traces"), {
+			ASSETS: assets,
+			MAPLE_API_BASE_URL: "https://api.maple.test",
+		})
+		expect(response.status).toBe(503)
+	})
+
 	it("503s without an API, instead of serving the SPA shell", async () => {
 		const response = await handleRequest(new Request("https://app.maple.test/_api/v2/traces"), {
 			ASSETS: assets,
