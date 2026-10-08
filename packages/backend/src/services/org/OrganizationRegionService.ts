@@ -19,7 +19,7 @@ import {
 	organizationRegionsFrom,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { Clock, Context, Effect, HashMap, Layer, Option, Redacted, Ref, Schema } from "effect"
+import { Clock, Context, Effect, Fiber, HashMap, Layer, Option, Redacted, Ref, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -35,10 +35,17 @@ const REGIONS_TTL_MS = 60_000
 const OPEN_REGION_TTL_MS = 5_000
 
 /**
- * The Workers cache tier, shared by every isolate in a data center. A fresh isolate reads it in a
- * few ms instead of paying a ~180 ms Clerk call. Same TTLs as the isolate tier.
+ * The Workers cache tier, shared by every isolate in a data center, so a fresh isolate can skip
+ * the Clerk call. Holds only answers that let this instance serve. Same TTLs as the isolate tier.
  */
 const REGIONS_CACHE_BUCKET = "org-regions"
+/**
+ * How long the shared read runs alone before Clerk is asked too. Warm reads answer in ~13 ms. A
+ * fresh isolate's first read took 90 to 340 ms (p10 to p90) on a preview, so there both race.
+ */
+const CLERK_HEDGE_AFTER_MS = 40
+/** Frees a hung shared read. Clerk is already answering by then. */
+const SHARED_READ_DEADLINE_MS = 1_000
 
 /** One Clerk answer. Every tier measures its age from `readAtMs`, so reuse never adds up across tiers. */
 const RegionRead = Schema.Struct({
@@ -48,10 +55,12 @@ const RegionRead = Schema.Struct({
 })
 type RegionRead = typeof RegionRead.Type
 
-/** Keeps a read that refuses this instance out of the shared tier. Recovered where it is raised. */
-class RegionReadNotShared extends Schema.TaggedError<RegionReadNotShared>()(
-	"@maple/backend/services/org/RegionReadNotShared",
-	{ message: Schema.String, read: RegionRead },
+const decodeRegionRead = Schema.decodeUnknownOption(RegionRead)
+
+/** The shared tier had no usable answer, so the race against Clerk goes to Clerk. */
+class RegionNotShared extends Schema.TaggedError<RegionNotShared>()(
+	"@maple/backend/services/org/RegionNotShared",
+	{ message: Schema.String },
 ) {}
 
 const regionTtlMs = (entry: RegionRead, nowMs: number): number =>
@@ -62,6 +71,8 @@ interface RegionAnswer {
 	readonly entry: RegionRead
 	readonly layer: "isolate" | "edge" | "origin"
 }
+
+const answer = (entry: RegionRead, layer: RegionAnswer["layer"]): RegionAnswer => ({ entry, layer })
 
 const isFresh = (entry: RegionRead, nowMs: number): boolean =>
 	nowMs - entry.readAtMs < regionTtlMs(entry, nowMs)
@@ -108,42 +119,66 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		return { metadata: organization.publicMetadata, createdAtMs: organization.createdAt, readAtMs }
 	})
 
+	const readEdge = (orgId: OrgId, nowMs: number) =>
+		edgeCache
+			.rawGetDetailed<unknown>(REGIONS_CACHE_BUCKET, orgId, { readTimeoutMs: SHARED_READ_DEADLINE_MS })
+			.pipe(
+				Effect.map(({ value }) =>
+					Option.filter(Option.flatMap(value, decodeRegionRead), (entry) => isFresh(entry, nowMs)),
+				),
+				// A failed read is a miss. Clerk still answers.
+				Effect.orElseSucceed(() => Option.none<RegionRead>()),
+			)
+
 	// Only a yes is shared. An organization whose region was just chosen in onboarding arrives
 	// here straight away, and a cached no would refuse it.
-	const readShared = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number) =>
-		edgeCache
-			.getOrCompute(
-				{
-					bucket: REGIONS_CACHE_BUCKET,
-					key: orgId,
-					schema: RegionRead,
-					ttlSeconds: (entry) => Math.ceil(regionTtlMs(entry, entry.readAtMs) / 1000),
-					readTimeoutMs: 1_000,
-				},
-				readDirectory(read, orgId).pipe(
-					Effect.filterOrFail(
-						(entry) => organizationServedIn(entry.metadata, region),
-						(entry) =>
-							new RegionReadNotShared({
-								message: "Organization is not served here",
-								read: entry,
-							}),
-					),
-				),
-			)
-			.pipe(
-				Effect.flatMap(({ value, hit }): Effect.Effect<RegionAnswer, ClerkRequestError> => {
-					if (!hit) return Effect.succeed({ entry: value, layer: "origin" })
-					if (isFresh(value, nowMs)) return Effect.succeed({ entry: value, layer: "edge" })
-					// Written once Clerk answered, so the entry can outlive its TTL by that call.
-					return Effect.map(readDirectory(read, orgId), (entry) => ({ entry, layer: "origin" }))
+	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId) =>
+		readDirectory(read, orgId).pipe(
+			Effect.tap((entry) =>
+				organizationServedIn(entry.metadata, region)
+					? edgeCache
+							.rawPut(
+								REGIONS_CACHE_BUCKET,
+								orgId,
+								entry,
+								Math.ceil(regionTtlMs(entry, entry.readAtMs) / 1000),
+							)
+							.pipe(
+								Effect.catch((error) =>
+									Effect.logWarning("Could not share the organization's regions").pipe(
+										Effect.annotateLogs({ orgId, error: error.message }),
+									),
+								),
+							)
+					: Effect.void,
+			),
+			Effect.map((entry) => answer(entry, "origin")),
+		)
+
+	const readShared = Effect.fnUntraced(function* (
+		read: ReadDirectoryOrganization,
+		orgId: OrgId,
+		nowMs: number,
+	) {
+		const shared = yield* Effect.forkChild(readEdge(orgId, nowMs))
+		const early = yield* Fiber.join(shared).pipe(Effect.timeoutOption(CLERK_HEDGE_AFTER_MS))
+		if (Option.isSome(early)) {
+			return Option.isSome(early.value)
+				? answer(early.value.value, "edge")
+				: yield* readOrigin(read, orgId)
+		}
+		// Usually a fresh isolate's first read. Ask Clerk as well and take whichever answers first.
+		yield* Effect.annotateCurrentSpan("cache.hedged", true)
+		const lateHit = Fiber.join(shared).pipe(
+			Effect.flatMap(
+				Option.match({
+					onNone: () => Effect.fail(new RegionNotShared({ message: "No shared region answer" })),
+					onSome: (entry) => Effect.succeed(answer(entry, "edge")),
 				}),
-				Effect.catchTag(
-					"@maple/backend/services/org/RegionReadNotShared",
-					(notShared): Effect.Effect<RegionAnswer> =>
-						Effect.succeed({ entry: notShared.read, layer: "origin" }),
-				),
-			)
+			),
+		)
+		return yield* Effect.race(lateHit, readOrigin(read, orgId))
+	})
 
 	const read = Effect.fn("OrganizationRegionService.read")(function* (orgId: OrgId) {
 		if (Option.isNone(readOrganization)) return Option.none<unknown>()
@@ -201,7 +236,15 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	const forget: OrganizationRegionServiceApi["forget"] = Effect.fn("OrganizationRegionService.forget")(
 		function* (orgId) {
 			yield* Ref.update(remembered, HashMap.remove(orgId))
-			yield* edgeCache.invalidate({ bucket: REGIONS_CACHE_BUCKET, key: orgId })
+			yield* edgeCache
+				.rawDelete(REGIONS_CACHE_BUCKET, orgId)
+				.pipe(
+					Effect.catch((error) =>
+						Effect.logWarning(
+							"Could not drop the shared organization regions; they expire on their TTL",
+						).pipe(Effect.annotateLogs({ orgId, error: error.message })),
+					),
+				)
 		},
 	)
 

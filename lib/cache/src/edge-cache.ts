@@ -101,9 +101,11 @@ export interface EdgeCacheServiceApi {
 	 * failure is logged and swallowed (the entry simply expires via its TTL).
 	 */
 	readonly invalidate: (options: EdgeCacheInvalidateOptions) => Effect.Effect<void>
+	/** `readTimeoutMs` overrides the service's read deadline, as on `getOrCompute`. */
 	readonly rawGetDetailed: <A>(
 		bucket: string,
 		key: string,
+		options?: { readonly readTimeoutMs?: number },
 	) => Effect.Effect<EdgeCacheReadResult<A>, EdgeCacheIOError>
 	readonly rawGet: <A>(bucket: string, key: string) => Effect.Effect<Option.Option<A>, EdgeCacheIOError>
 	readonly rawPut: (
@@ -112,6 +114,8 @@ export interface EdgeCacheServiceApi {
 		value: unknown,
 		ttlSeconds: number,
 	) => Effect.Effect<void, EdgeCacheIOError>
+	/** Evict a `rawPut` entry by the same raw key. */
+	readonly rawDelete: (bucket: string, key: string) => Effect.Effect<void, EdgeCacheIOError>
 }
 
 const sha256Hex = async (input: string): Promise<string> => {
@@ -449,7 +453,11 @@ export const makeEdgeCacheService = (
 		)
 	})
 
-	const rawGetDetailed = Effect.fn("EdgeCache.rawGetDetailed")(function* <A>(bucket: string, key: string) {
+	const rawGetDetailed = Effect.fn("EdgeCache.rawGetDetailed")(function* <A>(
+		bucket: string,
+		key: string,
+		options?: { readonly readTimeoutMs?: number },
+	) {
 		yield* Effect.annotateCurrentSpan({
 			"cache.bucket": bucket,
 			"cache.hit": false,
@@ -461,7 +469,7 @@ export const makeEdgeCacheService = (
 		const skipRead = shouldSkipRead(bucket, nowMs)
 		const read = skipRead
 			? { value: undefined, timedOut: false as const }
-			: yield* readBackend(bucket, key, nowMs, boundedReadTimeoutMs).pipe(
+			: yield* readBackend(bucket, key, nowMs, resolveReadTimeoutMs(options?.readTimeoutMs)).pipe(
 					Effect.mapError(toIOError(bucket, key)),
 				)
 		if (!skipRead) recordReadOutcome(bucket, read.timedOut, nowMs)
@@ -500,12 +508,17 @@ export const makeEdgeCacheService = (
 		)
 	})
 
+	const rawDelete = Effect.fn("EdgeCache.rawDelete")(function* (bucket: string, key: string) {
+		return yield* backend.delete(bucket, key).pipe(Effect.mapError(toIOError(bucket, key)))
+	})
+
 	return {
 		getOrCompute,
 		invalidate,
 		rawGetDetailed,
 		rawGet,
 		rawPut,
+		rawDelete,
 	} satisfies EdgeCacheServiceApi
 }
 

@@ -68,6 +68,7 @@ const makeObservedEdgeCache = () => {
 		},
 		rawGet: inner.rawGet,
 		rawPut: inner.rawPut,
+		rawDelete: inner.rawDelete,
 	}
 	return {
 		layer: Layer.succeed(EdgeCacheService, observed),

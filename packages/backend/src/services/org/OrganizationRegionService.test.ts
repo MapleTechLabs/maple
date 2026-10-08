@@ -7,7 +7,7 @@ import {
 } from "@maple/cache"
 import { OrganizationWrongRegionError, OrgId } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
-import { Effect, Exit, Option, Ref, Schema } from "effect"
+import { Effect, Exit, Fiber, Option, Ref, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import {
@@ -159,6 +159,38 @@ describe("OrganizationRegionService", () => {
 			yield* regions.ensureServedHere(orgId)
 			yield* (yield* isolate(backend, directory)).ensureServedHere(orgId)
 			assert.strictEqual(yield* Ref.get(directory.reads), 2)
+		}),
+	)
+
+	it.effect("a shared read that hangs hands over to Clerk after 40 ms", () =>
+		Effect.gen(function* () {
+			const hung: EdgeCacheBackend = { ...makeMemoryBackend(), get: () => Effect.never }
+			const directory = yield* makeDirectory(Option.some(chosen("eu")))
+			const pending = yield* Effect.forkChild(
+				Effect.exit((yield* isolate(hung, directory)).ensureServedHere(orgId)),
+			)
+			yield* TestClock.adjust("40 millis")
+			assert.isTrue(isWrongRegion(yield* Fiber.join(pending)))
+		}),
+	)
+
+	it.effect("a slow shared answer still wins over a slower Clerk", () =>
+		Effect.gen(function* () {
+			const backend = makeMemoryBackend()
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			yield* (yield* isolate(backend, directory)).ensureServedHere(orgId)
+			// Clerk now says EU and takes 500 ms, so only the shared answer can serve the request.
+			yield* Ref.set(directory.answer, Option.some(chosen("eu")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "500 millis") }
+			const slowCache: EdgeCacheBackend = {
+				...backend,
+				get: (...args) => Effect.delay(backend.get(...args), "100 millis"),
+			}
+			const pending = yield* Effect.forkChild(
+				Effect.exit((yield* isolate(slowCache, slowClerk)).ensureServedHere(orgId)),
+			)
+			yield* TestClock.adjust("1 second")
+			assert.isTrue(Exit.isSuccess(yield* Fiber.join(pending)))
 		}),
 	)
 })
