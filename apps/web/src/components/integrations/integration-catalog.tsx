@@ -29,7 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
-import { gcpConnectorState } from "./gcp-connector-state"
+import { gcpLogState, type GcpLogState } from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -320,13 +320,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const gcp: CardStatus | null = Result.builder(gcpResult)
 		.onSuccess((status): CardStatus => {
 			if (status.connectors.length === 0) return NOT_CONNECTED
-			const failing = status.connectors.some(
-				(connector) => gcpConnectorState(connector).kind === "error",
-			)
-			return {
-				label: countLabel(status.connectors.length, "project"),
-				variant: failing ? "warn" : "ok",
-			}
+			return { label: countLabel(status.connectors.length, "project"), variant: "ok" }
 		})
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
@@ -581,9 +575,8 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onSuccess((status): IntegrationOverview => {
 			const connectors = status.connectors
 			if (connectors.length === 0) return SET_UP
-			const states = connectors.map(gcpConnectorState)
-			const count = (kind: (typeof states)[number]["kind"]) =>
-				states.filter((state) => state.kind === kind).length
+			const states = connectors.map(gcpLogState)
+			const count = (kind: GcpLogState["kind"]) => states.filter((state) => state.kind === kind).length
 			const failing = count("error")
 			const waiting = count("waiting")
 			const issue =

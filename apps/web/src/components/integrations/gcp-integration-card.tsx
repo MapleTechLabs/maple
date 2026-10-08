@@ -30,9 +30,8 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, showErrorToast } from "@/lib/error-toast"
 import { retainedQuery } from "@/lib/services/common/atom-client"
-import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { cloudShellUrl, gcpConnectorState } from "./gcp-connector-state"
+import { cloudShellUrl, gcpLogState } from "./gcp-connector-state"
 import { GCP_ACCENT, IntegrationIconPlate, gcpStatusQuery } from "./integration-catalog"
 import {
 	IntegrationEmpty,
@@ -46,13 +45,16 @@ import {
 
 const REACTIVITY_KEYS = ["gcpIntegration"]
 
-/** Fast enough to watch the first log land, cheap next to the push traffic itself. */
-const WAITING_REFRESH_MS = 10_000
+/** Fast enough to watch the first log land, or an error clear after the script is re-run. */
+const SETTLING_REFRESH_MS = 10_000
+/** Keeps "last log" and a new error current on a page left open. */
+const STEADY_REFRESH_MS = 60_000
 
 const decodeProjectId = Schema.decodeUnknownOption(GcpProjectId)
 
 /** A disconnected project's cleanup script, shown until dismissed. It carries no secret. */
 interface RemovedProject {
+	readonly id: V2GcpConnector["id"]
 	readonly projectId: string
 	readonly cleanupScript: string
 }
@@ -104,10 +106,12 @@ function GcpProjectForm({
 	})
 	const [value, setValue] = useState("")
 	const [error, setError] = useState<string | null>(null)
+	// The rule turns red on blur, not while the first characters are being typed.
+	const [touched, setTouched] = useState(false)
 
 	// The API validates with the same schema, so a rejected ID is caught before the request.
 	const projectId = decodeProjectId(value.trim())
-	const invalid = value.trim().length > 0 && Option.isNone(projectId)
+	const invalid = touched && value.trim().length > 0 && Option.isNone(projectId)
 
 	const [submit, submitting] = useAsyncAction(async () => {
 		if (Option.isNone(projectId)) return
@@ -117,15 +121,17 @@ function GcpProjectForm({
 			reactivityKeys: REACTIVITY_KEYS,
 		})
 		if (Exit.isSuccess(result)) {
+			setValue("")
 			onCreated(result.value)
 			return
 		}
 		// An already-connected project answers with a message naming it; keep that on screen.
-		setError(errorMessage(result, "Couldn't connect the project. Check the project ID and try again."))
+		setError(errorMessage(result, "Couldn't add the project. Try again."))
 	})
 
 	function handleSubmit(event: React.FormEvent) {
 		event.preventDefault()
+		setTouched(true)
 		void submit()
 	}
 
@@ -144,6 +150,7 @@ function GcpProjectForm({
 							setValue(event.target.value)
 							setError(null)
 						}}
+						onBlur={() => setTouched(true)}
 						className="min-w-48 flex-1 font-mono"
 					/>
 					{onCancel !== undefined ? (
@@ -161,8 +168,8 @@ function GcpProjectForm({
 					</FieldError>
 				) : invalid ? (
 					<FieldError match>
-						A project ID is 6 to 30 lowercase letters, digits and hyphens, and starts with a
-						letter. The project name and number don&apos;t work.
+						A project ID is 6 to 30 lowercase letters, digits and hyphens. It starts with a letter
+						and can&apos;t end with a hyphen. The project name and number don&apos;t work.
 					</FieldError>
 				) : (
 					<FieldDescription>
@@ -200,13 +207,7 @@ function SetupStep({
 }
 
 /** Admin-only: fetching the script is refused for everyone else, and it carries the secret. */
-function GcpSetupPanel({
-	connector,
-	metricsAvailable,
-}: {
-	connector: V2GcpConnector
-	metricsAvailable: boolean
-}) {
+function GcpLogSetup({ connector }: { connector: V2GcpConnector }) {
 	const [excludeGke, setExcludeGke] = useState(false)
 	// A bare query on purpose. `retainedQueryV2` keeps results past unmount, and this one embeds
 	// the connector's secret: it should live only while the panel is open.
@@ -233,9 +234,8 @@ function GcpSetupPanel({
 			</SetupStep>
 			<SetupStep number={2} title="Paste and run the script">
 				<p className="text-xs text-muted-foreground">
-					It creates a log sink, a Pub/Sub topic and a push subscription to Maple
-					{metricsAvailable ? ", plus a read-only service account for metrics" : ""}. Running it
-					again is safe.
+					It enables the APIs it needs and creates a log sink, a Pub/Sub topic and a push
+					subscription to Maple. Running it again is safe.
 				</p>
 				<SettingRow
 					framed
@@ -250,7 +250,7 @@ function GcpSetupPanel({
 						<p className="text-xs text-severity-error" role="alert">
 							{errorMessage(scriptsResult.cause, "Couldn't load the setup script.")}
 						</p>
-						<Button size="sm" variant="outline" onClick={retry}>
+						<Button size="sm" variant="outline" onClick={retry} loading={scriptsResult.waiting}>
 							Try again
 						</Button>
 					</div>
@@ -260,33 +260,95 @@ function GcpSetupPanel({
 				<Alert variant="warn" size="sm">
 					<CircleWarningIcon size={14} />
 					<AlertDescription>
-						The script contains this connector&apos;s secret. Don&apos;t share it or commit it.
+						The script contains a secret that lets anyone send logs to your organization as this
+						project. Don&apos;t share it or commit it. If it leaks, disconnect the project and add
+						it again.
 					</AlertDescription>
 				</Alert>
 				<p className="text-xs text-muted-foreground">
-					To change which logs are forwarded, edit <InlineCode>LOG_FILTER</InlineCode> at the top of
-					the script and run it again.
+					By default it leaves out Data Access audit logs and load balancer health checks. To change
+					which logs are forwarded, edit <InlineCode>LOG_FILTER</InlineCode> at the top of the
+					script and run it again. Keep your edited copy: a script copied from here starts from the
+					default filter.
 				</p>
 			</SetupStep>
 			<SetupStep number={3} title="Return here">
 				<p className="text-xs text-muted-foreground">
-					The status changes to Receiving logs within a few minutes. This page updates on its own.
+					Log forwarding changes to Receiving logs within a few minutes. This page updates on its
+					own.
 				</p>
 			</SetupStep>
 		</ol>
 	)
 }
 
+/**
+ * A project's log forwarding: name, status, setup. A self-contained section under the project
+ * header, so what a project gains later is a sibling section rather than a change to this one.
+ */
+function GcpLogForwarding({
+	connector,
+	isAdmin,
+	setupOpen,
+	onToggleSetup,
+}: {
+	connector: V2GcpConnector
+	isAdmin: boolean
+	setupOpen: boolean
+	onToggleSetup: () => void
+}) {
+	const state = gcpLogState(connector)
+	return (
+		<section>
+			<div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3">
+				<h4 className="w-28 shrink-0 text-xs font-medium">Log forwarding</h4>
+				<span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+					<StatusDot
+						tone={state.kind === "receiving" ? "ok" : state.kind === "error" ? "crit" : "neutral"}
+					/>
+					{state.kind === "waiting" ? (
+						"Waiting for the first log"
+					) : (
+						<>
+							<span className="text-foreground">
+								{state.kind === "receiving" ? "Receiving logs" : "Last push rejected"}
+							</span>
+							{state.lastLogReceivedAt !== null ? (
+								<>
+									{"· "}
+									<RelativeTime
+										value={state.lastLogReceivedAt}
+										prefix={state.kind === "receiving" ? "last log" : "last accepted log"}
+									/>
+								</>
+							) : null}
+						</>
+					)}
+				</span>
+				{isAdmin ? (
+					<Button size="sm" variant="outline" onClick={onToggleSetup}>
+						{setupOpen ? "Hide setup" : "Show setup"}
+					</Button>
+				) : null}
+			</div>
+			{state.kind === "error" ? (
+				<p className="mx-4 mb-3 break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-severity-error">
+					{state.error}
+				</p>
+			) : null}
+			{setupOpen ? <GcpLogSetup connector={connector} /> : null}
+		</section>
+	)
+}
+
 function GcpConnectorRow({
 	connector,
-	metricsAvailable,
 	isAdmin,
 	setupOpen,
 	onToggleSetup,
 	onRemoved,
 }: {
 	connector: V2GcpConnector
-	metricsAvailable: boolean
 	isAdmin: boolean
 	setupOpen: boolean
 	onToggleSetup: () => void
@@ -296,13 +358,16 @@ function GcpConnectorRow({
 		mode: "promiseExit",
 	})
 	const [confirmOpen, setConfirmOpen] = useState(false)
-	const state = gcpConnectorState(connector)
 
 	// Resolving to `false` keeps the confirm dialog open for a retry.
 	async function handleDisconnect() {
 		const result = await remove({ params: { id: connector.id }, reactivityKeys: REACTIVITY_KEYS })
 		if (Exit.isSuccess(result)) {
-			onRemoved({ projectId: connector.project_id, cleanupScript: result.value.cleanup_script })
+			onRemoved({
+				id: connector.id,
+				projectId: connector.project_id,
+				cleanupScript: result.value.cleanup_script,
+			})
 			return true
 		}
 		showErrorToast(result, { title: "Failed to disconnect the project" })
@@ -311,63 +376,25 @@ function GcpConnectorRow({
 
 	return (
 		<div className="border-t border-border/60">
-			<div className="flex flex-wrap items-center gap-3 px-4 py-3">
-				<div className="flex min-w-0 flex-1 flex-col gap-1">
-					<span className="truncate font-mono text-sm">{connector.project_id}</span>
-					<span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-						<StatusDot
-							tone={
-								state.kind === "receiving"
-									? "ok"
-									: state.kind === "error"
-										? "crit"
-										: "neutral"
-							}
-						/>
-						{state.kind === "waiting" ? (
-							"Waiting for the first log"
-						) : (
-							<>
-								<span className="text-foreground">
-									{state.kind === "receiving" ? "Receiving logs" : "Last push rejected"}
-								</span>
-								{state.lastLogReceivedAt !== null ? (
-									<>
-										{"· "}
-										<RelativeTime
-											value={state.lastLogReceivedAt}
-											prefix={
-												state.kind === "receiving" ? "last log" : "last accepted log"
-											}
-										/>
-									</>
-								) : null}
-							</>
-						)}
-					</span>
-				</div>
+			<div className="flex items-center gap-3 px-4 pt-3 pb-2">
+				<span className="min-w-0 flex-1 truncate font-mono text-sm">{connector.project_id}</span>
 				{isAdmin ? (
-					<div className="flex shrink-0 items-center gap-1.5">
-						<Button size="sm" variant="outline" onClick={onToggleSetup}>
-							{setupOpen ? "Hide setup" : "Show setup"}
-						</Button>
-						<Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
-							Disconnect
-						</Button>
-					</div>
+					<Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
+						Disconnect
+					</Button>
 				) : null}
 			</div>
-			{state.kind === "error" ? (
-				<p className="mx-4 mb-3 break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-severity-error">
-					{state.error}
-				</p>
-			) : null}
-			{setupOpen ? <GcpSetupPanel connector={connector} metricsAvailable={metricsAvailable} /> : null}
+			<GcpLogForwarding
+				connector={connector}
+				isAdmin={isAdmin}
+				setupOpen={setupOpen}
+				onToggleSetup={onToggleSetup}
+			/>
 			<ConfirmDialog
 				open={confirmOpen}
 				onOpenChange={setConfirmOpen}
 				title={`Disconnect ${connector.project_id}?`}
-				description="Maple stops accepting this project's logs immediately. What the setup script created stays in Google Cloud until you run the cleanup script, which is shown after you disconnect."
+				description="Maple stops accepting this project's logs. Logs already in Maple are kept. What the setup script created stays in Google Cloud and keeps sending until you run the cleanup script, shown after you disconnect."
 				confirmLabel="Disconnect"
 				onConfirm={handleDisconnect}
 			/>
@@ -377,8 +404,8 @@ function GcpConnectorRow({
 
 /**
  * Google Cloud connection card. No OAuth: an admin registers a connector per project and runs
- * the generated script in Cloud Shell, so the card is a project list with a setup panel and a
- * status line each. Everyone else sees the list and the status only.
+ * the generated script in Cloud Shell, so the card is a project list, each project with a log
+ * forwarding section (status and setup). Everyone else sees the list and the status only.
  */
 export function GcpIntegrationCard() {
 	const statusQuery = gcpStatusQuery()
@@ -389,26 +416,29 @@ export function GcpIntegrationCard() {
 	// admin-only note waits for a settled session; the controls stay hidden meanwhile.
 	const isAdmin = useIsOrgAdmin()
 	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
-	const showNotAdmin = !isAdmin && (!isClerkAuthEnabled || !Result.isInitial(sessionResult))
+	const showNotAdmin = !isAdmin && !Result.isInitial(sessionResult)
 
 	const [setupFor, setSetupFor] = useState<V2GcpConnector["id"] | null>(null)
 	const [adding, setAdding] = useState(false)
-	const [removed, setRemoved] = useState<RemovedProject | null>(null)
+	const [removed, setRemoved] = useState<ReadonlyArray<RemovedProject>>([])
 
 	// Keep the last loaded status if a poll fails.
 	const status = Option.getOrNull(AsyncResult.value(statusResult))
 	const connectors = status?.connectors ?? []
 
-	const waiting = connectors.some((connector) => gcpConnectorState(connector).kind === "waiting")
-	useIntervalRefresh(refreshStatus, { intervalMs: WAITING_REFRESH_MS, enabled: waiting })
+	const settling = connectors.some((connector) => gcpLogState(connector).kind !== "receiving")
+	useIntervalRefresh(refreshStatus, {
+		intervalMs: settling ? SETTLING_REFRESH_MS : STEADY_REFRESH_MS,
+		enabled: connectors.length > 0,
+	})
 
 	if (Result.isInitial(statusResult) && status === null) {
 		return <Skeleton className="h-40 w-full rounded-lg" />
 	}
-	if (status === null) {
+	if (Result.isFailure(statusResult) && status === null) {
 		return (
 			<ErrorState
-				error={Result.isFailure(statusResult) ? statusResult.cause : undefined}
+				error={statusResult.cause}
 				title="Failed to load the Google Cloud integration"
 				onRetry={refreshStatus}
 			/>
@@ -420,30 +450,32 @@ export function GcpIntegrationCard() {
 		setSetupFor(connector.id)
 	}
 
-	const cleanup =
-		removed !== null ? (
-			<Panel padded className="gap-3">
-				<div className="flex flex-col gap-1">
-					<h3 className="text-sm font-semibold">
-						<span className="font-mono">{removed.projectId}</span> disconnected
-					</h3>
-					<p className="text-xs text-muted-foreground">
-						Maple no longer accepts this project&apos;s logs. Run this script in Cloud Shell to
-						remove what the setup script created. Copy it before you leave: it isn&apos;t shown
-						again.
-					</p>
-				</div>
-				<ScriptBlock script={removed.cleanupScript} label="Cleanup script" />
-				<div className="flex flex-wrap gap-2">
-					<OpenCloudShellButton projectId={removed.projectId} />
-					<Button size="sm" variant="outline" onClick={() => setRemoved(null)}>
-						Done
-					</Button>
-				</div>
-			</Panel>
-		) : null
-
-	const metricsNote = status.metrics_available ? " The same script also sets up metrics." : ""
+	const cleanup = removed.map((project) => (
+		<Panel key={project.id} padded className="gap-3">
+			<div className="flex flex-col gap-1">
+				<h3 className="text-sm font-semibold">
+					<span className="font-mono">{project.projectId}</span> disconnected
+				</h3>
+				<p className="text-xs text-muted-foreground">
+					Maple no longer accepts this project&apos;s logs. Run this script in Cloud Shell to remove
+					what the setup script created. Copy it before you leave: it isn&apos;t shown again.
+				</p>
+			</div>
+			<ScriptBlock script={project.cleanupScript} label="Cleanup script" />
+			<div className="flex flex-wrap gap-2">
+				<OpenCloudShellButton projectId={project.projectId} />
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() =>
+						setRemoved((current) => current.filter((entry) => entry.id !== project.id))
+					}
+				>
+					Done
+				</Button>
+			</div>
+		</Panel>
+	))
 
 	if (connectors.length === 0) {
 		return (
@@ -454,24 +486,25 @@ export function GcpIntegrationCard() {
 						<IntegrationEmptyFeature
 							label="Logs"
 							title="Every service in the project"
-							description="Cloud Run, GKE, Cloud SQL and audit logs arrive through one log sink."
+							description="Cloud Run, GKE, Cloud SQL and the rest of Cloud Logging arrive through one log sink."
 						/>
 						<IntegrationEmptyFeature
 							label="Setup"
 							title="One script in Cloud Shell"
-							description="No OAuth and no keys to paste. Maple gets no write access to your project."
+							description="No OAuth and no service account keys. Maple gets no write access to your project."
 						/>
 						<IntegrationEmptyFeature
 							label="Projects"
 							title="Connect several"
-							description="Each project gets its own connector, secret and status."
+							description="Each project gets its own setup script, secret and status."
 						/>
 					</IntegrationEmptyFeatures>
 					<IntegrationEmptyCard>
 						<IntegrationEmptyMedia />
 						<IntegrationEmptyHint>
-							Add a project to get its setup script. Logs arrive a few minutes after you run it.
-							{metricsNote}
+							{isAdmin
+								? "Add a project to get its setup script. Logs arrive a few minutes after you run it."
+								: "Logs arrive a few minutes after an admin adds a project and runs its setup script."}
 						</IntegrationEmptyHint>
 						{isAdmin ? (
 							<div className="w-full max-w-md">
@@ -479,7 +512,7 @@ export function GcpIntegrationCard() {
 							</div>
 						) : showNotAdmin ? (
 							<IntegrationEmptyFooter>
-								Only organization admins can connect Google Cloud projects.
+								Only organization admins can add Google Cloud projects.
 							</IntegrationEmptyFooter>
 						) : null}
 					</IntegrationEmptyCard>
@@ -499,7 +532,7 @@ export function GcpIntegrationCard() {
 					<ItemContent className="gap-0">
 						<h3 className="text-sm font-semibold">Google Cloud</h3>
 						<p className="mt-1 text-xs text-muted-foreground">
-							Each project sends its logs to Maple through a log sink and Pub/Sub.{metricsNote}
+							Each project sends its logs to Maple through a log sink and Pub/Sub.
 						</p>
 					</ItemContent>
 					{isAdmin && !adding ? (
@@ -519,11 +552,10 @@ export function GcpIntegrationCard() {
 					<GcpConnectorRow
 						key={connector.id}
 						connector={connector}
-						metricsAvailable={status.metrics_available}
 						isAdmin={isAdmin}
 						setupOpen={setupFor === connector.id}
 						onToggleSetup={() => setSetupFor(setupFor === connector.id ? null : connector.id)}
-						onRemoved={setRemoved}
+						onRemoved={(project) => setRemoved((current) => [...current, project])}
 					/>
 				))}
 			</Panel>

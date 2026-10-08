@@ -1,18 +1,18 @@
-// What a Google Cloud connector is doing, derived from the two fields the status endpoint
-// returns. Pure (no React, no atoms), like planetscale-setup-steps.ts.
+// A Google Cloud connector's log forwarding state, derived from the two fields the status
+// endpoint returns. Pure (no React, no atoms), like planetscale-setup-steps.ts.
 
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 
 type ConnectorLogFields = Pick<V2GcpConnector, "last_log_received_at" | "last_log_error">
 
-export type GcpConnectorState =
-	/** The setup script has not delivered a log yet. The card polls while any connector is here. */
+export type GcpLogState =
+	/** The setup script has not delivered a log yet. */
 	| { readonly kind: "waiting" }
 	| { readonly kind: "receiving"; readonly lastLogReceivedAt: string }
 	/** Maple rejected the most recent push. Earlier pushes may have been accepted. */
 	| { readonly kind: "error"; readonly error: string; readonly lastLogReceivedAt: string | null }
 
-export function gcpConnectorState(connector: ConnectorLogFields): GcpConnectorState {
+export function gcpLogState(connector: ConnectorLogFields): GcpLogState {
 	if (connector.last_log_error !== null) {
 		return {
 			kind: "error",

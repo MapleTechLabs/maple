@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest"
 
-import { cloudShellUrl, gcpConnectorState } from "./gcp-connector-state"
+import { cloudShellUrl, gcpLogState } from "./gcp-connector-state"
 
 const RECEIVED_AT = "2026-10-08T09:12:00.000Z"
 
-describe("gcpConnectorState", () => {
+describe("gcpLogState", () => {
 	it("waits until the first log arrives", () => {
-		expect(gcpConnectorState({ last_log_received_at: null, last_log_error: null })).toEqual({
+		expect(gcpLogState({ last_log_received_at: null, last_log_error: null })).toEqual({
 			kind: "waiting",
 		})
 	})
 
 	it("is receiving once a log was accepted", () => {
-		expect(gcpConnectorState({ last_log_received_at: RECEIVED_AT, last_log_error: null })).toEqual({
+		expect(gcpLogState({ last_log_received_at: RECEIVED_AT, last_log_error: null })).toEqual({
 			kind: "receiving",
 			lastLogReceivedAt: RECEIVED_AT,
 		})
 	})
 
 	it("reports a rejected push before any log was accepted", () => {
-		expect(gcpConnectorState({ last_log_received_at: null, last_log_error: "invalid secret" })).toEqual({
+		expect(gcpLogState({ last_log_received_at: null, last_log_error: "invalid secret" })).toEqual({
 			kind: "error",
 			error: "invalid secret",
 			lastLogReceivedAt: null,
@@ -28,7 +28,7 @@ describe("gcpConnectorState", () => {
 
 	it("prefers the error over an earlier accepted log and keeps its time", () => {
 		expect(
-			gcpConnectorState({ last_log_received_at: RECEIVED_AT, last_log_error: "payload too large" }),
+			gcpLogState({ last_log_received_at: RECEIVED_AT, last_log_error: "payload too large" }),
 		).toEqual({ kind: "error", error: "payload too large", lastLogReceivedAt: RECEIVED_AT })
 	})
 })
