@@ -7,6 +7,8 @@ import {
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
+	GoogleCloudIcon,
+	GoogleCloudMonoIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
@@ -27,6 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
+import { gcpConnectorState } from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -39,6 +42,7 @@ export type IntegrationId =
 	| "cloudflare"
 	| "prometheus"
 	| "planetscale"
+	| "gcp"
 	| "railway"
 	| "warpstream"
 	| "hazel"
@@ -94,6 +98,7 @@ export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
+export const GCP_ACCENT = "#4285F4"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -173,6 +178,16 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		docsUrl: docsUrl("planetscale"),
 	},
 	{
+		id: "gcp",
+		category: "infrastructure",
+		isNew: true,
+		name: "Google Cloud",
+		description: "Send a Google Cloud project's logs to Maple by running one script in Cloud Shell.",
+		icon: GoogleCloudIcon,
+		monoIcon: GoogleCloudMonoIcon,
+		accent: GCP_ACCENT,
+	},
+	{
 		id: "railway",
 		category: "infrastructure",
 		isNew: true,
@@ -217,6 +232,13 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	...CHAT_ENTRIES,
 ]
+
+/**
+ * The Google Cloud status read, shared by the catalog and the card. Called in a render body, like
+ * every `retainedQueryV2`: the atom it returns is memoized per organization.
+ */
+export const gcpStatusQuery = () =>
+	retainedQueryV2("gcpIntegration", "status", { reactivityKeys: ["gcpIntegration"] })
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
 
@@ -293,6 +315,21 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+	const gcpResult = useAtomValue(gcpStatusQuery())
+
+	const gcp: CardStatus | null = Result.builder(gcpResult)
+		.onSuccess((status): CardStatus => {
+			if (status.connectors.length === 0) return NOT_CONNECTED
+			const failing = status.connectors.some(
+				(connector) => gcpConnectorState(connector).kind === "error",
+			)
+			return {
+				label: countLabel(status.connectors.length, "project"),
+				variant: failing ? "warn" : "ok",
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
 
 	const railway: CardStatus | null = Result.builder(railwayResult)
 		.onSuccess((status): CardStatus => {
@@ -394,6 +431,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
 		planetscale,
+		gcp,
 		railway,
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
@@ -537,6 +575,47 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+	const gcpResult = useAtomValue(gcpStatusQuery())
+
+	const gcp: IntegrationOverview = Result.builder(gcpResult)
+		.onSuccess((status): IntegrationOverview => {
+			const connectors = status.connectors
+			if (connectors.length === 0) return SET_UP
+			const states = connectors.map(gcpConnectorState)
+			const count = (kind: (typeof states)[number]["kind"]) =>
+				states.filter((state) => state.kind === kind).length
+			const failing = count("error")
+			const waiting = count("waiting")
+			const issue =
+				failing > 0
+					? `${countLabel(failing, "project")} failing`
+					: waiting > 0
+						? `${countLabel(waiting, "project")} waiting for logs`
+						: null
+			return {
+				kind: "connected",
+				health: issue ? "attention" : "healthy",
+				stateLabel: issue ? "Needs attention" : "Healthy",
+				context:
+					connectors.length === 1
+						? (connectors[0]?.project_id ?? null)
+						: countLabel(connectors.length, "project"),
+				stat: `${count("receiving")} of ${countLabel(connectors.length, "project")} receiving logs`,
+				lastSyncLabel: syncedLabel(
+					maxMs(
+						connectors.map((connector) =>
+							connector.last_log_received_at
+								? Date.parse(connector.last_log_received_at)
+								: null,
+						),
+					),
+					"last log",
+				),
+				issue,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
 
 	const railway: IntegrationOverview = Result.builder(railwayResult)
 		.onSuccess((status): IntegrationOverview => {
@@ -754,6 +833,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
 		planetscale,
+		gcp,
 		railway,
 		// WarpStream rides the generic Prometheus pipeline — always a set-up card.
 		warpstream: SET_UP,

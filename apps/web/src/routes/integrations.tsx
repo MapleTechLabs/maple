@@ -9,6 +9,7 @@ import {
 	CloudflareAccountCard,
 	CloudflareHeaderActions,
 } from "@/components/integrations/cloudflare-account-card"
+import { GcpIntegrationCard } from "@/components/integrations/gcp-integration-card"
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
@@ -230,6 +231,8 @@ function IntegrationsPage() {
 					<GithubIntegrationCard />
 				) : integration === "planetscale" ? (
 					<PlanetScaleIntegrationCard />
+				) : integration === "gcp" ? (
+					<GcpIntegrationCard />
 				) : integration === "railway" ? (
 					<RailwayIntegrationCard />
 				) : (
