@@ -930,6 +930,7 @@ struct ConnectorRow {
 #[derive(Clone, Debug)]
 struct GcpConnectorRow {
     org_id: String,
+    logs_enabled: bool,
     self_managed: bool,
     clickhouse_ready: bool,
 }
@@ -997,16 +998,20 @@ impl CloudflareConnectorIdentity {
 struct GcpConnectorIdentity {
     org_id: String,
     secret_key_id: String,
+    logs_enabled: bool,
 }
 
 impl GcpConnectorIdentity {
-    fn into_resolved(self, routing: &OrgRouting) -> ResolvedIngestKey {
-        ResolvedIngestKey {
-            org_id: self.org_id,
-            key_type: IngestKeyType::Connector,
-            key_id: self.secret_key_id,
-            self_managed: routing.self_managed,
-            clickhouse_ready: routing.clickhouse_ready,
+    fn into_resolved(self, routing: &OrgRouting) -> ResolvedGcpConnector {
+        ResolvedGcpConnector {
+            logs_enabled: self.logs_enabled,
+            key: ResolvedIngestKey {
+                org_id: self.org_id,
+                key_type: IngestKeyType::Connector,
+                key_id: self.secret_key_id,
+                self_managed: routing.self_managed,
+                clickhouse_ready: routing.clickhouse_ready,
+            },
         }
     }
 }
@@ -1216,6 +1221,21 @@ struct ResolvedCloudflareConnector {
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
     clickhouse_ready: bool,
+}
+
+struct ResolvedGcpConnector {
+    /// False once the org turns log forwarding off; the sink may still push.
+    logs_enabled: bool,
+    key: ResolvedIngestKey,
+}
+
+/// What an acked GCP push did.
+enum GcpPushOutcome {
+    Accepted,
+    /// The body can never parse, so redelivering it is pointless.
+    NotALogEntry,
+    /// The connector has log forwarding turned off.
+    LogsDisabled,
 }
 
 #[derive(Clone, Copy)]
@@ -4742,20 +4762,40 @@ async fn handle_gcp_logpush(
     let duration = start.elapsed().as_secs_f64();
 
     match result {
-        Ok((response, accepted)) => {
+        Ok((response, outcome)) => {
             span_handle.record("http.response.status_code", response.status().as_u16());
-            span_handle.record("maple.ingest.item_count", usize::from(accepted));
-            if accepted {
-                span_handle.record("otel.status_code", "Ok");
-                metrics::request_completed("logs", "ok", "none", duration);
-                metrics::gcp_entry();
-            } else {
-                // Acked, but the entry is gone: an `Error` like every other
-                // rejection that loses the sender's data.
-                span_handle.record("error.type", "decode");
-                record_rejection_reason(&span_handle, 200, "decode", gcp_logging::NOT_A_LOG_ENTRY);
-                metrics::request_completed("logs", "error", "decode", duration);
-                metrics::gcp_parse_failure();
+            match outcome {
+                GcpPushOutcome::Accepted => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.item_count", 1);
+                    metrics::request_completed("logs", "ok", "none", duration);
+                    metrics::gcp_entry();
+                }
+                GcpPushOutcome::NotALogEntry => {
+                    // Acked, but the entry is gone: an `Error` like every other
+                    // rejection that loses the sender's data.
+                    span_handle.record("error.type", "decode");
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "decode",
+                        gcp_logging::NOT_A_LOG_ENTRY,
+                    );
+                    metrics::request_completed("logs", "error", "decode", duration);
+                    metrics::gcp_parse_failure();
+                }
+                GcpPushOutcome::LogsDisabled => {
+                    // The org asked for this, so it is neither an error nor
+                    // data loss: `Ok`, told apart by the reject reason.
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "logs_disabled",
+                        "Log forwarding is turned off for this connector",
+                    );
+                    metrics::request_completed("logs", "ok", "none", duration);
+                    metrics::gcp_disabled_drop();
+                }
             }
             response
         }
@@ -4773,15 +4813,14 @@ async fn handle_gcp_logpush(
     }
 }
 
-/// Returns Ok((response, accepted)) or Err((ApiError, error_kind_label)).
-/// `accepted == false` is a payload that can never parse, acked so Pub/Sub
-/// stops redelivering it.
+/// Returns Ok((ack response, what the ack means)) or
+/// Err((ApiError, error_kind_label)).
 async fn handle_gcp_logpush_inner(
     state: &AppState,
     connector_id: &str,
     secret: Option<&str>,
     body: Bytes,
-) -> Result<(Response, bool), (ApiError, &'static str)> {
+) -> Result<(Response, GcpPushOutcome), (ApiError, &'static str)> {
     let unauthorized = || {
         (
             ApiError::unauthorized("Invalid connector credentials"),
@@ -4810,11 +4849,25 @@ async fn handle_gcp_logpush_inner(
             warn!(connector_id, "Invalid GCP connector credentials");
             unauthorized()
         })?;
-    let org_id = resolved.org_id.as_str();
+    let org_id = resolved.key.org_id.as_str();
 
     Span::current().record("maple.org_id", org_id);
-    Span::current().record("maple.ingest.self_managed", resolved.self_managed);
-    Span::current().record("maple.ingest.clickhouse_ready", resolved.clickhouse_ready);
+    Span::current().record("maple.ingest.self_managed", resolved.key.self_managed);
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved.key.clickhouse_ready,
+    );
+
+    // Acked, not rejected: the sink keeps pushing until the customer removes
+    // it, and Pub/Sub would redeliver every refused entry for its retention.
+    // Ahead of the entitlement check and metering, so nothing is billed.
+    if !resolved.logs_enabled {
+        debug!(
+            org_id,
+            connector_id, "GCP log forwarding is off; entry acked and dropped"
+        );
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::LogsDisabled));
+    }
 
     let _org_inflight_permit = state
         .org_inflight_limiter
@@ -4843,7 +4896,7 @@ async fn handle_gcp_logpush_inner(
             .gcp_resolver
             .record_health(connector_id, Some(gcp_logging::NOT_A_LOG_ENTRY))
             .await;
-        return Ok((StatusCode::OK.into_response(), false));
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::NotALogEntry));
     };
 
     if let Some(error) = entitlement_rejection(state, org_id, Signal::Logs.path()).await {
@@ -4863,7 +4916,7 @@ async fn handle_gcp_logpush_inner(
         PayloadFormat::Protobuf,
         None,
         &DecodedPayload::Logs(request),
-        &resolved,
+        &resolved.key,
     )
     .await
     {
@@ -4885,7 +4938,7 @@ async fn handle_gcp_logpush_inner(
         tracker.track(org_id, Signal::Logs.path(), billable_gb(body.len() as u64));
     }
 
-    Ok((response, true))
+    Ok((response, GcpPushOutcome::Accepted))
 }
 
 /// Connector ids are generated by the API; anything outside this alphabet is
@@ -5939,7 +5992,7 @@ impl GcpConnectorResolver {
         &self,
         connector_id: &str,
         raw_secret: &str,
-    ) -> Result<Option<ResolvedIngestKey>, String> {
+    ) -> Result<Option<ResolvedGcpConnector>, String> {
         let secret_hash = hash_ingest_key(raw_secret, &self.lookup_hmac_key)?;
         let cache_key = (connector_id.to_owned(), secret_hash);
         if let Some(identity) = self.cache.get(&cache_key).await {
@@ -5966,6 +6019,7 @@ impl GcpConnectorResolver {
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
+            logs_enabled: row.logs_enabled,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -6443,7 +6497,7 @@ impl KeyStore for PostgresKeyStore {
         let client = self.client().await?;
         // No `enabled` column: deleting the row is how a connector is turned off.
         let sql = format!(
-            "SELECT c.org_id, \
+            "SELECT c.org_id, c.logs_enabled, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
                     COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
              FROM gcp_connectors c \
@@ -6465,6 +6519,7 @@ impl KeyStore for PostgresKeyStore {
         };
         Ok(Some(GcpConnectorRow {
             org_id: row.get("org_id"),
+            logs_enabled: row.get("logs_enabled"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
         }))
@@ -7823,6 +7878,7 @@ mod tests {
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         gcp_connectors:
             std::sync::Mutex<std::collections::HashMap<(String, String), GcpConnectorRow>>,
+        connector_successes: AtomicU64,
         /// (table, error) of every `record_connector_failure` call.
         connector_failures: std::sync::Mutex<Vec<(&'static str, String)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
@@ -7964,6 +8020,7 @@ mod tests {
             _connector_id: &str,
             _now_ms: i64,
         ) -> Result<(), String> {
+            self.connector_successes.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
         async fn record_connector_failure(
@@ -9251,21 +9308,47 @@ mod tests {
         }
     }"#;
 
+    async fn spawn_fake_clickhouse() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<FakeClickHouseImport>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new()
+            .route("/", post(fake_clickhouse_import))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (url, rx)
+    }
+
+    /// One org with two connectors: `gcp_conn_1`, and `gcp_conn_off` whose log
+    /// forwarding is turned off.
     async fn gcp_logpush_state(
         name: &str,
         clickhouse_url: &str,
     ) -> (Arc<AppState>, Arc<FakeKeyStore>, PathBuf) {
         let queue_dir = unique_main_test_dir(name);
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_gcp_connector(
-            "gcp_conn_1",
-            "gcp-secret",
-            GcpConnectorRow {
-                org_id: "org_gcp".to_owned(),
-                self_managed: true,
-                clickhouse_ready: true,
-            },
-        );
+        for (connector_id, secret, logs_enabled) in [
+            ("gcp_conn_1", "gcp-secret", true),
+            ("gcp_conn_off", "gcp-secret-off", false),
+        ] {
+            store.insert_gcp_connector(
+                connector_id,
+                secret,
+                GcpConnectorRow {
+                    org_id: "org_gcp".to_owned(),
+                    logs_enabled,
+                    self_managed: true,
+                    clickhouse_ready: true,
+                },
+            );
+        }
         store.insert_clickhouse_target(
             "org_gcp",
             ClickHouseTargetRow {
@@ -9325,19 +9408,8 @@ mod tests {
 
     #[tokio::test]
     async fn gcp_logpush_stores_a_log_entry_and_acks_a_poison_payload() {
-        let (ch_tx, mut ch_rx) = tokio::sync::mpsc::unbounded_channel();
-        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .unwrap();
-        let ch_addr = ch_listener.local_addr().unwrap();
-        let ch_app = Router::new()
-            .route("/", post(fake_clickhouse_import))
-            .with_state(ch_tx);
-        tokio::spawn(async move {
-            axum::serve(ch_listener, ch_app).await.unwrap();
-        });
-        let (state, store, queue_dir) =
-            gcp_logpush_state("gcp-logpush-accept", &format!("http://{ch_addr}")).await;
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-accept", &ch_url).await;
 
         let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
         assert_eq!(accepted.status(), StatusCode::OK);
@@ -9352,6 +9424,7 @@ mod tests {
             "{}",
             stored.body
         );
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 1);
         assert!(store.connector_failures.lock().unwrap().is_empty());
 
         // The wrapped Pub/Sub envelope can never parse, and Pub/Sub redelivers
@@ -9380,6 +9453,33 @@ mod tests {
                 .is_err(),
             "a poison payload must not be stored"
         );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_acks_and_drops_while_log_forwarding_is_off() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-off", &ch_url).await;
+
+        // Acked: a non-2xx would have Pub/Sub redeliver the entry for the
+        // subscription's whole retention.
+        let dropped = gcp_push(
+            &state,
+            "gcp_conn_off",
+            Some("gcp-secret-off"),
+            GCP_LOG_ENTRY,
+        )
+        .await;
+        assert_eq!(dropped.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be stored while log forwarding is off"
+        );
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
+        assert!(store.connector_failures.lock().unwrap().is_empty());
 
         drop(std::fs::remove_dir_all(queue_dir));
     }

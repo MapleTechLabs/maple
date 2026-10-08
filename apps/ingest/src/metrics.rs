@@ -132,6 +132,13 @@ static GCP_PARSE_FAILURES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static GCP_DISABLED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_disabled_drops_total")
+        .with_description("GCP Pub/Sub pushes acked and dropped: log forwarding is off")
+        .build()
+});
+
 static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_sentinel_total")
@@ -631,6 +638,12 @@ pub fn gcp_auth_failure() {
 /// A GCP Pub/Sub push was acked and dropped because its body was not a LogEntry.
 pub fn gcp_parse_failure() {
     GCP_PARSE_FAILURES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push was acked and dropped because the connector has log
+/// forwarding turned off.
+pub fn gcp_disabled_drop() {
+    GCP_DISABLED_DROPS_TOTAL.add(1, &[]);
 }
 
 /// A WAL append was rejected because the lane file is full. `shard` is the real
