@@ -35,6 +35,7 @@ interface PostedChunk {
 		durationMs: number
 	}
 	body: string
+	keepalive: boolean
 }
 const posted: PostedChunk[] = []
 // What the mocked ingest answers the next uploads with; defaults to accepted.
@@ -43,16 +44,20 @@ const outcomes: Array<"accepted" | "rejected" | "exhausted" | "failed"> = []
 vi.mock("../platform/transport", () => ({
 	// Identity "gzip" so tests can read the serialized payload directly.
 	gzip: vi.fn(async (bytes: Uint8Array) => bytes),
-	postSessionBlob: vi.fn(async (_config: unknown, meta: PostedChunk["meta"], bytes: Uint8Array) => {
-		posted.push({ meta, body: new TextDecoder().decode(bytes) })
-		return outcomes.shift() ?? "accepted"
-	}),
+	postSessionBlob: vi.fn(
+		async (_config: unknown, meta: PostedChunk["meta"], bytes: Uint8Array, keepalive: boolean) => {
+			posted.push({ meta, body: new TextDecoder().decode(bytes), keepalive })
+			return outcomes.shift() ?? "accepted"
+		},
+	),
+	// The shared keepalive budget has room unless a test says otherwise.
+	reserveKeepalive: vi.fn((): (() => void) | undefined => () => {}),
 }))
 
 const { startBufferedRecording, startRecording } = await import("./record")
 const { clearPendingChunk } = await import("../session/pending-chunk")
 const { nextChunkSeq } = await import("../session/session")
-const { gzip } = await import("../platform/transport")
+const { gzip, reserveKeepalive } = await import("../platform/transport")
 
 const CONFIG = {
 	endpoint: "https://ingest.example",
@@ -259,14 +264,20 @@ describe("startRecording", () => {
 
 		/** Record two events and flush them on the way out, under `chunkSeq`. */
 		const unloadFlush = (sessionId: string, chunkSeq: number) => {
+			const recorder = startRecording(CONFIG, sessionId)
 			const finishGzip = hangGzip()
 			vi.mocked(nextChunkSeq).mockReturnValueOnce(chunkSeq)
-			const recorder = startRecording(CONFIG, sessionId)
 			emitRef!(fullSnapshot(1_000), true)
 			emitRef!(incremental(2_500))
 			void recorder.flush(true)
 			recorder.stop()
 			return finishGzip
+		}
+
+		/** The next recorder start of `sessionId`, as a page load or a resume makes it. */
+		const nextStart = async (sessionId = "session-1", config = CONFIG) => {
+			startRecording(config, sessionId).stop()
+			await vi.advanceTimersByTimeAsync(0)
 		}
 
 		const postedSeqs = () => posted.map((chunk) => chunk.meta.chunkSeq)
@@ -276,8 +287,7 @@ describe("startRecording", () => {
 			expect(posted).toEqual([])
 			expect(stored()).toBeDefined()
 
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
 			expect(posted).toHaveLength(1)
 			expect(posted[0]!.meta).toMatchObject({
 				sessionId: "session-1",
@@ -292,26 +302,50 @@ describe("startRecording", () => {
 			])
 			expect(stored()).toBeUndefined()
 
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
 			expect(posted).toHaveLength(1)
 		})
 
 		it("is posted once when the flush that stored it outlives the start that sent it", async () => {
 			const finishGzip = unloadFlush("session-1", 7)
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
 			// A page restored from the back/forward cache resumes its compression.
 			finishGzip()
 			await vi.advanceTimersByTimeAsync(0)
 			expect(postedSeqs()).toEqual([7])
 		})
 
-		it("is sent by its own flush, and not again, when the page survives", async () => {
+		it("is sent by its own flush with keepalive, and not again, when the page survives", async () => {
 			unloadFlush("session-1", 7)()
 			await vi.advanceTimersByTimeAsync(0)
-			expect(postedSeqs()).toEqual([7])
+			expect(posted.map((chunk) => [chunk.meta.chunkSeq, chunk.keepalive])).toEqual([[7, true]])
 			expect(stored()).toBeUndefined()
+		})
+
+		it("stays stored when the keepalive budget is full, and the next start sends it once", async () => {
+			vi.mocked(reserveKeepalive).mockReturnValueOnce(undefined)
+			unloadFlush("session-1", 7)()
+			await vi.advanceTimersByTimeAsync(0)
+			// Posted without keepalive it would die with the page, its stored copy already gone.
+			expect(posted).toEqual([])
+			expect(stored()).toBeDefined()
+
+			await nextStart()
+			await nextStart()
+			expect(posted.map((chunk) => [chunk.meta.chunkSeq, chunk.keepalive])).toEqual([[7, false]])
+		})
+
+		it("is left for the start after a page that goes away while sending it", async () => {
+			unloadFlush("session-1", 7)
+			const finishGzip = hangGzip()
+			await nextStart()
+			expect(posted).toEqual([])
+			expect(stored()).toBeDefined()
+
+			await nextStart()
+			finishGzip()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(postedSeqs()).toEqual([7])
 		})
 
 		it("is not replaced by a later flush while it waits", async () => {
@@ -326,29 +360,37 @@ describe("startRecording", () => {
 			// The second chunk was not kept, so it uploads as it always did.
 			expect(postedSeqs()).toEqual([8])
 
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
 			expect(postedSeqs()).toEqual([8, 7])
 		})
 
-		it("is dropped by a recorder of another session or another ingest key", async () => {
+		it("is dropped by a recorder of another session, endpoint or ingest key", async () => {
 			unloadFlush("session-1", 7)
-			startRecording(CONFIG, "session-2").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart("session-2")
 			expect(stored()).toBeUndefined()
 
 			unloadFlush("session-1", 8)
-			startRecording({ ...CONFIG, ingestKey: "another-key" }, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart("session-1", { ...CONFIG, endpoint: "https://ingest.elsewhere.example" })
+			expect(stored()).toBeUndefined()
+
+			unloadFlush("session-1", 9)
+			await nextStart("session-1", { ...CONFIG, ingestKey: "another-key" })
 			expect(stored()).toBeUndefined()
 			expect(posted).toEqual([])
 		})
 
-		it("is discarded by a consent revoke, along with the flush still compressing it", async () => {
-			const finishGzip = unloadFlush("session-1", 7)
+		it("is discarded by a consent revoke while its flush or a later start is still compressing it", async () => {
+			const finishFlush = unloadFlush("session-1", 7)
 			clearPendingChunk()
 			expect(stored()).toBeUndefined()
-			finishGzip()
+			finishFlush()
+			await vi.advanceTimersByTimeAsync(0)
+
+			unloadFlush("session-1", 8)
+			const finishStart = hangGzip()
+			await nextStart()
+			clearPendingChunk()
+			finishStart()
 			await vi.advanceTimersByTimeAsync(0)
 			expect(posted).toEqual([])
 		})
@@ -358,16 +400,36 @@ describe("startRecording", () => {
 			const revokedAt = Date.now()
 			vi.stubGlobal("localStorage", { getItem: () => String(revokedAt) })
 			unloadFlush("session-1", 7)
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
 			expect(stored()).toBeUndefined()
 			expect(posted).toEqual([])
 
 			await vi.advanceTimersByTimeAsync(1)
 			unloadFlush("session-1", 8)
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
 			expect(postedSeqs()).toEqual([8])
+		})
+
+		it("is discarded when an earlier page stored it more than ten minutes ago", async () => {
+			// Before this module loaded: stored by an earlier page of the tab.
+			vi.setSystemTime(Date.now() - 60 * 60_000)
+			unloadFlush("session-1", 7)
+			await vi.advanceTimersByTimeAsync(9 * 60_000)
+			await nextStart()
+			expect(postedSeqs()).toEqual([7])
+
+			unloadFlush("session-1", 8)
+			await vi.advanceTimersByTimeAsync(10 * 60_000 + 1)
+			await nextStart()
+			expect(stored()).toBeUndefined()
+			expect(postedSeqs()).toEqual([7])
+		})
+
+		it("is still sent when this page stored it and was then hidden for longer than that", async () => {
+			unloadFlush("session-1", 7)
+			await vi.advanceTimersByTimeAsync(20 * 60_000)
+			await nextStart()
+			expect(postedSeqs()).toEqual([7])
 		})
 
 		it("uploads as before when sessionStorage refuses the write", async () => {
@@ -380,22 +442,26 @@ describe("startRecording", () => {
 		it("is not sent by a start that cannot remove it, so no later start sends it again", async () => {
 			unloadFlush("session-1", 7)
 			refuses = "removeItem"
-			startRecording(CONFIG, "session-1").stop()
-			await vi.advanceTimersByTimeAsync(0)
+			await nextStart()
+			await nextStart()
 			expect(posted).toEqual([])
+
+			refuses = undefined
+			await nextStart()
+			await nextStart()
+			expect(postedSeqs()).toEqual([7])
 		})
 
-		it("is not kept when it is a buffered segment too large for the shared quota", async () => {
-			const recorder = startBufferedRecording(CONFIG, "session-1")
-			snapshot(1_000)
-			emitRef!(incremental(1_500, "m".repeat(300 * 1024)))
-			const finishGzip = hangGzip()
-			void recorder.drain(true)
-			expect(stored()).toBeUndefined()
-			finishGzip()
-			await vi.advanceTimersByTimeAsync(0)
-			expect(posted).toHaveLength(1)
-			recorder.stop()
+		it("ignores a stored value it did not write, and the next unload flush replaces it", async () => {
+			storage.set(PENDING_KEY, '{"sessionId":"session-1","chunkSeq":7}')
+			await nextStart()
+			storage.set(PENDING_KEY, "{not json")
+			await nextStart()
+			expect(posted).toEqual([])
+
+			unloadFlush("session-1", 8)
+			await nextStart()
+			expect(postedSeqs()).toEqual([8])
 		})
 	})
 })

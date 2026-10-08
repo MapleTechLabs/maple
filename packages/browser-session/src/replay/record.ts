@@ -9,6 +9,7 @@ import {
 	type BlobPostOutcome,
 	gzip,
 	postSessionBlob,
+	reserveKeepalive,
 	warnDropped,
 	type ChunkMeta,
 } from "../platform/transport"
@@ -67,10 +68,13 @@ export interface Recorder {
 // unloading document is torn down before it resolves, so the chunk waits in
 // sessionStorage (this tab, this origin, like the session record) for the next
 // recorder start of its session: the next page load, or this page shown again.
+// A keepalive flush holds under FLUSH_BYTES of events, which bounds what is stored.
 //
-// A streamed flush stays near FLUSH_BYTES. A buffered segment can run to
-// megabytes and is not kept: the host app shares the origin's storage quota.
-const MAX_PENDING_CHARS = 256 * 1024
+// An earlier page's chunk older than this is discarded instead of sent: consent
+// withdrawn by a reload is never seen as a revoke, and must not be outlived by
+// long. This page's own chunk has no such gap, since a revoke here removes it.
+const MAX_PENDING_AGE_MS = 10 * 60_000
+const PAGE_STARTED_AT = Date.now()
 
 interface PendingChunk extends ChunkMeta {
 	readonly body: string
@@ -112,11 +116,11 @@ function readPending(): PendingChunk | undefined {
 
 /**
  * Keep `chunk` unless one is already waiting. False when it was not kept
- * (storage blocked or full, chunk too large): it is then only as durable as its upload.
+ * (storage blocked or full): it is then only as durable as its upload.
  */
 function storePending(chunk: PendingChunk): boolean {
 	try {
-		if (chunk.body.length > MAX_PENDING_CHARS || readPending()) return false
+		if (readPending()) return false
 		window.sessionStorage.setItem(PENDING_CHUNK_KEY, JSON.stringify(chunk))
 		return true
 	} catch {
@@ -136,12 +140,16 @@ function takePending(meta: ChunkMeta): boolean {
 /** Send the chunk an earlier flush of this session left behind; any other stored chunk is dropped. */
 function sendPendingChunk(config: IngestConfig, sessionId: string): void {
 	const chunk = readPending()
-	if (!chunk || !clearPendingChunk()) return
+	if (!chunk) return
 	const sendable =
 		chunk.sessionId === sessionId &&
 		chunk.target === targetOf(config) &&
-		chunk.createdAt > consentRevokedAt()
-	if (sendable) void compressAndPost(config, chunk, chunk.body, false, false)
+		chunk.createdAt > consentRevokedAt() &&
+		(chunk.createdAt >= PAGE_STARTED_AT || Date.now() - chunk.createdAt <= MAX_PENDING_AGE_MS)
+	// Left stored until the POST, like the flush that stored it: a revoke can still
+	// discard it, and a page gone mid-compression leaves it for the start after.
+	if (sendable) void compressAndPost(config, chunk, chunk.body, false, true)
+	else clearPendingChunk()
 }
 
 /**
@@ -181,8 +189,19 @@ async function compressAndPost(
 		warnDropped("chunk compression", error)
 		return undefined
 	}
-	// Gone: a later recorder start already sent it, or a revoke discarded it.
-	if (stored && !takePending(meta)) return undefined
+	if (stored) {
+		// A request that does not get keepalive dies with the page, after the copy is
+		// gone. So one that does not fit the shared budget right now stays stored for
+		// the next recorder start. Released at once: the POST below reserves again
+		// synchronously, before anything else can run.
+		if (keepalive) {
+			const release = reserveKeepalive(true, gzipped.byteLength)
+			if (!release) return undefined
+			release()
+		}
+		// Gone: a later recorder start already sent it, or a revoke discarded it.
+		if (!takePending(meta)) return undefined
+	}
 	return postSessionBlob(config, meta, gzipped, keepalive)
 }
 
