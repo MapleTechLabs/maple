@@ -193,7 +193,12 @@ function GcpConnectForm({
 	const [submit, submitting] = useAsyncAction(async () => {
 		if (Option.isNone(request)) return
 		setError(null)
-		const result = await create({ payload: request.value, reactivityKeys: REACTIVITY_KEYS })
+		// The client types the request as one object per payload variant, so the union has to be
+		// narrowed before it is passed; both branches make the same call.
+		const payload = request.value
+		const result = await (payload.scope_type === "project"
+			? create({ payload, reactivityKeys: REACTIVITY_KEYS })
+			: create({ payload, reactivityKeys: REACTIVITY_KEYS }))
 		if (Exit.isSuccess(result)) {
 			setDraft({ ...draft, scopeId: "", hostProjectId: "" })
 			onCreated(result.value)
