@@ -255,6 +255,7 @@ describe("the api Worker through alchemy's bridge", () => {
 			)
 			assert.strictEqual(success.response.status, 200)
 			assert.strictEqual(failed.response.status, 504)
+			assert.strictEqual(success.response.headers.get("timing-allow-origin"), "*")
 			for (const result of [success, failed]) {
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.request_ordinal"), "1")
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.age_ms"), "0")
@@ -323,6 +324,8 @@ describe("the api Worker through alchemy's bridge", () => {
 			)
 			assert.strictEqual(response.status, 204)
 			assert.include(response.headers.get("access-control-allow-headers") ?? "", "Authorization")
+			// Effect's CORS middleware sets none, and the preflight stays byte-equal to it.
+			assert.isNull(response.headers.get("timing-allow-origin"))
 		}),
 	)
 

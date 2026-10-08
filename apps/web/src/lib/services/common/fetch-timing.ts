@@ -34,6 +34,14 @@ const parseTraceparent = (value: string | null) => {
 	return { traceId: parts[1], spanId: parts[2], sampled: parts[3] === "01" }
 }
 
+/** `url` as a resource entry names it: resolved against `base`, without a fragment. */
+export const resourceEntryName = (url: string, base: string): string => {
+	const resolved = URL.parse(url, base)
+	if (resolved === null) return url
+	resolved.hash = ""
+	return resolved.href
+}
+
 /** Remember a sent request so its resource entry can be matched later. */
 export const trackFetch = (options: {
 	readonly url: string
@@ -46,7 +54,7 @@ export const trackFetch = (options: {
 	if (parent === undefined) return
 	if (pending.length >= MAX_PENDING) pending = pending.slice(1)
 	pending.push({
-		url: options.url,
+		url: resourceEntryName(options.url, location.href),
 		startedAt: options.startedAt,
 		authWaitMs: options.authWaitMs,
 		...parent,

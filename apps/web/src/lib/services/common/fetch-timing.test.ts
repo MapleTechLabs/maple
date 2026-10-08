@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { type ResourceTimingPhases, resourceTimingAttributes } from "./fetch-timing"
+import { type ResourceTimingPhases, resourceEntryName, resourceTimingAttributes } from "./fetch-timing"
 
 const coldEntry: ResourceTimingPhases = {
 	startTime: 100,
@@ -61,5 +61,15 @@ describe("resourceTimingAttributes", () => {
 			"maple.auth.wait_ms": 5,
 			"maple.fetch.timing_allowed": false,
 		})
+	})
+})
+
+describe("resourceEntryName", () => {
+	it("resolves relative URLs and drops the fragment, as resource entries do", () => {
+		const base = "https://app.maple.dev/traces?x=1"
+		expect(resourceEntryName("/api/v2/traces?limit=5#top", base)).toBe(
+			"https://app.maple.dev/api/v2/traces?limit=5",
+		)
+		expect(resourceEntryName("https://api.maple.dev", base)).toBe("https://api.maple.dev/")
 	})
 })

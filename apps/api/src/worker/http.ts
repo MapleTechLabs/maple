@@ -180,8 +180,8 @@ export const makeFetch = (
 	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
 	queryApp: Effect.Effect<HttpEffect, unknown> = app,
 ) =>
-	IsolateAge.useSync((isolateAge) =>
-		Effect.gen(function* () {
+	IsolateAge.useSync((isolateAge) => {
+		const serve = Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest
 			const path = pathOf(request.url)
 			if (request.method === "GET" && path === "/health") {
@@ -201,8 +201,6 @@ export const makeFetch = (
 					}),
 				})
 			}
-			if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
-
 			// The agent surfaces moved to maple-ai; this origin keeps serving them.
 			// Ahead of the route graph on purpose: that is the whole point of the
 			// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
@@ -243,7 +241,14 @@ export const makeFetch = (
 		}).pipe(
 			// HttpRouter.cors sets no Timing-Allow-Origin, so every response gets it here.
 			Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)),
+		)
+		// The preflight answers outside that wrapper, so it stays byte-equal to HttpRouter.cors.
+		return Effect.gen(function* () {
+			const request = yield* HttpServerRequest.HttpServerRequest
+			if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
+			return yield* serve
+		}).pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
 			Effect.provide(ports),
-		),
-	)
+		)
+	})
