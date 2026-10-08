@@ -24,6 +24,24 @@ export class TickDispatchError extends Schema.TaggedError<TickDispatchError>()(
 	},
 ) {}
 
+/** The tick did not run in the placed handler, so the caller runs it inline. */
+export class TickDispatchUnavailable extends Schema.TaggedError<TickDispatchUnavailable>()(
+	"@maple/alerting/errors/TickDispatchUnavailable",
+	{
+		message: Schema.String,
+		reason: Schema.Literals(["no-binding", "no-token", "refused-401", "refused-404"]),
+	},
+) {}
+
+/** A request to the tick route that the handler refuses, with the status it answers. */
+export class TickRequestRefused extends Schema.TaggedError<TickRequestRefused>()(
+	"@maple/alerting/errors/TickRequestRefused",
+	{
+		message: Schema.String,
+		status: Schema.Literals([400, 401, 404]),
+	},
+) {}
+
 const isFetcher = (value: unknown): value is Fetcher =>
 	typeof value === "object" && value !== null && "fetch" in value && typeof value.fetch === "function"
 
@@ -34,7 +52,7 @@ const withManualRedirects = (binding: Fetcher): Fetcher => ({
 })
 
 /** The internal token as this invocation's env says; unreadable reads as unset. */
-export const internalTokenFor = (env: Record<string, unknown>) =>
+const internalTokenFor = (env: Record<string, unknown>) =>
 	Config.option(Config.Redacted("INTERNAL_SERVICE_TOKEN")).pipe(
 		Effect.map(Option.map(Redacted.value)),
 		Effect.orElseSucceed(() => Option.none<string>()),
@@ -44,8 +62,8 @@ export const internalTokenFor = (env: Record<string, unknown>) =>
 	)
 
 /**
- * Runs `cron`'s tick in the placed fetch handler. `"unavailable"` means it did not run there
- * (no binding, no token, or the handler refused it), so the caller runs it inline.
+ * Runs `cron`'s tick in the placed fetch handler. Fails with `TickDispatchUnavailable` when it did
+ * not run there (no binding, no token, or the handler refused it), so the caller runs it inline.
  */
 export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	cron: string,
@@ -53,7 +71,18 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 ) {
 	const binding = env[SELF_BINDING]
 	const token = yield* internalTokenFor(env)
-	if (!isFetcher(binding) || Option.isNone(token)) return "unavailable" as const
+	if (!isFetcher(binding)) {
+		return yield* new TickDispatchUnavailable({
+			message: "No self service binding",
+			reason: "no-binding",
+		})
+	}
+	if (Option.isNone(token)) {
+		return yield* new TickDispatchUnavailable({
+			message: "No internal service token",
+			reason: "no-token",
+		})
+	}
 
 	const client = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(withManualRedirects(binding)))
 	const request = HttpClientRequest.post(TICK_URL).pipe(
@@ -64,9 +93,14 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 		Effect.provideService(HttpClient.HttpClient, client),
 		Effect.mapError((cause) => new TickDispatchError({ message: "Placed tick request failed", cause })),
 	)
-	if (response.status === 204) return "placed" as const
+	if (response.status === 204) return
 	// The handler did not run the tick: a token mismatch or a version without the route.
-	if (response.status === 401 || response.status === 404) return "unavailable" as const
+	if (response.status === 401 || response.status === 404) {
+		return yield* new TickDispatchUnavailable({
+			message: `Placed tick refused with ${response.status}`,
+			reason: response.status === 401 ? "refused-401" : "refused-404",
+		})
+	}
 	return yield* new TickDispatchError({
 		message: `Placed tick answered ${response.status}`,
 		status: response.status,
@@ -81,28 +115,31 @@ export interface PlacedTick {
 	readonly placement: string
 }
 
-/** Why a request to the tick route is refused, as its response status. */
-export type TickRefusal = 400 | 401 | 404
-
-/** Validates a request to the tick route against the internal token and the known crons. */
-export const authorizeTickRequest = (
+/** Validates a request to the tick route against `env`'s internal token and the known crons. */
+export const authorizeTickRequest = Effect.fnUntraced(function* (
 	request: Request,
-	token: Option.Option<string>,
+	env: Record<string, unknown>,
 	crons: ReadonlyArray<string>,
-): PlacedTick | TickRefusal => {
+) {
 	const url = new URL(request.url)
-	if (request.method !== "POST" || url.pathname !== TICK_PATH) return 404
-	const authorized = Option.match(token, {
+	if (request.method !== "POST" || url.pathname !== TICK_PATH) {
+		return yield* new TickRequestRefused({ message: "Not the tick route", status: 404 })
+	}
+	const authorized = Option.match(yield* internalTokenFor(env), {
 		onNone: () => false,
 		onSome: (expected) =>
 			isValidInternalBearer(request.headers.get("authorization") ?? undefined, expected),
 	})
-	if (!authorized) return 401
+	if (!authorized) {
+		return yield* new TickRequestRefused({ message: "Missing or invalid internal bearer", status: 401 })
+	}
 	const cron = url.searchParams.get("cron")
-	if (cron === null || !crons.includes(cron)) return 400
+	if (cron === null || !crons.includes(cron)) {
+		return yield* new TickRequestRefused({ message: "Unknown cron", status: 400 })
+	}
 	return {
 		cron,
 		colo: typeof request.cf?.colo === "string" ? request.cf.colo : "unknown",
 		placement: request.headers.get("cf-placement") ?? "none",
-	}
-}
+	} satisfies PlacedTick
+})

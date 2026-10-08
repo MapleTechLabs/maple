@@ -36,7 +36,7 @@ import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { HttpServerResponse } from "effect/http"
-import { authorizeTickRequest, dispatchTick, internalTokenFor, SELF_BINDING } from "./tick-dispatch.ts"
+import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
 
 /**
  * Runtime env, imported type-only by `./scheduled.ts`. Config vars stay `unknown` since they are
@@ -171,29 +171,30 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 					}
 					return
 				}
-				// A failed hop is not retried inline: the placed handler may have run part of the tick.
-				const dispatched = yield* dispatchTick(controller.cron, env).pipe(
-					Effect.catchTag("@maple/alerting/errors/TickDispatchError", (error) =>
-						Effect.logError("Placed alerting tick failed", error).pipe(
-							Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
-							Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "failed")),
-							Effect.as("failed" as const),
-						),
-					),
+				yield* dispatchTick(controller.cron, env).pipe(
+					Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "placed")),
+					Effect.catchTags({
+						"@maple/alerting/errors/TickDispatchUnavailable": () =>
+							runTick(controller.cron, env).pipe(
+								Effect.annotateSpans("maple.alerting.dispatch", "inline"),
+							),
+						// A failed hop is not retried inline: the placed handler may have run part of the tick.
+						"@maple/alerting/errors/TickDispatchError": (error) =>
+							Effect.logError("Placed alerting tick failed", error).pipe(
+								Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
+								Effect.andThen(
+									Effect.annotateCurrentSpan("maple.alerting.dispatch", "failed"),
+								),
+							),
+					}),
 				)
-				if (dispatched === "unavailable") {
-					yield* runTick(controller.cron, env).pipe(
-						Effect.annotateSpans("maple.alerting.dispatch", "inline"),
-					)
-				}
 			})
 
 		// Reached only through `SELF_BINDING`: the Worker has no route and no workers.dev URL.
 		const fetch = Effect.gen(function* () {
 			const request = yield* Cloudflare.Request
 			const env = yield* Cloudflare.WorkerEnvironment
-			const tick = authorizeTickRequest(request, yield* internalTokenFor(env), ALERTING_CRONS)
-			if (typeof tick === "number") return HttpServerResponse.empty({ status: tick })
+			const tick = yield* authorizeTickRequest(request, env, ALERTING_CRONS)
 			yield* runTick(tick.cron, env).pipe(
 				Effect.annotateSpans({
 					"maple.alerting.dispatch": "placed",
@@ -202,7 +203,11 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 				}),
 			)
 			return HttpServerResponse.empty({ status: 204 })
-		})
+		}).pipe(
+			Effect.catchTag("@maple/alerting/errors/TickRequestRefused", ({ status }) =>
+				Effect.succeed(HttpServerResponse.empty({ status })),
+			),
+		)
 
 		yield* Effect.forEach(ALERTING_CRONS, (cron) => Cloudflare.Workers.cron(cron, onFire), {
 			discard: true,
