@@ -17,9 +17,8 @@ const exported: ReadableSpan[] = []
 vi.mock("./otlp", async (original) => ({
 	...(await original<typeof import("./otlp")>()),
 	OtlpExporter: class {
-		constructor(private readonly url: string) {}
 		export(spans: ReadableSpan[], callback: (result: { code: number }) => void): void {
-			if (this.url.endsWith("/v1/traces")) exported.push(...spans)
+			exported.push(...spans)
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {

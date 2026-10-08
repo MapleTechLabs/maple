@@ -36,8 +36,8 @@ const BUDGET = {
 	 */
 	eager: 44.5,
 	/**
-	 * Every page load, after `init()`, off the critical path: the OTel logs SDK
-	 * and exporter, document timing, `web-vitals` (~3.3 kB), breadcrumbs,
+	 * Every page load, after `init()`, off the critical path: the OTel logs SDK,
+	 * document timing, `web-vitals` (~3.3 kB), breadcrumbs,
 	 * reports, the offline queue and long-frame/interaction spans.
 	 */
 	deferred: 14,

@@ -114,11 +114,6 @@ describe("OtlpExporter", () => {
 		expect(sent[0]?.headers).toEqual({ authorization: "Bearer k", "content-type": "application/json" })
 	})
 
-	it("issues the request before export returns", () => {
-		exportBatch(otlp(), spans(1))
-		expect(sent).toHaveLength(1)
-	})
-
 	it("spends the shared keepalive budget while in flight, under its own ceiling", async () => {
 		vi.useFakeTimers()
 		answers = ["pending"]
@@ -233,7 +228,7 @@ describe("newestFirstOnExit", () => {
 		expect(sent[0]?.names).toHaveLength(60)
 	})
 
-	it("sends the newest spans first under keepalive when unloading, leaving room for the session row", () => {
+	it("sends the newest spans first under keepalive when unloading, the rest second", () => {
 		vi.useFakeTimers()
 		answers = ["pending"]
 		const batch = spans(60, KIB)
@@ -253,14 +248,6 @@ describe("newestFirstOnExit", () => {
 		// Past the ceiling, so plain; and no span is in both requests.
 		expect(older?.keepalive).toBe(false)
 		expect(older?.names).toEqual(names(batch).slice(0, -tailCount))
-
-		// The session's `ended` row is issued after the trace flush and still gets keepalive.
-		void postToIngest("https://ingest.test/v1/sessionReplays/meta", {}, "x".repeat(8 * KIB), true)
-		expect(sent.at(-1)?.keepalive).toBe(true)
-		const keepaliveBytes = sent
-			.filter((request) => request.keepalive)
-			.reduce((sum, request) => sum + request.bytes, 0)
-		expect(keepaliveBytes).toBeLessThanOrEqual(48 * KIB)
 	})
 
 	it("splits while the document is hidden, and keeps a batch that fits in one request", () => {

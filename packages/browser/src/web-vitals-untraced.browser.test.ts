@@ -6,9 +6,8 @@ const exportedLogs: ReadableLogRecord[] = []
 vi.mock("./otlp", async (original) => ({
 	...(await original<typeof import("./otlp")>()),
 	OtlpExporter: class {
-		constructor(private readonly url: string) {}
 		export(items: ReadableLogRecord[], callback: (result: { code: number }) => void): void {
-			if (this.url.endsWith("/v1/logs")) exportedLogs.push(...items)
+			exportedLogs.push(...items)
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {

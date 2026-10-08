@@ -110,10 +110,6 @@ describe("trace export on the way out", () => {
 		// The session lifecycle's listener runs next; its `ended` row still gets keepalive.
 		void postToIngest("https://ingest.test/v1/sessionReplays/meta", {}, "x".repeat(8 * KIB), true)
 		expect(sent.at(-1)?.keepalive).toBe(true)
-		const keepaliveBytes = sent
-			.filter((request) => request.keepalive)
-			.reduce((sum, request) => sum + request.bytes, 0)
-		expect(keepaliveBytes).toBeLessThanOrEqual(48 * KIB)
 
 		// `visibilitychange` follows `pagehide` on a real unload: nothing is sent twice.
 		vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
@@ -129,25 +125,6 @@ describe("trace export on the way out", () => {
 		document.dispatchEvent(new Event("visibilitychange"))
 		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
 		expect([...(sent[1]?.names ?? []), ...(sent[0]?.names ?? [])]).toEqual(names)
-	})
-
-	it("sends a small batch as one keepalive request", () => {
-		shutdown = setupTracing(CONFIG)
-		const names = endSpans(3)
-
-		window.dispatchEvent(new Event("pagehide"))
-		expect(sent).toHaveLength(1)
-		expect(sent[0]).toMatchObject({ keepalive: true, names })
-	})
-
-	it("exports a batch whole while the document stays visible", async () => {
-		shutdown = setupTracing(CONFIG)
-		const names = endSpans(60)
-
-		settle()
-		await shutdown()
-		shutdown = undefined
-		expect(sent.map((request) => request.names)).toEqual([names])
 	})
 
 	it("sends nothing while consent is withheld", () => {

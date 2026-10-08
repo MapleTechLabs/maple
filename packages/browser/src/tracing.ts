@@ -236,14 +236,15 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// entering the bfcache fires it too; ending there is still right, since it
 	// may never be restored.
 	const settledRequests = new Map<ApiSpan, number>()
-	const onPageHide = (): void => {
-		for (const [span, endTime] of settledRequests) {
-			// Entries are only pruned on the next request, so some already ended.
-			if (span.isRecording()) span.end(endTime)
-		}
-		settledRequests.clear()
-		flushUnloading(onExit)
-	}
+	const onPageHide = (): void =>
+		flushUnloading(() => {
+			for (const [span, endTime] of settledRequests) {
+				// Entries are only pruned on the next request, so some already ended.
+				if (span.isRecording()) span.end(endTime)
+			}
+			settledRequests.clear()
+			onExit()
+		})
 	// Runs as the response settles, right before the instrumentation schedules
 	// the span's deferred end. Pruning here keeps the map to spans still waiting.
 	const noteSettled = (span: ApiSpan): void => {
