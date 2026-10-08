@@ -1,6 +1,9 @@
 {
 	"cta_get_started": "Start free trial",
 	"cta_github": "View on GitHub",
+	"cta_agent": "Build with your agent",
+	"cta_agent_copied": "Prompt copied",
+	"cta_agent_hint": "Copy a setup prompt for Claude Code, Codex or Cursor",
 
 	"nav_features": "Features",
 	"nav_use_cases": "Use Cases",

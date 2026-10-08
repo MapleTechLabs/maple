@@ -1,0 +1,130 @@
+---
+/**
+ * "Build with your agent": copies one line pointing at `/SKILL.md`, the
+ * `maple-onboard` skill. Nothing is installed; without a key the skill uses the
+ * `MAPLE_TEST` sentinel and tells the user where to get a real one.
+ */
+import { buttonVariants } from "@maple/ui/components/ui/button";
+import * as m from "../paraglide/messages.js";
+import { brandMark, markColor, type BrandMarkId } from "../lib/brand-marks";
+
+interface Props {
+	class?: string;
+}
+
+const { class: className = "" } = Astro.props;
+
+const PROMPT = "Add Maple observability to my app: maple.dev/SKILL.md";
+
+const AGENTS: BrandMarkId[] = ["claude", "openai", "cursor"];
+
+const COPY_PATHS = ["M19 21L9 21", "M5 15H5.0001", "M21 11L21 19", "M7 11L7 19", "M19 9L9 9", "M17 5L17 7", "M3 5L3 13", "M15 3L5 3"];
+const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999", "M14 14H14.01", "M5.99999 14H6.00999", "M3.99999 12H4.00999", "M22 6H22.01", "M16 12H16.01", "M18 10H18.01", "M20 8H20.01"];
+---
+
+<button
+	type="button"
+	class:list={[buttonVariants({ variant: "outline", size: "xl" }), "agent-prompt", className]}
+	data-copy={PROMPT}
+	title={m.cta_agent_hint()}
+>
+	<span class="agent-prompt__marks" aria-hidden="true">
+		{AGENTS.map((id) => {
+			const mark = brandMark(id);
+			return (
+				<span class="agent-prompt__mark">
+					<svg viewBox={mark.viewBox ?? "0 0 24 24"} style={`color:${markColor(mark)}`} fill="currentColor">
+						<path d={mark.path} />
+					</svg>
+				</span>
+			);
+		})}
+	</span>
+	<span class="agent-prompt__text">
+		<span class="agent-prompt__idle">{m.cta_agent()}</span>
+		<span class="agent-prompt__ghost" aria-hidden="true">{m.cta_agent_copied()}</span>
+		<span class="agent-prompt__status" aria-live="polite"></span>
+	</span>
+	<span class="agent-prompt__icon" aria-hidden="true">
+		<svg class="agent-prompt__copy" viewBox="0 0 24 24" fill="none">
+			{COPY_PATHS.map((d) => <path d={d} stroke="currentColor" stroke-width="2" stroke-linecap="square" />)}
+		</svg>
+		<svg class="agent-prompt__check" viewBox="0 0 24 24" fill="none">
+			{CHECK_PATHS.map((d) => <path d={d} stroke="currentColor" stroke-width="2" stroke-linecap="square" />)}
+		</svg>
+	</span>
+</button>
+
+<script>
+	import { bindCopyButtons } from "../lib/copy-to-clipboard";
+	import * as m from "../paraglide/messages.js";
+
+	bindCopyButtons({
+		hostSelector: ".agent-prompt[data-copy]",
+		buttonSelector: ".agent-prompt",
+		// Feedback goes in an overlay so the button keeps the width of its longest label.
+		labelSelector: ".agent-prompt__status",
+		idleLabel: "",
+		copiedLabel: m.cta_agent_copied(),
+		track: { event: "agent_prompt_copied", key: "prompt" },
+	});
+</script>
+
+<style>
+	.agent-prompt {
+		gap: 12px;
+	}
+	.agent-prompt__text {
+		display: grid;
+	}
+	.agent-prompt__text > * {
+		grid-area: 1 / 1;
+	}
+	.agent-prompt__ghost,
+	.agent-prompt__text:has(.agent-prompt__status:not(:empty)) .agent-prompt__idle {
+		visibility: hidden;
+	}
+	.agent-prompt__marks {
+		display: inline-flex;
+	}
+	.agent-prompt__mark {
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 999px;
+		background: var(--bg-elevated);
+		box-shadow: 0 0 0 1.5px var(--bg);
+		border: 1px solid var(--border);
+	}
+	.agent-prompt__mark + .agent-prompt__mark {
+		margin-left: -6px;
+	}
+	.agent-prompt__mark svg {
+		width: 13px;
+		height: 13px;
+	}
+	.agent-prompt__icon {
+		display: grid;
+		color: var(--muted-foreground);
+		transition: color 150ms ease;
+	}
+	.agent-prompt__icon svg {
+		grid-area: 1 / 1;
+		width: 16px;
+		height: 16px;
+	}
+	.agent-prompt:hover .agent-prompt__icon {
+		color: var(--foreground);
+	}
+	.agent-prompt__check,
+	.agent-prompt.is-done .agent-prompt__copy {
+		visibility: hidden;
+	}
+	.agent-prompt.is-done .agent-prompt__check {
+		visibility: visible;
+	}
+	.agent-prompt.is-done .agent-prompt__icon {
+		color: var(--chart-3);
+	}
+</style>

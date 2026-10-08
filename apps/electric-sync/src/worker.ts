@@ -22,6 +22,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
+import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"
 
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
@@ -63,21 +64,7 @@ const AppLayer = Layer.unwrap(
 	).pipe(
 		Effect.map(([{ ElectricSyncRouter }, { ElectricClient }, { TenantResolver }, { SyncConfig }]) =>
 			ElectricSyncRouter.pipe(
-				Layer.provideMerge(
-					HttpRouter.cors({
-						allowedOrigins: ["*"],
-						allowedMethods: ["GET", "OPTIONS"],
-						allowedHeaders: ["*"],
-						// Required: without them the Electric client stalls after the first chunk.
-						exposedHeaders: [
-							"electric-handle",
-							"electric-offset",
-							"electric-schema",
-							"electric-cursor",
-							"electric-up-to-date",
-						],
-					}),
-				),
+				Layer.provideMerge(HttpRouter.cors(ELECTRIC_SYNC_CORS_OPTIONS)),
 				// The only place the real implementations are wired; tests substitute them.
 				Layer.provideMerge(ElectricClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
 				Layer.provideMerge(TenantResolver.layer),
