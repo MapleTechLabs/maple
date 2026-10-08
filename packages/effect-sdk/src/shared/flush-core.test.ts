@@ -182,12 +182,12 @@ describe("runFlush", () => {
 		expect(seen).toEqual([1, 2, 3])
 	})
 
-	it.live("restores the failed chunks of a chunked flush once, in drain order", () =>
+	it.live("sends the newest items first and restores both failed requests once, in drain order", () =>
 		Effect.gen(function* () {
 			const spans = makeSpanBuffer()
 			yield* Effect.forEach(["a", "b", "c", "d"], (name) => recordSpan(spans, name), { discard: true })
 			const tracesState: SignalState = { disabledUntil: 0 }
-			let attempts = 0
+			const sent: Array<Array<string>> = []
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
 			const flushed = runFlush({
@@ -199,24 +199,28 @@ describe("runFlush", () => {
 				logsState: { disabledUntil: 0 },
 				metricsState: { disabledUntil: 0 },
 				transport: {
-					post: async () => {
-						attempts += 1
-						// "a" fails after "c" does: completion order must not decide the restore order.
-						if (attempts === 1) await new Promise((resolve) => setTimeout(resolve, 5))
-						if (attempts !== 2) throw new Error("collector unavailable")
+					post: async (_url, _headers, body) => {
+						const { resourceSpans } = body as {
+							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+						}
+						sent.push(resourceSpans[0]!.scopeSpans[0]!.spans.map((span) => span.name))
+						// The newest request fails last: completion order must not decide the restore order.
+						if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
+						throw new Error("collector unavailable")
 					},
 				},
 				logPrefix: "[test]",
-				// Smaller than any span: each travels alone.
-				maxChunkBytes: 1,
+				// Smaller than any span: the newest one travels alone.
+				tailBytes: 1,
 			})
+			// Both requests were issued before `runFlush` returned.
+			expect(sent).toEqual([["d"], ["a", "b", "c"]])
 			yield* recordSpan(spans, "newer")
 			yield* Effect.promise(() => flushed)
 
-			expect(attempts).toBe(4)
 			expect(errorSpy).toHaveBeenCalledTimes(1)
 			errorSpy.mockRestore()
-			expect(spans.drain().map((span) => span.name)).toEqual(["a", "c", "d", "newer"])
+			expect(spans.drain().map((span) => span.name)).toEqual(["a", "b", "c", "d", "newer"])
 			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
 		}),
 	)

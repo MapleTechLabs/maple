@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { describe, it } from "@effect/vitest"
-import { resetConsentForTests, setConsent } from "@maple/browser-session"
+import { postToIngest, resetConsentForTests, setConsent } from "@maple/browser-session"
 import { Effect, Metric } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
@@ -71,9 +71,14 @@ const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 		).resourceSpans[0].scopeSpans[0].spans.map((span) => span.name),
 	)
 
-// Mirrors `KEEPALIVE_BUDGET_BYTES` in @maple/browser-session and the unload chunk cap.
-const KEEPALIVE_BUDGET_BYTES = 48 * 1024
-const UNLOAD_CHUNK_BYTES = 16 * 1024
+// Mirror the client's keepalive ceiling and the size of its newest-first unload request.
+const KEEPALIVE_CEILING_BYTES = 32 * 1024
+const UNLOAD_TAIL_BYTES = 16 * 1024
+
+/** Bytes the shared keepalive budget currently counts as in flight. */
+const inflightKeepaliveBytes = (): number =>
+	(globalThis as unknown as Record<string, { bytes: number } | undefined>)["__MAPLE_KEEPALIVE_INFLIGHT__"]
+		?.bytes ?? 0
 
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
@@ -378,6 +383,7 @@ describe("MapleFlush.make (client)", () => {
 		)
 
 		expect(dom.listenerCount("pagehide")).toBe(1)
+		expect(dom.listenerCount("pageshow")).toBe(1)
 		// No manual flush — the unload handler should do it.
 		dom.fire("pagehide")
 		await tick()
@@ -385,6 +391,7 @@ describe("MapleFlush.make (client)", () => {
 
 		await telemetry.dispose()
 		expect(dom.listenerCount("pagehide")).toBe(0)
+		expect(dom.listenerCount("pageshow")).toBe(0)
 		expect(dom.listenerCount("visibilitychange")).toBe(0)
 	})
 
@@ -504,7 +511,7 @@ describe("MapleFlush.make (client)", () => {
 		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
 	})
 
-	it("sends a batch over the keepalive budget as a plain request, and keeps flushing after it", async () => {
+	it("sends a batch over the keepalive ceiling as a plain request, and keeps flushing after it", async () => {
 		const { calls, restore: r } = setupFetch()
 		restore = r
 		const telemetry = make(baseConfig)
@@ -512,7 +519,7 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, numbered("big", 400))
 		await telemetry.flush()
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(KEEPALIVE_BUDGET_BYTES)
+		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(KEEPALIVE_CEILING_BYTES)
 		// The browser would reject this body with keepalive set, whatever the server says.
 		expect(traceCalls(calls)[0].keepalive).toBe(false)
 
@@ -523,14 +530,16 @@ describe("MapleFlush.make (client)", () => {
 		expect(spanNames(calls)).toHaveLength(401)
 	})
 
-	it("aborts a POST that never answers, so the flushes queued behind it still run", async () => {
+	it("aborts a POST that never answers, restores its batch, and lets the queue continue", async () => {
 		vi.useFakeTimers()
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
-		const { calls, restore: r } = setupFetch(
-			(_url, init) =>
-				new Promise<Response>((_resolve, reject) => {
-					init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))
-				}),
+		let answer = false
+		const { calls, restore: r } = setupFetch((_url, init) =>
+			answer
+				? new Response(null, { status: 200 })
+				: new Promise<Response>((_resolve, reject) => {
+						init?.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+					}),
 		)
 		restore = r
 		const telemetry = make(baseConfig)
@@ -538,14 +547,22 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, ["stuck"])
 		const stuck = telemetry.flush()
 		const queued = telemetry.flush()
-		await vi.advanceTimersByTimeAsync(30_000)
+		await vi.advanceTimersByTimeAsync(31_000)
 		await Promise.all([stuck, queued])
 
 		expect(calls).toHaveLength(1)
-		expect(errorSpy).toHaveBeenCalledTimes(1)
+		expect(String(errorSpy.mock.calls[0]?.[1])).toContain("OTLP POST timed out after 30s")
+		expect(inflightKeepaliveBytes()).toBe(0)
+
+		answer = true
+		await vi.advanceTimersByTimeAsync(60_000)
+		await telemetry.flush()
+		expect(spanNames(calls.slice(1))).toEqual(["stuck"])
+		// An answered POST leaves no timeout behind.
+		expect(vi.getTimerCount()).toBe(0)
 	})
 
-	it("flushes on unload while a periodic flush is still in flight", async () => {
+	it("flushes on pagehide while a periodic flush is still in flight", async () => {
 		const inflight = pendingResponses()
 		const { calls, restore: rf } = setupFetch(inflight.responder)
 		const dom = setupDom()
@@ -557,6 +574,8 @@ describe("MapleFlush.make (client)", () => {
 
 		await recordSpans(telemetry, ["periodic"])
 		const periodic = telemetry.flush()
+		await tick()
+		expect(spanNames(calls)).toEqual(["periodic"])
 		await recordSpans(telemetry, ["tail"])
 		dom.fire("pagehide")
 		// No await: the request has to leave inside the event handler.
@@ -566,7 +585,7 @@ describe("MapleFlush.make (client)", () => {
 		await periodic
 	})
 
-	it("flushes on unload during a cooldown", async () => {
+	it("during a cooldown a hidden tab sends nothing, and pagehide still sends", async () => {
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 		let status = 503
@@ -581,18 +600,18 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, ["rejected"])
 		await telemetry.flush()
 		expect(errorSpy).toHaveBeenCalledTimes(1)
-		await telemetry.flush()
-		expect(warnSpy).toHaveBeenCalledTimes(1)
-		expect(traceCalls(calls)).toHaveLength(1)
 
 		status = 200
 		dom.setHidden()
 		dom.fire("visibilitychange")
-		expect(traceCalls(calls)).toHaveLength(2)
+		expect(traceCalls(calls)).toHaveLength(1)
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+
+		dom.fire("pagehide")
 		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["rejected"])
 	})
 
-	it("splits the unload flush into chunks that stay within the shared keepalive budget", async () => {
+	it("sends a backlog on pagehide as two requests per signal, the newest items first with keepalive", async () => {
 		const inflight = pendingResponses()
 		const { calls, restore: rf } = setupFetch(inflight.responder)
 		const dom = setupDom()
@@ -601,7 +620,7 @@ describe("MapleFlush.make (client)", () => {
 			dom.restore()
 		}
 		const telemetry = make({ ...baseConfig, flushOnUnload: true })
-		const names = numbered("unload", 400)
+		const names = numbered("backlog", 5_000)
 
 		await recordSpans(telemetry, names)
 		await Effect.runPromise(
@@ -612,25 +631,59 @@ describe("MapleFlush.make (client)", () => {
 		)
 		dom.fire("pagehide")
 
-		for (const call of calls) expect(call.bytes).toBeLessThanOrEqual(UNLOAD_CHUNK_BYTES)
-		expect(spanNames(calls)).toEqual(names)
-		// All in the one handler: every traces chunk, then logs, then metrics.
-		expect(calls.slice(traceCalls(calls).length).map((call) => call.url)).toEqual([
-			"https://collector.test/v1/logs",
-			"https://collector.test/v1/metrics",
+		// All in the one handler: traces, then logs, then metrics.
+		expect(calls.map((call) => call.url.replace("https://collector.test/v1/", ""))).toEqual([
+			"traces",
+			"traces",
+			"logs",
+			"metrics",
 		])
-		const keepalive = calls.filter((call) => call.keepalive)
-		expect(keepalive.reduce((sum, call) => sum + call.bytes, 0)).toBeLessThanOrEqual(
-			KEEPALIVE_BUDGET_BYTES,
-		)
-		// Past the budget a chunk still goes out, without keepalive.
-		expect(calls.some((call) => call.keepalive === false)).toBe(true)
+		const [newest, older] = traceCalls(calls)
+		const tail = spanNames([newest])
+		expect(tail.length).toBeGreaterThan(1)
+		expect(tail).toEqual(names.slice(-tail.length))
+		expect(newest.bytes).toBeLessThanOrEqual(UNLOAD_TAIL_BYTES)
+		expect(newest.keepalive).toBe(true)
+		// Everything older is one request, which no keepalive budget could hold.
+		expect(spanNames([older])).toEqual(names.slice(0, -tail.length))
+		expect(older.keepalive).toBe(false)
 
 		inflight.resolveAll()
 		await tick()
 	})
 
-	it("ignores a rejection seen after pagehide", async () => {
+	it("keeps its keepalive bodies under a ceiling that leaves room for the session's final row", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, numbered("periodic", 80))
+		const periodic = telemetry.flush()
+		await tick()
+		await recordSpans(telemetry, numbered("tail", 40))
+		dom.fire("pagehide")
+
+		const [first, second] = traceCalls(calls)
+		expect(first.keepalive).toBe(true)
+		// The shared budget alone would have taken both; the ceiling does not.
+		expect(first.bytes + second.bytes).toBeGreaterThan(KEEPALIVE_CEILING_BYTES)
+		expect(first.bytes + second.bytes).toBeLessThan(48 * 1024)
+		expect(second.keepalive).toBe(false)
+
+		const row = JSON.stringify("x".repeat(8 * 1024))
+		const sessionRow = postToIngest("https://collector.test/v1/sessionReplays/meta", {}, row, true)
+		expect(calls.at(-1)?.keepalive).toBe(true)
+
+		inflight.resolveAll()
+		await Promise.all([periodic, sessionRow])
+	})
+
+	it("ignores a rejection seen after pagehide, until pageshow", async () => {
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 		const inflight = pendingResponses()
@@ -644,23 +697,26 @@ describe("MapleFlush.make (client)", () => {
 
 		await recordSpans(telemetry, ["periodic"])
 		const periodic = telemetry.flush()
+		await tick()
 		await recordSpans(telemetry, ["tail"])
 		dom.fire("pagehide")
 		// An unloading document rejects keepalive fetches the server still receives.
 		inflight.rejectAll()
 		await periodic
 		await tick()
+		expect(errorSpy).not.toHaveBeenCalled()
 
-		// Restored from the back/forward cache: nothing was put back, nothing is cooling down.
+		// Restored from the back/forward cache: nothing was put back or is cooling
+		// down, and a failure counts again.
 		dom.fire("pageshow")
 		await recordSpans(telemetry, ["after-restore"])
 		const next = telemetry.flush()
 		await tick()
-		inflight.resolveAll()
+		inflight.rejectAll()
 		await next
 		expect(spanNames(calls)).toEqual(["periodic", "tail", "after-restore"])
-		expect(errorSpy).not.toHaveBeenCalled()
 		expect(warnSpy).not.toHaveBeenCalled()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
 	})
 
 	it("still treats an error status after pagehide as a failed flush", async () => {
@@ -676,7 +732,7 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, ["refused"])
 		dom.fire("pagehide")
 		await tick()
-		// Ingest answered, so this is not the unloading page's own rejection.
+		// Ingest answered, so this is not the unloading document's own rejection.
 		expect(errorSpy).toHaveBeenCalledTimes(1)
 	})
 
@@ -708,5 +764,28 @@ describe("MapleFlush.make (client)", () => {
 		vi.advanceTimersByTime(60_000)
 		await telemetry.flush()
 		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["hidden"])
+	})
+
+	it("sends nothing on pagehide or hide without consent", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true, privacy: { requireConsent: true } })
+
+		await recordSpans(telemetry, ["before-consent"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		dom.fire("pagehide")
+		await tick()
+		expect(calls).toHaveLength(0)
+
+		// Dropped, not held back for a later grant.
+		setConsent(true)
+		await telemetry.flush()
+		expect(calls).toHaveLength(0)
+		await telemetry.dispose()
 	})
 })

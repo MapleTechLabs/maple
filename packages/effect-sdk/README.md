@@ -133,7 +133,7 @@ Effect.runPromise(program.pipe(Effect.provide(TracerLive)))
 Use the explicit `@maple-dev/effect-sdk/client` entry point with a compatible
 Effect 4 version (see `peerDependencies`). `Maple.layer` and `MapleFlush.make`
 can export Effect traces, logs, and metrics using the runtime's `fetch`,
-`TextEncoder`, and `TextDecoder`. `identify()` and `clearIdentity()` still
+`AbortController`, `TextEncoder`, and `TextDecoder`. `identify()` and `clearIdentity()` still
 control `user.id` on Effect spans.
 
 React Native's `window` does not imply a browser DOM. Browser sessions, replay,
@@ -313,7 +313,7 @@ const telemetry = MapleFlush.make({
 // telemetry.layer keeps the replay-session trace linking from Maple.layer.
 ```
 
-By default the client preset flushes on `pagehide` and `visibilitychange→hidden` so the tail of a session isn't lost when the tab goes away. Flush uses `fetch` with `keepalive`, **not** `navigator.sendBeacon`: Maple's ingest authenticates via the `Authorization` header (no query-param auth) and sendBeacon can't set headers, so it would 401 whenever an ingest key is set. `keepalive` carries the header and survives unload. Browsers cap a page's in-flight keepalive bodies at 64 KiB combined, so the unload flush is sent in small requests; anything past the cap goes out as a plain request and may not finish.
+By default the client preset flushes on `pagehide` and `visibilitychange→hidden` so the tail of a session isn't lost when the tab goes away. Flush uses `fetch` with `keepalive`, **not** `navigator.sendBeacon`: Maple's ingest authenticates via the `Authorization` header (no query-param auth) and sendBeacon can't set headers, so it would 401 whenever an ingest key is set. `keepalive` carries the header and survives unload, within a limit: browsers cap the in-flight keepalive bodies of one document at 64 KiB combined. The SDK keeps a 48 KiB budget for them, shared with the session writes, and OTLP uses at most 32 KiB of it. On unload each signal sends its newest items first, in a request of at most 16 KiB; whatever does not fit the budget goes out as a plain request, oldest data first, and the browser aborts a plain request when the document unloads.
 
 ## Configuration
 

@@ -1,9 +1,9 @@
 // Browser telemetry preset with explicit and unload-triggered flushes for
 // buffered traces, logs, and metric snapshots. Transport uses keepalive fetch:
 // unlike sendBeacon it can carry the ingest key's Authorization header. The
-// browser caps a page's in-flight keepalive bodies at 64 KiB combined, so every
-// POST spends from the budget shared with the session writes and goes out as a
-// plain request once that is used up.
+// browser caps a document's in-flight keepalive bodies at 64 KiB combined, so
+// every POST reserves from the budget shared with the session writes, up to a
+// ceiling of its own, and goes out as a plain request past that.
 
 import {
 	hasConsent,
@@ -37,11 +37,15 @@ import type { PrivacyOptions } from "./track.js"
 /** Default auto-flush cadence (ms), matching `Otlp.layerJson`'s 5s export interval. */
 const DEFAULT_AUTO_FLUSH_MS = 5_000
 
-/** Abort a POST after this long so it cannot block the flush queue. */
+/** Abort a POST after this long, plus an allowance per KiB of body, so it cannot block the flush queue. */
 const POST_TIMEOUT_MS = 30_000
+const POST_TIMEOUT_MS_PER_KIB = 10
 
-/** Max body of one unload request, so several fit the keepalive budget. */
-const UNLOAD_CHUNK_BYTES = 16 * 1024
+/** OTLP's ceiling within the shared 48 KiB keepalive budget; the rest stays free for the session's final rows. */
+const KEEPALIVE_CEILING_BYTES = 32 * 1024
+
+/** Max body of the newest items a hidden or unloading document sends first. */
+const UNLOAD_TAIL_BYTES = 16 * 1024
 
 const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
@@ -161,13 +165,19 @@ export interface FlushableTelemetry {
 	readonly dispose: () => Promise<void>
 }
 
-/** Keepalive-budgeted POST (see file header), aborted after {@link POST_TIMEOUT_MS}. */
+/** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
 const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
+	const json = JSON.stringify(body)
+	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
 	const controller = new AbortController()
-	const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS)
-	return postToIngest(url, headers, JSON.stringify(body), true, controller.signal).finally(() =>
-		clearTimeout(timer),
+	const timer = setTimeout(
+		() => controller.abort(new Error(`OTLP POST timed out after ${Math.round(timeoutMs / 1000)}s`)),
+		timeoutMs,
 	)
+	return postToIngest(url, headers, json, true, {
+		signal: controller.signal,
+		keepaliveCeiling: KEEPALIVE_CEILING_BYTES,
+	}).finally(() => clearTimeout(timer))
 }
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
@@ -277,8 +287,9 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const metricsState: SignalState = { disabledUntil: 0 }
 
 	// Between `pagehide` and `pageshow` (a back/forward-cache restore) a rejected
-	// POST says nothing about delivery: an unloading page rejects keepalive
-	// fetches that ingest still receives. It is not restored, cooled down or logged.
+	// request is not restored, cooled down or logged: an unloading document
+	// rejects keepalive fetches that ingest still receives. It also terminates
+	// its plain requests, and those are not sent again after a restore either.
 	let unloading = false
 	const transport: FlushTransport = {
 		post: async (url, headers, body) => {
@@ -291,7 +302,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	// Never rejects: fired as `void` from the auto-flush timer and the unload handlers.
-	const makeFlush = (maxChunkBytes?: number) =>
+	const makeFlush = (unload?: { readonly ignoreCooldown: boolean }) =>
 		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
 			if (!hasConsent()) {
 				spans.drain()
@@ -309,12 +320,15 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				metricsState,
 				transport,
 				logPrefix: "[MapleClientSDK]",
-				maxChunkBytes,
+				tailBytes: unload && UNLOAD_TAIL_BYTES,
+				ignoreCooldown: unload?.ignoreCooldown,
 			})
 		})
 	const flush = makeSerializedFlush(makeFlush())
-	// Skips the queue: the page may not live to see a queued flush start.
-	const unloadFlush = makeFlush(UNLOAD_CHUNK_BYTES)
+	// These skip the queue: the document may not live to see a queued flush
+	// start. A hidden tab usually comes back, so only `pagehide` ignores the cooldown.
+	const hiddenFlush = makeFlush({ ignoreCooldown: false })
+	const pageHideFlush = makeFlush({ ignoreCooldown: true })
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -390,13 +404,13 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 
 	const onPageHide = (): void => {
 		unloading = true
-		void unloadFlush()
+		void pageHideFlush()
 	}
 	const onPageShow = (): void => {
 		unloading = false
 	}
 	const onVisibilityChange = (): void => {
-		if (browserDocument()?.visibilityState === "hidden") void unloadFlush()
+		if (browserDocument()?.visibilityState === "hidden") void hiddenFlush()
 	}
 	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
 	if (canListen) {

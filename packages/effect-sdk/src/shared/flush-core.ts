@@ -157,10 +157,11 @@ const flushSignal = async <A>(args: {
 	readonly signal: string
 	readonly transport: FlushTransport
 	readonly logPrefix: string
-	readonly maxChunkBytes: number | undefined
+	readonly tailBytes: number | undefined
+	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
-	const { url, headers, buffer, body, state, signal, transport, logPrefix, maxChunkBytes } = args
-	if (maxChunkBytes === undefined && state.disabledUntil && Date.now() < state.disabledUntil) {
+	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
+	if (!args.ignoreCooldown && state.disabledUntil && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -169,7 +170,7 @@ const flushSignal = async <A>(args: {
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
-	const chunks = maxChunkBytes === undefined ? [batch] : chunkByBytes(batch, body, maxChunkBytes)
+	const chunks = tailBytes === undefined ? [batch] : newestFirst(batch, body, tailBytes)
 	const posted = await Promise.all(
 		chunks.map(async (chunk) => ({
 			chunk,
@@ -188,26 +189,37 @@ const flushSignal = async <A>(args: {
 	)
 	const [first] = failed
 	if (first) {
-		// One restore, in drain order, however the chunks' failures arrived.
-		buffer.restore(failed.flatMap(({ chunk }) => chunk))
+		// One restore, back in drain order.
+		buffer.restore(failed.reverse().flatMap(({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
 		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause)
 	}
 }
 
-/** Halve a batch until each encoded body fits `maxBytes` of UTF-8. A single larger item travels alone. */
-const chunkByBytes = <A>(
+/**
+ * Split a batch for a document that may be unloading: its newest items in one
+ * body of at most `maxBytes` (UTF-8), issued first so it gets the keepalive
+ * attempt, then everything older in a second. Only the tail is measured, so a
+ * large backlog is not serialized here. A larger single item travels alone.
+ */
+const newestFirst = <A>(
 	items: ReadonlyArray<A>,
 	body: (items: ReadonlyArray<A>) => unknown,
 	maxBytes: number,
 ): Array<ReadonlyArray<A>> => {
-	if (items.length <= 1 || new TextEncoder().encode(JSON.stringify(body(items))).byteLength <= maxBytes)
-		return [items]
-	const mid = items.length >> 1
-	return [
-		...chunkByBytes(items.slice(0, mid), body, maxBytes),
-		...chunkByBytes(items.slice(mid), body, maxBytes),
-	]
+	const encoder = new TextEncoder()
+	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
+	const envelope = size([])
+	let start = items.length - 1
+	let bytes = size(items.slice(start))
+	while (start > 0) {
+		// +1 for the comma that joins it to the tail.
+		const next = size(items.slice(start - 1, start)) - envelope + 1
+		if (bytes + next > maxBytes) break
+		bytes += next
+		start -= 1
+	}
+	return start > 0 ? [items.slice(start), items.slice(0, start)] : [items]
 }
 
 /**
@@ -267,10 +279,11 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  * - `noOp`: drain so the buffers don't grow unbounded, fire `onNoOp` (one-shot
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
- * - `maxChunkBytes` (browser unload flush): a page that is going away gets no
- *   later flush, so a signal in cooldown is sent anyway, and each signal goes
- *   out in bodies of at most this size so several fit a keepalive budget.
- *   Every request is issued before this returns, traces first.
+ * - `tailBytes` (browser, document hidden or unloading): each signal goes out
+ *   as at most two requests, its newest items first in a body of at most this
+ *   size. Every request is issued before this returns, traces first.
+ * - `ignoreCooldown` (browser `pagehide`): no later flush is coming, so a
+ *   signal in cooldown is sent anyway.
  */
 export const runFlush = async (args: {
 	readonly resolved: Resolved
@@ -283,7 +296,8 @@ export const runFlush = async (args: {
 	readonly transport: FlushTransport
 	readonly logPrefix: string
 	readonly onNoOp?: (() => void) | undefined
-	readonly maxChunkBytes?: number | undefined
+	readonly tailBytes?: number | undefined
+	readonly ignoreCooldown?: boolean | undefined
 }): Promise<void> => {
 	const {
 		resolved: r,
@@ -296,7 +310,8 @@ export const runFlush = async (args: {
 		transport,
 		logPrefix,
 		onNoOp,
-		maxChunkBytes,
+		tailBytes,
+		ignoreCooldown,
 	} = args
 
 	if (r.noOp) {
@@ -317,7 +332,8 @@ export const runFlush = async (args: {
 			signal: "traces",
 			transport,
 			logPrefix,
-			maxChunkBytes,
+			tailBytes,
+			ignoreCooldown,
 		}),
 		flushSignal({
 			url: r.logsUrl,
@@ -328,7 +344,8 @@ export const runFlush = async (args: {
 			signal: "logs",
 			transport,
 			logPrefix,
-			maxChunkBytes,
+			tailBytes,
+			ignoreCooldown,
 		}),
 		flushSignal({
 			url: r.metricsUrl,
@@ -339,7 +356,8 @@ export const runFlush = async (args: {
 			signal: "metrics",
 			transport,
 			logPrefix,
-			maxChunkBytes,
+			tailBytes,
+			ignoreCooldown,
 		}),
 	])
 }

@@ -44,6 +44,12 @@ describe("reserveKeepalive", () => {
 		expect(reserveKeepalive(true, 30 * 1024)).toBeTypeOf("function")
 	})
 
+	it("keeps the budget above a caller's ceiling free for the others", () => {
+		expect(reserveKeepalive(true, 30 * 1024, 32 * 1024)).toBeTypeOf("function")
+		expect(reserveKeepalive(true, 4 * 1024, 32 * 1024)).toBeUndefined()
+		expect(reserveKeepalive(true, 16 * 1024)).toBeTypeOf("function")
+	})
+
 	it("never turns keepalive on for a caller that didn't ask", () => {
 		expect(reserveKeepalive(false, 1)).toBeUndefined()
 	})
@@ -72,6 +78,7 @@ describe("transport", () => {
 	let fetchMock: ReturnType<typeof vi.fn>
 
 	beforeEach(() => {
+		resetKeepaliveBudgetForTests()
 		fetchMock = vi.fn(async () => new Response(null, { status: 202 }))
 		vi.stubGlobal("fetch", fetchMock)
 	})
@@ -119,9 +126,18 @@ describe("transport", () => {
 
 	it("hands the caller's abort signal to fetch", async () => {
 		const { signal } = new AbortController()
-		await postToIngest("https://ingest.test/x", {}, "x", true, signal)
+		await postToIngest("https://ingest.test/x", {}, "x", true, { signal })
 
 		expect(lastInit(fetchMock).signal).toBe(signal)
+	})
+
+	it("sends a body past the caller's ceiling without keepalive", async () => {
+		const body = "x".repeat(20 * 1024)
+		await postToIngest("https://ingest.test/x", {}, body, true, { keepaliveCeiling: 16 * 1024 })
+		expect(lastInit(fetchMock).keepalive).toBe(false)
+
+		await postToIngest("https://ingest.test/x", {}, body, true, { keepaliveCeiling: 32 * 1024 })
+		expect(lastInit(fetchMock).keepalive).toBe(true)
 	})
 
 	it("writes one NDJSON line per event and skips an empty batch", async () => {
