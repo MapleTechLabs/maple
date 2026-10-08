@@ -534,6 +534,15 @@ export function LogsTableView({
 		if (expandedRows.size === 0 && inspectInputsRef.current.expanded) updateInspect({ expanded: false })
 	}, [expandedRows, updateInspect])
 
+	// The empty state has no stream to hover, scroll or open, so it can never fire
+	// the events that release those holds; drop them when the list empties.
+	React.useLayoutEffect(() => {
+		if (allData.length > 0) return
+		const { hovering, scrolledAway, detail } = inspectInputsRef.current
+		if (hovering || scrolledAway || detail)
+			updateInspect({ hovering: false, scrolledAway: false, detail: false })
+	}, [allData.length, updateInspect])
+
 	// Reads the committed set from the ref (user events land after layout effects),
 	// which keeps this stable for the memoized rows.
 	const setRowExpanded = React.useCallback(

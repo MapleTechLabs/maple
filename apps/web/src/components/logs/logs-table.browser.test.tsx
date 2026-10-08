@@ -151,4 +151,20 @@ describe("LogsTableView inspect signal", () => {
 		// And the page is told, so a reload under an expanded row never leaves the tail stuck.
 		expect(latest(onChange)).toEqual({ inspecting: false, scrolledAway: false })
 	})
+
+	// The empty state renders no stream, so no pointerleave can ever release a hover hold.
+	it("releases a hover hold when the list empties under the pointer", () => {
+		const registry = Registry.make()
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<RegistryContext.Provider value={registry}>{children}</RegistryContext.Provider>
+		)
+		const onChange = vi.fn()
+		const { rerender } = render(<View onInspectingChange={onChange} />, { wrapper })
+
+		fireEvent.pointerEnter(scroller())
+		expect(latest(onChange)).toEqual({ inspecting: true, scrolledAway: false })
+
+		rerender(<View logs={[]} onInspectingChange={onChange} />)
+		expect(latest(onChange)).toEqual({ inspecting: false, scrolledAway: false })
+	})
 })
