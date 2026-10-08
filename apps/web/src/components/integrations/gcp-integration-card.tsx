@@ -6,6 +6,7 @@ import type { V2GcpConnector } from "@maple/domain/http/v2"
 import type { GcpScopeType } from "@maple/domain/primitives"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
@@ -146,9 +147,11 @@ function ScriptBlock({ script, label, secret = false }: { script: string; label:
 }
 
 function GcpConnectForm({
+	metricsAvailable,
 	onCreated,
 	onCancel,
 }: {
+	metricsAvailable: boolean
 	onCreated: (connector: V2GcpConnector) => void
 	onCancel?: () => void
 }) {
@@ -159,6 +162,8 @@ function GcpConnectForm({
 		scopeType: "project",
 		scopeId: "",
 		hostProjectId: "",
+		logsEnabled: true,
+		metricsEnabled: false,
 	})
 	const [error, setError] = useState<string | null>(null)
 	// A rule turns red once its field was left, not while the first characters are being typed.
@@ -260,6 +265,36 @@ function GcpConnectForm({
 					)}
 				</Field>
 			) : null}
+			<fieldset className="flex flex-col gap-2">
+				<legend className="mb-2 text-sm font-medium">What to collect</legend>
+				<Field className="flex-row items-center gap-2">
+					<Checkbox
+						id="gcp-logs-enabled"
+						checked={draft.logsEnabled}
+						onCheckedChange={(checked) => edit({ logsEnabled: checked === true })}
+					/>
+					<FieldLabel htmlFor="gcp-logs-enabled" className="font-normal">
+						Log forwarding
+					</FieldLabel>
+				</Field>
+				<Field className="flex-row flex-wrap items-center gap-2" disabled={!metricsAvailable}>
+					<Checkbox
+						id="gcp-metrics-enabled"
+						checked={draft.metricsEnabled}
+						disabled={!metricsAvailable}
+						onCheckedChange={(checked) => edit({ metricsEnabled: checked === true })}
+					/>
+					<FieldLabel htmlFor="gcp-metrics-enabled" className="font-normal">
+						Metrics and resources
+					</FieldLabel>
+					{metricsAvailable ? null : (
+						<FieldDescription>{LOCK_NOTES["metrics-unavailable"]}</FieldDescription>
+					)}
+				</Field>
+				{draft.logsEnabled || draft.metricsEnabled ? null : (
+					<p className="text-xs text-destructive-foreground">Choose at least one.</p>
+				)}
+			</fieldset>
 			{error !== null ? (
 				<p className="text-xs text-destructive-foreground" role="alert">
 					{error}
@@ -736,7 +771,10 @@ export function GcpIntegrationCard() {
 						</IntegrationEmptyHint>
 						{isAdmin ? (
 							<div className="w-full max-w-2xl">
-								<GcpConnectForm onCreated={handleCreated} />
+								<GcpConnectForm
+									metricsAvailable={status?.metrics_available === true}
+									onCreated={handleCreated}
+								/>
 							</div>
 						) : showNotAdmin ? (
 							<IntegrationEmptyFooter>
@@ -774,7 +812,11 @@ export function GcpIntegrationCard() {
 				</Item>
 				{adding ? (
 					<div className="border-t border-border/60 p-4">
-						<GcpConnectForm onCreated={handleCreated} onCancel={() => setAdding(false)} />
+						<GcpConnectForm
+							metricsAvailable={status?.metrics_available === true}
+							onCreated={handleCreated}
+							onCancel={() => setAdding(false)}
+						/>
 					</div>
 				) : null}
 				{connectors.map((connector) => (

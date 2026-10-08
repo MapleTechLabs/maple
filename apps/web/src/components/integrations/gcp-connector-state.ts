@@ -2,7 +2,7 @@
 // switch rules, and the add form's validation. Pure (no React, no atoms), like
 // planetscale-setup-steps.ts.
 
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
 import { GcpProjectId, GcpResourceNumber, type GcpScopeType } from "@maple/domain/primitives"
 
@@ -63,21 +63,30 @@ export interface GcpConnectorDraft {
 	readonly scopeId: string
 	/** Read only for a folder or organization; a project is its own host project. */
 	readonly hostProjectId: string
+	readonly logsEnabled: boolean
+	readonly metricsEnabled: boolean
 }
 
 const decodeCreateRequest = Schema.decodeUnknownOption(V2GcpCreateConnectorRequest)
 
-/** The create request for a draft, decoded with the API's own schema; none while a field is wrong. */
-export const gcpCreateRequest = (draft: GcpConnectorDraft) =>
-	decodeCreateRequest(
+/**
+ * The create request for a draft, decoded with the API's own schema; none while a field is wrong.
+ * The schema allows both opt-ins off and the API then refuses, so that case is none here too.
+ */
+export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpCreateConnectorRequest> => {
+	if (!draft.logsEnabled && !draft.metricsEnabled) return Option.none()
+	const optIns = { logs_enabled: draft.logsEnabled, metrics_enabled: draft.metricsEnabled }
+	return decodeCreateRequest(
 		draft.scopeType === "project"
-			? { scope_type: "project", scope_id: draft.scopeId.trim() }
+			? { scope_type: "project", scope_id: draft.scopeId.trim(), ...optIns }
 			: {
 					scope_type: draft.scopeType,
 					scope_id: draft.scopeId.trim(),
 					project_id: draft.hostProjectId.trim(),
+					...optIns,
 				},
 	)
+}
 
 export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)

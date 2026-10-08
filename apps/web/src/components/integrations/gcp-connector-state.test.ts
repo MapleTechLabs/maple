@@ -90,14 +90,18 @@ describe("gcpCreateRequest", () => {
 		scopeType: "project",
 		scopeId: "",
 		hostProjectId: "",
+		logsEnabled: true,
+		metricsEnabled: false,
 		...over,
 	})
+	const optIns = { logs_enabled: true, metrics_enabled: false }
 	const request = (over: Partial<GcpConnectorDraft>) => Option.getOrNull(gcpCreateRequest(draft(over)))
 
 	it("sends a project as its own host project, trimmed", () => {
 		expect(request({ scopeId: " acme-prod ", hostProjectId: "ignored-host" })).toEqual({
 			scope_type: "project",
 			scope_id: "acme-prod",
+			...optIns,
 		})
 	})
 
@@ -118,11 +122,13 @@ describe("gcpCreateRequest", () => {
 			scope_type: "organization",
 			scope_id: "123456789012",
 			project_id: "acme-observability",
+			...optIns,
 		})
 		expect(request({ scopeType: "folder", scopeId: "42", hostProjectId: "acme-observability" })).toEqual({
 			scope_type: "folder",
 			scope_id: "42",
 			project_id: "acme-observability",
+			...optIns,
 		})
 	})
 
@@ -132,6 +138,29 @@ describe("gcpCreateRequest", () => {
 		expect(
 			request({ scopeType: "organization", scopeId: "123456789012", hostProjectId: "Acme" }),
 		).toBeNull()
+	})
+})
+
+describe("gcpCreateRequest opt-ins", () => {
+	const draft = (logsEnabled: boolean, metricsEnabled: boolean): GcpConnectorDraft => ({
+		scopeType: "project",
+		scopeId: "acme-prod",
+		hostProjectId: "",
+		logsEnabled,
+		metricsEnabled,
+	})
+
+	it("sends a metrics-only connection in one request", () => {
+		expect(Option.getOrNull(gcpCreateRequest(draft(false, true)))).toEqual({
+			scope_type: "project",
+			scope_id: "acme-prod",
+			logs_enabled: false,
+			metrics_enabled: true,
+		})
+	})
+
+	it("needs at least one opt-in", () => {
+		expect(Option.isNone(gcpCreateRequest(draft(false, false)))).toBe(true)
 	})
 })
 
