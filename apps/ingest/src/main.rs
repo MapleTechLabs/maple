@@ -4754,15 +4754,17 @@ async fn handle_gcp_logpush(
     match result {
         Ok((response, accepted)) => {
             span_handle.record("http.response.status_code", response.status().as_u16());
-            span_handle.record("otel.status_code", "Ok");
             span_handle.record("maple.ingest.item_count", usize::from(accepted));
             if accepted {
+                span_handle.record("otel.status_code", "Ok");
                 metrics::request_completed("logs", "ok", "none", duration);
                 metrics::gcp_entry();
             } else {
-                span_handle.record("error.type", "parse");
-                span_handle.record("maple.ingest.reject_reason", gcp_logging::NOT_A_LOG_ENTRY);
-                metrics::request_completed("logs", "error", "parse", duration);
+                // Acked, but the entry is gone: an `Error` like every other
+                // rejection that loses the sender's data.
+                span_handle.record("error.type", "decode");
+                record_rejection_reason(&span_handle, 200, "decode", gcp_logging::NOT_A_LOG_ENTRY);
+                metrics::request_completed("logs", "error", "decode", duration);
                 metrics::gcp_parse_failure();
             }
             response
@@ -4849,6 +4851,7 @@ async fn handle_gcp_logpush_inner(
             body_bytes = body.len(),
             "GCP push payload is not a LogEntry; acked and dropped"
         );
+        metrics::org_data_loss(org_id, Signal::Logs.path(), "decode");
         state
             .gcp_resolver
             .record_health(connector_id, Some(gcp_logging::NOT_A_LOG_ENTRY))
@@ -9324,18 +9327,14 @@ mod tests {
         let (state, _store, queue_dir) =
             gcp_logpush_state("gcp-logpush-auth", "http://127.0.0.1:1").await;
 
-        for (connector_id, secret) in [
-            ("gcp_conn_1", None),
-            ("gcp_conn_1", Some("wrong-secret")),
-            ("gcp_conn_unknown", Some("gcp-secret")),
-            ("not/a connector id", Some("gcp-secret")),
+        for (case, connector_id, secret) in [
+            ("missing secret", "gcp_conn_1", None),
+            ("wrong secret", "gcp_conn_1", Some("wrong-secret")),
+            ("unknown connector", "gcp_conn_unknown", Some("gcp-secret")),
+            ("malformed id", "not/a connector id", Some("gcp-secret")),
         ] {
             let response = gcp_push(&state, connector_id, secret, GCP_LOG_ENTRY).await;
-            assert_eq!(
-                response.status(),
-                StatusCode::UNAUTHORIZED,
-                "{connector_id} with secret {secret:?}"
-            );
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{case}");
         }
 
         drop(std::fs::remove_dir_all(queue_dir));
