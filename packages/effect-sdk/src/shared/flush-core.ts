@@ -157,7 +157,7 @@ const flushSignal = async <A>(args: {
 	readonly signal: string
 	readonly transport: FlushTransport
 	readonly logPrefix: string
-	readonly tailBytes: number | undefined
+	readonly tailBytes: (() => number) | undefined
 	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
 	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
@@ -170,7 +170,10 @@ const flushSignal = async <A>(args: {
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
-	const chunks = tailBytes === undefined ? [batch] : newestFirst(batch, body, tailBytes)
+	// Asked per signal, right before the split: the room depends on what the
+	// signals before this one have just reserved.
+	const tail = tailBytes?.()
+	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
 	const posted = await Promise.all(
 		chunks.map(async (chunk) => ({
 			chunk,
@@ -197,10 +200,10 @@ const flushSignal = async <A>(args: {
 }
 
 /**
- * Split a batch for a document that may be unloading: its newest items in one
- * body of at most `maxBytes` (UTF-8), issued first so it gets the keepalive
+ * Split a batch for a document that may be unloading: the newest items that
+ * fit `maxBytes` (UTF-8) in one body, issued first so it gets the keepalive
  * attempt, then everything older in a second. Only the tail is measured, so a
- * large backlog is not serialized here. A larger single item travels alone.
+ * large backlog is not serialized here. No split when nothing or everything fits.
  */
 const newestFirst = <A>(
 	items: ReadonlyArray<A>,
@@ -210,8 +213,8 @@ const newestFirst = <A>(
 	const encoder = new TextEncoder()
 	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
 	const envelope = size([])
-	let start = items.length - 1
-	let bytes = size(items.slice(start))
+	let start = items.length
+	let bytes = envelope
 	while (start > 0) {
 		// +1 for the comma that joins it to the tail.
 		const next = size(items.slice(start - 1, start)) - envelope + 1
@@ -219,7 +222,7 @@ const newestFirst = <A>(
 		bytes += next
 		start -= 1
 	}
-	return start > 0 ? [items.slice(start), items.slice(0, start)] : [items]
+	return start > 0 && start < items.length ? [items.slice(start), items.slice(0, start)] : [items]
 }
 
 /**
@@ -280,8 +283,9 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
  * - `tailBytes` (browser, document hidden or unloading): each signal goes out
- *   as at most two requests, its newest items first in a body of at most this
- *   size. Every request is issued before this returns, traces first.
+ *   as at most two requests, its newest items first in a body of at most the
+ *   size this returns for it. Every request is issued before `runFlush`
+ *   returns, traces first.
  * - `ignoreCooldown` (browser `pagehide`): no later flush is coming, so a
  *   signal in cooldown is sent anyway.
  */
@@ -296,7 +300,7 @@ export const runFlush = async (args: {
 	readonly transport: FlushTransport
 	readonly logPrefix: string
 	readonly onNoOp?: (() => void) | undefined
-	readonly tailBytes?: number | undefined
+	readonly tailBytes?: (() => number) | undefined
 	readonly ignoreCooldown?: boolean | undefined
 }): Promise<void> => {
 	const {

@@ -189,39 +189,48 @@ describe("runFlush", () => {
 			const tracesState: SignalState = { disabledUntil: 0 }
 			const sent: Array<Array<string>> = []
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
-
-			const flushed = runFlush({
-				resolved,
-				spans,
-				logs: makeLogBuffer(),
-				metrics: makeMetricBuffer(),
-				tracesState,
-				logsState: { disabledUntil: 0 },
-				metricsState: { disabledUntil: 0 },
-				transport: {
-					post: async (_url, _headers, body) => {
-						const { resourceSpans } = body as {
-							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
-						}
-						sent.push(resourceSpans[0]!.scopeSpans[0]!.spans.map((span) => span.name))
-						// The newest request fails last: completion order must not decide the restore order.
-						if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
-						throw new Error("collector unavailable")
+			const flush = (tailBytes: number) =>
+				runFlush({
+					resolved,
+					spans,
+					logs: makeLogBuffer(),
+					metrics: makeMetricBuffer(),
+					tracesState,
+					logsState: { disabledUntil: 0 },
+					metricsState: { disabledUntil: 0 },
+					transport: {
+						post: async (_url, _headers, body) => {
+							const { resourceSpans } = body as {
+								resourceSpans: Array<{
+									scopeSpans: Array<{ spans: Array<{ name: string }> }>
+								}>
+							}
+							sent.push(resourceSpans[0]!.scopeSpans[0]!.spans.map((span) => span.name))
+							// The newest request fails last: completion order must not decide the restore order.
+							if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
+							throw new Error("collector unavailable")
+						},
 					},
-				},
-				logPrefix: "[test]",
-				// Smaller than any span: the newest one travels alone.
-				tailBytes: 1,
-			})
+					logPrefix: "[test]",
+					tailBytes: () => tailBytes,
+					ignoreCooldown: true,
+				})
+
+			// Room for one span, not for two.
+			const flushed = flush(600)
 			// Both requests were issued before `runFlush` returned.
 			expect(sent).toEqual([["d"], ["a", "b", "c"]])
 			yield* recordSpan(spans, "newer")
 			yield* Effect.promise(() => flushed)
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
-			errorSpy.mockRestore()
-			expect(spans.drain().map((span) => span.name)).toEqual(["a", "b", "c", "d", "newer"])
 			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
+
+			// No room for even the newest item: one request, in drain order.
+			sent.length = 0
+			yield* Effect.promise(() => flush(1))
+			errorSpy.mockRestore()
+			expect(sent).toEqual([["a", "b", "c", "d", "newer"]])
 		}),
 	)
 
