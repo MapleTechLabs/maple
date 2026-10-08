@@ -20,7 +20,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { ScrapeTargetsService } from "./ScrapeTargetsService"
+import { ScrapeTargetsService, summarizeScrapeResults } from "./ScrapeTargetsService"
 
 const trackedDbs: TestDb[] = []
 const originalFetch = globalThis.fetch
@@ -797,5 +797,53 @@ describe("ScrapeTargetsService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/ScrapeTargetValidationError")
 			assert.include(error.message, "only valid for PlanetScale targets")
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})
+
+describe("summarizeScrapeResults", () => {
+	it("folds each target's results in input order without losing the newest report", () => {
+		const a = asScrapeTargetId("11111111-1111-4111-8111-111111111111")
+		const b = asScrapeTargetId("22222222-2222-4222-8222-222222222222")
+		const summary = summarizeScrapeResults([
+			{ targetId: a, scrapedAt: 3_000, error: null },
+			{ targetId: b, scrapedAt: 2_000, error: "timeout", subTargetKey: "main" },
+			{ targetId: a, scrapedAt: 1_000, error: "connection refused" },
+			{ targetId: b, scrapedAt: 1_500, error: "boom" },
+		])
+
+		assert.strictEqual(summary.size, 2)
+		// Success then failure: the error wins, lastScrapeAt stays at the good scrape,
+		// updatedAt follows the last applied result while reportedAt is the max.
+		assert.deepStrictEqual(summary.get(a), {
+			lastScrapeAt: new Date(3_000),
+			lastScrapeError: "connection refused",
+			updatedAt: new Date(1_000),
+			reportedAt: new Date(3_000),
+		})
+		assert.deepStrictEqual(summary.get(b), {
+			lastScrapeAt: null,
+			lastScrapeError: "boom",
+			updatedAt: new Date(1_500),
+			reportedAt: new Date(2_000),
+		})
+	})
+
+	it("prefixes sub-target errors and clears the error on a later success", () => {
+		const a = asScrapeTargetId("11111111-1111-4111-8111-111111111111")
+		const failed = summarizeScrapeResults([
+			{ targetId: a, scrapedAt: 1_000, error: "timeout", subTargetKey: "dev" },
+		])
+		assert.strictEqual(failed.get(a)?.lastScrapeError, "[branch:dev] timeout")
+
+		const recovered = summarizeScrapeResults([
+			{ targetId: a, scrapedAt: 1_000, error: "timeout", subTargetKey: "dev" },
+			{ targetId: a, scrapedAt: 2_000, error: null, subTargetKey: "dev" },
+		])
+		assert.deepStrictEqual(recovered.get(a), {
+			lastScrapeAt: new Date(2_000),
+			lastScrapeError: null,
+			updatedAt: new Date(2_000),
+			reportedAt: new Date(2_000),
+		})
 	})
 })
