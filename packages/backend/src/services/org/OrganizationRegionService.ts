@@ -118,6 +118,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 					key: orgId,
 					schema: RegionRead,
 					ttlSeconds: (entry) => Math.ceil(regionTtlMs(entry, entry.readAtMs) / 1000),
+					readTimeoutMs: 1_000,
 				},
 				readDirectory(read, orgId).pipe(
 					Effect.filterOrFail(
