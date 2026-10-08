@@ -295,14 +295,14 @@ const LogRow = React.memo(function LogRow({
 					{chips.length > 0 && (
 						// A chip that does not fit wraps onto a hidden second line, so chips
 						// drop out whole instead of clipping mid-word; a narrow stream shows none.
-						<span className="ml-auto hidden h-[18px] min-w-0 flex-wrap gap-1 overflow-hidden pl-2 @3xl/log:flex">
+						<span className="ml-auto hidden h-[18px] min-w-0 flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex">
 							{chips.map((chip) => (
 								<LogAttributeChip
 									key={chip.key}
 									attrKey={chip.key}
 									value={chip.value}
 									tone={chip.tone}
-									className="max-w-full shrink"
+									className="max-w-full"
 								/>
 							))}
 						</span>
@@ -335,7 +335,6 @@ const LogRow = React.memo(function LogRow({
 							className={ROW_ACTION_CLASS}
 						>
 							<PulseIcon size={13} />
-							<span>Trace</span>
 						</Link>
 					)}
 					<RowAction
@@ -357,7 +356,7 @@ const LogRow = React.memo(function LogRow({
 })
 
 const ROW_ACTION_CLASS =
-	"inline-flex h-5 items-center gap-1 rounded px-1.5 text-3xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex size-5 items-center justify-center rounded text-3xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 
 function RowAction({
 	label,
