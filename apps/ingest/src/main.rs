@@ -930,7 +930,6 @@ struct ConnectorRow {
 #[derive(Clone, Debug)]
 struct GcpConnectorRow {
     org_id: String,
-    project_id: String,
     self_managed: bool,
     clickhouse_ready: bool,
 }
@@ -997,21 +996,17 @@ impl CloudflareConnectorIdentity {
 #[derive(Clone)]
 struct GcpConnectorIdentity {
     org_id: String,
-    project_id: String,
     secret_key_id: String,
 }
 
 impl GcpConnectorIdentity {
-    fn into_resolved(self, routing: &OrgRouting) -> ResolvedGcpConnector {
-        ResolvedGcpConnector {
-            project_id: self.project_id,
-            key: ResolvedIngestKey {
-                org_id: self.org_id,
-                key_type: IngestKeyType::Connector,
-                key_id: self.secret_key_id,
-                self_managed: routing.self_managed,
-                clickhouse_ready: routing.clickhouse_ready,
-            },
+    fn into_resolved(self, routing: &OrgRouting) -> ResolvedIngestKey {
+        ResolvedIngestKey {
+            org_id: self.org_id,
+            key_type: IngestKeyType::Connector,
+            key_id: self.secret_key_id,
+            self_managed: routing.self_managed,
+            clickhouse_ready: routing.clickhouse_ready,
         }
     }
 }
@@ -1221,11 +1216,6 @@ struct ResolvedCloudflareConnector {
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
     clickhouse_ready: bool,
-}
-
-struct ResolvedGcpConnector {
-    project_id: String,
-    key: ResolvedIngestKey,
 }
 
 #[derive(Clone, Copy)]
@@ -4820,14 +4810,11 @@ async fn handle_gcp_logpush_inner(
             warn!(connector_id, "Invalid GCP connector credentials");
             unauthorized()
         })?;
-    let org_id = resolved.key.org_id.as_str();
+    let org_id = resolved.org_id.as_str();
 
     Span::current().record("maple.org_id", org_id);
-    Span::current().record("maple.ingest.self_managed", resolved.key.self_managed);
-    Span::current().record(
-        "maple.ingest.clickhouse_ready",
-        resolved.key.clickhouse_ready,
-    );
+    Span::current().record("maple.ingest.self_managed", resolved.self_managed);
+    Span::current().record("maple.ingest.clickhouse_ready", resolved.clickhouse_ready);
 
     let _org_inflight_permit = state
         .org_inflight_limiter
@@ -4867,7 +4854,6 @@ async fn handle_gcp_logpush_inner(
         &gcp_logging::Connector {
             id: connector_id,
             org_id,
-            project_id: &resolved.project_id,
         },
         current_time_unix_nano(),
     );
@@ -4877,7 +4863,7 @@ async fn handle_gcp_logpush_inner(
         PayloadFormat::Protobuf,
         None,
         &DecodedPayload::Logs(request),
-        &resolved.key,
+        &resolved,
     )
     .await
     {
@@ -5953,7 +5939,7 @@ impl GcpConnectorResolver {
         &self,
         connector_id: &str,
         raw_secret: &str,
-    ) -> Result<Option<ResolvedGcpConnector>, String> {
+    ) -> Result<Option<ResolvedIngestKey>, String> {
         let secret_hash = hash_ingest_key(raw_secret, &self.lookup_hmac_key)?;
         let cache_key = (connector_id.to_owned(), secret_hash);
         if let Some(identity) = self.cache.get(&cache_key).await {
@@ -5979,7 +5965,6 @@ impl GcpConnectorResolver {
         };
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
-            project_id: row.project_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
         };
 
@@ -6458,7 +6443,7 @@ impl KeyStore for PostgresKeyStore {
         let client = self.client().await?;
         // No `enabled` column: deleting the row is how a connector is turned off.
         let sql = format!(
-            "SELECT c.org_id, c.project_id, \
+            "SELECT c.org_id, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
                     COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
              FROM gcp_connectors c \
@@ -6480,7 +6465,6 @@ impl KeyStore for PostgresKeyStore {
         };
         Ok(Some(GcpConnectorRow {
             org_id: row.get("org_id"),
-            project_id: row.get("project_id"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
         }))
@@ -9278,7 +9262,6 @@ mod tests {
             "gcp-secret",
             GcpConnectorRow {
                 org_id: "org_gcp".to_owned(),
-                project_id: "my-project".to_owned(),
                 self_managed: true,
                 clickhouse_ready: true,
             },

@@ -21,7 +21,6 @@ type JsonObject = JsonMap<String, JsonValue>;
 pub struct Connector<'a> {
     pub id: &'a str,
     pub org_id: &'a str,
-    pub project_id: &'a str,
 }
 
 const HTTP_REQUEST_ATTRIBUTES: &[(&str, &str)] = &[
@@ -88,12 +87,18 @@ fn resource_attributes(entry: &JsonObject, connector: &Connector<'_>) -> Vec<Key
         attribute("maple_ingest_key_type", "connector"),
         attribute("maple_gcp_connector_id", connector.id),
         attribute("cloud.provider", "gcp"),
-        attribute(
-            "cloud.account.id",
-            label("project_id").unwrap_or(connector.project_id),
-        ),
         attribute("gcp.resource.type", resource_type),
     ];
+    // An aggregated sink delivers entries from many projects, so the project
+    // is the entry's own. Entries logged against an organization, folder or
+    // billing account have none.
+    let project = label("project_id").or_else(|| {
+        let (project, _) = text(entry, "logName")?
+            .strip_prefix("projects/")?
+            .split_once("/logs/")?;
+        Some(project)
+    });
+    push(&mut attributes, "cloud.account.id", project);
     push(
         &mut attributes,
         "cloud.platform",
@@ -385,7 +390,6 @@ mod tests {
     const CONNECTOR: Connector<'static> = Connector {
         id: "gcp_conn_1",
         org_id: "org_1",
-        project_id: "connector-project",
     };
 
     fn convert(entry: JsonValue) -> (HashMap<String, String>, LogRecord) {
@@ -688,9 +692,51 @@ mod tests {
             (record.severity_text.as_str(), record.severity_number),
             ("", 0)
         );
-        // No `resource` at all: the connector's project stands in.
-        assert_eq!(resource["cloud.account.id"], "connector-project");
+        // No `resource` at all: the project comes from `logName`.
+        assert_eq!(resource["cloud.account.id"], "my-project");
         assert_eq!(resource["service.name"], "gcp/unknown");
+    }
+
+    #[test]
+    fn cloud_account_id_is_the_entry_project_when_it_has_one() {
+        // A child project's entry, delivered through an aggregated sink.
+        let (child, _) = convert(json!({
+            "logName": "projects/child-project/logs/stdout",
+            "textPayload": "hello",
+            "resource": {
+                "type": "cloud_run_revision",
+                "labels": { "project_id": "child-project", "service_name": "api" }
+            }
+        }));
+        assert_eq!(child["cloud.account.id"], "child-project");
+
+        let (log_name_only, _) = convert(json!({
+            "logName": "projects/other-project/logs/cloudaudit.googleapis.com%2Factivity",
+            "textPayload": "hello",
+            "resource": { "type": "global", "labels": {} }
+        }));
+        assert_eq!(log_name_only["cloud.account.id"], "other-project");
+
+        let (organization, record) = convert(json!({
+            "logName": "organizations/123456789/logs/cloudaudit.googleapis.com%2Factivity",
+            "severity": "NOTICE",
+            "protoPayload": {
+                "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+                "serviceName": "cloudresourcemanager.googleapis.com",
+                "methodName": "SetIamPolicy"
+            },
+            "resource": {
+                "type": "organization",
+                "labels": { "organization_id": "123456789" }
+            }
+        }));
+        assert!(!organization.contains_key("cloud.account.id"));
+        assert_eq!(organization["service.name"], "gcp/organization");
+        assert_eq!(
+            organization["gcp.resource.labels.organization_id"],
+            "123456789"
+        );
+        assert_eq!(body_of(&record), "SetIamPolicy");
     }
 
     #[test]
