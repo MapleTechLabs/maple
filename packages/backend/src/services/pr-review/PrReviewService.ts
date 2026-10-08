@@ -1460,6 +1460,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				number: number,
 				tracked: ReadonlyArray<TrackedFinding>,
 				nowMs: number,
+				/** Files changed since the last review; unknown leaves resolved threads to the reviewer. */
+				changedPaths: ReadonlySet<string> | undefined,
 			) {
 				const open = tracked.filter((finding) => finding.status === "open")
 				const commented = tracked.filter((finding) => finding.commentId !== null)
@@ -1489,7 +1491,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					},
 					{ discard: true },
 				)
-				const dismissed = dismissedFindings(open, threads)
+				const dismissed = dismissedFindings(open, threads, changedPaths)
 				yield* setFindingStatus(
 					dismissed.map((finding) => finding.id),
 					{ status: "dismissed", updatedAt: msToDate(nowMs) },
@@ -1504,9 +1506,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 			/**
 			 * What a later push's kickoff says: the last reviewed head, what changed since, and the
-			 * findings still open. Threads a person resolved or answered "won't fix" are marked
-			 * dismissed first, so the reviewer never re-raises them. Provider reads that fail degrade
-			 * to less context, never to a failed review.
+			 * findings still open. Threads answered "won't fix", or resolved on a file this push left
+			 * alone, are marked dismissed first, so the reviewer never re-raises them. Provider reads
+			 * that fail degrade to less context, never to a failed review.
 			 */
 			const followUpFor = Effect.fn("PrReviewService.followUpFor")(function* (
 				orgId: OrgId,
@@ -1536,7 +1538,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const previousSha = previous[0]?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
-				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs)
 				const upstream = yield* providerFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
@@ -1552,6 +1553,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							Effect.orElseSucceed(() => undefined),
 						)
 				}
+				// A rewritten history has no trustworthy delta, so resolved threads stay with the reviewer.
+				const changedPaths =
+					changes?.paths === undefined || changes.rewritten ? undefined : new Set(changes.paths)
+				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
@@ -1930,7 +1935,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
-							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs)
+							// No delta on close: reactions and dismissal replies only.
+							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs, undefined)
 							yield* annotate("synced", { "maple.pr_review.merged": job.merged })
 						}
 					}
