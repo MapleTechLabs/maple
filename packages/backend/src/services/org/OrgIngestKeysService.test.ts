@@ -6,7 +6,13 @@ import { hashIngestKey } from "@maple/db"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	makeStatementRecorder,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`
@@ -291,38 +297,38 @@ describe("OrgIngestKeysService", () => {
 
 	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
 		const testDb = createTestDb(trackedDbs)
-		const orgs = ["org_a", "org_b", "org_c", "org_d"].map(asOrgId)
+		const user = asUserId("user_a")
+		const seededOrgs = ["org_a", "org_b", "org_c"].map(asOrgId)
+		const newOrg = asOrgId("org_d")
+		const orgs = [...seededOrgs, newOrg]
+		const coldBatch = makeStatementRecorder()
+		const warmBatch = makeStatementRecorder()
 		return Effect.gen(function* () {
 			// Seed three orgs through one instance, then read through a fresh one so
 			// its memo is cold, like a new isolate.
-			const seeded = yield* Effect.forEach(orgs.slice(0, 3), (orgId) =>
-				OrgIngestKeysService.getOrCreate(orgId, asUserId("user_a")),
+			const seeded = yield* Effect.forEach(seededOrgs, (orgId) =>
+				OrgIngestKeysService.getOrCreate(orgId, user),
 			).pipe(Effect.provide(makeLayer(testDb)))
-
-			const statements: Array<string> = []
-			const runStatement = testDb.pglite.query
-			testDb.pglite.query = function (...args: Parameters<typeof runStatement>) {
-				statements.push(args[0].trim().split(/\s+/)[0]?.toUpperCase() ?? "")
-				return runStatement.apply(testDb.pglite, args)
-			} as typeof runStatement
 
 			const keys = yield* Effect.gen(function* () {
 				const service = yield* OrgIngestKeysService
-				const first = yield* service.getOrCreateMany([...orgs, orgs[0]!], asUserId("user_a"))
-				const before = statements.length
-				// Every org is memoized now: no statements at all.
-				yield* service.getOrCreateMany(orgs, asUserId("user_a"))
-				assert.strictEqual(statements.length, before)
-				return first
+				const cold = yield* service
+					.getOrCreateMany([...orgs, ...seededOrgs], user)
+					.pipe(Effect.withTracer(coldBatch.tracer))
+				yield* service.getOrCreateMany(orgs, user).pipe(Effect.withTracer(warmBatch.tracer))
+				return cold
 			}).pipe(Effect.provide(makeLayer(testDb)))
 
 			// One batched SELECT for all four orgs, then org_d's first-use create path.
-			assert.deepStrictEqual(statements, ["SELECT", "SELECT", "INSERT", "SELECT"])
+			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "SELECT"])
+			// Every org is memoized after the first batch: no statements at all.
+			assert.deepStrictEqual(warmBatch.verbs(), [])
 			assert.strictEqual(keys.size, 4)
-			seeded.forEach((response, index) => {
-				assert.strictEqual(keys.get(orgs[index]!)?.publicKey, response.publicKey)
-			})
-			assert.isTrue(keys.get(orgs[3]!)?.publicKey.startsWith("maple_pk_"))
+			assert.deepStrictEqual(
+				seededOrgs.map((orgId) => keys.get(orgId)?.publicKey),
+				seeded.map((response) => response.publicKey),
+			)
+			assert.isTrue(keys.get(newOrg)?.publicKey.startsWith("maple_pk_"))
 		})
 	})
 })

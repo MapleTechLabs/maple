@@ -17,7 +17,7 @@ import {
 	type ResolvedIngestKey,
 } from "@maple/db"
 import { eq, inArray } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
@@ -225,38 +225,49 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				userId: UserId,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const rows = new Map<OrgId, typeof orgIngestKeys.$inferSelect>()
-				const distinct = [...new Set(orgIds)]
-				distinct.forEach((orgId) => {
+				const [memoHits, misses] = Arr.partition(Arr.dedupe(orgIds), (orgId) => {
 					const memoized = ingestKeysMemo.get(orgId)
-					if (memoized !== undefined && memoized.expiresAt > now) rows.set(orgId, memoized.row)
+					return memoized !== undefined && memoized.expiresAt > now
+						? Result.succeed([orgId, memoized.row] as const)
+						: Result.fail(orgId)
 				})
-				const missing = distinct.filter((orgId) => !rows.has(orgId))
 				yield* Effect.annotateCurrentSpan({
-					"ingestKeys.requested": rows.size + missing.length,
-					"ingestKeys.memoMisses": missing.length,
+					"ingestKeys.requested": memoHits.length + misses.length,
+					"ingestKeys.memoMisses": misses.length,
 				})
-				if (missing.length > 0) {
-					const selected = yield* database
-						.execute((db) =>
-							db.select().from(orgIngestKeys).where(inArray(orgIngestKeys.orgId, missing)),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-					selected.forEach((row) => {
-						rows.set(row.orgId, row)
-						ingestKeysMemo.set(row.orgId, { row, expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS })
-					})
-				}
+
+				const selected = Arr.isArrayNonEmpty(misses)
+					? yield* database
+							.execute((db) =>
+								db.select().from(orgIngestKeys).where(inArray(orgIngestKeys.orgId, misses)),
+							)
+							.pipe(Effect.mapError(toPersistenceError))
+					: []
 				yield* Effect.forEach(
-					missing.filter((orgId) => !rows.has(orgId)),
-					(orgId) => ensureRow(orgId, userId).pipe(Effect.map((row) => rows.set(orgId, row))),
+					selected,
+					(row) =>
+						Effect.sync(() =>
+							ingestKeysMemo.set(row.orgId, {
+								row,
+								expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS,
+							}),
+						),
 					{ discard: true },
 				)
-				return new Map(
-					yield* Effect.forEach([...rows], ([orgId, row]) =>
-						Effect.map(toResponse(row), (response) => [orgId, response] as const),
-					),
+
+				const withoutRow = Arr.difference(
+					misses,
+					selected.map((row) => row.orgId),
 				)
+				const created = yield* Effect.forEach(withoutRow, (orgId) =>
+					ensureRow(orgId, userId).pipe(Effect.map((row) => [orgId, row] as const)),
+				)
+				const responses = yield* Effect.forEach(
+					[...memoHits, ...selected.map((row) => [row.orgId, row] as const), ...created],
+					([orgId, row]) =>
+						toResponse(row).pipe(Effect.map((response) => [orgId, response] as const)),
+				)
+				return new Map(responses)
 			})
 
 			const rerollPublic = Effect.fn("OrgIngestKeysService.rerollPublic")(function* (

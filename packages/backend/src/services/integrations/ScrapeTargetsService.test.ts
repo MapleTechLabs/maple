@@ -11,7 +11,13 @@ import {
 } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { runScrapeCheckRetention } from "@maple/backend/services/integrations/scrape-check-retention"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	makeStatementRecorder,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { ScrapeTargetsService } from "./ScrapeTargetsService"
@@ -180,17 +186,12 @@ describe("ScrapeTargetsService", () => {
 
 	it.effect("recordScrapeResults writes every target of a report in one UPDATE", () => {
 		const testDb = createTestDb(trackedDbs)
-		const statements: Array<string> = []
-		const runStatement = testDb.pglite.query
-		testDb.pglite.query = function (...args: Parameters<typeof runStatement>) {
-			statements.push(args[0].trim().split(/\s+/)[0]?.toUpperCase() ?? "")
-			return runStatement.apply(testDb.pglite, args)
-		} as typeof runStatement
+		const recorder = makeStatementRecorder()
 		return Effect.gen(function* () {
 			const service = yield* ScrapeTargetsService
 			const orgId = asOrgId("org_1")
-			// Seeded with SQL, not create(), whose background probe would interleave
-			// its own statements with the ones counted below.
+			// Seeded with SQL, not create(), whose background probe would run its own
+			// recordScrapeResults alongside the one under test.
 			const [ok, failing, stale, ...rest] = yield* Effect.forEach(
 				["ok", "failing", "stale", "t4", "t5", "t6"],
 				(name, index) => {
@@ -222,16 +223,17 @@ describe("ScrapeTargetsService", () => {
 				]),
 			)
 
-			statements.length = 0
-			yield* service.recordScrapeResults([
-				{ targetId: ok.id, scrapedAt, error: null },
-				{ targetId: failing.id, scrapedAt, error: null },
-				{ targetId: failing.id, scrapedAt: scrapedAt + 15_000, error: "HTTP 503" },
-				{ targetId: stale.id, scrapedAt, error: "HTTP 500" },
-				...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
-			])
+			yield* service
+				.recordScrapeResults([
+					{ targetId: ok.id, scrapedAt, error: null },
+					{ targetId: failing.id, scrapedAt, error: null },
+					{ targetId: failing.id, scrapedAt: scrapedAt + 15_000, error: "HTTP 503" },
+					{ targetId: stale.id, scrapedAt, error: "HTTP 500" },
+					...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
+				])
+				.pipe(Effect.withTracer(recorder.tracer))
 			// 6 targets: 1 UPDATE + 1 SELECT (org ids) + 1 INSERT (check rows).
-			assert.deepStrictEqual(statements, ["UPDATE", "SELECT", "INSERT"])
+			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "INSERT"])
 
 			const okRow = yield* service.get(orgId, ok.id)
 			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())
