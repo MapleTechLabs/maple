@@ -30,7 +30,9 @@ const WORKER = ["worker", "acme-prod", "europe-west1"]
 
 const valuesOf = (service: (typeof GCP_INFRA_SERVICE_IDS)[number], points: ReadonlyArray<GcpMetricPoint>) =>
 	gcpWorkloads(service, points).map((workload) =>
-		Object.fromEntries(GCP_INFRA_COLUMNS[service].map((spec, index) => [spec.label, workload.values[index]])),
+		Object.fromEntries(
+			GCP_INFRA_COLUMNS[service].map((spec, index) => [spec.label, workload.values[index]]),
+		),
 	)
 
 describe("GCP_INFRA_COLUMNS", () => {
@@ -172,7 +174,11 @@ describe("formatGcpValue", () => {
 
 describe("gcpInfraTabs", () => {
 	it("shows the reporting services in tab order, then the inventory", () => {
-		expect(gcpInfraTabs(["cloudSql", "cloudRun"], undefined)).toEqual(["cloudRun", "cloudSql", "resources"])
+		expect(gcpInfraTabs(["cloudSql", "cloudRun"], undefined)).toEqual([
+			"cloudRun",
+			"cloudSql",
+			"resources",
+		])
 		expect(gcpInfraTabs([], undefined)).toEqual(["resources"])
 	})
 

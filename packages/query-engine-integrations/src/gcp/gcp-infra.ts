@@ -22,9 +22,7 @@ import {
 } from "@maple/query-engine/ch/tables"
 
 /** Both metrics tables declare the columns read here alike. */
-type MetricsAccessor =
-	| ColumnAccessor<typeof MetricsSum.columns>
-	| ColumnAccessor<typeof MetricsGauge.columns>
+type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>
 
 /**
  * Every curated metric of one service: one row per workload (`keys`, the values of the service's

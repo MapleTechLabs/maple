@@ -143,7 +143,9 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Acked", "count", (m) => m.total(`${SUBSCRIPTION}.ack_message_count`)),
 		column("Dead-lettered", "count", (m) => m.total(`${SUBSCRIPTION}.dead_letter_message_count`)),
 		// Push subscriptions only.
-		column("Push errors", "errorRate", (m) => failedShare(m, `${SUBSCRIPTION}.push_request_count`, "ack")),
+		column("Push errors", "errorRate", (m) =>
+			failedShare(m, `${SUBSCRIPTION}.push_request_count`, "ack"),
+		),
 	],
 	loadBalancing: [
 		column("Requests", "count", (m) => m.total(`${HTTPS}.request_count`)),
@@ -228,9 +230,7 @@ export const gcpInfraTabs = (
 	reporting: ReadonlyArray<GcpInfraServiceId>,
 	requested: GcpInfraTab | undefined,
 ): ReadonlyArray<GcpInfraTab> =>
-	GCP_INFRA_TABS.filter(
-		(tab) => tab === GCP_RESOURCES_TAB || tab === requested || reporting.includes(tab),
-	)
+	GCP_INFRA_TABS.filter((tab) => tab === GCP_RESOURCES_TAB || tab === requested || reporting.includes(tab))
 
 export type GcpInfraNotice =
 	/** A connector's most recent metrics read failed or was incomplete. */
@@ -262,7 +262,8 @@ export function gcpInfraNotice(
 /** Why the inventory may be stale: the first failing resource sync, or null. */
 export const gcpResourcesError = (
 	connectors: ReadonlyArray<Pick<V2GcpConnector, "last_resources_error">>,
-): string | null => connectors.find((connector) => connector.last_resources_error !== null)?.last_resources_error ?? null
+): string | null =>
+	connectors.find((connector) => connector.last_resources_error !== null)?.last_resources_error ?? null
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
 	"cloudresourcemanager.googleapis.com/Project": "Project",

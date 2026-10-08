@@ -459,12 +459,12 @@ export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsRespo
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
-export class GcpInfraPresenceRequest extends Schema.Class<GcpInfraPresenceRequest>(
-	"GcpInfraPresenceRequest",
-)({
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-}) {}
+export class GcpInfraPresenceRequest extends Schema.Class<GcpInfraPresenceRequest>("GcpInfraPresenceRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
 
 export class GcpInfraPresenceResponse extends Schema.Class<GcpInfraPresenceResponse>(
 	"GcpInfraPresenceResponse",
@@ -479,20 +479,20 @@ export class GcpInfraMetricsRequest extends Schema.Class<GcpInfraMetricsRequest>
 	service: GcpInfraService,
 }) {}
 
-export class GcpInfraMetricsResponse extends Schema.Class<GcpInfraMetricsResponse>(
-	"GcpInfraMetricsResponse",
-)({
-	/** One row per workload, metric and label value: see `gcpInfraMetricsSQL`. */
-	data: Schema.Array(
-		Schema.Struct({
-			keys: Schema.Array(Schema.String),
-			metric: Schema.String,
-			label: Schema.String,
-			total: Schema.Number,
-			samples: Schema.Number,
-		}),
-	),
-}) {}
+export class GcpInfraMetricsResponse extends Schema.Class<GcpInfraMetricsResponse>("GcpInfraMetricsResponse")(
+	{
+		/** One row per workload, metric and label value: see `gcpInfraMetricsSQL`. */
+		data: Schema.Array(
+			Schema.Struct({
+				keys: Schema.Array(Schema.String),
+				metric: Schema.String,
+				label: Schema.String,
+				total: Schema.Number,
+				samples: Schema.Number,
+			}),
+		),
+	},
+) {}
 
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
 // analytics and per-Worker invocation analytics from the direct-integration

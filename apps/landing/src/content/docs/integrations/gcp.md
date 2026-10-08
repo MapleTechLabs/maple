@@ -67,6 +67,7 @@ Then check the data:
 1. Open [Logs](/docs/explore/logs) and look for a service named after one of your Cloud Run services, functions, containers or instances.
 2. In the [metrics explorer](/docs/explore/metrics), search for `gcp.`.
 3. Under **Dashboards → Browse templates**, create the **Google Cloud** dashboard. It takes an optional project ID.
+4. Open **Infrastructure → Google Cloud** for a table of your workloads per service.
 
 ## Permissions
 
@@ -182,6 +183,25 @@ Every series also carries `cloud.account.id` (the project ID) and, for resources
 
 Every hour Maple lists these resources from Cloud Asset Inventory, with their project, location, state and labels: projects, Cloud Run services and jobs, Cloud Functions, GKE clusters, Compute Engine instances, Cloud SQL instances, Pub/Sub topics and subscriptions, and load balancer URL maps, backend services and forwarding rules.
 
+## Infrastructure → Google Cloud
+
+**Infrastructure → Google Cloud** appears in the sidebar once a connection has **Metrics and resources** switched on. It has one tab per service that reported metrics in the selected time range, with one row per workload. Counts and byte totals cover the time range; everything else is the average over it.
+
+| Tab             | One row per                               | Columns                                                                                                |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Cloud Run       | Service, project and region               | Requests, 5xx rate, latency p95 and p99, active instances, CPU p95, memory p95                         |
+| Cloud Functions | 1st gen function, project and region      | Executions, error rate, duration p95 and p99, active instances, memory p95                             |
+| GKE             | Container name, namespace and cluster     | CPU cores, CPU of limit, memory, memory of limit, restarts                                             |
+| Compute Engine  | Instance, project and zone                | CPU, memory (E2 machine types only), network in and out, disk read and write                           |
+| Cloud SQL       | Instance, project and region              | CPU, memory, disk, connections, replica lag                                                            |
+| Pub/Sub         | Subscription and project                  | Backlog, age of the oldest unacknowledged message, delivered, acknowledged, dead-lettered, push errors |
+| Load Balancing  | URL map, backend and project              | Requests, 5xx rate, latency p95 and p99, backend latency p95, response bytes                           |
+| Resources       | Resource from the [inventory](#resources) | Type, project, location, state and labels, with a filter by type and by project                        |
+
+Search a tab by name, project or location, and click a column to sort by it. A dash means the workload did not report that metric. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. GKE node and Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
+
+The **Resources** tab shows the first 500 resources that match its filters, and how many projects Maple found. It does not depend on the time range.
+
 ## Google Cloud costs
 
 Google bills Pub/Sub and Cloud Monitoring usage to your account, separately from your Maple plan.
@@ -249,5 +269,6 @@ Until the cleanup script runs, the sink keeps publishing to Pub/Sub. The script 
 
 - [Logs](/docs/explore/logs): search Google Cloud logs next to your application logs.
 - [Dashboards](/docs/dashboards/build-dashboards#templates): start from the **Google Cloud** template.
+- **Infrastructure → Google Cloud**: scan every workload of a service in one table.
 - [Alert rules](/docs/alerting/alert-rules): alert on any `gcp.*` metric.
 - [API reference](/docs/reference/api): manage connections with the `/v2/integrations/gcp` endpoints.

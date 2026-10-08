@@ -765,14 +765,12 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.gcpInfraPresenceSQL(), window),
 	},
-	...GCP_INFRA_SERVICE_IDS.map(
-		(service): IntegrationFixture => ({
-			module: "gcp-infra",
-			name: "gcpInfraMetricsSQL",
-			label: service,
-			compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
-		}),
-	),
+	...GCP_INFRA_SERVICE_IDS.map((service): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraMetricsSQL",
+		label: service,
+		compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
+	})),
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",

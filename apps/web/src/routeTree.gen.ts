@@ -91,6 +91,7 @@ import { Route as InfraCloudflareIndexRouteImport } from './routes/infra/cloudfl
 import { Route as InfraCloudflareZoneNameRouteImport } from './routes/infra/cloudflare/$zoneName'
 import { Route as InfraContainersIndexRouteImport } from './routes/infra/containers/index'
 import { Route as InfraContainersContainerNameRouteImport } from './routes/infra/containers/$containerName'
+import { Route as InfraGcpIndexRouteImport } from './routes/infra/gcp/index'
 import { Route as InfraHostsIndexRouteImport } from './routes/infra/hosts/index'
 import { Route as InfraHostsHostNameRouteImport } from './routes/infra/hosts/$hostName'
 import { Route as InfraKubernetesIndexRouteImport } from './routes/infra/kubernetes/index'
@@ -530,6 +531,11 @@ const InfraContainersContainerNameRoute =
     path: '/infra/containers/$containerName',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InfraGcpIndexRoute = InfraGcpIndexRouteImport.update({
+  id: '/infra/gcp/',
+  path: '/infra/gcp/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InfraHostsIndexRoute = InfraHostsIndexRouteImport.update({
   id: '/infra/hosts/',
   path: '/infra/hosts/',
@@ -754,6 +760,7 @@ export interface FileRoutesByFullPath {
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
   '/infra/containers/': typeof InfraContainersIndexRoute
+  '/infra/gcp/': typeof InfraGcpIndexRoute
   '/infra/hosts/': typeof InfraHostsIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
@@ -861,6 +868,7 @@ export interface FileRoutesByTo {
   '/errors/issues': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare': typeof InfraCloudflareIndexRoute
   '/infra/containers': typeof InfraContainersIndexRoute
+  '/infra/gcp': typeof InfraGcpIndexRoute
   '/infra/hosts': typeof InfraHostsIndexRoute
   '/infra/kubernetes': typeof InfraKubernetesIndexRoute
   '/infra/planetscale': typeof InfraPlanetscaleIndexRoute
@@ -970,6 +978,7 @@ export interface FileRoutesById {
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
   '/infra/containers/': typeof InfraContainersIndexRoute
+  '/infra/gcp/': typeof InfraGcpIndexRoute
   '/infra/hosts/': typeof InfraHostsIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
@@ -1080,6 +1089,7 @@ export interface FileRouteTypes {
     | '/errors/issues/'
     | '/infra/cloudflare/'
     | '/infra/containers/'
+    | '/infra/gcp/'
     | '/infra/hosts/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
@@ -1187,6 +1197,7 @@ export interface FileRouteTypes {
     | '/errors/issues'
     | '/infra/cloudflare'
     | '/infra/containers'
+    | '/infra/gcp'
     | '/infra/hosts'
     | '/infra/kubernetes'
     | '/infra/planetscale'
@@ -1295,6 +1306,7 @@ export interface FileRouteTypes {
     | '/errors/issues/'
     | '/infra/cloudflare/'
     | '/infra/containers/'
+    | '/infra/gcp/'
     | '/infra/hosts/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
@@ -1376,6 +1388,7 @@ export interface RootRouteChildren {
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   InfraCloudflareIndexRoute: typeof InfraCloudflareIndexRoute
   InfraContainersIndexRoute: typeof InfraContainersIndexRoute
+  InfraGcpIndexRoute: typeof InfraGcpIndexRoute
   InfraHostsIndexRoute: typeof InfraHostsIndexRoute
   InfraKubernetesIndexRoute: typeof InfraKubernetesIndexRoute
   InfraPlanetscaleIndexRoute: typeof InfraPlanetscaleIndexRoute
@@ -1967,6 +1980,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InfraContainersContainerNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infra/gcp/': {
+      id: '/infra/gcp/'
+      path: '/infra/gcp'
+      fullPath: '/infra/gcp/'
+      preLoaderRoute: typeof InfraGcpIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/infra/hosts/': {
       id: '/infra/hosts/'
       path: '/infra/hosts'
@@ -2270,6 +2290,7 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   InfraCloudflareIndexRoute: InfraCloudflareIndexRoute,
   InfraContainersIndexRoute: InfraContainersIndexRoute,
+  InfraGcpIndexRoute: InfraGcpIndexRoute,
   InfraHostsIndexRoute: InfraHostsIndexRoute,
   InfraKubernetesIndexRoute: InfraKubernetesIndexRoute,
   InfraPlanetscaleIndexRoute: InfraPlanetscaleIndexRoute,
