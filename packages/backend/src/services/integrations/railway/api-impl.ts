@@ -15,7 +15,7 @@ import {
 	type QueryError,
 	type RailwayGlobalError,
 } from "@distilled.cloud/railway"
-import { Duration, Effect, Layer, Stream } from "effect"
+import { Array as Arr, Duration, Effect, Layer, Stream } from "effect"
 import { HttpClient } from "effect/http"
 import { RailwayApiError } from "./errors"
 
@@ -146,26 +146,30 @@ export const discover = (httpClient: HttpClient.HttpClient, token: string) =>
 			(workspace) => run(httpClient, token, workspaceProjects(workspace.id)),
 			{ concurrency: 2 },
 		)
-		const environments: Array<RailwayDiscoveredEnvironment> = []
-		const truncatedProjectIds: Array<string> = []
-		const seen = new Set<string>()
-		for (const project of pages.flat()) {
-			if (project.environments.length >= NESTED_PAGE_SIZE) truncatedProjectIds.push(project.id)
-			const services = Object.fromEntries(
-				project.services.map((service) => [service.id, service.name] as const),
-			)
-			for (const environment of project.environments) {
-				if (environment.isEphemeral === true || seen.has(environment.id)) continue
-				seen.add(environment.id)
-				environments.push({
-					projectId: project.id,
-					projectName: project.name,
-					environmentId: environment.id,
-					environmentName: environment.name,
-					services,
-				})
-			}
-		}
+		const projects = pages.flat()
+		// First occurrence wins: a project listed by two workspaces is discovered once.
+		const environments = Arr.dedupeWith(
+			projects.flatMap((project) => {
+				const services = Object.fromEntries(
+					project.services.map((service) => [service.id, service.name] as const),
+				)
+				return project.environments
+					.filter((environment) => environment.isEphemeral !== true)
+					.map(
+						(environment): RailwayDiscoveredEnvironment => ({
+							projectId: project.id,
+							projectName: project.name,
+							environmentId: environment.id,
+							environmentName: environment.name,
+							services,
+						}),
+					)
+			}),
+			(a, b) => a.environmentId === b.environmentId,
+		)
+		const truncatedProjectIds = projects
+			.filter((project) => project.environments.length >= NESTED_PAGE_SIZE)
+			.map((project) => project.id)
 		return {
 			workspaceNames: workspaces.map((workspace) => workspace.name).sort(),
 			environments,
