@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -51,6 +52,17 @@ describe("gcpInfraMetricsSQL", () => {
 		const { sql } = compileUnsafe(gcpInfraMetricsSQL("gke"), { ...params, orgId: OrgId.make("org'evil") })
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 		expect(sql).not.toContain("OrgId = 'org'evil'")
+	})
+
+	// A BYO ClickHouse quotes 64-bit integers in JSON: the derived row schema unquotes the count.
+	it("decodes a quoted point count to a number", () => {
+		const point = { keys: ["api", "acme-prod", "europe-west1"], metric: "gcp.run.request_count" }
+		const rows = Effect.runSync(
+			compileUnsafe(gcpInfraMetricsSQL("cloudRun"), params).decodeRows([
+				{ ...point, label: "2xx", total: 12.5, samples: "60" },
+			]),
+		)
+		expect(rows).toEqual([{ ...point, label: "2xx", total: 12.5, samples: 60 }])
 	})
 })
 
