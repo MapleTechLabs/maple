@@ -1,74 +1,22 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, ErrorForbiddenError, MapleApi } from "@maple/domain/http"
+import { CurrentTenant, ErrorForbiddenError, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
-import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
-import { warehouseReadHandlers } from "@maple/backend/services/warehouse/warehouse-error-handlers"
-import { makePersistenceError } from "@maple/backend/services/errors/error-persistence"
 
-// Preserve v1's historical persistence envelope while v2 exposes warehouse tags directly.
-const legacyPersistenceFailure = (error: { readonly message: string }) =>
-	Effect.fail(makePersistenceError(error))
-
-export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers) =>
+export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (handlers) =>
 	Effect.gen(function* () {
 		const actors = yield* ErrorActorsService
-		const readModels = yield* ErrorIssueReadModelsService
 		const workflow = yield* ErrorIssueWorkflowService
 		const policies = yield* ErrorPolicyService
 		const errors = yield* ErrorsService
 		const verification = yield* IssueFixVerificationService
 
 		return handlers
-			.handle("listIssues", ({ query }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({
-						orgId: tenant.orgId,
-						workflowState: query.workflowState ?? "all",
-						limit: query.limit ?? 100,
-					})
-					const response = yield* readModels
-						.listIssues(tenant.orgId, {
-							workflowState: query.workflowState,
-							severity: query.severity,
-							kind: query.kind,
-							service: query.service,
-							deploymentEnv: query.deploymentEnv,
-							assignedActorId: query.assignedActorId,
-							includeArchived: query.includeArchived === "1",
-							startTime: query.startTime,
-							endTime: query.endTime,
-							limit: query.limit,
-							cursor: query.cursor,
-						})
-						.pipe(Effect.catchTags(warehouseReadHandlers(legacyPersistenceFailure)))
-					yield* Effect.annotateCurrentSpan("issueCount", response.issues.length)
-					return response
-				}).pipe(Effect.withSpan("HttpErrors.listIssues")),
-			)
-			.handle("getIssue", ({ params, query }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({
-						orgId: tenant.orgId,
-						issueId: params.issueId,
-					})
-					return yield* readModels
-						.getIssue(tenant.orgId, params.issueId, {
-							startTime: query.startTime,
-							endTime: query.endTime,
-							bucketSeconds: query.bucketSeconds,
-							sampleLimit: query.sampleLimit,
-						})
-						.pipe(Effect.catchTags(warehouseReadHandlers(legacyPersistenceFailure)))
-				}).pipe(Effect.withSpan("HttpErrors.getIssue")),
-			)
 			.handle("transitionIssue", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
@@ -139,17 +87,6 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 					)
 				}).pipe(Effect.withSpan("HttpErrors.commentOnIssue")),
 			)
-			.handle("proposeFix", ({ params, payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
-					return yield* errors.proposeFix(tenant.orgId, actor.id, params.issueId, {
-						patchSummary: payload.patchSummary,
-						prUrl: payload.prUrl,
-						artifacts: payload.artifacts,
-					})
-				}).pipe(Effect.withSpan("HttpErrors.proposeFix")),
-			)
 			.handle("listIssuePullRequests", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
@@ -199,18 +136,6 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 					return response
 				}).pipe(Effect.withSpan("HttpErrors.listIssueVerifications")),
 			)
-			.handle("assignIssue", ({ params, payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
-					return yield* workflow.assignIssue(
-						tenant.orgId,
-						actor.id,
-						params.issueId,
-						payload.actorId,
-					)
-				}).pipe(Effect.withSpan("HttpErrors.assignIssue")),
-			)
 			.handle("setIssueSeverity", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
@@ -245,69 +170,6 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 					yield* Effect.annotateCurrentSpan("eventCount", response.events.length)
 					return response
 				}).pipe(Effect.withSpan("HttpErrors.listIssueEvents")),
-			)
-			.handle("listIssueIncidents", ({ params }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({
-						orgId: tenant.orgId,
-						issueId: params.issueId,
-					})
-					const response = yield* readModels.listIssueIncidents(tenant.orgId, params.issueId)
-					yield* Effect.annotateCurrentSpan("incidentCount", response.incidents.length)
-					return response
-				}).pipe(Effect.withSpan("HttpErrors.listIssueIncidents")),
-			)
-			.handle("listOpenIncidents", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					const response = yield* readModels.listOpenIncidents(tenant.orgId)
-					yield* Effect.annotateCurrentSpan("incidentCount", response.incidents.length)
-					return response
-				}).pipe(Effect.withSpan("HttpErrors.listOpenIncidents")),
-			)
-			.handle("registerAgent", ({ payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({
-						orgId: tenant.orgId,
-						agentName: payload.name,
-					})
-					return yield* actors.registerAgent(tenant.orgId, tenant.userId, {
-						name: payload.name,
-						model: payload.model,
-						capabilities: payload.capabilities,
-					})
-				}).pipe(Effect.withSpan("HttpErrors.registerAgent")),
-			)
-			.handle("listAgents", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					return yield* actors.listAgents(tenant.orgId)
-				}).pipe(Effect.withSpan("HttpErrors.listAgents")),
-			)
-			.handle("getNotificationPolicy", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					return yield* policies.getNotificationPolicy(tenant.orgId)
-				}).pipe(Effect.withSpan("HttpErrors.getNotificationPolicy")),
-			)
-			.handle("upsertNotificationPolicy", ({ payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					// The gate itself lives in the service (the MCP tool and chat apply
-					// reach the same mutation); this keeps the failure adjacent to the route.
-					return yield* policies.upsertNotificationPolicy(
-						tenant.orgId,
-						tenant.userId,
-						tenant.roles,
-						payload,
-					)
-				}).pipe(Effect.withSpan("HttpErrors.upsertNotificationPolicy")),
 			)
 			.handle("getEscalationPolicy", () =>
 				Effect.gen(function* () {

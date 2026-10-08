@@ -5,7 +5,6 @@ import {
 	GitCommitSha,
 	mergePrReviewConfig,
 	type OrgId,
-	PrReviewListItem,
 	PrReviewModel,
 	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
@@ -27,7 +26,6 @@ import {
 	type VcsRepoSyncStatus,
 } from "@maple/domain/http"
 import {
-	prReviews,
 	prReviewSettings,
 	vcsCommits,
 	vcsInstallations,
@@ -54,7 +52,6 @@ const decodeRepo = Schema.decodeUnknownSync(VcsRepo)
 const decodeCommit = Schema.decodeUnknownSync(VcsCommit)
 const decodePrReviewConfig = Schema.decodeUnknownOption(PrReviewRepositoryConfig)
 const decodePrReviewModel = Schema.decodeUnknownOption(PrReviewModel)
-const decodePrReviewListItem = Schema.decodeUnknownSync(PrReviewListItem)
 const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
 // a malformed SHA throws and is caught into a VcsRepoDecodeError on write.
@@ -1015,44 +1012,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
-		// A repository's most recent reviews, newest first, for the settings list.
-		const listPrReviews = Effect.fn("VcsRepository.listPrReviews")(function* (
-			orgId: OrgId,
-			repositoryId: VcsRepositoryId,
-			limit: number,
-		) {
-			const rows = yield* database
-				.execute((db) =>
-					db
-						.select()
-						.from(prReviews)
-						.where(and(eq(prReviews.orgId, orgId), eq(prReviews.repositoryId, repositoryId)))
-						.orderBy(desc(prReviews.createdAt))
-						.limit(limit),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
-			return yield* decodeAll("pr_reviews", rows, (row) =>
-				decodePrReviewListItem({
-					id: row.id,
-					number: row.number,
-					title: row.title ?? null,
-					url: row.url,
-					headSha: row.headSha,
-					status: row.status,
-					skipReason: row.skipReason ?? null,
-					verdict: row.reportJson?.verdict ?? null,
-					score: row.score ?? null,
-					confidence: row.reportJson?.confidence ?? null,
-					findings: row.reportJson?.findings?.length ?? 0,
-					commentUrl: row.commentUrl ?? null,
-					publishError: row.publishError ?? null,
-					error: row.error ?? null,
-					createdAt: dateToMs(row.createdAt),
-					finishedAt: row.finishedAt === null ? null : dateToMs(row.finishedAt),
-				}),
-			)
-		})
-
 		// Drop the branch rows by id (their repo keeps its commits — a branch is just
 		// a name in the picker now).
 		const deleteBranchesByIds = (ids: ReadonlyArray<VcsBranchId>) =>
@@ -1210,7 +1169,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			getEffectivePrReviewConfig,
 			getPrReviewSettings,
 			setPrReviewSettings,
-			listPrReviews,
 			reconcileBranchDeletions,
 			deleteBranch,
 			purgeInstallation,

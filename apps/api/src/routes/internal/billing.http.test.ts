@@ -27,8 +27,8 @@ import {
 	BillingConflictError,
 	BillingCustomer,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 	UpdateBillingControlsRequest,
 	UpdateBillingSpendLimit,
 	UpdateBillingUsageAlert,
@@ -37,7 +37,7 @@ import { DailySpendService } from "@maple/backend/services/billing/DailySpendSer
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import { decodeInvoices, HttpBillingLive, resolveCycleWindow } from "./billing.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
 
@@ -579,8 +579,8 @@ describe("resolveAttachConflict", () => {
 describe("billing writes over HTTP", () => {
 	class BillingOnlyApi extends HttpApi.make("MapleInternalApi")
 		.add(BillingApiGroup)
-		.middleware(V1SchemaErrors)
-		.middleware(V1UnexpectedErrors) {}
+		.middleware(ApiSchemaErrors)
+		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
@@ -594,7 +594,7 @@ describe("billing writes over HTTP", () => {
 	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
 			Layer.provide(HttpBillingLive),
-			Layer.provide(V1ErrorBoundaryLive),
+			Layer.provide(ApiErrorBoundaryLive),
 			Layer.provideMerge(
 				Layer.succeed(
 					CurrentTenant.SessionAuthorization,

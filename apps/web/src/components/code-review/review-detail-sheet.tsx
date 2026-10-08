@@ -27,7 +27,7 @@ import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { AuthorLabel } from "./author-avatar"
 import {
@@ -67,7 +67,7 @@ function ReviewDetailBody({
 	reviewId: PrReviewId
 	onSelect: (reviewId: PrReviewId) => void
 }) {
-	const query = retainedQuery("codeReview", "getReview", { params: { reviewId } })
+	const query = retainedInternalQuery("codeReview", "getReview", { params: { reviewId } })
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
 

@@ -36,7 +36,7 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, toastExit } from "@/lib/error-toast"
 import { currentRegion } from "@/lib/region"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { ReviewRulesForm } from "./review-rules-form"
 
@@ -58,7 +58,7 @@ const EMPTY_CONFIG = new PrReviewRepositoryConfig({})
 
 /** Organization settings first, since every repository inherits them; then the repositories. */
 export function CodeReviewSettingsView() {
-	const query = retainedQuery("integrations", "githubGetPrReviewSettings", {
+	const query = retainedInternalQuery("integrations", "githubGetPrReviewSettings", {
 		reactivityKeys: [SETTINGS_KEY],
 	})
 	const result = useAtomValue(query)
@@ -125,7 +125,7 @@ function Section({
 }
 
 function useSaveSettings() {
-	const save = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReviewSettings"), {
+	const save = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetPrReviewSettings"), {
 		mode: "promiseExit",
 	})
 	return (settings: PrReviewOrgSettings) =>
@@ -237,7 +237,7 @@ function ReviewRulesDefaults({ settings }: { settings: PrReviewOrgSettings }) {
 }
 
 function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfig | undefined }) {
-	const query = retainedQuery("integrations", "githubStatus", { reactivityKeys: [STATUS_KEY] })
+	const query = retainedInternalQuery("integrations", "githubStatus", { reactivityKeys: [STATUS_KEY] })
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
 
@@ -305,7 +305,7 @@ function RepositoryRow({
 	inherited: PrReviewRepositoryConfig | undefined
 }) {
 	const isAdmin = useIsOrgAdmin()
-	const setPrReview = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReview"), {
+	const setPrReview = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetPrReview"), {
 		mode: "promiseExit",
 	})
 	const [enabled, setEnabled] = useState(repo.prReviewEnabled)
@@ -404,12 +404,12 @@ function RepositoryConfig({
 	inherited: PrReviewRepositoryConfig | undefined
 }) {
 	const result = useAtomValue(
-		retainedQuery("integrations", "githubGetPrReviewConfig", {
+		retainedInternalQuery("integrations", "githubGetPrReviewConfig", {
 			params: { repositoryId: repo.id },
 			reactivityKeys: [configKey(repo)],
 		}),
 	)
-	const save = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReviewConfig"), {
+	const save = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetPrReviewConfig"), {
 		mode: "promiseExit",
 	})
 

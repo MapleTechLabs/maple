@@ -19,6 +19,7 @@ import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { parseLogSearch } from "@/lib/logs/log-search-query"
+import { logAttributeQueryFilters } from "@/lib/logs/log-attribute-filters"
 import { LogSearchInput } from "./log-search-input"
 
 const routeApi = getRouteApi("/logs/")
@@ -63,6 +64,8 @@ export function LogsFilterSidebar() {
 		data: {
 			startTime: effectiveStartTime,
 			endTime: effectiveEndTime,
+			// Facet counts within the attribute-filtered set, so they agree with the list.
+			...logAttributeQueryFilters(search.attrs),
 		},
 	})
 	const facetsResult = useAtomValue(facetsAtom)
@@ -98,6 +101,7 @@ export function LogsFilterSidebar() {
 		(search.excludedSeverities?.length ?? 0) > 0 ||
 		(search.excludedDeploymentEnvs?.length ?? 0) > 0 ||
 		(search.excludedNamespaces?.length ?? 0) > 0 ||
+		(search.attrs?.length ?? 0) > 0 ||
 		!!search.search ||
 		!!search.traceId
 

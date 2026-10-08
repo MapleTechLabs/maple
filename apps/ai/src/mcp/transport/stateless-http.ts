@@ -301,14 +301,12 @@ export const layerStatelessMcpHttp = (options: {
  * minted session id that nothing ever deletes; without one, under the RPC client
  * id, which the disconnect finalizer releases with the request. This transport
  * wants the second, so the router — which `layerStatelessMcpHttp` still needs to
- * register its route — is kept out of the server's own context.
+ * register its route — is kept out of the server's own context. The caller provides
+ * `McpServer`, so tool registration can share the instance from outside the transport.
  */
 export const statelessMcpServerLayer = (options: {
 	readonly name: string
 	readonly version: string
 	readonly instructions?: string | undefined
 	readonly protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>]
-}) =>
-	Layer.effectDiscard(Effect.forkScoped(Effect.updateContext(McpServer.run(options), omitRouter))).pipe(
-		Layer.provideMerge(McpServer.McpServer.layer),
-	)
+}) => Layer.effectDiscard(Effect.forkScoped(Effect.updateContext(McpServer.run(options), omitRouter)))

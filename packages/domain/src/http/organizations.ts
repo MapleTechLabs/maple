@@ -2,7 +2,11 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId } from "../primitives"
 import { MapleRegion } from "../organization-regions"
-import { Authorization, RegionlessSessionAuthorization, UserSessionAuthorization } from "./current-tenant"
+import {
+	RegionlessSessionAuthorization,
+	SessionAuthorization,
+	UserSessionAuthorization,
+} from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
 export class DeleteOrganizationResponse extends Schema.Class<DeleteOrganizationResponse>(
@@ -94,8 +98,8 @@ export class OrganizationsApiGroup extends HttpApiGroup.make("organizations")
 			error: [OrganizationForbiddenError, OrganizationPersistenceError, OrganizationProviderError],
 		}),
 	)
-	.prefix("/api/organizations")
-	.middleware(Authorization) {}
+	.prefix("/internal/organizations")
+	.middleware(SessionAuthorization) {}
 
 export class CreateOrganizationRequest extends Schema.Class<CreateOrganizationRequest>(
 	"CreateOrganizationRequest",
@@ -125,7 +129,7 @@ export class OrganizationCreationApiGroup extends HttpApiGroup.make("organizatio
 			error: [OrganizationProviderError],
 		}),
 	)
-	.prefix("/api/organizations")
+	.prefix("/internal/organizations")
 	.middleware(UserSessionAuthorization) {}
 
 /**
@@ -142,5 +146,5 @@ export class OrganizationRegionApiGroup extends HttpApiGroup.make("organizationR
 			error: [OrganizationForbiddenError, OrganizationRegionLockedError, OrganizationProviderError],
 		}),
 	)
-	.prefix("/api/organizations")
+	.prefix("/internal/organizations")
 	.middleware(RegionlessSessionAuthorization) {}

@@ -1,9 +1,16 @@
 import { useState } from "react"
-import { CircleInfoIcon, PulseIcon, ServerIcon, SquareTerminalIcon } from "@/components/icons"
+import {
+	CircleInfoIcon,
+	PulseIcon,
+	ServerIcon,
+	SquareTerminalIcon,
+	UnorderedListIcon,
+} from "@/components/icons"
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import type { Log } from "@/api/warehouse/logs"
+import type { LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
@@ -11,6 +18,7 @@ import { LogHeroHeader } from "./log-hero-header"
 import { LogMetaStrip } from "./log-meta-strip"
 import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
 import { LogTraceTimeline } from "./log-trace-timeline"
+import { LogContextPanel } from "./log-context-panel"
 import { LogAttributesPanel } from "./log-attributes-panel"
 import { LogRawPanel } from "./log-raw-panel"
 
@@ -18,6 +26,8 @@ interface LogDetailSheetProps {
 	log: Log | null
 	open: boolean
 	onOpenChange: (open: boolean) => void
+	/** Filter in / out from an attribute row. Omit and the rows only copy. */
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 /**
@@ -26,7 +36,7 @@ interface LogDetailSheetProps {
  * into a tabbed layout. The same panels back the standalone `/logs/$logId`
  * page; only the chrome (drawer vs. full page) differs.
  */
-export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps) {
+export function LogDetailSheet({ log, open, onOpenChange, onAttributeFilter }: LogDetailSheetProps) {
 	const { effectiveTimezone } = useTimezonePreference()
 	// `viewedLog` may diverge from `log` when the user clicks through the trace
 	// timeline. Sync it from the incoming prop during render (no effect).
@@ -66,6 +76,9 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 								<PulseIcon size={14} /> Trace
 							</TabsTrigger>
 						)}
+						<TabsTrigger value="context">
+							<UnorderedListIcon size={14} /> Context
+						</TabsTrigger>
 						<TabsTrigger value="raw">
 							<SquareTerminalIcon size={14} /> Raw
 						</TabsTrigger>
@@ -79,7 +92,11 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 					<TabsContent value="attributes" className="flex-1 min-h-0 mt-0">
 						<ScrollArea className="h-full">
 							<div className="p-3">
-								<LogAttributesPanel key={logKey} log={viewedLog} />
+								<LogAttributesPanel
+									key={logKey}
+									log={viewedLog}
+									onAttributeFilter={onAttributeFilter}
+								/>
 							</div>
 						</ScrollArea>
 					</TabsContent>
@@ -93,6 +110,10 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 							</ScrollArea>
 						</TabsContent>
 					)}
+
+					<TabsContent value="context" className="flex-1 min-h-0 mt-0 p-3">
+						<LogContextPanel key={logKey} log={viewedLog} onLogSelect={setViewedLog} />
+					</TabsContent>
 
 					<TabsContent value="raw" className="flex-1 min-h-0 mt-0">
 						<ScrollArea className="h-full">

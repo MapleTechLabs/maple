@@ -1,3 +1,4 @@
+import { IsolateAge } from "@maple/infra/isolate-age"
 import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
@@ -7,10 +8,11 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
-import { Clock, type Context, Effect, Exit, Layer } from "effect"
+import { type Context, Effect, Exit, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
+import type { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import type { AiPortsLayer } from "./bindings"
@@ -62,47 +64,30 @@ export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =
  * Worker would be a duplicate `access-control-allow-origin`, which browsers
  * reject outright.
  */
-export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: AiPortsLayer) => {
-	const recordIsolateAge = makeIsolateAgeRecorder()
-	return Effect.gen(function* () {
-		const request = yield* HttpServerRequest.HttpServerRequest
-		const path = pathOf(request.url)
-		if (request.method === "GET" && path === "/health") {
-			return yield* healthResponse
-		}
+export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: Layer.Layer<MapleDbConnection>) =>
+	IsolateAge.useSync((isolateAge) =>
+		Effect.gen(function* () {
+			const request = yield* HttpServerRequest.HttpServerRequest
+			const path = pathOf(request.url)
+			if (request.method === "GET" && path === "/health") {
+				return yield* healthResponse
+			}
 
-		yield* recordIsolateAge
-		const built = yield* Effect.exit(app)
-		if (Exit.isFailure(built)) {
-			yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
-				Effect.annotateLogs({ method: request.method, path }),
-			)
-			return HttpServerResponse.text("maple-ai is unavailable", { status: 503 })
-		}
-		return yield* withPgConnectionScope(built.value)
-	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
-		Effect.provide(ports),
+			// Before the graph builds, so its failures count too and cold and warm compare unconditioned.
+			yield* isolateAge.record
+			const built = yield* Effect.exit(app)
+			if (Exit.isFailure(built)) {
+				yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
+					Effect.annotateLogs({ method: request.method, path }),
+				)
+				return HttpServerResponse.text("maple-ai is unavailable", { status: 503 })
+			}
+			return yield* withPgConnectionScope(built.value)
+		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
+			Effect.provide(ports),
+		),
 	)
-}
-
-/**
- * Isolate-scoped: the Worker's init calls `makeFetch` once, so ordinal 1 is the request that
- * builds the route graph. Counts graph-build failures too, so cold and warm compare unconditioned.
- */
-export const makeIsolateAgeRecorder = () => {
-	let firstRequestAt: number | undefined
-	let served = 0
-	return Effect.gen(function* () {
-		const startedAt = yield* Clock.currentTimeMillis
-		firstRequestAt ??= startedAt
-		served += 1
-		yield* Effect.annotateCurrentSpan({
-			"maple.isolate.age_ms": startedAt - firstRequestAt,
-			"maple.isolate.request_ordinal": served,
-		})
-	})
-}
 
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
