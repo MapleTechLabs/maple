@@ -102,8 +102,12 @@ const KEEPALIVE_BUDGET_BYTES = 48 * 1024
 /** The most of the budget that OTLP requests hold between them. */
 export const OTLP_KEEPALIVE_BYTES = 32 * 1024
 
-/** Largest body of newest items an OTLP flush sends first from a hidden or unloading document. */
-export const OTLP_UNLOAD_TAIL_BYTES = 16 * 1024
+/**
+ * Largest body of newest items an OTLP flush sends with keepalive from a hidden
+ * or unloading document. Two signals' worth leaves about 4 KiB of OTLP's share
+ * for a metrics snapshot.
+ */
+export const OTLP_UNLOAD_TAIL_BYTES = 14 * 1024
 
 /** On `globalThis`: two bundled SDK copies still share one per-document allowance. */
 const KEEPALIVE_KEY = "__MAPLE_KEEPALIVE_INFLIGHT__"

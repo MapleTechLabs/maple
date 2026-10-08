@@ -659,6 +659,71 @@ describe("MapleFlush.make (client)", () => {
 		await tick()
 	})
 
+	it("sends only the newest part of each signal with keepalive, which leaves room for metrics", async () => {
+		// Effect's default logger prints every log line.
+		vi.spyOn(console, "log").mockImplementation(() => {})
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, numbered("span", 200))
+		await Effect.runPromise(
+			Effect.all([
+				Effect.forEach(numbered("log", 40), (line) => Effect.logInfo(`${line} ${"x".repeat(1024)}`), {
+					discard: true,
+				}),
+				Metric.update(Metric.counter("unload_counter"), 1),
+			]).pipe(Effect.provide(telemetry.layer)),
+		)
+		dom.fire("pagehide")
+
+		expect(
+			calls.map((call) => [call.url.replace("https://collector.test/v1/", ""), call.keepalive]),
+		).toEqual([
+			["traces", true],
+			["traces", false],
+			["logs", true],
+			["logs", false],
+			["metrics", true],
+		])
+		// Both tails are full, and OTLP's share still holds the metrics snapshot.
+		const keepalive = calls.filter((call) => call.keepalive)
+		expect(keepalive[0].bytes + keepalive[1].bytes).toBeGreaterThan(24 * 1024)
+		expect(keepalive.reduce((sum, call) => sum + call.bytes, 0)).toBeLessThanOrEqual(OTLP_KEEPALIVE_BYTES)
+
+		inflight.resolveAll()
+		await tick()
+	})
+
+	it("sends the older part without keepalive even when room is left", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, numbered("span", 62))
+		dom.fire("pagehide")
+
+		const [newest, older] = traceCalls(calls)
+		expect(newest.keepalive).toBe(true)
+		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
+		// It would fit OTLP's share; the next signal's newest items need that room more.
+		expect(newest.bytes + older.bytes).toBeLessThan(OTLP_KEEPALIVE_BYTES)
+		expect(older.keepalive).toBe(false)
+
+		inflight.resolveAll()
+		await tick()
+	})
+
 	it("sizes the newest-first request to the keepalive room a periodic flush leaves", async () => {
 		const inflight = pendingResponses()
 		const { calls, restore: rf } = setupFetch(inflight.responder)
