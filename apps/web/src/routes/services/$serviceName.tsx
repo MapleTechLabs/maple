@@ -357,9 +357,14 @@ function OverviewTab({
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
 	// so this is a safe widening (no `as unknown` round-trip needed). The exact
 	// SpanMetrics throughput overlay (when present) is merged by ISO bucket here.
-	const detailPoints: Record<string, unknown>[] = useMemo(() => {
-		return mergeExactThroughput(basePoints, exactThroughputByBucket).map((point) => ({ ...point }))
-	}, [basePoints, exactThroughputByBucket])
+	const mergedPoints = useMemo(
+		() => mergeExactThroughput(basePoints, exactThroughputByBucket),
+		[basePoints, exactThroughputByBucket],
+	)
+	const detailPoints: Record<string, unknown>[] = useMemo(
+		() => mergedPoints.map((point) => ({ ...point })),
+		[mergedPoints],
+	)
 
 	// Commit deploy markers (dashed verticals + labels) drawn over every chart.
 	// Derived from the overview's release timeline and snapped onto the chart's
@@ -371,7 +376,7 @@ function OverviewTab({
 				.orElse(() => EMPTY_RELEASES),
 		[overviewResult],
 	)
-	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
+	const chartBuckets = useMemo(() => mergedPoints.map((point) => point.bucket), [mergedPoints])
 	const commitMarkers = useCommitMarkers(releases, chartBuckets)
 
 	// Stable identity so the memoized chart components under MetricsGrid skip

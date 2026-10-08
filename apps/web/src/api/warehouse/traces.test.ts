@@ -15,6 +15,7 @@ vi.mock("@/api/warehouse/effect-utils", async () => {
 	}
 })
 
+import { isWarehouseApiError } from "@/api/warehouse/effect-utils"
 import { getTracesDurationStats, getTracesFacets, listTraces } from "@/api/warehouse/traces"
 
 describe("tinybird traces attribute filter params", () => {
@@ -198,6 +199,62 @@ describe("tinybird traces attribute filter params", () => {
 					},
 				},
 			})
+		}),
+	)
+
+	it.effect("decodes per-span rows, accepting numeric strings for durations", () =>
+		Effect.gen(function* () {
+			executeQueryEngineMock.mockReturnValueOnce(
+				Effect.succeed({
+					result: {
+						kind: "list",
+						source: "traces",
+						data: [
+							{
+								traceId: "trace-2",
+								timestamp: "2026-02-01T00:00:00.000Z",
+								spanId: "span-2",
+								parentSpanId: "span-1",
+								serviceName: "checkout",
+								spanName: "GET /cart",
+								durationMs: "12.5",
+								statusCode: "Error",
+								spanKind: "Server",
+								hasError: true,
+								services: ["checkout", "", "checkout"],
+								spanAttributes: { "http.method": "GET", "db.system": "postgres" },
+							},
+						],
+					},
+				}),
+			)
+
+			const response = yield* listTraces({
+				data: { startTime: "2026-02-01 00:00:00", endTime: "2026-02-01 01:00:00", rootOnly: false },
+			})
+
+			expect(response.data[0]).toMatchObject({
+				spanId: "span-2",
+				isRootSpan: false,
+				durationMs: 12.5,
+				services: ["checkout"],
+				hasError: true,
+				rootSpan: { name: "GET /cart", attributes: { "http.method": "GET" } },
+			})
+		}),
+	)
+
+	it.effect("fails with WarehouseTransformError on a malformed list row", () =>
+		Effect.gen(function* () {
+			executeQueryEngineMock.mockReturnValueOnce(
+				Effect.succeed({ result: { kind: "list", source: "traces", data: [{ traceId: 42 }] } }),
+			)
+
+			const error = yield* Effect.flip(
+				listTraces({ data: { startTime: "2026-02-01 00:00:00", endTime: "2026-02-01 01:00:00" } }),
+			)
+
+			expect(isWarehouseApiError(error) && error._tag).toBe("@maple/web/errors/WarehouseTransformError")
 		}),
 	)
 })

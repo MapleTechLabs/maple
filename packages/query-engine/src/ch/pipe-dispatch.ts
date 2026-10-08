@@ -125,9 +125,11 @@ export function compilePipeQuery(
 	capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
 ): PipeCompiled | undefined {
 	const orgId = params.org_id
-	const startTime = String(params.start_time ?? "2023-01-01 00:00:00")
-	const endTime = String(params.end_time ?? "2099-12-31 23:59:59")
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
+	const startTime = str("start_time") ?? "2023-01-01 00:00:00"
+	const endTime = str("end_time") ?? "2099-12-31 23:59:59"
+	/** A param the pipe cannot run without; absent compiles to a filter that matches nothing. */
+	const reqStr = (key: string) => str(key) ?? ""
 	// Overloaded rather than `def?: number`: with an optional default every
 	// defaulted call still typed as `number | undefined` and every call site paid
 	// for it with a `!`.
@@ -266,7 +268,7 @@ export function compilePipeQuery(
 				return eraseType(
 					compile(
 						spanHierarchyQuery({
-							traceId: String(params.trace_id),
+							traceId: reqStr("trace_id"),
 							spanId: str("span_id"),
 							narrowByTime,
 						}),
@@ -440,7 +442,7 @@ export function compilePipeQuery(
 				return eraseType(
 					compile(
 						serviceReleasesTimelineQuery({
-							serviceName: String(params.service_name),
+							serviceName: reqStr("service_name"),
 							bucketSeconds,
 						}),
 						{ orgId, startTime, endTime, bucketSeconds },
@@ -452,7 +454,7 @@ export function compilePipeQuery(
 				return eraseType(
 					compile(
 						serviceApdexTimeseriesQuery({
-							serviceName: String(params.service_name),
+							serviceName: reqStr("service_name"),
 							apdexThresholdMs: int("apdex_threshold_ms", 500),
 							bucketSeconds,
 						}),
@@ -522,7 +524,7 @@ export function compilePipeQuery(
 				eraseType(
 					compile(
 						errorsTimeseriesQuery({
-							fingerprintHash: String(params.fingerprint_hash),
+							fingerprintHash: reqStr("fingerprint_hash"),
 							services: str("services")?.split(",").filter(Boolean),
 						}),
 						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
@@ -559,7 +561,7 @@ export function compilePipeQuery(
 				eraseType(
 					compile(
 						errorDetailTracesQuery({
-							fingerprintHash: String(params.fingerprint_hash),
+							fingerprintHash: reqStr("fingerprint_hash"),
 							rootOnly: bool("root_only"),
 							services: str("services")?.split(",").filter(Boolean),
 							limit: int("limit", 10),
@@ -588,7 +590,7 @@ export function compilePipeQuery(
 						orgId,
 						startTime,
 						endTime,
-						fingerprintHash: String(params.fingerprint_hash),
+						fingerprintHash: reqStr("fingerprint_hash"),
 						bucketSeconds: int("bucket_seconds", 3600),
 					}),
 				),
@@ -599,7 +601,7 @@ export function compilePipeQuery(
 						orgId,
 						startTime,
 						endTime,
-						fingerprintHash: String(params.fingerprint_hash),
+						fingerprintHash: reqStr("fingerprint_hash"),
 					}),
 				),
 			),
@@ -609,7 +611,7 @@ export function compilePipeQuery(
 						orgId,
 						startTime,
 						endTime,
-						fingerprintHash: String(params.fingerprint_hash),
+						fingerprintHash: reqStr("fingerprint_hash"),
 					}),
 				),
 			),
@@ -718,7 +720,7 @@ export function compilePipeQuery(
 						compile(
 							serviceScopedAttributeValuesQuery({
 								scope: "span",
-								attributeKey: String(params.attribute_key),
+								attributeKey: reqStr("attribute_key"),
 								limit: int("limit", 50),
 							}),
 							{ orgId, startTime, endTime, serviceName },
@@ -728,7 +730,7 @@ export function compilePipeQuery(
 				return eraseType(
 					compile(
 						spanAttributeValuesQuery({
-							attributeKey: String(params.attribute_key),
+							attributeKey: reqStr("attribute_key"),
 							limit: int("limit", 50),
 						}),
 						{ orgId, startTime, endTime },
@@ -742,7 +744,7 @@ export function compilePipeQuery(
 						compile(
 							serviceScopedAttributeValuesQuery({
 								scope: "resource",
-								attributeKey: String(params.attribute_key),
+								attributeKey: reqStr("attribute_key"),
 								limit: int("limit", 50),
 							}),
 							{ orgId, startTime, endTime, serviceName },
@@ -752,7 +754,7 @@ export function compilePipeQuery(
 				return eraseType(
 					compile(
 						resourceAttributeValuesQuery({
-							attributeKey: String(params.attribute_key),
+							attributeKey: reqStr("attribute_key"),
 							limit: int("limit", 50),
 						}),
 						{ orgId, startTime, endTime },
@@ -768,7 +770,7 @@ export function compilePipeQuery(
 							metricScopedAttributeValuesQuery({
 								metricType,
 								serviceName: str("service_name"),
-								attributeKey: String(params.attribute_key),
+								attributeKey: reqStr("attribute_key"),
 								limit: int("limit", 50),
 							}),
 							{ orgId, startTime, endTime, metricName },
@@ -778,7 +780,7 @@ export function compilePipeQuery(
 				return eraseType(
 					compile(
 						metricAttributeValuesQuery({
-							attributeKey: String(params.attribute_key),
+							attributeKey: reqStr("attribute_key"),
 							limit: int("limit", 50),
 						}),
 						{ orgId, startTime, endTime },
