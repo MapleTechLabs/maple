@@ -108,6 +108,11 @@ gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
 // Removal must not take "could not look" for "not there": a sink the caller may not see would
 // otherwise be left routing into a topic the next step deletes.
 const REMOVAL_HELPERS = `
+# For an API that is off, gcloud asks whether to enable it and waits for the answer. The lookups
+# below capture that question, so it would never show. Without prompts gcloud reports the API as
+# disabled instead.
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+
 # exists <gcloud ... describe ...>: whether a resource is there. NOT_FOUND means it is not, and so
 # does a disabled API for the host project's own resources, which cannot exist without it (a
 # sink can). Any other failure (a missing permission, for example) is shown and makes this script

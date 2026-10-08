@@ -69,6 +69,15 @@ const setupInput = (
 const FAKE_GCLOUD = `#!/usr/bin/env bash
 echo "$*" >> "$GCLOUD_LOG"
 printf "%s\\n" "$@" >> "$GCLOUD_LOG.args"
+# For a disabled API gcloud asks whether to enable it, unless prompts are off.
+api_off() {
+  if [ "$CLOUDSDK_CORE_DISABLE_PROMPTS" != 1 ]; then
+    echo "API not enabled on project [1]. Would you like to enable and retry? (y/N)" >&2
+    exit 1
+  fi
+  echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2
+  exit 1
+}
 case "$*" in
   *"sinks describe"*"--format"*) echo "${WRITER}" ;;
   *"service-accounts list"*)
@@ -76,13 +85,13 @@ case "$*" in
       found) echo "${ACCOUNT}" ;;
       missing) echo "Listed 0 items." >&2 ;;
       denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
-      api_off) echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2; exit 1 ;;
+      api_off) api_off ;;
     esac ;;
   *" describe "*)
     case "$GCLOUD_DESCRIBE" in
       missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
       denied) echo "ERROR: (gcloud) PERMISSION_DENIED: caller lacks permission" >&2; exit 1 ;;
-      api_off) echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2; exit 1 ;;
+      api_off) api_off ;;
     esac ;;
   *"remove-iam-policy-binding"*)
     case "$GCLOUD_UNBIND" in
