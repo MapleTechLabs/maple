@@ -16,6 +16,7 @@ import { mysqlTemplate } from "./database/mysql"
 import { postgresTemplate } from "./database/postgres"
 import { redisTemplate } from "./database/redis"
 import { cloudflareTemplate } from "./infrastructure/cloudflare"
+import { gcpTemplate } from "./infrastructure/gcp"
 import { planetscaleTemplate } from "./infrastructure/planetscale"
 import { hostMetricsTemplate } from "./infrastructure/host-metrics"
 import { kubernetesClusterTemplate } from "./infrastructure/kubernetes-cluster"
@@ -46,6 +47,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	// Infrastructure
 	cloudflareTemplate,
 	planetscaleTemplate,
+	gcpTemplate,
 	hostMetricsTemplate,
 	kubernetesClusterTemplate,
 	kubernetesPodTemplate,
