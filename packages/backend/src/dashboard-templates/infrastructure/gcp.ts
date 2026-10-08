@@ -13,13 +13,13 @@ import {
 } from "@maple/backend/dashboard-templates/helpers"
 import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-templates/types"
 
-// The Cloud Monitoring poller (GcpMetricsService) stores one point per minute under the names in
-// `GCP_METRIC_GROUPS`, so a widget takes its metric type and unit from that table. Counters are
-// delta sums (`sum`, not rate). Gauges are levels and are averaged: `sum` would add up every
-// minute of a bucket. Distributions are p50/p95/p99 gauges keyed by the `quantile` attribute.
-// Cloud Run, Cloud Functions, GKE containers and Compute Engine instances are named after the
-// workload (`service.name`); every other resource is `gcp/<resource type>` and is told apart by
-// a `gcp.resource.labels.*` resource attribute (see `gcpResourceAttributes`).
+// The Cloud Monitoring poller (GcpMetricsService) stores the metrics in `GCP_METRIC_GROUPS` at
+// one-minute resolution, so a widget takes its metric type and unit from that table. Counters are
+// delta sums (`sum`, not rate). Gauges are averaged, over the bucket and over the regions a
+// workload runs in: `sum` would add up every minute. Distributions are p50/p95/p99 gauges keyed
+// by the `quantile` attribute. Workloads chart by `service.name`. A chart grouped by an attribute
+// keeps one service's value per group, so those are used only where `service.name` is the
+// constant `gcp/<resource type>` (see `gcpResourceAttributes`).
 const STORED = new Map(
 	GCP_METRIC_GROUPS.flatMap((group) => group.metrics.map((metric) => [metric.name, metric] as const)),
 )
@@ -54,10 +54,12 @@ const CHARTS: ReadonlyArray<Chart> = [
 		by: WORKLOAD,
 	},
 	{
-		id: "run-response-classes",
-		title: "Cloud Run Requests by Response Class",
+		id: "run-errors",
+		title: "Cloud Run 5xx Responses by Service",
 		metric: "gcp.run.request_count",
-		by: "attr.response_code_class",
+		by: WORKLOAD,
+		where: `attr.response_code_class = "5xx"`,
+		display: CHART_DISPLAY_BAR,
 	},
 	{
 		id: "run-latency",
@@ -90,9 +92,9 @@ const CHARTS: ReadonlyArray<Chart> = [
 
 	{
 		id: "functions-executions",
-		title: "Cloud Functions (1st gen) Executions by Status",
+		title: "Cloud Functions (1st gen) Executions by Function",
 		metric: "gcp.cloudfunctions.function.execution_count",
-		by: "attr.status",
+		by: WORKLOAD,
 	},
 	{
 		id: "functions-execution-time",
@@ -213,6 +215,7 @@ const CHARTS: ReadonlyArray<Chart> = [
 function widgets(projectId?: string): WidgetDef[] {
 	const project = projectId ? `resource.cloud.account.id = "${escapeMetricStringLiteral(projectId)}"` : ""
 	return CHARTS.map((chart, index): WidgetDef => {
+		// An unknown name still builds, so gcp.test.ts can report it by name.
 		const stored = STORED.get(chart.metric)
 		const counter = stored?.kind === "sum"
 		return {
@@ -242,7 +245,7 @@ export const gcpTemplate: TemplateDefinition = {
 	id: templateId("gcp"),
 	name: "Google Cloud",
 	description:
-		"Metrics from the Google Cloud integration: Cloud Run requests, latency and instances, Cloud Functions executions, GKE container and node utilization, Compute Engine CPU and network, Cloud SQL utilization and connections, Pub/Sub backlog, and load balancer requests and latency.",
+		"Metrics from the Google Cloud integration: Cloud Run requests, errors, latency and instances, Cloud Functions (1st gen) executions, GKE container and node utilization, Compute Engine CPU and network, Cloud SQL utilization and connections, Pub/Sub backlog, and load balancer requests and latency.",
 	category: "infrastructure",
 	tags: ["gcp", "google cloud", "cloud run", "gke", "cloud sql", "pubsub"],
 	requirement: {

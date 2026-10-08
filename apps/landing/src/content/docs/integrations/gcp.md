@@ -81,7 +81,7 @@ The script enables these APIs in the host project:
 | `iam.googleapis.com`            | Metrics and resources | Creating the reader service account.                         |
 | `iamcredentials.googleapis.com` | Metrics and resources | Short-lived tokens for that account. No key is ever created. |
 
-For log forwarding it creates a Pub/Sub topic and push subscription in the host project and a log sink on the project, folder or organization. For metrics and resources it creates a reader service account in the host project. Each is named `maple-` followed by 24 characters of the connection's ID.
+For log forwarding it creates a Pub/Sub topic and push subscription in the host project and a log sink on the project, folder or organization. For metrics and resources it creates a reader service account in the host project. Each is named `maple-` followed by 24 hexadecimal characters unique to the connection.
 
 It grants these roles:
 
@@ -122,9 +122,9 @@ Each entry gets its `service.name` from the resource that wrote it, so workload 
 | App Engine              | The module ID.                                                    |
 | Everything else         | `gcp/<resource type>`, for example `gcp/cloudsql_database`.       |
 
-Every entry also carries `cloud.provider` (`gcp`), `cloud.account.id` (the project ID), `cloud.region`, `gcp.resource.type` and the resource's labels as `gcp.resource.labels.*`. GKE entries add `k8s.cluster.name`, `k8s.namespace.name`, `k8s.pod.name` and `k8s.container.name`.
+Every entry also carries `cloud.provider` (`gcp`), `gcp.resource.type` and the resource's labels as `gcp.resource.labels.*`, plus `cloud.account.id` (the project ID) and `cloud.region` when the resource has them. GKE container entries add `k8s.cluster.name`, `k8s.namespace.name`, `k8s.pod.name` and `k8s.container.name`.
 
-The log body is `textPayload`, or the `message` or `msg` field of `jsonPayload`. The other `jsonPayload` fields become log attributes. An entry's `trace` and `spanId` become the log's trace and span IDs.
+The log body is `textPayload`, or the `message` or `msg` field of `jsonPayload`, or the whole `jsonPayload` as JSON when it has neither. The other `jsonPayload` fields become log attributes. Audit logs use the method name as the body, and request logs the method, URL and status. An entry's `trace` and `spanId` become the log's trace and span IDs.
 
 | Cloud Logging severity           | Maple severity |
 | -------------------------------- | -------------- |
@@ -137,7 +137,7 @@ The log body is `textPayload`, or the `message` or `msg` field of `jsonPayload`.
 
 ### Metrics
 
-Maple stores one data point per minute for these Cloud Monitoring metrics. The name is the Cloud Monitoring type under a `gcp.` prefix: `run.googleapis.com/request_count` becomes `gcp.run.request_count`.
+Maple stores these Cloud Monitoring metrics at one-minute resolution. The name is the Cloud Monitoring type under a `gcp.` prefix: `run.googleapis.com/request_count` becomes `gcp.run.request_count`.
 
 | Service                                    | Prefix                         | Metrics                                                                                                                                                                                                                                                          |
 | ------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -157,7 +157,7 @@ Value conventions:
 - Utilization is a fraction from 0 to 1.
 - Latencies and execution times are in milliseconds.
 
-Service names follow the same rule as logs: Cloud Run services, functions, GKE containers and Compute Engine instances use the workload name, and everything else is `gcp/<resource type>`. Tell those apart by resource attribute:
+Service names follow the same rule as logs: Cloud Run services, functions, GKE containers and Compute Engine instances use the workload name, and everything else is `gcp/<resource type>`. Narrow further by resource attribute:
 
 | Service        | Resource attributes                                                           |
 | -------------- | ----------------------------------------------------------------------------- |
@@ -186,9 +186,9 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 
 Google bills Pub/Sub and Cloud Monitoring usage to your account, separately from your Maple plan.
 
-Pub/Sub bills the log entries the sink publishes and the subscription delivers as throughput. A narrower `LOG_FILTER` lowers it. See [Pub/Sub pricing](https://cloud.google.com/pubsub/pricing).
+Google bills Pub/Sub for the log entries that pass through the topic and the subscription. A narrower `LOG_FILTER` lowers it. See [Pub/Sub pricing](https://cloud.google.com/pubsub/pricing).
 
-Cloud Monitoring bills API reads to the host project by time series returned: $0.50 per million, with the first million per billing account each month free. Each connection runs 46 `timeSeries.list` queries per read, 288 reads a day. A connection that returns 500 series per read returns about 4.3 million a month, about $1.70. At 5,000 series per read it is about $21. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+Cloud Monitoring bills API reads by time series returned: $0.50 per million, with the first million per billing account each month free. Maple makes its reads through the host project, so they count against that project. Each connection runs 46 `timeSeries.list` queries per read, 288 reads a day. A connection that returns 500 series per read returns about 4.3 million a month, about $1.70. At 5,000 series per read it is about $21. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
 
 Cloud Asset Inventory searches are not charged.
 
@@ -210,7 +210,7 @@ Log forwarding:
 | The connection shows                                                                                                    | Cause and fix                                                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Waiting for the first log** for more than a few minutes                                                               | Check that the script ended with `Maple setup complete.` and that the filter lets some of your logs through. Maple shows no error for a push it refuses over the Maple plan limit, so also check the subscription's push errors in the Google Cloud console. |
-| **Last push rejected** with `Payload is not a Cloud Logging LogEntry; the push subscription must use --push-no-wrapper` | The subscription delivers wrapped Pub/Sub messages. Run the setup script again. It resets the subscription.                                                                                                                                                  |
+| **Last push rejected** with `Payload is not a Cloud Logging LogEntry; the push subscription must use --push-no-wrapper` | The subscription delivers wrapped Pub/Sub messages. Run the setup script again. It resets the subscription. Entries pushed in the meantime are lost.                                                                                                         |
 | **Last push rejected** with any other text                                                                              | Maple could not accept an entry at that moment. Pub/Sub retries it for up to a day, and the status returns to **Receiving logs** with the next accepted entry.                                                                                               |
 | GKE logs appear twice                                                                                                   | Your pods also send logs through an OpenTelemetry collector. Turn on **Exclude GKE container logs** and run the script again.                                                                                                                                |
 
@@ -220,22 +220,22 @@ Metrics and resources:
 | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Run the setup script in Cloud Shell to grant Maple read access; if it already ran, wait a few minutes for the grant to apply.` | Expected before the script has run. After it ran, Google can take a few minutes to apply the roles. The text before it names the API that refused, such as `Google IAM returned 403`. If it stays, run the script again and read its output. |
 | **Last read failed or was incomplete** with `... of 46 metric queries failed. First: ...`                                       | Some metrics could not be read. The text names the first one and Google's answer. Maple keeps what it read, and the failed metrics miss those minutes.                                                                                       |
-| A text with `returned 429`                                                                                                      | The host project is out of Cloud Monitoring API quota. Maple tries again on the next read.                                                                                                                                                   |
+| A text with `returned 429`                                                                                                      | Google rate-limited the API the text names, usually because the host project is out of quota for it. Maple keeps the metrics it already read. The rest can miss those minutes.                                                               |
 | **Last read failed or was incomplete** with `... of 46 metric queries held more than one poll reads`                            | The scope holds more series than one read takes. Connect its folders or projects as separate connections.                                                                                                                                    |
-| `Reading the metrics took too long. Maple retries on the next poll.`                                                            | Nothing to do unless it repeats. If it does, connect folders or projects separately.                                                                                                                                                         |
+| `Reading the metrics took too long. Maple retries on the next poll.`                                                            | Maple reads the same minutes again, which can store part of them twice. If it repeats, connect folders or projects separately.                                                                                                               |
 | `Metrics are paused: this organization is over its plan limit.`                                                                 | The Maple organization reached its plan limit. Maple tries again after an hour.                                                                                                                                                              |
-| `Metrics ingest returned ...`, `Metrics ingest request failed` or `Metrics ingest timed out`                                    | Maple could not store what it read. It reads the same window again on the next read.                                                                                                                                                         |
+| `Metrics ingest returned ...`, `Metrics ingest request failed` or `Metrics ingest timed out`                                    | Maple could not store what it read. It reads the same minutes again, which can store part of them twice.                                                                                                                                     |
 | **Receiving metrics** with `Resource inventory: The scope holds more than 10000 resources; the inventory is incomplete.`        | Metrics are unaffected. Connect folders or projects separately for a complete resource list.                                                                                                                                                 |
 | **Receiving metrics** with another `Resource inventory: ...` text                                                               | Metrics are unaffected. If it names `Cloud Asset Inventory returned 403`, run the setup script again. Otherwise Maple retries.                                                                                                               |
-| The **Metrics and resources** switch reads **Not available on this Maple deployment.**                                          | A self-hosted deployment needs `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` and `MAPLE_GCP_SERVICE_ACCOUNT_KEY` set.                                                                                                                                    |
+| The **Metrics and resources** switch reads **Not available on this Maple deployment.**                                          | A self-hosted deployment needs `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` set to a Google service account it owns. Reading metrics also needs `MAPLE_GCP_SERVICE_ACCOUNT_KEY`, that account's key file, base64-encoded.                               |
 
 Setup:
 
-| You see                                                                | Cause and fix                                                                                                                                                                          |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `The Google Cloud project ... is already connected.`                   | The project, folder or organization already has a connection in this Maple organization. Change that connection's switches instead.                                                    |
-| The script fails while granting `roles/iam.serviceAccountTokenCreator` | An organization policy with domain-restricted sharing (`constraints/iam.allowedPolicyMemberDomains`) rejects Maple's service account. Allow it in the policy and run the script again. |
-| `Not everything could be removed. See the errors above, then re-run.`  | The script could not check or remove something it created, usually for a missing permission. Fix the errors it printed and run it again.                                               |
+| You see                                                                         | Cause and fix                                                                                                                                                                          |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `The Google Cloud <project, folder or organization> <ID> is already connected.` | It already has a connection in this Maple organization. Change that connection's switches instead.                                                                                     |
+| The script fails while granting `roles/iam.serviceAccountTokenCreator`          | An organization policy with domain-restricted sharing (`constraints/iam.allowedPolicyMemberDomains`) rejects Maple's service account. Allow it in the policy and run the script again. |
+| `Not everything could be removed. See the errors above, then re-run.`           | The script could not check or remove something it created, usually for a missing permission. Fix the errors it printed and run it again.                                               |
 
 ## Disconnect
 

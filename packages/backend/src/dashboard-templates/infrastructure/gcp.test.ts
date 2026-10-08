@@ -48,6 +48,13 @@ describe("Google Cloud dashboard template", () => {
 				expect(stored, `${widget.id}: ${query.metricName} is not a curated metric`).toBeDefined()
 				if (stored === undefined) continue
 				expect(query.metricType, widget.id).toBe(stored.metricType)
+				// A counter is a delta sum; summing a gauge would add up every minute of a bucket.
+				expect(query.aggregation === "sum", widget.id).toBe(stored.metricType === "sum")
+				// An attribute group-by keeps one service's value per group, so it only adds up
+				// where every series shares the `gcp/<resource type>` service name.
+				if (!query.groupBy.includes("service.name")) {
+					expect(stored.rows[0]?.service_name, widget.id).toMatch(/^gcp\//)
+				}
 
 				const attributeKeys = Object.keys(stored.rows[0]?.metric_attributes ?? {})
 				const resourceKeys = Object.keys(stored.rows[0]?.resource_attributes ?? {})
@@ -60,8 +67,9 @@ describe("Google Cloud dashboard template", () => {
 					}
 				}
 
+				// A distribution is charted one quantile at a time: p50, p95 and p99 do not average.
 				const quantile = /attr\.quantile = "([^"]+)"/.exec(query.whereClause)?.[1]
-				if (quantile !== undefined) {
+				if (attributeKeys.includes("quantile")) {
 					expect(
 						stored.rows.map((row) => row.metric_attributes.quantile),
 						widget.id,
