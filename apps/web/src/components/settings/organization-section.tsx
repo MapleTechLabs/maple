@@ -20,7 +20,7 @@ import { OrgAvatar } from "@/components/dashboard/org-switcher-menu"
 import { RegionBadge } from "@/components/region/region-badge"
 import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { MAPLE_REGION_LABELS } from "@/lib/region"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 export function OrganizationSection() {
@@ -44,7 +44,7 @@ export function OrganizationSection() {
 		setName(organization?.name ?? "")
 	}, [organization?.id, organization?.name])
 
-	const deleteMutation = useAtomSet(MapleApiAtomClient.mutation("organizations", "delete"), {
+	const deleteMutation = useAtomSet(MapleInternalAtomClient.mutation("organizations", "delete"), {
 		mode: "promiseExit",
 	})
 

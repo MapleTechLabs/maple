@@ -806,27 +806,6 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	),
 }) {}
 
-/** One review in a repository's list: enough to scan outcomes without loading the report. */
-export class PrReviewListItem extends Schema.Class<PrReviewListItem>("PrReviewListItem")({
-	id: PrReviewId,
-	number: Schema.Number,
-	title: Schema.NullOr(Schema.String),
-	url: Schema.String,
-	headSha: GitCommitSha,
-	status: PrReviewStatus,
-	skipReason: Schema.NullOr(PrReviewSkipReason),
-	verdict: Schema.NullOr(PrReviewVerdict),
-	score: Schema.NullOr(Schema.Number),
-	/** 1 to 10; null until a report is stored, and for reports stored before confidence existed. */
-	confidence: Schema.NullOr(Schema.Number),
-	findings: Schema.Number,
-	commentUrl: Schema.NullOr(Schema.String),
-	publishError: Schema.NullOr(Schema.String),
-	error: Schema.NullOr(Schema.String),
-	createdAt: Schema.Number,
-	finishedAt: Schema.NullOr(Schema.Number),
-}) {}
-
 /** A review row as the dashboard reads it. */
 export class PrReview extends Schema.Class<PrReview>("PrReview")({
 	id: PrReviewId,

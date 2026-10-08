@@ -7,18 +7,12 @@ import {
 	type DurationStats,
 	type AttributeValueItem,
 } from "@maple/query-engine"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { HttpClientError } from "effect/http"
 import { PublicHttpErrorBodySchema, type AnyPublicHttpErrorBody } from "@maple/domain/http"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import {
-	mapleApiClientLayer,
-	mapleApiV2ClientLayer,
-	mapleInternalClientLayer,
-	mapleRuntime,
-} from "@/lib/registry"
+import { mapleApiV2ClientLayer, mapleInternalClientLayer, mapleRuntime } from "@/lib/registry"
 import { makeClientErrorBody, NetworkErrorBody } from "@/lib/error-messages"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { isBlipping, originOf } from "@/lib/services/common/peer-reachability"
@@ -189,7 +183,7 @@ const tagOf = (cause: unknown): string | undefined =>
 
 /**
  * What the API answered, on the adapter's span. A 500 arrives as the sanitized
- * `V1UnexpectedError`, whose message says nothing; its tag and the public
+ * `ApiUnexpectedError`, whose message says nothing; its tag and the public
  * body's code are the only facts this side has, and without them the web span
  * reads "An unexpected error occurred" for a warehouse timeout and a wiring bug
  * alike.
@@ -232,23 +226,17 @@ export function decodeInput<S extends Schema.Top & { readonly DecodingServices: 
 	)
 }
 
-/**
- * Accepts either v1 client because the warehouse adapters straddle two APIs:
- * query-engine moved to the private `/internal` transport, while the session
- * replay and integrations groups it shares this helper with are still on
- * `/api`. Both layers are provided, so a caller depends only on the one it
- * actually uses.
- */
+/** Runs a warehouse adapter against the `/internal` client with span and error normalization. */
 export function runWarehouseQuery<A, E>(
 	operation: string,
-	execute: () => Effect.Effect<A, E, MapleApiAtomClient | MapleInternalAtomClient>,
+	execute: () => Effect.Effect<A, E, MapleInternalAtomClient>,
 ): Effect.Effect<A, WarehouseApiError | BackendError> {
 	return Effect.suspend(execute).pipe(
 		Effect.tapError(annotateUpstreamFailure),
 		Effect.withSpan(operation),
 		// Warehouse adapters are imperative server-function entrypoints and own this runtime layer.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(mapleApiClientLayer, mapleInternalClientLayer)),
+		Effect.provide(mapleInternalClientLayer),
 		Effect.mapError((cause) => normalizeWarehouseError(operation, cause)),
 	)
 }

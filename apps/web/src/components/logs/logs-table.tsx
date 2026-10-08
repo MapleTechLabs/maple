@@ -4,7 +4,8 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { logFilterChips } from "@/lib/logs/log-filter-chips"
+import { logFilterChips, withoutChips } from "@/lib/logs/log-filter-chips"
+import { addLogAttributeFilter, type LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
@@ -18,17 +19,18 @@ import { LogsTableToolbar } from "./logs-table-toolbar"
 import type { LogsSearchParams } from "@/routes/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useLogsViewPreferences, type LogsDensity } from "@/hooks/use-logs-view-preferences"
-import { formatCompactTimeInTimezone } from "@/lib/timezone-format"
+import { LogTime } from "./log-time"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
 import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
+import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
 import { shortId } from "@maple/ui/lib/ids"
-import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, PulseIcon } from "@/components/icons"
+import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, LinkIcon, PulseIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
@@ -40,6 +42,7 @@ import {
 } from "@/components/time-range-picker/search"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { logPermalink } from "@/lib/log-key"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 const ROW_HEIGHT = 30
@@ -68,6 +71,35 @@ function splitFirstLine(body: string): { first: string; hidden: number } {
 	return { first: lines[0] ?? "", hidden: lines.length - 1 }
 }
 
+/** What the stream reports up, so a page can hold its live tail while someone reads. */
+export interface LogsInspectState {
+	/** Pointer over the stream, a row expanded, the detail drawer open, or scrolled down. */
+	inspecting: boolean
+	/** Scrolled away from the newest rows, the one cause "Jump to latest" undoes by itself. */
+	scrolledAway: boolean
+}
+
+export interface LogsStreamHandle {
+	/** Back to the newest rows: scroll to the top and collapse every expanded row. */
+	jumpToLatest: () => void
+}
+
+interface InspectInputs {
+	hovering: boolean
+	scrolledAway: boolean
+	expanded: boolean
+	detail: boolean
+}
+
+const NOT_INSPECTING: LogsInspectState = { inspecting: false, scrolledAway: false }
+const NO_INSPECT_INPUTS: InspectInputs = {
+	hovering: false,
+	scrolledAway: false,
+	expanded: false,
+	detail: false,
+}
+const NO_EXPANDED_ROWS: ReadonlySet<number> = new Set()
+
 interface LogsTableViewProps {
 	allData: Log[]
 	isFetchingNextPage: boolean
@@ -95,6 +127,11 @@ interface LogsTableViewProps {
 	onClearFilters?: () => void
 	/** Absent when the range is already wide or custom. */
 	onWidenRange?: () => void
+	/** Fired when the reader starts or stops inspecting; optional, embedded lists have no live tail. */
+	onInspectingChange?: (state: LogsInspectState) => void
+	streamRef?: React.Ref<LogsStreamHandle>
+	/** Filter in / out on one attribute value, from a chip or an attribute row. Omit off /logs. */
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 interface LogsTableProps {
@@ -102,6 +139,8 @@ interface LogsTableProps {
 	/** Hide the /logs route toolbar — required when rendering off the /logs route
 	 *  (LogsTableToolbar reads that route's search params and throws elsewhere). */
 	embedded?: boolean
+	onInspectingChange?: (state: LogsInspectState) => void
+	streamRef?: React.Ref<LogsStreamHandle>
 }
 
 function LoadingState() {
@@ -141,19 +180,7 @@ interface LogRowProps {
 	measureRef?: (node: Element | null) => void
 	onClick: (log: Log) => void
 	onToggleExpand: (index: number) => void
-}
-
-/** `HH:MM:SS` at full strength, the milliseconds a step back: the eye reads seconds first. */
-function LogTime({ timestamp, timeZone }: { timestamp: string; timeZone: string }) {
-	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
-	const dot = formatted.lastIndexOf(".")
-	if (dot === -1) return formatted
-	return (
-		<>
-			{formatted.slice(0, dot)}
-			<span className="text-muted-foreground/50">{formatted.slice(dot)}</span>
-		</>
-	)
+	onAttributeFilter?: (filter: LogAttributeFilter) => void
 }
 
 const LogRow = React.memo(function LogRow({
@@ -171,6 +198,7 @@ const LogRow = React.memo(function LogRow({
 	measureRef,
 	onClick,
 	onToggleExpand,
+	onAttributeFilter,
 }: LogRowProps) {
 	// Only chips that add to the message: resource attributes (region, env, pod)
 	// repeat down the whole stream, and a value the body already spells out
@@ -190,6 +218,7 @@ const LogRow = React.memo(function LogRow({
 	const severity = log.severityText.toUpperCase()
 	const severityColor = getSeverityColor(log.severityText)
 	const { copy } = useCopy({ successMessage: "Copied log message" })
+	const { copy: copyLink } = useCopy({ successMessage: "Copied link to log" })
 
 	return (
 		<div
@@ -212,6 +241,8 @@ const LogRow = React.memo(function LogRow({
 				role="listitem"
 				onClick={() => onClick(log)}
 				onKeyDown={(e) => {
+					// Keys pressed on a nested control (chips, row actions) belong to it, not the row.
+					if (e.target !== e.currentTarget) return
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault()
 						onClick(log)
@@ -303,6 +334,17 @@ const LogRow = React.memo(function LogRow({
 									value={chip.value}
 									tone={chip.tone}
 									className="max-w-full"
+									onFilter={
+										onAttributeFilter
+											? (key, value, negated) =>
+													onAttributeFilter({
+														source: chip.source,
+														key,
+														value,
+														negated,
+													})
+											: undefined
+									}
 								/>
 							))}
 						</span>
@@ -324,6 +366,15 @@ const LogRow = React.memo(function LogRow({
 						}}
 					>
 						<CopyIcon size={13} />
+					</RowAction>
+					<RowAction
+						label="Copy link to log"
+						onClick={(e) => {
+							e.stopPropagation()
+							void copyLink(logPermalink(log))
+						}}
+					>
+						<LinkIcon size={13} />
 					</RowAction>
 					{log.traceId && (
 						<Link
@@ -349,7 +400,12 @@ const LogRow = React.memo(function LogRow({
 				</span>
 			</div>
 			{isExpanded && (
-				<LogRowExpanded log={log} highlight={highlight} onOpenDetail={() => onClick(log)} />
+				<LogRowExpanded
+					log={log}
+					highlight={highlight}
+					onOpenDetail={() => onClick(log)}
+					onAttributeFilter={onAttributeFilter}
+				/>
 			)}
 		</div>
 	)
@@ -422,15 +478,47 @@ export function LogsTableView({
 	filtered = excludedValues.length > 0,
 	onClearFilters,
 	onWidenRange,
+	onInspectingChange,
+	streamRef,
+	onAttributeFilter,
 }: LogsTableViewProps) {
 	const [selectedLog, setSelectedLog] = React.useState<Log | null>(null)
 	const [sheetOpen, setSheetOpen] = React.useState(false)
-	const [expandedRows, setExpandedRows] = React.useState<ReadonlySet<number>>(() => new Set())
+	// Rows are index-keyed, so expansion belongs to the data it was made on: a
+	// refresh that prepends rows would otherwise point it at different logs.
+	const [expansion, setExpansion] = React.useState(() => ({
+		anchor: allData.at(0),
+		rows: NO_EXPANDED_ROWS,
+	}))
+	if (expansion.anchor !== allData.at(0)) {
+		setExpansion({ anchor: allData.at(0), rows: NO_EXPANDED_ROWS })
+	}
+	const expandedRows = expansion.rows
 	const { effectiveTimezone } = useTimezonePreference()
 	const scrollContainerRef = React.useRef<HTMLDivElement>(null)
 	// This pane owns its scroller (the route mounts it under `DashboardLayout.Fill`,
 	// not `.Scroll`), so it has to raise the sticky area's shadow itself.
 	const reportScrolled = usePageScrolledReporter()
+
+	// Inspect bookkeeping, written only from event handlers. Each cause is tracked
+	// apart so the page hears one change per transition, not one per scroll frame.
+	const inspectInputsRef = React.useRef(NO_INSPECT_INPUTS)
+	const reportedInspectRef = React.useRef(NOT_INSPECTING)
+	const updateInspect = React.useCallback(
+		(patch: Partial<InspectInputs>) => {
+			const inputs = { ...inspectInputsRef.current, ...patch }
+			inspectInputsRef.current = inputs
+			const next: LogsInspectState = {
+				inspecting: inputs.hovering || inputs.scrolledAway || inputs.expanded || inputs.detail,
+				scrolledAway: inputs.scrolledAway,
+			}
+			const reported = reportedInspectRef.current
+			if (reported.inspecting === next.inspecting && reported.scrolledAway === next.scrolledAway) return
+			reportedInspectRef.current = next
+			onInspectingChange?.(next)
+		},
+		[onInspectingChange],
+	)
 
 	const handleRowClick = React.useCallback(
 		(log: Log) => {
@@ -440,23 +528,19 @@ export function LogsTableView({
 			}
 			setSelectedLog(log)
 			setSheetOpen(true)
+			updateInspect({ detail: true })
 		},
-		[onLogClick],
+		[onLogClick, updateInspect],
 	)
 
-	const toggleExpanded = React.useCallback((index: number) => {
-		setExpandedRows((prev) => {
-			const next = new Set(prev)
-			if (next.has(index)) next.delete(index)
-			else next.add(index)
-			return next
-		})
-	}, [])
-
-	const handleSheetOpenChange = React.useCallback((open: boolean) => {
-		setSheetOpen(open)
-		if (!open) setSelectedLog(null)
-	}, [])
+	const handleSheetOpenChange = React.useCallback(
+		(open: boolean) => {
+			setSheetOpen(open)
+			if (!open) setSelectedLog(null)
+			updateInspect({ detail: open })
+		},
+		[updateInspect],
+	)
 
 	// Measured row heights, feeding an adaptive estimate. The constants below are
 	// only a cold start: a compact row actually lands near 31px (an 18px chip
@@ -467,7 +551,71 @@ export function LogsTableView({
 	const expandedRowsRef = React.useRef(expandedRows)
 	React.useLayoutEffect(() => {
 		expandedRowsRef.current = expandedRows
-	}, [expandedRows])
+		// New data drops expansion during render, where the page cannot be told;
+		// release the hold here so a reload or new query never leaves it stuck.
+		if (expandedRows.size === 0 && inspectInputsRef.current.expanded) updateInspect({ expanded: false })
+	}, [expandedRows, updateInspect])
+
+	// The empty state has no stream to hover, scroll or open, so it can never fire
+	// the events that release those holds; drop them when the list empties.
+	React.useLayoutEffect(() => {
+		if (allData.length > 0) return
+		const { hovering, scrolledAway, detail } = inspectInputsRef.current
+		if (hovering || scrolledAway || detail)
+			updateInspect({ hovering: false, scrolledAway: false, detail: false })
+	}, [allData.length, updateInspect])
+
+	// Reads the committed set from the ref (user events land after layout effects),
+	// which keeps this stable for the memoized rows.
+	const setRowExpanded = React.useCallback(
+		(index: number, expand: boolean | "toggle") => {
+			const current = expandedRowsRef.current
+			const on = expand === "toggle" ? !current.has(index) : expand
+			if (on === current.has(index)) return
+			const rows = new Set(current)
+			if (on) rows.add(index)
+			else rows.delete(index)
+			expandedRowsRef.current = rows
+			setExpansion((prev) => ({ anchor: prev.anchor, rows }))
+			updateInspect({ expanded: rows.size > 0 })
+		},
+		[updateInspect],
+	)
+	const toggleExpanded = React.useCallback(
+		(index: number) => setRowExpanded(index, "toggle"),
+		[setRowExpanded],
+	)
+
+	const collapseAll = () => {
+		expandedRowsRef.current = NO_EXPANDED_ROWS
+		setExpansion((prev) =>
+			prev.rows.size === 0 ? prev : { anchor: prev.anchor, rows: NO_EXPANDED_ROWS },
+		)
+		updateInspect({ expanded: false })
+	}
+
+	const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+		const away = event.currentTarget.scrollTop > 0
+		reportScrolled(away)
+		if (away !== inspectInputsRef.current.scrolledAway) updateInspect({ scrolledAway: away })
+	}
+
+	React.useImperativeHandle(streamRef, () => ({
+		jumpToLatest: () => {
+			scrollContainerRef.current?.scrollTo({ top: 0 })
+			reportScrolled(false)
+			collapseAll()
+			updateInspect({ scrolledAway: false })
+		},
+	}))
+
+	// The stream can unmount mid-inspection (a loading or error state replaces it);
+	// release any hold it was keeping on the page.
+	const onUnmount = React.useEffectEvent(() => {
+		if (reportedInspectRef.current.inspecting) onInspectingChange?.(NOT_INSPECTING)
+	})
+	// react-doctor-disable-next-line react-doctor/rules-of-hooks -- React Doctor does not recognize useMountEffect as an Effect Event boundary.
+	useMountEffect(() => () => onUnmount())
 
 	const estimateSize = React.useCallback(() => {
 		const stats = sizeStatsRef.current
@@ -546,12 +694,7 @@ export function LogsTableView({
 				hotkey: "ArrowRight",
 				callback: () => {
 					if (isDialogOpen() || focusedIndex < 0) return
-					setExpandedRows((prev) => {
-						if (prev.has(focusedIndex)) return prev
-						const next = new Set(prev)
-						next.add(focusedIndex)
-						return next
-					})
+					setRowExpanded(focusedIndex, true)
 				},
 				options: { ignoreInputs: true },
 			},
@@ -559,12 +702,7 @@ export function LogsTableView({
 				hotkey: "ArrowLeft",
 				callback: () => {
 					if (isDialogOpen() || focusedIndex < 0) return
-					setExpandedRows((prev) => {
-						if (!prev.has(focusedIndex)) return prev
-						const next = new Set(prev)
-						next.delete(focusedIndex)
-						return next
-					})
+					setRowExpanded(focusedIndex, false)
 				},
 				options: { ignoreInputs: true },
 			},
@@ -655,10 +793,14 @@ export function LogsTableView({
 				aria-busy={waiting || undefined}
 			>
 				{!onLogClick && !embedded && <LogsTableToolbar />}
-				<div className="flex-1 min-h-0 relative">
+				<div
+					className="flex-1 min-h-0 relative"
+					onPointerEnter={() => updateInspect({ hovering: true })}
+					onPointerLeave={() => updateInspect({ hovering: false })}
+				>
 					<div
 						ref={scrollContainerRef}
-						onScroll={(e) => reportScrolled(e.currentTarget.scrollTop > 0)}
+						onScroll={handleScroll}
 						className="@container/log absolute inset-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-md border"
 					>
 						<ColumnHeader pinnedColumns={pinnedColumns} timeZone={effectiveTimezone} />
@@ -690,6 +832,7 @@ export function LogsTableView({
 										measureRef={measureElement}
 										onClick={handleRowClick}
 										onToggleExpand={toggleExpanded}
+										onAttributeFilter={onAttributeFilter}
 									/>
 								)
 							})}
@@ -708,7 +851,12 @@ export function LogsTableView({
 				/>
 			</div>
 
-			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={handleSheetOpenChange} />
+			<LogDetailSheet
+				log={selectedLog}
+				open={sheetOpen}
+				onOpenChange={handleSheetOpenChange}
+				onAttributeFilter={onAttributeFilter}
+			/>
 		</>
 	)
 }
@@ -716,7 +864,7 @@ export function LogsTableView({
 /** Stable identity for the default, so the view never sees a new array each render. */
 const EMPTY_EXCLUDED: ReadonlyArray<string> = []
 
-export function LogsTable({ filters, embedded }: LogsTableProps) {
+export function LogsTable({ filters, embedded, onInspectingChange, streamRef }: LogsTableProps) {
 	const { firstPageResult, allData, isFetchingNextPage, hasNextPage, isCapped, fetchNextPage } =
 		useInfiniteLogs(filters)
 	// Bound to the logs route so clearing exclusions keeps the rest of the search params typed.
@@ -725,21 +873,17 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 	// An empty list under an exclusion cannot explain itself — see `ExcludedEmptyHint`.
 	const excludedChips = logFilterChips(filters ?? {}).filter((chip) => chip.negated)
 	const excludedValues = excludedChips.flatMap((chip) => chip.values)
-	const clearExclusions = () =>
-		navigateLogs({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
-			}),
-		})
+	const clearExclusions = () => navigateLogs({ search: (prev) => withoutChips(prev, excludedChips) })
 	const filterChips = logFilterChips(filters ?? {})
-	const clearFilters = () =>
-		navigateLogs({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(filterChips.map((chip) => [chip.param, undefined])),
+	const clearFilters = () => navigateLogs({ search: (prev) => withoutChips(prev, filterChips) })
+	// Stable, so the memoized rows do not re-render on every parent render.
+	const addAttributeFilter = React.useCallback(
+		(filter: LogAttributeFilter) =>
+			navigateLogs({
+				search: (prev) => ({ ...prev, attrs: addLogAttributeFilter(prev.attrs, filter) }),
 			}),
-		})
+		[navigateLogs],
+	)
 	const canWiden = !embedded && canWidenTimeRange(filters ?? {}, "")
 	const widenRange = () =>
 		navigateLogs({ search: (prev) => applyTimeRangeSearch(prev, { presetValue: WIDEN_TIME_PRESET }) })
@@ -782,6 +926,9 @@ export function LogsTable({ filters, embedded }: LogsTableProps) {
 				filtered={filterChips.length > 0}
 				onClearFilters={embedded ? undefined : clearFilters}
 				onWidenRange={canWiden ? widenRange : undefined}
+				onInspectingChange={onInspectingChange}
+				streamRef={streamRef}
+				onAttributeFilter={embedded ? undefined : addAttributeFilter}
 			/>
 		))
 		.render()

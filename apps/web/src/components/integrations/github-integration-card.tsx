@@ -43,7 +43,7 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useRequiredIntegrationConnect, type IntegrationConnect } from "./integration-connect"
 import {
@@ -81,21 +81,21 @@ const SYNC_PRESENTATION: Record<
 
 export function GithubIntegrationCard() {
 	// Assigned once so the refresh hook targets the same memoized query atom.
-	const statusQuery = retainedQuery("integrations", "githubStatus", {
+	const statusQuery = retainedInternalQuery("integrations", "githubStatus", {
 		reactivityKeys: ["githubIntegrationStatus"],
 	})
 	const statusResult = useAtomValue(statusQuery)
 	const refreshStatus = useAtomRefresh(statusQuery)
 
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubDisconnect"), {
 		mode: "promiseExit",
 	})
 	const deleteRepository = useAtomSet(
-		MapleApiAtomClient.mutation("integrations", "githubDeleteRepository"),
+		MapleInternalAtomClient.mutation("integrations", "githubDeleteRepository"),
 		{ mode: "promiseExit" },
 	)
 	const setTrackedBranch = useAtomSet(
-		MapleApiAtomClient.mutation("integrations", "githubSetTrackedBranch"),
+		MapleInternalAtomClient.mutation("integrations", "githubSetTrackedBranch"),
 		{ mode: "promiseExit" },
 	)
 

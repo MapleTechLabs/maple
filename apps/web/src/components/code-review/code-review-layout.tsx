@@ -16,7 +16,7 @@ import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 
 import { AuthorLabel } from "./author-avatar"
@@ -143,7 +143,7 @@ export function CodeReviewFilters({
 	onChange: (patch: Partial<CodeReviewSearch> & { timePreset?: string }) => void
 }) {
 	const authorsResult = useAtomValue(
-		retainedQuery("codeReview", "analytics", {
+		retainedInternalQuery("codeReview", "analytics", {
 			query: { ...window, repositoryId: search.repo, author: undefined },
 		}),
 	)
@@ -151,7 +151,9 @@ export function CodeReviewFilters({
 		.onSuccess((analytics) => analytics.authors.map((row) => row.author))
 		.orElse(() => [])
 	const status = useAtomValue(
-		retainedQuery("integrations", "githubStatus", { reactivityKeys: ["githubIntegrationStatus"] }),
+		retainedInternalQuery("integrations", "githubStatus", {
+			reactivityKeys: ["githubIntegrationStatus"],
+		}),
 	)
 	const repositories = Result.builder(status)
 		.onSuccess((response) => response.repositories.filter((repo) => repo.prReviewEnabled))

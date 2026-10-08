@@ -617,7 +617,7 @@ problem.
 ### Provider webhooks
 
 Provider authentication runs before normalization. The hosted PlanetScale route
-(`apps/api/src/routes/v1/planetscale-webhook.http.ts`) acknowledges test,
+(`apps/api/src/routes/webhooks/planetscale.http.ts`) acknowledges test,
 ignore, and log dispositions inline. Events that need issue or timeline
 persistence are projected and queued before acknowledgement. The canonical
 CloudEvent and routing metadata form the durable queue body. When the provider

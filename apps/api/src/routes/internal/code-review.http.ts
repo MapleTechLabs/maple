@@ -1,9 +1,9 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleApi } from "@maple/domain/http"
+import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
-export const HttpCodeReviewLive = HttpApiBuilder.group(MapleApi, "codeReview", (handlers) =>
+export const HttpCodeReviewLive = HttpApiBuilder.group(MapleInternalApi, "codeReview", (handlers) =>
 	Effect.gen(function* () {
 		const analytics = yield* PrReviewAnalyticsService
 

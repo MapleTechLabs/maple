@@ -1,37 +1,28 @@
 import { HttpApi, OpenApi } from "effect/http-api"
 import { AuthApiGroup, AuthPublicApiGroup } from "./auth"
 import { BillingPublicApiGroup } from "./billing"
-import { CodeReviewApiGroup } from "./code-review"
 import { EmailPublicApiGroup } from "./digest"
-import { ErrorsApiGroup } from "./errors"
-import { IntegrationsApiGroup } from "./integrations"
-import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
-import {
-	OrganizationCreationApiGroup,
-	OrganizationRegionApiGroup,
-	OrganizationsApiGroup,
-} from "./organizations"
-import { SessionReplaysApiGroup } from "./session-replay"
-import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
+import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
+
+/**
+ * The unversioned `/api` surface: routes whose URLs live in clients we cannot
+ * redeploy, so they never move. CLI device login and session (installed CLIs),
+ * MCP OAuth consent, password login, the unauthenticated plan catalog, and email
+ * unsubscribe. Not a versioned API: public resources belong in `/v2`, dashboard
+ * transport in `/internal`. Not published in the API reference.
+ */
 export class MapleApi extends HttpApi.make("MapleApi")
 	.add(AuthPublicApiGroup)
 	.add(AuthApiGroup)
 	.add(BillingPublicApiGroup)
-	.add(CodeReviewApiGroup)
 	.add(EmailPublicApiGroup)
-	.add(ErrorsApiGroup)
-	.add(IntegrationsApiGroup)
-	.add(OrgClickHouseSettingsApiGroup)
-	.add(OrganizationsApiGroup)
-	.add(OrganizationCreationApiGroup)
-	.add(OrganizationRegionApiGroup)
-	.add(SessionReplaysApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors)
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors)
 	.annotateMerge(
 		OpenApi.annotations({
-			title: "Maple API",
+			title: "Maple unversioned API",
 			version: "1.0.0",
-			description: "Effect-based backend API for Maple.",
+			description:
+				"Authentication protocols and unauthenticated helpers at stable /api URLs. Not public API.",
 		}),
 	) {}
