@@ -29,7 +29,9 @@ use axum::extract::Request;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
-use axum::http::header::{HeaderName, AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, RETRY_AFTER};
+use axum::http::header::{
+    HeaderName, AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, RETRY_AFTER, USER_AGENT,
+};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::middleware::Next;
@@ -2441,6 +2443,9 @@ async fn main() {
             AUTHORIZATION,
             CONTENT_TYPE,
             CONTENT_ENCODING,
+            // Some browsers let a page set `user-agent` on `fetch` and then list it
+            // in the preflight. Not allowing it fails the whole request.
+            USER_AGENT,
             HeaderName::from_static("x-maple-ingest-key"),
             // SDK identity hint, sent by every browser SDK on every request. Not
             // allowing it fails preflight for the whole SDK, not just this header.
@@ -3013,7 +3018,7 @@ impl ReplaySessionBudget {
 /// Header every Maple SDK stamps on every ingest request: `<sdk-name>/<version>`,
 /// e.g. `maple-browser/0.3.0` or `maple-effect-sdk-client/0.7.0`.
 ///
-/// Browsers do not let a page set `user-agent`, and until this existed a
+/// Not every browser lets a page set `user-agent`, and until this existed a
 /// rejected request from a browser SDK carried NOTHING that said which SDK or
 /// version produced it — a malformed replay chunk could not be traced back to a
 /// release. Recorded as `maple.sdk` on every request span. Must stay in the CORS
