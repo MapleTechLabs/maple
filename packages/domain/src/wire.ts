@@ -1,12 +1,28 @@
 import { DateTime, Schema, SchemaGetter } from "effect"
 
-const toWire = (value: unknown): unknown => {
+/** What a forwarded row value becomes on the wire. */
+export type WireJson =
+	| string
+	| number
+	| boolean
+	| null
+	| ReadonlyArray<WireJson>
+	| { readonly [key: string]: WireJson }
+
+const toWire = (value: unknown): WireJson => {
+	if (value === null || value === undefined) return null
+	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
 	if (DateTime.isDateTime(value)) return DateTime.formatIso(value)
+	if (value instanceof Date) return value.toISOString()
 	if (Array.isArray(value)) return value.map(toWire)
-	if (value !== null && typeof value === "object") {
-		return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, toWire(entry)]))
+	if (typeof value === "object") {
+		return Object.fromEntries(
+			Object.entries(value)
+				.filter(([, entry]) => entry !== undefined)
+				.map(([key, entry]) => [key, toWire(entry)]),
+		)
 	}
-	return value
+	return String(value)
 }
 
 /**
