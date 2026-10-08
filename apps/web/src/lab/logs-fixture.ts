@@ -234,6 +234,7 @@ export function buildLogsLabFixture(anchorMs: number, count = 400): Log[] {
 		const traced = template.service !== "email-worker" || r() < 0.5
 		return {
 			timestamp: new Date(t).toISOString(),
+			exactTimestamp: new Date(t).toISOString().replace("T", " ").replace("Z", ""),
 			severityText: template.severity,
 			severityNumber: SEVERITY_NUMBER[template.severity],
 			serviceName: template.service,
