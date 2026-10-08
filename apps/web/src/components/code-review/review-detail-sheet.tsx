@@ -192,6 +192,11 @@ function ReviewDetailContent({
 								<BulletList items={report.keyChanges} />
 							</Section>
 						) : null}
+						{report.beforeMerge && report.beforeMerge.length > 0 ? (
+							<Section title="Before merge">
+								<BulletList items={report.beforeMerge.map((step) => step.title)} />
+							</Section>
+						) : null}
 						<Section title={`Issues (${report.findings.length})`}>
 							{report.findings.length === 0 ? (
 								<p className="text-sm text-muted-foreground">No issues filed on this head.</p>

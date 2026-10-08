@@ -36,6 +36,7 @@ import {
 	type PullRequestContext,
 	type PullRequestFile,
 	PrReviewId,
+	PrReviewReport,
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
@@ -46,6 +47,7 @@ import {
 	PR_REVIEW_RULE_FILES,
 	type RepositoryRuleFile,
 } from "@maple/backend/services/pr-review/PrReviewService"
+import { detectMergeSteps, mergeChecklist, nameStep } from "@maple/backend/services/pr-review/merge-checklist"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -1112,7 +1114,17 @@ export const reviewLocally = async (
 		return dir
 	}
 
-	const report = submitted.report
+	// No code search here: every new-looking name is listed, where the service lists only unknown ones.
+	const detected = detectMergeSteps(files)
+	const { beforeMerge: reviewerSteps, ...submittedReport } = submitted.report
+	const beforeMerge = mergeChecklist(
+		[...detected.names.map(nameStep), ...detected.steps],
+		reviewerSteps ?? [],
+	)
+	const report = new PrReviewReport({
+		...submittedReport,
+		...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
+	})
 	const publication = buildPublication({
 		// Each run is its own review, so a posted run gets a comment of its own.
 		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),

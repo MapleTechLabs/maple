@@ -383,6 +383,26 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 - When a pull request closes, its threads are read once more for reactions and dismissals.
   `maple.pr_review.reactions_up` / `reactions_down` on the span are the live precision signal.
 
+### Before merge
+
+Every review comment carries a "Before merge" task list: what has to happen outside the diff
+before the change ships. The service builds it at submit from the pull request's files
+(`services/pr-review/merge-checklist.ts`), never from the model's say-so:
+
+- **Secrets and env vars**: names the diff starts reading (`process.env.X`, `Config.redacted("X")`,
+  `requiredSecret("X")`, `${{ secrets.X }}`, `.env.example` keys, and the other languages'
+  equivalents). A name a removed line still mentions is a move, not a new read. Each candidate is
+  then searched for on the default branch, and only names found nowhere are listed. Tests, docs
+  and `scripts/` are skipped.
+- **Migrations** added under a migrations directory, **warehouse schema** (`datasources.ts`,
+  `.datasource`, `.pipe`) and **deployment config** (`wrangler.*`, `alchemy.run.ts`, Terraform,
+  Dockerfiles) changes, one step per file.
+
+The agent adds up to six steps of its own through `beforeMerge` on `submit_review`, in the
+repository's terms (where a secret goes, a flag to create, a backfill to run). A reviewer step that
+names a detected secret or file replaces the detected one. Repository `ignorePaths` apply. The list
+is informational: it never changes the check's conclusion.
+
 ### Learning from feedback
 
 - Every stored finding's `category: title` and body are embedded (`FindingEmbedder`, wired in
