@@ -14,7 +14,7 @@
  * driver — the one input a shaper needs beyond its rows is the window's
  * duration, and the caller hands that in.
  */
-import { Option, Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
 
@@ -125,6 +125,10 @@ type RawCommitTuple = readonly [unknown, unknown, unknown, unknown]
 
 const isCommitTuple = (value: unknown): value is RawCommitTuple => Array.isArray(value) && value.length === 4
 
+/** A row timestamp as a string: decoded rows carry a `DateTime.Utc`, HTTP JSON the string. */
+const timeString = (value: unknown): string =>
+	DateTime.isDateTime(value) ? DateTime.formatIso(value) : String(value ?? "")
+
 /**
  * One services-list row, already collapsed to (service, environment) by
  * `serviceOverviewQuery`.
@@ -158,7 +162,7 @@ export function coerceServiceOverviewRow(
 			spanCount: commitSpanCount,
 			percentage: spanCount > 0 ? Math.round((commitSpanCount / spanCount) * 100) : 0,
 			errorCount: Number(tuple[2] ?? 0),
-			firstSeen: String(tuple[3] ?? ""),
+			firstSeen: timeString(tuple[3]),
 		}
 	})
 
@@ -274,6 +278,12 @@ export interface ErrorByType {
 	lastSeen: Date
 }
 
+/** A decoded `DateTime.Utc` in process, or its string form once it has crossed JSON. */
+const toDate = (value: unknown): Date =>
+	DateTime.isDateTime(value)
+		? DateTime.toDateUtc(value)
+		: new Date(warehouseDateTimeToIso(String(value ?? "")))
+
 export function coerceErrorsByTypeRows(rows: ReadonlyArray<Record<string, unknown>>): ErrorByType[] {
 	return rows.map((raw) => ({
 		fingerprintHash: String(raw.fingerprintHash ?? ""),
@@ -281,8 +291,8 @@ export function coerceErrorsByTypeRows(rows: ReadonlyArray<Record<string, unknow
 		sampleMessage: String(raw.sampleMessage ?? ""),
 		count: Number(raw.count),
 		affectedServicesCount: Number(raw.affectedServicesCount),
-		firstSeen: new Date(warehouseDateTimeToIso(String(raw.firstSeen ?? ""))),
-		lastSeen: new Date(warehouseDateTimeToIso(String(raw.lastSeen ?? ""))),
+		firstSeen: toDate(raw.firstSeen),
+		lastSeen: toDate(raw.lastSeen),
 	}))
 }
 
@@ -311,7 +321,10 @@ export function coerceErrorsSummary(row: Record<string, unknown> | null | undefi
 // ---------------------------------------------------------------------------
 
 export interface LogRow {
+	/** ISO-8601 UTC, millisecond precision. */
 	timestamp: string
+	/** The stored `DateTime64(9)` literal with its nanoseconds: the list cursor and the log key. */
+	exactTimestamp: string
 	severityText: string
 	severityNumber: number
 	serviceName: string
@@ -340,9 +353,14 @@ function parseAttributes(value: unknown): Record<string, string> {
 	return parsed.value as Record<string, string>
 }
 
+/** A decoded `DateTime.Utc` in process, or the ISO string it became on the HTTP wire. */
+const isoTimestamp = (value: unknown): string =>
+	DateTime.isDateTime(value) ? DateTime.formatIso(value) : String(value ?? "")
+
 export function coerceLogRow(raw: Record<string, unknown>): LogRow {
 	return {
-		timestamp: String(raw.timestamp ?? ""),
+		timestamp: isoTimestamp(raw.timestamp),
+		exactTimestamp: String(raw.exactTimestamp ?? ""),
 		severityText: String(raw.severityText ?? ""),
 		severityNumber: Number(raw.severityNumber ?? 0),
 		serviceName: String(raw.serviceName ?? ""),

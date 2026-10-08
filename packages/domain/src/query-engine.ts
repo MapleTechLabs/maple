@@ -11,6 +11,7 @@ import {
 	SpanName,
 	TraceId,
 } from "./primitives"
+import { WireRow } from "./wire"
 
 const dateTimePattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/
 
@@ -572,7 +573,7 @@ export const BreakdownItem = Schema.Struct({
 })
 export type BreakdownItem = Schema.Schema.Type<typeof BreakdownItem>
 
-export const ListRow = Schema.Record(Schema.String, Schema.Unknown)
+export const ListRow = WireRow
 export type ListRow = Schema.Schema.Type<typeof ListRow>
 
 export const AttributeKeyItem = Schema.Struct({

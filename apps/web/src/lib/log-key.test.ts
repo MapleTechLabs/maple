@@ -2,41 +2,43 @@ import { describe, expect, it } from "vitest"
 import { decodeLogKey, encodeLogKey } from "./log-key"
 
 describe("log-key", () => {
+	// The key carries the stored nanosecond literal, which the log lookup matches exactly.
 	it("round-trips a log with full trace context", () => {
 		const log = {
-			timestamp: "2026-05-19 12:54:36.123456",
+			exactTimestamp: "2026-05-19 12:54:36.123456",
 			serviceName: "checkout-api",
 			traceId: "abcdef0123456789abcdef0123456789",
 			spanId: "0123456789abcdef",
 		}
-		const decoded = decodeLogKey(encodeLogKey(log))
-		expect(decoded).toEqual(log)
+		const { exactTimestamp, ...rest } = log
+		expect(decodeLogKey(encodeLogKey(log))).toEqual({ timestamp: exactTimestamp, ...rest })
 	})
 
 	it("round-trips a log without trace/span context", () => {
 		const log = {
-			timestamp: "2026-05-19 12:54:36",
+			exactTimestamp: "2026-05-19 12:54:36",
 			serviceName: "worker",
 			traceId: "",
 			spanId: "",
 		}
-		const decoded = decodeLogKey(encodeLogKey(log))
-		expect(decoded).toEqual(log)
+		const { exactTimestamp, ...rest } = log
+		expect(decodeLogKey(encodeLogKey(log))).toEqual({ timestamp: exactTimestamp, ...rest })
 	})
 
 	it("preserves non-ASCII service names", () => {
 		const log = {
-			timestamp: "2026-05-19 00:00:00",
+			exactTimestamp: "2026-05-19 00:00:00",
 			serviceName: "café-service-日本",
 			traceId: "",
 			spanId: "",
 		}
-		expect(decodeLogKey(encodeLogKey(log))).toEqual(log)
+		const { exactTimestamp, ...rest } = log
+		expect(decodeLogKey(encodeLogKey(log))).toEqual({ timestamp: exactTimestamp, ...rest })
 	})
 
 	it("produces URL-safe tokens (no +, /, or = padding)", () => {
 		const token = encodeLogKey({
-			timestamp: "2026-05-19 12:54:36.999999",
+			exactTimestamp: "2026-05-19 12:54:36.999999",
 			serviceName: "svc/with+chars",
 			traceId: "ff".repeat(16),
 			spanId: "ee".repeat(8),
@@ -52,7 +54,7 @@ describe("log-key", () => {
 
 	it("returns null when the decoded payload has the wrong shape", () => {
 		const validToken = encodeLogKey({
-			timestamp: "2026-05-19 00:00:00",
+			exactTimestamp: "2026-05-19 00:00:00",
 			serviceName: "svc",
 			traceId: "",
 			spanId: "",
@@ -69,7 +71,7 @@ describe("log-key", () => {
 	})
 
 	it("returns null when timestamp or serviceName is empty", () => {
-		const emptyTs = encodeLogKey({ timestamp: "", serviceName: "svc", traceId: "", spanId: "" })
+		const emptyTs = encodeLogKey({ exactTimestamp: "", serviceName: "svc", traceId: "", spanId: "" })
 		expect(decodeLogKey(emptyTs)).toBeNull()
 	})
 })

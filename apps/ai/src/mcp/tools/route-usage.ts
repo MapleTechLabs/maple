@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { RouteUsageOutput, RouteUsageSort } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -82,8 +82,8 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 						errorCount: row.errorCount,
 						errorRate: row.spanCount > 0 ? row.errorCount / row.spanCount : 0,
 						p95Ms: row.p95DurationMs,
-						firstSeen: row.firstSeen,
-						lastSeen: row.lastSeen,
+						firstSeen: DateTime.formatIso(row.firstSeen),
+						lastSeen: DateTime.formatIso(row.lastSeen),
 					}
 				}),
 			}

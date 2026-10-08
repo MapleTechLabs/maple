@@ -1,4 +1,5 @@
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { SeriesPoint } from "../lib/chart-series"
@@ -35,7 +36,7 @@ export function useLocalServiceOverview(serviceName: string, bounds: TimeBounds)
 			const row = catalogRows[0]
 			if (!row) return null
 			const firstSeenMs = overviewRows.reduce<number | null>((earliest, overview) => {
-				const ms = parseClickHouseDateTime(overview.firstSeen)
+				const ms = parseClickHouseDateTime(DateTime.formatIso(overview.firstSeen))
 				return ms !== null && (earliest === null || ms < earliest) ? ms : earliest
 			}, null)
 			return { stats: toCatalogEntry(row, 0), firstSeenMs }
@@ -96,7 +97,7 @@ export function useLocalServiceOperationsTimeseries(
 							signal,
 						)
 						return rows.map((r) => ({
-							bucket: r.bucket,
+							bucket: DateTime.formatIso(r.bucket),
 							series: r.spanName,
 							value: Number(r.count),
 						}))

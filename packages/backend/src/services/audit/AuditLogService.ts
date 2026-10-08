@@ -5,9 +5,8 @@ import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from 
 import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
-import { warehouseDateTime64 } from "@maple/query-engine/datetime"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -167,8 +166,8 @@ const neverFail = (action: string) => (write: Effect.Effect<void, unknown>) =>
 
 /** Which optional filters bind, and the parameter values behind them. */
 const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
-	const since = filters.sinceMs === undefined ? undefined : warehouseDateTime64(filters.sinceMs)
-	const until = filters.untilMs === undefined ? undefined : warehouseDateTime64(filters.untilMs)
+	const since = filters.sinceMs === undefined ? undefined : DateTime.makeUnsafe(filters.sinceMs)
+	const until = filters.untilMs === undefined ? undefined : DateTime.makeUnsafe(filters.untilMs)
 	const opts: CH.AuditLogEntriesOpts = {
 		actorType: filters.actorType !== undefined,
 		userId: filters.userId !== undefined,

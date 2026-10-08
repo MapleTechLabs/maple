@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Context, Effect, Layer, Metric } from "effect"
+import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
@@ -86,6 +86,8 @@ export interface QueryEngineServiceApi {
 		payload: unknown,
 		effect: Effect.Effect<A, E>,
 		policy?: DirectRouteCachePolicyInput,
+		/** How the value crosses the cache's JSON round trip, when plain JSON would change it. */
+		schema?: Schema.Codec<A, unknown, never, never>,
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
 }
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceApi>()(
@@ -404,6 +406,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				payload: unknown,
 				effect: Effect.Effect<A, E>,
 				policyInput: DirectRouteCachePolicyInput = 15,
+				schema?: Schema.Codec<A, unknown, never, never>,
 			) {
 				// Attributes go on the `Effect.fn` span, not an inner `withSpan` of the
 				// same name. Wrapping the body in a second same-named span emitted two
@@ -439,7 +442,12 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						const policy = resolveDirectRouteCachePolicy(policyInput)
 						const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload, policy)
 						const { value, hit } = yield* edgeCache.getOrCompute(
-							{ bucket: "qe-direct", key, ttlSeconds: policy.ttlSeconds },
+							{
+								bucket: "qe-direct",
+								key,
+								ttlSeconds: policy.ttlSeconds,
+								...(schema === undefined ? undefined : { schema }),
+							},
 							effect,
 						)
 						yield* recordCacheOutcome(hit)

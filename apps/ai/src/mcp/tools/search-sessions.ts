@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { SearchSessionsOutput } from "@maple/domain/mcp-outputs"
 import { searchSessions } from "@maple/query-engine/observability"
 import { SESSION_TAGS, sessionTagsOf } from "@maple/domain/query-engine"
@@ -165,7 +165,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					userEmail: s.userEmail,
 					groupId: s.groupId,
 					groupName: s.groupName,
-					startTime: s.startTime,
+					startTime: DateTime.formatIso(s.startTime),
 					durationMs: s.durationMs != null ? Number(s.durationMs) : null,
 					status: s.status,
 					browserName: s.browserName,

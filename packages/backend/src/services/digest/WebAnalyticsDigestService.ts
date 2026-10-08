@@ -12,7 +12,7 @@ import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Redacted } from "effect"
+import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Redacted } from "effect"
 import {
 	aiProductIcon,
 	computeDelta,
@@ -281,7 +281,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				let prevPageViews = 0
 				for (const row of pageviewSeries) {
 					const views = Number(row.pageViews) || 0
-					if (String(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
+					if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
 					else prevPageViews += views
 				}
 
@@ -332,7 +332,8 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const referralsBy = (inCurrent: boolean) => {
 					const totals = new Map<string, number>()
 					for (const row of aiReferrals) {
-						if (String(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent) continue
+						if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent)
+							continue
 						totals.set(row.product, (totals.get(row.product) ?? 0) + (Number(row.sessions) || 0))
 					}
 					return totals
