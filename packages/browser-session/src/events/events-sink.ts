@@ -79,7 +79,6 @@ export interface SessionEventSink {
 interface BufferedEvent {
 	readonly ev: SessionEvent
 	readonly seq: number
-	readonly bytes: number
 }
 
 /**
@@ -128,8 +127,9 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 
 	let buffer: BufferedEvent[] = []
 	let bufferBytes = 0
-	// Events whose POST got no response; they go out again with the next flush.
-	let retry: BufferedEvent[] = []
+	// Rows whose POST got no response. They go out once more, unchanged, with
+	// the next flush, so this only ever holds what failed since the previous one.
+	let retry: Array<Record<string, unknown>> = []
 	let seq = 0
 	let pageViews = 0
 	let clickCount = 0
@@ -146,12 +146,12 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 
 	const flush = async (keepalive = false): Promise<void> => {
 		if (buffer.length === 0 && retry.length === 0) return
-		const batch = [...retry, ...buffer]
+		const fresh = buffer.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
+		const rows = [...retry, ...fresh]
 		retry = []
 		buffer = []
 		bufferBytes = 0
 		const changesAtSend = visibilityChanges
-		const rows = batch.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
 		const outcome = await postSessionEvents(config, rows, keepalive)
 		// `session_events` has no dedup, so a row sent twice is counted twice:
 		// resend only when no response came back and the page stayed in view. A
@@ -159,14 +159,9 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		// hidden, can reject even though ingest answered it: an unloading document
 		// never sees the response.
 		if (outcome !== "failed" || keepalive || visibilityChanges !== changesAtSend) return
-		// Newest first, so the byte cap drops the oldest.
-		let bytes = 0
-		retry = [...batch, ...retry]
-			.sort((a, b) => b.seq - a.seq)
-			.filter((event) => {
-				bytes += event.bytes
-				return bytes <= FLUSH_BYTES
-			})
+		// Only the rows on their first attempt: an unreachable endpoint must not
+		// turn into a POST every interval.
+		retry = [...fresh, ...retry]
 	}
 
 	const emit = (ev: SessionEvent): void => {
@@ -189,10 +184,8 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 			noteNavigation(ev.url ?? (typeof location !== "undefined" ? location.href : ""))
 		} else if (ev.type === "click") clickCount++
 		else if (ev.type === "error" || (ev.type === "console" && ev.level === "error")) errorCount++
-		const bytes = approximateSize(ev)
-		// Timestamped here, not when the row is built: a resent event keeps its time.
-		buffer.push({ ev: { ...ev, timestamp: ev.timestamp ?? Date.now() }, seq: seq++, bytes })
-		bufferBytes += bytes
+		buffer.push({ ev, seq: seq++ })
+		bufferBytes += approximateSize(ev)
 		if (bufferBytes >= FLUSH_BYTES) void flush()
 		for (const listener of listeners()) {
 			// A listener must never break capture.

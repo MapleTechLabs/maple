@@ -155,93 +155,85 @@ describe("startEventSink identity stamping", () => {
 	})
 })
 
-// A periodic flush that gets no response is the one failure the sink resends.
-// `session_events` has no dedup, so every other failure must stay a drop.
+// A flush that gets no response while the page stays in view is the one failure
+// the sink resends. `session_events` has no dedup, so every other one is a drop.
 describe("startEventSink resend after a failed flush", () => {
 	const post = vi.mocked(postSessionEvents)
-	const messagesOf = (call: number) => post.mock.calls[call]?.[1].map((row) => row.message)
+	const rowsOf = (call: number) => post.mock.calls[call]?.[1] ?? []
+	const messagesOf = (call: number) => rowsOf(call).map((row) => row.message)
 
 	beforeEach(() => {
 		resetSinkForTests()
 		post.mockReset().mockResolvedValue("accepted")
 	})
 
-	it("resends the same rows with the next flush", async () => {
+	it("resends the same rows once, with the next flush", async () => {
 		const sink = startEventSink(CONFIG, "sess-retry-1")
+		post.mockResolvedValueOnce("failed").mockResolvedValueOnce("failed")
 		sink.emit({ type: "custom", message: "first" })
-		post.mockResolvedValueOnce("failed")
 		await sink.flush()
 		await new Promise((resolve) => setTimeout(resolve, 5))
 		sink.emit({ type: "custom", message: "second" })
 		await sink.flush()
-
-		const [failed, resent] = post.mock.calls.map(([, rows]) => rows)
-		// Same seq and timestamp as the first attempt, alongside the newer event.
-		expect(resent).toEqual(expect.arrayContaining([...(failed ?? [])]))
-		expect(messagesOf(1)).toContain("second")
-
-		post.mockClear()
 		await sink.flush()
-		expect(post).not.toHaveBeenCalled()
+		await sink.flush()
+
+		// Unchanged from the first attempt (same seq and timestamp), ahead of the newer row.
+		expect(rowsOf(1).slice(0, rowsOf(0).length)).toEqual(rowsOf(0))
+		// The second failure re-queues only the row that had not been resent yet.
+		expect(messagesOf(2)).toEqual(["second"])
+		expect(post).toHaveBeenCalledTimes(3)
+		sink.stop()
+	})
+
+	it("re-queues every flush that failed since the previous one", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-2")
+		const fail: Array<() => void> = []
+		post.mockImplementation(() => new Promise((resolve) => fail.push(() => resolve("failed"))))
+		sink.emit({ type: "custom", message: "first" })
+		const first = sink.flush()
+		sink.emit({ type: "custom", message: "second" })
+		const second = sink.flush()
+		for (const settle of fail) settle()
+		await Promise.all([first, second])
+		post.mockReset().mockResolvedValue("accepted")
+		await sink.flush()
+
+		expect(messagesOf(0)).toEqual(expect.arrayContaining(["first", "second"]))
 		sink.stop()
 	})
 
 	it("does not resend a batch ingest answered, whatever the status", async () => {
-		const sink = startEventSink(CONFIG, "sess-retry-2")
+		const sink = startEventSink(CONFIG, "sess-retry-3")
 		post.mockResolvedValueOnce("rejected")
 		await sink.flush()
-		post.mockClear()
 		await sink.flush()
 
-		expect(post).not.toHaveBeenCalled()
+		expect(post).toHaveBeenCalledTimes(1)
 		sink.stop()
 	})
 
 	it("does not resend a keepalive flush", async () => {
-		const sink = startEventSink(CONFIG, "sess-retry-3")
+		const sink = startEventSink(CONFIG, "sess-retry-4")
 		post.mockResolvedValueOnce("failed")
 		await sink.flush(true)
-		post.mockClear()
 		await sink.flush()
 
-		expect(post).not.toHaveBeenCalled()
+		expect(post).toHaveBeenCalledTimes(1)
 		sink.stop()
 	})
 
 	it("does not resend a flush that was in flight when the page was hidden", async () => {
-		const sink = startEventSink(CONFIG, "sess-retry-4")
+		const sink = startEventSink(CONFIG, "sess-retry-5")
 		// An unloading document sees the POST reject even when ingest answered it.
 		post.mockImplementationOnce(async () => {
 			document.dispatchEvent(new Event("visibilitychange"))
 			return "failed"
 		})
 		await sink.flush()
-		post.mockClear()
 		await sink.flush()
 
-		expect(post).not.toHaveBeenCalled()
-		sink.stop()
-	})
-
-	it("keeps the newest events when the unsent backlog passes the byte cap", async () => {
-		const big = (message: string) => ({
-			type: "custom" as const,
-			message,
-			attrs: { pad: "x".repeat(30_000) },
-		})
-		const sink = startEventSink(CONFIG, "sess-retry-5")
-		post.mockResolvedValue("failed")
-		sink.emit(big("a"))
-		sink.emit(big("b"))
-		await sink.flush()
-		sink.emit(big("c"))
-		await sink.flush()
-		post.mockClear()
-		await sink.flush()
-
-		// 64 KiB holds two of the three; the oldest (and the page view before it) go.
-		expect(messagesOf(0)).toHaveLength(2)
-		expect(messagesOf(0)).toEqual(expect.arrayContaining(["b", "c"]))
+		expect(post).toHaveBeenCalledTimes(1)
 		sink.stop()
 	})
 })
