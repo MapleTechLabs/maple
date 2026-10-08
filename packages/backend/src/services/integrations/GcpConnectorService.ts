@@ -1,5 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto"
-import { gcpConnectors, hashIngestKey, parseIngestKeyLookupHmacKey, type GcpConnectorRow } from "@maple/db"
+import {
+	gcpConnectors,
+	gcpResources,
+	hashIngestKey,
+	parseIngestKeyLookupHmacKey,
+	type GcpConnectorRow,
+} from "@maple/db"
+import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
 	GcpMetricsUnavailableError,
 	GcpScopeAlreadyConnectedError,
@@ -15,7 +22,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { and, asc, eq } from "drizzle-orm"
+import { and, asc, eq, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -38,6 +45,12 @@ export interface GcpConnector {
 	/** Last log push the ingest gateway accepted from this connector. Null until the first one. */
 	readonly lastLogReceivedAt: number | null
 	readonly lastLogError: string | null
+	/** Last poll that read the scope's metrics. Null until the first one. */
+	readonly lastMetricsReceivedAt: number | null
+	readonly lastMetricsError: string | null
+	/** Projects the last inventory sync found in the scope. */
+	readonly discoveredProjectCount: number
+	readonly lastResourcesError: string | null
 }
 
 export type CreateGcpConnectorInput = Pick<
@@ -99,7 +112,7 @@ const toPersistenceError = makePersistenceErrorMapper(
 // Binds the ciphertext to its row, so a stored secret cannot be moved onto another connector.
 const secretAad = (connectorId: string) => Buffer.from(`gcp_connectors:v1:${connectorId}`, "utf8")
 
-const toConnector = (row: GcpConnectorRow): GcpConnector => ({
+const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConnector => ({
 	id: row.id,
 	scopeType: row.scopeType,
 	scopeId: row.scopeId,
@@ -109,6 +122,10 @@ const toConnector = (row: GcpConnectorRow): GcpConnector => ({
 	createdAt: dateToMs(row.createdAt),
 	lastLogReceivedAt: dateToMs(row.lastReceivedAt),
 	lastLogError: row.lastError,
+	lastMetricsReceivedAt: dateToMs(row.lastMetricsReceivedAt),
+	lastMetricsError: row.lastMetricsError,
+	discoveredProjectCount,
+	lastResourcesError: row.lastResourcesError,
 })
 
 const notFound = () => new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
@@ -171,6 +188,21 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					),
 				)
 
+			/** Projects in each connector's inventory. One the poller has not synced yet is absent. */
+			const projectCounts = (orgId: OrgId) =>
+				dbExecute((db) =>
+					db
+						.select({ connectorId: gcpResources.connectorId, count: sql<number>`count(*)::int` })
+						.from(gcpResources)
+						.where(
+							and(
+								eq(gcpResources.orgId, orgId),
+								eq(gcpResources.assetType, GCP_PROJECT_ASSET_TYPE),
+							),
+						)
+						.groupBy(gcpResources.connectorId),
+				).pipe(Effect.map((rows) => new Map(rows.map((row) => [row.connectorId, row.count]))))
+
 			const status = Effect.fn("GcpConnectorService.status")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
@@ -180,9 +212,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						.where(eq(gcpConnectors.orgId, orgId))
 						.orderBy(asc(gcpConnectors.createdAt), asc(gcpConnectors.id)),
 				)
+				const counts = yield* projectCounts(orgId)
 				return {
 					metricsAvailable: mapleServiceAccountEmail !== undefined,
-					connectors: rows.map(toConnector),
+					connectors: rows.map((row) => toConnector(row, counts.get(row.id))),
 				}
 			})
 
@@ -255,12 +288,25 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				const [row] = yield* dbExecute((db) =>
 					db
 						.update(gcpConnectors)
-						.set({ ...flags, updatedAt })
+						.set({
+							...flags,
+							// Switching metrics restarts the poller from a fresh window: it does not
+							// replay the time they were off, or keep an error from before.
+							...(flags.metricsEnabled === current.metricsEnabled
+								? undefined
+								: {
+										metricsWatermarkAt: null,
+										lastMetricsError: null,
+										resourcesSyncedAt: null,
+										lastResourcesError: null,
+									}),
+							updatedAt,
+						})
 						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
 						.returning(),
 				)
 				if (row === undefined) return yield* notFound()
-				return toConnector(row)
+				return toConnector(row, (yield* projectCounts(orgId)).get(row.id))
 			})
 
 			const scripts = Effect.fn("GcpConnectorService.scripts")(function* (

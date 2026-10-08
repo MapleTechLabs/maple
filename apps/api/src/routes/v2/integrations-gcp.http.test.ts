@@ -155,6 +155,10 @@ describe("v2 gcp integration over HTTP", () => {
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
 			last_log_received_at: null,
 			last_log_error: null,
+			last_metrics_received_at: null,
+			last_metrics_error: null,
+			discovered_project_count: 0,
+			last_resources_error: null,
 		})
 
 		// A project is its own host project, and forwards logs only unless asked otherwise.

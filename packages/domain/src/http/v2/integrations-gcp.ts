@@ -34,6 +34,10 @@ const connectorExample = {
 	created_at: "2026-10-01T12:00:00.000Z",
 	last_log_received_at: "2026-10-08T09:12:00.000Z",
 	last_log_error: null,
+	last_metrics_received_at: "2026-10-08T09:10:00.000Z",
+	last_metrics_error: null,
+	discovered_project_count: 14,
+	last_resources_error: null,
 } as const
 
 export const V2GcpConnector = Schema.Struct({
@@ -71,6 +75,24 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	last_log_error: Schema.NullOr(Schema.String).annotate({
 		description: "Why the most recent log push was rejected, or `null`.",
+		examples: [null],
+	}),
+	last_metrics_received_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When Maple last read the scope's metrics, or `null` before the first successful read. Stays `null` until the setup script has run with `metrics_enabled`.",
+	}),
+	last_metrics_error: Schema.NullOr(Schema.String).annotate({
+		description:
+			"Why the most recent metrics read failed or was incomplete, or `null`. Before the setup script has run it says that Maple has no access yet.",
+		examples: [null],
+	}),
+	discovered_project_count: Schema.Number.annotate({
+		description:
+			"How many projects the latest resource sync found in the scope. `0` until the first sync; a `project` scope reports `1`.",
+		examples: [14],
+	}),
+	last_resources_error: Schema.NullOr(Schema.String).annotate({
+		description: "Why the most recent resource sync failed or was incomplete, or `null`.",
 		examples: [null],
 	}),
 }).annotate({

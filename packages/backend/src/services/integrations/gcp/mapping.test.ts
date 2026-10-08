@@ -237,8 +237,8 @@ describe("mapGcpResource", () => {
 			displayName: "checkout",
 			state: null,
 			labels: { team: "payments" },
-			createdAtMs: Date.UTC(2026, 0, 2, 3, 4, 5),
-			updatedAtMs: null,
+			resourceCreatedAt: new Date(Date.UTC(2026, 0, 2, 3, 4, 5)),
+			resourceUpdatedAt: null,
 		})
 
 		const project = mapGcpResource({

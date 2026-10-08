@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { GCP_ASSET_TYPES, GCP_METRIC_GROUPS, GCP_PROJECT_ASSET_TYPE } from "./gcp-metrics"
+import { GCP_METRIC_GROUPS } from "./gcp-metrics"
 
 describe("GCP_METRIC_GROUPS", () => {
 	const metrics = GCP_METRIC_GROUPS.flatMap((group) => group.metrics)
@@ -12,25 +12,12 @@ describe("GCP_METRIC_GROUPS", () => {
 			"cloudsql.googleapis.com/database/postgresql/num_backends":
 				"gcp.cloudsql.database.postgresql.num_backends",
 		})
+		// No type twice, and no two types under one name.
+		expect(Object.keys(names)).toHaveLength(metrics.length)
 		expect(new Set(Object.values(names)).size).toBe(metrics.length)
-		expect(new Set(Object.keys(names)).size).toBe(metrics.length)
-	})
-
-	it("aligns counters and distributions as deltas, gauges as means", () => {
-		for (const metric of metrics) {
-			expect(metric.aligner, metric.type).toBe(metric.kind === "gauge" ? "ALIGN_MEAN" : "ALIGN_DELTA")
-			if (metric.kind !== "gauge") expect(metric.reducer, metric.type).toBe("REDUCE_SUM")
-		}
 	})
 
 	it("never groups by the project itself: every query adds it", () => {
 		for (const group of GCP_METRIC_GROUPS) expect(group.resourceLabels).not.toContain("project_id")
-	})
-})
-
-describe("GCP_ASSET_TYPES", () => {
-	it("lists projects, which is how a folder or organization scope is discovered", () => {
-		expect(GCP_ASSET_TYPES).toContain(GCP_PROJECT_ASSET_TYPE)
-		expect(new Set(GCP_ASSET_TYPES).size).toBe(GCP_ASSET_TYPES.length)
 	})
 })

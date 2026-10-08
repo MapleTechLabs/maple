@@ -1,5 +1,5 @@
 import { afterEach, assert, beforeAll, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Logger, References, Tracer } from "effect"
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Logger, References, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { GCP_ASSET_TYPES, GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
@@ -84,6 +84,8 @@ interface ScopedCall {
 	readonly scope: string
 	readonly params: URLSearchParams
 	readonly authorization: string | null
+	/** `x-goog-user-project`: the project whose quota the call uses. */
+	readonly quotaProject: string | null
 }
 
 interface MonitoringCall extends ScopedCall {
@@ -95,6 +97,7 @@ interface Calls {
 	readonly impersonate: Array<{
 		readonly account: string
 		readonly authorization: string | null
+		readonly quotaProject: string | null
 		readonly body: unknown
 	}>
 	readonly monitoring: Array<MonitoringCall>
@@ -107,7 +110,7 @@ interface StubOptions {
 	/** Answer for one impersonation; undefined grants a token. */
 	readonly impersonate?: (account: string) => Response | undefined
 	/** Answer for one `timeSeries.list` call; undefined answers "no series". */
-	readonly monitoring?: (call: MonitoringCall) => Response | undefined
+	readonly monitoring?: (call: MonitoringCall) => Response | Promise<Response> | undefined
 	/** Answer for one `searchAllResources` call; undefined answers "no resources". */
 	readonly assets?: (call: ScopedCall) => Response | undefined
 	readonly ingestStatus?: number
@@ -173,7 +176,9 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		const url = new URL(
 			typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
 		)
-		const authorization = new Headers(init?.headers).get("authorization")
+		const headers = new Headers(init?.headers)
+		const authorization = headers.get("authorization")
+		const quotaProject = headers.get("x-goog-user-project")
 		const body = await new Response(init?.body ?? null).text()
 		if (url.host === "oauth2.googleapis.com") {
 			calls.oauth.push(new URLSearchParams(body).get("assertion") ?? "")
@@ -185,7 +190,7 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 					.replace("/v1/projects/-/serviceAccounts/", "")
 					.replace(":generateAccessToken", ""),
 			)
-			calls.impersonate.push({ account, authorization, body: JSON.parse(body) })
+			calls.impersonate.push({ account, authorization, quotaProject, body: JSON.parse(body) })
 			return options.impersonate?.(account) ?? json({ accessToken: READER_TOKEN })
 		}
 		if (url.host === "monitoring.googleapis.com") {
@@ -195,15 +200,17 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 				metricType: /metric\.type = "([^"]+)"/.exec(filter)?.[1] ?? "",
 				params: url.searchParams,
 				authorization,
+				quotaProject,
 			}
 			calls.monitoring.push(call)
-			return options.monitoring?.(call) ?? json({})
+			return (await options.monitoring?.(call)) ?? json({})
 		}
 		if (url.host === "cloudasset.googleapis.com") {
 			const call = {
 				scope: url.pathname.replace("/v1/", "").replace(":searchAllResources", ""),
 				params: url.searchParams,
 				authorization,
+				quotaProject,
 			}
 			calls.assets.push(call)
 			return options.assets?.(call) ?? json({})
@@ -390,10 +397,12 @@ describe("GcpMetricsService", () => {
 					),
 				)
 
+				// Impersonation runs on Maple's own quota; everything read as the reader on its project's.
 				assert.deepStrictEqual(calls.impersonate, [
 					{
 						account: READER_A,
 						authorization: `Bearer ${MAPLE_TOKEN}`,
+						quotaProject: null,
 						body: {
 							scope: ["https://www.googleapis.com/auth/cloud-platform"],
 							lifetime: "600s",
@@ -406,28 +415,31 @@ describe("GcpMetricsService", () => {
 					calls.monitoring.every(
 						(call) =>
 							call.scope === "projects/acme-prod" &&
-							call.authorization === `Bearer ${READER_TOKEN}`,
+							call.authorization === `Bearer ${READER_TOKEN}` &&
+							call.quotaProject === "acme-prod",
 					),
 				)
 				const query = calls.monitoring.find((call) => call.metricType === REQUEST_COUNT)!
-				assert.deepStrictEqual(Object.fromEntries(query.params), {
-					filter: `metric.type = "${REQUEST_COUNT}" AND resource.type = "cloud_run_revision"`,
-					"interval.startTime": "2026-10-08T11:25:00.000Z",
-					"interval.endTime": "2026-10-08T12:25:00.000Z",
-					"aggregation.alignmentPeriod": "60s",
-					"aggregation.perSeriesAligner": "ALIGN_DELTA",
-					"aggregation.crossSeriesReducer": "REDUCE_SUM",
-					// Object.fromEntries keeps the last of a repeated parameter.
-					"aggregation.groupByFields": "metric.label.response_code_class",
-					view: "FULL",
-					pageSize: "5000",
-				})
-				assert.deepStrictEqual(query.params.getAll("aggregation.groupByFields"), [
-					"resource.label.project_id",
-					"resource.label.service_name",
-					"resource.label.location",
-					"metric.label.response_code_class",
-				])
+				assert.deepStrictEqual(
+					[...query.params],
+					[
+						[
+							"filter",
+							`metric.type = "${REQUEST_COUNT}" AND resource.type = "cloud_run_revision"`,
+						],
+						["interval.startTime", "2026-10-08T11:25:00.000Z"],
+						["interval.endTime", "2026-10-08T12:25:00.000Z"],
+						["aggregation.alignmentPeriod", "60s"],
+						["aggregation.perSeriesAligner", "ALIGN_DELTA"],
+						["aggregation.crossSeriesReducer", "REDUCE_SUM"],
+						["aggregation.groupByFields", "resource.label.project_id"],
+						["aggregation.groupByFields", "resource.label.service_name"],
+						["aggregation.groupByFields", "resource.label.location"],
+						["aggregation.groupByFields", "metric.label.response_code_class"],
+						["view", "FULL"],
+						["pageSize", "2000"],
+					],
+				)
 
 				assert.lengthOf(calls.ingest, 1)
 				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
@@ -664,7 +676,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.strictEqual(
 					state.last_metrics_error,
-					`1 of ${METRIC_COUNT} metric queries returned more series than one poll reads; connect folders or projects separately to collect all of them.`,
+					`1 of ${METRIC_COUNT} metric queries held more than one poll reads; connect folders or projects separately to collect all of it.`,
 				)
 			}),
 		)
@@ -700,7 +712,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.match(
 					state.last_metrics_error ?? "",
-					/^\d+ of \d+ metric queries returned more series/,
+					/^\d+ of \d+ metric queries held more than one poll reads/,
 				)
 			}),
 		)
@@ -748,6 +760,95 @@ describe("GcpMetricsService", () => {
 					state.last_metrics_error ?? "",
 					/^Cloud Monitoring returned 403 PERMISSION_DENIED\. Run the setup script/,
 				)
+				assert.isNull(state.metrics_watermark_at)
+			}),
+		)
+	})
+
+	it.effect("tries a query Google failed once more, then skips it for this window", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const flaky = "run.googleapis.com/request_latencies"
+		const broken = "run.googleapis.com/container/instance_count"
+		let flakyCalls = 0
+		const stub = stubFetch(calls, {
+			monitoring: (call) => {
+				if (call.metricType === broken) return googleError(503, "UNAVAILABLE")
+				if (call.metricType === flaky && flakyCalls++ === 0) return googleError(500, "INTERNAL")
+				return onlyRequestCount(call)
+			},
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
+				assert.lengthOf(calls.monitoring, METRIC_COUNT + 2)
+				const state = yield* pollState(testDb, CONNECTOR_A)
+				assert.strictEqual(
+					state.last_metrics_error,
+					`1 of ${METRIC_COUNT} metric queries failed. First: ${broken}: Cloud Monitoring returned 503 UNAVAILABLE.`,
+				)
+				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
+			}),
+		)
+	})
+
+	it.effect("repeats the whole window when it runs out of quota before shipping anything", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const stub = stubFetch(calls, {
+			// The first query succeeds, the second is rate limited.
+			monitoring: (call) =>
+				calls.monitoring.length === 1
+					? onlyRequestCount(call)
+					: googleError(429, "RESOURCE_EXHAUSTED"),
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 1, rowsIngested: 0 })
+				assert.lengthOf(calls.monitoring, 2)
+				assert.lengthOf(calls.ingest, 0)
+				const state = yield* pollState(testDb, CONNECTOR_A)
+				assert.strictEqual(
+					state.last_metrics_error,
+					"Cloud Monitoring returned 429 RESOURCE_EXHAUSTED",
+				)
+				assert.isNull(state.metrics_watermark_at)
+			}),
+		)
+	})
+
+	it.effect("stops a poll at its time budget when Google does not answer, keeping the window", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		let reached = () => {}
+		const firstQuery = new Promise<void>((resolve) => {
+			reached = resolve
+		})
+		const stub = stubFetch(calls, {
+			monitoring: () => {
+				reached()
+				return new Promise<Response>(() => {})
+			},
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				const fiber = yield* Effect.forkChild(pollAll)
+				yield* Effect.promise(() => firstQuery)
+				yield* TestClock.adjust("2 minutes")
+				assert.deepInclude(yield* Fiber.join(fiber), { polled: 1, failures: 1 })
+				// Two queries, each tried twice at 20 seconds, pass the poll's minute; the rest wait.
+				assert.lengthOf(calls.monitoring, 4)
+				const state = yield* pollState(testDb, CONNECTOR_A)
+				assert.strictEqual(state.last_metrics_error, "Cloud Monitoring request timed out")
 				assert.isNull(state.metrics_watermark_at)
 			}),
 		)
@@ -817,7 +918,11 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				const error = yield* Effect.flip(pollAll)
-				assert.strictEqual(error.message, "Google OAuth returned 400 invalid_grant")
+				assert.deepInclude(error, {
+					_tag: "@maple/api/integrations/GcpApiError",
+					kind: "invalid",
+					message: "Google OAuth returned 400 invalid_grant",
+				})
 				assert.lengthOf(calls.impersonate, 0)
 				// Maple's own misconfiguration is not the customer's error.
 				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).last_metrics_error)
@@ -856,6 +961,8 @@ describe("GcpMetricsService resource inventory", () => {
 		let results: ReadonlyArray<unknown> = [
 			project("acme-prod", "111"),
 			runService("checkout"),
+			// The same name twice in one page is stored once.
+			{ ...runService("cart"), displayName: "cart (listed twice)" },
 			runService("cart"),
 			// Nothing to attribute it to: not stored.
 			{ name: "//cloudresourcemanager.googleapis.com/folders/42", assetType: "x/Folder" },
@@ -870,10 +977,14 @@ describe("GcpMetricsService resource inventory", () => {
 			testDb,
 			stub,
 			Effect.gen(function* () {
-				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* insertConnector(testDb, CONNECTOR_A, { scope: ["folder", "42"] })
 				yield* pollAll
 				assert.lengthOf(calls.assets, 2)
-				assert.strictEqual(calls.assets[0]!.authorization, `Bearer ${READER_TOKEN}`)
+				assert.deepInclude(calls.assets[0], {
+					scope: "folders/42",
+					authorization: `Bearer ${READER_TOKEN}`,
+					quotaProject: "acme-prod",
+				})
 				assert.deepStrictEqual(calls.assets[0]!.params.getAll("assetTypes"), [...GCP_ASSET_TYPES])
 				assert.strictEqual(calls.assets[0]!.params.get("pageSize"), "500")
 				assert.strictEqual(
@@ -961,7 +1072,7 @@ describe("GcpMetricsService resource inventory", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_resources_error,
-					"The scope holds more than 20000 resources; the inventory is incomplete.",
+					"The scope holds more than 10000 resources; the inventory is incomplete.",
 				)
 				// Counted as synced, so the next attempt is in an hour, and nothing was removed.
 				assert.strictEqual(state.resources_synced_at?.getTime(), now + 60 * minute)

@@ -378,12 +378,14 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						return false
 					})
 
-					let succeeded = 0
-					let incomplete = 0
+					/** Queries read to the end, cut short at a budget, and not started because of one. */
+					let complete = 0
+					let partial = 0
+					let skipped = 0
 					let firstFailure: { readonly type: string; readonly error: GcpApiError } | undefined
 					for (const { group, metric } of METRICS) {
 						if (points >= MAX_POINTS_PER_POLL || (yield* outOfTime)) {
-							incomplete += 1
+							skipped += 1
 							continue
 						}
 						const result = yield* readMetric({ scope, group, metric, ...window }).pipe(
@@ -392,9 +394,9 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							),
 						)
 						if (result === true) {
-							succeeded += 1
+							complete += 1
 						} else if (result === false) {
-							incomplete += 1
+							partial += 1
 						} else {
 							firstFailure ??= { type: metric.type, error: result }
 							if (result.kind === "denied" || result.kind === "rate_limited") {
@@ -405,12 +407,20 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							}
 						}
 					}
-					if (firstFailure !== undefined && succeeded + incomplete === 0) {
-						return yield* firstFailure.error
+					// No query returned anything: the window is left for the next poll.
+					if (complete + partial === 0) {
+						return yield* (
+							firstFailure?.error ??
+								new GcpApiError({
+									message: "Reading the metrics took too long",
+									kind: "upstream",
+								})
+						)
 					}
 					rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, buffer)
 
-					const failed = METRICS.length - succeeded - incomplete
+					const incomplete = partial + skipped
+					const failed = METRICS.length - complete - incomplete
 					const notes = [
 						...(firstFailure === undefined
 							? []
