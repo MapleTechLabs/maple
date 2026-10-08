@@ -20,7 +20,7 @@ import { SeveritySelect } from "@/components/errors/severity-select"
 import { AiTriageSettingsSection } from "./ai-triage-settings-section"
 import { EscalationPolicySection } from "./escalation-policy-section"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
@@ -62,7 +62,7 @@ function PolicySimulator() {
 		destinationIds: ReadonlyArray<string>
 		skipReason: string | null
 	} | null>(null)
-	const evaluate = useAtomSet(MapleApiAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
+	const evaluate = useAtomSet(MapleInternalAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
 		mode: "promiseExit",
 	})
 	const { result: destinationsResult } = useAlertDestinationsList()
@@ -157,7 +157,7 @@ function PolicySimulator() {
 
 function RecentDeliveries() {
 	const result = useAtomValue(
-		retainedQuery("errors", "listRecentEscalations", {
+		retainedInternalQuery("errors", "listRecentEscalations", {
 			query: { limit: 20 },
 			reactivityKeys: ["issueEscalations"],
 		}),

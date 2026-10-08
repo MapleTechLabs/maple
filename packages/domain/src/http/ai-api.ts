@@ -1,7 +1,7 @@
 import { HttpApi, OpenApi } from "effect/http-api"
 import { ChatApiGroup } from "./chat"
 import { IncidentTriageApiGroup } from "./incident-triage"
-import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
+import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 
 /**
  * What the AI Worker serves over HTTP.
@@ -15,8 +15,8 @@ import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
  *
  * The paths are unchanged — `apps/api` forwards `/internal/chat/*` here over a
  * service binding — so this is a change of which Worker answers, not of what the
- * dashboard calls. The error envelope stays v1's for the same reason
- * `MapleInternalApi` keeps it: `apps/web` already decodes it.
+ * dashboard calls. It shares `MapleInternalApi`'s error envelope
+ * (`api-boundary.ts`), which `apps/web` already decodes.
  *
  * The chat SSE routes are deliberately NOT here. They are a raw `HttpRouter`,
  * because `HttpApi` cannot model an open `text/event-stream`.
@@ -25,8 +25,8 @@ export class MapleAiApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
 	// Worker-to-Worker only: alerting asks before an incident earns an investigation.
 	.add(IncidentTriageApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors)
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Maple AI API",

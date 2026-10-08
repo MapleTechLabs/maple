@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { renderCallbackPage } from "./integrations.http"
+import { renderCallbackPage } from "./integrations-callback.http"
 
 /**
  * The callback page is served from the API origin, so the stored `returnTo` is

@@ -2159,6 +2159,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							environments: options.environments,
 							namespaces: options.namespaces,
 							matchModes: options.matchModes,
+							attributeFilters: options.attributeFilters,
+							resourceAttributeFilters: options.resourceAttributeFilters,
 						},
 						facet,
 					),

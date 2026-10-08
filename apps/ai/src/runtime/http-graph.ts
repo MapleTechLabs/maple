@@ -29,7 +29,7 @@ import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
-import { ChatSessionsRouter } from "../routes/v1/chat-sessions.http"
+import { ChatSessionsRouter } from "../routes/chat-sessions.http"
 import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { Env } from "@maple/backend/platform/Env"
@@ -39,7 +39,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
 
 /**
@@ -83,7 +83,7 @@ const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisio
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
-	Layer.provide(V1ErrorBoundaryLive),
+	Layer.provide(ApiErrorBoundaryLive),
 )
 
 export const AllRoutes = Layer.mergeAll(AiInternalRoutes, RawRoutes).pipe(

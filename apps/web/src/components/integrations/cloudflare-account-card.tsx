@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { CircleWarningIcon, CloudflareIcon, CloudflareMonoIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
 import { useRequiredIntegrationConnect } from "./integration-connect"
 import {
@@ -108,7 +108,7 @@ export function CloudflareAccountCard() {
 	// phase they imply, which also drives the polling that fills a fresh connection in place.
 	const { statusResult, usageResult, phase } = useCloudflareIngestPhase()
 	const refreshStatus = useAtomRefresh(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -389,12 +389,12 @@ export function CloudflareAccountCard() {
  */
 export function CloudflareHeaderActions() {
 	const connectFlow = useRequiredIntegrationConnect("CloudflareHeaderActions")
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflareDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "cloudflareDisconnect"), {
 		mode: "promiseExit",
 	})
 	// Same memoized atom as the card — no extra fetch, just the account count for labels.
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
