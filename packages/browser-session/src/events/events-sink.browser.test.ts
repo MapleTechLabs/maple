@@ -199,7 +199,12 @@ describe("startEventSink resend after a failed flush", () => {
 		post.mockReset().mockResolvedValue("accepted")
 		await sink.flush()
 
-		expect(messagesOf(0)).toEqual(expect.arrayContaining(["first", "second"]))
+		// The page view and both events, each exactly once.
+		expect(
+			rowsOf(0)
+				.map((row) => row.seq)
+				.sort(),
+		).toEqual([0, 1, 2])
 		sink.stop()
 	})
 
@@ -213,7 +218,7 @@ describe("startEventSink resend after a failed flush", () => {
 		sink.stop()
 	})
 
-	it("does not resend a keepalive flush", async () => {
+	it("does not re-queue a keepalive flush", async () => {
 		const sink = startEventSink(CONFIG, "sess-retry-4")
 		post.mockResolvedValueOnce("failed")
 		await sink.flush(true)
@@ -223,14 +228,43 @@ describe("startEventSink resend after a failed flush", () => {
 		sink.stop()
 	})
 
-	it("does not resend a flush that was in flight when the page was hidden", async () => {
+	it("keeps queued rows out of a keepalive flush, for the next periodic one", async () => {
 		const sink = startEventSink(CONFIG, "sess-retry-5")
-		// An unloading document sees the POST reject even when ingest answered it.
-		post.mockImplementationOnce(async () => {
-			document.dispatchEvent(new Event("visibilitychange"))
-			return "failed"
-		})
+		post.mockResolvedValueOnce("failed")
+		sink.emit({ type: "custom", message: "first" })
 		await sink.flush()
+		sink.emit({ type: "custom", message: "second" })
+		await sink.flush(true)
+		await sink.flush()
+
+		expect(messagesOf(1)).toEqual(["second"])
+		expect(rowsOf(2)).toEqual(rowsOf(0))
+		sink.stop()
+	})
+
+	// The page going away cuts the POST off whether or not ingest stored it.
+	it.each(["visibilitychange", "pagehide"])(
+		"does not re-queue a flush in flight across %s",
+		async (type) => {
+			const sink = startEventSink(CONFIG, `sess-retry-${type}`)
+			post.mockImplementationOnce(async () => {
+				document.dispatchEvent(new Event(type, { bubbles: true }))
+				return "failed"
+			})
+			await sink.flush()
+			await sink.flush()
+
+			expect(post).toHaveBeenCalledTimes(1)
+			sink.stop()
+		},
+	)
+
+	it("drops queued rows on pagehide", async () => {
+		// A navigation can abort the POST before `pagehide` fires.
+		const sink = startEventSink(CONFIG, "sess-retry-6")
+		post.mockResolvedValueOnce("failed")
+		await sink.flush()
+		window.dispatchEvent(new Event("pagehide"))
 		await sink.flush()
 
 		expect(post).toHaveBeenCalledTimes(1)

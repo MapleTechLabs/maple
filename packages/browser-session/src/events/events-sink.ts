@@ -127,38 +127,42 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 
 	let buffer: BufferedEvent[] = []
 	let bufferBytes = 0
-	// Rows whose POST got no response. They go out once more, unchanged, with
-	// the next flush, so this only ever holds what failed since the previous one.
+	// Rows whose POST got no response. The next non-keepalive flush sends them
+	// once more, unchanged, so this only holds what failed since the previous
+	// one. A sink that is stopped or unloaded before that flush drops them.
 	let retry: Array<Record<string, unknown>> = []
 	let seq = 0
 	let pageViews = 0
 	let clickCount = 0
 	let errorCount = 0
 
-	// Bumped when the page is hidden (which every unload does first) or shown
-	// again; `flush` reads it to tell whether a POST was in flight across one.
-	let visibilityChanges = 0
-	const onVisibilityChange = (): void => {
-		visibilityChanges++
+	// `session_events` has no dedup, so a row sent twice is counted twice, and a
+	// POST cut off by the page going away rejects even when ingest stored it.
+	// `flush` therefore re-queues nothing that was in flight across a hide, show
+	// or unload. A navigation can also abort the POST before `pagehide` (the
+	// page is still visible then), so `pagehide` drops what is queued as well.
+	let pageTransitions = 0
+	const onPageTransition = (event: Event): void => {
+		pageTransitions++
+		if (event.type === "pagehide") retry = []
 	}
-	const visibilityTarget = typeof document === "undefined" ? undefined : document
-	visibilityTarget?.addEventListener("visibilitychange", onVisibilityChange)
+	// `visibilitychange` is fired at the document and bubbles to the window.
+	const pageTarget = typeof globalThis.addEventListener === "function" ? globalThis : undefined
+	pageTarget?.addEventListener("pagehide", onPageTransition)
+	pageTarget?.addEventListener("visibilitychange", onPageTransition)
 
 	const flush = async (keepalive = false): Promise<void> => {
-		if (buffer.length === 0 && retry.length === 0) return
 		const fresh = buffer.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
-		const rows = [...retry, ...fresh]
-		retry = []
+		// Queued rows never ride a keepalive flush: on the way out there is no
+		// telling a lost batch from one whose answer the page did not wait for.
+		const rows = keepalive ? fresh : [...retry, ...fresh]
+		if (rows.length === 0) return
+		if (!keepalive) retry = []
 		buffer = []
 		bufferBytes = 0
-		const changesAtSend = visibilityChanges
+		const transitionsAtSend = pageTransitions
 		const outcome = await postSessionEvents(config, rows, keepalive)
-		// `session_events` has no dedup, so a row sent twice is counted twice:
-		// resend only when no response came back and the page stayed in view. A
-		// POST sent on the way out (keepalive), or in flight when the page was
-		// hidden, can reject even though ingest answered it: an unloading document
-		// never sees the response.
-		if (outcome !== "failed" || keepalive || visibilityChanges !== changesAtSend) return
+		if (outcome !== "failed" || keepalive || pageTransitions !== transitionsAtSend) return
 		// Only the rows on their first attempt: an unreachable endpoint must not
 		// turn into a POST every interval.
 		retry = [...fresh, ...retry]
@@ -214,7 +218,8 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		flush,
 		stop: () => {
 			clearInterval(flushTimer)
-			visibilityTarget?.removeEventListener("visibilitychange", onVisibilityChange)
+			pageTarget?.removeEventListener("pagehide", onPageTransition)
+			pageTarget?.removeEventListener("visibilitychange", onPageTransition)
 			stopNavigation()
 			stopBaselineCapture()
 			if (holder()[SINK_KEY]?.sink === sink) holder()[SINK_KEY] = undefined
