@@ -12,6 +12,7 @@
 		"./billing-tax-ids": "./src/billing-tax-ids.ts",
 		"./format": "./src/format.ts",
 		"./gcp": "./src/gcp.ts",
+		"./gcp-infra": "./src/gcp-infra.ts",
 		"./gcp-metrics": "./src/gcp-metrics.ts",
 		"./gen-ai": "./src/gen-ai.ts",
 		"./glob": "./src/glob.ts",

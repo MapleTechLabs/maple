@@ -10,6 +10,7 @@
 
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
+import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
 import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
 import { BenchmarkError, type CatalogEntry } from "@maple/query-engine/benchmark"
@@ -758,6 +759,20 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
 	},
+	{
+		module: "gcp-infra",
+		name: "gcpInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.gcpInfraPresenceSQL(), window),
+	},
+	...GCP_INFRA_SERVICE_IDS.map(
+		(service): IntegrationFixture => ({
+			module: "gcp-infra",
+			name: "gcpInfraMetricsSQL",
+			label: service,
+			compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
+		}),
+	),
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",
