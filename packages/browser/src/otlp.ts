@@ -22,19 +22,29 @@ interface Exporter<T> {
 	shutdown(): Promise<void>
 }
 
+/** Keepalive room the export being handed over must leave free; set for the older part of a split. */
+let reserve = 0
+
 /**
  * Send one body, retrying with a jittered backoff (1s, growing 1.5x) until the
  * next wait would pass the deadline. The first request is issued before this
- * returns, which an unload flush needs.
+ * returns, which an unload flush needs. Keepalive is asked for only while
+ * `leaveFree` bytes of OTLP's room would remain after the body.
  */
-async function send(url: string, headers: Record<string, string>, body: Uint8Array): Promise<ExportResult> {
+async function send(
+	url: string,
+	headers: Record<string, string>,
+	body: Uint8Array,
+	leaveFree: number,
+): Promise<ExportResult> {
 	const deadline = Date.now() + EXPORT_TIMEOUT_MS
 	let timeoutMs = EXPORT_TIMEOUT_MS
 	let backoff = 1_000
 	for (;;) {
 		const controller = new AbortController()
 		const timer = setTimeout(() => controller.abort(), timeoutMs)
-		const failure = await postToIngest(url, headers, body, true, {
+		const keepalive = body.byteLength + leaveFree <= otlpKeepaliveRoom()
+		const failure = await postToIngest(url, headers, body, keepalive, {
 			signal: controller.signal,
 			otlp: true,
 		})
@@ -80,7 +90,7 @@ export class OtlpExporter<T> implements Exporter<T> {
 			return
 		}
 		const headers = { ...this.headers, "content-type": "application/json" }
-		const sent = send(this.url, headers, body)
+		const sent = send(this.url, headers, body, reserve)
 			.then(callback)
 			// A callback that throws must not surface in the host page or fail a later shutdown.
 			.catch(() => {})
@@ -130,22 +140,32 @@ function newestFirst<T>(items: T[], serializer: Serializer<T>): T[][] {
  * A hidden or unloading document may not live to see a response, and a plain
  * request is terminated with it. There each batch becomes two exports: its
  * newest items first, in a body small enough for keepalive, then the rest,
- * which keeps keepalive while it still fits. Each goes through `inner` on its
- * own, so only the part that failed is queued.
+ * which keeps keepalive while it fits and leaves `olderReserve` bytes of room
+ * for what is flushed after it. Each goes through `inner` on its own, so only
+ * the part that failed is queued.
  */
-export function newestFirstOnExit<T>(inner: Exporter<T>, serializer: Serializer<T>): Exporter<T> {
+export function newestFirstOnExit<T>(
+	inner: Exporter<T>,
+	serializer: Serializer<T>,
+	olderReserve = 0,
+): Exporter<T> {
 	return {
 		export(items, callback) {
 			const hidden = typeof document !== "undefined" && document.visibilityState === "hidden"
 			const parts = unloading || hidden ? newestFirst(items, serializer) : [items]
 			let pending = parts.length
 			let failed: ExportResult | undefined
-			for (const part of parts) {
-				inner.export(part, (result) => {
-					if (result.code !== 0) failed = result
-					pending -= 1
-					if (pending === 0) callback(failed ?? result)
-				})
+			for (const [index, part] of parts.entries()) {
+				reserve = index > 0 ? olderReserve : 0
+				try {
+					inner.export(part, (result) => {
+						if (result.code !== 0) failed = result
+						pending -= 1
+						if (pending === 0) callback(failed ?? result)
+					})
+				} finally {
+					reserve = 0
+				}
 			}
 		},
 		forceFlush: () => inner.forceFlush(),

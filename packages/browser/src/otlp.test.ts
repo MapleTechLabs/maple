@@ -281,6 +281,28 @@ describe("newestFirstOnExit", () => {
 		expect(total).toBeLessThanOrEqual(32 * KIB)
 	})
 
+	it("sends the older part without keepalive when it would not leave the reserve free", () => {
+		vi.useFakeTimers()
+		answers = ["pending"]
+		const reserving = newestFirstOnExit(otlp(), JsonTraceSerializer, 8 * KIB)
+		// About 20 KiB: the older part leaves more than 8 KiB of OTLP's share behind it.
+		flushUnloading(() => exportBatch(reserving, spans(16, KIB)))
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
+
+		resetKeepaliveBudgetForTests()
+		sent.length = 0
+		// About 28 KiB: it fits the share, but not with 8 KiB to spare.
+		flushUnloading(() => exportBatch(reserving, spans(22, KIB)))
+		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
+		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeLessThanOrEqual(32 * KIB)
+
+		resetKeepaliveBudgetForTests()
+		sent.length = 0
+		// Without a reserve the same batch keeps keepalive for both parts.
+		flushUnloading(() => exportBatch(newestFirstOnExit(otlp(), JsonTraceSerializer), spans(22, KIB)))
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
+	})
+
 	it("sizes the tail to the room an export in flight has left", () => {
 		vi.useFakeTimers()
 		answers = ["pending"]

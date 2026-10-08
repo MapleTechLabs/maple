@@ -111,6 +111,9 @@ class ConsentSpanExporter implements SpanExporter {
  */
 const EXPORT_INTERVAL_MS = 2_000
 
+/** Keepalive room the older spans of an exit batch leave for the logs, which are flushed after them. */
+const EXIT_LOGS_RESERVE_BYTES = 8 * 1024
+
 /**
  * The provider this SDK registered, while it is live. Everything Maple spans
  * goes through it directly: the global provider may belong to the host app,
@@ -181,6 +184,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			newestFirstOnExit(
 				config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
 				JsonTraceSerializer,
+				EXIT_LOGS_RESERVE_BYTES,
 			),
 			config.errorFilters.captureHttpStatus,
 		),

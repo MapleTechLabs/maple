@@ -149,6 +149,15 @@ describe("trace export on the way out", () => {
 		expect([...(sent[1]?.names ?? []), ...(sent[0]?.names ?? [])]).toEqual(names)
 	})
 
+	it("keeps keepalive for both parts of about 20 KiB of spans", () => {
+		shutdown = setupTracing(CONFIG)
+		const names = endSpans(16)
+
+		window.dispatchEvent(new Event("pagehide"))
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
+		expect([...(sent[1]?.names ?? []), ...(sent[0]?.names ?? [])]).toEqual(names)
+	})
+
 	it("splits each batch of a backlog larger than one, the newest spans still under keepalive", () => {
 		shutdown = setupTracing(CONFIG)
 		// The 512th span starts an export; while it is in flight the queue grows past one batch.
@@ -189,7 +198,7 @@ describe("trace export on the way out", () => {
 })
 
 describe("log export on the way out", () => {
-	it("gives the newest exit logs the keepalive room that about 30 KiB of spans left", async () => {
+	it("keeps keepalive for the exit logs after about 30 KiB of spans", async () => {
 		const stopTracing = setupTracing(CONFIG)
 		const stopLogs = startLogs(CONFIG)
 		shutdown = async () => {
@@ -204,19 +213,28 @@ describe("log export on the way out", () => {
 
 		// A real unload: `pagehide` flushes the spans, the `visibilitychange` after it the logs.
 		window.dispatchEvent(new Event("pagehide"))
-		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
-		const room = 32 * KIB - (sent[0]?.bytes ?? 0) - (sent[1]?.bytes ?? 0)
-		expect(room).toBeLessThan(5 * KIB)
+		// The older spans would fit OTLP's share, but not with room to spare for the logs.
+		expect(sent.map((request) => request.keepalive)).toEqual([true, false])
+		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeLessThanOrEqual(32 * KIB)
 
 		hide()
-		await vi.waitFor(() => expect(sent).toHaveLength(4))
-		const [, , newest, older] = sent
-		const newestCount = newest?.names.length ?? 0
-		expect(newest).toMatchObject({ url: "https://ingest.test/v1/logs", keepalive: true })
-		expect(newest?.bytes).toBeLessThanOrEqual(room)
-		expect(newestCount).toBeGreaterThan(0)
-		expect(newest?.names).toEqual(names.slice(-newestCount))
-		expect(older).toMatchObject({ keepalive: false, names: names.slice(0, -newestCount) })
+		await vi.waitFor(() => expect(sent).toHaveLength(3))
+		expect(sent[2]).toMatchObject({ url: "https://ingest.test/v1/logs", keepalive: true, names })
+	})
+
+	it("gives the older log records keepalive too when they fit", async () => {
+		shutdown = startLogs(CONFIG)
+		const names = Array.from({ length: 22 }, (_, i) => `l${i}`)
+		for (const body of names) {
+			emitLog({ severityNumber: 9, severityText: "INFO", body, attributes: { pad: "x".repeat(KIB) } })
+		}
+
+		hide()
+		await vi.waitFor(() => expect(sent).toHaveLength(2))
+		// About 28 KiB: nothing is flushed after the logs, so they hold no room back.
+		expect(sent.map((request) => request.keepalive)).toEqual([true, true])
+		expect((sent[0]?.bytes ?? 0) + (sent[1]?.bytes ?? 0)).toBeGreaterThan(24 * KIB)
+		expect([...(sent[1]?.names ?? []), ...(sent[0]?.names ?? [])]).toEqual(names)
 	})
 
 	it("sends the newest records under keepalive when the document is hidden, then the rest", async () => {
