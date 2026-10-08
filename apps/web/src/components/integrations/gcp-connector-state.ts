@@ -1,4 +1,4 @@
-// Google Cloud connector rules shared by the card and the hub: log forwarding state, the
+// Google Cloud connector rules shared by the card and the hub: log and metrics state, the
 // switch rules, and the add form's validation. Pure (no React, no atoms), like
 // planetscale-setup-steps.ts.
 
@@ -14,9 +14,9 @@ export type GcpLogState =
 	/** Maple rejected the most recent push. Earlier pushes may have been accepted. */
 	| { readonly kind: "error"; readonly error: string; readonly lastLogReceivedAt: string | null }
 
-export function gcpLogState(
-	connector: Pick<V2GcpConnector, "logs_enabled" | "last_log_received_at" | "last_log_error">,
-): GcpLogState {
+type LogFields = Pick<V2GcpConnector, "logs_enabled" | "last_log_received_at" | "last_log_error">
+
+export function gcpLogState(connector: LogFields): GcpLogState {
 	if (!connector.logs_enabled) return { kind: "off" }
 	if (connector.last_log_error !== null) {
 		return {
@@ -27,6 +27,62 @@ export function gcpLogState(
 	}
 	if (connector.last_log_received_at === null) return { kind: "waiting" }
 	return { kind: "receiving", lastLogReceivedAt: connector.last_log_received_at }
+}
+
+export type GcpMetricsState =
+	| { readonly kind: "off" }
+	/**
+	 * Nothing has been read yet. `note` is the poller's reason: until the setup script has run it
+	 * says Maple has no access, which is the expected start and not a failure.
+	 */
+	| { readonly kind: "waiting"; readonly note: string | null }
+	| {
+			readonly kind: "receiving"
+			readonly lastMetricsReceivedAt: string
+			/** Projects found under a folder or organization; null for a project or before the first sync. */
+			readonly projectCount: number | null
+			/** Set when only the resource inventory sync is failing. */
+			readonly resourcesError: string | null
+	  }
+	/** The most recent read failed or was incomplete, after earlier reads worked. */
+	| { readonly kind: "error"; readonly error: string; readonly lastMetricsReceivedAt: string }
+
+type MetricsFields = Pick<
+	V2GcpConnector,
+	| "scope_type"
+	| "metrics_enabled"
+	| "last_metrics_received_at"
+	| "last_metrics_error"
+	| "discovered_project_count"
+	| "last_resources_error"
+>
+
+export function gcpMetricsState(connector: MetricsFields): GcpMetricsState {
+	if (!connector.metrics_enabled) return { kind: "off" }
+	const lastMetricsReceivedAt = connector.last_metrics_received_at
+	if (lastMetricsReceivedAt === null) return { kind: "waiting", note: connector.last_metrics_error }
+	if (connector.last_metrics_error !== null) {
+		return { kind: "error", error: connector.last_metrics_error, lastMetricsReceivedAt }
+	}
+	return {
+		kind: "receiving",
+		lastMetricsReceivedAt,
+		projectCount:
+			connector.scope_type !== "project" && connector.discovered_project_count > 0
+				? connector.discovered_project_count
+				: null,
+		resourcesError: connector.last_resources_error,
+	}
+}
+
+/**
+ * What a connector asks of its owner: something is failing, or something switched on has not
+ * delivered yet. Drives the hub's attention chip and the card's fast poll.
+ */
+export function gcpAttention(connector: LogFields & MetricsFields): "failing" | "waiting" | null {
+	const kinds: ReadonlyArray<string> = [gcpLogState(connector).kind, gcpMetricsState(connector).kind]
+	if (kinds.includes("error")) return "failing"
+	return kinds.includes("waiting") ? "waiting" : null
 }
 
 export type GcpFlags = Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled">

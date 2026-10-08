@@ -29,7 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
-import { gcpLogState, gcpScopeLabel, type GcpLogState } from "./gcp-connector-state"
+import { gcpAttention, gcpScopeLabel } from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -576,17 +576,16 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onSuccess((status): IntegrationOverview => {
 			const connectors = status.connectors
 			if (connectors.length === 0) return SET_UP
-			const states = connectors.map(gcpLogState)
-			const count = (kind: GcpLogState["kind"]) => states.filter((state) => state.kind === kind).length
-			const failing = count("error")
+			const attention = connectors.map(gcpAttention)
+			const count = (kind: (typeof attention)[number]) =>
+				attention.filter((entry) => entry === kind).length
+			const failing = count("failing")
 			const waiting = count("waiting")
-			// A connector can collect metrics only; those have no log status to count.
-			const forwarding = connectors.length - count("off")
 			const issue =
 				failing > 0
 					? `${countLabel(failing, "connection")} failing`
 					: waiting > 0
-						? `${countLabel(waiting, "connection")} waiting for logs`
+						? `${countLabel(waiting, "connection")} waiting for data`
 						: null
 			return {
 				kind: "connected",
@@ -596,19 +595,17 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					connectors.length === 1
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
-				stat:
-					forwarding > 0
-						? `${count("receiving")} of ${countLabel(forwarding, "connection")} receiving logs`
-						: null,
+				stat: `${count(null)} of ${countLabel(connectors.length, "connection")} receiving data`,
 				lastSyncLabel: syncedLabel(
 					maxMs(
-						connectors.map((connector) =>
-							connector.logs_enabled && connector.last_log_received_at
-								? Date.parse(connector.last_log_received_at)
-								: null,
-						),
+						connectors
+							.flatMap((connector) => [
+								connector.logs_enabled ? connector.last_log_received_at : null,
+								connector.metrics_enabled ? connector.last_metrics_received_at : null,
+							])
+							.map((iso) => (iso ? Date.parse(iso) : null)),
 					),
-					"last log",
+					"last data",
 				),
 				issue,
 			}

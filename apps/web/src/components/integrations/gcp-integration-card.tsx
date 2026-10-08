@@ -19,6 +19,7 @@ import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Switch } from "@maple/ui/components/ui/switch"
+import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ErrorState } from "@/components/common/error-state"
@@ -42,8 +43,10 @@ import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
 	GCP_SCOPE_NAMES,
 	cloudShellUrl,
+	gcpAttention,
 	gcpCreateRequest,
 	gcpLogState,
+	gcpMetricsState,
 	gcpScopeLabel,
 	gcpSwitchLock,
 	isGcpProjectId,
@@ -67,9 +70,9 @@ const REACTIVITY_KEYS = ["gcpIntegration"]
 /** Invalidated by a switch change: the script depends on what the connector has switched on. */
 const SCRIPT_REACTIVITY_KEYS = ["gcpSetupScripts"]
 
-/** Fast enough to watch the first log land, or an error clear after the script is re-run. */
+/** Fast enough to watch the first log or metrics land, or an error clear after a re-run. */
 const SETTLING_REFRESH_MS = 10_000
-/** Keeps "last log" and a new error current on a page left open. */
+/** Keeps the "last log" and "last read" times and a new error current on a page left open. */
 const STEADY_REFRESH_MS = 60_000
 
 const PROJECT_ID_RULE =
@@ -342,11 +345,11 @@ function SetupStep({
 /** Admin-only: fetching the script is refused for everyone else, and it carries the secret. */
 function GcpSetup({
 	connector,
-	logsEnabled,
+	flags,
 	rerun,
 }: {
 	connector: V2GcpConnector
-	logsEnabled: boolean
+	flags: GcpFlags
 	/** A switch was just saved: Google Cloud follows only once the script runs again. */
 	rerun: boolean
 }) {
@@ -366,6 +369,7 @@ function GcpSetup({
 		Result.isSuccess(scriptsResult) && !scriptsResult.waiting ? scriptsResult.value.setup_script : null
 	const runAs = SCOPES[connector.scope_type].runAs
 	const host = <InlineCode>{connector.project_id}</InlineCode>
+	const logsEnabled = flags.logs_enabled
 
 	return (
 		<div className="flex flex-col gap-4 border-t border-border/60 bg-muted/20 p-4">
@@ -445,14 +449,15 @@ function GcpSetup({
 						</>
 					) : null}
 				</SetupStep>
-				{logsEnabled ? (
-					<SetupStep number={3} title="Return here">
-						<p className="text-xs text-muted-foreground">
-							Log forwarding changes to Receiving logs within a few minutes. This page updates
-							on its own.
-						</p>
-					</SetupStep>
-				) : null}
+				<SetupStep number={3} title="Return here">
+					<p className="text-xs text-muted-foreground">
+						{logsEnabled ? "Log forwarding changes to Receiving logs within a few minutes. " : ""}
+						{flags.metrics_enabled
+							? "Metrics appear within about ten minutes: Maple reads them every five minutes, five minutes behind. "
+							: ""}
+						This page updates on its own.
+					</p>
+				</SetupStep>
 			</ol>
 		</div>
 	)
@@ -488,39 +493,111 @@ function Capability({
 	)
 }
 
-function LogStatus({ connector, logsEnabled }: { connector: V2GcpConnector; logsEnabled: boolean }) {
-	const state = gcpLogState({ ...connector, logs_enabled: logsEnabled })
-	if (state.kind === "off") return <span className="text-foreground">Off</span>
+/** A capability's status: dot, headline, when it last delivered, and what the API said about it. */
+function Status({
+	tone,
+	label,
+	at,
+	atPrefix,
+	suffix,
+	detail,
+}: {
+	tone: "ok" | "crit" | "neutral"
+	label: string
+	at?: string | null
+	atPrefix?: string
+	suffix?: string | null
+	/** The API's own words. Red only when the capability is failing. */
+	detail?: string | null
+}) {
 	return (
 		<>
-			<StatusDot
-				tone={state.kind === "receiving" ? "ok" : state.kind === "error" ? "crit" : "neutral"}
-			/>
-			{state.kind === "waiting" ? (
-				"Waiting for the first log"
-			) : (
+			<StatusDot tone={tone} />
+			<span className={tone === "neutral" ? undefined : "text-foreground"}>{label}</span>
+			{at ? (
 				<>
-					<span className="text-foreground">
-						{state.kind === "receiving" ? "Receiving logs" : "Last push rejected"}
-					</span>
-					{state.lastLogReceivedAt !== null ? (
-						<>
-							{"· "}
-							<RelativeTime
-								value={state.lastLogReceivedAt}
-								prefix={state.kind === "receiving" ? "last log" : "last accepted log"}
-							/>
-						</>
-					) : null}
+					{"· "}
+					<RelativeTime value={at} prefix={atPrefix} />
 				</>
-			)}
-			{state.kind === "error" ? (
-				<p className="basis-full break-all rounded-md bg-muted/40 p-2 font-mono text-severity-error">
-					{state.error}
+			) : null}
+			{suffix ? `· ${suffix}` : null}
+			{detail ? (
+				<p
+					className={cn(
+						"basis-full break-all rounded-md bg-muted/40 p-2 font-mono",
+						tone === "crit" && "text-severity-error",
+					)}
+				>
+					{detail}
 				</p>
 			) : null}
 		</>
 	)
+}
+
+const OFF = <span className="text-foreground">Off</span>
+
+function LogStatus({ connector, logsEnabled }: { connector: V2GcpConnector; logsEnabled: boolean }) {
+	const state = gcpLogState({ ...connector, logs_enabled: logsEnabled })
+	switch (state.kind) {
+		case "off":
+			return OFF
+		case "waiting":
+			return <Status tone="neutral" label="Waiting for the first log" />
+		case "receiving":
+			return (
+				<Status tone="ok" label="Receiving logs" at={state.lastLogReceivedAt} atPrefix="last log" />
+			)
+		case "error":
+			return (
+				<Status
+					tone="crit"
+					label="Last push rejected"
+					at={state.lastLogReceivedAt}
+					atPrefix="last accepted log"
+					detail={state.error}
+				/>
+			)
+	}
+}
+
+function MetricsStatus({
+	connector,
+	metricsEnabled,
+}: {
+	connector: V2GcpConnector
+	metricsEnabled: boolean
+}) {
+	const state = gcpMetricsState({ ...connector, metrics_enabled: metricsEnabled })
+	switch (state.kind) {
+		case "off":
+			return OFF
+		case "waiting":
+			return <Status tone="neutral" label="Waiting for the first metrics" detail={state.note} />
+		case "receiving":
+			return (
+				<Status
+					tone="ok"
+					label="Receiving metrics"
+					at={state.lastMetricsReceivedAt}
+					atPrefix="last read"
+					suffix={state.projectCount === null ? null : countLabel(state.projectCount, "project")}
+					detail={
+						state.resourcesError === null ? null : `Resource inventory: ${state.resourcesError}`
+					}
+				/>
+			)
+		case "error":
+			return (
+				<Status
+					tone="crit"
+					label="Last read failed or was incomplete"
+					at={state.lastMetricsReceivedAt}
+					atPrefix="last read"
+					detail={state.error}
+				/>
+			)
+	}
 }
 
 function GcpConnectorRow({
@@ -622,9 +699,7 @@ function GcpConnectorRow({
 							aria-label="Log forwarding"
 							checked={flags.logs_enabled}
 							disabled={updating || logsLock !== null}
-							onCheckedChange={(logs_enabled) =>
-								void save({ logs_enabled, metrics_enabled: flags.metrics_enabled })
-							}
+							onCheckedChange={(logs_enabled) => void save({ logs_enabled })}
 						/>
 					) : null
 				}
@@ -640,19 +715,14 @@ function GcpConnectorRow({
 							aria-label="Metrics and resources"
 							checked={flags.metrics_enabled}
 							disabled={updating || metricsLock !== null}
-							onCheckedChange={(metrics_enabled) =>
-								void save({ logs_enabled: flags.logs_enabled, metrics_enabled })
-							}
+							onCheckedChange={(metrics_enabled) => void save({ metrics_enabled })}
 						/>
 					) : null
 				}
 			>
-				<span className="text-foreground">{flags.metrics_enabled ? "On" : "Off"}</span>
-				{"· Cloud Monitoring metrics and the resource inventory"}
+				<MetricsStatus connector={connector} metricsEnabled={flags.metrics_enabled} />
 			</Capability>
-			{setupOpen ? (
-				<GcpSetup connector={connector} logsEnabled={flags.logs_enabled} rerun={rerun} />
-			) : null}
+			{setupOpen ? <GcpSetup connector={connector} flags={flags} rerun={rerun} /> : null}
 			<ConfirmDialog
 				open={confirmOpen}
 				onOpenChange={setConfirmOpen}
@@ -690,10 +760,7 @@ export function GcpIntegrationCard() {
 	const status = Option.getOrNull(AsyncResult.value(statusResult))
 	const connectors = status?.connectors ?? []
 
-	const settling = connectors.some((connector) => {
-		const kind = gcpLogState(connector).kind
-		return kind === "waiting" || kind === "error"
-	})
+	const settling = connectors.some((connector) => gcpAttention(connector) !== null)
 	useIntervalRefresh(refreshStatus, {
 		intervalMs: settling ? SETTLING_REFRESH_MS : STEADY_REFRESH_MS,
 		enabled: connectors.length > 0,
@@ -766,8 +833,8 @@ export function GcpIntegrationCard() {
 						<IntegrationEmptyMedia />
 						<IntegrationEmptyHint>
 							{isAdmin
-								? "Choose what to connect to get its setup script. Logs arrive a few minutes after you run it."
-								: "Logs arrive a few minutes after an admin connects Google Cloud and runs the setup script."}
+								? "Choose what to connect to get its setup script. After you run it, logs arrive within a few minutes and metrics within about ten."
+								: "After an admin connects Google Cloud and runs the setup script, logs arrive within a few minutes and metrics within about ten."}
 						</IntegrationEmptyHint>
 						{isAdmin ? (
 							<div className="w-full max-w-2xl">
