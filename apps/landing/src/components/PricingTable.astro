@@ -24,6 +24,7 @@ import PixelIcon from "./icons/PixelIcon.astro";
 import RegionChip from "./RegionChip.astro";
 import {
     getOffer,
+    isUsageCredit,
     money,
     platformFeatures,
     rateBlock,
@@ -54,6 +55,7 @@ const rowRate = (a: Allotment) => {
     // Unlimited beta rows have no overage: the cell carries the beta note in
     // "then" position; the (empty) amount slot trails it harmlessly.
     if (a.unlimited) return { before: m.pricing_free_beta(), amount: "", after: "" }
+    if (isUsageCredit(a)) return { before: m.pricing_rate_ai_usage(), amount: "", after: "" }
     if (a.rate === undefined) return undefined
     const rendered =
         a.unit === "gb"
@@ -67,7 +69,7 @@ const rowRate = (a: Allotment) => {
 
 // Widest amount in the list, so every row's unit starts on the same axis.
 const rateSlotCh = Math.max(
-    ...offer.allotments.map((a) => (a.rate === undefined ? 0 : rateLabel(a.rate).length)),
+    ...offer.allotments.map((a) => (a.rate === undefined || isUsageCredit(a) ? 0 : rateLabel(a.rate).length)),
     1,
 )
 
@@ -200,6 +202,9 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     )}
                                     {a.featureId === "product_events" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M21 11H3"/><path d="M15 19L15 15L19 15"/><path d="M21.01 21H21"/><path d="M23.01 23H23"/><path d="M21 17H23V19"/><path d="M17 21V23H19"/><path d="M9 2L15 2"/><path d="M9 20L11 20"/><path d="M3 14V8"/><path d="M21 11V8"/><path d="M7.01 4L7 4"/><path d="M7.01 18L7 18"/><path d="M17.01 4L17 4"/><path d="M19.01 6L19 6"/><path d="M5.01 6L5 6"/><path d="M10.01 6L10 6"/><path d="M14.01 6L14 6"/><path d="M10.01 16L10 16"/><path d="M12.01 4L12 4"/><path d="M5.01 16L5 16"/><path d="M8 8V14"/><path d="M16 8V10"/></svg>
+                                    )}
+                                    {a.featureId === "ai_credits" && (
+                                        <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M17 7V7.01"/><path d="M13 7V7.01"/><path d="M13 11V11.01"/><path d="M17 11V11.01"/><path d="M15 13V17"/><path d="M15 1V5"/><path d="M11.005 8.995L9.005 8.995"/><path d="M21.005 8.995L19.005 8.995"/><path d="M9.01001 17L9.00001 17"/><path d="M3.01001 6L3.00001 6"/><path d="M5.01001 17L5.00001 17"/><path d="M7 13L7 15"/><path d="M7 19L7 21"/></svg>
                                     )}
                                     <span class="text-[12.5px] text-fg">{a.label}</span>
                                 </div>
