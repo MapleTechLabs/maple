@@ -24,6 +24,7 @@ import {
 	selfObservabilityEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
+import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -102,12 +103,14 @@ export default MapleAi.make(
 		// Captured before any event, so the first request's context cannot leak into later ones.
 		const isolate = isolateContext(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
-		return { fetch: makeFetch(app, ports) }
+		return { fetch: yield* makeFetch(app, ports) }
 	}).pipe(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
 				AiBindingLayers,
+				// The init runs once per isolate, so this is the isolate's request counter.
+				IsolateAge.layer,
 				// The DO's implementation. The gateway reaches it through activation, not env.
 				ChatSessionLive.pipe(Layer.provide(WorkersAiGatewayLive)),
 				WorkerTelemetry({
