@@ -423,8 +423,9 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 
 - `GET`/`PUT /internal/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
   paths, lenses, inline threshold, drafts and a per-repository daily limit. Stated in the kickoff
-  and enforced on submit. `GET .../pr-reviews` lists the 50 newest reviews.
-- Integrations → GitHub shows the settings and the review history beside each repository's switch.
+  and enforced on submit. Review history is `GET /internal/code-review/reviews`.
+- Code Review → Settings shows the settings beside each repository's switch; Code Review → Pull
+  requests lists the reviews.
 
 ### What the GitHub App needs
 

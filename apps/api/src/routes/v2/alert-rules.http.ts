@@ -18,7 +18,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
-import { Effect, Option, Result, Schema } from "effect"
+import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -55,9 +55,6 @@ const decodeChecksCursor = (value: string | undefined) => {
 		},
 	)
 }
-
-const summaryTimestamp = (value: string) =>
-	timestamp(new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`).toISOString())
 
 const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	id: doc.id,
@@ -530,7 +527,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 						top_group_keys: summary.topGroupKeys,
 						totals: summary.totals,
 						points: summary.points.map((point) => ({
-							bucket: summaryTimestamp(point.bucket),
+							bucket: timestamp(DateTime.formatIso(point.bucket)),
 							group_key: point.groupKey,
 							total_count: point.totalCount,
 							breached_count: point.breachedCount,

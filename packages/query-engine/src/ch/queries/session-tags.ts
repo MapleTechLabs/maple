@@ -5,6 +5,7 @@
 // column each list row carries. Nothing is stored, so changing a threshold
 // re-tags history. Tags that need `session_events` belong in a rollup, not here.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -16,7 +17,7 @@ type ReplaysAccessor = ColumnAccessor<typeof SessionReplays.columns>
 type ReplaysWhere = ($: ReplaysAccessor) => Array<CH.Condition | undefined>
 
 // dateDiff(unit, start, end) as whole units; the DSL has no typed wrapper.
-function dateDiffMs(start: CH.Expr<string>, end: CH.Expr<string>): CH.Expr<number> {
+function dateDiffMs(start: CH.Expr<DateTime.Utc>, end: CH.Expr<DateTime.Utc>): CH.Expr<number> {
 	return CH.compileTypedFnCall("dateDiff", T.int64.schema, CH.lit("millisecond"), start, end)
 }
 

@@ -4,6 +4,7 @@
 // A Railway service id is shared by every environment of its project, so a service here is the
 // (environment, service) pair. Replicas are summed per timestamp before bucketing.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
@@ -38,7 +39,7 @@ export interface RailwayServicesOutput {
 	readonly memoryMax: number
 	readonly memoryLimit: number
 	readonly replicas: number
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 }
 
 /** One row per (environment, service) over the window: usage against limits, replica count. */
@@ -63,8 +64,8 @@ export function railwayServicesSQL() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...RAILWAY_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("environmentId", "serviceId", "t")
 
@@ -91,7 +92,7 @@ export function railwayServicesSQL() {
 }
 
 export interface RailwayServiceTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly cpuAvg: number
 	readonly cpuMax: number
 	readonly cpuLimit: number
@@ -147,8 +148,8 @@ export function railwayServiceTimeseriesSQL() {
 			$.MetricName.in_(...RAILWAY_METRIC_NAMES),
 			$.ResourceAttributes.get("railway.environment.id").eq(param.string("environmentId")),
 			$.ResourceAttributes.get("railway.service.id").eq(param.string("serviceId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("t")
 

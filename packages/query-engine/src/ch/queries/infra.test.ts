@@ -1,9 +1,12 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,
+	hostGaugeTimeseriesQuery,
+	hostNetworkTimeseriesQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
@@ -586,4 +589,75 @@ describe("infraPresenceQuery", () => {
 			expect(sql).toContain(`ResourceAttributes['${key}']`)
 		}
 	})
+})
+
+// Rows reach callers through `decodeRows`. A query whose row schema is not
+// derived passes rows through untouched, and its timestamps would stay strings
+// behind a `DateTime.Utc` type.
+describe("infra rows decode timestamps to DateTime.Utc", () => {
+	const timestamped = {
+		listHostsQuery: () => compile(listHostsQuery(), baseParams),
+		hostDetailSummaryQuery: () => compile(hostDetailSummaryQuery({ hostName: "h" }), baseParams),
+		hostGaugeTimeseriesQuery: () =>
+			compile(hostGaugeTimeseriesQuery({ hostName: "h", metricName: "m" }), baseParams),
+		hostNetworkTimeseriesQuery: () => compile(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams),
+		listPodsQuery: () => compile(listPodsQuery(), baseParams),
+		podDetailSummaryQuery: () => compile(podDetailSummaryQuery({ podName: "p" }), baseParams),
+		podGaugeTimeseriesQuery: () =>
+			compile(podGaugeTimeseriesQuery({ podName: "p", metricName: "m" }), baseParams),
+		listNodesQuery: () => compile(listNodesQuery(), baseParams),
+		nodeDetailSummaryQuery: () => compile(nodeDetailSummaryQuery({ nodeName: "n" }), baseParams),
+		nodeGaugeTimeseriesQuery: () =>
+			compile(nodeGaugeTimeseriesQuery({ nodeName: "n", metricName: "m" }), baseParams),
+		listWorkloadsQuery: () => compile(listWorkloadsQuery({ kind: "deployment" }), baseParams),
+		workloadDetailSummaryQuery: () =>
+			compile(workloadDetailSummaryQuery({ kind: "deployment", workloadName: "w" }), baseParams),
+		workloadGaugeTimeseriesQuery: () =>
+			compile(
+				workloadGaugeTimeseriesQuery({ kind: "deployment", workloadName: "w", metricName: "m" }),
+				baseParams,
+			),
+	}
+
+	for (const [name, compileQuery] of Object.entries(timestamped)) {
+		it.effect(`${name} derives its row schema`, () =>
+			Effect.gen(function* () {
+				const compiled = yield* compileQuery()
+				expect(compiled.rowSchemaSource).toBe("derived")
+			}),
+		)
+	}
+
+	it.effect("listHostsQuery decodes lastSeen", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(listHostsQuery(), baseParams)
+			const [row] = yield* compiled.decodeRows([
+				{
+					hostName: "h",
+					osType: "linux",
+					hostArch: "amd64",
+					cloudProvider: "",
+					lastSeen: "2024-01-01 10:00:00.123456789",
+					cpuPct: 0.5,
+					memoryPct: 0.5,
+					diskPct: 0.5,
+					load15: 1,
+				},
+			])
+			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
+		}),
+	)
+
+	it.effect("hostGaugeTimeseriesQuery decodes bucket", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(
+				hostGaugeTimeseriesQuery({ hostName: "h", metricName: "m" }),
+				baseParams,
+			)
+			const [row] = yield* compiled.decodeRows([
+				{ bucket: "2024-01-01 10:00:00.000000000", attributeValue: "", avgValue: 1 },
+			])
+			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+		}),
+	)
 })

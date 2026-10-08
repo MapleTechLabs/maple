@@ -23,9 +23,9 @@ import type {
 	V2SessionReplayRef,
 	V2SessionTranscriptEvent,
 } from "@maple/domain/http/v2"
-import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTimeMs, parseUtc } from "@maple/query-engine"
 import { sessionTagsOf } from "@maple/domain/query-engine"
-import { Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Effect, Layer, Option, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
@@ -56,26 +56,20 @@ const assertRangeFitsBudget = (rows: ReadonlyArray<{ readonly byteSize: number }
 		: Effect.fail(V2SessionReplayRangeTooLarge.make(undefined, { param: "to_chunk_seq" }))
 }
 
-/** ISO-8601 → Tinybird `YYYY-MM-DD HH:mm:ss` (UTC), validated. */
-const toTinybird = (value: string, param: string) => {
-	const ms = parseWarehouseDateTime(value)
-	return Number.isNaN(ms)
-		? Effect.fail(V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param }))
-		: Effect.succeed(formatWarehouseDateTime(ms))
-}
+/** An ISO-8601 request param as a `DateTime.Utc`, validated. */
+const toUtc = (value: string, param: string) =>
+	Option.match(parseUtc(value), {
+		onNone: () =>
+			Effect.fail(V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param })),
+		onSome: (instant) => Effect.succeed(instant),
+	})
 
-const optTinybird = (value: string | undefined, param: string) =>
-	value === undefined ? Effect.succeed(undefined) : toTinybird(value, param)
+const optUtc = (value: string | undefined, param: string) =>
+	value === undefined ? Effect.succeed(undefined) : toUtc(value, param)
 
-/** ClickHouse/Tinybird datetime string → ISO-8601 UTC (defensive; UTC wall-clock). */
-const chToIso = (value: string): Timestamp => {
-	const normalized = value.includes("T") ? value : value.replace(" ", "T")
-	const zoned = /[zZ]|[+-]\d\d:?\d\d$/.test(normalized) ? normalized : `${normalized}Z`
-	const ms = parseWarehouseDateTime(zoned)
-	return timestamp(Number.isNaN(ms) ? value : new Date(ms).toISOString())
-}
+const isoOf = (value: DateTime.Utc): Timestamp => timestamp(DateTime.formatIso(value))
 
-const chToIsoOrNull = (value: string | null): Timestamp | null => (value === null ? null : chToIso(value))
+const isoOrNull = (value: DateTime.Utc | null): Timestamp | null => (value === null ? null : isoOf(value))
 
 const nullableUserId = (value: string | null): string | null => (value ? value : null)
 
@@ -87,8 +81,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 		const requireSession = Effect.fn("HttpV2SessionReplays.requireSession")(function* (
 			tenant: CurrentTenant.TenantSchema,
 			sessionId: SessionId,
-			windowStart: string | undefined,
-			windowEnd: string | undefined,
+			windowStart: DateTime.Utc | undefined,
+			windowEnd: DateTime.Utc | undefined,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sessionId })
 			const compiled = CH.compile(
@@ -112,8 +106,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			.handle("search", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const startTime = yield* toTinybird(payload.start_time, "start_time")
-					const endTime = yield* toTinybird(payload.end_time, "end_time")
+					const startTime = yield* toUtc(payload.start_time, "start_time")
+					const endTime = yield* toUtc(payload.end_time, "end_time")
 					// Keyset, not offset. This list is newest-first over a table the
 					// SDK is writing to continuously, so by the time the reader asks
 					// for the next page the sessions that arrived since page one have
@@ -173,9 +167,13 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 										activeTimeMaxMs: payload.active_time_max_ms,
 									}
 								: undefined),
-							cursor: cursorParts
-								? { startTime: cursorParts[0]!, sessionId: cursorParts[1]! }
-								: undefined,
+							cursor: Option.match(
+								Option.flatMap(Option.fromUndefinedOr(cursorParts?.[0]), parseUtc),
+								{
+									onNone: () => undefined,
+									onSome: (startTime) => ({ startTime, sessionId: cursorParts?.[1] ?? "" }),
+								},
+							),
 							// One row of lookahead decides `has_more` without a
 							// second count query.
 							limit: limit + 1,
@@ -195,11 +193,11 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						data: dataRows.map((row): V2SessionReplayListItem => ({
 							id: decodeSessionId(row.sessionId),
 							object: "session_replay" as const,
-							start_time: chToIso(row.startTime),
-							end_time: chToIsoOrNull(row.endTime),
+							start_time: isoOf(row.startTime),
+							end_time: isoOrNull(row.endTime),
 							duration_ms: row.durationMs,
 							status: row.status,
-							last_activity_at: chToIsoOrNull(row.lastActivityAt),
+							last_activity_at: isoOrNull(row.lastActivityAt),
 							user_id: nullableUserId(row.userId),
 							user_name: row.userName,
 							user_email: row.userEmail,
@@ -226,7 +224,10 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						has_more: hasMore,
 						next_cursor:
 							hasMore && last
-								? encodeKeysetCursor("ses", [last.startTime, last.sessionId])
+								? encodeKeysetCursor("ses", [
+										formatWarehouseDateTimeMs(DateTime.toEpochMillis(last.startTime)),
+										last.sessionId,
+									])
 								: null,
 					}
 				}),
@@ -234,8 +235,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			.handle("retrieve", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const windowStart = yield* optTinybird(query.window_start, "window_start")
-					const windowEnd = yield* optTinybird(query.window_end, "window_end")
+					const windowStart = yield* optUtc(query.window_start, "window_start")
+					const windowEnd = yield* optUtc(query.window_end, "window_end")
 					const detailCompiled = CH.compile(
 						CH.getSessionReplayQuery({ startTime: windowStart, endTime: windowEnd }),
 						{
@@ -274,8 +275,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const replay = {
 						id: decodeSessionId(data.sessionId),
 						object: "session_replay",
-						start_time: chToIso(data.startTime),
-						end_time: chToIsoOrNull(data.endTime),
+						start_time: isoOf(data.startTime),
+						end_time: isoOrNull(data.endTime),
 						duration_ms: data.durationMs,
 						status: data.status,
 						user_id: nullableUserId(data.userId),
@@ -297,7 +298,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						entry_path: data.entryPath,
 						exit_path: data.exitPath,
 						language: data.language,
-						last_activity_at: chToIsoOrNull(data.lastActivityAt),
+						last_activity_at: isoOrNull(data.lastActivityAt),
 						url_initial: data.urlInitial,
 						browser_name: data.browserName,
 						os_name: data.osName,
@@ -321,8 +322,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			.handle("manifest", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const windowStart = yield* optTinybird(query.window_start, "window_start")
-					const windowEnd = yield* optTinybird(query.window_end, "window_end")
+					const windowStart = yield* optUtc(query.window_start, "window_start")
+					const windowEnd = yield* optUtc(query.window_end, "window_end")
 					const compiled = CH.compile(
 						CH.sessionReplayChunkIndexQuery({ startTime: windowStart, endTime: windowEnd }),
 						{ orgId: tenant.orgId, sessionId: params.id },
@@ -345,7 +346,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						(row) =>
 							({
 								chunk_seq: Number(row.chunkSeq),
-								timestamp: chToIso(row.timestamp),
+								timestamp: isoOf(row.timestamp),
 								duration_ms: Number(row.durationMs),
 								event_count: Number(row.eventCount),
 								byte_size: Number(row.byteSize),
@@ -371,8 +372,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			.handle("events", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const windowStart = yield* optTinybird(query.window_start, "window_start")
-					const windowEnd = yield* optTinybird(query.window_end, "window_end")
+					const windowStart = yield* optUtc(query.window_start, "window_start")
+					const windowEnd = yield* optUtc(query.window_end, "window_end")
 					// Clamp rather than reject: asking for a chunk past the cap should
 					// still return data. Only a range whose *payload* blows the byte
 					// budget is refused, below.
@@ -454,7 +455,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 										rows.map((row) => ({
 											object: "session_replay.event_chunk" as const,
 											chunk_seq: Number(row.chunkSeq),
-											timestamp: chToIso(row.timestamp),
+											timestamp: isoOf(row.timestamp),
 											duration_ms: Number(row.durationMs),
 											event_count: Number(row.eventCount),
 											byte_size: Number(row.byteSize),
@@ -471,8 +472,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			.handle("transcript", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const windowStart = yield* optTinybird(query.window_start, "window_start")
-					const windowEnd = yield* optTinybird(query.window_end, "window_end")
+					const windowStart = yield* optUtc(query.window_start, "window_start")
+					const windowEnd = yield* optUtc(query.window_end, "window_end")
 					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 						Effect.gen(function* () {
 							const compiled = CH.compile(
@@ -498,7 +499,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 									Effect.map((rows): ReadonlyArray<V2SessionTranscriptEvent> =>
 										rows.map((row) => ({
 											object: "session_replay.transcript_event" as const,
-											timestamp: chToIso(row.timestamp),
+											timestamp: isoOf(row.timestamp),
 											seq: row.seq,
 											attributes: row.attributes,
 											type: row.type,
@@ -535,8 +536,8 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			.handle("forTrace", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const startTime = yield* toTinybird(payload.start_time, "start_time")
-					const endTime = yield* toTinybird(payload.end_time, "end_time")
+					const startTime = yield* toUtc(payload.start_time, "start_time")
+					const endTime = yield* toUtc(payload.end_time, "end_time")
 					const page = yield* paginateOffsetQuery(payload, ({ limit, offset }) =>
 						Effect.gen(function* () {
 							const compiled = CH.compile(
@@ -553,7 +554,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 										rows.map((row) => ({
 											object: "session_replay.ref" as const,
 											id: decodeSessionId(row.sessionId),
-											start_time: chToIso(row.startTime),
+											start_time: isoOf(row.startTime),
 											duration_ms: row.durationMs,
 										})),
 									),

@@ -8,18 +8,31 @@ import { expect, test } from "@playwright/test"
 // reproduce that — it happily dispatches a synthesized leave to any node — so
 // these assertions live here rather than in the unit suite.
 //
-// /lab/bench/logs renders the real LogsTableView over 2 000 rows × 12 chips with no
-// auth and no backend. Rows are `max-content` wide and scroll horizontally, so
-// only the leading chip of each row is reliably on screen; the sweep therefore
-// runs down that column, which is also how a cursor actually crosses the table.
+// /lab/bench/logs renders the real LogsTableView over 2 000 rows with no auth and
+// no backend. A row shows the chips that fit beside its message and wraps the
+// rest onto a clipped second line, so only chips inside their lane count; the
+// sweep runs down them, which is also how a cursor actually crosses the table.
 
 const CARD = '[data-slot="hover-card-content"]'
 
 /** Centres of every attribute chip currently inside the viewport, top to bottom. */
 async function visibleChipCentres(page: import("@playwright/test").Page) {
 	return page.evaluate(() => {
-		const chips = Array.from(document.querySelectorAll('[role="log"] button[aria-label^="Copy "]'))
+		// Chip labels carry the pair (`Copy key=value`); the row's own copy action does not.
+		const chips = Array.from(
+			document.querySelectorAll('[role="log"] button[aria-label^="Copy "][aria-label*="="]'),
+		)
 		return chips
+			.filter((chip) => {
+				const lane = chip.parentElement?.getBoundingClientRect()
+				const r = chip.getBoundingClientRect()
+				return (
+					lane !== undefined &&
+					r.top >= lane.top &&
+					r.bottom <= lane.bottom &&
+					r.right <= lane.right + 1
+				)
+			})
 			.map((chip) => {
 				const r = chip.getBoundingClientRect()
 				return { x: r.x + r.width / 2, y: r.y + r.height / 2 }

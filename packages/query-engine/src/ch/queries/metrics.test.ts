@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
@@ -563,4 +564,82 @@ describe("metricsSummaryQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
+})
+
+// Rows reach callers through `decodeRows`; an underived row schema would leave
+// `bucket` a string behind a `DateTime.Utc` type.
+describe("metric rows decode buckets to DateTime.Utc", () => {
+	const valueRow = {
+		bucket: "2024-01-01 10:00:00.000000000",
+		serviceName: "api",
+		attributeValue: "",
+		groupName: "api",
+		avgValue: 1,
+		minValue: 1,
+		maxValue: 1,
+		sumValue: 1,
+		dataPointCount: "1",
+	}
+	const rateRow = {
+		bucket: "2024-01-01 10:00:00",
+		serviceName: "api",
+		attributeValue: "",
+		groupName: "api",
+		rateValue: 1,
+		increaseValue: 1,
+		dataPointCount: "1",
+	}
+	const tenAm = Date.UTC(2024, 0, 1, 10)
+
+	const bucketOf = <A extends { readonly bucket: DateTime.Utc }>(
+		compiled: Effect.Effect<CompiledQuery<A>, unknown>,
+		wire: Record<string, unknown>,
+	) =>
+		Effect.gen(function* () {
+			const query = yield* compiled
+			expect(query.rowSchemaSource).not.toBe("none")
+			const [row] = yield* query.decodeRows([wire])
+			return row!.bucket
+		})
+
+	const cases = {
+		"value timeseries": () =>
+			bucketOf(compile(metricsTimeseriesQuery({ metricType: "gauge" }), baseParams), valueRow),
+		"value timeseries, series-capped": () =>
+			bucketOf(
+				compile(
+					metricsTimeseriesQuery({
+						metricType: "gauge",
+						groupByAttributeKey: "k",
+						groupBy: ["attribute"],
+						seriesLimit: 5,
+					}),
+					baseParams,
+				),
+				valueRow,
+			),
+		"rate timeseries": () =>
+			bucketOf(compile(metricsTimeseriesRateQuery({ metricName: "requests" }), baseParams), rateRow),
+		"rate timeseries from the span-metrics rollup": () =>
+			bucketOf(
+				compile(metricsTimeseriesRateQuery({ metricName: "calls", bucketSeconds: 3600 }), baseParams),
+				rateRow,
+			),
+		sparklines: () =>
+			bucketOf(compile(metricsSparklinesQuery({ metricType: "sum", metricNames: ["m"] }), baseParams), {
+				bucket: "2024-01-01 10:00:00",
+				metricName: "m",
+				avgValue: 1,
+				sumValue: 1,
+				dataPointCount: "1",
+			}),
+	}
+
+	for (const [name, bucket] of Object.entries(cases)) {
+		it.effect(name, () =>
+			Effect.gen(function* () {
+				expect(DateTime.toEpochMillis(yield* bucket())).toBe(tenAm)
+			}),
+		)
+	}
 })
