@@ -188,7 +188,6 @@ describe("runFlush", () => {
 			yield* Effect.forEach(["a", "b", "c", "d"], (name) => recordSpan(spans, name), { discard: true })
 			const tracesState: SignalState = { disabledUntil: 0 }
 			const sent: Array<Array<string>> = []
-			const keepalives: Array<boolean> = []
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 			const flush = (tailBytes: number) =>
 				runFlush({
@@ -200,8 +199,7 @@ describe("runFlush", () => {
 					logsState: { disabledUntil: 0 },
 					metricsState: { disabledUntil: 0 },
 					transport: {
-						post: async (_url, _headers, body, keepalive) => {
-							keepalives.push(keepalive)
+						post: async (_url, _headers, body) => {
 							const { resourceSpans } = body as {
 								resourceSpans: Array<{
 									scopeSpans: Array<{ spans: Array<{ name: string }> }>
@@ -222,20 +220,17 @@ describe("runFlush", () => {
 			const flushed = flush(600)
 			// Both requests were issued before `runFlush` returned.
 			expect(sent).toEqual([["d"], ["a", "b", "c"]])
-			// Only the newest part asks for keepalive.
-			expect(keepalives).toEqual([true, false])
 			yield* recordSpan(spans, "newer")
 			yield* Effect.promise(() => flushed)
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
 			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
 
-			// No room for even the newest item: one request, in drain order, without keepalive.
+			// No room for even the newest item: one request, in drain order.
 			sent.length = 0
 			yield* Effect.promise(() => flush(1))
 			errorSpy.mockRestore()
 			expect(sent).toEqual([["a", "b", "c", "d", "newer"]])
-			expect(keepalives).toEqual([true, false, false])
 		}),
 	)
 

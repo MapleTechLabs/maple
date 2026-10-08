@@ -103,8 +103,8 @@ const KEEPALIVE_BUDGET_BYTES = 48 * 1024
 export const OTLP_KEEPALIVE_BYTES = 32 * 1024
 
 /**
- * Largest body of newest items an OTLP flush sends with keepalive from a hidden
- * or unloading document. Two signals' worth leaves about 4 KiB of OTLP's share
+ * Largest body of newest items an OTLP flush sends first from a hidden or
+ * unloading document. Two signals' worth leaves about 4 KiB of OTLP's share
  * for a metrics snapshot.
  */
 export const OTLP_UNLOAD_TAIL_BYTES = 14 * 1024
