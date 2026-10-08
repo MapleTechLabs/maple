@@ -31,6 +31,7 @@ import { exactDateTime64 } from "./tables"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
+	hasSpanNameRollup,
 	logBodySearchMode,
 	type WarehouseCapabilities,
 } from "../capabilities"
@@ -859,6 +860,7 @@ export function compilePipeQuery(
 							traceId: str("trace_id"),
 							limit: int("limit", 20),
 							offset: int("offset", 0),
+							spanNameRollup: hasSpanNameRollup(capabilities),
 						}),
 						{ orgId, startTime, endTime },
 					),

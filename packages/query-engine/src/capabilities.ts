@@ -185,6 +185,14 @@ export const deriveWarehouseCapabilities = (input: {
 	}
 }
 
+/**
+ * `service_operations_hourly` is on this warehouse. It ships in a migration
+ * that is not required for ingest, so a self-hosted cluster can lack it; a
+ * query may read it only on this evidence.
+ */
+export const hasSpanNameRollup = (capabilities: WarehouseCapabilities): boolean =>
+	hasColumn(capabilities.columns, "service_operations_hourly", "SpanName")
+
 export const hasWarehouseFeature = (
 	capabilities: WarehouseCapabilities,
 	feature: WarehouseSearchFeature,

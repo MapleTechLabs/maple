@@ -984,7 +984,7 @@ describe("tracesListQuery", () => {
 		// Display-name aware: excludes rows whose raw OR rewritten span name
 		// matches, so excluding a "Root Span" facet value ("GET /route") works.
 		expect(sql).toContain(
-			"NOT ((traces.SpanName = 'GET /health' OR (traces.SpanName IN ('http.server GET', 'GET') AND ",
+			"NOT (((traces.SpanName = 'GET /health' OR traces.SpanName IN ('http.server GET', 'GET')) AND (",
 		)
 		expect(sql).toContain("replaceOne(traces.SpanName, 'http.server ', '')")
 	})

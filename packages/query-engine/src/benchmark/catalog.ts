@@ -63,6 +63,9 @@ const SHORT_END_TIME = "2026-01-03 14:15:00"
  * lookups, plain scans), so a fixture run under one set says nothing about the
  * others.
  */
+/** `hasSpanNameRollup`: the baseline variant searches span names without the rollup. */
+const SPAN_NAME_ROLLUP_COLUMNS: ReadonlySet<string> = new Set(["service_operations_hourly.SpanName"])
+
 export const capabilityVariants: ReadonlyArray<{
 	readonly label: string
 	readonly capabilities: WarehouseCapabilities
@@ -73,6 +76,7 @@ export const capabilityVariants: ReadonlyArray<{
 		capabilities: {
 			...baselineWarehouseCapabilities(),
 			metadataAvailable: true,
+			columns: SPAN_NAME_ROLLUP_COLUMNS,
 			features: new Set(["logs.attributes.bloom", "traces.attributes.bloom", "logs.body.tokenbf"]),
 		},
 	},
@@ -81,6 +85,7 @@ export const capabilityVariants: ReadonlyArray<{
 		capabilities: {
 			...baselineWarehouseCapabilities(),
 			metadataAvailable: true,
+			columns: SPAN_NAME_ROLLUP_COLUMNS,
 			fullTextSearchSetting: "enabled",
 			features: new Set(["logs.attributes.text", "traces.attributes.text", "logs.body.text"]),
 		},
@@ -163,6 +168,18 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	{ pipe: "span_search", label: "default", params: { search: "timeout" }, allCapabilities: true },
 	{
 		pipe: "span_search",
+		label: "span-name-contains",
+		params: { span_name: "/v1/", span_name_match_mode: "contains" },
+		allCapabilities: true,
+	},
+	{
+		pipe: "span_search",
+		label: "span-name-contains-one-service",
+		params: { service: "api", span_name: "/v1/", span_name_match_mode: "contains", offset: 20 },
+		allCapabilities: true,
+	},
+	{
+		pipe: "list_traces",
 		label: "span-name-contains",
 		params: { span_name: "/v1/", span_name_match_mode: "contains" },
 	},
@@ -1229,13 +1246,20 @@ const hasSpliceBoundary = (sql: string): boolean => {
 export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): ReadonlyArray<string> {
 	return entries
 		.filter((entry) => {
-			const tiers = withoutLookupSubqueries(entry.sql)
+			const tiers = withoutSpanNameLookups(entry.sql)
 			return ROLLUP_TABLE_RE.test(tiers) && RAW_TABLE_RE.test(tiers) && !hasSpliceBoundary(entry.sql)
 		})
 		.map((entry) => entry.id)
 }
 
-const ROW_SOURCE_RE = /\b(?:FROM|JOIN|UNION ALL|AS)[\s(]*$/
+/**
+ * How `storedSpanNameContains` opens every read of the rollup: distinct span
+ * names and nothing else. A subquery of this form can only say which names
+ * exist — it has no measure to add to a raw tier, so it has no boundary to
+ * tile. Any other rollup read next to a raw table is still a tier.
+ */
+const SPAN_NAME_LOOKUP_OPEN =
+	"(SELECT DISTINCT service_operations_hourly.SpanName AS spanName FROM service_operations_hourly WHERE "
 
 /** Index just past the string literal that opens at `start`. */
 const literalEnd = (sql: string, start: number): number => {
@@ -1244,36 +1268,27 @@ const literalEnd = (sql: string, start: number): number => {
 	return i + 1
 }
 
-/**
- * `sql` without the subqueries it only consults. A scalar or `IN (SELECT …)`
- * operand decides which rows match and contributes none of its own, so the
- * window it reads has nothing to tile against: the span-name lookup reads
- * `service_operations_hourly` for every hour the window touches, on purpose.
- * A tier is a row source — it follows `FROM`, `JOIN`, `UNION ALL` or `AS`,
- * possibly behind more opening parentheses.
- */
-function withoutLookupSubqueries(sql: string): string {
+/** `sql`, whitespace collapsed, without its span-name lookups. */
+function withoutSpanNameLookups(sql: string): string {
+	const text = sql.replace(/\s+/g, " ")
 	let kept = ""
 	let i = 0
-	while (i < sql.length) {
-		if (sql[i] === "'") {
-			// Literal contents are dropped: a parenthesis inside one would unbalance the scan.
-			i = literalEnd(sql, i)
-			kept += "''"
-		} else if (sql.startsWith("(SELECT", i) && !ROW_SOURCE_RE.test(kept)) {
-			let depth = 0
-			do {
-				if (sql[i] === "'") {
-					i = literalEnd(sql, i)
-				} else {
-					if (sql[i] === "(") depth++
-					else if (sql[i] === ")") depth--
-					i++
-				}
-			} while (depth > 0 && i < sql.length)
-		} else {
-			kept += sql[i++]
+	while (i < text.length) {
+		if (!text.startsWith(SPAN_NAME_LOOKUP_OPEN, i)) {
+			kept += text[i++]
+			continue
 		}
+		let depth = 0
+		do {
+			// A parenthesis inside a literal must not count.
+			if (text[i] === "'") {
+				i = literalEnd(text, i)
+			} else {
+				if (text[i] === "(") depth++
+				else if (text[i] === ")") depth--
+				i++
+			}
+		} while (depth > 0 && i < text.length)
 	}
 	return kept
 }

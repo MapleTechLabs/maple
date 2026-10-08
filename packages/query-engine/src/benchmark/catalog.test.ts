@@ -105,24 +105,36 @@ describe("sql catalog", () => {
 		).toEqual([])
 	})
 
-	// A rollup consulted for which names exist is not a tier of the result.
-	it("tells a rollup lookup from a rollup tier", () => {
+	// Only the distinct-names lookup is exempt; every other rollup read beside a
+	// raw table is a tier, however it is nested.
+	it("exempts the span-name lookup and nothing else", () => {
 		const withSql = (id: string, sql: string) => ({ ...entries[0]!, id, sql })
 		const hourly =
 			"FROM service_operations_hourly WHERE Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))"
-		const raw = "SELECT count() AS n FROM traces"
+		const raw = "SELECT count() AS n FROM traces WHERE Timestamp >= '2026-01-01 10:30:00'"
 		const rollup = `SELECT sum(SpanCount) AS n ${hourly}`
+		const names = `SELECT DISTINCT service_operations_hourly.SpanName AS spanName ${hourly}`
+		const tiers = {
+			"plain union": `SELECT sum(n) FROM (${raw} UNION ALL ${rollup})`,
+			"parenthesised union": `(${raw}) UNION ALL (${rollup})`,
+			"nested union": `SELECT sum(n) FROM ((${raw}) UNION ALL\n(${rollup}))`,
+			"union distinct": `SELECT sum(n) FROM (${raw} UNION DISTINCT (${rollup}))`,
+			"scalar sum": `SELECT (${raw}) + (${rollup}) AS n`,
+			"comma join": `SELECT sum(n) FROM (${raw}) AS a, (${rollup}) AS b`,
+			"with scalar": `WITH (${rollup}) AS interior SELECT count() + interior AS n FROM traces`,
+			arrayJoin: `SELECT sum(n) FROM (${raw} UNION ALL SELECT arrayJoin((SELECT groupArray(SpanCount) ${hourly})) AS n)`,
+			greatest: `SELECT greatest((${rollup}), (SELECT count() FROM traces)) AS n`,
+			"counts in an IN subquery": `${raw} AND SpanName IN (SELECT SpanName ${hourly})`,
+		}
+		const lookups = {
+			"names in": `${raw} AND SpanName IN (${names} AND x = ')' LIMIT 10001)`,
+			"names counted": `${raw} AND (SELECT count() FROM (${names} LIMIT 1)) > 0`,
+		}
 		expect(
-			unsplicedTwoTierQueries([
-				withSql("lookup", `${raw} WHERE SpanName IN (SELECT SpanName ${hourly})`),
-				withSql(
-					"literal",
-					`${raw} WHERE x = ')' AND SpanName IN (SELECT SpanName ${hourly} AND y = '(')`,
-				),
-				withSql("tier", `SELECT sum(n) FROM (${raw} UNION ALL ${rollup})`),
-				withSql("nested-tier", `SELECT sum(n) FROM ((${raw}) UNION ALL (${rollup}))`),
-			]),
-		).toEqual(["tier", "nested-tier"])
+			unsplicedTwoTierQueries(
+				Object.entries({ ...tiers, ...lookups }).map(([id, sql]) => withSql(id, sql)),
+			),
+		).toEqual(Object.keys(tiers))
 	})
 
 	// Asserted exactly, not as a ceiling: a query that stops deriving a row

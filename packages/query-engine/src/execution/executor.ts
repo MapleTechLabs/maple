@@ -275,7 +275,7 @@ WHERE database = currentDatabase() AND table IN ('logs', 'traces')`,
 						"columns",
 						`SELECT table, name
 FROM system.columns
-WHERE database = currentDatabase() AND table IN ('logs', 'traces')`,
+WHERE database = currentDatabase() AND table IN ('logs', 'traces', 'service_operations_hourly')`,
 					).pipe(
 						Effect.flatMap((rows) =>
 							Schema.decodeUnknownEffect(WarehouseColumnMetadataSchema)(rows),
