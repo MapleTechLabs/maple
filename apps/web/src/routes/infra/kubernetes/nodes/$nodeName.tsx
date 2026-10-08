@@ -6,9 +6,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
-import { formatUptime } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatUptime } from "@maple/ui/lib/format"
 
 import type { NodeInfraMetric } from "@/api/warehouse/infra"
 import { ServerIcon } from "@/components/icons"
@@ -74,6 +77,8 @@ function NodeDetailPage() {
 			<DetailRail.MetaRow label="k8s.kubelet.version" value={summary.kubeletVersion} />
 			<DetailRail.MetaRow label="container.runtime" value={summary.containerRuntime} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={ServerIcon} />
 	) : null
 
 	return (
@@ -114,11 +119,17 @@ function NodeDetailPage() {
 					<StatRail columns={3}>
 						<StatRailItem
 							eyebrow="CPU cores"
-							value={Number.isFinite(summary.cpuUsage) ? summary.cpuUsage.toFixed(2) : "—"}
+							value={
+								Number.isFinite(summary.cpuUsage) ? summary.cpuUsage.toFixed(2) : EMPTY_VALUE
+							}
 							compact
 						/>
 						<StatRailItem eyebrow="Uptime" value={formatUptime(summary.uptime)} compact />
-						<StatRailItem eyebrow="Kubelet" value={summary.kubeletVersion || "—"} compact />
+						<StatRailItem
+							eyebrow="Kubelet"
+							value={summary.kubeletVersion || EMPTY_VALUE}
+							compact
+						/>
 					</StatRail>
 				) : (
 					<NoMetricsMessage noun="node" />

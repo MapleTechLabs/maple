@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import {
 	Popover,
@@ -97,7 +98,7 @@ function ConnectPanel() {
 
 function McpCard() {
 	return (
-		<div className="group overflow-hidden rounded-lg border bg-muted/30 transition-colors hover:border-foreground/20">
+		<Panel tone="muted" className="group transition-colors hover:border-foreground/20">
 			<Link
 				to="/settings"
 				search={{ tab: "mcp" }}
@@ -131,6 +132,6 @@ function McpCard() {
 					className="size-6 shrink-0"
 				/>
 			</div>
-		</div>
+		</Panel>
 	)
 }

@@ -3,6 +3,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 
 import { EvidenceChips } from "./action-detail-sheet"
 import { CauseRecap } from "./cause-recap"
+import { countLabel } from "@maple/ui/lib/format"
 
 /**
  * The findings that back the cause, promoted out of the chat transcript where
@@ -41,8 +42,8 @@ export function EvidenceTab({ investigation }: { investigation: V2Investigation 
 						Evidence
 					</h2>
 					<span className="text-sm text-muted-foreground">
-						{evidence.length} {evidence.length === 1 ? "finding" : "findings"}
-						{traceCount > 0 ? ` · ${traceCount} ${traceCount === 1 ? "trace" : "traces"}` : ""}
+						{countLabel(evidence.length, "finding")}
+						{traceCount > 0 ? ` · ${countLabel(traceCount, "trace")}` : ""}
 					</span>
 				</div>
 				<ol className="flex flex-col border-t">

@@ -71,7 +71,7 @@ export const responseHasPlanHistory = (response: unknown): boolean =>
 const isSubscriptionLike = (value: unknown): value is PlanGatingSubscription =>
 	typeof value === "object" && value !== null
 
-const subscriptionsOf = (response: unknown): ReadonlyArray<PlanGatingSubscription> => {
+export const subscriptionsOf = (response: unknown): ReadonlyArray<PlanGatingSubscription> => {
 	if (typeof response !== "object" || response === null) return []
 	const subscriptions = (response as { subscriptions?: unknown }).subscriptions
 	return Array.isArray(subscriptions) ? subscriptions.filter(isSubscriptionLike) : []

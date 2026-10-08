@@ -8,7 +8,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { formatDuration } from "../../lib/format"
 import { summarizeClockSkew } from "../../lib/span-tree"
 import type { SpanNode } from "../../lib/types"
-import { getServiceColor } from "../../lib/colors"
 import { isEditableTarget } from "../../lib/keyboard"
 import { useContainerSize } from "../../hooks/use-container-size"
 import { useTraceView } from "./trace-view-context"
@@ -40,6 +39,7 @@ import {
 	SIDEBAR_WIDTH_NARROW_MIN,
 	SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./trace-timeline-types"
+import { ServiceDot } from "../service-dot"
 
 function readSidebarWidth(): number {
 	if (typeof window === "undefined") return SIDEBAR_WIDTH_DEFAULT
@@ -517,7 +517,7 @@ export function TraceTimeline() {
 					</TooltipContent>
 				</Tooltip>
 
-				<div className="ml-auto flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+				<div className="ml-auto flex min-w-0 items-center gap-2 text-3xs text-muted-foreground">
 					{/* Collapsing hides rows, so this count and the trace header's disagree. Say
 					    so explicitly instead of quietly showing a second, smaller "N spans". */}
 					{/* Only while rows are hidden. Uncollapsed this just repeats the trace header's
@@ -653,7 +653,7 @@ export function TraceTimeline() {
 					className="pointer-events-none absolute top-0 bottom-0 left-0 z-20 w-px bg-foreground/40"
 					style={{ display: "none" }}
 				>
-					<span className="absolute top-1 whitespace-nowrap bg-background/90 px-1 font-mono text-[9px] leading-3 text-muted-foreground" />
+					<span className="absolute top-1 whitespace-nowrap bg-background/90 px-1 font-mono text-4xs leading-3 text-muted-foreground" />
 				</div>
 				{interactions.marquee && (
 					<div
@@ -663,23 +663,23 @@ export function TraceTimeline() {
 				)}
 			</div>
 
-			<div className="flex shrink-0 items-center gap-3 border-t border-border bg-muted/30 px-2 py-1.5 text-[10px] text-muted-foreground @min-[560px]/timeline:px-3">
+			<div className="flex shrink-0 items-center gap-3 border-t border-border bg-muted/30 px-2 py-1.5 text-3xs text-muted-foreground @min-[560px]/timeline:px-3">
 				{/* Pointer/keyboard hints are meaningless on touch — the legend takes the whole bar there. */}
 				<div className="hidden shrink-0 items-center gap-3 text-foreground/30 @min-[560px]/timeline:flex">
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							Drag
 						</kbd>{" "}
 						zoom
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							W A S D
 						</kbd>{" "}
 						navigate
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							/
 						</kbd>{" "}
 						search
@@ -689,7 +689,7 @@ export function TraceTimeline() {
 						onClick={() => setShowShortcuts((v) => !v)}
 						className="hover:text-foreground/70"
 					>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
 							?
 						</kbd>{" "}
 						all shortcuts
@@ -699,15 +699,15 @@ export function TraceTimeline() {
 				<div className="-mx-2 flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto px-2 [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden @min-[560px]/timeline:mx-0 @min-[560px]/timeline:flex-wrap @min-[560px]/timeline:justify-end @min-[560px]/timeline:overflow-x-visible @min-[560px]/timeline:px-0 @min-[560px]/timeline:[mask-image:none]">
 					{services.map((service) => (
 						<div key={service} className="flex shrink-0 items-center gap-1">
-							<div
-								className="size-2 shrink-0"
-								style={{ backgroundColor: getServiceColor(service) }}
-							/>
+							<ServiceDot serviceName={service} />
 							<span className="font-medium whitespace-nowrap">{service}</span>
 						</div>
 					))}
 					<div className="flex shrink-0 items-center gap-1">
-						<div className="size-2 bg-destructive shrink-0" />
+						<span
+							aria-hidden
+							className="size-2 shrink-0 rounded-[35%] bg-severity-error [corner-shape:squircle]"
+						/>
 						<span className="font-medium">Error</span>
 					</div>
 				</div>
@@ -732,7 +732,7 @@ export function TraceTimeline() {
 								Esc
 							</button>
 						</div>
-						<div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[11px]">
+						<div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-2xs">
 							{(
 								[
 									["W / S", "Zoom in / out at cursor (⇧ faster)"],
@@ -752,7 +752,7 @@ export function TraceTimeline() {
 								] as const
 							).map(([keys, desc]) => (
 								<React.Fragment key={keys}>
-									<kbd className="justify-self-start border border-foreground/10 bg-muted px-1.5 py-0.5 font-mono text-[10px] whitespace-nowrap">
+									<kbd className="justify-self-start border border-foreground/10 bg-muted px-1.5 py-0.5 font-mono text-3xs whitespace-nowrap">
 										{keys}
 									</kbd>
 									<span className="text-muted-foreground self-center">{desc}</span>

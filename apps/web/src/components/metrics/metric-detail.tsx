@@ -4,6 +4,7 @@ import { Suspense } from "react"
 import { Result } from "@/lib/effect-atom"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
+import { ChartLoading } from "@maple/ui/components/charts/_shared/chart-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { ErrorState } from "@/components/common/error-state"
@@ -164,7 +165,7 @@ export function MetricDetail({ metricName, state, startTime, endTime, onPatch }:
 		.onInitial(() => (
 			<div className="space-y-4">
 				<Skeleton className="h-14 w-full" />
-				<Skeleton className="h-80 w-full" />
+				<ChartLoading variant="area" height={320} />
 			</div>
 		))
 		.onError((error) => <ErrorState error={error} title="Failed to load metric" />)
@@ -172,17 +173,18 @@ export function MetricDetail({ metricName, state, startTime, endTime, onPatch }:
 			const summary = summarizeCatalogRows(response.data, metricName, state.type)
 			if (!summary) {
 				return (
-					<div className="flex flex-col items-center justify-center rounded-md border border-dashed p-12 text-center">
-						<p className="text-sm font-medium">No data for this metric in the selected range</p>
-						<p className="mt-2 max-w-md text-sm text-muted-foreground">
-							<span className="font-mono">{metricName}</span> has no datapoints between{" "}
-							{startTime} and {endTime}. Widen the time range, or check that the service
-							emitting it is still running.
+					<EmptyMessage dashed className="flex flex-col items-center p-12">
+						<p className="font-medium text-foreground">
+							No data for this metric in the selected range
+						</p>
+						<p className="mt-2 max-w-md">
+							<span className="font-mono">{metricName}</span> has no datapoints in this window.
+							Widen the time range, or check that the service emitting it is still running.
 						</p>
 						<span className="mt-3">
 							<DocsLink page="metrics" />
 						</span>
-					</div>
+					</EmptyMessage>
 				)
 			}
 			return (
@@ -280,7 +282,9 @@ function MetricChart({
 		<Panel>
 			<PanelHeader
 				title={<span className="font-mono">{queryLabel}</span>}
-				action={unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined}
+				action={
+					unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined
+				}
 			/>
 			<div className="h-80 p-3">
 				{Result.builder(result)

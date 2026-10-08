@@ -75,3 +75,17 @@ export function severityTone(level: string | null | undefined): Tone {
 			return "neutral"
 	}
 }
+
+/**
+ * Identity accent for automation (agents, AI triage, Maple's own subsystems): not
+ * a severity, so it lives beside `Tone` rather than in it. One hue, from the
+ * `chart-ai-agent` theme colour, so "not a human" reads the same everywhere.
+ */
+export const AGENT_ACCENT = {
+	text: "text-chart-ai-agent",
+	fill: "bg-chart-ai-agent",
+	soft: "bg-chart-ai-agent/10 text-chart-ai-agent",
+	border: "border-chart-ai-agent/25",
+	ring: "ring-1 ring-chart-ai-agent/25",
+	surface: "border-chart-ai-agent/20 bg-chart-ai-agent/5",
+} as const satisfies Record<string, string>

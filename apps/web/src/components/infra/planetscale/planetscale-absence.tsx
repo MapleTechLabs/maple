@@ -15,7 +15,7 @@ import { Link } from "@tanstack/react-router"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { AlertWarningIcon, CircleWarningIcon } from "@/components/icons"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 /** Metrics scraping is off. Said the same way wherever a metric would have been. */
 export const METRICS_PAUSED_MESSAGE = "Branch metrics are paused. Add a metrics token to collect them."
@@ -90,11 +90,14 @@ export function PlanetScaleInventoryNotice({
 				{failing ? "Inventory refresh is failing" : "Inventory hasn't refreshed recently"}
 			</AlertTitle>
 			<AlertDescription>
-				{failing
-					? "The database and branch list may be out of date. Metrics are unaffected."
-					: `The database and branch list may be out of date. Last refreshed ${
-							lastInventoryAt === null ? "never" : formatRelativeTime(lastInventoryAt)
-						}.`}
+				{failing ? (
+					"The database and branch list may be out of date. Metrics are unaffected."
+				) : (
+					<>
+						The database and branch list may be out of date. Last refreshed{" "}
+						{lastInventoryAt === null ? "never" : <RelativeTime value={lastInventoryAt} />}.
+					</>
+				)}
 			</AlertDescription>
 		</Alert>
 	)

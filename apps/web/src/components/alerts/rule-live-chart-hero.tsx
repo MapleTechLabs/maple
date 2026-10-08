@@ -3,6 +3,7 @@ import { useMemo } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
 import type { AlertRulePreviewResponse } from "@maple/domain/http"
@@ -115,16 +116,19 @@ export function RuleLiveChartHero({
 						presetValue={timeRange.presetValue}
 						onChange={onTimeRangeChange}
 					/>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={onTestRule}
-						loading={testing}
-						title="Evaluate the rule once against current data. Nothing is sent."
-					>
-						<EyeIcon size={14} />
-						Dry run
-					</Button>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button variant="outline" size="sm" onClick={onTestRule} loading={testing} />
+							}
+						>
+							<EyeIcon size={14} />
+							Dry run
+						</TooltipTrigger>
+						<TooltipContent>
+							Evaluate the rule once against current data. Nothing is sent.
+						</TooltipContent>
+					</Tooltip>
 				</div>
 			</div>
 

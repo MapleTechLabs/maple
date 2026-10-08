@@ -28,6 +28,7 @@ import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
 import { summarizeDashboardChange } from "./dashboard-changes"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const decodeDashboardIdSync = Schema.decodeUnknownSync(DashboardId)
 const decodeDashboardVersionIdSync = Schema.decodeUnknownSync(DashboardVersionId)
@@ -48,7 +49,7 @@ const toPersistenceError = (error: unknown) =>
 	})
 
 const parseTimestamp = (field: "createdAt" | "updatedAt", value: string) => {
-	const timestamp = Date.parse(value)
+	const timestamp = timestampMs(value)
 
 	if (!Number.isFinite(timestamp)) {
 		return Effect.fail(

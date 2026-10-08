@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { AgentSessionsList, AgentSessionsListSkeleton } from "@/components/agent-sessions/agent-sessions-list"
 import { AgentSessionsFilterSidebar } from "@/components/agent-sessions/agent-sessions-filter-sidebar"
 import { AgentSessionsToolbar } from "@/components/agent-sessions/agent-sessions-toolbar"
@@ -12,6 +12,7 @@ import {
 	agentSessionsFilterInputs,
 	agentSessionsSort,
 	agentSessionsSortPatch,
+	hasAgentSessionsFilters,
 } from "@/components/agent-sessions/agent-sessions-filter-inputs"
 import {
 	PageRefreshProvider,
@@ -78,17 +79,12 @@ export const Route = createFileRoute("/agent-sessions/")({
 function AgentSessionsPage() {
 	return (
 		<PageRefreshProvider>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Agent Sessions" }]} />
-				<DashboardLayout.Body>
-					<AgentSessionsBody />
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<AgentSessionsBody />
 		</PageRefreshProvider>
 	)
 }
 
-/** The `Filters | Content` siblings, so both share one resolved window. */
+/** The filter rail and the list, so both share one resolved window. */
 function AgentSessionsBody() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -143,16 +139,9 @@ function AgentSessionsBody() {
 		[navigate],
 	)
 
-	// Every search key but the sort narrows the list.
-	const hasActiveFilters = Object.entries(search).some(
-		([key, value]) =>
-			key !== "sortBy" &&
-			key !== "sortDir" &&
-			value !== undefined &&
-			value !== "" &&
-			value !== false &&
-			!(Array.isArray(value) && value.length === 0),
-	)
+	// The filter keys only: anything else riding in the URL (a dev flag, a stale param) is not a
+	// question the user asked, and reading it as one swaps the setup on-ramp for "clear filters".
+	const hasActiveFilters = hasAgentSessionsFilters(search)
 	const handleClearFilters = () =>
 		navigate({ search: (prev) => ({ sortBy: prev.sortBy, sortDir: prev.sortDir }) })
 
@@ -178,53 +167,41 @@ function AgentSessionsBody() {
 	)
 
 	return (
-		<>
-			<DashboardLayout.Filters>
+		<DashboardPage
+			breadcrumbs={[{ label: "Agent Sessions" }]}
+			filters={
 				<AgentSessionsFilterSidebar
 					facetsResult={facetsResult}
 					distributionsResult={distributionsResult}
 				/>
-			</DashboardLayout.Filters>
-			<DashboardLayout.Content>
-				{/* `pb-3` over an unpadded scroll area: the layout's `p-4` on both
-				    stacked 32px between the toolbar and the table. */}
-				<DashboardLayout.Sticky className="pb-3">
-					{/* The Tools tab reads the same spans across every session; this
-					    page reads one session at a time. Two routes, one strip — with
-					    the Tools page's hairline and 12px gap, so the strip and the
-					    toolbar sit at the same height on both. */}
-					<div className="space-y-3">
-						<AgentSessionsTabs
-							active="sessions"
-							counts={tabCounts}
-							className="border-b border-border"
-						/>
-						{toolbar}
-					</div>
-				</DashboardLayout.Sticky>
-				<DashboardLayout.Scroll className="pt-0">
-					{Result.builder(firstPageResult)
-						.onInitial(() => <AgentSessionsListSkeleton />)
-						.onError((error) => (
-							<ErrorState error={error} title="Failed to load agent sessions" />
-						))
-						.onSuccess(() => (
-							<AgentSessionsList
-								sessions={allData}
-								sortBy={sortBy}
-								sortDir={sortDir}
-								onSortChange={onSortChange}
-								hasMore={hasNextPage}
-								isCapped={isCapped}
-								loadingMore={isFetchingNextPage}
-								onReachEnd={fetchNextPage}
-								filtered={hasActiveFilters}
-								onClearFilters={handleClearFilters}
-							/>
-						))
-						.render()}
-				</DashboardLayout.Scroll>
-			</DashboardLayout.Content>
-		</>
+			}
+			// The Tools tab reads the same spans across every session; this page reads one
+			// session at a time. Two routes, one strip, laid out identically on both.
+			tabs={
+				<AgentSessionsTabs active="sessions" counts={tabCounts} className="border-b border-border" />
+			}
+			sticky={toolbar}
+			// The sticky area's own bottom padding already separates the toolbar from the table.
+			scrollClassName="pt-0"
+		>
+			{Result.builder(firstPageResult)
+				.onInitial(() => <AgentSessionsListSkeleton />)
+				.onError((error) => <ErrorState error={error} title="Failed to load agent sessions" />)
+				.onSuccess(() => (
+					<AgentSessionsList
+						sessions={allData}
+						sortBy={sortBy}
+						sortDir={sortDir}
+						onSortChange={onSortChange}
+						hasMore={hasNextPage}
+						isCapped={isCapped}
+						loadingMore={isFetchingNextPage}
+						onReachEnd={fetchNextPage}
+						filtered={hasActiveFilters}
+						onClearFilters={handleClearFilters}
+					/>
+				))
+				.render()}
+		</DashboardPage>
 	)
 }

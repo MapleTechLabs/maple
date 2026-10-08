@@ -1,9 +1,10 @@
-import { formatLatency } from "../../lib/format"
+import { formatErrorRate, formatLatency, formatRate } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
 import { cn } from "../../lib/utils"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
-import { TONE_FILL } from "../../lib/tone"
+import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
+import { type UtilizationLevel, utilizationLevel } from "../../lib/utilization"
 import { latencyToneClass } from "../../lib/latency-tone"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
 import {
@@ -39,11 +40,12 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 	}
 }
 
-export function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
+// "ok" keeps the cell's default colour, as before.
+const UTILIZATION_TEXT = {
+	crit: TONE_TEXT.crit,
+	warn: TONE_TEXT.warn,
+	ok: undefined,
+} satisfies Record<UtilizationLevel, string | undefined>
 
 const HEALTH_DOT_CLASS = {
 	crit: TONE_FILL.crit,
@@ -76,12 +78,12 @@ function MetricCell({
 }) {
 	return (
 		<div className="flex flex-col gap-px">
-			<span className="text-[9px] font-medium tracking-wide text-muted-foreground/60 uppercase">
+			<span className="text-4xs font-medium tracking-wide text-muted-foreground/60 uppercase">
 				{label}
 			</span>
 			<span
 				className={cn(
-					"text-[11px] font-medium font-mono tabular-nums text-secondary-foreground",
+					"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
 					valueClassName,
 				)}
 			>
@@ -174,7 +176,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 						</Tooltip>
 						<span className="truncate text-xs font-medium text-foreground">{title}</span>
 						<span
-							className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide"
+							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
 						>
 							{badge}
@@ -189,7 +191,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 						/>
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell
@@ -215,11 +217,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 								label="cpu"
 								value={`${planetscale.stats.cpuMaxPercent.toFixed(0)}%`}
 								valueClassName={
-									planetscale.stats.cpuMaxPercent > 80
-										? "text-severity-error"
-										: planetscale.stats.cpuMaxPercent > 60
-											? "text-severity-warn"
-											: undefined
+									UTILIZATION_TEXT[utilizationLevel(planetscale.stats.cpuMaxPercent / 100)]
 								}
 							/>
 							<MetricCell
@@ -318,7 +316,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
+								<span className="shrink-0 text-4xs font-medium uppercase tracking-wide text-muted-foreground/60">
 									{runtimeInfo.short}
 								</span>
 							))}
@@ -345,7 +343,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 
@@ -357,13 +355,13 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						{/* Pods badge — empty placeholder when no infra so widths stay stable */}
 						<div className="ml-auto flex flex-col items-end gap-px">
-							<span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
+							<span className="text-4xs font-medium uppercase tracking-wide text-muted-foreground/60">
 								pods
 							</span>
 							{infra ? (
 								<Tooltip>
 									<TooltipTrigger>
-										<span className="flex items-center gap-1 font-mono text-[11px] font-medium tabular-nums text-secondary-foreground">
+										<span className="flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground">
 											<CubeIcon size={10} className="text-muted-foreground/70" />
 											{infra.podCount}
 										</span>
@@ -379,7 +377,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="font-mono text-[11px] tabular-nums text-muted-foreground/30">
+								<span className="font-mono text-2xs tabular-nums text-muted-foreground/30">
 									–
 								</span>
 							)}
@@ -423,7 +421,7 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 							{label}
 						</span>
 						<span
-							className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide"
+							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
 						>
 							{nsMemberCount ?? 0} services
@@ -434,7 +432,7 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 						<MetricCell label="req/s" value={formatRate(throughput)} />
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell

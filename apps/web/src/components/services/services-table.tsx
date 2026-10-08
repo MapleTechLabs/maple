@@ -22,15 +22,17 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Meter } from "@maple/ui/components/ui/meter"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatPercent, formatThroughput, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SampledValue } from "./sampled-value"
+import { MobileStat, MobileStatLine } from "./service-table-cells"
 import { shortId } from "@maple/ui/lib/ids"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import {
@@ -254,7 +256,7 @@ interface DeployLinesProps {
 
 function deployMetaLine(text: string) {
 	return text === "" ? null : (
-		<span className="truncate font-mono text-[10px] text-muted-foreground">{text}</span>
+		<span className="truncate font-mono text-3xs text-muted-foreground">{text}</span>
 	)
 }
 
@@ -354,7 +356,7 @@ const DeployCell = React.memo(function DeployCell({ commits }: { commits: Commit
 		return <span className="text-xs text-muted-foreground">N/A</span>
 	}
 	const stateLine = info.errorsSince ? (
-		<span className="truncate text-[10px] text-severity-error">
+		<span className="truncate text-3xs text-severity-error">
 			{info.firstSeen !== ""
 				? `${formatRelativeTimeOrDate(info.firstSeen, undefined, effectiveTimezone)} · `
 				: ""}
@@ -363,13 +365,13 @@ const DeployCell = React.memo(function DeployCell({ commits }: { commits: Commit
 	) : info.rollout !== undefined ? (
 		<Tooltip>
 			<TooltipTrigger className="flex cursor-default items-center gap-1.5">
-				<span className="relative h-[3px] w-10 shrink-0 overflow-hidden rounded-full bg-muted">
-					<span
-						className="absolute inset-y-0 left-0 rounded-full bg-primary"
-						style={{ width: `${info.rollout.percentage}%` }}
-					/>
-				</span>
-				<span className="font-mono text-[10px] text-primary">
+				<Meter
+					value={info.rollout.percentage}
+					max={100}
+					className="h-[3px] w-10 shrink-0 bg-muted"
+					fillClassName="bg-primary"
+				/>
+				<span className="font-mono text-3xs text-primary">
 					{info.rollout.percentage}% · +{info.rollout.others.length}
 				</span>
 			</TooltipTrigger>
@@ -491,7 +493,7 @@ const ServiceRow = React.memo(function ServiceRow({
 					<LatencyValue ms={service.p95LatencyMs} scale="p95" />
 				</div>
 				{delta !== undefined && (
-					<div className={cn("text-[10px] tabular-nums", delta.className)}>{delta.label}</div>
+					<div className={cn("text-3xs tabular-nums", delta.className)}>{delta.label}</div>
 				)}
 			</TableCell>
 			<TableCell className="hidden lg:table-cell text-xs">
@@ -534,7 +536,7 @@ const ServiceRow = React.memo(function ServiceRow({
 								/>
 							</span>
 							{service.hasSampling && (
-								<span className="font-mono text-[9px] text-muted-foreground [text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]">
+								<span className="font-mono text-4xs text-muted-foreground [text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]">
 									~{formatThroughput(service.tracedThroughput, "/s")} traced
 								</span>
 							)}
@@ -543,8 +545,8 @@ const ServiceRow = React.memo(function ServiceRow({
 					{service.hasSampling && (
 						<TooltipContent side="bottom">
 							<p>
-								Estimated from {((1 / service.samplingWeight) * 100).toFixed(0)}% sampled
-								traces (x{service.samplingWeight.toFixed(0)} extrapolation)
+								Estimated from {formatPercent(1 / service.samplingWeight)} sampled traces (x
+								{service.samplingWeight.toFixed(0)} extrapolation)
 							</p>
 						</TooltipContent>
 					)}
@@ -961,20 +963,14 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																		{subtitleFor(service)}
 																	</div>
 																)}
-																<div className="mt-1 flex items-center gap-3 font-mono text-xs tabular-nums">
-																	<span>
-																		<span className="text-muted-foreground/60">
-																			P99{" "}
-																		</span>
+																<MobileStatLine>
+																	<MobileStat label="P99">
 																		<LatencyValue
 																			ms={service.p99LatencyMs}
 																			scale="p99"
 																		/>
-																	</span>
-																	<span>
-																		<span className="text-muted-foreground/60">
-																			Thru{" "}
-																		</span>
+																	</MobileStat>
+																	<MobileStat label="Thru">
 																		<SampledValue
 																			className="text-foreground"
 																			estimated={service.hasSampling}
@@ -983,8 +979,8 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																				"/s",
 																			)}
 																		/>
-																	</span>
-																</div>
+																	</MobileStat>
+																</MobileStatLine>
 															</div>
 															<div className="shrink-0 text-right">
 																<ErrorRateValue

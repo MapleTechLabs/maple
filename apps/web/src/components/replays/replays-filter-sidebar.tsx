@@ -18,7 +18,7 @@ import {
 	sessionTagsFromSearch,
 } from "@/components/replays/session-tags"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
-import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -30,6 +30,7 @@ import { percentilePresets, toLogBuckets } from "@/components/filters/range-dist
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
+	FilterSidebarEmpty,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
@@ -222,6 +223,9 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 					pages.length > 0 ||
 					tags.length > 0 ||
 					facets.errorCount > 0
+				if (!hasFacets && !hasActiveFilters) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={result.waiting}>
@@ -324,9 +328,9 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							{/* The rule is the separator's job: everything above is picked from a
 						    list the warehouse supplied, everything below is typed from memory. */}
 							<Separator className="my-2" />
-							<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>
+							<Eyebrow as="h4" variant="label" className="py-1">
 								Identity
-							</h4>
+							</Eyebrow>
 
 							<TextFilter
 								key={`user:${search.user ?? ""}`}
@@ -345,12 +349,6 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 								value={search.userId}
 								onApply={setUserId}
 							/>
-
-							{!hasFacets && (
-								<p className="py-4 text-sm text-muted-foreground">
-									No sessions in the selected time range
-								</p>
-							)}
 						</FilterSidebarBody>
 					</FilterSidebarFrame>
 				)

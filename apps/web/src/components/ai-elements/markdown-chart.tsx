@@ -69,7 +69,7 @@ function ChartFrame({ title, children }: { title: string | null; children: React
 	return (
 		<figure className="my-3 space-y-2 rounded-lg border border-border bg-card p-3">
 			{title ? (
-				<figcaption className="text-[11px] font-medium text-muted-foreground">{title}</figcaption>
+				<figcaption className="text-2xs font-medium text-muted-foreground">{title}</figcaption>
 			) : null}
 			{children}
 		</figure>

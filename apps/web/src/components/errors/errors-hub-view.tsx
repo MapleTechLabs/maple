@@ -224,8 +224,7 @@ const EMPTY_COPY = {
 	},
 } satisfies Record<HubView, { icon: typeof CircleCheckIcon; title: string; description: string }>
 
-const ERRORS_PURPOSE =
-	"Errors groups failed spans and exception logs into issues you can triage, assign and resolve."
+const ERRORS_PURPOSE = "Group failed spans and exceptions into issues you can triage, assign and resolve."
 
 export interface ErrorsHubViewProps {
 	/** `loading` draws row skeletons, `failed` the retry card. Both keep the

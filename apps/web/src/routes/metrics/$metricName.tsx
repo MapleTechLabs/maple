@@ -1,13 +1,12 @@
 import { useNavigate, useRouterState, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { MetricDetail } from "@/components/metrics/metric-detail"
 import type { MetricQueryPatch } from "@/components/metrics/metric-query-controls"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { AutocompleteValuesProvider } from "@/hooks/use-autocomplete-values"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
@@ -51,7 +50,7 @@ function MetricDetailPage() {
 		search.timePreset ?? "24h",
 	)
 
-	const handleTimeChange = (range: { startTime?: string; endTime?: string; presetValue?: string }) => {
+	const handleTimeChange = (range: TimeRange) => {
 		navigate({ search: (prev) => applyTimeRangeSearch(prev, range) })
 	}
 
@@ -73,45 +72,26 @@ function MetricDetailPage() {
 	const backToMetricsHref = buildBackToMetricsHref(searchStr)
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "24h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Metrics", href: backToMetricsHref }, { label: metricName }]}
+		<DashboardPage
+			breadcrumbs={[{ label: "Metrics", href: backToMetricsHref }, { label: metricName }]}
+			time={{ search, defaultPreset: "24h", onChange: handleTimeChange }}
+		>
+			<AutocompleteValuesProvider startTime={startTime} endTime={endTime}>
+				<MetricDetail
+					metricName={metricName}
+					state={{
+						type: search.type,
+						agg: search.agg,
+						where: search.where,
+						groupBy: search.groupBy,
+						step: search.step,
+						bd: search.bd,
+					}}
+					startTime={startTime}
+					endTime={endTime}
+					onPatch={handlePatch}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime}
-									endTime={search.endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "24h")}
-									defaultPreset="24h"
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<AutocompleteValuesProvider startTime={startTime} endTime={endTime}>
-								<MetricDetail
-									metricName={metricName}
-									state={{
-										type: search.type,
-										agg: search.agg,
-										where: search.where,
-										groupBy: search.groupBy,
-										step: search.step,
-										bd: search.bd,
-									}}
-									startTime={startTime}
-									endTime={endTime}
-									onPatch={handlePatch}
-								/>
-							</AutocompleteValuesProvider>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+			</AutocompleteValuesProvider>
+		</DashboardPage>
 	)
 }

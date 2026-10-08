@@ -5,13 +5,14 @@
 import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { TableCell, TableHead } from "@maple/ui/components/ui/table"
+import { BackdropBar } from "@maple/ui/components/ui/meter"
 import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import { SortableHeader } from "@/components/common/sortable-header"
 import type { SortDir } from "@/hooks/use-table-sort"
 import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 
 /** Shared chrome for the desktop table and the mobile list of the service detail tabs. */
-export const TABLE_CARD_CLASS = "overflow-hidden rounded-lg border bg-card"
+export const TABLE_CARD_CLASS = "overflow-hidden rounded-md border bg-card"
 
 interface BarCellProps {
 	value: number
@@ -22,22 +23,19 @@ interface BarCellProps {
 
 /** Numeric cell with a column-tinted distribution bar. */
 export function BarCell({ value, max, tone, children }: BarCellProps) {
-	const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0
-	const hasBar = pct > 0
 	return (
 		<TableCell className="relative py-2 text-right align-middle">
-			{hasBar ? (
-				<div
-					aria-hidden
-					className={cn(
-						"pointer-events-none absolute inset-y-1.5 right-2 rounded-sm opacity-50 transition-opacity group-hover/row:opacity-90",
-						tone === "calls" && "bg-severity-info/20",
-						tone === "errors" && "bg-severity-error/25",
-						tone === "latency" && "bg-severity-warn/20",
-					)}
-					style={{ width: `calc(${pct}% - 0.5rem)` }}
-				/>
-			) : null}
+			<BackdropBar
+				value={value}
+				max={max}
+				align="right"
+				className={cn(
+					"opacity-50 transition-opacity group-hover/row:opacity-90",
+					tone === "calls" && "bg-severity-info/20",
+					tone === "errors" && "bg-severity-error/25",
+					tone === "latency" && "bg-severity-warn/20",
+				)}
+			/>
 			<span className="relative pr-1.5">{children}</span>
 		</TableCell>
 	)
@@ -99,7 +97,7 @@ export function MobileSortBar<K extends string>({
 	onSort,
 }: MobileSortBarProps<K>) {
 	return (
-		<div className="flex items-center gap-1.5 text-[11px]">
+		<div className="flex items-center gap-1.5 text-2xs">
 			<Eyebrow variant="label">Sort</Eyebrow>
 			{options.map(([key, label]) => {
 				const active = sortKey === key

@@ -4,7 +4,7 @@ import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import {
 	CloudflareAccountCard,
 	CloudflareHeaderActions,
@@ -35,6 +35,7 @@ import { SettingsNav, useVisibleSettingsSections } from "@/components/settings/s
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { docsUrl } from "@/lib/docs"
 import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon } from "@/components/icons"
@@ -159,26 +160,13 @@ function IntegrationsPage() {
 
 	if (!integration) {
 		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Settings", href: "/settings" }, { label: "Integrations" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>{settingsSidebar}</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<IntegrationsSummary />
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<IntegrationCatalog
-								onSelect={(id) => navigate({ search: { integration: id } })}
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<DashboardPage
+				breadcrumbs={[{ label: "Settings", href: "/settings" }, { label: "Integrations" }]}
+				filters={settingsSidebar}
+				headerActions={<IntegrationsSummary />}
+			>
+				<IntegrationCatalog onSelect={(id) => navigate({ search: { integration: id } })} />
+			</DashboardPage>
 		)
 	}
 
@@ -187,81 +175,68 @@ function IntegrationsPage() {
 
 	return (
 		<IntegrationConnectProvider integration={integration}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Settings", href: "/settings" },
-						{ label: "Integrations", href: "/integrations" },
-						{ label: entry.name },
-					]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>{settingsSidebar}</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								titleContent={<IntegrationHeader integration={integration} />}
-							/>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-4">
-								{integration === "prometheus" && (
-									<Alert variant="info">
-										<CircleInfoIcon />
-										<AlertDescription>
-											Maple scrapes any public Prometheus{" "}
-											<InlineCode>/metrics</InlineCode> endpoint you add as a target
-											below and stores the samples as OpenTelemetry metrics.{" "}
-											<a
-												href={docsUrl("prometheus")}
-												target="_blank"
-												rel="noreferrer"
-												className="text-foreground underline underline-offset-2 hover:no-underline"
-											>
-												Setup guide
-											</a>
-										</AlertDescription>
-									</Alert>
-								)}
-								{integration === "warpstream" && (
-									<Alert variant="info">
-										<CircleInfoIcon />
-										<AlertDescription>
-											WarpStream clusters are scraped as Prometheus targets. Point a
-											target at an agent&apos;s <InlineCode>:8080/metrics</InlineCode>{" "}
-											endpoint or the hosted Prometheus endpoint with Basic auth.{" "}
-											<a
-												href={docsUrl("warpstream")}
-												target="_blank"
-												rel="noreferrer"
-												className="text-foreground underline underline-offset-2 hover:no-underline"
-											>
-												Setup guide
-											</a>
-										</AlertDescription>
-									</Alert>
-								)}
-								{chatConnector !== null ? (
-									<ChatIntegrationCard connector={chatConnector} />
-								) : integration === "cloudflare" ? (
-									<CloudflareAccountCard />
-								) : integration === "hazel" ? (
-									<HazelIntegrationCard />
-								) : integration === "github" ? (
-									<GithubIntegrationCard />
-								) : integration === "planetscale" ? (
-									<PlanetScaleIntegrationCard />
-								) : integration === "railway" ? (
-									<RailwayIntegrationCard />
-								) : (
-									// prometheus + warpstream share the generic scrape-target flow
-									<ScrapeTargetsSection sourceFilter="prometheus" />
-								)}
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<DashboardPage
+				breadcrumbs={[
+					{ label: "Settings", href: "/settings" },
+					{ label: "Integrations", href: "/integrations" },
+					{ label: entry.name },
+				]}
+				filters={settingsSidebar}
+				titleContent={<IntegrationHeader integration={integration} />}
+				gap="md"
+			>
+				{integration === "prometheus" && (
+					<Alert variant="info">
+						<CircleInfoIcon />
+						<AlertDescription>
+							Maple scrapes any public Prometheus <InlineCode>/metrics</InlineCode> endpoint you
+							add as a target below and stores the samples as OpenTelemetry metrics.{" "}
+							<a
+								href={docsUrl("prometheus")}
+								target="_blank"
+								rel="noreferrer"
+								className="text-foreground underline underline-offset-2 hover:no-underline"
+							>
+								Setup guide
+							</a>
+						</AlertDescription>
+					</Alert>
+				)}
+				{integration === "warpstream" && (
+					<Alert variant="info">
+						<CircleInfoIcon />
+						<AlertDescription>
+							WarpStream clusters are scraped as Prometheus targets. Point a target at an
+							agent&apos;s <InlineCode>:8080/metrics</InlineCode> endpoint or the hosted
+							Prometheus endpoint with Basic auth.{" "}
+							<a
+								href={docsUrl("warpstream")}
+								target="_blank"
+								rel="noreferrer"
+								className="text-foreground underline underline-offset-2 hover:no-underline"
+							>
+								Setup guide
+							</a>
+						</AlertDescription>
+					</Alert>
+				)}
+				{chatConnector !== null ? (
+					<ChatIntegrationCard connector={chatConnector} />
+				) : integration === "cloudflare" ? (
+					<CloudflareAccountCard />
+				) : integration === "hazel" ? (
+					<HazelIntegrationCard />
+				) : integration === "github" ? (
+					<GithubIntegrationCard />
+				) : integration === "planetscale" ? (
+					<PlanetScaleIntegrationCard />
+				) : integration === "railway" ? (
+					<RailwayIntegrationCard />
+				) : (
+					// prometheus + warpstream share the generic scrape-target flow
+					<ScrapeTargetsSection sourceFilter="prometheus" />
+				)}
+			</DashboardPage>
 		</IntegrationConnectProvider>
 	)
 }
@@ -288,14 +263,9 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 
 	return (
 		<div className="flex items-center gap-3">
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Back to integrations"
-				onClick={() => navigate({ search: {} })}
-			>
+			<IconButton label="Back to integrations" onClick={() => navigate({ search: {} })}>
 				<ArrowLeftIcon size={16} />
-			</Button>
+			</IconButton>
 			<IntegrationIconPlate
 				icon={entry.icon}
 				accent={entry.accent}

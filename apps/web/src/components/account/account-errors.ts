@@ -21,3 +21,23 @@ export function toastAccountError(err: unknown, fallback: string) {
 	if (isReverificationCancelledError(err)) return
 	toastManager.add({ title: accountErrorMessage(err, fallback), type: "error" })
 }
+
+/**
+ * Settles a Clerk call into a boolean: toasts `success` (when given) or Clerk's own failure
+ * message, so call sites never wrap Clerk promises in try/catch.
+ */
+export function settleClerk(
+	promise: Promise<unknown>,
+	options: { readonly success?: string; readonly error: string },
+): Promise<boolean> {
+	return promise.then(
+		() => {
+			if (options.success !== undefined) toastManager.add({ title: options.success, type: "success" })
+			return true
+		},
+		(err: unknown) => {
+			toastAccountError(err, options.error)
+			return false
+		},
+	)
+}

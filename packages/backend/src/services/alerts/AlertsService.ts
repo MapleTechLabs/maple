@@ -12,6 +12,7 @@ import {
 	formatWarehouseDateTime,
 	snapAlertWindowEndMs,
 	warehouseDateTime64,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
@@ -1175,8 +1176,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 
 				const windowMs = normalized.windowMinutes * 60_000
-				const requestedStartMs = Date.parse(request.startTime)
-				const requestedEndMs = Date.parse(request.endTime)
+				const requestedStartMs = parseWarehouseDateTime(request.startTime)
+				const requestedEndMs = parseWarehouseDateTime(request.endTime)
 				if (
 					!Number.isFinite(requestedStartMs) ||
 					!Number.isFinite(requestedEndMs) ||
@@ -1256,7 +1257,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
 								})
 								for (const obs of observations) {
-									record(groupKey, Date.parse(obs.bucket), {
+									record(groupKey, parseWarehouseDateTime(obs.bucket), {
 										value: obs.value,
 										sampleCount: obs.sampleCount,
 										hasData: obs.sampleCount > 0,
@@ -1280,7 +1281,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// ungrouped series' name.
 					for (const obs of observations) {
 						if (HashSet.has(excludeSet, obs.groupKey)) continue
-						record(toStorageGroupKey(plan, obs.groupKey), Date.parse(obs.bucket), {
+						record(toStorageGroupKey(plan, obs.groupKey), parseWarehouseDateTime(obs.bucket), {
 							value: obs.value,
 							sampleCount: obs.sampleCount,
 							hasData: obs.sampleCount > 0,
@@ -2652,23 +2653,34 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 							}
 
-							yield* queueIncidentNotifications(
-								orgId,
-								normalized,
-								{
-									...incident,
-									status: "resolved",
-									resolvedAt: new Date(timestamp),
-									holdReason: null,
-									heldSince: null,
-									updatedAt: new Date(timestamp),
-								},
-								syntheticEvaluation,
-								"resolve",
-								timestamp,
-								pushBudget,
-								afterHold(incident, gate.heldForMs),
-							)
+							// Same rule as the lifecycle core's resolution plan: an incident
+							// whose trigger was flap-suppressed carries an inherited
+							// notification anchor and no delivered event. Announcing its
+							// all-clear would also refresh that anchor, muting the trigger of
+							// every later reopen while the resolves keep arriving.
+							if (incident.lastDeliveredEventType == null && incident.lastNotifiedAt != null) {
+								yield* Effect.logInfo(
+									"Skipping resolve notification for flapping incident",
+								).pipe(Effect.annotateLogs({ ruleId, incidentId: incident.id, groupKey }))
+							} else {
+								yield* queueIncidentNotifications(
+									orgId,
+									normalized,
+									{
+										...incident,
+										status: "resolved",
+										resolvedAt: new Date(timestamp),
+										holdReason: null,
+										heldSince: null,
+										updatedAt: new Date(timestamp),
+									},
+									syntheticEvaluation,
+									"resolve",
+									timestamp,
+									pushBudget,
+									afterHold(incident, gate.heldForMs),
+								)
+							}
 
 							yield* dbExecute((db) =>
 								db

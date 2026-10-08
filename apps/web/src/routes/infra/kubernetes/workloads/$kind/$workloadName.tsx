@@ -6,22 +6,24 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatPercent } from "@maple/ui/lib/format"
 
 import type { WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
 import { ErrorState } from "@/components/common/error-state"
 import { GridIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { WorkloadDetailChart } from "@/components/infra/k8s-detail-chart"
-import { PodTable } from "@/components/infra/pod-table"
+import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/common/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -114,6 +116,8 @@ function WorkloadDetailPage() {
 			<DetailRail.MetaRow label="k8s.namespace.name" value={summary.namespace} />
 			<DetailRail.MetaRow label="pods" value={String(summary.podCount)} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={GridIcon} />
 	) : null
 
 	return (
@@ -137,18 +141,18 @@ function WorkloadDetailPage() {
 					title={<span className="font-mono">{params.workloadName}</span>}
 					description={`${KIND_LABEL[params.kind]}${
 						namespace ? ` in namespace ${namespace}` : ""
-					} — aggregated from pod metrics.`}
+					}, aggregated from pod metrics.`}
 					meta={
 						<>
 							{namespace && <HeroChip>ns {namespace}</HeroChip>}
 							<HeroChip>kind {params.kind}</HeroChip>
-							{summary && <HeroChip>{summary.podCount} pods</HeroChip>}
+							{summary && <HeroChip>{countLabel(summary.podCount, "pod")}</HeroChip>}
 						</>
 					}
 				/>
 
 				{Result.isInitial(summaryResult) ? (
-					<Skeleton className="h-24 w-full rounded-md" />
+					<StatRailLoading />
 				) : Result.isFailure(summaryResult) ? (
 					<ErrorState
 						error={summaryResult.cause}
@@ -173,7 +177,9 @@ function WorkloadDetailPage() {
 						<StatRailItem
 							eyebrow="Avg CPU cores"
 							value={
-								Number.isFinite(summary.avgCpuUsage) ? summary.avgCpuUsage.toFixed(3) : "—"
+								Number.isFinite(summary.avgCpuUsage)
+									? summary.avgCpuUsage.toFixed(3)
+									: EMPTY_VALUE
 							}
 							compact
 						/>
@@ -190,7 +196,7 @@ function WorkloadDetailPage() {
 							value={metric}
 							onChange={setMetric}
 						/>
-						<label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+						<label className="inline-flex items-center gap-2 text-2xs text-muted-foreground">
 							<input
 								type="checkbox"
 								checked={groupByPod}
@@ -216,7 +222,7 @@ function WorkloadDetailPage() {
 				<div className="space-y-3">
 					<SectionHeading as="h3" title="Pods" />
 					{Result.builder(podsResult)
-						.onInitial(() => <Skeleton className="h-28 w-full rounded-md" />)
+						.onInitial(() => <PodTableLoading />)
 						.onError((error) => (
 							<ErrorState
 								error={error}

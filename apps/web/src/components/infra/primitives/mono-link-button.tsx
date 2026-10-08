@@ -8,7 +8,7 @@ export function MonoLinkButton({ className, type = "button", ...props }: React.C
 		<button
 			type={type}
 			className={cn(
-				"font-mono text-[10px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline",
+				"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline",
 				className,
 			)}
 			{...props}

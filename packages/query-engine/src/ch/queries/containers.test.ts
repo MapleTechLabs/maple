@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	listContainersQuery,
@@ -353,4 +354,32 @@ describe("conditional aggregates are NaN-guarded", () => {
 			expect(sql).toMatch(/ifNotFinite\((?:avgIf|maxIf)\(/)
 		})
 	}
+})
+
+describe("container rows decode timestamps to DateTime.Utc", () => {
+	it.effect("containerDetailSummaryQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(containerDetailSummaryQuery({ containerName: "c" }), baseParams)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					containerName: "c",
+					hostName: "h",
+					containerId: "id",
+					imageName: "img",
+					composeProject: "",
+					composeService: "",
+					runtime: "docker",
+					firstSeen: "2024-01-01 09:00:00.000000000",
+					lastSeen: "2024-01-01 10:00:00.500000000",
+					cpuPct: 0.1,
+					memoryPct: 0.2,
+					cpuLimitCores: 1,
+					uptimeSeconds: 60,
+				},
+			])
+			expect(DateTime.formatIso(row!.firstSeen)).toBe("2024-01-01T09:00:00.000Z")
+			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.500Z")
+		}),
+	)
 })

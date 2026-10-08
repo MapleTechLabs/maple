@@ -5,9 +5,11 @@ import { Result } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartLoading } from "@maple/ui/components/charts"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
@@ -62,8 +64,6 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const ANALYTICS_TABS = ["overview", "ai"] as const
 type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
@@ -108,10 +108,7 @@ function WebAnalyticsPage() {
 		})
 	}
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -164,126 +161,117 @@ function WebAnalyticsPage() {
 	const sessionsPresence = useSignalPresence("sessions")
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Web Analytics" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<AnalyticsFilterSidebar
-							breakdownsResult={breakdownsResult}
-							eventsResult={eventsResult}
-							filters={filters}
-							onFilterChange={onFilterChange}
-							onClearFilters={onClearFilters}
-						/>
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<div className="flex flex-wrap items-center gap-2">
-									{/* Ahead of the range controls, because it is the one number
-									    on the page they do not govern: "right now" is its own
-									    window, and the filters still narrow it. */}
-									<AnalyticsLiveBadge filters={filters} />
-									{/* The reciprocal of the Analytics button on Session Replays: this
-									    page aggregates the sessions that page plays back one at a time,
-									    and "who are these people actually" is the next question from
-									    either side. Carries the window across, same as the outbound link. */}
-									<Button
-										variant="outline"
-										size="sm"
-										aria-label="View session replays"
-										render={
-											<Link
-												to="/replays"
-												search={{
-													startTime: search.startTime,
-													endTime: search.endTime,
-													timePreset: search.timePreset,
-												}}
-											/>
-										}
-									>
-										<PlayRotateClockwiseIcon size={14} />
-										<span className="hidden sm:inline">Replays</span>
-									</Button>
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ??
-											(search.startTime ? undefined : DEFAULT_PRESET)
-										}
-										onTimeChange={handleTimeChange}
-									/>
-								</div>
-							</DashboardLayout.Header>
-							{/* A page-width tab bar, same as Alerts: a pill beside the time
-							    controls read as one more filter and was easy to miss. */}
-							<Tabs value={activeTab} onValueChange={onTabChange}>
-								<TabsList variant="underline">
-									<TabsTrigger value="overview">Overview</TabsTrigger>
-									<TabsTrigger value="ai">AI traffic</TabsTrigger>
-								</TabsList>
-							</Tabs>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								{/* Active filters, removable one at a time. The page title used to carry
-								    them; the breadcrumb and tab bar already say where you are. */}
-								{chips.length > 0 ? (
-									<div className="flex flex-wrap items-center gap-1.5">
-										{chips.map((chip) => (
-											<Badge
-												key={`${chip.key}:${chip.value}`}
-												variant="meta"
-												size="xs"
-												mono
-												className="h-auto px-1.5 py-0.5 transition-colors hover:text-foreground"
-												render={<button type="button" onClick={() => onFilterChange(chip.key, undefined)} />}
-											>
-												{chip.label} ✕
-											</Badge>
-										))}
-										<button
-											type="button"
-											onClick={onClearFilters}
-											className="px-1 text-[10px] text-muted-foreground underline-offset-2 hover:underline"
-										>
-											Clear all
-										</button>
-									</div>
-								) : null}
-								{activeTab === "ai" ? (
-									<AnalyticsAiTab
-										startTime={startTime}
-										endTime={endTime}
-										filters={filters}
-										onToggleFilter={onToggleFilter}
-									/>
-								) : sessionsPresence.status === "absent" && chips.length === 0 ? (
-									<SignalEmptyState
-										signal="sessions"
-										noun="visits"
-										purpose="Web analytics counts visitors, pages and referrers from the browser SDK."
-										guideDocs="webAnalytics"
-									/>
-								) : (
-									<AnalyticsContent
-										startTime={startTime}
-										endTime={endTime}
-										filters={filters}
-										breakdownsResult={breakdownsResult}
-										eventsResult={eventsResult}
-										onToggleFilter={onToggleFilter}
-									/>
-								)}
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Web Analytics" }]}
+			headerActions={
+				<>
+					{/* Ahead of the range controls, because it is the one number
+					    on the page they do not govern: "right now" is its own
+					    window, and the filters still narrow it. */}
+					<AnalyticsLiveBadge filters={filters} />
+					{/* The reciprocal of the Analytics button on Session Replays: this
+					    page aggregates the sessions that page plays back one at a time,
+					    and "who are these people actually" is the next question from
+					    either side. Carries the window across, same as the outbound link. */}
+					<Button
+						variant="outline"
+						size="sm"
+						aria-label="View session replays"
+						render={
+							<Link
+								to="/replays"
+								search={{
+									startTime: search.startTime,
+									endTime: search.endTime,
+									timePreset: search.timePreset,
+								}}
+							/>
+						}
+					>
+						<PlayRotateClockwiseIcon size={14} />
+						<span className="hidden sm:inline">Replays</span>
+					</Button>
+				</>
+			}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			// View tabs share the header row with the range controls on wide
+			// screens, same as Hosts; the header stacks them on narrow ones.
+			titleContent={
+				<Tabs value={activeTab} onValueChange={onTabChange} className="min-w-0">
+					<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
+						<TabsTrigger value="overview" className="h-8 px-2 text-sm sm:h-8">
+							Overview
+						</TabsTrigger>
+						<TabsTrigger value="ai" className="h-8 px-2 text-sm sm:h-8">
+							AI traffic
+						</TabsTrigger>
+					</TabsList>
+				</Tabs>
+			}
+			filters={
+				<AnalyticsFilterSidebar
+					breakdownsResult={breakdownsResult}
+					eventsResult={eventsResult}
+					filters={filters}
+					onFilterChange={onFilterChange}
+					onClearFilters={onClearFilters}
+				/>
+			}
+			gap="lg"
+		>
+			{/* Active filters, removable one at a time. The page title used to carry
+			    them; the breadcrumb and tab bar already say where you are. */}
+			{chips.length > 0 ? (
+				<div className="flex flex-wrap items-center gap-1.5">
+					{chips.map((chip) => (
+						<Badge
+							key={`${chip.key}:${chip.value}`}
+							variant="meta"
+							size="xs"
+							mono
+							className="h-auto px-1.5 py-0.5 transition-colors hover:text-foreground"
+							render={
+								<button type="button" onClick={() => onFilterChange(chip.key, undefined)} />
+							}
+						>
+							{chip.label} ✕
+						</Badge>
+					))}
+					<button
+						type="button"
+						onClick={onClearFilters}
+						className="px-1 text-3xs text-muted-foreground underline-offset-2 hover:underline"
+					>
+						Clear all
+					</button>
+				</div>
+			) : null}
+			{activeTab === "ai" ? (
+				<AnalyticsAiTab
+					startTime={startTime}
+					endTime={endTime}
+					filters={filters}
+					onToggleFilter={onToggleFilter}
+				/>
+			) : sessionsPresence.status === "absent" && chips.length === 0 ? (
+				<SignalEmptyState
+					signal="sessions"
+					noun="visits"
+					purpose="See your visitors, top pages and where they came from."
+					action="Set up web analytics"
+					guideDocs="webAnalytics"
+				/>
+			) : (
+				<AnalyticsContent
+					startTime={startTime}
+					endTime={endTime}
+					filters={filters}
+					breakdownsResult={breakdownsResult}
+					eventsResult={eventsResult}
+					onToggleFilter={onToggleFilter}
+				/>
+			)}
+		</DashboardPage>
 	)
 }
 
@@ -396,7 +384,7 @@ function AnalyticsContent({
 				.onInitial(() => (
 					<>
 						<AnalyticsMetricStripLoading />
-						<Skeleton className="h-56 w-full" />
+						<ChartLoading variant="area" height={224} />
 					</>
 				))
 				.onError((error) => <ErrorState error={error} />)

@@ -59,6 +59,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		// Shared customer support channels, created in Maple's own Slack workspace.
 		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
+		optionalPlain("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("HAZEL_API_BASE_URL"),

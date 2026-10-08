@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { PlusIcon, TrashIcon } from "@/components/icons"
 
 import { InlineEditableText } from "@/components/dashboard-builder/sections/inline-editable-text"
@@ -66,29 +66,27 @@ export function SectionTabBar({
 						    just switching tabs, never sees a destructive control. The
 						    last tab can't be deleted — that's deleting the group. */}
 						{editable && tabs.length > 1 && (
-							<Button
-								variant="ghost"
+							<IconButton
 								size="icon-xs"
-								aria-label={`Delete tab ${tab.title}`}
+								label={`Delete tab ${tab.title}`}
 								className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover/tab:opacity-100"
 								onClick={() => onDelete(tab.id)}
 							>
 								<TrashIcon size={11} />
-							</Button>
+							</IconButton>
 						)}
 					</div>
 				)
 			})}
 			{editable && (
-				<Button
-					variant="ghost"
+				<IconButton
 					size="icon-xs"
-					aria-label="Add tab"
+					label="Add tab"
 					className="shrink-0 text-muted-foreground"
 					onClick={onAddTab}
 				>
 					<PlusIcon size={13} />
-				</Button>
+				</IconButton>
 			)}
 		</div>
 	)

@@ -190,8 +190,8 @@ describe("alert rule chart rail", () => {
 		render(<AlertRuleChart {...baseProps} preview={preview} source="preview" />)
 		expect(screen.getByText("Eval")).toBeTruthy()
 		expect(screen.getByText("Incident")).toBeTruthy()
-		expect(screen.getByText("Healthy 2")).toBeTruthy()
-		expect(screen.getByText("Breached 1")).toBeTruthy()
+		expect(screen.getByText("Healthy").parentElement?.textContent).toContain("2")
+		expect(screen.getByText("Breached").parentElement?.textContent).toContain("1")
 	})
 
 	it("reports the clicked bucket with its own time bounds", () => {

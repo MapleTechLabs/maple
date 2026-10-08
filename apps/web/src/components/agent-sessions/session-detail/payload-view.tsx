@@ -79,7 +79,7 @@ export function ViewSwitch({
 	)
 }
 
-const SEGMENT_CLASS = "font-mono text-[10px] uppercase tracking-[0.08em] sm:text-[10px]"
+const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-[0.08em] sm:text-3xs"
 
 // The switch sits inside clickable rows; a segment click must not toggle the row.
 const stopPropagation = (event: { stopPropagation: () => void }) => event.stopPropagation()

@@ -16,12 +16,16 @@ import {
 	PrReviewFinding,
 	PrReviewId,
 	PrReviewReport,
+	PrReviewContractBreak,
 	PrReviewRepositoryConfig,
+	PrReviewTelemetry,
+	PrReviewTelemetryReference,
 	SubmitPrReviewRequest,
 	VcsRepoUnavailableError,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { prReviewFindingEmbeddings, prReviewFindings } from "@maple/db"
+import { prReviewFindingEmbeddings, prReviewFindings, prReviews } from "@maple/db"
+import { eq } from "drizzle-orm"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -55,6 +59,10 @@ import {
 	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
+import {
+	PrReviewTelemetryService,
+	type PrReviewTelemetryServiceApi,
+} from "./telemetry/PrReviewTelemetryService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -105,6 +113,12 @@ const layerFor = (
 		readonly comments?: Array<string>
 		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
 		readonly checks?: Array<string>
+		/** Present: the review reads these telemetry facts at start. */
+		readonly telemetry?: PrReviewTelemetry
+		/** Files at the head, by path, for verifying a telemetry dismissal. */
+		readonly sourceFiles?: Readonly<Record<string, string>>
+		/** Paths code search returns for any query. */
+		readonly searchHits?: ReadonlyArray<string>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -121,7 +135,7 @@ const layerFor = (
 		fetchCommit: unused,
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
-		fetchPullRequestFiles: unused,
+		fetchPullRequestFiles: () => Effect.succeed([]),
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
 		resolveReviewThread: (_installation, _repo, input) =>
@@ -134,10 +148,20 @@ const layerFor = (
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
 		commitFiles: unused,
-		searchCode: unused,
+		searchCode: () =>
+			options.searchHits === undefined
+				? unused()
+				: Effect.succeed(
+						options.searchHits.map((path) => ({ path, sha: "s", htmlUrl: "", snippets: [] })),
+					),
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
-		fetchSourceFile: unused,
+		fetchSourceFile: (_installation, _repo, path) =>
+			Effect.succeed(
+				Option.fromUndefinedOr(options.sourceFiles?.[path]).pipe(
+					Option.map((content) => ({ path, sha: "s", htmlUrl: "", size: content.length, content })),
+				),
+			),
 		writePullRequestSummaryComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				const next = input.body(commentsByMarker.get(input.marker))
@@ -210,6 +234,9 @@ const layerFor = (
 				options.embedder === undefined
 					? Layer.empty
 					: Layer.succeed(FindingEmbedder, options.embedder),
+				options.telemetry === undefined
+					? Layer.empty
+					: Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
 				OrganizationFeatureFlagsService.fixed({
 					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
 					prReview: options.rolledOut ?? true,
@@ -218,6 +245,38 @@ const layerFor = (
 		),
 	)
 }
+
+const telemetryReaderFake = (telemetry: PrReviewTelemetry): PrReviewTelemetryServiceApi => ({
+	analyze: () => Effect.succeed(telemetry),
+	commitTimes: () => Effect.succeed(new Map()),
+	deploymentsSince: () => Effect.succeed([]),
+	operationsIn: () => Effect.succeed([]),
+	issueCountsIn: () => Effect.succeed(new Map()),
+	issuesFirstSeenSince: () => Effect.succeed([]),
+	attributeKeysIn: () => Effect.succeed(new Set()),
+})
+
+const breakingTelemetry = new PrReviewTelemetry({
+	windowDays: 7,
+	services: ["api"],
+	contractBreaks: [
+		new PrReviewContractBreak({
+			kind: "attribute",
+			name: "payment.provider",
+			path: "src/pay.ts",
+			line: 12,
+			references: [
+				new PrReviewTelemetryReference({ kind: "alert", id: "rule-1", name: "Checkout by provider" }),
+			],
+			perDay: 1_000,
+		}),
+	],
+	hotFiles: [],
+	linkedIssues: [],
+	costNotes: [],
+	added: [],
+	removed: [],
+})
 
 const seed = (enabled: boolean) =>
 	Effect.gen(function* () {
@@ -697,6 +756,62 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
+	it.effect("keeps a partial review off the pull request and leaves the retry notice instead", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						{
+							path: "src/routes/orders.ts",
+							line: 12,
+							category: "observability",
+							severity: "warn",
+							title: "POST /orders has no server span",
+							body: "Wrap the handler in withSpan.",
+						},
+					]),
+					partial: true,
+				}),
+			)
+			assert.equal(published.length, 0)
+			assert.include(comments.at(-1)!, PR_REVIEW_FAILURE_COPY.ended_early)
+			assert.notInclude(comments.at(-1)!, "POST /orders")
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.equal(stored.status, "completed")
+			assert.equal(stored.report?.findings.length, 1)
+
+			// The next review posts the same finding as new, never as one carried from the partial.
+			const next = yield* reviews.onPullRequestEvent(orgId, job({ headSha: HEAD_2 }))
+			yield* reviews.submitReview(
+				orgId,
+				next.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						{
+							path: "src/routes/orders.ts",
+							line: 12,
+							category: "observability",
+							severity: "warn",
+							title: "POST /orders has no server span",
+							body: "Wrap the handler in withSpan.",
+						},
+					]),
+				}),
+			)
+			assert.equal(published.length, 1)
+			assert.equal(published[0]!.comments.length, 1)
+			assert.notInclude(published[0]!.summaryComment.body, "Still open from earlier reviews")
+		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
+	})
+
 	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
@@ -767,7 +882,7 @@ describe("PrReviewService.submitReview", () => {
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
 			// Two warnings (quality 80) and an unobservable route.
-			assert.equal(publication.title, "Confidence 2/5 · 2 issues to address")
+			assert.equal(publication.title, "Confidence 5/10 · 2 issues to address")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
@@ -1226,7 +1341,7 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
 		// Quality 88 reads 4, less half a point for the unobservable route.
-		assert.equal(publication.title, "Confidence 3/5 · 1 issue to address")
+		assert.equal(publication.title, "Confidence 6/10 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -1244,7 +1359,7 @@ describe("buildPublication", () => {
 		assert.isTrue(publication.summaryComment.body.startsWith(prReviewCommentMarker(UNKNOWN_REVIEW)))
 		assert.include(
 			publication.summaryComment.body,
-			"## Maple review\n\n🟢 **Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
+			"## Maple review\n\n🟢 **Confidence 9/10** · safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
 		)
 	})
 
@@ -1298,7 +1413,7 @@ describe("buildPublication", () => {
 			repositoryUrl: `${REPO_URL}/`,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
-		assert.include(comment, "🔴 **Confidence 2/5** · risky as written")
+		assert.include(comment, "🔴 **Confidence 4/10** · risky as written")
 		assert.include(comment, "<sub>quality 75/100 · 1 critical · 0/1 new units observable</sub>")
 		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
 		assert.include(comment, "<details><summary>🔴 <b>Critical</b> · gap</summary>")
@@ -1383,7 +1498,7 @@ describe("buildPublication", () => {
 					coverage: [],
 					tests: "covered",
 					risk: "low",
-					confidence: 5,
+					confidence: 10,
 					confidenceReason: "Small change, verified end to end.",
 				}),
 				partial,
@@ -1392,18 +1507,18 @@ describe("buildPublication", () => {
 			})
 		assert.include(
 			render([]),
-			"🟢 **Confidence 5/5** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
+			"🟢 **Confidence 10/10** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
 		)
 		const critical = render([
 			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
 		])
 		assert.include(
 			critical,
-			"🔴 **Confidence 2/5** · risky as written\nHeld at 2 because a critical finding is open.",
+			"🔴 **Confidence 4/10** · risky as written\nHeld at 4 because a critical finding is open.",
 		)
 		assert.notInclude(critical, "verified end to end")
 		const partial = render([], true)
-		assert.include(partial, "🟡 **Confidence 3/5** · needs attention\n<sub>")
+		assert.include(partial, "🟡 **Confidence 6/10** · needs attention\n<sub>")
 		// The early end is the warning; a reason saying so again is left out.
 		assert.notInclude(partial, "Held at")
 		assert.include(partial, "ended early")
@@ -1417,14 +1532,17 @@ describe("buildPublication", () => {
 				headSha: HEAD,
 				partial,
 				repositoryUrl: REPO_URL,
+				// Signals read 7: an unobservable unit, partial tests and a medium-risk area.
 				report: new PrReviewReport({
 					...report([]),
+					tests: "partial",
+					risk: "medium",
 					...(confidence === undefined ? undefined : { confidence }),
 				}),
 			}).conclusion
-		assert.equal(conclusion(5), "success")
-		assert.equal(conclusion(4), "success")
-		assert.equal(conclusion(3), "neutral")
+		assert.equal(conclusion(undefined), "success")
+		assert.equal(conclusion(8), "success")
+		assert.equal(conclusion(6), "neutral")
 		assert.equal(conclusion(undefined, true), "neutral")
 	})
 
@@ -1582,5 +1700,213 @@ describe("buildReviewKickoff", () => {
 		assert.include(text, "[cut at 30000 of 40000 characters")
 		assert.notInclude(text, '<rules path="AGENTS.md">')
 		assert.include(text, "Also binding, left out for length: AGENTS.md, .maple/review.md.")
+	})
+})
+
+describe("PrReviewService telemetry", () => {
+	it.effect(
+		"states production facts in the kickoff and fails the check on a break when the repository asks",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true)
+				const repo = yield* VcsRepository
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ blockOnContractBreaks: true }),
+				)
+				const reviews = yield* PrReviewService
+				const started = yield* reviews.onPullRequestEvent(orgId, job())
+				assert.include(
+					begun[0]!.text,
+					"`payment.provider` (attribute, ~1.0k/day) removed at src/pay.ts:12",
+				)
+				yield* reviews.submitReview(
+					orgId,
+					started.reviewId!,
+					new SubmitPrReviewRequest({ report: report([]) }),
+				)
+				const publication = published[0]!
+				assert.equal(publication.conclusion, "failure")
+				assert.include(publication.summaryComment.body, "This check fails")
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+				assert.deepStrictEqual(
+					stored.report?.findings.map((finding) => [finding.checkId, finding.severity]),
+					[["TEL-01", "critical"]],
+				)
+				assert.equal(stored.report?.telemetry?.contractBreaks.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun, published, telemetry: breakingTelemetry })))
+		},
+	)
+
+	it.effect(
+		"informs without failing by default, and drops a break the head proves is still emitted",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				yield* seed(true)
+				const reviews = yield* PrReviewService
+				const first = yield* reviews.onPullRequestEvent(orgId, job())
+				yield* reviews.submitReview(
+					orgId,
+					first.reviewId!,
+					new SubmitPrReviewRequest({ report: report([]) }),
+				)
+				assert.equal(published[0]!.conclusion, "neutral")
+
+				const second = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				yield* reviews.submitReview(
+					orgId,
+					second.reviewId!,
+					new SubmitPrReviewRequest({
+						report: report([]),
+						telemetryDismissals: [
+							// A comment is not proof; the second line is.
+							{ name: "payment.provider", path: "src/other.ts", line: 1 },
+							{ name: "payment.provider", path: "src/other.ts", line: 2 },
+						],
+					}),
+				)
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
+				assert.deepStrictEqual(stored.report?.telemetry?.contractBreaks[0]?.dismissed, {
+					path: "src/other.ts",
+					line: 2,
+				})
+				assert.deepStrictEqual(stored.report?.findings, [])
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, {
+						published,
+						telemetry: breakingTelemetry,
+						sourceFiles: {
+							"src/other.ts": '// "payment.provider"\nspan.setAttribute("payment.provider", p)',
+						},
+					}),
+				),
+			)
+		},
+	)
+
+	it.effect("schedules one look at production when a reviewed pull request merges", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			const merged = job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 })
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			const db = yield* Database
+			const rows = yield* db.execute((client) =>
+				client
+					.select({
+						status: prReviews.postMergeStatus,
+						after: prReviews.postMergeAfter,
+						sha: prReviews.mergeCommitSha,
+					})
+					.from(prReviews)
+					.where(eq(prReviews.id, started.reviewId!)),
+			)
+			assert.deepStrictEqual(rows, [
+				{ status: "waiting", after: new Date(1_000 + 15 * 60_000), sha: "ccc" },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
+	})
+})
+
+describe("PrReviewService telemetry, unchanged code and late merges", () => {
+	it.effect("drops a break before the review when untouched code still emits the name", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ blockOnContractBreaks: true }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.notInclude(begun[0]!.text, "removed at src/pay.ts:12")
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			assert.notEqual(published[0]!.conclusion, "failure")
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepStrictEqual(stored.report?.telemetry?.contractBreaks[0]?.dismissed, {
+				path: "src/untouched.ts",
+				line: 3,
+			})
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					begun,
+					published,
+					telemetry: breakingTelemetry,
+					searchHits: ["src/untouched.ts", "docs/attributes.md"],
+					sourceFiles: { "src/untouched.ts": 'a\nb\nspan.setAttribute("payment.provider", p)' },
+				}),
+			),
+		)
+	})
+
+	it.effect("schedules the look when the pull request merged before its review finished", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 }),
+			)
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.equal(stored.postMergeStatus, "waiting")
+		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
+	})
+
+	it.effect("clears an earlier post-merge look when a reviewed head is reviewed again", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			const db = yield* Database
+			yield* db.execute((client) =>
+				client
+					.update(prReviews)
+					.set({ postMergeStatus: "reported" })
+					.where(eq(prReviews.id, started.reviewId!)),
+			)
+			yield* reviews.reviewNow(orgId, job())
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.isNull(stored.postMergeStatus ?? null)
+		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
 	})
 })

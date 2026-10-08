@@ -61,8 +61,8 @@ export const SIGNAL_COPY = {
 	traces: {
 		noun: "traces",
 		icon: NetworkNodesIcon,
-		purpose: "Traces show each request's path through your services, with timing for every step.",
-		source: "They come from an OpenTelemetry SDK in your app, exporting to Maple's endpoint.",
+		purpose: "Follow every request through your services, with timing for each step.",
+		source: "Send spans from an OpenTelemetry SDK in your app.",
 		action: "Set up tracing",
 		setupDocs: "instrumentation",
 		guideDocs: "traces",
@@ -70,8 +70,8 @@ export const SIGNAL_COPY = {
 	logs: {
 		noun: "logs",
 		icon: FileIcon,
-		purpose: "Logs are searchable here and linked to the trace that wrote them.",
-		source: "They come from an OTLP log bridge under your existing logger. Logging to stdout alone never reaches Maple.",
+		purpose: "Search every log line and jump to the trace that wrote it.",
+		source: "Add an OpenTelemetry log exporter to the logger you already use; stdout alone doesn't reach Maple.",
 		action: "Set up logging",
 		setupDocs: "instrumentation",
 		guideDocs: "logs",
@@ -79,8 +79,8 @@ export const SIGNAL_COPY = {
 	metrics: {
 		noun: "metrics",
 		icon: ChartLineIcon,
-		purpose: "Metrics chart the counters, gauges and histograms your services and hosts report.",
-		source: "They come from an OpenTelemetry metric reader, a Prometheus scrape target, or the Maple infrastructure agent.",
+		purpose: "Chart the counters, gauges and histograms your services and hosts report.",
+		source: "Send them from an OpenTelemetry metric reader, a Prometheus scrape, or the Maple agent.",
 		action: "Set up metrics",
 		setupDocs: "instrumentation",
 		guideDocs: "metrics",
@@ -88,8 +88,8 @@ export const SIGNAL_COPY = {
 	sessions: {
 		noun: "sessions",
 		icon: EyeIcon,
-		purpose: "Session replay shows what a user saw and did, next to the requests their browser made.",
-		source: "Sessions come from the browser SDK. Install @maple-dev/browser and call MapleBrowser.init().",
+		purpose: "Watch what a user saw and did, next to the requests their browser made.",
+		source: "Add the Maple browser SDK to your site.",
 		action: "Set up session replay",
 		setupDocs: "browserSdk",
 		guideDocs: "sessionReplay",
@@ -97,8 +97,8 @@ export const SIGNAL_COPY = {
 	product_events: {
 		noun: "events",
 		icon: ConnectionIcon,
-		purpose: "Product events record what users do in your app, for funnels and web analytics.",
-		source: "They come from track() calls in the browser SDK.",
+		purpose: "Record what users do in your app, for funnels and web analytics.",
+		source: "Send them with track() from the Maple browser SDK.",
 		action: "Set up product analytics",
 		setupDocs: "productEventsApi",
 		guideDocs: "webAnalytics",
@@ -127,6 +127,8 @@ export interface SignalEmptyStateProps {
 	 */
 	readonly purpose?: string
 	readonly guideDocs?: DocsPage
+	/** The setup button's label, when the page's job is narrower than the signal's. */
+	readonly action?: string
 	readonly className?: string
 }
 
@@ -142,6 +144,7 @@ export function SignalEmptyStateView({
 	detail,
 	purpose,
 	guideDocs,
+	action,
 	className,
 }: SignalEmptyStateProps & { readonly presence: SignalPresence }): React.ReactElement {
 	const copy = SIGNAL_COPY[signal]
@@ -153,9 +156,7 @@ export function SignalEmptyStateView({
 	// for — even on an org that has never sent the signal, where the setup advice is also true but
 	// answers a question they did not ask.
 	if (filtered) {
-		return (
-			<FilteredEmpty noun={subject} onClear={onClearFilters} detail={detail} className={className} />
-		)
+		return <FilteredEmpty noun={subject} onClear={onClearFilters} detail={detail} className={className} />
 	}
 
 	if (presence.status === "absent") {
@@ -180,10 +181,11 @@ export function SignalEmptyStateView({
 							render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 						>
 							<ConnectionIcon size={14} />
-							{copy.action}
+							{action ?? copy.action}
 						</Button>
+						{/* One link, not two: before any data the setup guide is the only docs page
+						    that helps, and a third action wraps onto its own line. */}
 						<DocsLink page={copy.setupDocs}>Setup guide</DocsLink>
-						{guide !== copy.setupDocs && <DocsLink page={guide} />}
 					</EmptyActions>
 				</EmptyContent>
 			</Empty>

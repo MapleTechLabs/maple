@@ -1,3 +1,4 @@
+import { DateTime } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -31,7 +32,7 @@ describe("traceSummariesQuery", () => {
 				serviceName: "api",
 				hasError: true,
 				limit: 21,
-				cursor: { timestamp: "2024-01-01 12:00:00", traceId: "trace123" },
+				cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00Z"), traceId: "trace123" },
 			}),
 			baseParams,
 		)
@@ -151,9 +152,9 @@ describe("tracesListQuery", () => {
 	})
 
 	it("applies cursor pagination", () => {
-		const q = tracesListQuery({ cursor: "2024-01-01T12:00:00" })
+		const q = tracesListQuery({ cursor: DateTime.makeUnsafe("2024-01-01T12:00:00.250Z") })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("Timestamp < '2024-01-01T12:00:00'")
+		expect(sql).toContain("Timestamp < '2024-01-01 12:00:00.250'")
 	})
 
 	it("applies custom limit", () => {
@@ -237,10 +238,10 @@ describe("tracesListQuery", () => {
 	})
 
 	it("includes the cursor in the cutoff subquery so pagination narrows the cheap scan too", () => {
-		const q = tracesListQuery({ cursor: "2024-01-01T12:00:00" })
+		const q = tracesListQuery({ cursor: DateTime.makeUnsafe("2024-01-01T12:00:00Z") })
 		const { sql } = compileUnsafe(q, baseParams)
 		// Cursor predicate applies in both stages.
-		expect(sql.match(/Timestamp < '2024-01-01T12:00:00'/g)).toHaveLength(2)
+		expect(sql.match(/Timestamp < '2024-01-01 12:00:00'/g)).toHaveLength(2)
 	})
 })
 
@@ -310,9 +311,9 @@ describe("tracesRootListQuery", () => {
 	})
 
 	it("applies cursor pagination", () => {
-		const q = tracesRootListQuery({ cursor: "2024-01-01T12:00:00" })
+		const q = tracesRootListQuery({ cursor: DateTime.makeUnsafe("2024-01-01T12:00:00.250Z") })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("Timestamp < '2024-01-01T12:00:00'")
+		expect(sql).toContain("Timestamp < '2024-01-01 12:00:00.250'")
 	})
 
 	it("applies offset", () => {
@@ -438,18 +439,18 @@ describe("traceListQuery", () => {
 		// One second holding five traces whose TraceId order (stage 1's tiebreak
 		// on the second-granular MV) runs opposite to their ns start order.
 		const roots = [
-			{ traceId: "t5", startTime: "2024-01-01 12:00:00.100000000" },
-			{ traceId: "t4", startTime: "2024-01-01 12:00:00.200000000" },
-			{ traceId: "t3", startTime: "2024-01-01 12:00:00.300000000" },
-			{ traceId: "t2", startTime: "2024-01-01 12:00:00.400000000" },
-			{ traceId: "t1", startTime: "2024-01-01 12:00:00.500000000" },
-			{ traceId: "t0", startTime: "2024-01-01 11:59:59.000000000" },
+			{ traceId: "t5", startTime: DateTime.makeUnsafe("2024-01-01T12:00:00.100Z") },
+			{ traceId: "t4", startTime: DateTime.makeUnsafe("2024-01-01T12:00:00.200Z") },
+			{ traceId: "t3", startTime: DateTime.makeUnsafe("2024-01-01T12:00:00.300Z") },
+			{ traceId: "t2", startTime: DateTime.makeUnsafe("2024-01-01T12:00:00.400Z") },
+			{ traceId: "t1", startTime: DateTime.makeUnsafe("2024-01-01T12:00:00.500Z") },
+			{ traceId: "t0", startTime: DateTime.makeUnsafe("2024-01-01T11:59:59.000Z") },
 		]
 		type Root = (typeof roots)[number]
-		type Cursor = { timestamp: string; traceId: string }
-		const second = (ts: string) => ts.slice(0, 19)
-		const desc = (key: (r: Root) => string) => (a: Root, b: Root) =>
-			key(b).localeCompare(key(a)) || b.traceId.localeCompare(a.traceId)
+		type Cursor = { timestamp: DateTime.Utc; traceId: string }
+		const second = (ts: DateTime.Utc) => Math.floor(DateTime.toEpochMillis(ts) / 1000) * 1000
+		const desc = (key: (r: Root) => number) => (a: Root, b: Root) =>
+			key(b) - key(a) || b.traceId.localeCompare(a.traceId)
 
 		/** Evaluates one page the way ClickHouse would, reading stage 2's order off the SQL. */
 		const page = (cursor: Cursor | undefined): Root[] => {
@@ -468,7 +469,7 @@ describe("traceListQuery", () => {
 				.slice(0, 2)
 			const stage2Key = outerOrder.startsWith("ORDER BY startSecond")
 				? (r: Root) => second(r.startTime)
-				: (r: Root) => r.startTime
+				: (r: Root) => DateTime.toEpochMillis(r.startTime)
 			return stage1.sort(desc(stage2Key))
 		}
 
@@ -529,18 +530,18 @@ describe("traceListQuery", () => {
 		expect(inner).toContain("HttpStatusCode IN ('500', '502')")
 	})
 
-	it("truncates the ns cursor to the MV's second-granularity Timestamp", () => {
+	it("truncates the cursor to the MV's second-granularity Timestamp", () => {
 		const inner = pageSubquery(
 			compileUnsafe(
 				traceListQuery({
-					cursor: { timestamp: "2024-01-01 12:00:00.123456789", traceId: "trace123" },
+					cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00.123Z"), traceId: "trace123" },
 				}),
 				baseParams,
 			).sql,
 		)
 
 		expect(inner).toContain("Timestamp < '2024-01-01 12:00:00'")
-		expect(inner).not.toContain("12:00:00.123456789")
+		expect(inner).not.toContain("12:00:00.123")
 		expect(inner).toContain("TraceId < 'trace123'")
 	})
 
@@ -596,7 +597,9 @@ describe("traceListQuery", () => {
 	it("breaks cursor ties on TraceId so same-timestamp traces are not skipped", () => {
 		const inner = pageSubquery(
 			compileUnsafe(
-				traceListQuery({ cursor: { timestamp: "2024-01-01 12:00:00", traceId: "trace123" } }),
+				traceListQuery({
+					cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00Z"), traceId: "trace123" },
+				}),
 				baseParams,
 			).sql,
 		)

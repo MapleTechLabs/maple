@@ -33,11 +33,15 @@ const U64_STRING_FIELDS: &[&str] = &[
     "observedTimeUnixNano",
     "startTimeUnixNano",
     "endTimeUnixNano",
-    "asInt",
     "count",
     "zeroCount",
     "bucketCounts",
 ];
+
+/// `NumberDataPoint` / `Exemplar` `asInt`: an int64 the spec also encodes as a
+/// decimal string, but whose derive has no string deserializer and wants a JSON
+/// number. It sits in a flattened oneof, so a string silently becomes `None`.
+const I64_NUMBER_FIELDS: &[&str] = &["asInt"];
 
 /// 32-bit integer fields, where the reverse also shows up in the wild: a
 /// decimal *string* where the derives want a number.
@@ -153,6 +157,8 @@ fn normalize_object(map: &mut Map<String, Value>) {
 
         if U64_STRING_FIELDS.contains(&key) {
             stringify_u64(child);
+        } else if I64_NUMBER_FIELDS.contains(&key) {
+            numberify_i64(child);
         } else if U32_NUMBER_FIELDS.contains(&key) {
             numberify_u32(child);
         } else if let Some(name) = child.as_str() {
@@ -188,6 +194,12 @@ fn stringify_u64(value: &mut Value) {
             }
         }
         _ => {}
+    }
+}
+
+fn numberify_i64(value: &mut Value) {
+    if let Some(parsed) = value.as_str().and_then(|s| s.parse::<i64>().ok()) {
+        *value = Value::from(parsed);
     }
 }
 
@@ -308,6 +320,21 @@ mod tests {
         normalize_value(&mut v);
         assert_eq!(v["droppedAttributesCount"], Value::from(3));
         assert_eq!(v["flags"], Value::from(1));
+    }
+
+    /// `asInt` is the inverse of the nanos: a string must become a number, and
+    /// a number must stay one, or the point decodes with no value.
+    #[test]
+    fn as_int_is_kept_or_made_numeric() {
+        let mut v: Value = serde_json::from_str(
+            r#"{"dataPoints":[{"asInt":42},{"asInt":"43"},{"asInt":"-7"},{"asInt":"x"}]}"#,
+        )
+        .unwrap();
+        normalize_value(&mut v);
+        assert_eq!(
+            v["dataPoints"],
+            serde_json::json!([{"asInt": 42}, {"asInt": 43}, {"asInt": -7}, {"asInt": "x"}])
+        );
     }
 
     #[test]

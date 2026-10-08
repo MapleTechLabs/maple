@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { cn } from "@maple/ui/lib/utils"
+import { countLabel as nounCount } from "@maple/ui/lib/format"
 
 /**
  * The row between a fleet band and its table: a search box, any pivot the
@@ -48,8 +49,6 @@ export function SearchToolbar({
  * whole list. The count is the truth, not the page size.
  */
 export function countLabel(shown: number, total: number, noun: string): string {
-	const word = total === 1 ? noun : `${noun}s`
-	return total > shown
-		? `Top ${shown} of ${total.toLocaleString()} ${word}`
-		: `${total.toLocaleString()} ${word}`
+	const counted = nounCount(total, noun)
+	return total > shown ? `Top ${shown} of ${counted}` : counted
 }

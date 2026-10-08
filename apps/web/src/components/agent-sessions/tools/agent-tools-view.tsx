@@ -127,8 +127,8 @@ export function AgentToolsView({
 			// Volume, whatever the chart is drawing: the spark is the row's shape
 			// over the window, and a row's shape is how much of it there was.
 			for (const [key, points] of byTool) sparkByTool.set(key, metricSpark(points, "calls", percentile))
-			for (const [key, token] of toolSeriesColors(rankSeriesKeys(data.series))) {
-				colorByTool.set(key, `var(${token})`)
+			for (const [key, color] of toolSeriesColors(rankSeriesKeys(data.series))) {
+				colorByTool.set(key, color)
 			}
 		}
 		return { sparkByTool, colorByTool }
@@ -176,7 +176,7 @@ export function AgentToolsView({
 				<SignalEmptyState
 					signal="traces"
 					noun="agent tool calls"
-					purpose="Agent tools shows every tool your AI agents call, with volume, latency and failures per tool."
+					purpose="See every tool your AI agents call, with volume, latency and failures."
 					guideDocs="agentSessions"
 					className="px-6 py-16"
 				/>

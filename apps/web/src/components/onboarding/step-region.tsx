@@ -12,6 +12,7 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { OptionCard } from "@/components/common/option-card"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { RegionFlag } from "@/components/region/region-flag"
 import { currentRegion, type MapleRegion, regionAppUrl } from "@/lib/region"
 
@@ -125,7 +126,7 @@ export function StepRegion() {
 								}
 								footer={
 									<span
-										className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+										className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground"
 										style={{
 											color: active ? card.accent : undefined,
 											borderColor: active ? `${card.accent}66` : undefined,
@@ -150,7 +151,7 @@ export function StepRegion() {
 					aria-atomic="true"
 					className={cn(
 						"min-h-10 text-center text-xs leading-relaxed",
-						errorMessage ? "text-destructive" : "text-muted-foreground",
+						errorMessage ? TONE_TEXT.crit : "text-muted-foreground",
 					)}
 				>
 					{errorMessage ?? "An organization stays in the region it starts in."}

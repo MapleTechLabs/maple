@@ -2,18 +2,10 @@ import { useState } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
-import { Field, FieldLabel } from "@maple/ui/components/ui/field"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { PlusIcon, XmarkIcon } from "@/components/icons"
 
@@ -51,47 +43,21 @@ export function TagEditorDialog({
 	onOpenChange: (open: boolean) => void
 	dashboardName: string
 	tags: ReadonlyArray<string>
-	/** Tags already in use across the org — offered as one-click adds. */
+	/** Tags already in use across the org, offered as one-click adds. */
 	suggestions?: ReadonlyArray<string>
 	onSave: (tags: string[]) => void
 }) {
-	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				{/* Mounted only while open so each session starts from the saved tags,
-				    matching `VariablesManagerDialog`. */}
-				{open && (
-					<TagEditor
-						dashboardName={dashboardName}
-						initial={tags}
-						suggestions={suggestions}
-						onCancel={() => onOpenChange(false)}
-						onSave={(next) => {
-							onSave(next)
-							onOpenChange(false)
-						}}
-					/>
-				)}
-			</DialogContent>
-		</Dialog>
-	)
-}
-
-function TagEditor({
-	dashboardName,
-	initial,
-	suggestions,
-	onCancel,
-	onSave,
-}: {
-	dashboardName: string
-	initial: ReadonlyArray<string>
-	suggestions: ReadonlyArray<string>
-	onCancel: () => void
-	onSave: (tags: string[]) => void
-}) {
-	const [drafts, setDrafts] = useState<string[]>(() => normalizeTags(initial))
+	const [drafts, setDrafts] = useState<string[]>(() => normalizeTags(tags))
 	const [pending, setPending] = useState("")
+	// Each opening starts from the saved tags, matching `VariablesManagerDialog`.
+	const [wasOpen, setWasOpen] = useState(open)
+	if (open !== wasOpen) {
+		setWasOpen(open)
+		if (open) {
+			setDrafts(normalizeTags(tags))
+			setPending("")
+		}
+	}
 
 	const commit = (value: string) => {
 		const added = normalizeTags(splitInput(value))
@@ -106,118 +72,113 @@ function TagEditor({
 	const unused = normalizeTags(suggestions).filter((tag) => !drafts.includes(tag))
 
 	return (
-		<>
-			<DialogHeader>
-				<DialogTitle>Tags</DialogTitle>
-				<DialogDescription>
+		<FormDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			className="sm:max-w-md"
+			panelClassName="flex flex-col gap-3 space-y-0"
+			title="Tags"
+			description={
+				<>
 					Group <span className="text-foreground">{dashboardName}</span> with related dashboards.
 					Tags drive the Tags filter on the dashboards list.
-				</DialogDescription>
-			</DialogHeader>
-			<DialogPanel className="flex flex-col gap-3">
-				<Field className="items-stretch gap-1.5">
-					<FieldLabel className="text-xs" htmlFor="tag-editor-input">
-						Add a tag
-					</FieldLabel>
-					<div className="flex items-center gap-1.5">
-						<Input
-							id="tag-editor-input"
-							size="sm"
-							value={pending}
-							placeholder="slo, api, team-platform"
-							maxLength={MAX_TAG_LENGTH}
-							onChange={(event) => setPending(event.target.value)}
-							onKeyDown={(event) => {
-								if (event.key === "Enter" || event.key === ",") {
-									// Enter must not reach the dialog's default submit — the
-									// pending tag isn't saved yet.
-									event.preventDefault()
-									commit(pending)
-									return
-								}
-								// Backspace on an empty field pops the last chip, the
-								// convention every tag input shares.
-								if (event.key === "Backspace" && pending === "" && drafts.length > 0) {
-									event.preventDefault()
-									remove(drafts[drafts.length - 1]!)
-								}
-							}}
-							// Committing on blur means a typed tag is never silently lost by
-							// clicking Save directly.
-							onBlur={() => commit(pending)}
-						/>
-						<Button
-							variant="outline"
-							size="icon-sm"
-							aria-label="Add tag"
-							disabled={normalizeTags(splitInput(pending)).length === 0}
-							onClick={() => commit(pending)}
-						>
-							<PlusIcon size={14} />
-						</Button>
-					</div>
-				</Field>
-
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">On this dashboard</Label>
-					{drafts.length === 0 ? (
-						<p className="text-muted-foreground text-[11px]">
-							No tags yet — this dashboard won't appear under any Tags filter.
-						</p>
-					) : (
-						<div className="flex flex-wrap gap-1">
-							{drafts.map((tag) => (
-								<Badge
-									key={tag}
-									variant="secondary"
-									className="gap-1 pr-1 font-mono text-[11px]"
-								>
-									{tag}
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										aria-label={`Remove tag ${tag}`}
-										className="size-4 text-muted-foreground hover:text-foreground"
-										onClick={() => remove(tag)}
-									>
-										<XmarkIcon size={11} />
-									</Button>
-								</Badge>
-							))}
-						</div>
-					)}
+				</>
+			}
+			submitLabel="Save"
+			// Commits `pending` first: onBlur fires before click on most browsers
+			// but not all, and losing a just-typed tag on Save is unforgiving.
+			onSubmit={() => {
+				onSave(normalizeTags([...drafts, ...splitInput(pending)]))
+				onOpenChange(false)
+			}}
+		>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel className="text-xs" htmlFor="tag-editor-input">
+					Add a tag
+				</FieldLabel>
+				<div className="flex items-center gap-1.5">
+					<Input
+						id="tag-editor-input"
+						size="sm"
+						value={pending}
+						placeholder="slo, api, team-platform"
+						maxLength={MAX_TAG_LENGTH}
+						onChange={(event) => setPending(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Enter" || event.key === ",") {
+								// Enter must not reach the dialog's default submit — the
+								// pending tag isn't saved yet.
+								event.preventDefault()
+								commit(pending)
+								return
+							}
+							// Backspace on an empty field pops the last chip, the
+							// convention every tag input shares.
+							if (event.key === "Backspace" && pending === "" && drafts.length > 0) {
+								event.preventDefault()
+								remove(drafts[drafts.length - 1]!)
+							}
+						}}
+						// Committing on blur means a typed tag is never silently lost by
+						// clicking Save directly.
+						onBlur={() => commit(pending)}
+					/>
+					<IconButton
+						variant="outline"
+						label="Add tag"
+						disabled={normalizeTags(splitInput(pending)).length === 0}
+						onClick={() => commit(pending)}
+					>
+						<PlusIcon size={14} />
+					</IconButton>
 				</div>
+			</Field>
 
-				{unused.length > 0 && (
-					<div className="flex flex-col gap-1.5">
-						<Label className="text-xs">Used elsewhere</Label>
-						<div className="flex flex-wrap gap-1">
-							{unused.map((tag) => (
-								<Button
-									key={tag}
-									variant="outline"
-									size="xs"
-									className="font-mono text-[11px]"
-									onClick={() => commit(tag)}
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel className="text-xs">On this dashboard</FieldLabel>
+				{drafts.length === 0 ? (
+					<FieldDescription className="text-2xs">
+						No tags yet, so this dashboard won't appear under any Tags filter.
+					</FieldDescription>
+				) : (
+					<div className="flex flex-wrap gap-1">
+						{drafts.map((tag) => (
+							<Badge key={tag} variant="secondary" className="gap-1 pr-1 font-mono text-2xs">
+								{tag}
+								<IconButton
+									size="icon-xs"
+									label={`Remove tag ${tag}`}
+									tooltip={false}
+									className="size-4 text-muted-foreground hover:text-foreground"
+									onClick={() => remove(tag)}
 								>
-									<PlusIcon size={10} data-icon="inline-start" />
-									{tag}
-								</Button>
-							))}
-						</div>
+									<XmarkIcon size={11} />
+								</IconButton>
+							</Badge>
+						))}
 					</div>
 				)}
-			</DialogPanel>
-			<DialogFooter>
-				<Button variant="outline" size="sm" onClick={onCancel}>
-					Cancel
-				</Button>
-				{/* Commits `pending` first: onBlur fires before click on most browsers
-				    but not all, and losing a just-typed tag on Save is unforgiving. */}
-				<Button size="sm" onClick={() => onSave(normalizeTags([...drafts, ...splitInput(pending)]))}>
-					Save
-				</Button>
-			</DialogFooter>
-		</>
+			</Field>
+
+			{unused.length > 0 && (
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Used elsewhere</FieldLabel>
+					<div className="flex flex-wrap gap-1">
+						{unused.map((tag) => (
+							<Button
+								key={tag}
+								variant="outline"
+								size="xs"
+								className="font-mono text-2xs"
+								onClick={() => commit(tag)}
+							>
+								<PlusIcon size={10} data-icon="inline-start" />
+								{tag}
+							</Button>
+						))}
+					</div>
+				</Field>
+			)}
+		</FormDialog>
 	)
 }

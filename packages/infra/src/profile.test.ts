@@ -16,9 +16,9 @@ describe("resolveMapleProfile", () => {
 			const { deploys, database, migratesDatabase } = profile(raw)
 			// The collector and the replay writer live beside the gateway.
 			if (deploys.collector || deploys.replayBlobs) expect(deploys.ingest).toBe(true)
-			// Electric and the sandbox need a database; previews have none.
+			// Electric and the sandbox need a declared database; dev's is docker-compose.
 			if (deploys.electric || deploys.sandbox) expect(migratesDatabase).toBe(true)
-			expect(migratesDatabase).toBe(database === "ref" || database === "declared")
+			expect(migratesDatabase).toBe(database !== "managed")
 		}
 	})
 

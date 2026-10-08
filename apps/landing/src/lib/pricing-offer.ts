@@ -30,14 +30,14 @@ export interface Allotment {
 	unit: Unit
 	included: number
 	/**
-	 * Autumn `unlimited`: no cap and no overage — the row reads "Unlimited · free
+	 * Autumn `unlimited`: no cap and no overage. The row reads "Unlimited · free
 	 * during beta" instead of a number and a rate. `included`/`rate` are ignored.
 	 */
 	unlimited?: boolean
 	/** Price per `rateUnits` units once `included` is used up. */
 	rate?: number
 	/**
-	 * Units the rate is quoted per — 1 for GB and sessions, 1,000 for events.
+	 * Units the rate is quoted per: 1 for GB and sessions, 1,000 for events.
 	 * Autumn's `billingUnits`; the rate is the price of one such block.
 	 */
 	rateUnits: number
@@ -55,7 +55,7 @@ export interface Offer {
 
 const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
 
-/** Canonical row order — Autumn can return items in any order. */
+/** Canonical row order: Autumn can return items in any order. */
 const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events"]
 
 const dataFeatureRank = (id: string | undefined) => {
@@ -81,7 +81,7 @@ const dataFeatureLabels = (): Record<string, string> => ({
 /**
  * Everything the plan carries, as one run. With a single plan there is nothing
  * to compare against, so this is a "and all of this too" line rather than a
- * checklist — a checklist implies some rows might have been withheld.
+ * checklist, since a checklist implies some rows might have been withheld.
  */
 export const platformFeatures = (): string[] => [
 	m.pricing_30day_retention(),
@@ -96,7 +96,7 @@ export const platformFeatures = (): string[] => [
 
 /**
  * The live offer, or the `autumn.config.ts` mirror if Autumn is unreachable at
- * build time. The fallback carries browser sessions and product events too — a
+ * build time. The fallback carries browser sessions and product events too, since a
  * short fallback would render a meter that disagrees with the live one.
  */
 export async function getOffer(): Promise<Offer> {
@@ -189,7 +189,7 @@ export async function getOffer(): Promise<Offer> {
 				featureId: "product_events",
 				label: labels.product_events!,
 				unit: "events",
-				// Free and unlimited during beta — mirrors `apps/api/autumn.config.ts`.
+				// Free and unlimited during beta; mirrors `apps/api/autumn.config.ts`.
 				included: 0,
 				unlimited: true,
 				rateUnits: 1,

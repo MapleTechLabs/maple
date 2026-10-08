@@ -9,6 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
 import { useTickingNow } from "@/hooks/use-ticking-now"
+import { countLabel } from "@maple/ui/lib/format"
 
 /** Silence past this is named as a stall. Well above the 8s heartbeat: a model call between steps can take tens of seconds. */
 const STALL_MS = 90_000
@@ -81,9 +82,7 @@ export function RunProgress({
 function Header({ count, stalled, silentFor }: { count: number; stalled: boolean; silentFor: number }) {
 	return (
 		<Eyebrow as="div" className="flex items-baseline gap-2">
-			<span>
-				{count} {count === 1 ? "step" : "steps"}
-			</span>
+			<span>{countLabel(count, "step")}</span>
 			{stalled ? (
 				<>
 					<span aria-hidden className="text-muted-foreground/40">

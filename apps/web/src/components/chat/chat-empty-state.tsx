@@ -1,14 +1,6 @@
 import type { ComponentType } from "react"
-import {
-	ArrowTrendUpIcon,
-	ChartLineIcon,
-	CompactLinesIcon,
-	CornerDownLeftIcon,
-	PixelNodesIcon,
-	PixelSparkleIcon,
-	PixelTriangleWarningIcon,
-	ServerIcon,
-} from "@/components/icons"
+import { ArrowTrendUpIcon, CornerDownLeftIcon, PixelSparkleIcon } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import type { IconProps } from "@/components/icons/icon"
 import { DocsLink } from "@/components/common/docs-link"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
@@ -21,14 +13,14 @@ interface Tone {
 
 const TONES = {
 	errors: {
-		Glyph: PixelTriangleWarningIcon,
-		chip: "text-destructive bg-destructive/10 border-destructive/20",
+		Glyph: CONCEPT_ICON.error,
+		chip: "text-severity-error bg-severity-error/10 border-severity-error/20",
 	},
-	traces: { Glyph: PixelNodesIcon, chip: "text-chart-2 bg-chart-2/10 border-chart-2/20" },
-	logs: { Glyph: CompactLinesIcon, chip: "text-chart-5 bg-chart-5/10 border-chart-5/20" },
+	traces: { Glyph: CONCEPT_ICON.trace, chip: "text-chart-2 bg-chart-2/10 border-chart-2/20" },
+	logs: { Glyph: CONCEPT_ICON.log, chip: "text-chart-5 bg-chart-5/10 border-chart-5/20" },
 	health: { Glyph: ArrowTrendUpIcon, chip: "text-chart-3 bg-chart-3/10 border-chart-3/20" },
-	services: { Glyph: ServerIcon, chip: "text-chart-4 bg-chart-4/10 border-chart-4/20" },
-	metrics: { Glyph: ChartLineIcon, chip: "text-chart-1 bg-chart-1/10 border-chart-1/20" },
+	services: { Glyph: CONCEPT_ICON.service, chip: "text-chart-4 bg-chart-4/10 border-chart-4/20" },
+	metrics: { Glyph: CONCEPT_ICON.metric, chip: "text-chart-1 bg-chart-1/10 border-chart-1/20" },
 	any: { Glyph: PixelSparkleIcon, chip: "text-primary bg-primary/10 border-primary/20" },
 } satisfies Record<string, Tone>
 

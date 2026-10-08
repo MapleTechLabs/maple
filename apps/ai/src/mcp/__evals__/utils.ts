@@ -1,8 +1,6 @@
-import { describe, it } from "vitest"
-import { describeEval, type TaskResult, type ToolCall } from "vitest-evals/legacy"
-import { generateText } from "ai"
-import { createEvalModel, hasEvalCredentials } from "./model"
-import { buildPredictionToolSet } from "./tools"
+import { Schema } from "effect"
+import { OrgId, UserId } from "@maple/domain/http"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 /** Stable identifiers used across eval prompts + fixtures. */
 export const FIXTURES = {
@@ -21,40 +19,9 @@ export const FIXTURES = {
 	issueId: "2b11d788-6f3a-4c21-9f0e-51c4a8d7e930",
 } as const
 
-/**
- * Prediction task: hand the model every MCP tool (no `execute`) and capture
- * which it chooses for `input`, without running anything. vitest-evals passes
- * the returned `toolCalls` to `ToolCallScorer`, which compares them to the data
- * item's `expectedTools`.
- */
-export const predictToolCalls = async (input: string): Promise<TaskResult> => {
-	const result = await generateText({
-		model: createEvalModel(),
-		temperature: 0,
-		tools: buildPredictionToolSet(),
-		toolChoice: "auto",
-		messages: [{ role: "user", content: input }],
-	})
-	const toolCalls: ToolCall[] = result.toolCalls.map((call) => ({
-		name: call.toolName,
-		arguments: (call.input ?? {}) as Record<string, unknown>,
-	}))
-	return { result: result.text, toolCalls }
-}
-
-type DescribeEvalArgs = Parameters<typeof describeEval>
-
-/**
- * `describeEval` that skips (rather than fails) when no OpenRouter key is
- * configured — so `bun run eval` is green locally/CI without secrets.
- */
-export const describeMapleEval = (...args: DescribeEvalArgs): void => {
-	const [name, options] = args
-	if (!hasEvalCredentials()) {
-		describe.skip(`[eval] ${String(name)}`, () => {
-			it("skipped — set OPENROUTER_API_KEY to run MCP evals", () => {})
-		})
-		return
-	}
-	describeEval(name, options)
+export const EVAL_TENANT: TenantContext = {
+	orgId: Schema.decodeSync(OrgId)(FIXTURES.orgId),
+	userId: Schema.decodeSync(UserId)("internal-service"),
+	roles: [],
+	authMode: "self_hosted",
 }

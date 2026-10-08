@@ -274,7 +274,8 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
 		"Record your review of THIS pull request. Call it exactly once, after you have " +
 		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, coverage, line-anchored findings and the " +
-		"handles of earlier findings this head fixes. It " +
+		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
+		"pass that location in telemetryDismissals. It " +
 		"persists the review and posts it to the pull request. After calling it, stop.",
 	parameters: PrReviewSubmission,
 	success: Schema.String,
@@ -369,7 +370,7 @@ export const buildReviewCompletion = (
 	const record = (submission: PrReviewSubmission) =>
 		Effect.suspend(() => {
 			const normalized = normalizePrReviewSubmission(submission)
-			const { filled, droppedFindings, resolved } = normalized
+			const { filled, droppedFindings, resolved, telemetryDismissals } = normalized
 			const unread = unreadToRefuse(normalized.report.verdict)
 			if (unread.length > 0) {
 				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
@@ -390,6 +391,7 @@ export const buildReviewCompletion = (
 					outputTokens: usage.output,
 					...(partial ? { partial: true } : undefined),
 					...(resolved.length > 0 ? { resolved } : undefined),
+					...(telemetryDismissals.length > 0 ? { telemetryDismissals } : undefined),
 				}),
 			).pipe(
 				Effect.tap(() =>

@@ -6,7 +6,7 @@ export function LogTextButton({ className, ...props }: React.ComponentProps<"but
 		<button
 			type="button"
 			className={cn(
-				"flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground",
+				"flex cursor-pointer items-center gap-1 text-3xs text-muted-foreground transition-colors hover:text-foreground",
 				className,
 			)}
 			{...props}

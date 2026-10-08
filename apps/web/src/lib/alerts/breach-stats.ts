@@ -1,4 +1,5 @@
 import type { AlertRulePreviewResponse } from "@maple/domain/http"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 /**
  * How the rule would have behaved over the chart's window. Drives the "would
@@ -50,7 +51,7 @@ export function breachStatsFromPreview(preview: AlertRulePreviewResponse | null)
 
 /** Format a millisecond duration as a compact human string (e.g. `12m`, `1h 5m`). */
 export function formatBreachDuration(ms: number | null): string {
-	if (ms === null || !Number.isFinite(ms) || ms <= 0) return "—"
+	if (ms === null || !Number.isFinite(ms) || ms <= 0) return EMPTY_VALUE
 	const totalMins = Math.round(ms / 60_000)
 	if (totalMins < 1) {
 		const secs = Math.max(1, Math.round(ms / 1000))

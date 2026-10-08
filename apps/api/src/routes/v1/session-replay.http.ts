@@ -6,17 +6,24 @@ import {
 	MapleApi,
 	ReplaysForTraceResponse,
 	SessionTranscriptResponse,
+	V1RequestValidationError,
 	SessionId,
 	TraceId,
 	UserId,
 } from "@maple/domain/http"
-import { Effect, Option, Schema } from "effect"
-import { CH } from "@maple/query-engine"
+import { DateTime, Effect, Option, Schema } from "effect"
+import { CH, parseUtc } from "@maple/query-engine"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const decodeSessionId = Schema.decodeSync(SessionId)
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeUserId = Schema.decodeSync(UserId)
+
+/** An optional request bound; one that does not parse is dropped (it only prunes partitions). */
+const optionalInstant = (value: string | undefined): DateTime.Utc | undefined =>
+	value === undefined ? undefined : Option.getOrUndefined(parseUtc(value))
+
+const isoOrNull = (value: DateTime.Utc | null) => (value === null ? null : DateTime.formatIso(value))
 
 export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {
@@ -27,6 +34,22 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					// An unparseable cursor is invalid input: reading it as absent would
+					// silently restart paging at the first page.
+					const cursorStart =
+						payload.cursor === undefined
+							? undefined
+							: yield* Option.match(parseUtc(payload.cursor), {
+									onNone: () =>
+										Effect.fail(
+											new V1RequestValidationError({
+												message: "cursor is not a valid timestamp",
+												param: "cursor",
+												details: [payload.cursor ?? ""],
+											}),
+										),
+									onSome: Effect.succeed,
+								})
 					const compiled = CH.compile(
 						CH.sessionReplaysListQuery({
 							serviceName: payload.serviceName,
@@ -41,9 +64,9 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							search: payload.search,
 							pagePath: payload.pagePath,
 							cursor:
-								payload.cursor === undefined
+								cursorStart === undefined
 									? undefined
-									: { startTime: payload.cursor, sessionId: payload.cursorSessionId },
+									: { startTime: cursorStart, sessionId: payload.cursorSessionId },
 							durationMinMs: payload.durationMinMs,
 							durationMaxMs: payload.durationMaxMs,
 							activeTimeMinMs: payload.activeTimeMinMs,
@@ -60,6 +83,9 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					return new ListReplaysResponse({
 						data: rows.map((row) => ({
 							...row,
+							startTime: DateTime.formatIso(row.startTime),
+							endTime: isoOrNull(row.endTime),
+							lastActivityAt: isoOrNull(row.lastActivityAt),
 							sessionId: decodeSessionId(row.sessionId),
 							userId: row.userId ? decodeUserId(row.userId) : null,
 							// `length()` is UInt64; the ClickHouse path JSON-quotes it as a
@@ -79,8 +105,8 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					})
 					const compiled = CH.compile(
 						CH.getSessionReplayQuery({
-							startTime: payload.windowStart,
-							endTime: payload.windowEnd,
+							startTime: optionalInstant(payload.windowStart),
+							endTime: optionalInstant(payload.windowEnd),
 						}),
 						{
 							orgId: tenant.orgId,
@@ -94,8 +120,8 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					// latency rather than two.
 					const activityCompiled = CH.compile(
 						CH.sessionActivityQuery({
-							startTime: payload.windowStart,
-							endTime: payload.windowEnd,
+							startTime: optionalInstant(payload.windowStart),
+							endTime: optionalInstant(payload.windowEnd),
 						}),
 						{ orgId: tenant.orgId, sessionId: payload.sessionId },
 					)
@@ -125,6 +151,9 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					return new GetReplayResponse({
 						data: {
 							...data,
+							startTime: DateTime.formatIso(data.startTime),
+							endTime: isoOrNull(data.endTime),
+							lastActivityAt: isoOrNull(data.lastActivityAt),
 							sessionId: decodeSessionId(data.sessionId),
 							userId: data.userId ? decodeUserId(data.userId) : null,
 							traceIds: data.traceIds.map((traceId) => decodeTraceId(traceId)),
@@ -158,6 +187,7 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					return new ReplaysForTraceResponse({
 						data: rows.map((row) => ({
 							...row,
+							startTime: DateTime.formatIso(row.startTime),
 							sessionId: decodeSessionId(row.sessionId),
 						})),
 					})
@@ -172,8 +202,8 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					})
 					const compiled = CH.compile(
 						CH.sessionTranscriptQuery({
-							startTime: payload.windowStart,
-							endTime: payload.windowEnd,
+							startTime: optionalInstant(payload.windowStart),
+							endTime: optionalInstant(payload.windowEnd),
 						}),
 						{
 							orgId: tenant.orgId,
@@ -187,6 +217,7 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 					return new SessionTranscriptResponse({
 						data: rows.map((row) => ({
 							...row,
+							timestamp: DateTime.formatIso(row.timestamp),
 							traceId: row.traceId ? decodeTraceId(row.traceId) : null,
 						})),
 					})

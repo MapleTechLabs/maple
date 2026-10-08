@@ -27,7 +27,7 @@ export function GenAiSection({
 			<div className="divide-y divide-border/60 overflow-hidden rounded-md border">
 				{matched.map((group) => (
 					<div key={group.id}>
-						<div className="px-1.5 py-1.5 text-[11px] font-semibold tracking-wide text-foreground/80">
+						<div className="px-1.5 py-1.5 text-2xs font-semibold tracking-wide text-foreground/80">
 							{group.label}
 						</div>
 						<div className="divide-y divide-border/40 border-t border-border/60 bg-muted/15">

@@ -3,6 +3,11 @@ import { ConfigProvider, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
+	CancellationReviewError,
+	CancellationReviewService,
+	type CancellationToReview,
+} from "@maple/backend/services/cancellation-review/CancellationReviewService"
+import {
 	ProductEventsService,
 	type ProductEventInput,
 } from "@maple/backend/services/product-events/ProductEventsService"
@@ -88,15 +93,32 @@ const recordingRevocation = (fail = false) => {
 	return { calls, layer }
 }
 
+/** Records the cancellations the Autumn route hands to the review, which can be made to fail. */
+const recordingCancellationReviews = (fail = false) => {
+	const reviewed: Array<CancellationToReview> = []
+	const layer = Layer.succeed(CancellationReviewService, {
+		review: (cancellation) =>
+			fail
+				? Effect.fail(new CancellationReviewError({ message: "Autumn did not answer", step: "billing" }))
+				: Effect.sync(() => {
+						reviewed.push(cancellation)
+						return "posted" as const
+					}),
+	})
+	return { reviewed, layer }
+}
+
 const makeRouterLayer = (
 	router: typeof ClerkWebhookRoute | typeof AutumnWebhookRouter,
 	config: Record<string, string>,
 	productEvents: Layer.Layer<ProductEventsService>,
 	revocation: Layer.Layer<MembershipRevocationService> = recordingRevocation().layer,
 	audit: Layer.Layer<AuditLogService> = recordingAudit().layer,
+	cancellationReviews: Layer.Layer<CancellationReviewService> = recordingCancellationReviews().layer,
 ) =>
 	router.pipe(
 		Layer.provide(productEvents),
+		Layer.provide(cancellationReviews),
 		Layer.provide(revocation),
 		Layer.provide(audit),
 		Layer.provide(Env.layer),
@@ -411,7 +433,129 @@ describe("ClerkWebhookRouter", () => {
 	)
 })
 
+const AUTUMN_CANCEL_SCHEDULED = JSON.stringify({
+	type: "billing.updated",
+	data: {
+		object: "billing.updated",
+		customer_id: "org_42",
+		plan_changes: [
+			{
+				action: "updated",
+				subscription: {
+					plan_id: "startup",
+					status: "active",
+					past_due: false,
+					started_at: 1_759_248_000_000,
+					canceled_at: 1_761_840_000_000,
+					expires_at: 1_764_432_000_000,
+					trial_ends_at: null,
+					current_period_start: 1_761_840_000_000,
+					current_period_end: 1_764_432_000_000,
+				},
+				previous_attributes: { canceled_at: null, expires_at: null },
+				item_changes: [],
+			},
+		],
+		tags: [],
+	},
+})
+
 describe("AutumnWebhookRouter", () => {
+	it.effect("reviews a scheduled cancellation", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationReviews()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(
+					reviews.reviewed.map(({ receivedAt: _receivedAt, ...cancellation }) => cancellation),
+					[
+						{
+							orgId: "org_42",
+							planId: "startup",
+							phase: "scheduled",
+							startedAt: 1_759_248_000_000,
+							canceledAt: 1_761_840_000_000,
+							expiresAt: 1_764_432_000_000,
+							trial: false,
+							pastDue: false,
+						},
+					],
+				)
+				// `updated` is still a plan change to the funnel.
+				assert.deepStrictEqual(
+					events.tracked.map((event) => event.name),
+					["plan_changed"],
+				)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.effect("reviews nothing on a deployment with no channel to report to", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationReviews()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET },
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(reviews.reviewed, [])
+				assert.strictEqual(events.tracked.length, 1)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.effect("records the plan events, then answers 503, when the review could not finish", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
+					events.layer,
+					undefined,
+					undefined,
+					recordingCancellationReviews(true).layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 503)
+				// The funnel does not wait on the review.
+				assert.deepStrictEqual(
+					events.tracked.map((event) => event.name),
+					["plan_changed"],
+				)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
 	it.effect("emits plan_started for an activated plan and plan_cancelled for the expired one", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()

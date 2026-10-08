@@ -1,11 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import { formatPercent } from "@maple/ui/lib/format"
 import { Delta } from "@maple/ui/components/ui/delta"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 
-import { StatRailItem } from "@/components/common/stat-rail"
+import { StatRailItem, StatRailItemSkeleton } from "@/components/common/stat-rail"
 import {
 	TOOL_PERCENTILES,
 	formatToolCount,
@@ -182,7 +181,7 @@ function DurationTile({
 					<ToggleGroupItem
 						key={candidate}
 						value={candidate}
-						className="h-5 min-w-0 px-1.5 font-mono text-[10px] uppercase sm:h-5 sm:min-w-0 sm:text-[10px]"
+						className="h-5 min-w-0 px-1.5 font-mono text-3xs uppercase sm:h-5 sm:min-w-0 sm:text-3xs"
 					>
 						{candidate}
 					</ToggleGroupItem>
@@ -211,16 +210,9 @@ function ToolDeltaValue({ delta }: { delta: ToolDelta }) {
 
 export function ToolMetricStripLoading() {
 	return (
-		<div className="flex border-b border-border">
-			{Array.from({ length: 4 }).map((_, index) => (
-				<div key={index} className={cn("flex flex-col gap-[7px] px-5 py-4", TILE)}>
-					<Skeleton className="h-3 w-16" />
-					<div className="flex items-end justify-between gap-3">
-						<Skeleton className="h-7 w-20" />
-						<Skeleton className="h-7 w-24" />
-					</div>
-					<Skeleton className="h-3 w-28" />
-				</div>
+		<div className="flex border-b border-border" aria-busy>
+			{Array.from({ length: 4 }, (_, index) => (
+				<StatRailItemSkeleton key={index} className={TILE} />
 			))}
 		</div>
 	)

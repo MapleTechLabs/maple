@@ -59,6 +59,7 @@ import {
 	useSidebar,
 } from "@maple/ui/components/ui/sidebar"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { ROW_LANE } from "@maple/ui/components/ui/list-row"
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
@@ -75,8 +76,7 @@ import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
  * tokens.css and consumed by nothing before this; it is the one thing that
  * distinguishes "selected" from "hovered", which otherwise share a fill.
  */
-const RAIL_LANE = "relative before:absolute before:inset-y-0 before:left-0 before:w-0.5"
-const ACTIVE_RAIL = `${RAIL_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
+const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
 /** Group labels sit below the items they name, not level with them. */
 const GROUP_LABEL = "h-6 text-muted-foreground"
@@ -363,7 +363,7 @@ function NavRow({
 	return (
 		<SidebarMenuItem>
 			<SidebarMenuButton
-				className={isOpen ? RAIL_LANE : ACTIVE_RAIL}
+				className={isOpen ? ROW_LANE : ACTIVE_RAIL}
 				isActive={isActive}
 				render={<Link to={item.href} />}
 				tooltip={item.title}
@@ -391,7 +391,7 @@ function NavRow({
 			</SidebarMenuButton>
 			{item.badge ? (
 				<SidebarMenuBadge>
-					<Badge className="h-4 px-1.5 py-0 font-medium text-[10px]" variant="secondary">
+					<Badge className="h-4 px-1.5 py-0 font-medium text-3xs" variant="secondary">
 						{item.badge}
 					</Badge>
 				</SidebarMenuBadge>
@@ -476,7 +476,9 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 	const overflow = pinned.length - visible.length
 	const activeDashboardId = currentPath.match(/^\/dashboards\/([^/]+)/)?.[1]
 
-	if (isLoading) return null
+	// No pins, no group: a dashed "pin something" box in the main nav is an instruction, not a
+	// destination, and it is what every new org saw first. Pinning lives on the dashboards list.
+	if (isLoading || visible.length === 0) return null
 
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -485,44 +487,38 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 				{pinned.length > 0 ? <span className="font-normal tabular-nums">{pinned.length}</span> : null}
 			</SidebarGroupLabel>
 			<SidebarGroupContent>
-				{visible.length === 0 ? (
-					<p className="rounded-md border border-sidebar-border border-dashed px-2.5 py-2 text-[11px] text-muted-foreground leading-relaxed">
-						Pin a dashboard to keep it here.
-					</p>
-				) : (
-					<SidebarMenu>
-						{visible.map((dashboard) => (
-							<SidebarMenuItem key={dashboard.id}>
-								<SidebarMenuButton
-									className={ACTIVE_RAIL}
-									isActive={activeDashboardId === dashboard.id}
-									render={
-										<Link
-											params={{ dashboardId: dashboard.id }}
-											to="/dashboards/$dashboardId"
-										/>
-									}
-									size="sm"
-								>
-									<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
-									<span>{dashboard.name}</span>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
-						))}
-						{overflow > 0 ? (
-							<SidebarMenuItem>
-								<SidebarMenuButton
-									className={`${ACTIVE_RAIL} text-muted-foreground`}
-									render={<Link to="/dashboards" />}
-									size="sm"
-								>
-									<span className="size-3.5 shrink-0" />
-									<span>{overflow} more…</span>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
-						) : null}
-					</SidebarMenu>
-				)}
+				<SidebarMenu>
+					{visible.map((dashboard) => (
+						<SidebarMenuItem key={dashboard.id}>
+							<SidebarMenuButton
+								className={ACTIVE_RAIL}
+								isActive={activeDashboardId === dashboard.id}
+								render={
+									<Link
+										params={{ dashboardId: dashboard.id }}
+										to="/dashboards/$dashboardId"
+									/>
+								}
+								size="sm"
+							>
+								<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
+								<span>{dashboard.name}</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					))}
+					{overflow > 0 ? (
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								className={`${ACTIVE_RAIL} text-muted-foreground`}
+								render={<Link to="/dashboards" />}
+								size="sm"
+							>
+								<span className="size-3.5 shrink-0" />
+								<span>{overflow} more…</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					) : null}
+				</SidebarMenu>
 			</SidebarGroupContent>
 		</SidebarGroup>
 	)

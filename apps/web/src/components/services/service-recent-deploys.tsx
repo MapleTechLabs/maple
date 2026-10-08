@@ -116,7 +116,7 @@ function RowFrame({
 					<div className="min-w-0 flex-1 truncate text-[13px]">{line1}</div>
 					{chip}
 				</div>
-				<div className="flex items-baseline gap-1.5 text-[11px] text-muted-foreground">{line2}</div>
+				<div className="flex items-baseline gap-1.5 text-2xs text-muted-foreground">{line2}</div>
 			</div>
 		</div>
 	)
@@ -310,7 +310,7 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 							<DeployRow key={deploy.sha} deploy={deploy} />
 						))}
 						{expanded && hiddenCount > 0 ? (
-							<div className="px-2 py-1.5 text-center text-[11px] text-muted-foreground/70">
+							<div className="px-2 py-1.5 text-center text-2xs text-muted-foreground/70">
 								…and {hiddenCount} more {pluralize(hiddenCount, "version")} in this window
 							</div>
 						) : null}

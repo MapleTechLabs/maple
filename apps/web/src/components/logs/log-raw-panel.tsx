@@ -40,10 +40,10 @@ export function LogRawPanel({ log }: LogRawPanelProps) {
 					label="Log JSON"
 					idleLabel="Copy"
 					iconSize={10}
-					className="h-5 px-1.5 text-[10px]"
+					className="h-5 px-1.5 text-3xs"
 				/>
 			</div>
-			<pre className="rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+			<pre className="rounded-md border bg-muted/30 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all">
 				<code dangerouslySetInnerHTML={{ __html: highlighted }} />
 			</pre>
 		</div>

@@ -108,7 +108,7 @@ export function ServiceUsagePanel({
 			title="Ingest this window"
 			action={
 				envFilterActive ? (
-					<span className="text-[10px] text-muted-foreground/60">all environments</span>
+					<span className="text-3xs text-muted-foreground/60">all environments</span>
 				) : undefined
 			}
 			className={refreshingClass(isWaiting)}
@@ -129,7 +129,7 @@ export function ServiceUsagePanel({
 								previous={prev}
 								suffix="vs prev"
 								flatThreshold={0.005}
-								className="text-[10px] text-muted-foreground"
+								className="text-3xs text-muted-foreground"
 							/>
 						</div>
 					)

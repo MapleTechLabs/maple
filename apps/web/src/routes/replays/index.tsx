@@ -3,8 +3,8 @@ import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { SessionsList } from "@/components/replays/sessions-list"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { SessionsList, SessionsListSkeleton } from "@/components/replays/sessions-list"
 import { ActiveUserFilter } from "@/components/replays/active-user-filter"
 import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sidebar"
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
@@ -17,11 +17,8 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { listReplaysResultAtom, replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ToolbarStat } from "@maple/ui/components/toolbar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Link } from "@tanstack/react-router"
@@ -220,13 +217,6 @@ function ReplaysPage() {
 				<ChartBarHorizontalIcon size={14} />
 				<span className="hidden sm:inline">Analytics</span>
 			</Button>
-			<TimeRangeHeaderControls
-				startTime={search.startTime ?? startTime}
-				endTime={search.endTime ?? endTime}
-				presetValue={search.timePreset ?? (search.startTime ? undefined : "24h")}
-				defaultPreset="24h"
-				onTimeChange={handleTimeChange}
-			/>
 		</div>
 	)
 
@@ -254,80 +244,51 @@ function ReplaysPage() {
 	)
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "24h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Session Replays" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<ReplaysFilterSidebar facetsResult={facetsResult} />
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>{headerActions}</DashboardLayout.Header>
-							{toolbar}
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							{search.userId && (
-								<ActiveUserFilter
-									userId={search.userId}
-									count={sessions.length}
-									onClear={() => handleUserFilter(undefined)}
-								/>
-							)}
-							{search.visitorId && (
-								<ActiveUserFilter
-									userId={search.visitorId}
-									count={sessions.length}
-									label="Sessions from visitor"
-									clearLabel="Clear visitor filter"
-									onClear={() => handleVisitorFilter(undefined)}
-								/>
-							)}
-							{Result.builder(firstPageResult)
-								.onInitial(() => (
-									<div className="divide-y divide-border">
-										{Array.from({ length: 8 }).map((_, i) => (
-											<div key={i} className="flex items-center gap-3 py-2.5">
-												<div className="flex-1 space-y-1.5">
-													<Skeleton className="h-3.5 w-48" />
-													<Skeleton className="h-3 w-64" />
-												</div>
-												<Skeleton className="hidden h-3.5 w-40 sm:block" />
-											</div>
-										))}
-									</div>
-								))
-								.onError((error) => (
-									<ErrorState error={error} title="Failed to load session replays" />
-								))
-								.onSuccess(() => (
-									<SessionsList
-										sessions={allData}
-										hasMore={hasNextPage}
-										isCapped={isCapped}
-										loadingMore={isFetchingNextPage}
-										onReachEnd={fetchNextPage}
-										durationP95={durationP95}
-										filtered={hasActiveFilters}
-										onClearFilters={handleClearFilters}
-										collapseLowSignal={collapseLowSignal}
-										onFilterTag={(tag) => {
-											const next = nextTagSelection(selectedTags, [
-												...selectedTags,
-												tag,
-											])
-											navigate({ search: (prev) => ({ ...prev, tags: next }) })
-										}}
-										onFilterGroup={(group) =>
-											navigate({ search: (prev) => ({ ...prev, group }) })
-										}
-									/>
-								))
-								.render()}
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Session Replays" }]}
+			filters={<ReplaysFilterSidebar facetsResult={facetsResult} />}
+			headerActions={headerActions}
+			time={{ search, startTime, endTime, defaultPreset: "24h", onChange: handleTimeChange }}
+			sticky={toolbar}
+		>
+			{search.userId && (
+				<ActiveUserFilter
+					userId={search.userId}
+					count={sessions.length}
+					onClear={() => handleUserFilter(undefined)}
+				/>
+			)}
+			{search.visitorId && (
+				<ActiveUserFilter
+					userId={search.visitorId}
+					count={sessions.length}
+					label="Sessions from visitor"
+					clearLabel="Clear visitor filter"
+					onClear={() => handleVisitorFilter(undefined)}
+				/>
+			)}
+			{Result.builder(firstPageResult)
+				.onInitial(() => <SessionsListSkeleton />)
+				.onError((error) => <ErrorState error={error} title="Failed to load session replays" />)
+				.onSuccess(() => (
+					<SessionsList
+						sessions={allData}
+						hasMore={hasNextPage}
+						isCapped={isCapped}
+						loadingMore={isFetchingNextPage}
+						onReachEnd={fetchNextPage}
+						durationP95={durationP95}
+						filtered={hasActiveFilters}
+						onClearFilters={handleClearFilters}
+						collapseLowSignal={collapseLowSignal}
+						onFilterTag={(tag) => {
+							const next = nextTagSelection(selectedTags, [...selectedTags, tag])
+							navigate({ search: (prev) => ({ ...prev, tags: next }) })
+						}}
+						onFilterGroup={(group) => navigate({ search: (prev) => ({ ...prev, group }) })}
+					/>
+				))
+				.render()}
+		</DashboardPage>
 	)
 }

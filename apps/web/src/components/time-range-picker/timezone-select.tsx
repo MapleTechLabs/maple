@@ -12,6 +12,7 @@ import {
 } from "@maple/ui/components/ui/combobox"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
 
 import { getBrowserTimeZone, SYSTEM_VALUE } from "@/atoms/timezone-preference-atoms"
 import { ChevronDownIcon, GlobeIcon } from "@/components/icons"
@@ -171,7 +172,7 @@ export function TimezoneSelect() {
 					aria-label="Timezone"
 					className={cn(
 						"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
-						"text-[11px] tracking-tight outline-none transition-colors",
+						"text-2xs tracking-tight outline-none transition-colors",
 						"hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-muted/60",
 					)}
 				>
@@ -181,9 +182,9 @@ export function TimezoneSelect() {
 						{formatUtcOffset(effectiveTimezone)}
 					</span>
 					{selectedTimezone === null && (
-						<span className="shrink-0 rounded-sm border border-border/70 px-1 py-px text-[9px] font-medium uppercase tracking-[0.1em] text-muted-foreground/80">
+						<Badge variant="tag" className="shrink-0">
 							System
-						</span>
+						</Badge>
 					)}
 					<ChevronDownIcon size={12} className="shrink-0 text-muted-foreground" />
 				</ComboboxTrigger>
@@ -245,10 +246,10 @@ export function TimezoneSelect() {
 															</>
 														)}
 													</span>
-													<span className="shrink-0 font-mono text-[11px] tabular-nums text-foreground/70">
+													<span className="shrink-0 font-mono text-2xs tabular-nums text-foreground/70">
 														{formatClock(zone, now)}
 													</span>
-													<span className="w-14 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground/70">
+													<span className="w-14 shrink-0 text-right font-mono text-3xs tabular-nums text-muted-foreground/70">
 														{formatUtcOffset(zone, now)}
 													</span>
 												</span>

@@ -1,3 +1,6 @@
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { countLabel } from "@maple/ui/lib/format"
 import { XmarkIcon } from "@/components/icons"
 import { gradientFor } from "./replay-format"
 
@@ -31,7 +34,7 @@ export function ActiveUserFilter({
 }: ActiveUserFilterProps) {
 	const initial = (userId[0] ?? "?").toUpperCase()
 	return (
-		<div className="mb-3 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2">
+		<div className="mb-3 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
 			<div
 				className={`grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(userId)} text-xs font-semibold text-white shadow-sm`}
 			>
@@ -40,22 +43,21 @@ export function ActiveUserFilter({
 			<div className="min-w-0 flex-1">
 				<div className="flex items-baseline gap-2">
 					<span className="text-xs text-muted-foreground">{label}</span>
-					<span className="truncate font-mono text-sm font-medium" title={userId}>
+					<TruncatedText mono tooltip="overflow" className="text-sm font-medium">
 						{userId}
-					</span>
+					</TruncatedText>
 				</div>
 				<span className="text-xs text-muted-foreground tabular-nums">
-					{count.toLocaleString()} session{count === 1 ? "" : "s"} loaded
+					{countLabel(count, "session")} loaded
 				</span>
 			</div>
-			<button
-				type="button"
+			<IconButton
 				onClick={onClear}
-				aria-label={clearLabel}
-				className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				label={clearLabel}
+				className="rounded-full text-muted-foreground before:rounded-full"
 			>
 				<XmarkIcon className="size-4" />
-			</button>
+			</IconButton>
 		</div>
 	)
 }

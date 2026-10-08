@@ -13,7 +13,8 @@ import { NotifyChannels, SignalBadge, TagChips, TagGroupHeaderRow } from "@/comp
 import { CircleWarningIcon } from "@/components/icons"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { worstState } from "@/lib/alerts/rule-status"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
@@ -118,7 +119,7 @@ export function RulesOverviewTable({
 							<Tooltip>
 								<TooltipTrigger
 									render={
-										<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-[11px]" />
+										<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-2xs" />
 									}
 									onClick={(e) => e.stopPropagation()}
 								>
@@ -152,11 +153,11 @@ export function RulesOverviewTable({
 							</span>
 						</span>
 					) : (
-						<span className="text-muted-foreground text-xs">—</span>
+						<span className="text-muted-foreground text-xs">{EMPTY_VALUE}</span>
 					)}
 				</TableCell>
 				<TableCell className="text-muted-foreground text-xs tabular-nums">
-					{lastEvaluatedAt ? formatRelativeTime(lastEvaluatedAt) : "—"}
+					{lastEvaluatedAt ? <RelativeTime value={lastEvaluatedAt} tooltip="title" /> : EMPTY_VALUE}
 				</TableCell>
 				<TableCell onClick={(e) => e.stopPropagation()}>
 					<NotifyChannels destinations={ruleDestinations} enabled={rule.enabled} />

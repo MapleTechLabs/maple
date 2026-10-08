@@ -289,4 +289,16 @@ describe("getServiceOverview throughput resolution", () => {
 			])
 		}),
 	)
+
+	// Live clock: the TestClock sits at epoch 0, where the fallback window has no positive start.
+	it.live("divides by the default 24h window it queried when no range is passed", () =>
+		Effect.gen(function* () {
+			setActiveOrgId("overview-default-window")
+			const { data } = yield* getServiceOverview({ data: {} })
+
+			// 100 spans over the 24h fallback window, not over a 1h fallback duration.
+			const expected = 100 / (24 * 3600)
+			assert.ok(Math.abs(data[0].throughput - expected) < 1e-9, `throughput=${data[0].throughput}`)
+		}),
+	)
 })

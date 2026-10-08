@@ -9,7 +9,8 @@ import {
 	getServiceOverviewResultAtom,
 	getServicesFacetsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ServicesTable } from "@/components/services/services-table"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 import { serviceFilterChips } from "@/lib/services-list/service-filter-chips"
@@ -17,8 +18,6 @@ import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { ServicesFilterSidebar } from "@/components/services/services-filter-sidebar"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 
@@ -103,14 +102,7 @@ function ServicesPage() {
 		search.timePreset ?? "12h",
 	)
 
-	const handleTimeChange = (
-		range: {
-			startTime?: string
-			endTime?: string
-			presetValue?: string
-		},
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, range),
@@ -118,53 +110,40 @@ function ServicesPage() {
 	}
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Services" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<ServicesFilterSidebar />
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? effectiveStartTime}
-									endTime={search.endTime ?? effectiveEndTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									presets={LONG_RANGE_PRESET_OPTIONS}
-									maxRangeSeconds={ONE_YEAR_SECONDS}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<ActiveFilterChips
-								chips={serviceFilterChips(search)
-									// URL namespace filters are ignored while the org-global
-									// pin is on — chips for them would suggest they still apply.
-									.filter(
-										(chip) =>
-											pinnedNamespace === null ||
-											(chip.param !== "namespaces" &&
-												chip.param !== "excludedNamespaces"),
-									)
-									.map((chip) => ({
-										id: chip.param,
-										label: chip.label,
-										values: chip.values,
-										negated: chip.negated,
-										onRemove: () =>
-											navigate({
-												search: (prev) => ({ ...prev, [chip.param]: undefined }),
-											}),
-									}))}
-							/>
-							<ServicesTable filters={search} />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Services" }]}
+			time={{
+				search,
+				startTime: effectiveStartTime,
+				endTime: effectiveEndTime,
+				defaultPreset: "12h",
+				onChange: handleTimeChange,
+				presets: LONG_RANGE_PRESET_OPTIONS,
+				maxRangeSeconds: ONE_YEAR_SECONDS,
+			}}
+			filters={<ServicesFilterSidebar />}
+		>
+			<ActiveFilterChips
+				chips={serviceFilterChips(search)
+					// URL namespace filters are ignored while the org-global
+					// pin is on; chips for them would suggest they still apply.
+					.filter(
+						(chip) =>
+							pinnedNamespace === null ||
+							(chip.param !== "namespaces" && chip.param !== "excludedNamespaces"),
+					)
+					.map((chip) => ({
+						id: chip.param,
+						label: chip.label,
+						values: chip.values,
+						negated: chip.negated,
+						onRemove: () =>
+							navigate({
+								search: (prev) => ({ ...prev, [chip.param]: undefined }),
+							}),
+					}))}
+			/>
+			<ServicesTable filters={search} />
+		</DashboardPage>
 	)
 }

@@ -3,14 +3,13 @@ import { shortId } from "@maple/ui/lib/ids"
 import { Schema } from "effect"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { LogsTable } from "@/components/logs/logs-table"
 import { LogsVolumeChart } from "@/components/logs/logs-volume-chart"
 import { LogsFilterSidebar } from "@/components/logs/logs-filter-sidebar"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 import { logFilterChips } from "@/lib/logs/log-filter-chips"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
@@ -48,14 +47,7 @@ function LogsPage() {
 	const navigate = useNavigate({ from: Route.fullPath })
 	const pinnedNamespace = useGlobalNamespace()
 
-	const handleTimeChange = (
-		range: {
-			startTime?: string
-			endTime?: string
-			presetValue?: string
-		},
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => applyTimeRangeSearch(prev, range),
@@ -91,45 +83,30 @@ function LogsPage() {
 	}
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Logs" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<LogsFilterSidebar />
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime}
-									endTime={search.endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-							<LogsVolumeChart
-								filters={search}
-								onTimeRangeSelect={(range) =>
-									handleTimeChange(
-										{ startTime: range.startTime, endTime: range.endTime },
-										{ replace: true },
-									)
-								}
-							/>
-						</DashboardLayout.Sticky>
-						{/* `Fill`, not `Scroll`: the logs stream is virtualized and owns its
-						    own scroller, so an outer `overflow-auto` only adds a second
-						    scrollbar for the wheel to chain into at the ends. */}
-						<DashboardLayout.Fill>
-							<div className="flex min-h-0 flex-1 flex-col p-4">
-								<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFacetFilters} />
-								<LogsTable filters={search} />
-							</div>
-						</DashboardLayout.Fill>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Logs" }]}
+			time={{ search, defaultPreset: "12h", onChange: handleTimeChange }}
+			sticky={
+				<LogsVolumeChart
+					filters={search}
+					onTimeRangeSelect={(range) =>
+						handleTimeChange(
+							{ startTime: range.startTime, endTime: range.endTime },
+							{ replace: true },
+						)
+					}
+				/>
+			}
+			filters={<LogsFilterSidebar />}
+			// `fill`, not a scroll body: the logs stream is virtualized and owns its own
+			// scroller, so an outer `overflow-auto` only adds a second scrollbar for the
+			// wheel to chain into at the ends.
+			fill
+		>
+			<div className="flex min-h-0 flex-1 flex-col p-4">
+				<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFacetFilters} />
+				<LogsTable filters={search} />
+			</div>
+		</DashboardPage>
 	)
 }

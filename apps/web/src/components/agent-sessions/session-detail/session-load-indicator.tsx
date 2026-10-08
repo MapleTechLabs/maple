@@ -2,6 +2,7 @@ import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
+import { Meter } from "@maple/ui/components/ui/meter"
 
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 
@@ -26,7 +27,6 @@ export function SessionLoadIndicator({
 	className?: string
 }) {
 	const { phase } = progress
-	const format = (value: number) => value.toLocaleString("en-US")
 
 	if (phase === "failed") {
 		return (
@@ -58,19 +58,12 @@ export function SessionLoadIndicator({
 			<div className="flex items-center gap-2">
 				<Spinner size={12} className="shrink-0" aria-hidden />
 				<span className="tabular-nums">
-					Loading {format(loaded)}
-					{total !== undefined && ` of ${format(total)}`} {noun}
+					Loading {loaded.toLocaleString("en-US")}
+					{total !== undefined && ` of ${total.toLocaleString("en-US")}`} {noun}
 				</span>
 			</div>
-			<div className="h-0.5 w-40 overflow-hidden rounded-full bg-muted" aria-hidden>
-				<div
-					className={cn(
-						"h-full rounded-full bg-primary/70 transition-[width] duration-300",
-						fraction === undefined && "w-1/3",
-					)}
-					style={fraction === undefined ? undefined : { width: `${Math.round(fraction * 100)}%` }}
-				/>
-			</div>
+			{/* No total yet: a fixed third, so the bar still says "in progress". */}
+			<Meter value={fraction ?? 1 / 3} fillClassName="bg-primary/70" className="h-0.5 w-40 bg-muted" />
 		</div>
 	)
 }

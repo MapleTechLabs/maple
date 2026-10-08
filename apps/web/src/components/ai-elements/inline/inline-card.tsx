@@ -98,14 +98,14 @@ export function InlineServiceChips({ services }: { services: readonly string[] }
 			{shown.map((service) => (
 				<span
 					key={service}
-					className="min-w-0 truncate rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+					className="min-w-0 truncate rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 text-2xs text-muted-foreground"
 					title={service}
 				>
 					{service}
 				</span>
 			))}
 			{services.length > shown.length ? (
-				<span className="shrink-0 text-[11px] text-muted-foreground/70">
+				<span className="shrink-0 text-2xs text-muted-foreground/70">
 					+{services.length - shown.length}
 				</span>
 			) : null}

@@ -16,6 +16,7 @@
  * resolved ingest key, so leaving `maple_org_id` in `resource_attributes` is harmless.
  */
 import type { MetricAttrs, MetricGaugeRow, MetricSumRow } from "@maple/backend/services/warehouse/metric-rows"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 interface OtlpKeyValue {
 	readonly key: string
@@ -68,7 +69,7 @@ const toKeyValues = (attrs: MetricAttrs): OtlpKeyValue[] =>
 
 /** ClickHouse DateTime64 literal ("YYYY-MM-DD HH:MM:SS.mmm", UTC) → unix-nanosecond string. */
 const tsToUnixNano = (ts: string): string => {
-	const ms = Date.parse(`${ts.replace(" ", "T")}Z`)
+	const ms = parseWarehouseDateTime(ts)
 	// ns = ms × 1e6; append six zeros so the value stays exact past 2^53.
 	return `${ms}000000`
 }

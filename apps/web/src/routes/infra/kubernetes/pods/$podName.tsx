@@ -4,9 +4,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
 import type { PodInfraMetric } from "@/api/warehouse/infra"
@@ -18,7 +20,7 @@ import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/common/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { podDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -83,6 +85,8 @@ function PodDetailPage() {
 			<DetailRail.MetaRow label="k8s.daemonset.name" value={summary.daemonsetName} />
 			<DetailRail.MetaRow label="k8s.pod.start_time" value={summary.podStartTime} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={FolderIcon} />
 	) : null
 
 	return (
@@ -115,7 +119,7 @@ function PodDetailPage() {
 				/>
 
 				{Result.isInitial(summaryResult) ? (
-					<Skeleton className="h-24 w-full rounded-md" />
+					<StatRailLoading />
 				) : Result.isFailure(summaryResult) ? (
 					<ErrorState
 						error={summaryResult.cause}

@@ -2,7 +2,7 @@ import * as React from "react"
 
 import { ServiceSpectrumBar, computeServiceShares } from "@maple/ui/components/traces/service-spectrum-bar"
 import { ServiceDot } from "@maple/ui/components/service-dot"
-import { countLabel, formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -11,6 +11,7 @@ import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
 import type { Span } from "@/api/warehouse/traces"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { StatFigure } from "@/components/common/stat-rail"
 
 interface TraceAnatomyStripProps {
 	spans: ReadonlyArray<Span>
@@ -48,14 +49,11 @@ export function TraceAnatomyStrip({
 	return (
 		<div className="shrink-0 space-y-2">
 			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-				<div className="flex min-w-0 items-baseline gap-3">
-					<span className="font-mono text-2xl font-semibold tabular-nums tracking-tight">
-						{formatDuration(totalDurationMs)}
-					</span>
-					<span className="text-xs text-muted-foreground">
-						{countLabel(spans.length, "span")} · {countLabel(shares.length, "service")}
-					</span>
-				</div>
+				<StatFigure
+					value={formatDuration(totalDurationMs)}
+					unit={`${countLabel(spans.length, "span")} · ${countLabel(shares.length, "service")}`}
+					className="min-w-0"
+				/>
 
 				<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
 					<span
@@ -105,8 +103,8 @@ export function TraceAnatomyStrip({
 					<span key={share.serviceName} className="flex items-center gap-1.5 font-mono text-xs">
 						<ServiceDot serviceName={share.serviceName} size="sm" />
 						<span>{share.serviceName}</span>
-						<span className="text-[10px] text-muted-foreground tabular-nums">
-							{share.percent.toFixed(share.percent < 10 ? 1 : 0)}%
+						<span className="text-3xs text-muted-foreground tabular-nums">
+							{formatPercent(share.percent / 100)}
 						</span>
 					</span>
 				))}

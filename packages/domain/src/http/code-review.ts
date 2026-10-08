@@ -13,6 +13,7 @@ import {
 	PrReviewStatus,
 	PrReviewVerdict,
 } from "./pr-review"
+import { PrReviewPostMerge } from "./pr-review-telemetry"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
 
 /**
@@ -208,6 +209,8 @@ export class CodeReviewDetail extends Schema.Class<CodeReviewDetail>("CodeReview
 	history: Schema.Array(CodeReviewListItem),
 	/** The pull request's tracked findings, across all its reviews. */
 	findings: Schema.Array(CodeReviewFinding),
+	/** How production behaved after the merge shipped; absent until Maple has looked. */
+	postMerge: Schema.optionalKey(Schema.NullOr(PrReviewPostMerge)),
 }) {}
 
 export class CodeReviewApiGroup extends HttpApiGroup.make("codeReview")

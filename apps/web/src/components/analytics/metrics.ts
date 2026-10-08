@@ -6,7 +6,7 @@
 // chart renders the selected one's series — so a tile and the chart it drives
 // can never disagree about what they are showing.
 
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import type {
 	WebAnalyticsPageviewsPoint,
@@ -107,14 +107,14 @@ export interface AnalyticsMetricDescriptor {
  * a session is read in minutes and seconds.
  */
 export function formatSessionDuration(ms: number): string {
-	if (ms <= 0) return "—"
+	if (ms <= 0) return EMPTY_VALUE
 	const seconds = Math.round(ms / 1000)
 	if (seconds < 60) return `${seconds}s`
 	const minutes = Math.floor(seconds / 60)
 	return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`
 }
 
-const formatRatio = (value: number): string => (value > 0 ? value.toFixed(1) : "—")
+const formatRatio = (value: number): string => (value > 0 ? value.toFixed(1) : EMPTY_VALUE)
 
 const sum = <T>(rows: ReadonlyArray<T>, pick: (row: T) => number): number =>
 	rows.reduce((total, row) => total + pick(row), 0)

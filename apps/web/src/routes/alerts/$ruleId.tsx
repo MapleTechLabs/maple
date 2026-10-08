@@ -5,7 +5,10 @@ import { Exit, Schema } from "effect"
 import { Fragment, useCallback, useMemo, useRef, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { ResultPage } from "@/components/layout/result-page"
+import { DetailHeader } from "@/components/common/detail-header"
+import { SectionHeading } from "@/components/common/section-heading"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useAlertRuleChecks } from "@/hooks/use-alert-rule-checks"
@@ -21,7 +24,7 @@ import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-series"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
-import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { ErrorState } from "@/components/common/error-state"
 import { ResultView } from "@/components/common/result-view"
@@ -37,7 +40,7 @@ import {
 	v2CheckToDocument,
 	v2DeliveryToDocument,
 } from "@/lib/alerts/form-utils"
-import { getExitErrorMessage } from "@/lib/error-toast"
+import { toastExit } from "@/lib/error-toast"
 import { RuleDiagnosisPanel } from "@/components/alerts/rule-detail/rule-diagnosis-panel"
 import { useAlertRuleStates } from "@/hooks/use-alert-rule-states"
 import {
@@ -49,7 +52,7 @@ import {
 	type AlertRuleDocument,
 } from "@maple/domain/http"
 import { useAlertDestinationsList, useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { CheckIcon, PencilIcon, DotsVerticalIcon, ChatBubbleSparkleIcon } from "@/components/icons"
+import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -61,19 +64,20 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { tokenizeSql } from "@/lib/sql-highlight"
 import { formatSql } from "@/lib/sql-format"
 import { runMapleApiV2 } from "@/lib/collections/api-runner"
 
 const tabValues = ["overview", "history"] as const
 type RuleDetailTab = (typeof tabValues)[number]
+const isRuleDetailTab = (value: unknown): value is RuleDetailTab => tabValues.some((tab) => tab === value)
 
 /** Names what each chart source actually is, so the toggle isn't a guess. */
 const SIGNAL_SOURCE_DESCRIPTION: Record<SignalSource, string> = {
@@ -286,9 +290,7 @@ function RuleDetailContent() {
 		[ruleStates, ruleIncidents, checks, ruleDeliveryEvents],
 	)
 
-	const activeTab: RuleDetailTab = (tabValues as readonly string[]).includes(search.tab ?? "")
-		? (search.tab as RuleDetailTab)
-		: "overview"
+	const activeTab: RuleDetailTab = isRuleDetailTab(search.tab) ? search.tab : "overview"
 
 	const [stateFilter, setStateFilter] = useState<"all" | "open" | "resolved">("all")
 	const [checkStatusFilter, setCheckStatusFilter] = useState<CheckStatusFilter>("all")
@@ -326,27 +328,32 @@ function RuleDetailContent() {
 			setSelectedBucket({ index, ...bucket })
 			setBucketChecks(NO_CHECKS)
 			setBucketLoading(true)
-			void (async () => {
-				try {
-					const page = await runMapleApiV2((client) =>
-						client.alertRules.checks({
-							params: { id: ruleId },
-							query: {
-								since: IsoDateTimeString.make(new Date(bucket.start).toISOString()),
-								until: IsoDateTimeString.make(new Date(bucket.end).toISOString()),
-								limit: 100,
-							},
-						}),
-					)
-					if (bucketRequest.current !== token) return
-					setBucketChecks(page.data.map(v2CheckToDocument))
-				} catch {
-					if (bucketRequest.current !== token) return
-					toastManager.add({ title: "Checks for that bucket could not be loaded", type: "error" })
-				} finally {
+			void runMapleApiV2((client) =>
+				client.alertRules.checks({
+					params: { id: ruleId },
+					query: {
+						since: IsoDateTimeString.make(new Date(bucket.start).toISOString()),
+						until: IsoDateTimeString.make(new Date(bucket.end).toISOString()),
+						limit: 100,
+					},
+				}),
+			)
+				.then(
+					(page) => {
+						if (bucketRequest.current !== token) return
+						setBucketChecks(page.data.map(v2CheckToDocument))
+					},
+					() => {
+						if (bucketRequest.current !== token) return
+						toastManager.add({
+							title: "Checks for that bucket could not be loaded",
+							type: "error",
+						})
+					},
+				)
+				.finally(() => {
 					if (bucketRequest.current === token) setBucketLoading(false)
-				}
-			})()
+				})
 		},
 		[clearBucket, ruleId],
 	)
@@ -401,10 +408,7 @@ function RuleDetailContent() {
 			await navigate({ to: "/investigations/$id", params: { id: result.value.id } })
 			return
 		}
-		toastManager.add({
-			title: getExitErrorMessage(result, "Failed to open investigation"),
-			type: "error",
-		})
+		toastExit(result, { error: "Failed to open investigation" })
 	}
 
 	const stats = useMemo(() => computeIncidentStats(ruleIncidents), [ruleIncidents])
@@ -450,76 +454,6 @@ function RuleDetailContent() {
 		checksPage != null ? ` · ${formatBucketSpan(checksPage.summary.bucketSeconds)} each` : ""
 	}`
 
-	if (Result.isInitial(rulesResult)) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Alerts", href: "/alerts" }, { label: "Loading..." }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							{/* Mirror the settled Overview rhythm so the first paint doesn't snap. */}
-							<div className="space-y-6">
-								<Skeleton className="h-14 w-full" />
-								<div className="space-y-2">
-									<Skeleton className="h-3.5 w-40" />
-									<Skeleton className="h-[300px] w-full" />
-								</div>
-								<Skeleton className="h-52 w-full" />
-								<Skeleton className="h-64 w-full" />
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
-
-	if (Result.isFailure(rulesResult)) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Alerts", href: "/alerts" }, { label: "Error" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<ErrorState
-								error={rulesResult.cause}
-								title="Failed to load alert rule"
-								onRetry={() => refreshRules()}
-								className="m-6"
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
-
-	if (!rule) {
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Alerts", href: "/alerts" }, { label: "Not Found" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<ResourceNotFound
-								title="Rule not found"
-								description="This alert rule could not be found. It may have been deleted."
-								backLink={<Link to="/alerts" />}
-								backLabel="Back to rules"
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		)
-	}
-
 	async function handleToggleEnabled() {
 		if (!rule) return
 		const result = await updateRule({
@@ -527,631 +461,636 @@ function RuleDetailContent() {
 			payload: { enabled: !rule.enabled },
 			reactivityKeys: ["alertRules"],
 		})
-		if (!Exit.isSuccess(result)) {
-			toastManager.add({ title: getExitErrorMessage(result, "Failed to update rule"), type: "error" })
-		} else {
-			refreshRules()
-		}
+		if (toastExit(result, { error: "Failed to update rule" })) refreshRules()
 	}
 
 	const isFiring = openRuleIncidents.length > 0
-	const subtitle = `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
 
 	// No incident strip here: incidents are painted as bands on the chart and as
 	// the rail's own incident lane, so the header strip was a third lookalike row
 	// telling a story the chart already tells in place.
-	const stickyContent = (
-		<div>
-			<Tabs
-				value={activeTab}
-				onValueChange={(v) => navigate({ search: (prev) => ({ ...prev, tab: v as RuleDetailTab }) })}
-			>
-				<TabsList variant="underline">
-					<TabsTrigger value="overview">Overview</TabsTrigger>
-					<TabsTrigger value="history">History</TabsTrigger>
-				</TabsList>
-			</Tabs>
-		</div>
-	)
-
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Alerts", href: "/alerts" }, { label: rule.name }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								<div>
-									<div className="flex items-center gap-2 flex-wrap">
-										<DashboardLayout.Title>{rule.name}</DashboardLayout.Title>
-										<AlertSeverityBadge severity={rule.severity} />
-										{isFiring ? (
-											<AlertStatusBadge
-												state={
-													openRuleIncidents.every((i) => i.holdReason != null)
-														? "held"
-														: "firing"
-												}
-											/>
-										) : rule.enabled ? (
-											<AlertStatusBadge state="ok" />
-										) : (
-											<AlertStatusBadge state="disabled" />
-										)}
-									</div>
-									<p className="text-muted-foreground mt-0.5">{subtitle}</p>
-								</div>
-							}
-						>
-							<div className="flex items-center gap-2">
-								<TimeRangeHeaderControls
-									startTime={search.startTime}
-									endTime={search.endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "24h")}
-									defaultPreset="24h"
-									presets={LONG_RANGE_PRESET_OPTIONS}
-									maxRangeSeconds={ONE_YEAR_SECONDS}
-									onTimeChange={(range) =>
-										navigate({ search: (prev) => applyTimeRangeSearch(prev, range) })
+		<ResultPage
+			breadcrumbs={[{ label: "Alerts", href: "/alerts" }]}
+			result={rulesResult}
+			select={() => rule}
+			crumb={(rule) => rule.name}
+			errorTitle="Failed to load alert rule"
+			onRetry={() => refreshRules()}
+			loading={
+				// Mirror the settled Overview rhythm so the first paint doesn't snap.
+				<div className="space-y-6">
+					<Skeleton className="h-14 w-full" />
+					<div className="space-y-2">
+						<Skeleton className="h-3.5 w-40" />
+						<Skeleton className="h-[300px] w-full" />
+					</div>
+					<Skeleton className="h-52 w-full" />
+					<Skeleton className="h-64 w-full" />
+				</div>
+			}
+			notFound={
+				<ResourceNotFound
+					title="Rule not found"
+					description="This alert rule could not be found. It may have been deleted."
+					backLink={<Link to="/alerts" />}
+					backLabel="Back to rules"
+				/>
+			}
+			header={(rule) => (
+				<DetailHeader
+					kind="Alert rule"
+					title={rule.name}
+					meta={
+						<>
+							<AlertSeverityBadge severity={rule.severity} />
+							{isFiring ? (
+								<AlertStatusBadge
+									state={
+										openRuleIncidents.every((i) => i.holdReason != null)
+											? "held"
+											: "firing"
 									}
 								/>
-								<Button
-									variant="outline"
-									size="sm"
-									render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
-								>
-									<PencilIcon size={14} />
-									Edit rule
-								</Button>
-							</div>
-						</DashboardLayout.Header>
-						{stickyContent}
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						{activeTab === "overview" && (
-							<div className="space-y-6">
-								<RuleDiagnosisPanel
-									rule={rule}
-									states={ruleStates}
-									checks={checks}
-									openIncidents={openRuleIncidents}
-									destinations={destinations}
-									deliveryEvents={ruleDeliveryEvents}
-									now={diagnosisNow}
-									onToggleEnabled={() => void handleToggleEnabled()}
-								/>
-								<div className="space-y-3">
-									<div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-										<div className="space-y-1">
-											<Eyebrow variant="label" as="h2">
-												{signalLabels[rule.signalType]}: {rangeLabel}
-											</Eyebrow>
-											<p className="text-muted-foreground text-xs">
-												{SIGNAL_SOURCE_DESCRIPTION[signalSource]}
-											</p>
-										</div>
-										<SegmentedSelect<SignalSource>
-											options={[
-												{
-													value: "preview",
-													label: SIGNAL_SOURCE_LABEL.preview,
-													disabled: !previewAvailable,
-												},
-												{
-													value: "checks",
-													label: SIGNAL_SOURCE_LABEL.checks,
-													disabled: !checksAvailable,
-												},
-											]}
-											value={signalSource}
-											onChange={setSignalSource}
-											size="sm"
-											aria-label="Chart data source"
+							) : rule.enabled ? (
+								<AlertStatusBadge state="ok" />
+							) : (
+								<AlertStatusBadge state="disabled" />
+							)}
+							<span className="text-muted-foreground text-sm">{ruleSubtitle(rule)}</span>
+						</>
+					}
+					actions={
+						<>
+							<TimeRangeHeaderControls
+								search={search}
+								defaultPreset="24h"
+								presets={LONG_RANGE_PRESET_OPTIONS}
+								maxRangeSeconds={ONE_YEAR_SECONDS}
+								onTimeChange={(range) =>
+									navigate({ search: (prev) => applyTimeRangeSearch(prev, range) })
+								}
+							/>
+							<Button
+								variant="outline"
+								size="sm"
+								render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
+							>
+								<PencilIcon size={14} />
+								Edit rule
+							</Button>
+						</>
+					}
+				/>
+			)}
+			tabs={() => (
+				<Tabs
+					value={activeTab}
+					onValueChange={(v) => {
+						if (isRuleDetailTab(v)) navigate({ search: (prev) => ({ ...prev, tab: v }) })
+					}}
+				>
+					<TabsList variant="underline">
+						<TabsTrigger value="overview">Overview</TabsTrigger>
+						<TabsTrigger value="history">History</TabsTrigger>
+					</TabsList>
+				</Tabs>
+			)}
+		>
+			{(rule) => (
+				<>
+					{activeTab === "overview" && (
+						<div className="space-y-6">
+							<RuleDiagnosisPanel
+								rule={rule}
+								states={ruleStates}
+								checks={checks}
+								openIncidents={openRuleIncidents}
+								destinations={destinations}
+								deliveryEvents={ruleDeliveryEvents}
+								now={diagnosisNow}
+								onToggleEnabled={() => void handleToggleEnabled()}
+							/>
+							<div className="space-y-3">
+								<div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+									<div className="space-y-1">
+										<SectionHeading
+											variant="eyebrow"
+											title={`${signalLabels[rule.signalType]}: ${rangeLabel}`}
+											className="mb-0"
 										/>
+										<p className="text-muted-foreground text-xs">
+											{SIGNAL_SOURCE_DESCRIPTION[signalSource]}
+										</p>
 									</div>
-									<AlertRuleChart
-										preview={preview}
-										checks={chartChecks}
-										incidents={ruleIncidents}
-										threshold={rule.threshold}
-										thresholdUpper={rule.thresholdUpper}
-										comparator={rule.comparator}
-										signalType={rule.signalType}
-										window={timelineRange}
-										source={signalSource}
-										railCoverage={railCoverage}
-										selectedBucket={selectedBucket?.index ?? null}
-										onSelectBucket={handleSelectBucket}
-										loading={
-											previewLoading ||
-											(rule.signalType === "raw_query" &&
-												Result.isInitial(checksResult))
-										}
-										error={previewError}
+									<SegmentedSelect<SignalSource>
+										options={[
+											{
+												value: "preview",
+												label: SIGNAL_SOURCE_LABEL.preview,
+												disabled: !previewAvailable,
+											},
+											{
+												value: "checks",
+												label: SIGNAL_SOURCE_LABEL.checks,
+												disabled: !checksAvailable,
+											},
+										]}
+										value={signalSource}
+										onChange={setSignalSource}
+										size="sm"
+										aria-label="Chart data source"
 									/>
 								</div>
+								<AlertRuleChart
+									preview={preview}
+									checks={chartChecks}
+									incidents={ruleIncidents}
+									threshold={rule.threshold}
+									thresholdUpper={rule.thresholdUpper}
+									comparator={rule.comparator}
+									signalType={rule.signalType}
+									window={timelineRange}
+									source={signalSource}
+									railCoverage={railCoverage}
+									selectedBucket={selectedBucket?.index ?? null}
+									onSelectBucket={handleSelectBucket}
+									loading={
+										previewLoading ||
+										(rule.signalType === "raw_query" && Result.isInitial(checksResult))
+									}
+									error={previewError}
+								/>
+							</div>
 
-								{/* Reserve the slot while incidents sync so the card doesn't pop in
-								    and shove Configuration + Checks down once it resolves. */}
-								{Result.isInitial(incidentsResult) ? (
-									<Skeleton className="h-40 w-full" />
-								) : overviewIncident ? (
-									<div className="flex items-center justify-between gap-4 border border-border px-4 py-3">
-										<div className="min-w-0">
-											<Eyebrow variant="label" as="p">
-												Investigation
-											</Eyebrow>
-											<p className="truncate text-sm">
-												Review the latest incident in a durable evidence workspace.
-											</p>
-										</div>
-										<Button
-											size="sm"
-											onClick={() => void openInvestigation(overviewIncident)}
-										>
-											<ChatBubbleSparkleIcon size={14} />
-											Open investigation
-										</Button>
+							{/* Reserve the slot while incidents sync so the card doesn't pop in
+							    and shove Configuration + Checks down once it resolves. */}
+							{Result.isInitial(incidentsResult) ? (
+								<Skeleton className="h-40 w-full" />
+							) : overviewIncident ? (
+								<Panel className="flex-row items-center justify-between gap-4 px-4 py-3">
+									<div className="min-w-0">
+										<Eyebrow variant="label" as="p">
+											Investigation
+										</Eyebrow>
+										<p className="truncate text-sm">
+											Review the latest incident in a durable evidence workspace.
+										</p>
 									</div>
-								) : null}
+									<Button
+										size="sm"
+										onClick={() => void openInvestigation(overviewIncident)}
+									>
+										<ChatBubbleSparkleIcon size={14} />
+										Open investigation
+									</Button>
+								</Panel>
+							) : null}
 
-								<div className="space-y-3">
-									<h2 className="text-lg font-semibold">Configuration</h2>
-									<Card>
-										<CardContent className="p-5">
-											<KeyValueList className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-												{rule.notes && (
-													<div className="flex flex-col gap-1 sm:col-span-2">
-														<dt className="text-muted-foreground">Notes</dt>
-														<dd className="whitespace-pre-wrap text-foreground">
-															{rule.notes}
-														</dd>
-													</div>
-												)}
-												<ConfigRow label="Signal">
-													<span className="font-medium">
-														{signalLabels[rule.signalType]}
-													</span>
-												</ConfigRow>
-												<ConfigRow label="Scope">
-													<div className="flex flex-wrap gap-1 justify-end">
-														{rule.serviceNames?.length > 0 ? (
-															rule.serviceNames.map((s) => (
-																<Badge
-																	key={s}
-																	variant="outline"
-																	className="text-xs"
-																>
-																	{s}
-																</Badge>
-															))
-														) : (
-															<span className="font-mono font-medium">
-																{rule.groupBy && rule.groupBy.length > 0
-																	? `all (per ${rule.groupBy.join(" \u00b7 ")})`
-																	: "all"}
-															</span>
-														)}
-													</div>
-												</ConfigRow>
-												<ConfigRow label="Environments">
-													<div className="flex flex-wrap gap-1 justify-end">
-														{rule.environments?.length > 0 ? (
-															rule.environments.map((env) => (
-																<Badge
-																	key={env}
-																	variant="outline"
-																	className="text-xs"
-																>
-																	{env}
-																</Badge>
-															))
-														) : (
-															<span className="font-mono font-medium">all</span>
-														)}
-													</div>
-												</ConfigRow>
-												{rule.excludeServiceNames?.length > 0 && (
-													<ConfigRow label="Excluded">
-														<div className="flex flex-wrap gap-1 justify-end">
-															{rule.excludeServiceNames.map((s) => (
-																<Badge
-																	key={s}
-																	variant="outline"
-																	className="text-xs line-through"
-																>
-																	{s}
-																</Badge>
-															))}
-														</div>
-													</ConfigRow>
-												)}
-												<ConfigRow label="Condition">
-													<span className="font-mono font-medium">
-														{comparatorLabels[rule.comparator]}{" "}
-														{formatSignalValue(rule.signalType, rule.threshold)} /{" "}
-														{rule.windowMinutes}min
-													</span>
-												</ConfigRow>
-												<ConfigRow label="Severity">
-													<AlertSeverityBadge severity={rule.severity} />
-												</ConfigRow>
-												<ConfigRow label="Consecutive breaches">
-													<span className="font-medium tabular-nums">
-														{rule.consecutiveBreachesRequired}
-													</span>
-												</ConfigRow>
-												<ConfigRow label="Healthy to resolve">
-													<span className="font-medium tabular-nums">
-														{rule.consecutiveHealthyRequired}
-													</span>
-												</ConfigRow>
-												<ConfigRow label="Min samples">
-													<span className="font-medium tabular-nums">
-														{rule.minimumSampleCount}
-													</span>
-												</ConfigRow>
-												<ConfigRow label="Renotify interval">
-													<span className="font-medium">
-														{rule.renotifyIntervalMinutes}min
-													</span>
-												</ConfigRow>
-												{rule.signalType === "builder_query" &&
-													rule.queryBuilderDraft && (
-														<>
-															<ConfigRow label="Data source">
-																<span className="font-mono font-medium capitalize">
-																	{rule.queryBuilderDraft.dataSource}
-																</span>
-															</ConfigRow>
-															<ConfigRow label="Aggregation">
-																<span className="font-mono font-medium">
-																	{rule.queryBuilderDraft.aggregation}
-																</span>
-															</ConfigRow>
-															{rule.queryBuilderDraft.whereClause && (
-																<ConfigRow label="Where" wide>
-																	<span className="font-mono font-medium text-right">
-																		{rule.queryBuilderDraft.whereClause}
-																	</span>
-																</ConfigRow>
-															)}
-														</>
+							<div className="space-y-3">
+								<h2 className="text-lg font-semibold">Configuration</h2>
+								<Card>
+									<CardContent className="p-5">
+										<KeyValueList className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+											{rule.notes && (
+												<div className="flex flex-col gap-1 sm:col-span-2">
+													<dt className="text-muted-foreground">Notes</dt>
+													<dd className="whitespace-pre-wrap text-foreground">
+														{rule.notes}
+													</dd>
+												</div>
+											)}
+											<ConfigRow label="Signal">
+												<span className="font-medium">
+													{signalLabels[rule.signalType]}
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Scope">
+												<div className="flex flex-wrap gap-1 justify-end">
+													{rule.serviceNames?.length > 0 ? (
+														rule.serviceNames.map((s) => (
+															<Badge
+																key={s}
+																variant="outline"
+																className="text-xs"
+															>
+																{s}
+															</Badge>
+														))
+													) : (
+														<span className="font-mono font-medium">
+															{rule.groupBy && rule.groupBy.length > 0
+																? `all (per ${rule.groupBy.join(" \u00b7 ")})`
+																: "all"}
+														</span>
 													)}
-												{rule.signalType === "raw_query" && rule.rawQuerySql && (
-													<div className="flex flex-col gap-1.5 sm:col-span-2">
-														<dt className="text-muted-foreground">Raw SQL</dt>
-														<dd>
-															<pre className="overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed">
-																<code>
-																	{tokenizeSql(
-																		formatSql(rule.rawQuerySql),
-																	).map((token) => (
+												</div>
+											</ConfigRow>
+											<ConfigRow label="Environments">
+												<div className="flex flex-wrap gap-1 justify-end">
+													{rule.environments?.length > 0 ? (
+														rule.environments.map((env) => (
+															<Badge
+																key={env}
+																variant="outline"
+																className="text-xs"
+															>
+																{env}
+															</Badge>
+														))
+													) : (
+														<span className="font-mono font-medium">all</span>
+													)}
+												</div>
+											</ConfigRow>
+											{rule.excludeServiceNames?.length > 0 && (
+												<ConfigRow label="Excluded">
+													<div className="flex flex-wrap gap-1 justify-end">
+														{rule.excludeServiceNames.map((s) => (
+															<Badge
+																key={s}
+																variant="outline"
+																className="text-xs line-through"
+															>
+																{s}
+															</Badge>
+														))}
+													</div>
+												</ConfigRow>
+											)}
+											<ConfigRow label="Condition">
+												<span className="font-mono font-medium">
+													{comparatorLabels[rule.comparator]}{" "}
+													{formatSignalValue(rule.signalType, rule.threshold)} /{" "}
+													{rule.windowMinutes}min
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Severity">
+												<AlertSeverityBadge severity={rule.severity} />
+											</ConfigRow>
+											<ConfigRow label="Consecutive breaches">
+												<span className="font-medium tabular-nums">
+													{rule.consecutiveBreachesRequired}
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Healthy to resolve">
+												<span className="font-medium tabular-nums">
+													{rule.consecutiveHealthyRequired}
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Min samples">
+												<span className="font-medium tabular-nums">
+													{rule.minimumSampleCount}
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Renotify interval">
+												<span className="font-medium">
+													{rule.renotifyIntervalMinutes}min
+												</span>
+											</ConfigRow>
+											{rule.signalType === "builder_query" &&
+												rule.queryBuilderDraft && (
+													<>
+														<ConfigRow label="Data source">
+															<span className="font-mono font-medium capitalize">
+																{rule.queryBuilderDraft.dataSource}
+															</span>
+														</ConfigRow>
+														<ConfigRow label="Aggregation">
+															<span className="font-mono font-medium">
+																{rule.queryBuilderDraft.aggregation}
+															</span>
+														</ConfigRow>
+														{rule.queryBuilderDraft.whereClause && (
+															<ConfigRow label="Where" wide>
+																<span className="font-mono font-medium text-right">
+																	{rule.queryBuilderDraft.whereClause}
+																</span>
+															</ConfigRow>
+														)}
+													</>
+												)}
+											{rule.signalType === "raw_query" && rule.rawQuerySql && (
+												<div className="flex flex-col gap-1.5 sm:col-span-2">
+													<dt className="text-muted-foreground">Raw SQL</dt>
+													<dd>
+														<pre className="overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed">
+															<code>
+																{tokenizeSql(formatSql(rule.rawQuerySql)).map(
+																	(token) => (
 																		<span
 																			key={token.start}
 																			className={token.className}
 																		>
 																			{token.text}
 																		</span>
-																	))}
-																</code>
-															</pre>
-														</dd>
-													</div>
-												)}
-												<ConfigRow label="Destinations">
-													<span className="font-medium">
-														{rule.destinationIds.length} configured
-													</span>
-												</ConfigRow>
-												<ConfigRow label="Status">
-													<AlertStatusBadge
-														state={rule.enabled ? "ok" : "disabled"}
-														label={rule.enabled ? "Enabled" : "Disabled"}
-													/>
-												</ConfigRow>
-											</KeyValueList>
-										</CardContent>
-									</Card>
-								</div>
-
-								{Result.builder(checksResult)
-									.onError((error) => (
-										<div className="space-y-4">
-											<h2 className="text-lg font-semibold">Checks</h2>
-											<ErrorState
-												error={error}
-												title="Failed to load checks"
-												onRetry={() => refreshChecks()}
-											/>
-										</div>
-									))
-									.orElse(() => (
-										<ChecksPanel
-											key={`${since}|${until}|${checkStatusFilter}`}
-											rule={rule}
-											checks={checks}
-											summaryTotals={checksPage?.summary.totals}
-											nextCursor={checksPage?.nextCursor ?? null}
-											since={since}
-											until={until}
-											loading={Result.isInitial(checksResult)}
-											statusFilter={checkStatusFilter}
-											setStatusFilter={setCheckStatusFilter}
-											bucket={selectedBucket}
-											bucketChecks={bucketChecks}
-											bucketLoading={bucketLoading}
-											onClearBucket={clearBucket}
-										/>
-									))}
+																	),
+																)}
+															</code>
+														</pre>
+													</dd>
+												</div>
+											)}
+											<ConfigRow label="Destinations">
+												<span className="font-medium">
+													{rule.destinationIds.length} configured
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Status">
+												<AlertStatusBadge
+													state={rule.enabled ? "ok" : "disabled"}
+													label={rule.enabled ? "Enabled" : "Disabled"}
+												/>
+											</ConfigRow>
+										</KeyValueList>
+									</CardContent>
+								</Card>
 							</div>
-						)}
 
-						{activeTab === "history" && (
-							<ResultView
-								result={incidentsResult}
-								loading={
+							{Result.builder(checksResult)
+								.onError((error) => (
 									<div className="space-y-4">
-										<Skeleton className="h-24 w-full" />
-										<Skeleton className="h-64 w-full" />
-									</div>
-								}
-								errorTitle="Failed to load incidents"
-								onRetry={() => refreshIncidents()}
-							>
-								{() => (
-									<div className="space-y-6">
-										<div className="flex items-center justify-between">
-											<div>
-												<h2 className="text-lg font-semibold">History</h2>
-												<p className="text-muted-foreground text-sm">
-													{stats.totalTriggered} total triggers
-												</p>
-											</div>
-											<SegmentedSelect<"all" | "open" | "resolved">
-												options={[
-													{ value: "all", label: "All" },
-													{ value: "open", label: "Fired" },
-													{ value: "resolved", label: "Resolved" },
-												]}
-												value={stateFilter}
-												onChange={setStateFilter}
-												size="sm"
-												aria-label="Filter incidents"
-											/>
-										</div>
-
-										<AlertStatStrip
-											items={[
-												{ label: "Total triggered", value: stats.totalTriggered },
-												{ label: "Avg resolution", value: stats.avgResolution },
-											]}
+										<h2 className="text-lg font-semibold">Checks</h2>
+										<ErrorState
+											error={error}
+											title="Failed to load checks"
+											onRetry={() => refreshChecks()}
 										/>
+									</div>
+								))
+								.orElse(() => (
+									<ChecksPanel
+										key={`${since}|${until}|${checkStatusFilter}`}
+										rule={rule}
+										checks={checks}
+										summaryTotals={checksPage?.summary.totals}
+										nextCursor={checksPage?.nextCursor ?? null}
+										since={since}
+										until={until}
+										loading={Result.isInitial(checksResult)}
+										statusFilter={checkStatusFilter}
+										setStatusFilter={setCheckStatusFilter}
+										bucket={selectedBucket}
+										bucketChecks={bucketChecks}
+										bucketLoading={bucketLoading}
+										onClearBucket={clearBucket}
+									/>
+								))}
+						</div>
+					)}
 
-										{stats.topContributors.length > 0 && (
-											<div className="space-y-2">
-												<h3 className="text-sm font-semibold">Top contributors</h3>
-												<Card>
-													<CardContent className="space-y-2 p-5">
-														{stats.topContributors.map(([groupKey, count]) => (
-															<div
-																key={groupKey}
-																className="flex items-center gap-2"
+					{activeTab === "history" && (
+						<ResultView
+							result={incidentsResult}
+							loading={
+								<div className="space-y-4">
+									<Skeleton className="h-24 w-full" />
+									<Skeleton className="h-64 w-full" />
+								</div>
+							}
+							errorTitle="Failed to load incidents"
+							onRetry={() => refreshIncidents()}
+						>
+							{() => (
+								<div className="space-y-6">
+									<div className="flex items-center justify-between">
+										<div>
+											<h2 className="text-lg font-semibold">History</h2>
+											<p className="text-muted-foreground text-sm">
+												{stats.totalTriggered} total triggers
+											</p>
+										</div>
+										<SegmentedSelect<"all" | "open" | "resolved">
+											options={[
+												{ value: "all", label: "All" },
+												{ value: "open", label: "Fired" },
+												{ value: "resolved", label: "Resolved" },
+											]}
+											value={stateFilter}
+											onChange={setStateFilter}
+											size="sm"
+											aria-label="Filter incidents"
+										/>
+									</div>
+
+									<StatRail columns={2}>
+										<StatRailItem
+											size="sm"
+											eyebrow="Total triggered"
+											value={stats.totalTriggered}
+										/>
+										<StatRailItem
+											size="sm"
+											eyebrow="Avg resolution"
+											value={stats.avgResolution}
+										/>
+									</StatRail>
+
+									{stats.topContributors.length > 0 && (
+										<div className="space-y-2">
+											<h3 className="text-sm font-semibold">Top contributors</h3>
+											<Card>
+												<CardContent className="space-y-2 p-5">
+													{stats.topContributors.map(([groupKey, count]) => (
+														<div
+															key={groupKey}
+															className="flex items-center gap-2"
+														>
+															<Badge
+																variant="outline"
+																className="text-xs shrink-0 truncate max-w-[160px]"
 															>
-																<Badge
-																	variant="outline"
-																	className="text-xs shrink-0 truncate max-w-[160px]"
-																>
-																	{groupKey}
-																</Badge>
-																<Meter
-																	value={count}
-																	max={maxContributorCount}
-																	className="h-2 flex-1 bg-muted"
-																	fillClassName={
-																		count === maxContributorCount
-																			? "bg-severity-error"
-																			: "bg-severity-warn"
+																{groupKey}
+															</Badge>
+															<Meter
+																value={count}
+																max={maxContributorCount}
+																className="h-2 flex-1 bg-muted"
+																fillClassName={
+																	count === maxContributorCount
+																		? "bg-severity-error"
+																		: "bg-severity-warn"
+																}
+															/>
+															<span className="text-xs text-muted-foreground tabular-nums shrink-0">
+																{count}/{stats.totalTriggered}
+															</span>
+														</div>
+													))}
+												</CardContent>
+											</Card>
+										</div>
+									)}
+
+									{filteredIncidents.length === 0 ? (
+										<Empty className="py-12">
+											<EmptyHeader>
+												<EmptyMedia variant="icon">
+													<CheckIcon size={18} />
+												</EmptyMedia>
+												<EmptyTitle>No incidents</EmptyTitle>
+												<EmptyDescription>
+													{stateFilter === "all"
+														? "This rule has not fired. It opens an incident when the threshold is crossed."
+														: `This rule has no ${stateFilter} incidents.`}
+												</EmptyDescription>
+											</EmptyHeader>
+											<EmptyActions>
+												{stateFilter !== "all" && (
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() => setStateFilter("all")}
+													>
+														Show all incidents
+													</Button>
+												)}
+												<DocsLink page="incidents" />
+											</EmptyActions>
+										</Empty>
+									) : (
+										<Table>
+											<TableHeader>
+												<TableRow>
+													<TableHead className="w-[100px]">State</TableHead>
+													<TableHead className="w-[180px]">Group</TableHead>
+													<TableHead>Labels</TableHead>
+													<TableHead className="w-[180px]">Triggered at</TableHead>
+													<TableHead className="w-[110px]">Duration</TableHead>
+													<TableHead className="w-[70px]">Issue</TableHead>
+													<TableHead className="w-[50px]" />
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{filteredIncidents.map((incident) => {
+													const isOpen = incident.status === "open"
+													return (
+														<TableRow key={incident.id}>
+															<TableCell>
+																<AlertStatusBadge
+																	state={
+																		isOpen
+																			? incident.holdReason != null
+																				? "held"
+																				: "firing"
+																			: "resolved"
 																	}
 																/>
-																<span className="text-xs text-muted-foreground tabular-nums shrink-0">
-																	{count}/{stats.totalTriggered}
+															</TableCell>
+															<TableCell>
+																<span className="font-mono text-muted-foreground">
+																	{incident.groupKey ?? "all"}
 																</span>
-															</div>
-														))}
-													</CardContent>
-												</Card>
-											</div>
-										)}
-
-										{filteredIncidents.length === 0 ? (
-											<Empty className="py-12">
-												<EmptyHeader>
-													<EmptyMedia variant="icon">
-														<CheckIcon size={18} />
-													</EmptyMedia>
-													<EmptyTitle>No incidents</EmptyTitle>
-													<EmptyDescription>
-														{stateFilter === "all"
-															? "This rule has not fired. It opens an incident when the threshold is crossed."
-															: `This rule has no ${stateFilter} incidents.`}
-													</EmptyDescription>
-												</EmptyHeader>
-												<EmptyActions>
-													{stateFilter !== "all" && (
-														<Button
-															variant="outline"
-															size="sm"
-															onClick={() => setStateFilter("all")}
-														>
-															Show all incidents
-														</Button>
-													)}
-													<DocsLink page="incidents" />
-												</EmptyActions>
-											</Empty>
-										) : (
-											<Table>
-												<TableHeader>
-													<TableRow>
-														<TableHead className="w-[100px]">State</TableHead>
-														<TableHead className="w-[180px]">Group</TableHead>
-														<TableHead>Labels</TableHead>
-														<TableHead className="w-[180px]">
-															Triggered at
-														</TableHead>
-														<TableHead className="w-[110px]">Duration</TableHead>
-														<TableHead className="w-[70px]">Issue</TableHead>
-														<TableHead className="w-[50px]" />
-													</TableRow>
-												</TableHeader>
-												<TableBody>
-													{filteredIncidents.map((incident) => {
-														const isOpen = incident.status === "open"
-														return (
-															<TableRow key={incident.id}>
-																<TableCell>
-																	<AlertStatusBadge
-																		state={
-																			isOpen
-																				? incident.holdReason != null
-																					? "held"
-																					: "firing"
-																				: "resolved"
-																		}
-																	/>
-																</TableCell>
-																<TableCell>
-																	<span className="font-mono text-muted-foreground">
-																		{incident.groupKey ?? "all"}
-																	</span>
-																</TableCell>
-																<TableCell>
-																	<div className="flex flex-wrap gap-1">
-																		<Badge
-																			variant="secondary"
-																			className="text-xs font-mono"
-																		>
-																			{rule.signalType.replace(
-																				"_",
-																				" ",
-																			)}
-																			:{" "}
-																			{formatSignalValue(
-																				rule.signalType,
-																				incident.lastObservedValue,
-																			)}
-																		</Badge>
-																		<Badge
-																			variant="secondary"
-																			className="text-xs font-mono"
-																		>
-																			threshold:{" "}
-																			{formatSignalValue(
-																				rule.signalType,
-																				incident.threshold,
-																			)}
-																		</Badge>
-																	</div>
-																</TableCell>
-																<TableCell className="text-xs">
-																	{formatAlertDateTimeFull(
-																		incident.firstTriggeredAt,
-																		effectiveTimezone,
-																	)}
-																</TableCell>
-																<TableCell>
-																	<span
-																		className={cn(
-																			"text-xs tabular-nums",
-																			isOpen &&
-																				"text-severity-error font-medium",
-																		)}
+															</TableCell>
+															<TableCell>
+																<div className="flex flex-wrap gap-1">
+																	<Badge
+																		variant="secondary"
+																		className="text-xs font-mono"
 																	>
-																		{formatAlertDuration(
-																			incident.firstTriggeredAt,
-																			incident.resolvedAt,
+																		{rule.signalType.replace("_", " ")}:{" "}
+																		{formatSignalValue(
+																			rule.signalType,
+																			incident.lastObservedValue,
 																		)}
-																	</span>
-																</TableCell>
-																<TableCell>
-																	{incident.errorIssueId != null ? (
-																		<Link
-																			to="/errors/issues/$issueId"
-																			params={{
-																				issueId:
-																					incident.errorIssueId,
-																			}}
-																			className="text-xs text-primary underline-offset-4 hover:underline"
-																		>
-																			View
-																		</Link>
-																	) : (
-																		<span className="text-xs text-muted-foreground/60">
-																			—
-																		</span>
+																	</Badge>
+																	<Badge
+																		variant="secondary"
+																		className="text-xs font-mono"
+																	>
+																		threshold:{" "}
+																		{formatSignalValue(
+																			rule.signalType,
+																			incident.threshold,
+																		)}
+																	</Badge>
+																</div>
+															</TableCell>
+															<TableCell className="text-xs">
+																{formatAlertDateTimeFull(
+																	incident.firstTriggeredAt,
+																	effectiveTimezone,
+																)}
+															</TableCell>
+															<TableCell>
+																<span
+																	className={cn(
+																		"text-xs tabular-nums",
+																		isOpen &&
+																			"text-severity-error font-medium",
 																	)}
-																</TableCell>
-																<TableCell>
-																	<div className="flex items-center justify-end gap-1">
-																		<DropdownMenu>
-																			<DropdownMenuTrigger
-																				render={
-																					<Button
-																						variant="ghost"
-																						size="icon-sm"
-																					/>
-																				}
-																			>
-																				<DotsVerticalIcon size={14} />
-																			</DropdownMenuTrigger>
-																			<DropdownMenuContent align="end">
-																				<DropdownMenuItem
-																					onClick={() =>
-																						void openInvestigation(
-																							incident,
-																						)
-																					}
-																				>
-																					<ChatBubbleSparkleIcon
-																						size={14}
-																					/>
-																					Open investigation
-																				</DropdownMenuItem>
-																				<DropdownMenuItem
-																					onClick={() =>
-																						navigate({
-																							to: "/alerts",
-																							search: {
-																								tab: "overview",
-																							},
-																						})
-																					}
-																				>
-																					View all incidents
-																				</DropdownMenuItem>
-																			</DropdownMenuContent>
-																		</DropdownMenu>
-																	</div>
-																</TableCell>
-															</TableRow>
-														)
-													})}
-												</TableBody>
-											</Table>
-										)}
-									</div>
-								)}
-							</ResultView>
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+																>
+																	{formatAlertDuration(
+																		incident.firstTriggeredAt,
+																		incident.resolvedAt,
+																	)}
+																</span>
+															</TableCell>
+															<TableCell>
+																{incident.errorIssueId != null ? (
+																	<Link
+																		to="/errors/issues/$issueId"
+																		params={{
+																			issueId: incident.errorIssueId,
+																		}}
+																		className="text-xs text-primary underline-offset-4 hover:underline"
+																	>
+																		View
+																	</Link>
+																) : (
+																	<span className="text-xs text-muted-foreground/60">
+																		{EMPTY_VALUE}
+																	</span>
+																)}
+															</TableCell>
+															<TableCell>
+																<div className="flex items-center justify-end gap-1">
+																	<RowActionsMenu label="Incident actions">
+																		<DropdownMenuItem
+																			onClick={() =>
+																				void openInvestigation(
+																					incident,
+																				)
+																			}
+																		>
+																			<ChatBubbleSparkleIcon
+																				size={14}
+																			/>
+																			Open investigation
+																		</DropdownMenuItem>
+																		<DropdownMenuItem
+																			onClick={() =>
+																				navigate({
+																					to: "/alerts",
+																					search: {
+																						tab: "overview",
+																					},
+																				})
+																			}
+																		>
+																			View all incidents
+																		</DropdownMenuItem>
+																	</RowActionsMenu>
+																</div>
+															</TableCell>
+														</TableRow>
+													)
+												})}
+											</TableBody>
+										</Table>
+									)}
+								</div>
+							)}
+						</ResultView>
+					)}
+				</>
+			)}
+		</ResultPage>
 	)
+}
+
+function ruleSubtitle(rule: AlertRuleDocument): string {
+	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
 }
 
 function ConfigRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
@@ -1233,7 +1172,6 @@ function ChecksPanel({
 	const { effectiveTimezone } = useTimezonePreference()
 	const [extraChecks, setExtraChecks] = useState<ReadonlyArray<AlertCheckDocument>>([])
 	const [nextCursorOverride, setNextCursorOverride] = useState<string | null | undefined>(undefined)
-	const [loadingMore, setLoadingMore] = useState(false)
 	const nextCursor = nextCursorOverride === undefined ? initialNextCursor : nextCursorOverride
 	const loadedChecks = useMemo(() => {
 		const byKey = new Map<string, AlertCheckDocument>()
@@ -1303,30 +1241,32 @@ function ChecksPanel({
 		[filteredChecks, medianGapMs],
 	)
 
-	const loadMore = useCallback(async () => {
+	const [runLoadMore, loadingMore] = useAsyncAction((cursor: string) =>
+		runMapleApiV2((client) =>
+			client.alertRules.checks({
+				params: { id: rule.id },
+				query: {
+					since,
+					until,
+					limit: 100,
+					cursor,
+					...(!(statusFilter === "all") ? { status: statusFilter } : undefined),
+				},
+			}),
+		).then(
+			(page) => {
+				setExtraChecks((current) => [...current, ...page.data.map(v2CheckToDocument)])
+				setNextCursorOverride(page.next_cursor)
+			},
+			() => {
+				toastManager.add({ title: "More alert checks could not be loaded", type: "error" })
+			},
+		),
+	)
+	const loadMore = () => {
 		if (nextCursor === null || loadingMore) return
-		setLoadingMore(true)
-		try {
-			const page = await runMapleApiV2((client) =>
-				client.alertRules.checks({
-					params: { id: rule.id },
-					query: {
-						since,
-						until,
-						limit: 100,
-						cursor: nextCursor,
-						...(!(statusFilter === "all") ? { status: statusFilter } : undefined),
-					},
-				}),
-			)
-			setExtraChecks((current) => [...current, ...page.data.map(v2CheckToDocument)])
-			setNextCursorOverride(page.next_cursor)
-		} catch {
-			toastManager.add({ title: "More alert checks could not be loaded", type: "error" })
-		} finally {
-			setLoadingMore(false)
-		}
-	}, [loadingMore, nextCursor, rule.id, since, statusFilter, until])
+		void runLoadMore(nextCursor)
+	}
 
 	// Ungrouped rules evaluate a single "all" series, so a Group column is a wall
 	// of "all" — only show it when the rule actually fans out per group.
@@ -1363,21 +1303,20 @@ function ChecksPanel({
 	return (
 		<div className="space-y-4">
 			<h2 className="text-lg font-semibold">Checks</h2>
-			<AlertStatStrip
-				items={[
-					{ label: "Total checks", value: totals.total },
-					{
-						label: "Breached",
-						value: totals.breached,
-						tone: totals.breached > 0 ? "crit" : undefined,
-					},
-					{ label: "Healthy", value: totals.healthy, tone: "ok" },
-					...(totals.errored > 0
-						? [{ label: "Failed", value: totals.errored, tone: "crit" as const }]
-						: []),
-					{ label: "Transitions", value: totals.transitions },
-				]}
-			/>
+			<StatRail columns={totals.errored > 0 ? 5 : 4}>
+				<StatRailItem size="sm" eyebrow="Total checks" value={totals.total} />
+				<StatRailItem
+					size="sm"
+					eyebrow="Breached"
+					value={totals.breached}
+					tone={totals.breached > 0 ? "crit" : "neutral"}
+				/>
+				<StatRailItem size="sm" eyebrow="Healthy" value={totals.healthy} tone="ok" />
+				{totals.errored > 0 ? (
+					<StatRailItem size="sm" eyebrow="Failed" value={totals.errored} tone="crit" />
+				) : null}
+				<StatRailItem size="sm" eyebrow="Transitions" value={totals.transitions} />
+			</StatRail>
 
 			<div className="space-y-3">
 				<div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
@@ -1404,10 +1343,10 @@ function ChecksPanel({
 							{bucket != null
 								? bucketLoading
 									? "Loading this bucket's evaluations…"
-									: `${bucketChecks.length} evaluation${bucketChecks.length === 1 ? "" : "s"} in this bucket — nothing hidden.`
+									: `${countLabel(bucketChecks.length, "evaluation")} in this bucket, nothing hidden.`
 								: totals.total > loadedChecks.length
-									? `Showing the latest ${loadedChecks.length} of ${totals.total} in this window — the rail above covers all of them.`
-									: `All ${totals.total} evaluation${totals.total === 1 ? "" : "s"} in this window.`}
+									? `Showing the latest ${loadedChecks.length} of ${totals.total} in this window; the rail above covers all of them.`
+									: `All ${countLabel(totals.total, "evaluation")} in this window.`}
 						</p>
 					</div>
 					<SegmentedSelect<CheckStatusFilter>
@@ -1458,10 +1397,10 @@ function ChecksPanel({
 										<TableRow className="hover:bg-transparent">
 											<TableCell
 												colSpan={isGrouped ? 6 : 5}
-												className="bg-muted/40 py-1.5 text-[11px] text-muted-foreground"
+												className="bg-muted/40 py-1.5 text-2xs text-muted-foreground"
 											>
-												{skipped} evaluation{skipped === 1 ? "" : "s"} hidden by the
-												status filter
+												{countLabel(skipped, "evaluation")} hidden by the status
+												filter
 											</TableCell>
 										</TableRow>
 									)}
@@ -1496,14 +1435,15 @@ function ChecksPanel({
 										</TableCell>
 										<TableCell>
 											{check.status === "error" ? (
-												<span
-													className="block max-w-[320px] truncate text-destructive text-xs"
-													title={check.errorMessage ?? undefined}
+												<TruncatedText
+													text={check.errorMessage ?? undefined}
+													tooltip="overflow"
+													className={cn("max-w-[320px] text-xs", TONE_TEXT.crit)}
 												>
 													{check.errorMessage ?? "Evaluation failed"}
-												</span>
+												</TruncatedText>
 											) : check.observedValue == null ? (
-												<span className="text-muted-foreground">—</span>
+												<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 											) : (
 												<div className="flex items-baseline gap-2">
 													<span
@@ -1541,7 +1481,7 @@ function ChecksPanel({
 										)}
 										<TableCell>
 											{check.incidentTransition === "none" ? (
-												<span className="text-muted-foreground">–</span>
+												<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 											) : (
 												<Badge
 													variant="outline"
@@ -1561,7 +1501,7 @@ function ChecksPanel({
 				    reintroduce the coverage mismatch this redesign removes. */}
 				{bucket == null && nextCursor !== null && (
 					<div className="flex items-center justify-between gap-4">
-						<span className="text-[11px] text-muted-foreground">
+						<span className="text-2xs text-muted-foreground">
 							{loadedChecks.length} of {totals.total} loaded
 						</span>
 						<LoadMoreButton loading={loadingMore} onClick={loadMore} label="Load 100 more" />

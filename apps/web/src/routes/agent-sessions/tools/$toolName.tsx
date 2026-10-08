@@ -14,7 +14,7 @@ import {
 } from "@/components/agent-sessions/tools/tool-error-modal"
 import { prepareToolErrors, type ToolErrorsWindow } from "@/components/agent-sessions/tools/tool-errors-table"
 import { ResultView } from "@/components/common/result-view"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
@@ -75,42 +75,35 @@ function ToolDetailPage() {
 
 	return (
 		<PageRefreshProvider timePreset={preset}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Agent Sessions", href: "/agent-sessions" },
-						{ label: "Tools", href: "/agent-sessions/tools" },
-						{ label: toolName },
-					]}
+			<DashboardPage
+				breadcrumbs={[
+					{ label: "Agent Sessions", href: "/agent-sessions" },
+					{ label: "Tools", href: "/agent-sessions/tools" },
+					{ label: toolName },
+				]}
+				// The view lays out its own header and gutters edge to edge.
+				scrollClassName="p-0"
+			>
+				<ToolDetailBody
+					tool={toolName}
+					search={search}
+					window={window}
+					onSearchChange={onSearchChange}
+					headerControls={
+						<TimeRangeHeaderControls
+							search={search}
+							startTime={startTime}
+							endTime={endTime}
+							defaultPreset={TOOL_ANALYTICS_DEFAULT_PRESET}
+							onTimeChange={(range) => {
+								navigate({
+									search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
+								})
+							}}
+						/>
+					}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll className="p-0">
-							<ToolDetailBody
-								tool={toolName}
-								search={search}
-								window={window}
-								onSearchChange={onSearchChange}
-								headerControls={
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ??
-											(search.startTime ? undefined : TOOL_ANALYTICS_DEFAULT_PRESET)
-										}
-										onTimeChange={(range) => {
-											navigate({
-												search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
-											})
-										}}
-									/>
-								}
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			</DashboardPage>
 		</PageRefreshProvider>
 	)
 }

@@ -2,9 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { ResultView } from "@/components/common/result-view"
 import { Schema } from "effect"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { countLabel } from "@maple/ui/lib/format"
 import { Result, useAtomValue, useAtomRefresh } from "@/lib/effect-atom"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
 import { HostDetailHeader, HostDetailHeaderLoading } from "@/components/infra/host-detail-header"
 import { MetricStrip } from "@/components/infra/host-detail-chart"
@@ -13,6 +15,8 @@ import { hostDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-quer
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
+import { ServerIcon } from "@/components/icons"
+import { ResourceAttributesCardSkeleton } from "@/components/infra/primitives/resource-attributes-card"
 import {
 	TimeRangeSearchFields,
 	WIDEN_TIME_PRESET,
@@ -20,8 +24,6 @@ import {
 	canWidenTimeRange,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const DEFAULT_PRESET = "1h"
 
@@ -54,10 +56,7 @@ function HostDetailPage() {
 	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
 	const bucketSeconds = bucketSecondsForRange(startTime, endTime)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -74,97 +73,78 @@ function HostDetailPage() {
 		.onSuccess((r) => r.data)
 		.orElse(() => null)
 
-	const rightSidebar = <HostMetadataPanel summary={summary} />
+	const rightSidebar = summary ? (
+		<HostMetadataPanel summary={summary} />
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={ServerIcon} />
+	) : null
 
 	// Linked hover cursor across the metric strips (charts stay independent —
 	// no Recharts syncId render storms).
 	const { containerProps: linkedCursorContainerProps } = useLinkedCursor(true)
 
 	return (
-		<PageRefreshProvider timePreset={preset}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Infrastructure", href: "/infra" },
-						{ label: "Hosts", href: "/infra/hosts" },
-						{ label: hostName },
-					]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-8">
-								<ResultView
-									result={summaryResult}
-									loading={<HostDetailHeaderLoading />}
-									error={(error) => (
-										<ErrorState
-											variant="inline"
-											error={error}
-											title="Failed to load host summary"
-											onRetry={refreshSummary}
-										/>
-									)}
-								>
-									{(r) => (
-										<HostDetailHeader
-											summary={r.data}
-											hostName={hostName}
-											onWidenRange={
-												canWidenTimeRange(search, DEFAULT_PRESET)
-													? () =>
-															handleTimeChange({
-																presetValue: WIDEN_TIME_PRESET,
-															})
-													: undefined
-											}
-										/>
-									)}
-								</ResultView>
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Infrastructure", href: "/infra" },
+				{ label: "Hosts", href: "/infra/hosts" },
+				{ label: hostName },
+			]}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			rightPanel={rightSidebar}
+		>
+			<div className="space-y-8">
+				<ResultView
+					result={summaryResult}
+					loading={<HostDetailHeaderLoading />}
+					error={(error) => (
+						<ErrorState
+							variant="inline"
+							error={error}
+							title="Failed to load host summary"
+							onRetry={refreshSummary}
+						/>
+					)}
+				>
+					{(r) => (
+						<HostDetailHeader
+							summary={r.data}
+							hostName={hostName}
+							onWidenRange={
+								canWidenTimeRange(search, DEFAULT_PRESET)
+									? () => handleTimeChange({ presetValue: WIDEN_TIME_PRESET })
+									: undefined
+							}
+						/>
+					)}
+				</ResultView>
 
-								<Panel className="overflow-visible">
-									<PanelHeader
-										title="Metrics"
-										action={
-											<span className="text-xs tabular-nums text-muted-foreground">
-												{METRIC_STRIPS.length} signals
-											</span>
-										}
-									/>
-									<div className="px-4" {...linkedCursorContainerProps}>
-										{METRIC_STRIPS.map((strip) => (
-											<MetricStrip
-												key={strip.metric}
-												label={strip.label}
-												caption={strip.caption}
-												hostName={hostName}
-												metric={strip.metric}
-												startTime={startTime}
-												endTime={endTime}
-												bucketSeconds={bucketSeconds}
-												syncId={`host-${hostName}`}
-											/>
-										))}
-									</div>
-								</Panel>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-					<DashboardLayout.RightPanel>{rightSidebar}</DashboardLayout.RightPanel>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+				<Panel className="overflow-visible">
+					<PanelHeader
+						title="Metrics"
+						action={
+							<span className="text-xs tabular-nums text-muted-foreground">
+								{countLabel(METRIC_STRIPS.length, "signal")}
+							</span>
+						}
+					/>
+					<div className="px-4" {...linkedCursorContainerProps}>
+						{METRIC_STRIPS.map((strip) => (
+							<MetricStrip
+								key={strip.metric}
+								label={strip.label}
+								caption={strip.caption}
+								hostName={hostName}
+								metric={strip.metric}
+								startTime={startTime}
+								endTime={endTime}
+								bucketSeconds={bucketSeconds}
+								syncId={`host-${hostName}`}
+							/>
+						))}
+					</div>
+				</Panel>
+			</div>
+		</DashboardPage>
 	)
 }

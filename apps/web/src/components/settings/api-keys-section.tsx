@@ -1,31 +1,21 @@
-import { countLabel } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@maple/ui/components/ui/card"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	Empty,
 	EmptyContent,
@@ -35,46 +25,27 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { RelativeTime } from "@/components/common/relative-time"
-import {
-	ArrowPathIcon,
-	CodeIcon,
-	DotsVerticalIcon,
-	KeyIcon,
-	PlusIcon,
-	SquareTerminalIcon,
-	TrashIcon,
-} from "@/components/icons"
+import { ArrowPathIcon, CodeIcon, KeyIcon, PlusIcon, SquareTerminalIcon, TrashIcon } from "@/components/icons"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
 import { SyncUnavailable } from "@/components/common/sync-unavailable"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
-import { displayError } from "@/lib/error-messages"
+import { toastExit } from "@/lib/error-toast"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { CreateApiKeyDialog } from "./create-api-key-dialog"
 import { RollApiKeyDialog } from "./roll-api-key-dialog"
 
 type ApiKey = V2ApiKey
-
-function formatDate(timestamp: string | null): string {
-	if (!timestamp) return "Never"
-	try {
-		return new Date(timestamp).toLocaleDateString("en-US", {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		})
-	} catch {
-		return "Unknown"
-	}
-}
 
 /**
  * A key has exactly one status, and the list is grouped by it. "Expiring" is not a separate bucket —
@@ -149,16 +120,11 @@ export function ApiKeysSection() {
 		if (!revokingKey) return false
 		prepareForMutation()
 		const result = await revokeMutation({ params: { id: revokingKey.id } })
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "API key revoked", type: "success" })
-			void reconcileTxid(result.value.txid)
-			// ConfirmDialog closes on `true`. `revokingKey` stays set so the copy doesn't swap mid-animation.
-			return true
-		}
-		const { title, message } = displayError(result)
-		toastManager.add({ title, description: message, type: "error" })
-		// `false` keeps the dialog open so the user can retry.
-		return false
+		// ConfirmDialog closes on `true` (`revokingKey` stays set so the copy doesn't swap mid-animation);
+		// `false` keeps it open so the user can retry.
+		const ok = toastExit(result, { success: "API key revoked", error: "Couldn't revoke API key" })
+		if (Exit.isSuccess(result)) void reconcileTxid(result.value.txid)
+		return ok
 	}
 
 	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind
@@ -196,50 +162,59 @@ export function ApiKeysSection() {
 	const showSearch = buckets[activeView].length > 5 || needle.length > 0
 
 	return (
-		<div className="space-y-6">
-			<div className="space-y-3">
-				<div className="flex flex-wrap items-center gap-3">
-					{keys.length > 0 && (
-						<>
-							<SegmentedSelect
-								size="sm"
-								aria-label="Key status"
-								value={activeView}
-								onChange={setView}
-								options={(["active", "expired", "revoked"] as const)
-									// A tab for an empty bucket is a dead end. Active always shows, so
-									// there is something to fall back to.
-									.filter((tab) => tab === "active" || buckets[tab].length > 0)
-									.map((tab) => ({
-										value: tab,
-										label: `${VIEW_LABELS[tab]} · ${buckets[tab].length}`,
-									}))}
-							/>
-							{buckets.active.length > 0 && (
-								<span className="text-muted-foreground font-mono text-[11px]">
-									<span className="text-success-foreground">{standardCount} standard</span>
-									<span className="text-muted-foreground/40"> · </span>
-									<span className="text-info-foreground">{mcpCount} mcp</span>
-								</span>
-							)}
-						</>
-					)}
-					<div className="flex-1" />
-					{showSearch && (
-						<SearchInput
-							value={search}
-							onValueChange={setSearch}
-							placeholder="Filter by name or prefix"
-							className="w-56"
-						/>
-					)}
+		<SettingsSections>
+			<SettingsSection
+				title="API keys"
+				framed={false}
+				actions={
 					<Button onClick={() => setCreateOpen(true)} size="sm" disabled={!isAdmin}>
-						<PlusIcon data-icon="inline-start" size={14} />
+						<PlusIcon data-icon="inline-start" />
 						Create key
 					</Button>
-				</div>
+				}
+			>
+				{keys.length > 0 || showSearch ? (
+					<div className="flex flex-wrap items-center gap-3">
+						{keys.length > 0 && (
+							<>
+								<SegmentedSelect
+									size="sm"
+									aria-label="Key status"
+									value={activeView}
+									onChange={setView}
+									options={(["active", "expired", "revoked"] as const)
+										// A tab for an empty bucket is a dead end. Active always shows, so
+										// there is something to fall back to.
+										.filter((tab) => tab === "active" || buckets[tab].length > 0)
+										.map((tab) => ({
+											value: tab,
+											label: `${VIEW_LABELS[tab]} · ${buckets[tab].length}`,
+										}))}
+								/>
+								{buckets.active.length > 0 && (
+									<span className="text-muted-foreground font-mono text-2xs">
+										<span className="text-success-foreground">
+											{standardCount} standard
+										</span>
+										<span className="text-muted-foreground/40"> · </span>
+										<span className="text-info-foreground">{mcpCount} mcp</span>
+									</span>
+								)}
+							</>
+						)}
+						<div className="flex-1" />
+						{showSearch && (
+							<SearchInput
+								value={search}
+								onValueChange={setSearch}
+								placeholder="Filter by name or prefix"
+								className="w-56"
+							/>
+						)}
+					</div>
+				) : null}
 
-				<div className="bg-card overflow-hidden rounded-lg border">
+				<Panel>
 					{isLoading ? (
 						<SkeletonList rows={2} rowClassName="h-[52px]" gap="2" className="p-4" />
 					) : isError ? (
@@ -263,7 +238,7 @@ export function ApiKeysSection() {
 								<EmptyActions>
 									{isAdmin ? (
 										<Button size="sm" onClick={() => setCreateOpen(true)}>
-											<PlusIcon data-icon="inline-start" size={14} />
+											<PlusIcon data-icon="inline-start" />
 											Create key
 										</Button>
 									) : (
@@ -297,7 +272,7 @@ export function ApiKeysSection() {
 							{needle.length === 0 && activeView === "active" && isAdmin && (
 								<EmptyContent>
 									<Button size="sm" onClick={() => setCreateOpen(true)}>
-										<PlusIcon data-icon="inline-start" size={14} />
+										<PlusIcon data-icon="inline-start" />
 										Create key
 									</Button>
 								</EmptyContent>
@@ -330,8 +305,8 @@ export function ApiKeysSection() {
 							))}
 						</DataTable.Root>
 					)}
-				</div>
-			</div>
+				</Panel>
+			</SettingsSection>
 
 			{!isAdmin ? (
 				<p className="text-muted-foreground text-xs">
@@ -342,7 +317,7 @@ export function ApiKeysSection() {
 					>
 						MCP
 					</Link>{" "}
-					page — you can create one of those yourself.
+					page; you can create one of those yourself.
 				</p>
 			) : null}
 
@@ -373,7 +348,7 @@ export function ApiKeysSection() {
 				confirmLabel="Revoke key"
 				onConfirm={handleRevoke}
 			/>
-		</div>
+		</SettingsSections>
 	)
 }
 
@@ -404,7 +379,7 @@ const SCOPE_FAMILY_ROWS = [
 	{
 		id: "investigations",
 		label: "Investigations",
-		description: "AI investigation war-rooms — list, open, and update status",
+		description: "AI investigation war-rooms: list, open, and update status",
 	},
 	{
 		id: "anomalies",
@@ -437,89 +412,66 @@ const curlExample = `curl ${apiBaseUrl}/v2/alerts/rules \\
  */
 function ApiReference() {
 	return (
-		<div className="space-y-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>API Reference</CardTitle>
-					<CardDescription>
-						The Maple v2 API is a resource-oriented REST interface — snake_case JSON, prefixed
-						object IDs, cursor-paginated lists, and scoped API keys.
-					</CardDescription>
-					<CardAction>
-						<Button
-							size="sm"
-							render={
-								<a
-									href={docsUrl}
-									target="_blank"
-									rel="noopener noreferrer"
-									aria-label="Open API reference"
-								/>
-							}
-						>
-							<CodeIcon data-icon="inline-start" size={14} />
-							Open API reference
-						</Button>
-					</CardAction>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<div className="space-y-1.5">
-						<Eyebrow variant="label" as="div">
-							Base URL
-						</Eyebrow>
-						<div className="bg-muted/50 flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-							<code className="font-mono text-sm">{apiBaseUrl}/v2</code>
-							<CopyButton value={`${apiBaseUrl}/v2`} label="Base URL" size="icon-sm" />
-						</div>
-					</div>
-					<div className="space-y-1.5">
-						<Eyebrow variant="label" as="div">
-							Quick start
-						</Eyebrow>
-						<div className="bg-muted/50 flex items-start justify-between gap-2 rounded-md border px-3 py-2">
+		<>
+			<SettingsSection
+				title="API reference"
+				description="The Maple v2 API is a resource-oriented REST interface: snake_case JSON, prefixed object IDs, cursor-paginated lists, and scoped API keys."
+				actions={
+					<Button
+						size="sm"
+						variant="outline"
+						render={<a href={docsUrl} target="_blank" rel="noopener noreferrer" />}
+					>
+						<CodeIcon data-icon="inline-start" />
+						Open API reference
+					</Button>
+				}
+			>
+				<div className="space-y-4">
+					<CopyableField label="Base URL" value={`${apiBaseUrl}/v2`} />
+					<div className="space-y-1">
+						<span className="text-xs text-muted-foreground">Quick start</span>
+						<Panel tone="muted" className="flex-row items-start justify-between gap-2 px-3 py-2">
 							<pre className="overflow-x-auto font-mono text-sm leading-6">{curlExample}</pre>
 							<CopyButton value={curlExample} label="curl example" size="icon-sm" />
-						</div>
+						</Panel>
 					</div>
-				</CardContent>
-			</Card>
+				</div>
+			</SettingsSection>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>Scopes</CardTitle>
-					<CardDescription>
+			<SettingsSection
+				title="Scopes"
+				description={
+					<>
 						Restricted keys grant <InlineCode>read</InlineCode> or <InlineCode>write</InlineCode>{" "}
 						access per resource family (<InlineCode>write</InlineCode> implies{" "}
 						<InlineCode>read</InlineCode>). A key without scopes has full access.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="divide-y rounded-md border">
-						{SCOPE_FAMILY_ROWS.map((family) => (
-							<div
-								key={family.id}
-								className="flex items-center justify-between gap-4 px-3 py-2.5"
-							>
-								<div className="min-w-0 space-y-0.5">
-									<div className="text-sm font-medium">{family.label}</div>
-									<div className="text-muted-foreground truncate text-xs">
-										{family.description}
-									</div>
-								</div>
-								<div className="flex shrink-0 items-center gap-1.5">
-									<Badge variant="outline" mono className="text-[11px]">
-										{family.id}:read
-									</Badge>
-									<Badge variant="outline" mono className="text-[11px]">
-										{family.id}:write
-									</Badge>
-								</div>
+					</>
+				}
+				padded={false}
+			>
+				<div className="divide-y">
+					{SCOPE_FAMILY_ROWS.map((family) => (
+						<div key={family.id} className="flex items-center justify-between gap-4 px-4 py-2.5">
+							<div className="min-w-0 space-y-0.5">
+								<div className="text-sm font-medium">{family.label}</div>
+								<TruncatedText className="text-xs text-muted-foreground">
+									{family.description}
+								</TruncatedText>
 							</div>
-						))}
-					</div>
-				</CardContent>
-			</Card>
-		</div>
+							<div className="flex shrink-0 items-center gap-1.5">
+								<Badge variant="outline" mono className="text-2xs">
+									{family.id}:read
+								</Badge>
+								<Badge variant="outline" mono className="text-2xs">
+									{family.id}:write
+								</Badge>
+							</div>
+						</div>
+					))}
+				</div>
+			</SettingsSection>
+		</>
 	)
 }
 
@@ -569,6 +521,8 @@ function ApiKeyRow({
 				? "bg-info/10 text-info"
 				: "bg-success/10 text-success"
 
+	const { effectiveTimezone } = useTimezonePreference()
+	const formatDate = (timestamp: string) => formatDateInTimezone(timestamp, { timeZone: effectiveTimezone })
 	const createdMeta = [
 		apiKey.description,
 		`Created ${formatDate(apiKey.created_at)}${apiKey.created_by_email ? ` by ${apiKey.created_by_email}` : ""}`,
@@ -615,15 +569,13 @@ function ApiKeyRow({
 							</Badge>
 						)}
 					</div>
-					<span className="text-muted-foreground truncate text-[11px]" title={createdMeta}>
-						{createdMeta}
-					</span>
+					<TruncatedText className="text-muted-foreground text-2xs">{createdMeta}</TruncatedText>
 				</div>
 			</div>
 
 			<InlineCode
 				variant="plain"
-				className={cn(COL.prefix, "text-foreground/55 truncate text-[11px] tracking-tight")}
+				className={cn(COL.prefix, "text-foreground/55 truncate text-2xs tracking-tight")}
 			>
 				{apiKey.key_prefix}
 			</InlineCode>
@@ -632,14 +584,18 @@ function ApiKeyRow({
 				<ScopesCell apiKey={apiKey} />
 			</div>
 
-			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}>
-				{apiKey.last_used_at ? <RelativeTime value={apiKey.last_used_at} tooltip="title" /> : "—"}
+			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-2xs")}>
+				{apiKey.last_used_at ? (
+					<RelativeTime value={apiKey.last_used_at} tooltip="title" />
+				) : (
+					EMPTY_VALUE
+				)}
 			</span>
 
 			<span
 				className={cn(
 					COL.expires,
-					"truncate text-[11px]",
+					"truncate text-2xs",
 					expiresSoon ? "text-severity-warn" : "text-muted-foreground",
 				)}
 			>
@@ -648,26 +604,18 @@ function ApiKeyRow({
 
 			<div className={cn(COL.menu, "flex items-center justify-end")}>
 				{onRevoke && (
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={<Button variant="ghost" size="icon" className="size-7" />}
-							aria-label={`Actions for ${apiKey.name}`}
-						>
-							<DotsVerticalIcon size={14} />
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
-							{onRoll && (
-								<DropdownMenuItem onClick={onRoll}>
-									<ArrowPathIcon size={14} />
-									Roll key
-								</DropdownMenuItem>
-							)}
-							<DropdownMenuItem variant="destructive" onClick={onRevoke}>
-								<TrashIcon size={14} />
-								Revoke key
+					<RowActionsMenu label={`Actions for ${apiKey.name}`}>
+						{onRoll && (
+							<DropdownMenuItem onClick={onRoll}>
+								<ArrowPathIcon size={14} />
+								Roll key
 							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+						)}
+						<DropdownMenuItem variant="destructive" onClick={onRevoke}>
+							<TrashIcon size={14} />
+							Revoke key
+						</DropdownMenuItem>
+					</RowActionsMenu>
 				)}
 			</div>
 		</div>
@@ -676,21 +624,22 @@ function ApiKeyRow({
 
 function ScopesCell({ apiKey }: { apiKey: ApiKey }) {
 	if (apiKey.kind === "mcp") {
-		return <span className="text-muted-foreground text-[11px]">MCP tools</span>
+		return <span className="text-muted-foreground text-2xs">MCP tools</span>
 	}
 	if (apiKey.scopes === null) {
-		return <span className="text-foreground/80 text-[11px]">Full access</span>
+		return <span className="text-foreground/80 text-2xs">Full access</span>
 	}
 	const compact = apiKey.scopes.map((scope) => scope.replace(/:write$/, ":w").replace(/:read$/, ":r"))
 	const shown = compact.slice(0, 2).join(" · ")
 	const extra = compact.length - 2
 	return (
-		<span
-			className="text-muted-foreground block truncate font-mono text-[11px] tracking-tight"
-			title={apiKey.scopes.join(", ")}
+		<TruncatedText
+			mono
+			text={apiKey.scopes.join(", ")}
+			className="text-muted-foreground text-2xs tracking-tight"
 		>
 			{shown}
 			{extra > 0 ? ` · +${extra}` : ""}
-		</span>
+		</TruncatedText>
 	)
 }

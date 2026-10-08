@@ -295,9 +295,35 @@ const noRawToolLayer = {
 	},
 }
 
+const NO_DATE_PARSE_MESSAGE =
+	"Do not use `Date.parse`. A timestamp without a zone (`2026-10-07 10:00:00`, `2026-10-07T10:00:00`) is read in the HOST's timezone: right in production Workers by luck, hours off on a developer machine, silently. Warehouse strings: `parseWarehouseDateTime` from `@maple/query-engine`. Anything else (API responses, headers, requests): `timestampMs` from `@maple/backend/platform/time`, or decode to a `DateTime.Utc` with `Schema.DateTimeUtcFromString` / `DateTime.make`."
+
+/**
+ * `Date.parse` in any position, the call and the value form alike. The two helpers the
+ * message names read a zone-less string as UTC on every host; this keeps new code on them.
+ */
+const noDateParse = {
+	meta: {
+		type: "problem",
+		docs: { description: "Disallow `Date.parse`, which reads zone-less timestamps in the host timezone." },
+		messages: { noDateParse: NO_DATE_PARSE_MESSAGE },
+	},
+	create(context) {
+		return {
+			MemberExpression(node) {
+				if (node.computed) return
+				if (node.object.type !== "Identifier" || node.object.name !== "Date") return
+				if (node.property.type !== "Identifier" || node.property.name !== "parse") return
+				context.report({ node, messageId: "noDateParse" })
+			},
+		}
+	},
+}
+
 export default {
 	meta: { name: "maple" },
 	rules: {
+		"no-date-parse": noDateParse,
 		"no-effect-die": noEffectDie,
 		"no-ordie-compiled-query": noOrDieCompiledQuery,
 		"no-raw-tool-layer": noRawToolLayer,

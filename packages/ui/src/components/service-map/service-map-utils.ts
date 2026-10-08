@@ -1,6 +1,7 @@
 import type { Node, Edge } from "@xyflow/react"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "../../lib/colors"
+import { type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
 import type {
 	PlanetScaleDatabaseStat,
 	ServiceMapCloudflareRow,
@@ -10,7 +11,12 @@ import type {
 	ServiceMapWorkloadRow,
 	ServicePlatform,
 } from "./service-map-types"
-import { getDbNodeColor, PLANETSCALE_COLOR, resolveDbNodePresentation } from "./service-map-db"
+import {
+	CLOUDFLARE_COLOR,
+	getDbNodeColor,
+	PLANETSCALE_COLOR,
+	resolveDbNodePresentation,
+} from "./service-map-db"
 import {
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
@@ -26,8 +32,8 @@ type ServiceNodeKind = "service" | "database" | "namespaceAggregate"
 
 export type ServiceMapColorMode = "service" | "health" | "platform"
 
-/** Cloudflare brand orange — accent for the detail-panel overlay section. */
-export const CLOUDFLARE_COLOR = "oklch(0.7 0.16 50)"
+/** Cloudflare brand orange, accent for the detail-panel overlay section. */
+export { CLOUDFLARE_COLOR }
 
 /**
  * Cloudflare direct-integration analytics overlaid onto an instrumented Worker
@@ -117,10 +123,14 @@ export function getPlatformColor(platform: ServicePlatform | undefined): string 
 	return PLATFORM_COLORS[platform ?? "unknown"]
 }
 
+const HEALTH_COLOR = {
+	crit: "var(--severity-error)",
+	warn: "var(--severity-warn)",
+	neutral: "var(--severity-info)",
+} satisfies Record<ErrorRateLevel, string>
+
 export function getHealthColor(errorRate: number): string {
-	if (errorRate > 0.05) return "var(--severity-error)"
-	if (errorRate > 0.01) return "var(--severity-warn)"
-	return "var(--severity-info)"
+	return HEALTH_COLOR[errorRateLevel(errorRate)]
 }
 
 /**

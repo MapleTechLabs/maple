@@ -4,6 +4,7 @@ import type {
 	AnomalySignalType,
 	AnomalyTriageStatus,
 } from "@maple/domain/http"
+import { formatErrorRate } from "@maple/ui/lib/format"
 import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { BoltIcon, ChartLineIcon, CircleWarningIcon, FileIcon, PulseIcon } from "@/components/icons"
 
@@ -59,7 +60,7 @@ export const SIGNAL_ICON: Record<AnomalySignalType, typeof PulseIcon> = {
 export function formatSignalValue(signalType: AnomalySignalType, value: number): string {
 	switch (signalType) {
 		case "error_rate":
-			return `${(value * 100).toFixed(1)}%`
+			return formatErrorRate(value)
 		case "latency_p95":
 			return value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${value.toFixed(0)}ms`
 		case "throughput":
@@ -174,4 +175,4 @@ export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; to
 } satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
 
 /** Keeps the 20px / 11px meta-pill size on anomaly rows and cards (Badge `size="sm"` shrinks on sm+). */
-export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-[11px] sm:h-5 sm:text-[11px]"
+export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-2xs sm:h-5 sm:text-2xs"

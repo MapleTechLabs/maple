@@ -319,7 +319,6 @@ export {
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,
-	releaseErrorFingerprintsRowSchema,
 	RELEASES_LIST_CAP,
 	PLACEHOLDER_COMMIT_SHAS,
 	type ReleasesListOpts,
@@ -359,6 +358,7 @@ export {
 	errorsWindowTotalsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
@@ -663,3 +663,11 @@ export {
 	type ContainerTimeseriesOutput,
 	type ContainerFacetsOutput,
 } from "./queries/containers"
+
+// Queries — Pull request review (per-operation traffic across services)
+export {
+	operationTrafficHourlyQuery,
+	operationTrafficMinutelyQuery,
+	type OperationTrafficOpts,
+	type OperationTrafficOutput,
+} from "./queries/pr-review"

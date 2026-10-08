@@ -13,7 +13,7 @@ export function SeverityBadge({ severity, className }: SeverityBadgeProps) {
 	return (
 		<Badge
 			variant="secondary"
-			className={cn("font-mono text-[10px] uppercase", className)}
+			className={cn("font-mono text-3xs uppercase", className)}
 			style={{
 				color,
 				backgroundColor: `color-mix(in oklch, ${color} 10%, transparent)`,

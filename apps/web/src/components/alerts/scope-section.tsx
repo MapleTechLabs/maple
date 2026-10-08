@@ -5,7 +5,7 @@ import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/fie
 
 import { EnvironmentCombobox, ServiceCombobox } from "@/components/alerts/service-combobox"
 import { GroupByMultiSelect } from "@/components/query-builder/group-by-multi-select"
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import type { AutocompleteValuesContextType } from "@/hooks/use-autocomplete-values"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
 
@@ -35,7 +35,7 @@ export function ScopeSection({
 
 	return (
 		<Card className="p-4">
-			<SectionHeader id="rule-scope-heading" label="Scope" />
+			<SectionHeading variant="eyebrow" id="rule-scope-heading" title="Scope" />
 
 			<div className="space-y-3">
 				<Field className="items-stretch gap-1.5">

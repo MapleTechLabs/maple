@@ -5,30 +5,26 @@ import { curveMonotoneX } from "d3-shape"
 import { useMemo, type ReactNode } from "react"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
 	thresholdRules,
 	useChartId,
-	usePlotChromeColors,
-	useResolvedSeriesColors,
+	useCursorPlot,
 	verticalGradient,
-	type PlotTooltipSeries,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty, useChartPlotHeight } from "@maple/ui/components/charts"
 import { cn } from "@maple/ui/lib/utils"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
+import { CHART_EMPTY_MESSAGE } from "@/components/common/chart-card"
 import {
-	CHART_EMPTY_MESSAGE,
 	formatValueWithUnit,
-	makeBucketAxis,
 	transformRows,
 	UNNAMED_SERIES_KEY,
 	type ChartUnit,
@@ -123,7 +119,7 @@ function isCell(datum: InfraDatum): datum is InfraCell {
 }
 
 function rowOf(datum: InfraDatum): TransformedPoint {
-	return isCell(datum) ? datum.point : (datum as TransformedPoint)
+	return isCell(datum) ? datum.point : datum
 }
 
 /**
@@ -158,9 +154,7 @@ export function InfraMetricChart({
 	const inheritedHeight = useChartPlotHeight()
 	const plotHeight = height ?? inheritedHeight ?? INFRA_METRIC_CHART_HEIGHT
 
-	const chromeColors = usePlotChromeColors()
 	const gradientPrefix = useChartId("infra")
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 
 	const { data, series } = useMemo(() => transformRows(rows), [rows])
 
@@ -171,15 +165,6 @@ export function InfraMetricChart({
 		() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket), effectiveTimezone),
 		[xDomain, data, effectiveTimezone],
 	)
-
-	/**
-	 * Series names carry dots and slashes (container names, mount points), which
-	 * is why they were never routed through `ChartContainer`'s `var(--color-…)`
-	 * variables. They are resolved to literals here for a further reason: canvas
-	 * cannot read a `var()` at all.
-	 */
-	const colorTokens = useMemo(() => resolveSeriesColors(series), [series])
-	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
 
 	const labelFor = useMemo(
 		() => (name: string) => (name === UNNAMED_SERIES_KEY ? (seriesLabel ?? name) : name),
@@ -222,22 +207,26 @@ export function InfraMetricChart({
 		return niceLinearDomain(linearYDomain({ rows: data, keys: series, stacked, thresholds }))
 	}, [data, series, stacked, showThreshold, unit])
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<InfraDatum>[]>(
-		() =>
-			series.map((name) => ({
-				label: labelFor(name),
-				color: colors.get(name) ?? chromeColors.border,
-				// Read off the pivoted ROW, so a stacked chart still prints every
-				// series at the hovered bucket rather than only the band under the
-				// cursor — the same reason the bar chart reads through `cell.row`.
-				value: (datum: InfraDatum) => {
-					const value = rowOf(datum)[name]
-					return typeof value === "number" ? value : null
-				},
-				format: (value: number) => formatValueWithUnit(value, unit),
-			})),
-		[series, labelFor, colors, chromeColors.border, unit],
-	)
+	// Series names carry dots and slashes (container names, mount points), which
+	// is why they were never routed through `var(--color-…)` variables.
+	const cursorSeries = useMemo<CursorPlotSeries<InfraDatum>[]>(() => {
+		const tokens = resolveSeriesColors(series)
+		return series.map((name) => ({
+			key: name,
+			label: labelFor(name),
+			color: tokens.get(name) ?? "--border",
+			// Read off the pivoted ROW, so a stacked chart still prints every
+			// series at the hovered bucket rather than only the band under the
+			// cursor, the same reason the bar chart reads through `cell.row`.
+			value: (datum: InfraDatum) => {
+				const value = rowOf(datum)[name]
+				return typeof value === "number" ? value : null
+			},
+			format: (value: number) => formatValueWithUnit(value, unit),
+		}))
+	}, [series, labelFor, unit])
+	const plot = useCursorPlot(cursorSeries)
+	const colors = plot.colors
 
 	const definition = useMemo(() => {
 		const at = (point: TransformedPoint) => point.date
@@ -245,7 +234,7 @@ export function InfraMetricChart({
 			const value = point[name]
 			return typeof value === "number" ? value : null
 		}
-		const colorOf = (name: string) => colors.get(name) ?? chromeColors.border
+		const colorOf = plot.color
 		const gradientFor = (name: string) => `${gradientPrefix}-${name.replace(/\W+/g, "_")}`
 		const curve = d3Curve(curveMonotoneX)
 
@@ -298,8 +287,8 @@ export function InfraMetricChart({
 					labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined,
 				}),
 				...bands,
-				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), chromeColors)),
-				focusCrosshair(chromeColors),
+				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), plot.chrome)),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: axis.x,
@@ -317,22 +306,9 @@ export function InfraMetricChart({
 			margin: { top: 12, right: 12, left: 56 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [
-		data,
-		series,
-		axis,
-		stacked,
-		colors,
-		chromeColors,
-		gradientPrefix,
-		yDomain,
-		tickFormatter,
-		showThreshold,
-		unit,
-		focusStore,
-	])
+	}, [data, series, axis, stacked, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
 
 	if (data.length === 0) {
 		return <ChartEmpty height={height}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
@@ -352,21 +328,14 @@ export function InfraMetricChart({
 				 * overlays and was finding zero.
 				 */}
 				{linkedChartId != null && <LinkedCursorOverlay chartId={linkedChartId} />}
-				<div style={{ height: plotHeight }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel={seriesLabel ?? "Utilization"}
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(datum: InfraDatum) => axis.heading(rowOf(datum).bucket)}
-							/>
-						)}
-					/>
-				</div>
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={cursorSeries}
+					heading={(datum: InfraDatum) => axis.heading(rowOf(datum).bucket)}
+					ariaLabel={seriesLabel ?? "Utilization"}
+					height={plotHeight}
+				/>
 			</div>
 		</div>
 	)

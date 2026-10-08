@@ -1,5 +1,7 @@
 import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import {
 	Combobox,
 	ComboboxContent,
@@ -196,17 +198,12 @@ function StepRow({
 	const filterError = filterParse !== null && !filterParse.ok ? filterParse.error : null
 
 	return (
-		<div
-			className={cn(
-				"flex flex-col gap-1 rounded-md border bg-card",
-				compact ? "px-1.5 py-1" : "px-2 py-1.5",
-			)}
-		>
+		<Panel className={cn("gap-1 overflow-visible", compact ? "px-1.5 py-1" : "px-2 py-1.5")}>
 			<div className="flex items-center gap-1.5">
 				{!single && (
 					<span
 						className={cn(
-							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] tabular-nums text-muted-foreground",
+							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-3xs tabular-nums text-muted-foreground",
 							compact ? "size-5" : "size-6",
 						)}
 						aria-label={`Step ${index + 1}`}
@@ -314,35 +311,25 @@ function StepRow({
 
 				{!single && (
 					<div className="flex shrink-0 items-center">
-						<Button
-							type="button"
-							variant="ghost"
+						<IconButton
+							label="Move step up"
 							size="icon-xs"
 							onClick={onMoveUp}
 							disabled={index === 0}
-							aria-label="Move step up"
 						>
 							<ArrowUpIcon size={12} />
-						</Button>
-						<Button
-							type="button"
-							variant="ghost"
+						</IconButton>
+						<IconButton
+							label="Move step down"
 							size="icon-xs"
 							onClick={onMoveDown}
 							disabled={index === total - 1}
-							aria-label="Move step down"
 						>
 							<ArrowDownIcon size={12} />
-						</Button>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-xs"
-							onClick={onRemove}
-							aria-label="Remove step"
-						>
+						</IconButton>
+						<IconButton label="Remove step" size="icon-xs" onClick={onRemove}>
 							<XmarkIcon size={12} />
-						</Button>
+						</IconButton>
 					</div>
 				)}
 			</div>
@@ -369,10 +356,10 @@ function StepRow({
 							ariaLabel={`Step ${index + 1} attribute filter`}
 						/>
 					</div>
-					{filterError ? <p className="text-[11px] text-destructive">{filterError}</p> : null}
+					{filterError ? <p className="text-2xs text-severity-error">{filterError}</p> : null}
 				</div>
 			) : null}
-		</div>
+		</Panel>
 	)
 }
 
@@ -445,7 +432,7 @@ function SuggestingInput({
 									{name}
 								</span>
 								{countOf.get(name) !== undefined ? (
-									<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+									<span className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground">
 										{formatNumber(countOf.get(name)!)}
 									</span>
 								) : null}

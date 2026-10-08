@@ -4,7 +4,7 @@ import {
 	createSequentialColorScale,
 	rampStops,
 	usePlotColors,
-	type PlotColorToken,
+	type PlotColorSource,
 	type SequentialScaleType,
 } from "@maple/ui/components/plot"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -41,12 +41,12 @@ interface HeatmapHole {
  * literal per render would re-read computed style on every frame.
  */
 const HEATMAP_CHROME_TOKENS = {
-	foreground: ["--foreground", "#fafafa"],
+	foreground: "--foreground",
 	// Production's grout (`query-builder-heatmap-chart.tsx`), the recessed
 	// surface a hole is a hole *in*. `tokens.css` defines it for both themes and
 	// it inverts between them, hence the token rather than a literal.
 	grout: ["--heatmap-grout", "oklch(0.175 0.008 62)"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+} as const satisfies Record<string, PlotColorSource>
 
 /** Preserve first-appearance order — a `Set` over the rows, not a sort. */
 function uniqueInOrder(values: readonly string[]): string[] {
@@ -437,7 +437,7 @@ export const HeatmapSpike = memo(function HeatmapSpike({
 							/>
 						))}
 					</div>
-					<span className="text-[11px] text-muted-foreground">No data</span>
+					<span className="text-2xs text-muted-foreground">No data</span>
 				</div>
 			</div>
 		)
@@ -451,7 +451,7 @@ export const HeatmapSpike = memo(function HeatmapSpike({
 			definition={definition}
 			footer={
 				model.prunedColumns > 0 || model.prunedRows > 0 ? (
-					<p className="pt-1 text-right text-[10px] text-muted-foreground/70">
+					<p className="pt-1 text-right text-3xs text-muted-foreground/70">
 						{[
 							model.prunedColumns > 0 ? pluralize(model.prunedColumns, "empty column") : null,
 							model.prunedRows > 0 ? pluralize(model.prunedRows, "empty row") : null,
@@ -491,7 +491,7 @@ export const HeatmapSpike = memo(function HeatmapSpike({
 				return (
 					<div className="flex items-center gap-2">
 						<span
-							className="size-2.5 shrink-0 rounded-[2px]"
+							className="size-2.5 shrink-0 rounded-xs"
 							style={{ backgroundColor: colorScale(slot.value) }}
 						/>
 						{label}

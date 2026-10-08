@@ -20,7 +20,7 @@ export function QuickSelectGrid({ onSelect }: QuickSelectGridProps) {
 								onSelect(range, option.value, option.label)
 							}
 						}}
-						className="flex h-7 items-center justify-center rounded-md border border-border/60 bg-background/30 font-mono text-[11px] tracking-wide text-foreground/90 transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						className="flex h-7 items-center justify-center rounded-md border border-border/60 bg-background/30 font-mono text-2xs tracking-wide text-foreground/90 transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
 						{option.label}
 					</button>

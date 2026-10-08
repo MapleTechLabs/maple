@@ -11,22 +11,19 @@
  * org member's shape stream — so there is no txid to await and `awaitTxId`
  * would hang forever.
  */
-import { useMemo, useRef, useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { Exit } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import {
 	ArrowRotateClockwiseIcon,
-	CheckIcon,
 	CircleWarningIcon,
-	CopyIcon,
 	GlobeIcon,
-	LinkIcon,
 	LockIcon,
 	ShieldIcon,
 } from "@/components/icons"
-import { Alert } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
-import { useCopy } from "@maple/ui/hooks/use-copy"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 import {
 	Dialog,
 	DialogClose,
@@ -39,6 +36,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
@@ -169,7 +167,7 @@ export function ShareDashboardDialog({
 							if (value === "off") void stopSharing()
 							else void share(value as ShareMode)
 						}}
-						className="gap-0 divide-y divide-border overflow-hidden rounded-lg border"
+						className="gap-0 divide-y divide-border overflow-hidden rounded-md border"
 					>
 						<ShareOption
 							value="off"
@@ -261,7 +259,7 @@ function NoticeRow({ tone = "muted", children }: { tone?: "muted" | "error"; chi
 		<div
 			className={cn(
 				"flex items-start gap-2 text-xs leading-relaxed",
-				tone === "error" ? "text-destructive-foreground" : "text-muted-foreground",
+				tone === "error" ? TONE_TEXT.crit : "text-muted-foreground",
 			)}
 		>
 			<CircleWarningIcon size={13} className="mt-0.5 shrink-0" />
@@ -271,9 +269,8 @@ function NoticeRow({ tone = "muted", children }: { tone?: "muted" | "error"; chi
 }
 
 /**
- * Replacing kills the current link for good — every copy of it already handed
- * out, every embed on someone else's page. So it asks first, inline: a second
- * modal over the dialog would be heavier than the question.
+ * Replacing kills the current link for good: every copy of it already handed
+ * out, every embed on someone else's page. So it asks first.
  */
 export function ShareLinkRow({
 	url,
@@ -286,81 +283,27 @@ export function ShareLinkRow({
 	replaceWarning: string
 }) {
 	const [confirmingReplace, setConfirmingReplace] = useState(false)
-	const [copyBlocked, setCopyBlocked] = useState(false)
-	const field = useRef<HTMLInputElement>(null)
-
-	// When even the fallback write fails, select the field so ⌘C still works.
-	const { copy, copied } = useCopy({
-		label: "Share link",
-		toast: false,
-		onCopy: () => setCopyBlocked(false),
-		onError: () => {
-			setCopyBlocked(true)
-			field.current?.select()
-		},
-	})
 
 	return (
-		<div className="space-y-2">
-			<div className="flex items-center gap-2">
-				<div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-input bg-muted/40 px-2.5 font-mono text-xs focus-within:border-ring sm:h-7">
-					<LinkIcon size={13} className="shrink-0 text-muted-foreground" />
-					{/* A real input rather than a span: the link stays selectable, which is
-					    what makes the clipboard fallback above worth anything. */}
-					<input
-						ref={field}
-						readOnly
-						aria-label="Share link"
-						value={url}
-						onFocus={(event) => event.currentTarget.select()}
-						className="min-w-0 flex-1 truncate bg-transparent outline-none"
-					/>
-				</div>
-				<Button size="sm" onClick={() => void copy(url)}>
-					{copied ? <CheckIcon /> : <CopyIcon />}
-					{copied ? "Copied" : "Copy"}
-				</Button>
-				<Button
-					size="sm"
-					variant="outline"
-					onClick={() => setConfirmingReplace((open) => !open)}
-					aria-expanded={confirmingReplace}
-				>
-					<ArrowRotateClockwiseIcon />
-					Replace
-				</Button>
+		<div className="flex items-center gap-2">
+			<div className="min-w-0 flex-1">
+				<CopyableField value={url} copyLabel="Share link" />
 			</div>
-			{confirmingReplace ? (
-				<Alert variant="crit" size="sm" className="gap-y-2 py-2.5">
-					<p className="leading-relaxed">
-						<span className="font-medium">Replace this link?</span>{" "}
-						<span className="text-muted-foreground">{replaceWarning} This can't be undone.</span>
-					</p>
-					<div className="flex justify-end gap-2">
-						<Button variant="ghost" size="xs" onClick={() => setConfirmingReplace(false)}>
-							Cancel
-						</Button>
-						<Button
-							variant="destructive"
-							size="xs"
-							onClick={() => {
-								setConfirmingReplace(false)
-								onReplace()
-							}}
-						>
-							Replace link
-						</Button>
-					</div>
-				</Alert>
-			) : null}
-			{copyBlocked ? (
-				<p className="text-muted-foreground text-xs leading-relaxed">
-					Your browser blocked the clipboard. The link is selected — copy it with ⌘C.
-				</p>
-			) : null}
-			<span aria-live="polite" className="sr-only">
-				{copied ? "Share link copied to clipboard" : ""}
-			</span>
+			<Button size="sm" variant="outline" onClick={() => setConfirmingReplace(true)}>
+				<ArrowRotateClockwiseIcon />
+				Replace
+			</Button>
+			<ConfirmDialog
+				open={confirmingReplace}
+				onOpenChange={setConfirmingReplace}
+				title="Replace this link?"
+				description={`${replaceWarning} This can't be undone.`}
+				confirmLabel="Replace link"
+				onConfirm={() => {
+					setConfirmingReplace(false)
+					onReplace()
+				}}
+			/>
 		</div>
 	)
 }

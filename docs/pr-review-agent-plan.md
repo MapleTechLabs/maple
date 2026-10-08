@@ -101,18 +101,20 @@ needs work (50+) or poor. A single warning scores 90 but grades good, so the hea
 gap excellent. The score is computed from the findings rather than asked of the model, so the same
 gaps always score the same, and it is stored in `pr_reviews.score`.
 
-The headline is now a confidence level from 1 to 5 (`confidencePrReview`, same file), from "do not
+The headline is now a confidence level from 1 to 10 (`confidencePrReview`, same file), from "do not
 merge" to "safe to merge". It starts from the quality score, deducts for missing tests, a high-risk
-area and unobservable new work, and is capped by findings. The quality score is shown beneath it.
+area and unobservable new work in whole points, and is capped by findings. The quality score is shown beneath it.
 
 ### Publishing to GitHub
 
 `PrReviewService.submitReview` stores the report, then calls
 `VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/5 · <verdict>`.
+1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/10 · <verdict>`.
    It concludes `success` only when the review finished, left nothing to address and did not
-   rate confidence 3 or lower; otherwise `neutral`, never `failure`. An installation that has not granted
+   rate confidence 6 or lower; otherwise `neutral`. It concludes `failure` only when the repository enables
+   `blockOnContractBreaks` and an undismissed contract break is open (see "Production telemetry").
+   An installation that has not granted
    `checks: write` answers 403, and the review is posted without the check run. A rate-limited
    403, which carries a retry time, fails the publish instead.
 2. **One summary comment per review**, always, authored by the App and found again by its hidden
@@ -166,6 +168,74 @@ and `.dropped_findings`, and the turn records `.closed_out` when the runner had 
 The publish span carries `vcs.pull_request.check_run_id`, `.comment_id`,
 `.review_id`, `.check_run_skipped` and `.review_comments_rejected`. The turn itself is an ordinary
 chat session, so Agent Sessions shows its transcript.
+
+## Production telemetry
+
+A review reads the diff against the organization's own telemetry before the agent starts, so the
+facts are computed rather than asked of the model. `PrReviewTelemetryService.analyze`
+(`packages/backend/src/services/pr-review/telemetry/`) runs in `start` beside the rule-file read,
+best effort with a 20 s ceiling, and stores its result on `pr_reviews.telemetry_json`. It reads:
+
+- the last 7 days of per-operation traffic across services (`operationTrafficHourlyQuery`, the
+  `service_operations_hourly` rollup), span and resource attribute keys, metric names, and the
+  org's average log record size;
+- every enabled alert rule and dashboard (Postgres), reduced to their stored strings;
+- open error issues seen in the last 14 days, with their top frame.
+
+`analyzeTelemetry` (pure) turns that and the pull request's patches into:
+
+| Fact | How it is decided | What it becomes |
+| --- | --- | --- |
+| Contract break | A string literal on a removed line, not added back anywhere in the pull request, that the warehouse knows as a span name, attribute key or metric name, and that an alert or dashboard reads as a whole token | `TEL-01` finding, critical when an alert reads it, warn for dashboards only |
+| Hot file | Literals anywhere in the file's patch that name a production operation (exact span name, or a route inside `METHOD /route`) | Kickoff traffic block; the model's observability and performance notes in files over 10k calls/day are raised to warnings |
+| Linked issue | An open issue whose top frame ends in the changed file's directory and name (any extension) | Kickoff and comment section; compared again after the merge ships |
+| Cost note | A new log call in a hot file (calls/day × 30 × average record size), or a span name built from a template | `TEL-02` (≥ 1 GB/month, warn from 10 GB) and `TEL-03` findings |
+
+Tests, docs, fixtures and config files are never read for any of these. A name quoted on an
+added comment or log line does not count as adding it back.
+
+**Untouched emitters.** The diff only shows changed lines, so before the review starts the service
+code-searches the repository for each removed name (up to 8) and reads the candidate files at the
+head SHA. A file that still emits the name on a line of code (not a comment or a log message)
+dismisses the break before the agent sees it.
+
+**Dismissals.** The kickoff asks the agent to grep the head for each removed name. When the name is
+still emitted elsewhere, `submit_review` takes `telemetryDismissals: [{ name, path, line }]`, and
+`submitReview` fetches that file at the head SHA and accepts the dismissal only when that line is
+code (not a comment) holding the quoted name. A later push that no longer breaks a name resolves
+its `TEL-01` finding by title. `TEL-*` findings repeat across pushes by title, wherever their line
+moved.
+
+**Gate.** `blockOnContractBreaks` in the repository config (off by default) makes the check run
+conclude `failure` while an undismissed break is open. It is the only path to a failing check, and
+it rests on facts the service established, never on a model's opinion.
+
+### After the merge ships
+
+A `closed` event with `merged` stamps the merged pull request's last completed review that has
+telemetry facts: `merge_commit_sha`, `post_merge_status = 'waiting'`, `post_merge_after = merge +
+15 min` (unless `postMergeCheck` is off). `PrReviewPostMergeService.runTick` runs on the alerting
+worker's 5-minute cron, at most 10 rows a tick:
+
+1. Claim the row for 10 minutes, so overlapping ticks post once.
+2. Find the deploy: the version (`vcs.ref.head.revision`) of a touched service equal to the merge
+   commit. After 2 h without it, the first version reported after the merge stands in
+   (`exact: false`), skipping versions whose commit is known to predate the merge. A review that
+   only found removed names reads every service and waits for the merge commit itself. No deploy
+   after 48 h settles `no_deploy`; otherwise it looks again in 30 minutes.
+3. Wait until an hour of traffic after the deploy has landed.
+4. Compare the hour before and after (`operationTrafficMinutelyQuery`) for the busiest operations
+   the review saw. A regression is at least 20 calls after and an error rate up 2 points and
+   doubled, or p95 up 1.5× and 100 ms. Also: issues first seen after the deploy in those services,
+   linked issues' rate before and after, and contract-break attributes that stopped arriving.
+5. Store `post_merge_json` (`PrReviewPostMerge`), mark it `reported`, and post one comment on the
+   pull request (`<!-- maple-pr-post-merge <reviewId> -->`). A refused post leaves the result
+   stored; the Code Review sheet shows it either way.
+
+A failed read is a typed failure, never an empty answer: the row is looked at again in 30
+minutes, and settles `failed` once the 48 h window passes. A review that finishes after its pull
+request merged schedules its own look, and a reviewed head that is reviewed again clears the old
+one.
 
 ## Staged rollout
 

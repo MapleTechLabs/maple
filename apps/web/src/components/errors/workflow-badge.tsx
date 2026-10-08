@@ -4,6 +4,10 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 
+/** Work under way (in progress, in review, verifying, an open PR): the severity-debug blue. */
+export const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+export const IN_FLIGHT_FILL = "bg-severity-debug"
+
 /**
  * Tone only — the wording comes from {@link WORKFLOW_LABEL}, which the state
  * picker, the bulk bar and the workflow ring already share. This file used to
@@ -16,12 +20,11 @@ const WORKFLOW_TONE: Record<WorkflowState, string> = {
 	// as more urgent than an untriaged issue rather than the same.
 	regressed: TONE_SOFT.crit,
 	todo: TONE_SOFT.neutral,
-	// In-flight stages keep their own hues: they are stage identity, not a status level.
-	in_progress: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-	in_review: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-	// Teal, distinct from both `in_review` (a human is looking) and `done` (it is
-	// over): a merged fix is being watched, and nobody needs to act yet.
-	verifying: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+	// In-flight stages share one "under way" hue, distinct from `done` (it is over)
+	// and from the warn/crit stages that need someone to act.
+	in_progress: IN_FLIGHT_SOFT,
+	in_review: IN_FLIGHT_SOFT,
+	verifying: IN_FLIGHT_SOFT,
 	done: TONE_SOFT.ok,
 	cancelled: TONE_SOFT.neutral,
 	wontfix: TONE_SOFT.neutral,

@@ -215,3 +215,47 @@ export function calculateSelfTime(
 	const childrenTime = merged.reduce((sum, i) => sum + (i.end - i.start), 0)
 	return Math.max(0, span.durationMs - childrenTime)
 }
+
+/** Last-resort colour for a token that is neither on the document nor in {@link TOKEN_FALLBACK}. */
+export const DEFAULT_TOKEN_FALLBACK = "#6366f1"
+
+/**
+ * The one hex fallback per design token, used where a token cannot be read off
+ * the document (SSR, tests, a canvas painted before styles load). Callers name
+ * the token only; nothing else should carry its own `["--token", "#hex"]` pair.
+ */
+export const TOKEN_FALLBACK: Readonly<Record<string, string>> = {
+	"--background": "#0c0a09",
+	"--foreground": "#fafafa",
+	"--border": "#3f3f46",
+	"--muted-foreground": "#a1a1aa",
+	"--primary": "#6366f1",
+	"--destructive": "#ef4444",
+	"--chart-1": "#6366f1",
+	"--chart-2": "#22d3ee",
+	"--chart-3": "#f59e0b",
+	"--chart-4": "#fbbf24",
+	"--chart-5": "#f472b6",
+	"--chart-p99": "#e0484a",
+	"--chart-p95": "#e0a23a",
+	"--chart-p50": "#4f8ef7",
+	"--chart-error": "#e5484d",
+	"--chart-throughput": "#8b7cf6",
+	"--chart-apdex": "#3fb27f",
+	"--severity-trace": "#71717a",
+	"--severity-debug": "#3b82f6",
+	"--severity-info": "#10b981",
+	"--severity-warn": "#f59e0b",
+	"--severity-error": "#ef4444",
+	"--severity-fatal": "#b91c1c",
+} satisfies Record<string, string>
+
+/**
+ * The hex fallback for `--token`, `var(--token)` or Tailwind's `--color-token` alias;
+ * {@link DEFAULT_TOKEN_FALLBACK} when unmapped.
+ */
+export function tokenFallback(token: string): string {
+	const inner = token.startsWith("var(") && token.endsWith(")") ? token.slice(4, -1).trim() : token
+	const name = inner.startsWith("--color-") ? `--${inner.slice("--color-".length)}` : inner
+	return Object.hasOwn(TOKEN_FALLBACK, name) ? TOKEN_FALLBACK[name] : DEFAULT_TOKEN_FALLBACK
+}

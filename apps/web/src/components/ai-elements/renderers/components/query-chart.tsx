@@ -34,7 +34,7 @@ export function QueryChart({ props }: RendererComponentProps<QueryChartProps>) {
 
 	if (rows.length === 0) {
 		return (
-			<div className="flex h-[140px] items-center justify-center text-[11px] text-muted-foreground">
+			<div className="flex h-[140px] items-center justify-center text-2xs text-muted-foreground">
 				No data points
 			</div>
 		)
@@ -42,7 +42,7 @@ export function QueryChart({ props }: RendererComponentProps<QueryChartProps>) {
 
 	return (
 		<div className="space-y-1">
-			<p className="text-[11px] font-medium text-muted-foreground">{metric}</p>
+			<p className="text-2xs font-medium text-muted-foreground">{metric}</p>
 			{/*
 			 * `legend="hidden"`: the Recharts original drew no `<Legend>`. Nothing
 			 * opens a legend slot around an agent message either, so the series are

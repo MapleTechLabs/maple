@@ -2,6 +2,9 @@ import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
 
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { cn } from "@maple/ui/lib/utils"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import {
 	Dialog,
@@ -224,7 +227,7 @@ export function AnalyticsBreakdownPanel({
 		// is the only honest measure. The expand dialog portals out of this card —
 		// `/panel` classes are card-only (`!ranked`); the dialog keeps viewport
 		// queries, which are truthful there via its `max-w-[92vw]`.
-		<div className="@container/panel rounded-md border bg-card">
+		<Panel className="@container/panel">
 			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2">
 				{tabs}
 				<FilterInput
@@ -236,16 +239,16 @@ export function AnalyticsBreakdownPanel({
 			</div>
 
 			{dimension.rows.length === 0 ? (
-				<div className="px-4 py-10 text-center text-[12px] text-muted-foreground">
+				<EmptyMessage className="py-10">
 					{dimension.emptyMessage ?? `No ${dimension.noun} data in the selected window.`}
-				</div>
+				</EmptyMessage>
 			) : (
 				<>
 					<BreakdownTable {...table} maxHeight={360} surfaceClass="bg-card" />
 					<button
 						type="button"
 						onClick={() => setExpanded(true)}
-						className="flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
+						className="flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
 					>
 						<span className="flex items-center gap-1.5">
 							<MaximizeIcon size={12} />
@@ -300,7 +303,7 @@ export function AnalyticsBreakdownPanel({
 					/>
 				</DialogPopup>
 			</Dialog>
-		</div>
+		</Panel>
 	)
 }
 
@@ -328,7 +331,7 @@ function DimensionTabs({
 				<ToggleGroupItem
 					key={dim.tab}
 					value={dim.tab}
-					className="h-auto min-w-0 rounded-sm px-2 py-0.5 text-[11px] font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-[11px]"
+					className="h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs"
 				>
 					{dim.tab}
 				</ToggleGroupItem>
@@ -360,7 +363,7 @@ function FilterInput({
 			// from searching it, and the card's own input must never steal the page.
 			autoFocus={autoFocus}
 			className={cn(
-				"h-6 rounded-sm border bg-background px-2 text-[11px] placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+				"h-6 rounded-sm border bg-background px-2 text-2xs placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 				className,
 			)}
 		/>
@@ -498,17 +501,14 @@ function BreakdownTable({
 								// it reads as a hover in both. The text colour is the one token
 								// guaranteed to contrast with whatever the row sits on.
 								"hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
-								// Selection is a rule down the leading edge rather than a wash:
-								// a wash in the primary hue is precisely what the fill already
-								// is, and at 47% share the two were the same picture. `shadow`
-								// rather than a border so nothing shifts by 3px.
-								isSelected && "bg-primary/10 shadow-[inset_3px_0_0_var(--primary)]",
+								// Selection is the shared leading-edge lane, not a primary wash (the fill already is one).
+								rowSelectedClass(isSelected),
 							)}
 						>
 							{/* Position in the order on screen, so it stays true when a
 							    different column takes over the sort. */}
 							{ranked ? (
-								<span className="w-6 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60 max-sm:hidden">
+								<span className="w-6 text-right font-mono text-2xs tabular-nums text-muted-foreground/60 max-sm:hidden">
 									{index + 1}
 								</span>
 							) : null}
@@ -516,7 +516,7 @@ function BreakdownTable({
 								{icon ?? (hasIcons ? <span className="size-4 shrink-0" aria-hidden /> : null)}
 								<span
 									className={cn(
-										"min-w-0 truncate text-[12px] transition-colors",
+										"min-w-0 truncate text-xs transition-colors",
 										isSelected
 											? "font-medium text-foreground"
 											: "text-foreground/90 group-hover:text-foreground",
@@ -529,7 +529,7 @@ function BreakdownTable({
 							{hasViews ? (
 								<span
 									className={cn(
-										"text-right font-mono text-[11px] tabular-nums",
+										"text-right font-mono text-2xs tabular-nums",
 										ranked ? "w-16 sm:w-24" : "w-16",
 									)}
 								>
@@ -538,7 +538,7 @@ function BreakdownTable({
 							) : null}
 							<span
 								className={cn(
-									"text-right font-mono text-[11px] tabular-nums",
+									"text-right font-mono text-2xs tabular-nums",
 									ranked ? "w-16 sm:w-24" : hasViews ? "w-20" : "w-24",
 									hasViews && !ranked && "text-muted-foreground",
 									!ranked && hasViews && "hidden @min-[380px]/panel:inline-block",
@@ -549,7 +549,7 @@ function BreakdownTable({
 							{showShare ? (
 								<span
 									className={cn(
-										"w-16 text-right font-mono text-[11px] tabular-nums text-muted-foreground",
+										"w-16 text-right font-mono text-2xs tabular-nums text-muted-foreground",
 										ranked ? "max-sm:hidden" : "hidden @min-[380px]/panel:inline-block",
 									)}
 								>

@@ -3,6 +3,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { productEventsForTraceResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { ChartBarTrendUpIcon } from "@/components/icons"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Panel } from "@maple/ui/components/ui/panel"
 import type { TraceProductEvent } from "@/api/warehouse/product-events"
 
 /** Same margin as `TraceLogsLink`: clock skew can stamp an annotated span just
@@ -57,7 +58,7 @@ function LoadedTraceProductEvents({
 		.onSuccess((response) => {
 			if (response.data.length === 0) return null
 			return (
-				<section className="rounded-md border">
+				<Panel tone="background">
 					<header className="flex items-center gap-2 border-b px-3 py-2">
 						<ChartBarTrendUpIcon className="size-3.5 text-muted-foreground" />
 						<h2 className="text-xs font-medium">Product events</h2>
@@ -74,7 +75,7 @@ function LoadedTraceProductEvents({
 							/>
 						))}
 					</ul>
-				</section>
+				</Panel>
 			)
 		})
 		.onError(() => null)

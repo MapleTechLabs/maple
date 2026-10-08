@@ -40,7 +40,7 @@ import {
 } from "@maple/db"
 import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Cause, Clock, Context, Effect, Layer, Option, Ref, Schema } from "effect"
+import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
@@ -119,6 +119,20 @@ const NOTIFICATION_MAX_ATTEMPTS = 5
  *  with recent errors still gets scanned, with slack for
  *  cron jitter and MV write lag. */
 const ERROR_ACTIVE_DISCOVERY_WINDOW_MS = 15 * 60_000
+/** How far behind the cutoff a skipped org's cursor is parked. An error that is
+ *  ingested this long after its timestamp is still ahead of the cursor when the
+ *  org is scanned again; the price is that many minutes of replay on return. */
+const TICK_IDLE_CURSOR_TRAIL_MS = 5 * TICK_MINUTE_MS
+const TICK_CURSOR_UPDATE_CHUNK = 500
+/** How far back an idle org's errors are still recovered after it went
+ *  unobserved (the tick or discovery was down). Older than this, telling a
+ *  customer about the error is no longer useful and the cursor skips it. */
+const TICK_IDLE_RECOVERY_HORIZON_MS = 6 * 60 * TICK_MINUTE_MS
+/** Recovery lookups per tick. They run before the active orgs are scanned and
+ *  pile up exactly when the warehouse is coming back, so the rest wait a tick;
+ *  an org needs one lookup unless it really has errors to recover. */
+const TICK_IDLE_RECOVERY_LOOKUPS = 40
+const TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS = 6_000
 // Last-known active-org set, cached so a discovery failure can fail CLOSED
 // (reuse the previous active set) instead of fanning out to every known org —
 // the latter melts the warehouse exactly when it is already struggling. Keyed
@@ -286,16 +300,19 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
-		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: OrgId }>))
-		const byo = new Set<OrgId>(byoRows.map((r) => r.orgId))
+		).pipe(Effect.option)
+		// Without the BYO set an org on its own warehouse reads as idle, and
+		// managed discovery says nothing about its data: not a discovered result.
+		const byoKnown = Option.isSome(byoRows)
+		const byo = new Set<OrgId>(Option.getOrElse(byoRows, () => []).map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
 			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
-			return byo as ReadonlySet<OrgId>
+			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
 		}
 
 		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
-			startTime: formatWarehouseDateTime(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
+			startTime: DateTime.makeUnsafe(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
 		})
 		return yield* warehouse
 			.crossOrgQuery(systemTenant(knownOrgs[0]!), compiled, {
@@ -313,14 +330,14 @@ const make: Effect.Effect<
 					for (const row of rows) {
 						active.add(row.orgId)
 					}
-					return active as ReadonlySet<OrgId>
+					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
 				}),
-				Effect.tap((active) =>
+				Effect.tap(({ active }) =>
 					Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
 				),
 				// Cache the freshly-discovered set so a later discovery failure can
 				// reuse it instead of fanning out to all known orgs. Best-effort.
-				Effect.tap((active) =>
+				Effect.tap(({ active }) =>
 					edgeCache
 						.rawPut(
 							ACTIVE_ORGS_CACHE_BUCKET,
@@ -357,7 +374,7 @@ const make: Effect.Effect<
 									activeOrgs: active.size,
 									failedClosed: true,
 								})
-								return active as ReadonlySet<string>
+								return { active: active as ReadonlySet<string>, discovered: false }
 							}),
 				),
 			)
@@ -394,7 +411,7 @@ const make: Effect.Effect<
 						return yield* Effect.fail(
 							new ErrorValidationError({
 								message: "Invalid snoozeUntil timestamp",
-								details: [String(opts.snoozeUntil)],
+								details: [opts.snoozeUntil],
 							}),
 						)
 					}
@@ -1158,8 +1175,8 @@ const make: Effect.Effect<
 			Effect.gen(function* () {
 				const tickParams = {
 					orgId,
-					startTime: formatWarehouseDateTime(windowStartMs),
-					endTime: formatWarehouseDateTime(endMs),
+					startTime: DateTime.makeUnsafe(windowStartMs),
+					endTime: DateTime.makeUnsafe(endMs),
 				}
 				const issuesCompiled = tickWindow.isBootstrap
 					? CH.compile(CH.errorTickBootstrapIssuesQuery(), tickParams)
@@ -1226,8 +1243,8 @@ const make: Effect.Effect<
 				? raw.serviceVersions.map((version) => String(version)).filter((version) => version !== "")
 				: [],
 			count: Number(raw.count ?? 0),
-			firstSeen: String(raw.firstSeen ?? ""),
-			lastSeen: String(raw.lastSeen ?? ""),
+			firstSeenMs: DateTime.toEpochMillis(raw.firstSeen),
+			lastSeenMs: DateTime.toEpochMillis(raw.lastSeen),
 		}))
 
 		const persistence = yield* dbExecute((db) =>
@@ -1243,8 +1260,8 @@ const make: Effect.Effect<
 					topFrame: row.topFrame,
 					serviceVersions: row.serviceVersions,
 					count: row.count,
-					firstSeenMs: parseWarehouseDateTime(row.firstSeen),
-					lastSeenMs: parseWarehouseDateTime(row.lastSeen),
+					firstSeenMs: row.firstSeenMs,
+					lastSeenMs: row.lastSeenMs,
 				})),
 				policy,
 				destinationIds: parsePolicyDestinations(policy.destinationIdsJson),
@@ -1478,6 +1495,185 @@ const make: Effect.Effect<
 		}
 	})
 
+	// A skipped org's cursor must not freeze: `claimTickWindow` resumes from it,
+	// so an org that returns after a quiet month would replay that month five
+	// minutes per tick before reaching the errors it has now.
+	//
+	// The orgs passed here were skipped because this tick's discovery found no
+	// error events for them, so their cursor moves forward without a scan. It is
+	// parked `TICK_IDLE_CURSOR_TRAIL_MS` short of the cutoff, for errors that
+	// arrive late, and moved only once it trails that by a full window: one write
+	// per idle org every few minutes.
+	//
+	// A cursor older than the discovery window was not being moved: the tick or
+	// discovery was down, or the row predates this. Whatever errors that stretch
+	// holds would otherwise be dropped, so the org's first error minute in it is
+	// looked up (one keyed read) and the cursor is set there; the org is returned
+	// to be scanned this tick. It hops error to error on later ticks until the
+	// lookup finds nothing, and is then parked like any idle org. The lookup
+	// reaches back `TICK_IDLE_RECOVERY_HORIZON_MS` at most.
+	//
+	// An org that is being scanned never comes through here and always replays
+	// from its cursor. Callers skip this when discovery failed: the reused set
+	// proves nothing about who is idle.
+	const advanceIdleCursors = Effect.fn("ErrorsService.advanceIdleCursors")(function* (
+		idleOrgs: ReadonlyArray<OrgId>,
+		cutoffMs: number,
+		nowMs: number,
+	) {
+		if (idleOrgs.length === 0) return []
+		const idle = new Set(idleOrgs)
+		const parkedAtMs = cutoffMs - TICK_IDLE_CURSOR_TRAIL_MS
+		const horizonMs = cutoffMs - TICK_IDLE_RECOVERY_HORIZON_MS
+		// A lease that has lapsed belongs to a tick that died mid-org. Left in
+		// place it would pin the cursor for as long as the org stays idle.
+		const unclaimed = or(
+			isNull(errorTickStates.claimExpiresAt),
+			lte(errorTickStates.claimExpiresAt, new Date(nowMs)),
+		)
+		const trailing = (yield* dbExecute((db) =>
+			db
+				.select({
+					orgId: errorTickStates.orgId,
+					processedThrough: errorTickStates.processedThrough,
+				})
+				.from(errorTickStates)
+				.where(
+					and(
+						lte(errorTickStates.processedThrough, new Date(parkedAtMs - TICK_MAX_WINDOW_MS)),
+						unclaimed,
+					),
+				),
+		)).filter((row) => idle.has(row.orgId))
+
+		// `skip locked` for the reason `claimTickWindow` has it: a lapsed lease can
+		// still have its apply transaction open, holding the row. Waiting on that
+		// lock here would stall the whole tick; the row is picked up next time.
+		const moveCursors = (orgIds: ReadonlyArray<OrgId>, toMs: number) =>
+			Effect.forEach(
+				Arr.chunksOf(orgIds, TICK_CURSOR_UPDATE_CHUNK),
+				(chunk) =>
+					dbExecute((db) =>
+						db
+							.update(errorTickStates)
+							.set({
+								processedThrough: new Date(toMs),
+								claimToken: null,
+								claimExpiresAt: null,
+								updatedAt: new Date(nowMs),
+							})
+							.where(
+								inArray(
+									errorTickStates.orgId,
+									db
+										.select({ orgId: errorTickStates.orgId })
+										.from(errorTickStates)
+										.where(
+											and(
+												inArray(errorTickStates.orgId, chunk),
+												lt(errorTickStates.processedThrough, new Date(toMs)),
+												unclaimed,
+											),
+										)
+										.for("update", { skipLocked: true }),
+								),
+							),
+					),
+				{ discard: true },
+			)
+
+		const isObserved = (row: { readonly processedThrough: Date }) =>
+			row.processedThrough.getTime() >= nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
+
+		// A quarantined org stays where it is until the quarantine ends, so it is
+		// passed over before the cap: counted, it would keep a lookup from an org
+		// behind it on every one of those ticks. Probed a cap-sized wave at a time,
+		// so the common case is one wave and a wall of quarantined orgs is not
+		// read through one by one.
+		const lookups: Array<(typeof trailing)[number]> = []
+		for (const wave of Arr.chunksOf(
+			trailing
+				.filter((row) => !isObserved(row))
+				// Most recent first: a short outage gap before rows that are weeks old.
+				.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime()),
+			TICK_IDLE_RECOVERY_LOOKUPS,
+		)) {
+			if (lookups.length >= TICK_IDLE_RECOVERY_LOOKUPS) break
+			const quarantined = yield* Effect.forEach(
+				wave,
+				(row) => isOrgWarehouseQuarantined(edgeCache, row.orgId),
+				{ concurrency: 4 },
+			)
+			lookups.push(...wave.filter((_, index) => !quarantined[index]))
+		}
+		lookups.splice(TICK_IDLE_RECOVERY_LOOKUPS)
+
+		// Where each unobserved org's cursor belongs: its first error minute, or
+		// the parking point when the stretch is empty. A failed lookup leaves the
+		// cursor alone for the next tick.
+		const recovered = yield* Effect.forEach(
+			lookups,
+			(row) =>
+				Effect.gen(function* () {
+					const cursorMs = row.processedThrough.getTime()
+					const fromMs = Math.max(cursorMs, horizonMs)
+					const rows = yield* warehouse
+						.compiledQuery(
+							systemTenant(row.orgId),
+							CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
+								orgId: row.orgId,
+								startTime: DateTime.makeUnsafe(fromMs),
+								endTime: DateTime.makeUnsafe(cutoffMs),
+							}),
+							{ profile: "discovery", context: "errorTickFirstErrorMinute" },
+						)
+						// The executor adds a client buffer and retries on top of the
+						// profile's 5s. A slow lookup is retried next tick, not waited on.
+						.pipe(Effect.timeout(TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS))
+					if (cursorMs < horizonMs) {
+						yield* Effect.logInfo("Idle error tick cursor moved past the recovery horizon").pipe(
+							Effect.annotateLogs({
+								orgId: row.orgId,
+								skippedFromMs: cursorMs,
+								skippedMs: horizonMs - cursorMs,
+							}),
+						)
+					}
+					const first = rows[0]
+					const firstErrorMs = first === undefined ? null : DateTime.toEpochMillis(first.minute)
+					return [{ orgId: row.orgId, firstErrorMs }]
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logWarning("Idle error tick cursor lookup failed").pipe(
+									Effect.annotateLogs({ orgId: row.orgId, error: summarizeCause(cause) }),
+									Effect.as([]),
+								),
+					),
+				),
+			{ concurrency: 4 },
+		).pipe(Effect.map((results) => results.flat()))
+
+		const parked = [
+			...trailing.filter(isObserved).map((row) => row.orgId),
+			...recovered.filter((row) => row.firstErrorMs === null).map((row) => row.orgId),
+		]
+		yield* moveCursors(parked, parkedAtMs)
+		const recovering = recovered.flatMap((row) =>
+			row.firstErrorMs === null ? [] : [{ orgId: row.orgId, firstErrorMs: row.firstErrorMs }],
+		)
+		yield* Effect.forEach(recovering, (row) => moveCursors([row.orgId], row.firstErrorMs), {
+			discard: true,
+		})
+
+		yield* Effect.annotateCurrentSpan({
+			idleCursorsParked: parked.length,
+			idleCursorsRecovering: recovering.length,
+		})
+		return recovering.map((row) => row.orgId)
+	})
+
 	// Align to the latest completed minute. Per-org cursor leases serialize
 	// overlapping cron invocations; the cursor advances atomically with issue,
 	// incident, audit-event, and notification-outbox writes.
@@ -1502,7 +1698,7 @@ const make: Effect.Effect<
 		)
 		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...ingestOrgs.map((r) => r.orgId)])
 
-		const activeOrgs = yield* resolveActiveOrgs([...knownOrgs], nowMs)
+		const { active: activeOrgs, discovered } = yield* resolveActiveOrgs([...knownOrgs], nowMs)
 		// Orgs that hold issue/incident state must be scanned even with no recent
 		// errors: the scan returning empty is what drives auto-resolution and
 		// aging. Only pure ingest-key-only orgs with neither recent errors nor
@@ -1515,7 +1711,27 @@ const make: Effect.Effect<
 		// any of those is in `withState` by construction. Visiting the rest cost 5
 		// Postgres round-trips each per minute — ~1.6M/day, most of the statement
 		// volume on the database — to discover nothing.
-		const scanOrgs = [...knownOrgs].filter(isActive)
+		const activeScanOrgs = [...knownOrgs].filter(isActive)
+		// Housekeeping for orgs that are not being scanned: a failure here must not
+		// cost the active orgs their tick.
+		const recoveringOrgs = discovered
+			? yield* advanceIdleCursors(
+					[...knownOrgs].filter((org) => !isActive(org)),
+					cutoffMs,
+					nowMs,
+				).pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logWarning("Idle error tick cursors were not advanced").pipe(
+									Effect.annotateLogs({ error: summarizeCause(cause) }),
+									Effect.as([] as ReadonlyArray<OrgId>),
+								),
+					),
+				)
+			: []
+
+		const scanOrgs = [...activeScanOrgs, ...recoveringOrgs]
 
 		const emptyResult = {
 			issuesTouched: 0,

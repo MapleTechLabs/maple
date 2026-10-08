@@ -3,10 +3,11 @@ import * as React from "react"
 import { ChevronDownIcon, ChevronRightIcon, LayersIcon } from "../icons"
 import { cn } from "../../lib/utils"
 import { getServiceColor } from "../../lib/colors"
-import { formatDuration } from "../../lib/format"
+import { countLabel, formatDuration } from "../../lib/format"
 import { describeSpan } from "../../lib/span-category"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, ROW_HEIGHT } from "./trace-timeline-types"
+import { TONE_TEXT } from "../../lib/tone"
 
 interface TraceTimelineRowProps {
 	bar: TimelineBar
@@ -85,7 +86,7 @@ function TraceTimelineRowImpl({
 			<div
 				// A container, so the trailing chips can drop out at narrow column widths without a
 				// re-render: a resize drag only rewrites `--sidebar-w`.
-				className="@container/label sticky left-0 z-10 relative flex items-center gap-1 shrink-0 border-r border-border bg-inherit pr-2 text-[11px]"
+				className="@container/label sticky left-0 z-10 relative flex items-center gap-1 shrink-0 border-r border-border bg-inherit pr-2 text-2xs"
 				style={{ width: "var(--sidebar-w)", paddingLeft: bar.depth * DEPTH_INDENT + 4 }}
 			>
 				{/* Ancestor indent guides */}
@@ -122,15 +123,12 @@ function TraceTimelineRowImpl({
 				{/* Category glyph. The timeline row has no room to spell the category out, so the
 				    title carries it; `describeSpan` already ran here for `cacheInfo`. */}
 				<span className="flex shrink-0 items-center" title={category.label}>
-					<CategoryIcon
-						size={11}
-						className={bar.isError ? "text-destructive" : category.accent.text}
-					/>
+					<CategoryIcon size={11} className={bar.isError ? TONE_TEXT.crit : category.accent.text} />
 				</span>
 				<span
 					className={cn(
 						"truncate font-mono font-medium text-foreground/90",
-						bar.isError && "text-destructive",
+						bar.isError && TONE_TEXT.crit,
 						bar.span.isMissing && "italic text-muted-foreground",
 					)}
 				>
@@ -141,7 +139,7 @@ function TraceTimelineRowImpl({
 					// column is narrow: the span name must not be crushed to three characters for a
 					// service the row's colour stripe and the legend already name.
 					<span
-						className="min-w-0 max-w-[40%] truncate text-[10px] @max-[240px]/label:hidden"
+						className="min-w-0 max-w-[40%] truncate text-3xs @max-[240px]/label:hidden"
 						style={{ color: getServiceColor(bar.span.serviceName) }}
 					>
 						{bar.span.serviceName}
@@ -150,7 +148,7 @@ function TraceTimelineRowImpl({
 				{cacheInfo?.result && (
 					<span
 						className={cn(
-							"text-[9px] font-semibold px-1 shrink-0 uppercase",
+							"text-4xs font-semibold px-1 shrink-0 uppercase",
 							cacheInfo.result === "hit" ? "text-primary" : "text-chart-p50",
 						)}
 					>
@@ -159,14 +157,14 @@ function TraceTimelineRowImpl({
 				)}
 				{bar.isCollapsed && bar.childCount > 0 && (
 					<span
-						className="flex items-center gap-0.5 shrink-0 text-[9px] text-muted-foreground/70"
-						title={`${bar.childCount} hidden ${bar.childCount === 1 ? "span" : "spans"}`}
+						className="flex items-center gap-0.5 shrink-0 text-4xs text-muted-foreground/70"
+						title={countLabel(bar.childCount, "hidden span")}
 					>
 						<LayersIcon size={9} />
 						{bar.childCount}
 					</span>
 				)}
-				<span className="ml-auto shrink-0 pl-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+				<span className="ml-auto shrink-0 pl-1 font-mono text-3xs tabular-nums text-muted-foreground">
 					{durationLabel}
 				</span>
 			</div>
@@ -178,7 +176,7 @@ function TraceTimelineRowImpl({
 					className={cn(
 						"@container/bar absolute top-1/2 -translate-y-1/2 flex items-center",
 						// Not overflow-hidden: the outside label is a child and has to escape the box.
-						"whitespace-nowrap font-mono text-[11px]",
+						"whitespace-nowrap font-mono text-2xs",
 					)}
 					style={{
 						left: BAR_LEFT,
@@ -210,7 +208,7 @@ function TraceTimelineRowImpl({
 						data-outside-label=""
 						className={cn(
 							"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap",
-							"font-mono text-[10px] text-muted-foreground/80 @max-[56px]/bar:block",
+							"font-mono text-3xs text-muted-foreground/80 @max-[56px]/bar:block",
 							"left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full",
 							"data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
 						)}
@@ -223,7 +221,7 @@ function TraceTimelineRowImpl({
 				    pass — CSS can't tell whether the clamp above actually bit. */}
 				<span
 					data-clip-left=""
-					className="pointer-events-none absolute left-0.5 top-1/2 hidden -translate-y-1/2 font-mono text-[9px] leading-none"
+					className="pointer-events-none absolute left-0.5 top-1/2 hidden -translate-y-1/2 font-mono text-4xs leading-none"
 					style={{ color: bar.borderColor }}
 					aria-hidden
 				>
@@ -231,7 +229,7 @@ function TraceTimelineRowImpl({
 				</span>
 				<span
 					data-clip-right=""
-					className="pointer-events-none absolute right-0.5 top-1/2 hidden -translate-y-1/2 font-mono text-[9px] leading-none"
+					className="pointer-events-none absolute right-0.5 top-1/2 hidden -translate-y-1/2 font-mono text-4xs leading-none"
 					style={{ color: bar.borderColor }}
 					aria-hidden
 				>

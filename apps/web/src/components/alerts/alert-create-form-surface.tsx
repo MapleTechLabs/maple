@@ -36,7 +36,7 @@ import {
 	signalLabels,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
-import { getExitErrorMessage } from "@/lib/error-toast"
+import { toastExit } from "@/lib/error-toast"
 import { applyTemplate } from "@/lib/alerts/templates"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
 import { Result, useAtomSet } from "@/lib/effect-atom"
@@ -157,12 +157,10 @@ export function AlertCreateFormSurface({
 				})
 			: await createRule({ payload, reactivityKeys: ["alertRules"] })
 
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: editingRule ? "Rule updated" : "Rule created", type: "success" })
+		const success = editingRule ? "Rule updated" : "Rule created"
+		if (toastExit(result, { success, error: "Failed to save rule" })) {
 			if (!editingRule) trackProduct("alert_rule_created", { signal: ruleForm.signalType })
 			navigate({ to: "/alerts" })
-		} else {
-			toastManager.add({ title: getExitErrorMessage(result, "Failed to save rule"), type: "error" })
 		}
 	})
 
@@ -179,6 +177,8 @@ export function AlertCreateFormSurface({
 			payload: buildRuleTestParamsV2(ruleForm, sendNotification),
 			reactivityKeys: ["alertDeliveryEvents"],
 		})
+		const success = sendNotification ? "Preview ran and sent a test notification" : "Preview updated"
+		if (!toastExit(result, { success, error: "Failed to preview rule" })) return
 		if (Exit.isSuccess(result)) {
 			setPreviewResult({
 				key: testedKey,
@@ -187,12 +187,6 @@ export function AlertCreateFormSurface({
 				sampleCount: result.value.sample_count,
 				reason: result.value.reason,
 			})
-			toastManager.add({
-				title: sendNotification ? "Preview ran and sent a test notification" : "Preview updated",
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: getExitErrorMessage(result, "Failed to preview rule"), type: "error" })
 		}
 	}
 	const [previewRule, previewingRule] = useAsyncAction(() => runTest(false))

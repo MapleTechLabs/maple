@@ -71,9 +71,9 @@ const pillarFaqs = [
                     without stopping to add new instrumentation first.
                 </p>
                 <p class="text-sm md:text-base text-fg-muted leading-relaxed">
-                    That distinction matters most during incidents. Modern systems are distributed, asynchronous, and
-                    full of emergent behavior, so the failure you're debugging is often one nobody predicted.
-                    Observability is what lets you explore those unknown-unknowns from the data you already collect.
+                    This matters most during incidents. In a distributed system, the failure you're debugging is often
+                    one nobody predicted. With good telemetry you can investigate it from data you already collect,
+                    without first shipping new logging.
                 </p>
             </div>
         </div>
@@ -108,9 +108,9 @@ const pillarFaqs = [
                 </div>
             </div>
             <p class="mt-6 max-w-3xl text-sm md:text-base text-fg-muted leading-relaxed">
-                The pillars are most useful together. A metric tells you error rate spiked; a trace shows you the one
-                request path responsible; the logs on that span tell you why. Correlation across all three is what turns
-                raw telemetry into an answer.
+                The pillars are most useful together. A metric tells you the error rate spiked. A trace shows the request
+                path responsible. The logs on that span tell you why. You need all three linked to get from a symptom to
+                a cause.
             </p>
         </div>
     </section>
@@ -129,9 +129,9 @@ const pillarFaqs = [
                     a service is down or latency crossed a threshold. It answers questions you knew to ask in advance.
                 </p>
                 <p class="text-sm md:text-base text-fg-muted leading-relaxed">
-                    Observability picks up where monitoring stops. By keeping rich, high-cardinality telemetry you can
-                    query after the fact, it lets you investigate problems you never anticipated. Monitoring is a subset
-                    of what an observable system makes possible.
+                    Observability covers the cases monitoring can't. If you keep detailed, high-cardinality telemetry
+                    that you can query after the fact, you can investigate problems you never anticipated. Monitoring is
+                    one of the things an observable system lets you do.
                 </p>
             </div>
         </div>
@@ -149,7 +149,7 @@ const pillarFaqs = [
                     send it to any compatible backend and switch tools without re-instrumenting your code.
                 </p>
                 <p class="text-sm md:text-base text-fg-muted leading-relaxed">
-                    That's why OpenTelemetry has become the default foundation for observability. Read
+                    Most new observability tooling now builds on OpenTelemetry. Read
                     <a href="/opentelemetry" class="text-primary hover:underline">our guide to OpenTelemetry</a> for how
                     the standard works and how Maple follows it.
                 </p>

@@ -8,7 +8,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
@@ -21,7 +21,7 @@ import { ExternalLinkIcon, RailwayIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { errorMessage } from "@/lib/error-toast"
+import { errorMessage, toastExit } from "@/lib/error-toast"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { IntegrationIconPlate, RAILWAY_ACCENT } from "./integration-catalog"
 import {
@@ -117,40 +117,40 @@ function RailwayTokenForm({
 
 	return (
 		<form onSubmit={handleSubmit} className="flex w-full flex-col gap-2 text-left">
-			<Label htmlFor="railway-token">Account or workspace token</Label>
-			<div className="flex flex-wrap items-center gap-2">
-				<Input
-					id="railway-token"
-					type="password"
-					autoComplete="off"
-					placeholder="Paste a Railway API token"
-					value={token}
-					onChange={(event) => setToken(event.target.value)}
-					className="min-w-48 flex-1"
-				/>
-				{onCancel !== undefined ? (
-					<Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
-						Cancel
+			<Field className="items-stretch gap-2" invalid={!submitting && error !== null}>
+				<FieldLabel htmlFor="railway-token">Account or workspace token</FieldLabel>
+				<div className="flex flex-wrap items-center gap-2">
+					<Input
+						id="railway-token"
+						type="password"
+						autoComplete="off"
+						placeholder="Paste a Railway API token"
+						value={token}
+						onChange={(event) => setToken(event.target.value)}
+						className="min-w-48 flex-1"
+					/>
+					{onCancel !== undefined ? (
+						<Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+							Cancel
+						</Button>
+					) : null}
+					<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
+						<RailwayIcon size={14} />
+						{mode === "rotate" ? "Update token" : "Connect Railway"}
 					</Button>
+				</div>
+				{submitting ? (
+					<p className="text-xs text-muted-foreground" aria-live="polite">
+						Checking the token and pulling the last hour of metrics. This takes a few seconds.
+					</p>
+				) : error !== null ? (
+					<FieldError match role="alert">
+						{error}
+					</FieldError>
+				) : tokenInvalid ? (
+					<FieldDescription>A Railway token is between 8 and 512 characters.</FieldDescription>
 				) : null}
-				<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
-					<RailwayIcon size={14} />
-					{mode === "rotate" ? "Update token" : "Connect Railway"}
-				</Button>
-			</div>
-			{submitting ? (
-				<p className="text-xs text-muted-foreground" aria-live="polite">
-					Checking the token and pulling the last hour of metrics. This takes a few seconds.
-				</p>
-			) : error !== null ? (
-				<p className="text-xs text-severity-error" role="alert">
-					{error}
-				</p>
-			) : tokenInvalid ? (
-				<p className="text-xs text-muted-foreground">
-					A Railway token is between 8 and 512 characters.
-				</p>
-			) : null}
+			</Field>
 		</form>
 	)
 }
@@ -170,14 +170,8 @@ export function RailwayIntegrationCard() {
 	)
 	const [handleSync, syncBusy] = useAsyncAction(async () => {
 		const result = await sync({ reactivityKeys: ["railwayIntegrationStatus"] })
-		if (Exit.isFailure(result)) {
-			// Non-admins are refused; the reason says so instead of a bare failure.
-			toastManager.add({
-				title: "Failed to sync Railway",
-				description: errorMessage(result, "Try again in a moment."),
-				type: "error",
-			})
-		}
+		// Non-admins are refused; the reason says so instead of a bare failure.
+		toastExit(result, { error: "Failed to sync Railway" })
 	})
 	const [rotating, setRotating] = useState(false)
 

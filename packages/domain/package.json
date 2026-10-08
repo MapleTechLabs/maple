@@ -31,9 +31,9 @@
 		"./setup-audit": "./src/setup-audit.ts",
 		"./support-channel": "./src/support-channel.ts",
 		"./system-agents": "./src/system-agents.ts",
-		"./tinybird-project-sync": "./src/tinybird/project-sync.ts",
 		"./warehouse-queries": "./src/warehouse-queries.ts",
 		"./tinybird": "./src/tinybird/index.ts",
+		"./tinybird/datasources": "./src/tinybird/datasources.ts",
 		"./tinybird/db-query-shape-sql": "./src/tinybird/db-query-shape-sql.ts",
 		"./tinybird/fingerprint": "./src/tinybird/fingerprint.ts",
 		"./tinybird/gen-ai-columns": "./src/tinybird/gen-ai-columns.ts",
@@ -59,11 +59,10 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/effect-orm": "0.2.0",
+		"@maple-dev/effect-orm": "0.4.0",
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@tinybirdco/sdk": "catalog:tinybird",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

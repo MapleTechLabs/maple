@@ -93,7 +93,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 					<ErrorState error={error} title="Failed to load trace logs" variant="inline" />
 				))
 				.onSuccess((data) => {
-					const logs = data.data.toSorted((a, b) => a.timestamp.localeCompare(b.timestamp))
+					const logs = data.data.toSorted((a, b) => a.exactTimestamp.localeCompare(b.exactTimestamp))
 
 					if (logs.length <= 1) {
 						return <EmptyMessage>No other logs in this trace</EmptyMessage>
@@ -125,7 +125,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 											{spanChanged && (
 												<div className="flex items-center gap-2 px-2 py-0.5 bg-muted/30">
 													<div className="h-px flex-1 bg-border" />
-													<span className="text-[9px] font-mono text-muted-foreground/60 shrink-0 truncate max-w-[200px]">
+													<span className="text-4xs font-mono text-muted-foreground/60 shrink-0 truncate max-w-[200px]">
 														{spanNameMap.get(spanChanged) ??
 															shortId(spanChanged, "span")}
 													</span>
@@ -145,18 +145,18 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 													if (!isCurrent) onLogSelect(log)
 												}}
 											>
-												<span className="text-[10px] text-muted-foreground tabular-nums shrink-0 w-[52px] text-right">
+												<span className="text-3xs text-muted-foreground tabular-nums shrink-0 w-[52px] text-right">
 													{formatTimelineOffset(relativeMs)}
 												</span>
 												{log.serviceName !== currentLog.serviceName && (
-													<span className="flex max-w-[72px] shrink-0 items-center gap-1 truncate text-[10px] text-muted-foreground/60">
+													<span className="flex max-w-[72px] shrink-0 items-center gap-1 truncate text-3xs text-muted-foreground/60">
 														<ServiceDot serviceName={log.serviceName} size="sm" />
 														<span className="truncate">{log.serviceName}</span>
 													</span>
 												)}
 												<span
 													className={cn(
-														"min-w-0 flex-1 truncate text-[11px]",
+														"min-w-0 flex-1 truncate text-2xs",
 														isCurrent ? "text-foreground" : "text-foreground/80",
 													)}
 												>

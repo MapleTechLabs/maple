@@ -1,11 +1,11 @@
 import { useMemo } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 
 import type { CloudflareZoneCacheBucket } from "@/api/warehouse/cloudflare-infra"
-import { formatNumber } from "@maple/ui/lib/format"
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { EDGE_SERVED_STATUSES } from "./constants"
 
 /**
@@ -48,59 +48,54 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 	if (total === 0) return null
 
 	return (
-		<div className={cn("rounded-md border bg-card px-5 py-4", className)}>
+		<Panel className={cn("block px-5 py-4", className)}>
 			<div className="flex items-baseline justify-between gap-3">
 				<div className="flex items-baseline gap-2">
-					<span className="font-mono text-[22px] font-semibold tabular-nums leading-none text-foreground">
+					<span className="font-mono text-xl font-semibold tabular-nums leading-none text-foreground">
 						{formatPercent(edgeShare)}
 					</span>
-					<span className="text-[11px] font-medium text-muted-foreground">served at the edge</span>
+					<span className="text-2xs font-medium text-muted-foreground">served at the edge</span>
 				</div>
 				<div className="flex items-baseline gap-2">
-					<span className="text-[11px] font-medium text-muted-foreground">from origin</span>
-					<span className="font-mono text-[13px] font-medium tabular-nums text-foreground/80">
+					<span className="text-2xs font-medium text-muted-foreground">from origin</span>
+					<span className="font-mono text-xs font-medium tabular-nums text-foreground/80">
 						{formatPercent(originShare)}
 					</span>
 				</div>
 			</div>
-			<div className="mt-3 flex h-3 w-full overflow-hidden rounded-sm">
-				{segments.map((seg) => (
-					<Tooltip key={seg.status}>
-						<TooltipTrigger
-							render={<div />}
-							tabIndex={0}
-							className="h-full min-w-[2px]"
-							style={{ width: `${seg.share * 100}%`, background: seg.color }}
-							aria-label={`${seg.label}: ${formatPercent(seg.share)}`}
-						/>
-						<TooltipContent>
-							{seg.label} · {formatNumber(seg.requests)} requests ({formatPercent(seg.share)})
-						</TooltipContent>
-					</Tooltip>
-				))}
-				<Tooltip>
-					<TooltipTrigger
-						render={<div />}
-						tabIndex={0}
-						className="h-full flex-1"
-						style={{ background: ORIGIN_COLOR }}
-						aria-label={`Origin: ${formatPercent(originShare)}`}
-					/>
-					<TooltipContent>
-						Origin · {formatNumber(originRequests)} requests ({formatPercent(originShare)})
-					</TooltipContent>
-				</Tooltip>
-			</div>
+			<SegmentedBar
+				className="mt-3 h-3 w-full rounded-sm bg-transparent"
+				total={total}
+				minVisible={0.5}
+				label={[
+					...segments.map((seg) => `${seg.label}: ${formatPercent(seg.share)}`),
+					`Origin: ${formatPercent(originShare)}`,
+				].join(", ")}
+				segments={[
+					...segments.map((seg) => ({
+						key: seg.status,
+						value: seg.requests,
+						color: seg.color,
+						title: `${seg.label} · ${formatNumber(seg.requests)} requests (${formatPercent(seg.share)})`,
+					})),
+					{
+						key: "origin",
+						value: originRequests,
+						color: ORIGIN_COLOR,
+						title: `Origin · ${formatNumber(originRequests)} requests (${formatPercent(originShare)})`,
+					},
+				]}
+			/>
 			<div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
 				{segments.map((seg) => (
 					<span key={seg.status} className="inline-flex items-baseline gap-1.5">
 						<span
 							aria-hidden
-							className="size-2 translate-y-[-1px] rounded-[2px]"
+							className="size-2 translate-y-[-1px] rounded-xs"
 							style={{ background: seg.color }}
 						/>
-						<span className="text-[11px] text-muted-foreground">{seg.label}</span>
-						<span className="font-mono text-[11px] tabular-nums text-foreground/75">
+						<span className="text-2xs text-muted-foreground">{seg.label}</span>
+						<span className="font-mono text-2xs tabular-nums text-foreground/75">
 							{formatNumber(seg.requests)}
 						</span>
 					</span>
@@ -108,15 +103,15 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 				<span className="inline-flex items-baseline gap-1.5">
 					<span
 						aria-hidden
-						className="size-2 translate-y-[-1px] rounded-[2px]"
+						className="size-2 translate-y-[-1px] rounded-xs"
 						style={{ background: ORIGIN_COLOR }}
 					/>
-					<span className="text-[11px] text-muted-foreground">Origin</span>
-					<span className="font-mono text-[11px] tabular-nums text-foreground/75">
+					<span className="text-2xs text-muted-foreground">Origin</span>
+					<span className="font-mono text-2xs tabular-nums text-foreground/75">
 						{formatNumber(originRequests)}
 					</span>
 				</span>
 			</div>
-		</div>
+		</Panel>
 	)
 }

@@ -3,35 +3,33 @@ import * as React from "react"
 import { areaY, d3Curve, defineChart, lineY, rect } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scalePoint } from "@tanstack/charts-scales/point"
 import { curveMonotoneX } from "d3-shape"
 import type { AnomalyIncidentDocument, AnomalyIncidentTimeseriesResponse } from "@maple/domain/http"
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	focusDot,
-	resolvePlotColor,
+	makeBucketAxis,
 	thresholdRules,
 	useChartId,
-	usePlotChromeColors,
+	useCursorPlot,
 	verticalGradient,
-	type PlotTooltipSeries,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { useTheme } from "@maple/ui/hooks/use-theme"
-import { formatBucketLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+
+import { SeriesLegend } from "@/components/common/series-legend"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 import { formatSignalValue } from "./anomaly-format"
 
-/** Tokens plus the literal each falls back to — canvas cannot read `var()`. */
+/** The observed line's colour, by incident severity. */
 const SEVERITY_STROKE = {
-	critical: ["--destructive", "#ef4444"],
-	warning: ["--chart-4", "#fbbf24"],
-} satisfies Record<"critical" | "warning", readonly [string, string]>
+	critical: "--severity-error",
+	warning: "--severity-warn",
+} satisfies Record<"critical" | "warning", string>
 
 /** One bucket of the observed signal. */
 interface SignalPoint {
@@ -49,17 +47,26 @@ export function AnomalyTimeseriesChart({
 	className?: string
 }) {
 	const { signalType, baselineMedian, thresholdValue } = timeseries
-	const { theme } = useTheme()
-	// `theme` is in the deps but not in the body on purpose: `resolvePlotColor`
-	// reads computed style, so the colour has to be re-resolved when the theme
-	// flips even though nothing here references it.
-	const stroke = React.useMemo(() => {
-		const [token, fallback] = SEVERITY_STROKE[incident.severity]
-		return resolvePlotColor(token, fallback)
-	}, [incident.severity, theme])
-	const chromeColors = usePlotChromeColors()
 	const gradientId = useChartId("anomaly-observed")
-	const focusStore = React.useMemo(() => createTooltipFocusStore(), [])
+
+	const valueFormatter = React.useCallback(
+		(value: number) => formatSignalValue(signalType, Number.isFinite(value) ? value : 0),
+		[signalType],
+	)
+	const series = React.useMemo<CursorPlotSeries<SignalPoint>[]>(
+		() => [
+			{
+				key: "observed",
+				label: "Observed",
+				color: SEVERITY_STROKE[incident.severity],
+				value: (point: SignalPoint) => point.value,
+				format: valueFormatter,
+			},
+		],
+		[incident.severity, valueFormatter],
+	)
+	const plot = useCursorPlot(series)
+	const stroke = plot.color("observed")
 
 	const data = React.useMemo<SignalPoint[]>(
 		() =>
@@ -69,15 +76,18 @@ export function AnomalyTimeseriesChart({
 		[timeseries.buckets],
 	)
 
-	const axisContext = React.useMemo(() => {
-		if (data.length < 2) return { rangeMs: 0, bucketSeconds: timeseries.bucketSeconds }
-		const first = Date.parse(data[0]!.bucket)
-		const last = Date.parse(data[data.length - 1]!.bucket)
-		return { rangeMs: last - first, bucketSeconds: timeseries.bucketSeconds }
-	}, [data, timeseries.bucketSeconds])
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = React.useMemo(
+		() =>
+			makeBucketAxis(
+				data.map((point) => point.bucket),
+				effectiveTimezone,
+			),
+		[data, effectiveTimezone],
+	)
 
-	// Snap the incident window to actual bucket values so the category axis
-	// can place the shading.
+	// Snap the incident window to actual bucket values so the shading lines up
+	// with the plotted points.
 	const window = React.useMemo(() => {
 		if (data.length === 0) return null
 		const startMs = Date.parse(incident.firstTriggeredAt)
@@ -92,7 +102,7 @@ export function AnomalyTimeseriesChart({
 		// Window starts after the last bucket (fresh incident): pin to the edge.
 		if (x1 === null) x1 = data[data.length - 1]!.bucket
 		if (x2 === null || Date.parse(x2) < Date.parse(x1)) x2 = x1
-		return { x1, x2 }
+		return { x1: bucketDate(x1), x2: bucketDate(x2) }
 	}, [data, incident.firstTriggeredAt, incident.resolvedAt])
 
 	// Pad the y-domain so both reference lines stay visible. Also the band's
@@ -103,25 +113,8 @@ export function AnomalyTimeseriesChart({
 		return [0, maxVal * 1.15]
 	}, [data, thresholdValue, baselineMedian])
 
-	const valueFormatter = React.useCallback(
-		(value: number) => formatSignalValue(signalType, Number.isFinite(value) ? value : 0),
-		[signalType],
-	)
-
-	const tooltipSeries = React.useMemo<PlotTooltipSeries<SignalPoint>[]>(
-		() => [
-			{
-				label: "Observed",
-				color: stroke,
-				value: (point: SignalPoint) => point.value,
-				format: valueFormatter,
-			},
-		],
-		[stroke, valueFormatter],
-	)
-
 	const definition = React.useMemo(() => {
-		const at = (point: SignalPoint) => point.bucket
+		const at = (point: SignalPoint) => bucketDate(point.bucket)
 		const value = (point: SignalPoint) => point.value
 
 		return defineChart({
@@ -133,8 +126,8 @@ export function AnomalyTimeseriesChart({
 					? [
 							decorative(
 								rect([window], {
-									x1: (w: { x1: string; x2: string }) => w.x1,
-									x2: (w: { x1: string; x2: string }) => w.x2,
+									x1: (w: { x1: Date; x2: Date }) => w.x1,
+									x2: (w: { x1: Date; x2: Date }) => w.x2,
 									y1: () => yDomain[0],
 									y2: () => yDomain[1],
 									fill: stroke,
@@ -153,9 +146,9 @@ export function AnomalyTimeseriesChart({
 							color: "--muted-foreground",
 							label: "Baseline",
 						},
-						{ value: thresholdValue, color: "--destructive", label: "Threshold" },
+						{ value: thresholdValue, color: "--severity-error", label: "Threshold" },
 					],
-					{ labelX: data.at(-1)?.bucket },
+					{ labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined },
 				),
 				areaY(data, {
 					x: at,
@@ -172,22 +165,11 @@ export function AnomalyTimeseriesChart({
 					strokeWidth: 2,
 					curve: d3Curve(curveMonotoneX),
 				}),
-				focusDot(data, at, value, stroke, chromeColors),
-				focusCrosshair(chromeColors),
+				focusDot(data, at, value, stroke, plot.chrome),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
-				x: {
-					scale: scalePoint,
-					axis: {
-						line: false,
-						ticks: {
-							size: 0,
-							padding: 8,
-							format: (v: string) => formatBucketLabel(v, axisContext, "tick"),
-						},
-						tickLabels: { thin: { minGap: 12 } },
-					},
-				},
+				x: axis.x,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
@@ -201,20 +183,19 @@ export function AnomalyTimeseriesChart({
 			margin: { top: 8, right: 8, left: 70 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
 	}, [
 		data,
 		window,
 		yDomain,
 		stroke,
-		chromeColors,
+		plot,
 		gradientId,
 		baselineMedian,
 		thresholdValue,
-		axisContext,
+		axis,
 		valueFormatter,
-		focusStore,
 	])
 
 	if (data.length === 0) {
@@ -233,35 +214,33 @@ export function AnomalyTimeseriesChart({
 
 	return (
 		<div className={cn("space-y-2", className)}>
-			<PlotFrame
+			<CursorPlot
+				plot={plot}
 				definition={definition}
+				series={series}
+				heading={(point: SignalPoint) => axis.heading(point.bucket)}
 				ariaLabel="Observed signal"
 				className="h-64 w-full"
-				renderTooltipBody={({ points }) => (
-					<PlotTooltipBody
-						points={points}
-						series={tooltipSeries}
-						focusStore={focusStore}
-						heading={(point: SignalPoint) =>
-							formatBucketLabel(point.bucket, axisContext, "tooltip")
-						}
-					/>
-				)}
 			/>
-			<div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-				<span className="flex items-center gap-1.5">
-					<span className="h-0.5 w-4 rounded-full" style={{ backgroundColor: stroke }} />
-					Observed
-				</span>
-				<span className="flex items-center gap-1.5">
-					<span className="h-px w-4 border-t border-dashed border-muted-foreground" />
-					Baseline median {formatSignalValue(signalType, baselineMedian)}
-				</span>
-				<span className="flex items-center gap-1.5">
-					<span className="h-px w-4 border-t border-dashed border-destructive" />
-					Threshold {formatSignalValue(signalType, thresholdValue)}
-				</span>
-			</div>
+			<SeriesLegend
+				className="justify-start gap-x-4"
+				items={[
+					{ key: "observed", label: "Observed", color: stroke, swatch: "line" },
+					{
+						key: "baseline",
+						label: "Baseline median",
+						value: formatSignalValue(signalType, baselineMedian),
+						color: "var(--muted-foreground)",
+					},
+					{
+						key: "threshold",
+						label: "Threshold",
+						value: formatSignalValue(signalType, thresholdValue),
+						color: "var(--severity-error)",
+					},
+				]}
+				swatch="dashed"
+			/>
 		</div>
 	)
 }

@@ -32,6 +32,8 @@ export interface TableSkeletonProps {
 	tableClassName?: string
 	/** Classes for the wrapper; defaults to the standard bordered card. */
 	className?: string
+	/** Classes for each body row, e.g. the real table's fixed row height so nothing grows on load. */
+	rowClassName?: string
 }
 
 const DEFAULT_SKELETON = "w-24"
@@ -42,6 +44,7 @@ export function TableSkeleton({
 	showHeader = true,
 	tableClassName,
 	className,
+	rowClassName,
 }: TableSkeletonProps) {
 	const columnList: ReadonlyArray<TableSkeletonColumn> =
 		typeof columns === "number" ? Array.from({ length: columns }, () => ({})) : columns
@@ -70,7 +73,7 @@ export function TableSkeleton({
 				)}
 				<TableBody>
 					{Array.from({ length: rows }).map((_, rowIndex) => (
-						<TableRow key={rowIndex}>
+						<TableRow key={rowIndex} className={rowClassName}>
 							{columnList.map((column, colIndex) => (
 								<TableCell key={colIndex} className={column.cellClassName}>
 									{column.skeleton !== null && (

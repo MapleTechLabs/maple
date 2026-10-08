@@ -9,7 +9,7 @@ import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { sortIncidents, TagChips, TagGroupHeaderRow } from "@/components/alerts/overview/shared"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
 import { groupByTag as groupItemsByTag } from "@/lib/alerts/tag-grouping"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 
@@ -49,7 +49,6 @@ export function ActiveIncidentsTable({
 	)
 
 	const renderRow = (incident: AlertIncidentDocument, key: string) => {
-		const duration = incident.lastTriggeredAt ? formatRelativeTime(incident.lastTriggeredAt) : "—"
 		const tags = tagsByRuleId.get(incident.ruleId) ?? []
 		return (
 			<TableRow
@@ -96,7 +95,13 @@ export function ActiveIncidentsTable({
 						</>
 					)}
 				</TableCell>
-				<TableCell>{duration}</TableCell>
+				<TableCell>
+					{incident.lastTriggeredAt ? (
+						<RelativeTime value={incident.lastTriggeredAt} tooltip="title" />
+					) : (
+						EMPTY_VALUE
+					)}
+				</TableCell>
 				<TableCell>
 					{incident.lastNotifiedAt ? (
 						<RelativeTime value={incident.lastNotifiedAt} tooltip="title" />

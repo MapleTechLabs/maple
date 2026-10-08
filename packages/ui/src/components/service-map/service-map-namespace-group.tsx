@@ -36,7 +36,7 @@ export const NamespaceGroupNode = memo(function NamespaceGroupNode({ data }: Nam
 			style={{ borderColor, backgroundColor: bgColor }}
 		>
 			<span
-				className="pointer-events-auto absolute left-2.5 top-2 flex max-w-[calc(100%-1.25rem)] items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
+				className="pointer-events-auto absolute left-2.5 top-2 flex max-w-[calc(100%-1.25rem)] items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-widest"
 				style={{ color: labelColor, backgroundColor: chipBg, borderColor: chipBorder }}
 			>
 				<span className="truncate">{label}</span>

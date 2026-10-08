@@ -2,7 +2,7 @@ import { useAtomRefresh, Result } from "@/lib/effect-atom"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -47,13 +47,7 @@ export function AnalyticsLiveBadge({ filters }: { filters: AnalyticsFilters }) {
 			const identified = live.visitors > 0
 			const count = identified ? live.visitors : live.sessions
 			const minutes = Math.max(1, Math.round(live.windowSeconds / 60))
-			const noun = identified
-				? count === 1
-					? "visitor"
-					: "visitors"
-				: count === 1
-					? "session"
-					: "sessions"
+			const noun = pluralize(count, identified ? "visitor" : "session")
 
 			return (
 				<span
@@ -63,7 +57,7 @@ export function AnalyticsLiveBadge({ filters }: { filters: AnalyticsFilters }) {
 							? cn(TONE_SOFT.ok, TONE_BORDER.ok)
 							: "border-border/70 text-muted-foreground",
 					)}
-					title={`${count} ${noun} active in the last ${minutes} minute${minutes === 1 ? "" : "s"}`}
+					title={`${count} ${noun} active in the last ${minutes} ${pluralize(minutes, "minute")}`}
 				>
 					{count > 0 ? <StatusDot tone="ok" /> : <StatusDot />}
 					<span aria-live="polite">

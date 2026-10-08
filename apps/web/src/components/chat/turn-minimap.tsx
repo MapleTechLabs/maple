@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { useMessageScroller, useMessageScrollerVisibility } from "@maple/ui/components/ui/message-scroller"
 import { ChevronDownIcon, ChevronUpIcon } from "@/components/icons"
 import type { TranscriptRow } from "./transcript-rows"
@@ -255,16 +255,9 @@ function TurnMinimapStep({
 				previous ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]",
 			)}
 		>
-			<Button
-				type="button"
-				variant="ghost"
-				size="icon-xs"
-				aria-label={label}
-				disabled={disabled}
-				onClick={onClick}
-			>
+			<IconButton label={label} tooltip={false} size="icon-xs" disabled={disabled} onClick={onClick}>
 				<Icon className="size-3.5" />
-			</Button>
+			</IconButton>
 		</span>
 	)
 }

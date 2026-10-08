@@ -1,4 +1,18 @@
-import { column, defineDatasource, engine, type InferRow, t } from "@tinybirdco/sdk"
+import { column, defineDatasource, engine, type InferRow, t } from "@maple-dev/effect-orm/tinybird"
+import * as CH from "@maple-dev/effect-orm/clickhouse"
+import { OrgId, SpanId, TraceId } from "@maple/primitives"
+
+/**
+ * A `DateTime` column queried as a `DateTime.Utc`. ClickHouse sends the
+ * tz-less UTC string; the column's codec reads it as UTC, and comparisons
+ * encode a `DateTime.Utc` back to that literal. The datafile type and the
+ * ingested row stay the string, so switching a column changes no schema.
+ */
+export const utcDateTime = () => t.dateTime().brand(CH.dateTime.schema)
+
+/** `utcDateTime` for `DateTime64(precision)`; reads keep milliseconds. */
+export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) =>
+	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
 const attributeItemsExpr = (mapColumn: string): string =>
 	`arrayMap((k, v) -> concat(k, char(31), v), mapKeys(${mapColumn}), mapValues(${mapColumn}))`
@@ -8,13 +22,14 @@ const attributeItemsExpr = (mapColumn: string): string =>
  * Matches the official OpenTelemetry Collector Tinybird exporter format
  */
 export const logs = defineDatasource("logs", {
+	tenantColumn: "OrgId",
 	description: "This is a table that contains the logs from the OpenTelemetry Collector.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
-		TimestampTime: column(t.dateTime(), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
+		TimestampTime: column(utcDateTime(), { jsonPath: "$.timestamp" }),
 		TraceId: column(t.string(), { jsonPath: "$.trace_id" }),
 		SpanId: column(t.string(), { jsonPath: "$.span_id" }),
 		TraceFlags: column(t.uint8(), { jsonPath: "$.flags" }),
@@ -166,12 +181,13 @@ const IS_ENTRY_POINT_EXPR = "if(SpanKind IN ('Server', 'Consumer') OR ParentSpan
  * Matches the official OpenTelemetry Collector Tinybird exporter format
  */
 export const traces = defineDatasource("traces", {
+	tenantColumn: "OrgId",
 	description: "A table that contains trace data from OpenTelemetry in Tinybird format.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.start_time" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.start_time" }),
 		TraceId: column(t.string(), { jsonPath: "$.trace_id" }),
 		SpanId: column(t.string(), { jsonPath: "$.span_id" }),
 		ParentSpanId: column(t.string(), { jsonPath: "$.parent_span_id" }),
@@ -201,7 +217,7 @@ export const traces = defineDatasource("traces", {
 		SpanAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.span_attributes",
 		}),
-		EventsTimestamp: column(t.array(t.dateTime64(9)), {
+		EventsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.events_timestamp[:]",
 		}),
 		EventsName: column(t.array(t.string().lowCardinality()), {
@@ -306,13 +322,14 @@ export type TracesRow = InferRow<typeof traces>
  * Populated via materialized views, no JSON ingestion
  */
 export const serviceUsage = defineDatasource("service_usage", {
+	tenantColumn: "OrgId",
 	description:
 		"Aggregated usage statistics per service per hour. Uses SummingMergeTree for efficient incremental updates from multiple materialized views.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
 		ServiceName: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		Hour: utcDateTime(),
 		LogCount: t.uint64(),
 		LogSizeBytes: t.uint64(),
 		TraceCount: t.uint64(),
@@ -342,12 +359,13 @@ export type ServiceUsageRow = InferRow<typeof serviceUsage>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapSpans = defineDatasource("service_map_spans", {
+	tenantColumn: "OrgId",
 	description:
 		"Lightweight projection of traces for service map JOIN queries. Pre-extracts deployment.environment from Map columns. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime(),
 		TraceId: t.string(),
 		SpanId: t.string(),
 		ParentSpanId: t.string(),
@@ -374,12 +392,13 @@ export type ServiceMapSpansRow = InferRow<typeof serviceMapSpans>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapChildren = defineDatasource("service_map_children", {
+	tenantColumn: "OrgId",
 	description:
 		"Server/Consumer spans with ParentSpanId for efficient service map child-side JOIN lookups. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime(),
 		TraceId: t.string(),
 		ParentSpanId: t.string(),
 		ServiceName: t.string().lowCardinality(),
@@ -408,11 +427,12 @@ export type ServiceMapChildrenRow = InferRow<typeof serviceMapChildren>
  * aggregate target below.
  */
 export const serviceMapEdgesHourlyIngest = defineDatasource("service_map_edges_hourly_ingest", {
+	tenantColumn: "OrgId",
 	description:
 		"Zero-retention Events API ingress bridge for scheduled service-map edge rollups. A materialized view forwards each insert to service_map_edges_hourly.",
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		TargetService: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -442,6 +462,7 @@ export type ServiceMapEdgesHourlyIngestRow = InferRow<typeof serviceMapEdgesHour
  * through the Events API, so it must not declare JSONPaths.
  */
 export const serviceMapEdgesHourly = defineDatasource("service_map_edges_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly service-to-service edges for the service map. Uses AggregatingMergeTree for incremental aggregation. Populated from the scheduled rollup through a Null-engine ingress bridge.",
 	jsonPaths: false,
@@ -451,8 +472,8 @@ export const serviceMapEdgesHourly = defineDatasource("service_map_edges_hourly"
 	// rebuild; it intentionally contains no historical rows.
 	forwardQuery: "SELECT *",
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		TargetService: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -484,12 +505,13 @@ export type ServiceMapEdgesHourlyRow = InferRow<typeof serviceMapEdgesHourly>
  * distinct service-map nodes. Populated by materialized view, not direct ingestion.
  */
 export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly service-to-database edges (one row per service/db.system.name/db.namespace) for the service map's database-node query. Uses AggregatingMergeTree for incremental aggregation. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DbSystem: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -542,12 +564,13 @@ export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly
  * Populated by `service_map_db_query_shapes_hourly_mv`.
  */
 export const serviceMapDbQuerySignaturesHourly = defineDatasource("service_map_db_query_shapes_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly database query shapes (one row per service/db.system/query-shape) for the service map's database detail panel. Uses AggregatingMergeTree with a sample-weighted t-digest state for true p50/p95. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DbSystem: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -606,12 +629,13 @@ export type ServiceMapDbQuerySignaturesHourlyRow = InferRow<typeof serviceMapDbQ
  * LEFT ANTI JOIN against `service_address_resolutions_hourly`.
  */
 export const serviceExternalEdgesHourly = defineDatasource("service_external_edges_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans WITHOUT db.system.name. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		TargetType: t.string().lowCardinality(),
 		TargetSystem: t.string().lowCardinality(),
@@ -659,13 +683,14 @@ export type ServiceExternalEdgesHourlyRow = InferRow<typeof serviceExternalEdges
  * `service_map_edges_hourly`.
  */
 export const serviceAddressResolutionsHourly = defineDatasource("service_address_resolutions_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Resolved (sourceService, parent.server.address) → resolved targetService facts emitted by the ServiceMapRollupService rollup. Used to anti-join internal-service overlap out of the external-edges query.",
 	// jsonPaths enabled — same reason as `service_map_edges_hourly`: the rollup
 	// writes these rows directly via POST /v0/events, which requires them.
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		SourceService: t.string().lowCardinality(),
 		ParentServerAddress: t.string(),
 		ResolvedTargetService: t.string().lowCardinality(),
@@ -698,12 +723,13 @@ export type ServiceAddressResolutionsHourlyRow = InferRow<typeof serviceAddressR
  * Populated by materialized view, not direct ingestion.
  */
 export const servicePlatformsHourly = defineDatasource("service_platforms_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly per-service platform/runtime attributes (k8s, cloud, faas) for the service map's hosting-icon resolver. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		K8sCluster: t.simpleAggregateFunction("max", t.string()),
@@ -735,12 +761,13 @@ export type ServicePlatformsHourlyRow = InferRow<typeof servicePlatformsHourly>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
+	tenantColumn: "OrgId",
 	description:
 		"Lightweight projection of service entry point spans (Server/Consumer + root) for service overview queries. Pre-extracts deployment attributes from ResourceAttributes. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		Duration: t.uint64(),
 		StatusCode: t.string().lowCardinality(),
@@ -782,12 +809,13 @@ export type ServiceOverviewSpansRow = InferRow<typeof serviceOverviewSpans>
  * retention window.
  */
 export const serviceOverviewHourly = defineDatasource("service_overview_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly service entry-point aggregates with release dimensions, sampling-aware counts, latency states, and fixed-500ms Apdex counts.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		ServiceNamespace: t.string().lowCardinality(),
@@ -798,7 +826,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
@@ -831,12 +859,13 @@ export type ServiceOverviewHourlyRow = InferRow<typeof serviceOverviewHourly>
  * rebuilt past the 30-day source retention.
  */
 export const serviceOverviewMinutely = defineDatasource("service_overview_minutely", {
+	tenantColumn: "OrgId",
 	description:
 		"Minutely service entry-point aggregates with release dimensions, sampling-aware counts, latency states, and fixed-500ms Apdex counts. Serves sub-hour buckets that the hourly rollup cannot.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Minute: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Minute: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		ServiceNamespace: t.string().lowCardinality(),
@@ -847,7 +876,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 		EstimatedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
 		DurationSum: t.simpleAggregateFunction("sum", t.float64()),
 		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
@@ -875,14 +904,15 @@ export type ServiceOverviewMinutelyRow = InferRow<typeof serviceOverviewMinutely
  * and scanning recent activity stay on the sort-key prefix.
  */
 export const errorEvents = defineDatasource("error_events", {
+	tenantColumn: "OrgId",
 	description:
 		"Per-error-occurrence rows for the triageable-errors system. Unwraps OTel exception events and computes a stable FingerprintHash for grouping into issues. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime(),
-		TraceId: t.string(),
-		SpanId: t.string(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime(),
+		TraceId: t.string().brand(TraceId),
+		SpanId: t.string().brand(SpanId),
 		ParentSpanId: t.string().default("__unset__"),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -923,14 +953,15 @@ export type ErrorEventsRow = InferRow<typeof errorEvents>
  * sorting key differs.
  */
 export const errorEventsByTime = defineDatasource("error_events_by_time", {
+	tenantColumn: "OrgId",
 	description:
 		"Time-ordered sibling of error_events (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans (errorIssuesScan tick + dashboard error queries). Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime(),
-		TraceId: t.string(),
-		SpanId: t.string(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime(),
+		TraceId: t.string().brand(TraceId),
+		SpanId: t.string().brand(SpanId),
 		ParentSpanId: t.string().default("__unset__"),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -970,12 +1001,13 @@ export type ErrorEventsByTimeRow = InferRow<typeof errorEventsByTime>
  * fingerprint last (highest cardinality).
  */
 export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_minutely", {
+	tenantColumn: "OrgId",
 	description:
 		"Minute-grain per-fingerprint error aggregates for the scheduled issue evaluator. Cascaded from error_events to avoid re-running fingerprint extraction.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Minute: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Minute: utcDateTime(),
 		FingerprintHash: t.uint64(),
 		ServiceName: t.simpleAggregateFunction("anyLast", t.string()),
 		ExceptionType: t.simpleAggregateFunction("anyLast", t.string()),
@@ -983,8 +1015,8 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 		ErrorLabel: t.simpleAggregateFunction("anyLast", t.string()),
 		TopFrame: t.simpleAggregateFunction("anyLast", t.string()),
 		OccurrenceCount: t.simpleAggregateFunction("sum", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
-		LastSeen: t.simpleAggregateFunction("max", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 		// EVERY build seen in the minute, not one sampled build. The evaluator
 		// unions these into the issue's build set, and that set is what decides
 		// whether an occurrence on a resolved issue is a real regression or an old
@@ -1012,13 +1044,14 @@ export type ErrorFingerprintsMinutelyRow = InferRow<typeof errorFingerprintsMinu
  * Populated by materialized view, not direct ingestion.
  */
 export const traceListMv = defineDatasource("trace_list_mv", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-materialized root spans for the trace list view. Extracts HTTP attributes and normalizes span names at write time. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
 		TraceId: t.string(),
-		Timestamp: t.dateTime(),
+		Timestamp: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string(),
 		SpanKind: t.string().lowCardinality(),
@@ -1056,12 +1089,13 @@ export type TraceListMvRow = InferRow<typeof traceListMv>
  * collapse to a few hundred rows per org-hour.
  */
 export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly root-span counts and duration state per service, span name, HTTP method/status, environment, namespace and error flag. Traces sidebar facets. Populated by materialized view from trace_list_mv.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string(),
 		HttpMethod: t.string().lowCardinality(),
@@ -1100,12 +1134,13 @@ export type TraceFacetsHourlyRow = InferRow<typeof traceFacetsHourly>
  * instead of bloom-filter scanning across all partitions.
  */
 export const traceDetailSpans = defineDatasource("trace_detail_spans", {
+	tenantColumn: "OrgId",
 	description:
 		"All spans for a trace, sorted by TraceId for fast detail lookups. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime64(9),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		SpanId: t.string(),
 		ParentSpanId: t.string(),
@@ -1164,12 +1199,13 @@ export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
  * documented in `query-engine-integrations/src/ai/ai-sessions.ts`.
  */
 export const aiTraceIndex = defineDatasource("ai_trace_index", {
+	tenantColumn: "OrgId",
 	description:
 		"GenAI agent spans only (maple_ai.vendor.id stamped), pre-extracted to plain columns. Detection/facet surface for the Agent Sessions pages. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime64(9),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		SessionId: t.string(),
 		VendorId: t.string().lowCardinality(),
@@ -1243,12 +1279,13 @@ export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>
  * One row per span, so read requests as `uniq(TraceId)`: a proxied request has several.
  */
 export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
+	tenantColumn: "OrgId",
 	description:
 		"Server spans from AI crawlers (GPTBot, ClaudeBot, PerplexityBot, ...) with the crawler, host, path and HTTP status pre-extracted. Web Analytics AI tab. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Timestamp: t.dateTime64(9),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
 		ServiceName: t.string().lowCardinality(),
 		Crawler: t.string().lowCardinality(),
@@ -1269,9 +1306,10 @@ export type AiCrawlerRequestsRow = InferRow<typeof aiCrawlerRequests>
  * OpenTelemetry sum/counter metrics datasource
  */
 export const metricsSum = defineDatasource("metrics_sum", {
+	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
 		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
@@ -1301,8 +1339,8 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Value: column(t.float64(), { jsonPath: "$.value" }),
 		Flags: column(t.uint32(), { jsonPath: "$.flags" }),
 		ExemplarsTraceId: column(t.array(t.string()), {
@@ -1311,7 +1349,7 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1338,9 +1376,10 @@ export type MetricsSumRow = InferRow<typeof metricsSum>
  * OpenTelemetry gauge metrics datasource
  */
 export const metricsGauge = defineDatasource("metrics_gauge", {
+	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
 		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
@@ -1370,8 +1409,8 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Value: column(t.float64(), { jsonPath: "$.value" }),
 		Flags: column(t.uint32(), { jsonPath: "$.flags" }),
 		ExemplarsTraceId: column(t.array(t.string()), {
@@ -1380,7 +1419,7 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1403,9 +1442,10 @@ export type MetricsGaugeRow = InferRow<typeof metricsGauge>
  * OpenTelemetry histogram metrics datasource
  */
 export const metricsHistogram = defineDatasource("metrics_histogram", {
+	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
 		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
@@ -1435,8 +1475,8 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Count: column(t.uint64(), { jsonPath: "$.count" }),
 		Sum: column(t.float64(), { jsonPath: "$.sum" }),
 		BucketCounts: column(t.array(t.uint64()), {
@@ -1451,7 +1491,7 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1480,9 +1520,10 @@ export type MetricsHistogramRow = InferRow<typeof metricsHistogram>
  * OpenTelemetry exponential histogram metrics datasource
  */
 export const metricsExponentialHistogram = defineDatasource("metrics_exponential_histogram", {
+	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), {
+		OrgId: column(t.string().lowCardinality().brand(OrgId), {
 			jsonPath: "$.resource_attributes.maple_org_id",
 		}),
 		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
@@ -1512,8 +1553,8 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.metric_attributes",
 		}),
-		StartTimeUnix: column(t.dateTime64(9), { jsonPath: "$.start_timestamp" }),
-		TimeUnix: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		StartTimeUnix: column(utcDateTime64(9), { jsonPath: "$.start_timestamp" }),
+		TimeUnix: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Count: column(t.uint64(), { jsonPath: "$.count" }),
 		Sum: column(t.float64(), { jsonPath: "$.sum" }),
 		Scale: column(t.int32(), { jsonPath: "$.scale" }),
@@ -1532,7 +1573,7 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 		ExemplarsSpanId: column(t.array(t.string()), {
 			jsonPath: "$.exemplars_span_id[:]",
 		}),
-		ExemplarsTimestamp: column(t.array(t.dateTime64(9)), {
+		ExemplarsTimestamp: column(t.array(utcDateTime64(9)), {
 			jsonPath: "$.exemplars_timestamp[:]",
 		}),
 		ExemplarsValue: column(t.array(t.float64()), {
@@ -1566,12 +1607,13 @@ export type MetricsExponentialHistogramRow = InferRow<typeof metricsExponentialH
  * instead of scanning raw datapoints.
  */
 export const metricCatalog = defineDatasource("metric_catalog", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly catalog of distinct metrics (name/type/service) with datapoint counts and first/last-seen. AggregatingMergeTree MV target; powers the Metrics page discovery queries.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		MetricType: t.string().lowCardinality(),
 		ServiceName: t.string().lowCardinality(),
 		MetricName: t.string().lowCardinality(),
@@ -1579,8 +1621,8 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 		MetricUnit: t.simpleAggregateFunction("anyLast", t.string()),
 		IsMonotonic: t.simpleAggregateFunction("anyLast", t.uint8()),
 		DataPointCount: t.simpleAggregateFunction("sum", t.uint64()),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime()),
-		LastSeen: t.simpleAggregateFunction("max", t.dateTime()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -1596,11 +1638,12 @@ export type MetricCatalogRow = InferRow<typeof metricCatalog>
  * Fed by MVs from traces (span + resource), logs, and metrics tables.
  */
 export const attributeKeysHourly = defineDatasource("attribute_keys_hourly", {
+	tenantColumn: "OrgId",
 	description: "Pre-aggregated attribute keys with hourly usage counts from traces, logs, and metrics.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		AttributeKey: t.string().lowCardinality(),
 		AttributeScope: t.string().lowCardinality(),
 		UsageCount: t.simpleAggregateFunction("sum", t.uint64()),
@@ -1622,12 +1665,13 @@ export type AttributeKeysHourlyRow = InferRow<typeof attributeKeysHourly>
  * Fed by MVs from traces for span and resource attribute values.
  */
 export const attributeValuesHourly = defineDatasource("attribute_values_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated attribute values with hourly usage counts from trace span and resource attributes.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		AttributeKey: t.string().lowCardinality(),
 		AttributeValue: t.string(),
 		AttributeScope: t.string().lowCardinality(),
@@ -1655,6 +1699,7 @@ export type AttributeValuesHourlyRow = InferRow<typeof attributeValuesHourly>
  * and `NormalizedRule`.
  */
 export const alertChecks = defineDatasource("alert_checks", {
+	tenantColumn: "OrgId",
 	description:
 		"One row per alert rule evaluation. Durable audit trail of checks: status, observed value, threshold, sample count, incident linkage.",
 	// jsonPaths enabled: alert_checks is ingested directly via POST /v0/events from
@@ -1665,10 +1710,10 @@ export const alertChecks = defineDatasource("alert_checks", {
 	// The runtime literals live in http/alerts.ts and NormalizedRule; TS narrows them
 	// at the assignment site in AlertsService.processEvaluation.
 	schema: {
-		OrgId: t.string().lowCardinality(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
 		RuleId: t.string(),
 		GroupKey: t.string(),
-		Timestamp: t.dateTime64(3),
+		Timestamp: utcDateTime64(3),
 		Status: t.string().lowCardinality(),
 		SignalType: t.string().lowCardinality(),
 		Comparator: t.string().lowCardinality(),
@@ -1676,8 +1721,8 @@ export const alertChecks = defineDatasource("alert_checks", {
 		ObservedValue: t.float64().nullable(),
 		SampleCount: t.uint32(),
 		WindowMinutes: t.uint16(),
-		WindowStart: t.dateTime64(3),
-		WindowEnd: t.dateTime64(3),
+		WindowStart: utcDateTime64(3),
+		WindowEnd: utcDateTime64(3),
 		ConsecutiveBreaches: t.uint16(),
 		ConsecutiveHealthy: t.uint16(),
 		IncidentId: t.string().nullable(),
@@ -1719,13 +1764,14 @@ export type AlertChecksRow = InferRow<typeof alertChecks>
  * years, and the audit trail is the documentation of who accessed what.
  */
 export const auditLog = defineDatasource("audit_log", {
+	tenantColumn: "OrgId",
 	description:
 		"Org-wide audit trail: allowed and denied actions plus telemetry/session-replay reads, attributed to the user, API key, or agent that performed them. Admin-only; read through GET /v2/audit_log.",
 	schema: {
-		OrgId: t.string().lowCardinality(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
 		Id: t.string(),
-		OccurredAt: t.dateTime64(3),
-		RecordedAt: t.dateTime64(3),
+		OccurredAt: utcDateTime64(3),
+		RecordedAt: utcDateTime64(3),
 		ActorType: t.string().lowCardinality(),
 		UserId: t.string(),
 		ApiKeyId: t.string(),
@@ -1769,12 +1815,13 @@ export type AuditLogRow = InferRow<typeof auditLog>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceOperationsMinutely = defineDatasource("service_operations_minutely", {
+	tenantColumn: "OrgId",
 	description:
 		"Minute-grain service operation metrics with normalized HTTP names, exact and sampling-weighted counts, and unweighted duration t-digest state.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Minute: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Minute: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		// Falls back to url.path when no route template exists; keep this a plain
@@ -1828,12 +1875,13 @@ export type ServiceOperationsMinutelyRow = InferRow<typeof serviceOperationsMinu
  * the minute-level row cardinality for the full horizon.
  */
 export const serviceOperationsHourly = defineDatasource("service_operations_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly service operation metrics merged from the minutely rollup for one-year operation history.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
 		SpanName: t.string(),
@@ -1889,12 +1937,13 @@ export type ServiceOperationsHourlyRow = InferRow<typeof serviceOperationsHourly
  * changes — see docs/persistence.md.
  */
 export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly pre-aggregated trace metrics with sampling-weighted state columns. Generalized MV target for timeseries/breakdown/service-overview queries. AggregatingMergeTree.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SpanName: t.string().lowCardinality(),
 		SpanKind: t.string().lowCardinality(),
@@ -1961,12 +2010,13 @@ export type TracesAggregatesHourlyRow = InferRow<typeof tracesAggregatesHourly>
  * changes — see docs/persistence.md.
  */
 export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly per-series last-value (argMax) rollup of the span-metrics calls counter. AggregatingMergeTree MV target powering sampling-aware throughput without scanning raw metrics_sum.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		MetricName: t.string().lowCardinality(),
 		SpanKind: t.string().lowCardinality(),
@@ -1976,7 +2026,7 @@ export const spanMetricsCallsHourly = defineDatasource("span_metrics_calls_hourl
 		AttrFingerprint: t.uint64(),
 		ResourceFingerprint: t.uint64(),
 		// Counter-reset epoch; isolates accumulation runs within one series.
-		StartTimeUnix: t.dateTime64(9),
+		StartTimeUnix: utcDateTime64(9),
 		// Cumulative counter value at the end of the hour for this series-epoch.
 		// Finalize with argMaxMerge(LastValue). Tinybird's aggregateFunction(func,
 		// type) emits one type slot, so the value type (Float64) is smuggled into
@@ -2010,12 +2060,13 @@ export type SpanMetricsCallsHourlyRow = InferRow<typeof spanMetricsCallsHourly>
  * SOURCE TTL: 30d (matches `logs.ttl`).
  */
 export const logsAggregatesHourly = defineDatasource("logs_aggregates_hourly", {
+	tenantColumn: "OrgId",
 	description:
 		"Hourly pre-aggregated log counts and sizes by service × severity × deployment env. AggregatingMergeTree.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
-		Hour: t.dateTime(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Hour: utcDateTime(),
 		ServiceName: t.string().lowCardinality(),
 		SeverityText: t.string().lowCardinality(),
 		DeploymentEnv: t.string().lowCardinality(),
@@ -2071,13 +2122,14 @@ export type LogsAggregatesHourlyRow = InferRow<typeof logsAggregatesHourly>
  * fast; keep in lockstep with `sessionReplayEvents`' TTL.
  */
 export const sessionReplays = defineDatasource("session_replays", {
+	tenantColumn: "OrgId",
 	description:
 		"Per-session browser replay metadata (one row per session). Ingested directly from the @maple-dev/browser SDK via POST /v1/sessionReplays/meta. Event payloads live inline in session_replay_events; this holds only queryable metadata. ReplacingMergeTree(Version) for start/end upsert.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
-		StartTime: column(t.dateTime64(9), { jsonPath: "$.start_time" }),
-		EndTime: column(t.dateTime64(9).nullable(), { jsonPath: "$.end_time" }),
+		StartTime: column(utcDateTime64(9), { jsonPath: "$.start_time" }),
+		EndTime: column(utcDateTime64(9).nullable(), { jsonPath: "$.end_time" }),
 		DurationMs: column(t.uint32().nullable(), { jsonPath: "$.duration_ms" }),
 		Status: column(t.string().lowCardinality(), { jsonPath: "$.status" }),
 		UserId: column(t.string(), { jsonPath: "$.user_id" }),
@@ -2205,7 +2257,7 @@ export const sessionReplays = defineDatasource("session_replays", {
 		 * null and `DurationMs` unknown; `LastActivityAt - StartTime` recovers a
 		 * usable duration for those sessions.
 		 */
-		LastActivityAt: column(t.dateTime64(9).nullable(), {
+		LastActivityAt: column(utcDateTime64(9).nullable(), {
 			jsonPath: "$.last_activity_at",
 		}),
 	},
@@ -2239,16 +2291,17 @@ export type SessionReplaysRow = InferRow<typeof sessionReplays>
  * `sessionReplays`.
  */
 export const sessionReplayEvents = defineDatasource("session_replay_events", {
+	tenantColumn: "OrgId",
 	description:
 		"Session replay rrweb events, one row per chunk. `Events` carries the event-array JSON inline for pre-cutover rows and for deployments without a blob store; otherwise it is empty and the payload lives in R2 under v1/{OrgId}/{SessionId}/{ChunkSeq}.json.gz.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
 		ChunkSeq: column(t.uint32(), { jsonPath: "$.chunk_seq" }),
 		// Gateway receipt time. Drives partitioning and the TTL, and doubles as the
 		// chunk index's playback anchor: it trails the recording's own clock by the
 		// upload latency, which is well inside a single chunk's duration.
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		DurationMs: column(t.uint32().default(0), { jsonPath: "$.duration_ms" }),
 		EventCount: column(t.uint32().default(0), { jsonPath: "$.event_count" }),
 		// Uncompressed byte length of the events JSON (telemetry / debugging).
@@ -2281,12 +2334,13 @@ export type SessionReplayEventsRow = InferRow<typeof sessionReplayEvents>
  * single contiguous range scan. 30-day TTL matches `sessionReplays`.
  */
 export const sessionEvents = defineDatasource("session_events", {
+	tenantColumn: "OrgId",
 	description:
 		"Distilled structured session events (navigation, click, input, console, network, error) captured client-side and ingested via POST /v1/sessionEvents. Powers in-session search, replay panels, and agent transcripts.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		Seq: column(t.uint32().default(0), { jsonPath: "$.seq" }),
 		Type: column(t.string().lowCardinality(), { jsonPath: "$.type" }),
 		Url: column(t.string().default(""), { jsonPath: "$.url" }),
@@ -2416,11 +2470,12 @@ export type SessionEventsRow = InferRow<typeof sessionEvents>
  * not a rebuildable cache.
  */
 export const productEvents = defineDatasource("product_events", {
+	tenantColumn: "OrgId",
 	description:
 		"Product events fact table: browser page views and track() calls (materialized from session_events) plus events posted directly by backends and mobile apps via POST /v1/events. Carries the person key (VisitorId/UserId/GroupId). Powers page views, top pages and funnels.",
 	schema: {
-		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
-		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		OrgId: column(t.string().lowCardinality().brand(OrgId), { jsonPath: "$.org_id" }),
+		Timestamp: column(utcDateTime64(9), { jsonPath: "$.timestamp" }),
 		/** `browser` (from session_events) | `server` | `mobile`. */
 		Source: column(t.string().lowCardinality().default("browser"), {
 			jsonPath: "$.source",
@@ -2537,14 +2592,15 @@ export type ProductEventsRow = InferRow<typeof productEvents>
  * `@maple/query-engine`'s `ch/queries/product-events.ts`.
  */
 export const identityLinks = defineDatasource("identity_links", {
+	tenantColumn: "OrgId",
 	description:
 		"Visitor→user identity links, one row per (VisitorId, UserId) pair observed on a session_replays row with both set. Stitches anonymous and identified product_events into one person for funnels.",
 	jsonPaths: false,
 	schema: {
-		OrgId: t.string().lowCardinality(),
+		OrgId: t.string().lowCardinality().brand(OrgId),
 		VisitorId: t.string(),
 		UserId: t.string(),
-		FirstSeen: t.simpleAggregateFunction("min", t.dateTime64(9)),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime64(9)),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",

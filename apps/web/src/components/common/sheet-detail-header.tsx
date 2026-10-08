@@ -1,12 +1,14 @@
 import type * as React from "react"
 
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { cn } from "@maple/ui/lib/utils"
 
+import { DetailEyebrow, type DetailKind } from "./detail-header"
+
 /**
  * Header of a peek/detail sheet: kind eyebrow, mono title, optional meta row.
- * `pr-14` leaves room for the sheet's own close button.
+ * `pr-14` leaves room for the sheet's own close button. The sheet counterpart of
+ * `DetailHeader`, sharing its slot names and eyebrow.
  */
 export function SheetDetailHeader({
 	kind,
@@ -17,8 +19,8 @@ export function SheetDetailHeader({
 	mono = true,
 	className,
 }: {
-	/** "Trace", "Pod", "Action". */
-	kind?: React.ReactNode
+	/** "Trace", "Pod", or ["Action", "Run"]. */
+	kind?: DetailKind
 	title: React.ReactNode
 	/** Status badge beside the title. */
 	adornment?: React.ReactNode
@@ -31,7 +33,7 @@ export function SheetDetailHeader({
 }) {
 	return (
 		<SheetHeader className={cn("gap-1.5 pr-14", className)}>
-			{kind ? <Eyebrow>{kind}</Eyebrow> : null}
+			{kind !== undefined ? <DetailEyebrow kind={kind} /> : null}
 			<SheetTitle
 				className={cn(
 					"flex flex-wrap items-center gap-2 text-[15px] leading-tight",

@@ -18,7 +18,7 @@ const ROW_CLASS =
 
 const numCell = (value: string, hidden?: boolean) => (
 	<div
-		className={`w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80 ${
+		className={`w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80 ${
 			hidden ? "hidden md:block" : ""
 		}`}
 	>
@@ -79,7 +79,7 @@ function QueueTable({ queues, waiting }: { queues: ReadonlyArray<CloudflareQueue
 
 			{sorted.map((queue) => (
 				<div key={queue.serviceName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] font-medium text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground">
 						{queue.queueName}
 					</div>
 					{numCell(formatNumber(Math.round(queue.backlogMessages)))}
@@ -141,12 +141,12 @@ function DurableObjectTable({
 
 			{sorted.map((row) => (
 				<div key={row.serviceName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] font-medium text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground">
 						{row.scriptName}
 					</div>
 					{numCell(formatNumber(row.requests))}
 					<div
-						className={`w-[110px] text-right font-mono text-[12px] tabular-nums ${errorRateClass(row.errorRate)}`}
+						className={`w-[110px] text-right font-mono text-xs tabular-nums ${errorRateClass(row.errorRate)}`}
 					>
 						{formatPercent(row.errorRate)}
 					</div>

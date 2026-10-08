@@ -96,7 +96,7 @@ export function ServiceDependenciesTab({
 			if (!edge.targetService) continue
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.targetService)
+			const target = edge.targetService
 			out.push({
 				id: `service:${target}`,
 				kind: "service",
@@ -120,7 +120,7 @@ export function ServiceDependenciesTab({
 			if (!edge.dbSystem) continue
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.dbSystem)
+			const target = edge.dbSystem
 			// Edges are per database identity (db.namespace et al.) — surface it as
 			// the row name so two databases of the same system stay distinguishable.
 			// The drill-down stays scoped by system only: the identity can originate
@@ -151,7 +151,7 @@ export function ServiceDependenciesTab({
 				edge.targetType === "messaging" ? "messaging" : edge.targetType === "rpc" ? "rpc" : "http"
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const system = edge.targetSystem ? String(edge.targetSystem) : ""
+			const system = edge.targetSystem ? edge.targetSystem : ""
 			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({
@@ -261,7 +261,7 @@ export function ServiceDependenciesTab({
 			aria-busy={isWaiting || undefined}
 		>
 			{summary ? (
-				<div className="flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
+				<div className="flex flex-col gap-2 text-2xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
 					<div className="flex items-baseline gap-x-3">
 						<span className="text-foreground">
 							<span className="tabular-nums font-mono font-medium">{dedupedRows.length}</span>{" "}

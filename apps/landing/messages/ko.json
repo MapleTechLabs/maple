@@ -43,6 +43,9 @@
 	"pe_src_docs_link": "\ubb38\uc11c \uc77d\uae30 \u2192",
 	"cta_get_started": "\ubb34\ub8cc \ud3c9\uac00\ud310 \uc2dc\uc791",
 	"cta_github": "GitHub\uc5d0\uc11c \ubcf4\uae30",
+	"cta_agent": "\uc5d0\uc774\uc804\ud2b8\ub85c \uc2dc\uc791\ud558\uae30",
+	"cta_agent_copied": "\ud504\ub86c\ud504\ud2b8 \ubcf5\uc0ac\ub428",
+	"cta_agent_hint": "Claude Code, Codex, Cursor\uc6a9 \uc124\uc815 \ud504\ub86c\ud504\ud2b8 \ubcf5\uc0ac",
 
 	"nav_features": "\uae30\ub2a5",
 	"nav_use_cases": "\uc0ac\uc6a9 \uc0ac\ub840",
@@ -504,6 +507,8 @@
 	"page_panel_eyebrow": "\ud654\uba74",
 	"page_cap_eyebrow": "\ud560 \uc218 \uc788\ub294 \uc77c",
 	"page_artifact_eyebrow": "\uc6c0\uc9c1\uc784",
+	"page_gallery_eyebrow": "\ub354 \ub9ce\uc740 \ud654\uba74",
+	"page_gallery_title": "{feature} \ud654\uba74",
 	"page_story_eyebrow": "\uacbd\ub85c",
 	"page_outcome_label": "\uacb0\uacfc",
 	"page_cross_eyebrow": "\ub2e4\uc74c\uc740",

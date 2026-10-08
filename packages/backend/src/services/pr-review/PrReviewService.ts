@@ -17,7 +17,7 @@
  */
 import { randomUUID } from "node:crypto"
 import {
-	type GitCommitSha,
+	GitCommitSha,
 	type OrgId,
 	PrReview,
 	PrReviewFinding,
@@ -31,18 +31,23 @@ import {
 	type PrReviewSeverity,
 	type PrReviewSkipReason,
 	type PrReviewStatus,
+	PrReviewTelemetry,
+	openContractBreaks,
 	PR_REVIEW_CONFIDENCE_LABEL,
+	PR_REVIEW_CONFIDENCE_MAX,
 	PR_REVIEW_FAILURE_COPY,
 	DEFAULT_REVIEWER_MENTION,
-	type PrReviewFailureReason,
+	PrReviewFailureReason,
 	prReviewFailureReason,
 	confidencePrReview,
+	prReviewConfidenceTone,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
 	type PullRequestEventJob,
 	type PullRequestReviewComment,
 	type PullRequestReviewPublication,
 	type SubmitPrReviewRequest,
+	type VcsInstallation,
 	type VcsRepo,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
@@ -56,8 +61,8 @@ import {
 	type PrReviewFindingRow,
 	type PrReviewRow,
 } from "@maple/db"
-import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
-import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
+import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -75,6 +80,18 @@ import {
 	findingText,
 } from "./feedback"
 import { FindingEmbedder } from "./FindingEmbedder"
+import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
+import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
+import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
+import {
+	fixedContractBreaks,
+	lineStillEmits,
+	renderTelemetryKickoff,
+	renderTelemetryMarkdown,
+	telemetryFindings,
+	weighByTraffic,
+	withDismissals,
+} from "./telemetry/render"
 import {
 	dismissedFindings,
 	nextHandles,
@@ -98,6 +115,9 @@ export const PR_REVIEW_CHECK_NAME = "Maple / review"
  * last head instead of a started and aborted turn per push.
  */
 export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
+
+/** Removed names the service searches the repository for before the review starts. */
+const MAX_CONFIRMED_BREAKS = 8
 
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
@@ -217,6 +237,8 @@ const rowToReview = (row: PrReviewRow): PrReview =>
 		finishedAt: dateToMs(row.finishedAt),
 		createdAt: dateToMs(row.createdAt),
 		updatedAt: dateToMs(row.updatedAt),
+		postMergeStatus: row.postMergeStatus ?? null,
+		postMerge: row.postMergeJson ?? null,
 	})
 
 const DAY_MS = 86_400_000
@@ -254,6 +276,8 @@ export const buildReviewKickoff = (input: {
 	 * be read (the agent then reads them itself).
 	 */
 	readonly rules?: ReadonlyArray<RepositoryRuleFile>
+	/** What production telemetry says about the diff; absent when it could not be read. */
+	readonly telemetry?: PrReviewTelemetry
 }): string => {
 	const body = (input.body ?? "").trim()
 	const quoted =
@@ -278,6 +302,7 @@ export const buildReviewKickoff = (input: {
 		"",
 		...renderConfigRules(input.config),
 		...(input.followUp === undefined || input.followUp.length === 0 ? [] : [...input.followUp, ""]),
+		...renderTelemetryKickoff(input.telemetry),
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(lines.join("\n"), "")
@@ -396,15 +421,41 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string =>
 	`<!-- maple-pr-review ${reviewId} ${attempt} -->`
 
-/** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
-const STATUS_OPEN = "<!-- maple-pr-review:status"
+const STATUS_OPEN = "<!-- maple-pr-review:status "
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
 
+/** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
+const StatusMarker = Schema.TemplateLiteralParser([
+	STATUS_OPEN,
+	Schema.Literals(["reviewing", "failed", "superseded"]),
+	" ",
+	Schema.String,
+	" -->",
+])
+const encodeStatusMarker = Schema.encodeSync(StatusMarker)
+const decodeStatusMarker = Schema.decodeUnknownOption(StatusMarker)
+
+/** Whether a comment carries the "reviewing" notice of this head, the only notice anything replaces. */
+const isReviewing = (body: string | undefined, headSha: string): boolean =>
+	Option.exists(
+		Option.firstSomeOf((body ?? "").split("\n").map((line) => decodeStatusMarker(line))),
+		([, kind, , sha]) => kind === "reviewing" && sha === headSha,
+	)
+
 /** What a review's comment says before its result replaces it. */
-export type PrReviewStatusNotice =
-	| { readonly kind: "reviewing"; readonly headSha: string }
-	| { readonly kind: "failed"; readonly headSha: string; readonly reason?: PrReviewFailureReason }
-	| { readonly kind: "superseded"; readonly headSha: string }
+export const PrReviewStatusNotice = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("reviewing"),
+		headSha: GitCommitSha,
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("failed"),
+		headSha: GitCommitSha,
+		reason: Schema.optionalKey(PrReviewFailureReason),
+	}),
+	Schema.Struct({ kind: Schema.Literal("superseded"), headSha: GitCommitSha }),
+]).pipe(Schema.toTaggedUnion("kind"))
+export type PrReviewStatusNotice = typeof PrReviewStatusNotice.Type
 
 /** "The review of `abc1234` could not finish. It ran out of time before it filed a report." */
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
@@ -413,8 +464,8 @@ const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined):
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
  *
- * `undefined` leaves the comment alone: a failure or a supersede only replaces its own
- * "reviewing" notice, so a late one cannot overwrite a summary that was already published.
+ * `undefined` leaves the comment alone: a failure or a supersede only replaces its
+ * own "reviewing" notice, so a late one cannot overwrite a summary that was already published.
  */
 export const withReviewStatus = (
 	existing: string | undefined,
@@ -422,58 +473,54 @@ export const withReviewStatus = (
 	notice: PrReviewStatusNotice,
 	mention: string,
 ): string | undefined => {
-	if (
-		notice.kind !== "reviewing" &&
-		!(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)
-	) {
+	// Only a "reviewing" notice opens a comment; everything after it replaces that notice.
+	if (!PrReviewStatusNotice.guards.reviewing(notice) && !isReviewing(existing, notice.headSha)) {
 		return undefined
 	}
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
-	const lines = {
-		reviewing: [
+	const lines = PrReviewStatusNotice.match(notice, {
+		reviewing: () => [
 			"> [!NOTE]",
-			`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
+			`> ⏳ **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
 		],
-		failed: [
+		failed: ({ reason }) => [
 			"> [!WARNING]",
-			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`${mention} review\` to try again.`,
+			`> ${failedSentence(sha, reason)} Comment \`${mention} review\` to try again.`,
 		],
-		superseded: [
+		superseded: () => [
 			"> [!NOTE]",
 			`> A newer push replaced ${sha} before its review finished. The latest commit is reviewed in a new comment.`,
 		],
-	}[notice.kind]
-	return [marker, `${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`, ...lines, STATUS_CLOSE].join("\n")
+	})
+	const status = encodeStatusMarker([STATUS_OPEN, notice.kind, " ", notice.headSha, " -->"])
+	return [marker, status, ...lines, STATUS_CLOSE].join("\n")
 }
 
 /** What the review's check run says before a result replaces it. */
 export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
-	switch (notice.kind) {
-		case "reviewing":
-			return {
-				...run,
-				state: { status: "in_progress" as const },
-				title: "Reviewing",
-				summary: `Maple is reviewing ${sha}. The result lands here and in the review comment when it finishes.`,
-			}
-		case "failed":
-			// Neutral, like every other result: the review informs, it never blocks a merge.
-			return {
-				...run,
-				state: { status: "completed" as const, conclusion: "neutral" as const },
-				title: "Review could not finish",
-				summary: `${failedSentence(sha, notice.reason)} Comment \`${mention} review\` on the pull request to try again.`,
-			}
-		case "superseded":
-			return {
-				...run,
-				state: { status: "completed" as const, conclusion: "skipped" as const },
-				title: "Superseded by a newer push",
-				summary: `A newer commit replaced ${sha} before its review finished; the latest commit is reviewed instead.`,
-			}
-	}
+	return PrReviewStatusNotice.match(notice, {
+		reviewing: () => ({
+			...run,
+			state: { status: "in_progress" as const },
+			title: "Reviewing",
+			summary: `Maple is reviewing ${sha}. The result lands here and in the review comment when it finishes.`,
+		}),
+		// Neutral, like every other result: the review informs, it never blocks a merge.
+		failed: ({ reason }) => ({
+			...run,
+			state: { status: "completed" as const, conclusion: "neutral" as const },
+			title: "Review could not finish",
+			summary: `${failedSentence(sha, reason)} Comment \`${mention} review\` on the pull request to try again.`,
+		}),
+		superseded: () => ({
+			...run,
+			state: { status: "completed" as const, conclusion: "skipped" as const },
+			title: "Superseded by a newer push",
+			summary: `A newer commit replaced ${sha} before its review finished; the latest commit is reviewed instead.`,
+		}),
+	})
 }
 
 /** The check a push gets once its pull request has used the repository's automatic reviews. */
@@ -506,7 +553,8 @@ const SEVERITY_ALERT = {
 } as const satisfies Record<PrReviewFinding["severity"], string>
 
 /** Green when safe, amber when it needs a look, red when risky. */
-const confidenceMark = (confidence: number) => (confidence >= 4 ? "🟢" : confidence === 3 ? "🟡" : "🔴")
+const CONFIDENCE_MARK = { safe: "🟢", attention: "🟡", risky: "🔴" } as const
+const confidenceMark = (confidence: number) => CONFIDENCE_MARK[prReviewConfidenceTone(confidence)]
 
 /** `observability · SPAN-03`, or the bare category for every other lens. */
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
@@ -523,6 +571,8 @@ export interface ReviewMarkdownInput {
 	readonly carried?: CarriedFindings
 	/** How the footer tells people to address the reviewer; the App's login. */
 	readonly mention?: string
+	/** The repository fails the check on a broken telemetry contract. */
+	readonly blocking?: boolean
 }
 
 const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings: ReadonlyArray<F>) =>
@@ -597,7 +647,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push("**Nothing to review**", "")
 	} else {
 		lines.push(
-			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
+			`${confidenceMark(confidence.confidence)} **Confidence ${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
 		)
 		// An early end is already the warning below; the reason would only say it again.
 		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
@@ -657,6 +707,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			"",
 		)
 	}
+	lines.push(...renderTelemetryMarkdown(report.telemetry, { blocking: input.blocking === true }))
 	const checked = report.checked ?? []
 	if (checked.length > 0) {
 		lines.push(
@@ -810,6 +861,8 @@ export const buildPublication = (input: {
 	readonly keys?: ReadonlyMap<string, string>
 	readonly commentAttempt?: number
 	readonly mention?: string
+	/** Fail the check while a telemetry contract break is open (the repository's setting). */
+	readonly blockOnContractBreaks?: boolean
 }): PullRequestReviewPublication => {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
@@ -832,8 +885,10 @@ export const buildPublication = (input: {
 				finding.handle === undefined ? undefined : input.keys?.get(finding.handle),
 			),
 		)
+	const blocking = input.blockOnContractBreaks === true && openContractBreaks(report.telemetry).length > 0
 	const markdown = {
 		report,
+		blocking,
 		partial: input.partial,
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
@@ -847,14 +902,18 @@ export const buildPublication = (input: {
 		checkName: PR_REVIEW_CHECK_NAME,
 		// Fixed order, like the scorecard: a check list scans down one column.
 		title: [
-			`Confidence ${confidence === undefined ? "–" : `${confidence.confidence}/5`}`,
+			`Confidence ${confidence === undefined ? "–" : `${confidence.confidence}/${PR_REVIEW_CONFIDENCE_MAX}`}`,
 			verdictTitle(report, carried),
 		].join(" · "),
 		summary: renderCheckSummary(markdown),
-		// Never `failure`: the review informs, it does not block a merge. Green only for a review
-		// that finished, found nothing to address and is confident the change is safe.
-		conclusion:
-			hasIssues || input.partial || (confidence !== undefined && confidence.confidence <= 3)
+		// `failure` only for a repository that asked to block on a broken telemetry contract, a fact
+		// rather than an opinion. Otherwise the review informs: green only for a review that
+		// finished, found nothing to address and is confident the change is safe.
+		conclusion: blocking
+			? "failure"
+			: hasIssues ||
+				  input.partial ||
+				  (confidence !== undefined && prReviewConfidenceTone(confidence.confidence) !== "safe")
 				? "neutral"
 				: "success",
 		annotations,
@@ -882,6 +941,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
 			// Present where the agent runs; without it the feedback filter is off.
 			const embedder = Option.getOrUndefined(yield* Effect.serviceOption(FindingEmbedder))
+			// Present where a warehouse is wired; without it reviews read the diff alone.
+			const telemetryReader = Option.getOrUndefined(
+				yield* Effect.serviceOption(PrReviewTelemetryService),
+			)
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -1107,6 +1170,70 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
 				})
 			})
+
+			/**
+			 * The diff read against the organization's telemetry, for the kickoff and the report. Best
+			 * effort, like the rules: a review that cannot read it reviews the diff alone.
+			 */
+			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number, headSha: GitCommitSha) =>
+				Effect.gen(function* () {
+					if (telemetryReader === undefined) return undefined
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return undefined
+					const { provider, installation, ref } = target.value
+					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
+					const analyzed = yield* telemetryReader.analyze(orgId, files)
+					if (analyzed === undefined) return undefined
+					// The diff only shows changed lines: a name the pull request removes may still be emitted
+					// by code it did not touch. Search for each one and read the candidates at the head.
+					const breaks = openContractBreaks(analyzed).slice(0, MAX_CONFIRMED_BREAKS)
+					const stillEmitted = yield* Effect.forEach(
+						breaks,
+						(item) =>
+							Effect.gen(function* () {
+								const hits = yield* provider
+									.searchCode(installation, ref, `"${item.name}"`, { limit: 10 })
+									.pipe(Effect.catchCause(() => Effect.succeed([])))
+								const paths = [...new Set([item.path, ...hits.map((hit) => hit.path)])]
+									.filter(isRuntimeSource)
+									.slice(0, 6)
+								const lines = yield* Effect.forEach(
+									paths,
+									(path) =>
+										provider.fetchSourceFile(installation, ref, path, headSha).pipe(
+											Effect.map((file) => {
+												const line = Option.isSome(file)
+													? lineEmitting(file.value.content, item.name, item.kind)
+													: undefined
+												return line === undefined
+													? []
+													: [{ name: item.name, path, line }]
+											}),
+											Effect.catchCause(() => Effect.succeed([])),
+										),
+									{ concurrency: 3 },
+								)
+								return lines.flat().slice(0, 1)
+							}),
+						{ concurrency: 2 },
+					)
+					yield* Effect.annotateCurrentSpan(
+						"maple.pr_review.telemetry.breaks_still_emitted",
+						stillEmitted.flat().length,
+					)
+					return withDismissals(analyzed, stillEmitted.flat())
+				}).pipe(
+					Effect.timeout("20 seconds"),
+					Effect.withSpan("PrReviewService.telemetryFor"),
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"[PrReview] could not read production telemetry; reviewing the diff alone",
+						).pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
 
 			/**
 			 * The repository's rule files at the base, for the kickoff. Best effort: `undefined` when
@@ -1440,6 +1567,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								commentAttempt: sql`case when ${prReviews.status} in ('completed', 'skipped') then ${prReviews.commentAttempt} + 1 else ${prReviews.commentAttempt} end`,
 								reportJson: null,
 								score: null,
+								// The new review reads production again and earns its own post-merge look.
+								telemetryJson: null,
+								postMergeStatus: null,
+								postMergeAfter: null,
+								postMergeJson: null,
 								startedAt: null,
 								finishedAt: null,
 								updatedAt: msToDate(nowMs),
@@ -1512,11 +1644,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					),
 				)
-				const rules = yield* repositoryRules(
-					orgId,
-					repo,
-					job.baseSha ?? job.baseRef ?? repo.defaultBranch,
+				const [rules, telemetry] = yield* Effect.all(
+					[
+						repositoryRules(orgId, repo, job.baseSha ?? job.baseRef ?? repo.defaultBranch),
+						telemetryFor(orgId, repo, job.number, headSha),
+					],
+					{ concurrency: "unbounded" },
 				)
+				if (telemetry !== undefined) {
+					// Read back at submit, where the facts become findings and the gate.
+					yield* update(orgId, reviewId, { telemetryJson: telemetry }).pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("[PrReview] could not store the telemetry facts").pipe(
+								Effect.annotateLogs({ orgId, reviewId, error: error.message }),
+							),
+						),
+					)
+				}
 				const text = buildReviewKickoff({
 					repository: repo.fullName,
 					number: job.number,
@@ -1535,6 +1679,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
 					...(rules === undefined ? undefined : { rules }),
+					...(telemetry === undefined ? undefined : { telemetry }),
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
@@ -1585,6 +1730,65 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return { reviewId, outcome: "started" as const }
 			})
 
+			/**
+			 * A merged pull request's last review with telemetry facts gets a look at production once
+			 * the merge ships (`PrReviewPostMergeService`). Called by the merge, and by a review that
+			 * finishes after its pull request merged. Once per pull request: a redelivered event finds
+			 * the row already scheduled.
+			 */
+			const schedulePostMerge = (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				merge: {
+					readonly number: number
+					readonly mergeCommitSha: string | null
+					readonly mergedAtMs: number
+				},
+				nowMs: number,
+			) =>
+				Effect.gen(function* () {
+					const config = yield* repositories.getEffectivePrReviewConfig(orgId, repositoryId)
+					if (config.postMergeCheck === false) return
+					const latest = yield* database.execute((db) =>
+						db
+							.select({ id: prReviews.id, postMergeStatus: prReviews.postMergeStatus })
+							.from(prReviews)
+							.where(
+								and(
+									eq(prReviews.orgId, orgId),
+									eq(prReviews.repositoryId, repositoryId),
+									eq(prReviews.number, merge.number),
+									eq(prReviews.status, "completed"),
+									isNotNull(prReviews.telemetryJson),
+								),
+							)
+							.orderBy(desc(prReviews.finishedAt))
+							.limit(1),
+					)
+					const row = latest[0]
+					if (row === undefined || row.postMergeStatus !== null) return
+					yield* database.execute((db) =>
+						db
+							.update(prReviews)
+							.set({
+								mergeCommitSha: merge.mergeCommitSha,
+								postMergeStatus: "waiting",
+								postMergeAfter: msToDate(
+									merge.mergedAtMs + Duration.toMillis(POST_MERGE_FIRST_LOOK),
+								),
+								updatedAt: msToDate(nowMs),
+							})
+							.where(and(eq(prReviews.id, row.id), isNull(prReviews.postMergeStatus))),
+					)
+					yield* Effect.annotateCurrentSpan("maple.pr_review.post_merge_scheduled", row.id)
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not schedule the post-merge look").pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+						),
+					),
+				)
+
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
@@ -1614,7 +1818,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.execute((db) =>
 									db
 										.update(prReviews)
-										.set({ mergedAt: msToDate(job.mergedAtMs ?? nowMs) })
+										.set({
+											mergedAt: msToDate(job.mergedAtMs ?? nowMs),
+											// Kept on every row, for a review still running to schedule its own look.
+											mergeCommitSha: job.mergeCommitSha,
+										})
 										.where(
 											and(
 												eq(prReviews.orgId, orgId),
@@ -1624,6 +1832,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										),
 								)
 								.pipe(Effect.mapError(toPersistence))
+							yield* schedulePostMerge(
+								orgId,
+								repositoryId,
+								{
+									number: job.number,
+									mergeCommitSha: job.mergeCommitSha,
+									mergedAtMs: job.mergedAtMs ?? nowMs,
+								},
+								nowMs,
+							)
 						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
@@ -1897,6 +2115,75 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 
+			/**
+			 * The telemetry facts stored at start, with each dismissal the reviewer could prove: the
+			 * file it names, read at the head, still emits the name on that line. Anything that cannot
+			 * be read is not proof.
+			 */
+			const telemetryAtSubmit = Effect.fn("PrReviewService.telemetryAtSubmit")(function* (
+				orgId: OrgId,
+				reviewId: PrReviewId,
+				headSha: GitCommitSha,
+				dismissals: ReadonlyArray<{
+					readonly name: string
+					readonly path: string
+					readonly line: number
+				}>,
+				repository: Option.Option<VcsRepo>,
+				installation: Option.Option<VcsInstallation>,
+			) {
+				const rows = yield* database
+					.execute((db) =>
+						db
+							.select({ telemetryJson: prReviews.telemetryJson })
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(Effect.mapError(toPersistence))
+				const stored = rows[0]?.telemetryJson
+				if (stored === null || stored === undefined) return undefined
+				const telemetry = yield* Schema.decodeUnknownEffect(PrReviewTelemetry)(stored).pipe(
+					Effect.option,
+				)
+				if (Option.isNone(telemetry)) return undefined
+				// Each claim names the open break it answers, and is checked against that break's kind.
+				const kindOf = new Map(
+					openContractBreaks(telemetry.value).map((item) => [item.name, item.kind] as const),
+				)
+				const candidates = dismissals.flatMap((item) => {
+					const kind = kindOf.get(item.name)
+					return kind !== undefined && isRuntimeSource(item.path) ? [{ ...item, kind }] : []
+				})
+				if (candidates.length === 0 || Option.isNone(repository) || Option.isNone(installation))
+					return telemetry.value
+				const target = yield* providerFor(orgId, repository.value).pipe(
+					Effect.option,
+					Effect.map(Option.flatten),
+				)
+				if (Option.isNone(target)) return telemetry.value
+				const { provider, ref } = target.value
+				const verified = yield* Effect.forEach(
+					candidates,
+					(item) =>
+						provider.fetchSourceFile(installation.value, ref, item.path, headSha).pipe(
+							Effect.map((file) =>
+								Option.isSome(file) &&
+								lineStillEmits(file.value.content, item.line, item.name, item.kind)
+									? [{ name: item.name, path: item.path, line: item.line }]
+									: [],
+							),
+							Effect.catchCause(() => Effect.succeed([])),
+						),
+					{ concurrency: 4 },
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.pr_review.telemetry.dismissals_claimed": dismissals.length,
+					"maple.pr_review.telemetry.dismissals_verified": verified.flat().length,
+				})
+				return withDismissals(telemetry.value, verified.flat())
+			})
+
 			const submitReview: PrReviewServiceApi["submitReview"] = Effect.fn(
 				"PrReviewService.submitReview",
 			)(function* (orgId, reviewId, request) {
@@ -1920,13 +2207,30 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
+				// The facts read at start, with the dismissals the reviewer could prove.
+				const telemetry = yield* telemetryAtSubmit(
+					orgId,
+					reviewId,
+					review.headSha,
+					request.telemetryDismissals ?? [],
+					repository,
+					installation,
+				)
+
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
 				const open = tracked.filter((finding) => finding.status === "open")
-				const resolved = resolvedByHandle(request.resolved ?? [], open)
+				const resolved = [
+					...resolvedByHandle(request.resolved ?? [], open),
+					...fixedContractBreaks(open, telemetry),
+				].filter((finding, i, all) => all.indexOf(finding) === i)
 				const stillOpen = open.filter((finding) => !resolved.includes(finding))
-				// The repository's settings are enforced here, not only stated in the kickoff.
-				const allowed = request.report.findings.filter(
+				// The model's findings weighed by production traffic, and the facts the service files
+				// itself. The repository's settings are enforced here, not only stated in the kickoff.
+				const allowed = [
+					...weighByTraffic(request.report.findings, telemetry),
+					...telemetryFindings(telemetry),
+				].filter(
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -1966,6 +2270,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
 				const settled = new PrReviewReport({
 					...request.report,
+					...(telemetry === undefined ? undefined : { telemetry }),
 					findings,
 					verdict: hasIssues
 						? "issues"
@@ -2032,9 +2337,38 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					).pipe(Effect.annotateLogs({ orgId, reviewId, status: review.status }))
 					return
 				}
+				// The pull request merged while this review ran: the merge found nothing to schedule.
+				const merged = yield* database
+					.execute((db) =>
+						db
+							.select({
+								mergedAt: prReviews.mergedAt,
+								mergeCommitSha: prReviews.mergeCommitSha,
+							})
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(Effect.mapError(toPersistence))
+				const mergedAtMs = dateToMs(merged[0]?.mergedAt ?? null)
+				if (mergedAtMs !== null && mergedAtMs !== undefined) {
+					yield* schedulePostMerge(
+						orgId,
+						review.repositoryId,
+						{
+							number: review.number,
+							mergeCommitSha: merged[0]?.mergeCommitSha ?? null,
+							mergedAtMs,
+						},
+						nowMs,
+					)
+				}
 
 				const keys = new Map(findings.map((finding) => [finding.handle ?? "", randomUUID()] as const))
-				if (findings.length > 0) {
+				// A partial's findings are never posted, so they are not tracked: a later review must not
+				// carry them forward or drop its own as repeats of findings nobody saw.
+				const tracksFindings = request.partial !== true && findings.length > 0
+				if (tracksFindings) {
 					yield* database
 						.execute((db) =>
 							db.insert(prReviewFindings).values(
@@ -2061,7 +2395,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The vectors a later review compares against. Losing them only weakens a later filter,
 				// so a failed write is logged rather than failing a review that is already stored.
 				const vectors = feedback.vectors
-				if (embedder !== undefined && vectors !== undefined && findings.length > 0) {
+				if (embedder !== undefined && vectors !== undefined && tracksFindings) {
 					yield* database
 						.execute((db) =>
 							db
@@ -2102,57 +2436,68 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					})
 					return
 				}
-				const publication = buildPublication({
-					reviewId,
-					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
-					repositoryUrl: repo.htmlUrl,
-					number: review.number,
-					headSha: review.headSha,
-					report,
-					partial: request.partial === true,
-					carried,
-					keys,
-					mention: provider.success.reviewerMention,
-					...(config.minInlineSeverity === undefined
-						? undefined
-						: { minInlineSeverity: config.minInlineSeverity }),
-				})
-				const published = yield* provider.success
-					.publishPullRequestReview(installation.value, ref, publication)
-					.pipe(Effect.result)
-				if (Result.isFailure(published)) {
-					// Recorded, not retried: the usual cause is the installation not having
-					// accepted `checks: write` yet, and the report itself is already safe.
-					yield* Effect.logWarning("[PrReview] could not publish the review to the provider").pipe(
-						Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }),
-					)
-					yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
-					yield* update(orgId, reviewId, {
-						publishError: published.failure.message.slice(0, 500),
-						updatedAt: msToDate(nowMs),
+				// An early end gets the retry notice, not a half review that reads as finished. The partial
+				// report stays stored for the review page.
+				if (request.partial === true) {
+					yield* postReviewStatus(orgId, reviewId, repo, review.number, {
+						kind: "failed",
+						headSha: review.headSha,
+						reason: "ended_early",
 					})
 				} else {
-					yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
-					yield* update(orgId, reviewId, {
-						checkRunUrl: published.success.checkRunUrl,
-						commentUrl: published.success.commentUrl,
-						reviewUrl: published.success.reviewUrl,
-						publishError: null,
-						updatedAt: msToDate(nowMs),
+					const publication = buildPublication({
+						reviewId,
+						commentAttempt: yield* commentAttemptOf(orgId, reviewId),
+						repositoryUrl: repo.htmlUrl,
+						number: review.number,
+						headSha: review.headSha,
+						report,
+						partial: false,
+						carried,
+						keys,
+						mention: provider.success.reviewerMention,
+						...(config.minInlineSeverity === undefined
+							? undefined
+							: { minInlineSeverity: config.minInlineSeverity }),
+						...(config.blockOnContractBreaks === true ? { blockOnContractBreaks: true } : undefined),
 					})
-					yield* Effect.forEach(
-						published.success.inlineComments,
-						({ key, commentId }) =>
-							database
-								.execute((db) =>
-									db
-										.update(prReviewFindings)
-										.set({ commentId })
-										.where(eq(prReviewFindings.id, key)),
-								)
-								.pipe(Effect.mapError(toPersistence)),
-						{ discard: true },
-					)
+					const published = yield* provider.success
+						.publishPullRequestReview(installation.value, ref, publication)
+						.pipe(Effect.result)
+					if (Result.isFailure(published)) {
+						// Recorded, not retried: the usual cause is the installation not having
+						// accepted `checks: write` yet, and the report itself is already safe.
+						yield* Effect.logWarning("[PrReview] could not publish the review to the provider").pipe(
+							Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }),
+						)
+						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
+						yield* update(orgId, reviewId, {
+							publishError: published.failure.message.slice(0, 500),
+							updatedAt: msToDate(nowMs),
+						})
+					} else {
+						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
+						yield* update(orgId, reviewId, {
+							checkRunUrl: published.success.checkRunUrl,
+							commentUrl: published.success.commentUrl,
+							reviewUrl: published.success.reviewUrl,
+							publishError: null,
+							updatedAt: msToDate(nowMs),
+						})
+						yield* Effect.forEach(
+							published.success.inlineComments,
+							({ key, commentId }) =>
+								database
+									.execute((db) =>
+										db
+											.update(prReviewFindings)
+											.set({ commentId })
+											.where(eq(prReviewFindings.id, key)),
+									)
+									.pipe(Effect.mapError(toPersistence)),
+							{ discard: true },
+						)
+					}
 				}
 
 				// A fixed finding's thread is answered and resolved, so the conversation shows it.
@@ -2272,6 +2617,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				VcsRepository.layer,
 				VcsProviderRegistry.layer,
 				OrganizationFeatureFlagsService.layer,
+				PrReviewTelemetryService.layer,
 			),
 		),
 	)

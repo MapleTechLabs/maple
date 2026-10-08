@@ -9,6 +9,7 @@ import {
 	UpdateDashboardSummary,
 	UpdateDashboardWidgetSummary,
 } from "./dashboard"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 interface SummaryProps {
 	toolName: string
@@ -31,7 +32,7 @@ export function ApprovalSummary({ toolName, input }: SummaryProps) {
 }
 
 function formatValue(value: unknown): { kind: "scalar"; text: string } | { kind: "blob"; chars: number } {
-	if (value === null || value === undefined) return { kind: "scalar", text: "—" }
+	if (value === null || value === undefined) return { kind: "scalar", text: EMPTY_VALUE }
 	if (typeof value === "boolean") return { kind: "scalar", text: value ? "true" : "false" }
 	if (typeof value === "number") return { kind: "scalar", text: String(value) }
 	if (typeof value === "string") {
@@ -51,7 +52,7 @@ function KeyValueFallback({ input }: { input: unknown }) {
 	const obj = asRecord(input)
 	if (!obj) {
 		return (
-			<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[11px] leading-snug">
+			<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug">
 				{safeStringify(input)}
 			</pre>
 		)

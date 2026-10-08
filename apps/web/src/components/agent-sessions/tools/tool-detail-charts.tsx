@@ -5,24 +5,23 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
-	PlotFrame,
-	PlotTooltipBody,
+	CursorPlot,
 	UNBOUNDED_FOCUS_DISTANCE,
-	createTooltipFocusStore,
-	cursorTooltip,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
-	usePlotChromeColors,
-	useResolvedSeriesColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 
-import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/infra/chart-utils"
+import { CHART_EMPTY_MESSAGE, ChartCard } from "@/components/common/chart-card"
+import { SeriesLegend } from "@/components/common/series-legend"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { errorRate, formatDurationNs, type ToolSeriesPoint } from "@/lib/agent-sessions/tool-analytics"
 
@@ -133,12 +132,19 @@ function Cell({
 	series: ReadonlyArray<ChartSeries>
 	format: (value: number) => string
 }) {
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
-	const chromeColors = usePlotChromeColors()
-	// Canvas strokes cannot read `var()`; the lines take resolved colors.
-	const colorTokens = useMemo(() => new Map(series.map((entry) => [entry.key, entry.color])), [series])
-	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
+	const cursorSeries = useMemo<CursorPlotSeries<PlotCell>[]>(
+		() =>
+			series.map((entry) => ({
+				key: entry.key,
+				label: entry.label,
+				color: entry.color,
+				value: (cell: PlotCell) => valueAt(cell.row, entry.key),
+				format,
+			})),
+		[series, format],
+	)
+	const plot = useCursorPlot(cursorSeries)
 
 	const axis = useMemo(
 		() =>
@@ -152,7 +158,7 @@ function Cell({
 	const definition = useMemo(() => {
 		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: series.map((entry) => entry.key) }))
 		return defineChart({
-			marks: [...seriesLines(rows, series, colors, chromeColors), focusCrosshair(chromeColors)],
+			marks: [...seriesLines(rows, series, plot.colors, plot.chrome), focusCrosshair(plot.chrome)],
 			scales: {
 				x: axis.x,
 				y: {
@@ -178,63 +184,29 @@ function Cell({
 			// Sparse buckets sit far apart; keep the whole column live between them.
 			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [rows, series, axis, format, focusStore, colors, chromeColors])
-
-	const tooltipSeries = useMemo<PlotTooltipSeries<PlotCell>[]>(
-		() =>
-			series.map((entry) => ({
-				label: entry.label,
-				color: entry.color,
-				value: (cell: PlotCell) => valueAt(cell.row, entry.key),
-				format,
-			})),
-		[series, format],
-	)
+	}, [rows, series, axis, format, plot])
 
 	return (
-		<section className="flex min-w-0 flex-col gap-3.5 border-b border-border px-6 pt-[22px] pb-5 @min-[900px]/page:[&:nth-child(odd)]:border-r">
-			<div className="flex items-baseline gap-2.5">
-				<h2 className="text-[15px] font-semibold leading-5 tracking-[-0.01em] text-foreground">
-					{title}
-				</h2>
-				<span className="grow" />
-				{series.length > 1 ? (
-					<span className="flex items-center gap-4 font-mono text-[11px] leading-3.5">
-						{series.map((entry) => (
-							<span key={entry.key} className="flex items-center gap-1.5">
-								<span
-									aria-hidden
-									className="size-2 shrink-0 rounded-[2px]"
-									style={{ backgroundColor: entry.color }}
-								/>
-								<span className="text-foreground/75">{entry.label}</span>
-							</span>
-						))}
-					</span>
-				) : null}
-			</div>
-
+		<ChartCard
+			bare
+			title={title}
+			legend={series.length > 1 ? <SeriesLegend items={series} swatch="square" /> : null}
+			className="gap-3.5 border-b border-border px-6 pt-[22px] pb-5 @min-[900px]/page:[&:nth-child(odd)]:border-r"
+		>
 			{rows.length === 0 ? (
 				<ChartEmpty height={PLOT_HEIGHT}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 			) : (
-				<div className="w-full" style={{ height: PLOT_HEIGHT }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel={title}
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(cell: PlotCell) => axis.heading(cell.row.bucket)}
-							/>
-						)}
-					/>
-				</div>
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={cursorSeries}
+					heading={(cell: PlotCell) => axis.heading(cell.row.bucket)}
+					ariaLabel={title}
+					height={PLOT_HEIGHT}
+				/>
 			)}
-		</section>
+		</ChartCard>
 	)
 }

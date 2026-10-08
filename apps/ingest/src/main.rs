@@ -7049,6 +7049,48 @@ mod tests {
         assert_eq!(gauge.data_points.len(), 1);
     }
 
+    /// `asInt` as a JSON number or a decimal string must both decode to a
+    /// value. It used to be stringified for the derives, which want a number,
+    /// so every integer gauge and sum point decoded to `None` and stored 0.
+    #[test]
+    fn integer_metric_points_keep_their_value() {
+        use opentelemetry_proto::tonic::metrics::v1::number_data_point;
+
+        let decoded = decode_json(
+            Signal::Metrics,
+            r#"{"resourceMetrics":[{"resource":{"attributes":[]},"scopeMetrics":[{"metrics":[{"name":"g","gauge":{"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":42},{"timeUnixNano":"1753660000000000000","asInt":"43"}]}},{"name":"s","sum":{"aggregationTemporality":2,"isMonotonic":true,"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":44},{"timeUnixNano":"1753660000000000000","asInt":"-45"}]}}]}]}]}"#,
+        )
+        .expect("payload accepted");
+
+        let DecodedPayload::Metrics(request) = decoded else {
+            panic!("expected metrics");
+        };
+        let metrics = &request.resource_metrics[0].scope_metrics[0].metrics;
+        let Some(metric::Data::Gauge(gauge)) = &metrics[0].data else {
+            panic!("gauge data dropped");
+        };
+        let Some(metric::Data::Sum(sum)) = &metrics[1].data else {
+            panic!("sum data dropped");
+        };
+        let values = |points: &[opentelemetry_proto::tonic::metrics::v1::NumberDataPoint]| {
+            points.iter().map(|p| p.value).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            values(&gauge.data_points),
+            vec![
+                Some(number_data_point::Value::AsInt(42)),
+                Some(number_data_point::Value::AsInt(43)),
+            ]
+        );
+        assert_eq!(
+            values(&sum.data_points),
+            vec![
+                Some(number_data_point::Value::AsInt(44)),
+                Some(number_data_point::Value::AsInt(-45)),
+            ]
+        );
+    }
+
     #[test]
     fn spec_compliant_payloads_still_decode() {
         let decoded = decode_json(

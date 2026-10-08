@@ -1,8 +1,10 @@
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
+import type { Tone } from "@maple/ui/lib/tone"
 
 interface ReplaysToolbarProps {
 	/** Current `q` search param (URL substring filter). */
@@ -57,26 +59,22 @@ export function ReplaysToolbar({
 				<TriageChip
 					pressed={errorsOnly}
 					onToggle={onToggleErrorsOnly}
-					title={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
-					pressedClassName="border-severity-error bg-severity-error text-white"
-					idleClassName={cn(TONE_SOFT.crit, TONE_BORDER.crit, "hover:bg-severity-error/15")}
-					dotClassName={TONE_FILL.crit}
+					tooltip={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
+					tone="crit"
 				>
-					<span className="tabular-nums">{errorSessions.toLocaleString()}</span> with errors
+					<span className="tabular-nums">{formatNumber(errorSessions)}</span> with errors
 				</TriageChip>
 
 				<TriageChip
 					pressed={engagedOnly}
 					onToggle={onToggleEngagedOnly}
-					title={
+					tooltip={
 						engagedOnly ? "Show every session type" : "Hide bots, bounces, idle tabs and glances"
 					}
-					pressedClassName="border-emerald-600 bg-emerald-600 text-white"
-					idleClassName="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400"
-					dotClassName="bg-emerald-500"
+					tone="ok"
 				>
 					{engagedSessions !== undefined && (
-						<span className="tabular-nums">{engagedSessions.toLocaleString()}</span>
+						<span className="tabular-nums">{formatNumber(engagedSessions)}</span>
 					)}
 					engaged
 				</TriageChip>
@@ -88,33 +86,26 @@ export function ReplaysToolbar({
 function TriageChip({
 	pressed,
 	onToggle,
-	title,
-	pressedClassName,
-	idleClassName,
-	dotClassName,
+	tooltip,
+	tone,
 	children,
 }: {
 	pressed: boolean
 	onToggle: () => void
-	title: string
-	pressedClassName: string
-	idleClassName: string
-	dotClassName: string
+	tooltip: string
+	tone: Tone
 	children: React.ReactNode
 }) {
 	return (
-		<button
-			type="button"
-			onClick={onToggle}
-			aria-pressed={pressed}
-			title={title}
-			className={cn(
-				"inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
-				pressed ? pressedClassName : idleClassName,
-			)}
-		>
-			<StatusDot tone="custom" className={pressed ? "bg-white" : dotClassName} />
-			{children}
-		</button>
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<FilterChip pressed={pressed} onPressedChange={() => onToggle()} tone={tone} dot>
+						{children}
+					</FilterChip>
+				}
+			/>
+			<TooltipContent>{tooltip}</TooltipContent>
+		</Tooltip>
 	)
 }

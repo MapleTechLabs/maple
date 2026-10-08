@@ -3,6 +3,7 @@ import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { PricingCards } from "@/components/settings/pricing-cards"
 import { Button } from "@maple/ui/components/ui/button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { ArrowLeftIcon } from "@/components/icons"
@@ -24,7 +25,7 @@ export function StepPlanLayout({ onBack, children }: { onBack?: () => void; chil
 						Pick a plan
 					</Eyebrow>
 					<h2 className="text-3xl font-semibold tracking-tight mt-2">Pick a plan to keep going</h2>
-					<p className="text-muted-foreground text-[15px] mt-3 max-w-lg mx-auto">
+					<p className="text-muted-foreground text-sm mt-3 max-w-lg mx-auto">
 						Start a {TRIAL_DURATION_DAYS}-day free trial: we'll save your card now and won't
 						charge until day {TRIAL_DURATION_DAYS}. Cancel anytime from settings.
 					</p>
@@ -53,11 +54,7 @@ function PricingSkeleton() {
 			className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto"
 		>
 			{[0, 1].map((i) => (
-				<div
-					key={`plan-skeleton-${i}`}
-					className="rounded-xl border bg-card p-6 space-y-4"
-					style={{ animationDelay: `${i * 80}ms` }}
-				>
+				<Panel key={`plan-skeleton-${i}`} className="gap-4 p-6">
 					<Skeleton className="h-5 w-24" />
 					<Skeleton className="h-8 w-32" />
 					<div className="space-y-2 pt-2">
@@ -66,8 +63,8 @@ function PricingSkeleton() {
 						<Skeleton className="h-3 w-4/6" />
 						<Skeleton className="h-3 w-3/6" />
 					</div>
-					<Skeleton className="h-10 w-full rounded-lg" />
-				</div>
+					<Skeleton className="h-10 w-full rounded-md" />
+				</Panel>
 			))}
 		</div>
 	)

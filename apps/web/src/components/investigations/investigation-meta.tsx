@@ -13,17 +13,17 @@
  * under the finding, and an unaudited diagnosis is the thing to avoid — not an
  * unread one.
  */
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { IssueEscalationAttemptDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { investigationOriginLabel } from "./investigation-status"
+import { SectionHeading } from "@/components/common/section-heading"
 
 export function InvestigationMeta({ investigation }: { investigation: V2Investigation }) {
 	const { snapshot, subject } = investigation
@@ -31,7 +31,7 @@ export function InvestigationMeta({ investigation }: { investigation: V2Investig
 
 	return (
 		<section className="flex shrink-0 flex-col gap-3 border-t pt-5">
-			<Eyebrow as="h2">Linked</Eyebrow>
+			<SectionHeading variant="eyebrow" title="Linked" className="mb-0" />
 			{/*
 			 * A wrapping row of labelled pairs rather than the rail's stacked list.
 			 * The rail stacked them because it was 320px wide; across the full page a
@@ -95,7 +95,7 @@ function Provenance({ investigation }: { investigation: V2Investigation }) {
 	const tokens =
 		input === null && output === null
 			? null
-			: `${input === null ? "—" : formatNumber(input)} in · ${output === null ? "—" : formatNumber(output)} out`
+			: `${input === null ? EMPTY_VALUE : formatNumber(input)} in · ${output === null ? EMPTY_VALUE : formatNumber(output)} out`
 
 	const opened =
 		investigation.seeded_by === "system"
@@ -103,7 +103,7 @@ function Provenance({ investigation }: { investigation: V2Investigation }) {
 			: "Opened by a member of your team"
 
 	return (
-		<p className="text-[11px] text-muted-foreground">
+		<p className="text-2xs text-muted-foreground">
 			{[model, tokens, opened].filter(Boolean).join(" · ")}
 		</p>
 	)
@@ -152,7 +152,7 @@ function Escalation({
 					>
 						{ESCALATION_LABEL[attempt.status]}
 						{attempt.deliveries.length > 0
-							? ` · ${attempt.deliveries.length} destination${attempt.deliveries.length === 1 ? "" : "s"}`
+							? ` · ${countLabel(attempt.deliveries.length, "destination")}`
 							: ""}
 						{failed > 0 ? ` · ${failed} failed` : ""}
 					</span>

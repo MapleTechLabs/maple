@@ -3,8 +3,8 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
-import { PageLayout } from "@maple/ui/components/ui/page-layout"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { formatPercent } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
@@ -14,6 +14,9 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleaseDetailResultAtom, getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { SegmentedSelect } from "@/components/common/segmented-select"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { APDEX_HINT } from "@/components/dashboard/chart-hints"
@@ -24,8 +27,6 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 import { useCommitMarkers } from "@/components/vcs/commit-markers/use-commit-markers"
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
@@ -110,15 +111,6 @@ const RELEASE_CHARTS: ReleaseChartConfig[] = [
 
 const EMPTY_RELEASES: ReadonlyArray<ReleasePoint> = []
 
-function ReleaseDetailPage() {
-	const search = Route.useSearch()
-	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<ReleaseDetailContent />
-		</PageRefreshProvider>
-	)
-}
-
 /** Commit message as the page title once the sha resolves; the short sha until then. */
 function ReleaseTitle({ commitSha }: { commitSha: string }) {
 	if (!isResolvableSha(commitSha)) {
@@ -175,7 +167,7 @@ function ResolvedReleaseMeta({ commitSha }: { commitSha: string }) {
 		))
 }
 
-function ReleaseDetailContent() {
+function ReleaseDetailPage() {
 	const { commitSha } = Route.useParams()
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -186,10 +178,7 @@ function ReleaseDetailContent() {
 	)
 
 	const handleTimeChange = useCallback(
-		(
-			range: { startTime?: string; endTime?: string; presetValue?: string },
-			options?: { replace?: boolean },
-		) => {
+		(range: TimeRange, options?: { replace?: boolean }) => {
 			navigate({
 				replace: options?.replace,
 				search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, range),
@@ -202,83 +191,65 @@ function ReleaseDetailContent() {
 	const service = search.service
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={
-					service === undefined
-						? [{ label: "Releases", href: "/releases" }, { label: shortReleaseLabel(commitSha) }]
-						: [
-								{ label: "Releases", href: "/releases" },
-								{ label: shortReleaseLabel(commitSha), href: `/releases/${commitSha}` },
-								{ label: service },
-							]
-				}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								<PageLayout.Title
-									className="flex min-w-0 items-center gap-2.5"
-									title={commitSha}
-								>
-									<ReleaseTitle commitSha={commitSha} />
-								</PageLayout.Title>
-							}
-						>
-							<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-								{service ? (
-									<Button
-										variant="outline"
-										size="sm"
-										render={
-											<Link
-												to="/services/$serviceName"
-												params={{ serviceName: service }}
-												search={{ ...timeSearch, environments: search.environments }}
-											/>
-										}
-									>
-										<ServiceDot serviceName={service} />
-										{service}
-									</Button>
-								) : null}
-								<TimeRangeHeaderControls
-									startTime={search.startTime}
-									endTime={search.endTime}
-									presetValue={
-										search.timePreset ?? (search.startTime ? undefined : DEFAULT_PRESET)
-									}
-									presets={LONG_RANGE_PRESET_OPTIONS}
-									maxRangeSeconds={ONE_YEAR_SECONDS}
-									onTimeChange={handleTimeChange}
-								/>
-							</div>
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						{service === undefined ? (
-							<ReleaseDeployOverview
-								commitSha={commitSha}
-								startTime={startTime}
-								endTime={endTime}
-								environments={search.environments}
-								timeSearch={timeSearch}
+		<DashboardPage
+			breadcrumbs={
+				service === undefined
+					? [{ label: "Releases", href: "/releases" }, { label: shortReleaseLabel(commitSha) }]
+					: [
+							{ label: "Releases", href: "/releases" },
+							{ label: shortReleaseLabel(commitSha), href: `/releases/${commitSha}` },
+							{ label: service },
+						]
+			}
+			titleContent={
+				<DashboardLayout.Title className="flex min-w-0 items-center gap-2.5" title={commitSha}>
+					<ReleaseTitle commitSha={commitSha} />
+				</DashboardLayout.Title>
+			}
+			headerActions={
+				service ? (
+					<Button
+						variant="outline"
+						size="sm"
+						render={
+							<Link
+								to="/services/$serviceName"
+								params={{ serviceName: service }}
+								search={{ ...timeSearch, environments: search.environments }}
 							/>
-						) : (
-							<ReleaseBody
-								commitSha={commitSha}
-								serviceName={service}
-								startTime={startTime}
-								endTime={endTime}
-								environments={search.environments}
-							/>
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+						}
+					>
+						<ServiceDot serviceName={service} />
+						{service}
+					</Button>
+				) : undefined
+			}
+			time={{
+				search,
+				defaultPreset: DEFAULT_PRESET,
+				onChange: handleTimeChange,
+				presets: LONG_RANGE_PRESET_OPTIONS,
+				maxRangeSeconds: ONE_YEAR_SECONDS,
+			}}
+		>
+			{service === undefined ? (
+				<ReleaseDeployOverview
+					commitSha={commitSha}
+					startTime={startTime}
+					endTime={endTime}
+					environments={search.environments}
+					timeSearch={timeSearch}
+				/>
+			) : (
+				<ReleaseBody
+					commitSha={commitSha}
+					serviceName={service}
+					startTime={startTime}
+					endTime={endTime}
+					environments={search.environments}
+				/>
+			)}
+		</DashboardPage>
 	)
 }
 
@@ -362,7 +333,7 @@ function ReleaseBodyLoaded({
 				? derived.response.points
 				: derived.response.baselinePoints
 	const detailPoints = useMemo(() => points.map((point) => ({ ...point })), [points])
-	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
+	const chartBuckets = useMemo(() => detailPoints.map((point) => point.bucket), [detailPoints])
 	const commitMarkers = useCommitMarkers(derived?.releases ?? EMPTY_RELEASES, chartBuckets)
 	const isLoading = Result.isInitial(result)
 	const metrics = useMemo(
@@ -394,10 +365,12 @@ function ReleaseBodyLoaded({
 	if (impact === undefined) {
 		return (
 			<div className="flex flex-col gap-3">
-				<EmptyMessage className="rounded-md border bg-card text-sm">
-					<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic on{" "}
-					{serviceName} in this window. Widen the time range to include its deploy.
-				</EmptyMessage>
+				<Panel>
+					<EmptyMessage className="text-sm">
+						<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic on{" "}
+						{serviceName} in this window. Widen the time range to include its deploy.
+					</EmptyMessage>
+				</Panel>
 				<ReleaseVersionsRail
 					impacts={impacts}
 					currentSha={commitSha}
@@ -417,17 +390,12 @@ function ReleaseBodyLoaded({
 				<ReleaseMeta commitSha={commitSha} />
 				<span>
 					first seen{" "}
-					<RelativeTime
-						value={impact.firstSeen}
-						variant="orDate"
-						tooltip="title"
-						className="text-foreground"
-					/>{" "}
-					on {serviceName}
+					<RelativeTime value={impact.firstSeen} variant="orDate" className="text-foreground" /> on{" "}
+					{serviceName}
 				</span>
 				{impact.environment ? <span>{impact.environment}</span> : null}
 				{impact.share !== undefined ? (
-					<span>{Math.round(impact.share * 100)}% of the latest traffic</span>
+					<span>{formatPercent(impact.share)} of the latest traffic</span>
 				) : null}
 				{impact.health === "healthy" ? null : (
 					<ReleaseHealthPill health={impact.health} label={figure} />
@@ -448,26 +416,20 @@ function ReleaseBodyLoaded({
 			<ReleaseChangeset base={impact.baseline?.commitSha} head={commitSha} />
 
 			<div className="flex items-center justify-between gap-3">
-				<Tabs
+				<SegmentedSelect<Series>
+					size="sm"
+					aria-label="Chart series"
 					value={series}
-					onValueChange={(value) => setSeries(value === "others" ? "others" : "version")}
-				>
-					<TabsList variant="default" className="h-7 gap-0 p-0.5">
-						<TabsTrigger
-							value="version"
-							className="h-6 px-2.5 text-xs font-medium sm:h-6 sm:text-xs"
-						>
-							This version
-						</TabsTrigger>
-						<TabsTrigger
-							value="others"
-							className="h-6 px-2.5 text-xs font-medium sm:h-6 sm:text-xs"
-						>
-							{baselineCommitSha === undefined ? "Other versions" : "Previous version"}
-						</TabsTrigger>
-					</TabsList>
-				</Tabs>
-				<span className="text-[11px] text-muted-foreground/70">
+					onChange={setSeries}
+					options={[
+						{ value: "version", label: "This version" },
+						{
+							value: "others",
+							label: baselineCommitSha === undefined ? "Other versions" : "Previous version",
+						},
+					]}
+				/>
+				<span className="text-2xs text-muted-foreground/70">
 					{series === "version"
 						? `Only spans that carried ${shortReleaseLabel(commitSha)}`
 						: baselineCommitSha === undefined

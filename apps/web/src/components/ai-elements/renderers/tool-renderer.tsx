@@ -1,6 +1,6 @@
 import type { StructuredToolOutput } from "@maple/domain"
 import type { ReactNode } from "react"
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatErrorRate, formatLatency, formatPercent } from "@maple/ui/lib/format"
 import { DataTable } from "./components/data-table"
 import { ErrorList } from "./components/error-list"
 import { LogList } from "./components/log-list"
@@ -179,10 +179,10 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 							edge.targetService,
 							String(edge.callCount),
 							String(edge.errorCount),
-							`${edge.avgDurationMs.toFixed(1)}ms`,
-							`${edge.maxDurationMs.toFixed(1)}ms`,
+							formatLatency(edge.avgDurationMs),
+							formatLatency(edge.maxDurationMs),
 						]),
-						title: `Service Map (${output.data.serviceCount} services, ${output.data.edges.length} edges)`,
+						title: `Service Map (${countLabel(output.data.serviceCount, "service")}, ${countLabel(output.data.edges.length, "edge")})`,
 					}}
 				/>
 			)
@@ -215,7 +215,9 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 							incident.severity,
 							incident.status,
 							incident.signalType,
-							incident.lastObservedValue != null ? String(incident.lastObservedValue) : "—",
+							incident.lastObservedValue != null
+								? String(incident.lastObservedValue)
+								: EMPTY_VALUE,
 							incident.firstTriggeredAt.slice(0, 19),
 						]),
 						title:
@@ -280,8 +282,12 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 				<StatCards
 					props={{
 						cards: [
-							{ label: "Name", value: typeof name === "string" ? name : "—", format: "text" },
-							{ label: "ID", value: typeof id === "string" ? id : "—", format: "text" },
+							{
+								label: "Name",
+								value: typeof name === "string" ? name : EMPTY_VALUE,
+								format: "text",
+							},
+							{ label: "ID", value: typeof id === "string" ? id : EMPTY_VALUE, format: "text" },
 							{
 								label: "Widgets",
 								value: Array.isArray(output.data.dashboard.widgets)
@@ -446,7 +452,7 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 							service.name,
 							String(service.throughput),
 							formatErrorRate(service.errorRate),
-							`${service.p95Ms.toFixed(1)}ms`,
+							formatLatency(service.p95Ms),
 						]),
 						title: `Services (${output.data.total})`,
 					}}
@@ -487,7 +493,7 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 								query.status,
 								String(query.stats.rowCount),
 								String(query.stats.seriesCount),
-								query.flags.join(", ") || "—",
+								query.flags.join(", ") || EMPTY_VALUE,
 							]),
 							title: `${output.data.widget.title ?? output.data.widget.id} — ${output.data.widget.endpoint}`,
 						}}
@@ -505,7 +511,10 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 							cards: [
 								{
 									label: "Conversion",
-									value: output.data.conversion === null ? "—" : output.data.conversion,
+									value:
+										output.data.conversion === null
+											? EMPTY_VALUE
+											: output.data.conversion,
 									format: "percent",
 								},
 								{ label: "Entered", value: first, format: "number" },
@@ -521,11 +530,11 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 								String(step.step),
 								step.label,
 								String(step.count),
-								`${(step.ofFirst * 100).toFixed(1)}%`,
-								step.ofPrevious === null ? "—" : `${(step.ofPrevious * 100).toFixed(1)}%`,
-								step.step === 1 ? "—" : `-${step.dropOff}`,
+								formatPercent(step.ofFirst),
+								step.ofPrevious === null ? EMPTY_VALUE : formatPercent(step.ofPrevious),
+								step.step === 1 ? EMPTY_VALUE : `-${step.dropOff}`,
 							]),
-							title: `Funnel · ${output.data.steps.length} steps · within ${output.data.windowSeconds}s`,
+							title: `Funnel · ${countLabel(output.data.steps.length, "step")} · within ${output.data.windowSeconds}s`,
 						}}
 					/>
 					{output.data.breakdown ? (
@@ -539,9 +548,7 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 								rows: output.data.breakdown.groups.map((group) => [
 									group.group === "" ? "(none)" : group.group,
 									...group.counts.map((count) => String(count)),
-									group.conversion === null
-										? "—"
-										: `${(group.conversion * 100).toFixed(1)}%`,
+									group.conversion === null ? EMPTY_VALUE : formatPercent(group.conversion),
 								]),
 								title: `By ${output.data.breakdown.by}`,
 							}}

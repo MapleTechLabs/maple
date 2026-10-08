@@ -7,6 +7,7 @@ import { FilterSection, SearchableFilterSection } from "@/components/filters/fil
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
+	FilterSidebarEmpty,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
@@ -73,6 +74,9 @@ export function ReleasesFilterSidebar() {
 	if (Result.isInitial(result)) return <FilterSidebarLoading sectionCount={3} />
 	if (Result.isFailure(result)) return <FilterSidebarError error={result.cause} onRetry={refresh} />
 	if (facets === undefined) return <FilterSidebarLoading sectionCount={3} />
+	if (!hasActiveFilters && facets.services.length === 0 && facets.environments.length === 0) {
+		return <FilterSidebarEmpty />
+	}
 
 	return (
 		<FilterSidebarFrame waiting={Result.isSuccess(result) && result.waiting}>

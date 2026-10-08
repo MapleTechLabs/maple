@@ -7,21 +7,23 @@ import { Schema } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { ResourceAttributesCard } from "@/components/infra/primitives/resource-attributes-card"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import {
+	ResourceAttributesCard,
+	ResourceAttributesCardSkeleton,
+} from "@/components/infra/primitives/resource-attributes-card"
 
 import { ErrorState } from "@/components/common/error-state"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { DockerIcon } from "@/components/icons"
 import { ContainerDetailChart } from "@/components/infra/container-detail-chart"
 import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
-import { StatRail, StatRailItem } from "@/components/common/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { containerDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
 import { formatSeconds } from "@/components/infra/chart-utils"
 import { severityLevel } from "@/components/infra/format"
-import { formatBytes, formatPercent } from "@maple/ui/lib/format"
+import { formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import type { ContainerInfraMetric } from "@/api/warehouse/infra"
 
@@ -89,123 +91,99 @@ function ContainerDetailPage() {
 			<DetailRail.MetaRow label="compose.project" value={summary.composeProject} />
 			<DetailRail.MetaRow label="compose.service" value={summary.composeService} />
 		</ResourceAttributesCard>
+	) : Result.isInitial(summaryResult) ? (
+		<ResourceAttributesCardSkeleton icon={DockerIcon} />
 	) : null
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
-					{ label: "Infrastructure", href: "/infra" },
-					{ label: "Containers", href: "/infra/containers" },
-					{ label: containerName },
-				]}
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Infrastructure", href: "/infra" },
+				{ label: "Containers", href: "/infra/containers" },
+				{ label: containerName },
+			]}
+			headerActions={toolbar}
+			rightPanel={rightSidebar}
+			gap="lg"
+		>
+			<PageHero
+				title={<span className="font-mono">{containerName}</span>}
+				description="Container metrics from the Docker stats receiver."
+				meta={
+					<>
+						{summary?.hostName && <HeroChip>host {summary.hostName}</HeroChip>}
+						{summary?.imageName && <HeroChip>image {summary.imageName}</HeroChip>}
+						{summary?.runtime && <HeroChip>runtime {summary.runtime}</HeroChip>}
+					</>
+				}
 			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header>{toolbar}</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<div className="space-y-6">
-							<PageHero
-								title={<span className="font-mono">{containerName}</span>}
-								description="Container metrics from the Docker stats receiver."
-								meta={
-									<>
-										{summary?.hostName && <HeroChip>host {summary.hostName}</HeroChip>}
-										{summary?.imageName && <HeroChip>image {summary.imageName}</HeroChip>}
-										{summary?.runtime && <HeroChip>runtime {summary.runtime}</HeroChip>}
-									</>
-								}
-							/>
 
-							{Result.isInitial(summaryResult) ? (
-								<Skeleton className="h-24 w-full rounded-md" />
-							) : Result.isFailure(summaryResult) ? (
-								<ErrorState
-									error={summaryResult.cause}
-									title="Failed to load container metrics"
-									onRetry={refreshSummary}
-								/>
-							) : summary ? (
-								<StatRail>
-									<StatRailItem
-										eyebrow="CPU"
-										value={formatPercent(summary.cpuPct)}
-										tone={severityLevel(summary.cpuPct)}
-										compact
-									/>
-									<StatRailItem
-										eyebrow="Memory vs limit"
-										value={formatPercent(summary.memoryPct)}
-										tone={severityLevel(summary.memoryPct)}
-										compact
-									/>
-									<StatRailItem
-										eyebrow="Memory"
-										value={formatBytes(summary.memoryBytesAvg)}
-										compact
-									/>
-									<StatRailItem
-										eyebrow="Restarts"
-										value={summary.restartsDelta.toLocaleString()}
-										tone={summary.restartsDelta > 0 ? "warn" : undefined}
-										compact
-									/>
-									<StatRailItem
-										eyebrow="Uptime"
-										value={formatSeconds(summary.uptimeSeconds)}
-										compact
-									/>
-								</StatRail>
-							) : (
-								<EmptyMessage dashed className="flex flex-col items-center gap-3 py-12">
-									<p>
-										This container sent no metrics in the selected window. It may have
-										stopped earlier: try a wider range, or go back to the containers list.
-									</p>
-									<div className="flex flex-wrap items-center justify-center gap-2">
-										{preset === "7d" ? null : (
-											<Button
-												variant="outline"
-												size="sm"
-												onClick={() => setPreset("7d")}
-											>
-												Show last 7 days
-											</Button>
-										)}
-										<Button
-											variant="outline"
-											size="sm"
-											render={<Link to="/infra/containers" />}
-										>
-											Back to containers
-										</Button>
-									</div>
-								</EmptyMessage>
-							)}
+			{Result.isInitial(summaryResult) ? (
+				<StatRailLoading count={5} />
+			) : Result.isFailure(summaryResult) ? (
+				<ErrorState
+					error={summaryResult.cause}
+					title="Failed to load container metrics"
+					onRetry={refreshSummary}
+				/>
+			) : summary ? (
+				<StatRail>
+					<StatRailItem
+						eyebrow="CPU"
+						value={formatPercent(summary.cpuPct)}
+						tone={severityLevel(summary.cpuPct)}
+						compact
+					/>
+					<StatRailItem
+						eyebrow="Memory vs limit"
+						value={formatPercent(summary.memoryPct)}
+						tone={severityLevel(summary.memoryPct)}
+						compact
+					/>
+					<StatRailItem eyebrow="Memory" value={formatBytes(summary.memoryBytesAvg)} compact />
+					<StatRailItem
+						eyebrow="Restarts"
+						value={formatNumber(summary.restartsDelta)}
+						tone={summary.restartsDelta > 0 ? "warn" : undefined}
+						compact
+					/>
+					<StatRailItem eyebrow="Uptime" value={formatSeconds(summary.uptimeSeconds)} compact />
+				</StatRail>
+			) : (
+				<EmptyMessage dashed className="flex flex-col items-center gap-3 py-12">
+					<p>
+						This container sent no metrics in the selected window. It may have stopped earlier:
+						try a wider range, or go back to the containers list.
+					</p>
+					<div className="flex flex-wrap items-center justify-center gap-2">
+						{preset === "7d" ? null : (
+							<Button variant="outline" size="sm" onClick={() => setPreset("7d")}>
+								Show last 7 days
+							</Button>
+						)}
+						<Button variant="outline" size="sm" render={<Link to="/infra/containers" />}>
+							Back to containers
+						</Button>
+					</div>
+				</EmptyMessage>
+			)}
 
-							<div className="space-y-3">
-								<SegmentPivot<ContainerInfraMetric>
-									ariaLabel="Metric"
-									options={METRIC_TABS}
-									value={metric}
-									onChange={setMetric}
-								/>
-								<ContainerDetailChart
-									containerName={containerName}
-									hostName={hostName}
-									metric={metric}
-									startTime={startTime}
-									endTime={endTime}
-									bucketSeconds={bucketSeconds}
-								/>
-							</div>
-						</div>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-				<DashboardLayout.RightPanel>{rightSidebar}</DashboardLayout.RightPanel>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+			<div className="space-y-3">
+				<SegmentPivot<ContainerInfraMetric>
+					ariaLabel="Metric"
+					options={METRIC_TABS}
+					value={metric}
+					onChange={setMetric}
+				/>
+				<ContainerDetailChart
+					containerName={containerName}
+					hostName={hostName}
+					metric={metric}
+					startTime={startTime}
+					endTime={endTime}
+					bucketSeconds={bucketSeconds}
+				/>
+			</div>
+		</DashboardPage>
 	)
 }

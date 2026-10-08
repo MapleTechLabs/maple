@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Meter } from "@maple/ui/components/ui/meter"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Popover, PopoverPopup, PopoverTrigger } from "@maple/ui/components/ui/popover"
@@ -25,7 +26,6 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 export function formatCountdown(deadlineMs: number, nowMs: number): string {
 	return formatRemaining(deadlineMs - nowMs, { fixedHours: true })
 }
-
 
 const formatCredits = (checklist: Pick<V2OnboardingChecklist, "reward_amount_usd">) =>
 	`$${checklist.reward_amount_usd}`
@@ -135,7 +135,7 @@ function ProgressChip({ completed, total }: { completed: number; total: number }
 			size="xs"
 			mono
 			className={cn(
-				"text-[11px] font-semibold sm:text-[11px]",
+				"text-2xs font-semibold sm:text-2xs",
 				completed === total ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary",
 			)}
 		>
@@ -179,15 +179,9 @@ function RewardCallout({
 						and get {credits} in credits.
 					</span>
 				</button>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					aria-label="Got it"
-					onClick={onClose}
-					className="-mt-1 shrink-0 text-muted-foreground"
-				>
+				<IconButton label="Got it" onClick={onClose} className="-mt-1 shrink-0 text-muted-foreground">
 					<XmarkIcon size={12} />
-				</Button>
+				</IconButton>
 			</div>
 		</div>
 	)
@@ -264,12 +258,12 @@ export function OnboardingChecklistPanel({
 							<span
 								className={cn(
 									"text-muted-foreground",
-									claimError !== null && "text-destructive",
+									claimError !== null && "text-severity-error",
 								)}
 							>
 								{claimError ?? "Every step is done."}
 							</span>
-							<Button size="sm" onClick={onClaim} loading={claimPending} disabled={claimPending}>
+							<Button size="sm" onClick={onClaim} loading={claimPending}>
 								Claim {credits} credits
 							</Button>
 						</>
@@ -298,7 +292,7 @@ export function OnboardingChecklistPanel({
 
 function OptionalTag() {
 	return (
-		<span className="shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+		<span className="shrink-0 rounded-full border px-1.5 py-px text-3xs font-medium text-muted-foreground">
 			Optional
 		</span>
 	)
@@ -335,7 +329,7 @@ function StepRow({
 				className="group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
 			>
 				<span
-					className="flex size-[18px] shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-[10px] text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
+					className="flex size-[18px] shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
 					aria-hidden
 				>
 					{index}

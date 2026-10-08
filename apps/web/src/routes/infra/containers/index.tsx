@@ -8,7 +8,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@m
 import { Button } from "@maple/ui/components/ui/button"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
 import { DockerIcon, MagnifierIcon } from "@/components/icons"
 import { PageHero } from "@/components/common/page-hero"
@@ -36,8 +37,6 @@ import {
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
 import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
 
@@ -186,10 +185,7 @@ function ContainersPage() {
 		patchSearch({ sortBy: key, sortDir: key === "containerName" ? "asc" : "desc" })
 	}
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -200,149 +196,115 @@ function ContainersPage() {
 	const hasAnyNarrowing = hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope)
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Infrastructure", href: "/infra" }, { label: "Containers" }]}
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Containers" }]}
+			titleContent={<HostsViewTabs view="containers" timeSearch={search} />}
+			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
+			filters={
+				<ContainersFilterSidebarView
+					facetsResult={facetsResult}
+					filters={filters}
+					onFilterChange={onFilterChange}
+					onClearFilters={onClearFilters}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<ContainersFilterSidebarView
-							facetsResult={facetsResult}
-							filters={filters}
-							onFilterChange={onFilterChange}
-							onClearFilters={onClearFilters}
-						/>
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								titleContent={<HostsViewTabs view="containers" timeSearch={search} />}
-							>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									onTimeChange={handleTimeChange}
+			}
+			gap="lg"
+		>
+			<PageHero
+				title="Containers"
+				description="Sorted worst-first by peak utilization against each container's own limits."
+			/>
+
+			<ActiveFilterChips
+				chips={containerFilterChips(search).map((chip) => ({
+					id: chip.param,
+					label: chip.label,
+					values: chip.values,
+					negated: chip.negated,
+					onRemove: () =>
+						navigate({
+							search: (prev) => ({ ...prev, [chip.param]: undefined }),
+						}),
+				}))}
+			/>
+
+			{Result.builder(summaryResult)
+				.onInitial(() => <ContainerSummaryBandLoading className={FLEET_BAND_BOXED} />)
+				.onError(() => null)
+				.onSuccess((counts, result) => (
+					<ContainerSummaryBand
+						counts={counts}
+						activeScope={scope}
+						onScopeChange={(next) => patchSearch({ scope: next })}
+						waiting={result.waiting}
+						className={FLEET_BAND_BOXED}
+					/>
+				))
+				.render()}
+
+			{Result.builder(containersResult)
+				.onInitial(() => <ContainerTableLoading />)
+				.onError((err) => <ErrorState error={err} />)
+				.onSuccess((response, result) => {
+					const containers = response.data
+					const total = response.totalCount
+
+					if (containers.length === 0 && !hasAnyNarrowing) {
+						return (
+							<InfraSetupEmpty
+								icon={<DockerIcon size={16} />}
+								title="No containers reporting yet"
+								description="Run the Maple Docker agent next to your containers to collect per-container CPU, memory, network, and block I/O. On Kubernetes, the Helm chart collects container metrics too."
+								installTab="docker"
+								actionLabel="Install the Docker agent"
+								docs="docker"
+							/>
+						)
+					}
+
+					return (
+						<div
+							className={cn("space-y-4", refreshingClass(result.waiting))}
+							aria-busy={result.waiting || undefined}
+						>
+							<SearchToolbar
+								value={searchText}
+								onChange={(value) => patchSearch({ q: value || undefined })}
+								placeholder="Search all containers…"
+								trailing={countLabel(containers.length, total, "container")}
+							/>
+
+							{containers.length === 0 ? (
+								<Empty className="py-12">
+									<EmptyHeader>
+										<EmptyMedia variant="icon">
+											<MagnifierIcon size={16} />
+										</EmptyMedia>
+										<EmptyTitle>No containers match these filters</EmptyTitle>
+										<EmptyDescription>
+											{scope
+												? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
+												: "Try a different name, or clear the filters to see the whole fleet."}
+										</EmptyDescription>
+									</EmptyHeader>
+									<Button variant="outline" size="sm" onClick={onClearFilters}>
+										Clear all filters
+									</Button>
+								</Empty>
+							) : (
+								<ContainerTable
+									containers={containers}
+									sortBy={sortBy}
+									sortDir={sortDir}
+									onSortChange={onSortChange}
+									waiting={result.waiting}
+									referenceTime={endTime}
 								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title="Containers"
-									description="Sorted worst-first by peak utilization against each container's own limits."
-								/>
-
-								<ActiveFilterChips
-									chips={containerFilterChips(search).map((chip) => ({
-										id: chip.param,
-										label: chip.label,
-										values: chip.values,
-										negated: chip.negated,
-										onRemove: () =>
-											navigate({
-												search: (prev) => ({ ...prev, [chip.param]: undefined }),
-											}),
-									}))}
-								/>
-
-								{Result.builder(summaryResult)
-									.onInitial(() => (
-										<ContainerSummaryBandLoading className={FLEET_BAND_BOXED} />
-									))
-									.onError(() => null)
-									.onSuccess((counts, result) => (
-										<ContainerSummaryBand
-											counts={counts}
-											activeScope={scope}
-											onScopeChange={(next) => patchSearch({ scope: next })}
-											waiting={result.waiting}
-											className={FLEET_BAND_BOXED}
-										/>
-									))
-									.render()}
-
-								{Result.builder(containersResult)
-									.onInitial(() => <ContainerTableLoading />)
-									.onError((err) => <ErrorState error={err} />)
-									.onSuccess((response, result) => {
-										const containers = response.data
-										const total = response.totalCount
-
-										if (containers.length === 0 && !hasAnyNarrowing) {
-											return (
-												<InfraSetupEmpty
-													icon={<DockerIcon size={16} />}
-													title="No containers reporting yet"
-													description="Run the Maple Docker agent next to your containers to collect per-container CPU, memory, network, and block I/O. On Kubernetes, the Helm chart collects container metrics too."
-													installTab="docker"
-													actionLabel="Install the Docker agent"
-													docs="docker"
-												/>
-											)
-										}
-
-										return (
-											<div
-												className={cn("space-y-4", refreshingClass(result.waiting))}
-												aria-busy={result.waiting || undefined}
-											>
-												<SearchToolbar
-													value={searchText}
-													onChange={(value) =>
-														patchSearch({ q: value || undefined })
-													}
-													placeholder="Search all containers…"
-													trailing={countLabel(
-														containers.length,
-														total,
-														"container",
-													)}
-												/>
-
-												{containers.length === 0 ? (
-													<Empty className="py-12">
-														<EmptyHeader>
-															<EmptyMedia variant="icon">
-																<MagnifierIcon size={16} />
-															</EmptyMedia>
-															<EmptyTitle>
-																No containers match these filters
-															</EmptyTitle>
-															<EmptyDescription>
-																{scope
-																	? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
-																	: "Try a different name, or clear the filters to see the whole fleet."}
-															</EmptyDescription>
-														</EmptyHeader>
-														<Button
-															variant="outline"
-															size="sm"
-															onClick={onClearFilters}
-														>
-															Clear all filters
-														</Button>
-													</Empty>
-												) : (
-													<ContainerTable
-														containers={containers}
-														sortBy={sortBy}
-														sortDir={sortDir}
-														onSortChange={onSortChange}
-														waiting={result.waiting}
-														referenceTime={endTime}
-													/>
-												)}
-											</div>
-										)
-									})
-									.render()}
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+							)}
+						</div>
+					)
+				})
+				.render()}
+		</DashboardPage>
 	)
 }

@@ -15,7 +15,6 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 
 import {
-	AlertWarningIcon,
 	BellIcon,
 	BoltIcon,
 	ChartBarIcon,
@@ -24,13 +23,12 @@ import {
 	CodeIcon,
 	type IconComponent,
 	MagnifierIcon,
-	NetworkNodesIcon,
 	RadioCheckedIcon,
 	RocketIcon,
 	ServerIcon,
 	SlidersIcon,
-	SquareTerminalIcon,
 } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import type { ActionKind } from "./action-target"
 import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData } from "./provenance-graph"
 
@@ -39,7 +37,7 @@ import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData }
  * -----------------------------------------------------------------------------------------------*/
 
 const GLYPH: Record<FlowGlyph, IconComponent> = {
-	issue: AlertWarningIcon,
+	issue: CONCEPT_ICON.error,
 	check: RadioCheckedIcon,
 	incident: BellIcon,
 	investigation: MagnifierIcon,
@@ -147,7 +145,7 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 * that *is* the running thing was the only one on the canvas not saying.
 			 */}
 			{data.phase ? (
-				<Eyebrow as="p" className="truncate text-[9px] leading-3 text-primary" title={data.phase}>
+				<Eyebrow as="p" className="truncate text-4xs leading-3 text-primary" title={data.phase}>
 					{data.phase}
 				</Eyebrow>
 			) : null}
@@ -158,7 +156,7 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 */}
 			{data.live ? <LiveBar /> : null}
 			{data.status ? (
-				<p className="flex items-baseline gap-1 text-[9px] leading-3">
+				<p className="flex items-baseline gap-1 text-4xs leading-3">
 					<span
 						className={cn(
 							"shrink-0 font-medium tracking-[0.06em]",
@@ -173,7 +171,7 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 				</p>
 			) : null}
 			{data.note ? (
-				<p className="whitespace-pre-line text-[10px] leading-[1.4] text-muted-foreground">
+				<p className="whitespace-pre-line text-3xs leading-[1.4] text-muted-foreground">
 					{data.note}
 					{data.current ? "\nyou are here" : null}
 				</p>
@@ -193,7 +191,7 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 					variant="orDate"
 					tooltip="title"
 					mono
-					className="mt-auto pt-0.5 text-[9px] leading-3 text-muted-foreground/70"
+					className="mt-auto pt-0.5 text-4xs leading-3 text-muted-foreground/70"
 				/>
 			) : null}
 		</>
@@ -261,7 +259,7 @@ export const FlowPendingVerdictNode = memo(function FlowPendingVerdictNode({
 					</Eyebrow>
 				</div>
 				{data.note ? (
-					<p className="text-[10px] leading-[1.4] text-muted-foreground">{data.note}</p>
+					<p className="text-3xs leading-[1.4] text-muted-foreground">{data.note}</p>
 				) : null}
 				{/*
 				 * Two bars where the verdict node prints its suspected cause and its
@@ -290,7 +288,7 @@ export const FlowHeadingNode = memo(function FlowHeadingNode({
 	data,
 }: NodeProps & { data: { text: string } }) {
 	return (
-		<Eyebrow className="pointer-events-none block whitespace-nowrap text-[9px] leading-3 tracking-[0.1em] text-muted-foreground">
+		<Eyebrow className="pointer-events-none block whitespace-nowrap text-4xs leading-3 tracking-[0.1em] text-muted-foreground">
 			{data.text}
 		</Eyebrow>
 	)
@@ -312,9 +310,9 @@ export const ACTION_GLYPH: Record<ActionKind, { Icon: IconComponent; label: stri
 	rollback: { Icon: RocketIcon, label: "Deploy or rollback" },
 	alert: { Icon: BellIcon, label: "Alerting" },
 	dashboard: { Icon: ChartBarIcon, label: "Dashboard" },
-	traces: { Icon: NetworkNodesIcon, label: "Traces" },
-	logs: { Icon: SquareTerminalIcon, label: "Logs" },
-	issue: { Icon: AlertWarningIcon, label: "Error issue" },
+	traces: { Icon: CONCEPT_ICON.trace, label: "Traces" },
+	logs: { Icon: CONCEPT_ICON.log, label: "Logs" },
+	issue: { Icon: CONCEPT_ICON.error, label: "Error issue" },
 	config: { Icon: SlidersIcon, label: "Configuration" },
 	code: { Icon: CodeIcon, label: "Code change" },
 	service: { Icon: ServerIcon, label: "Service setup" },
@@ -394,7 +392,7 @@ export const FlowActionNode = memo(function FlowActionNode({ data }: NodeProps &
 				 * `task` is a real kind — so the two lanes hold across every row.
 				 */}
 				<span className="flex w-4 shrink-0 flex-col items-center gap-1.5 self-start pt-3">
-					<span className="font-mono text-[10px] leading-3 text-muted-foreground tabular-nums">
+					<span className="font-mono text-3xs leading-3 text-muted-foreground tabular-nums">
 						{data.ordinal}
 					</span>
 					<ActionGlyph kind={data.kind} />
@@ -405,7 +403,7 @@ export const FlowActionNode = memo(function FlowActionNode({ data }: NodeProps &
 						{data.target ? (
 							<Link
 								to={data.target.href}
-								className="shrink-0 text-[9px] font-medium tracking-[0.06em] text-primary hover:underline"
+								className="shrink-0 text-4xs font-medium tracking-[0.06em] text-primary hover:underline"
 							>
 								{data.target.label} →
 							</Link>
@@ -415,7 +413,7 @@ export const FlowActionNode = memo(function FlowActionNode({ data }: NodeProps &
 						 * dim chip on the action they would perform — a roadmap promise
 						 * attached to a real handle, not a placeholder box on the canvas.
 						 */}
-						<span className="min-w-0 flex-1 truncate text-right text-[9px] tracking-[0.06em] text-muted-foreground/60">
+						<span className="min-w-0 flex-1 truncate text-right text-4xs tracking-[0.06em] text-muted-foreground/60">
 							{data.promise}
 						</span>
 					</p>

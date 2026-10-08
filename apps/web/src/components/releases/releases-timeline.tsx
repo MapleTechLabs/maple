@@ -4,7 +4,7 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { pluralize } from "@maple/ui/lib/format"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -16,6 +16,7 @@ import {
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 /** Lanes beyond this fold into a trailing count; the table still lists every release. */
 const MAX_LANES = 12
@@ -153,13 +154,7 @@ function axisLabels(startMs: number, endMs: number, timeZone: string): string[] 
 	return [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
 		const date = new Date(startMs + span * ratio)
 		return showTime
-			? date.toLocaleString(undefined, {
-					timeZone,
-					month: "short",
-					day: "numeric",
-					hour: "numeric",
-					minute: "2-digit",
-				})
+			? formatTimestampInTimezone(date, { timeZone, style: "range" })
 			: date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
 	})
 }
@@ -177,7 +172,7 @@ function markerTitle(marker: Marker, timeZone: string): string {
 		.map((m) => shortReleaseLabel(m.commitSha))
 		.join(", ")
 	const more = marker.members.length > 6 ? `, +${marker.members.length - 6} more` : ""
-	return `${marker.members.length} deploys · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
+	return `${countLabel(marker.members.length, "deploy")} · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
 }
 
 /**
@@ -219,7 +214,7 @@ export function ReleasesTimeline({
 			<PanelHeader
 				title="Deploys over time"
 				action={
-					<div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+					<div className="flex items-center gap-3 text-3xs text-muted-foreground">
 						{RELEASE_HEALTH_ORDER.map((band) => (
 							<span key={band} className="inline-flex items-center gap-1">
 								<span
@@ -240,7 +235,7 @@ export function ReleasesTimeline({
 						key={lane.serviceName}
 						className="grid h-8 grid-cols-[minmax(0,160px)_1fr] items-center gap-3"
 					>
-						<span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+						<span className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
 							<ServiceDot serviceName={lane.serviceName} />
 							<TruncatedText text={lane.serviceName} />
 						</span>
@@ -278,7 +273,7 @@ export function ReleasesTimeline({
 											)}
 										/>
 										{count > 1 ? (
-											<span className="absolute left-full ml-0.5 rounded-sm bg-card px-0.5 font-mono text-[9px] leading-none tabular-nums text-muted-foreground">
+											<span className="absolute left-full ml-0.5 rounded-sm bg-card px-0.5 font-mono text-4xs leading-none tabular-nums text-muted-foreground">
 												{count}
 											</span>
 										) : null}
@@ -289,7 +284,7 @@ export function ReleasesTimeline({
 					</div>
 				))}
 				{hidden > 0 ? (
-					<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 py-1 text-[10px] text-muted-foreground/70">
+					<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 py-1 text-3xs text-muted-foreground/70">
 						<span>
 							+{hidden} more {pluralize(hidden, "service")}
 						</span>
@@ -298,7 +293,7 @@ export function ReleasesTimeline({
 				<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 pt-1.5">
 					<span />
 					<div
-						className="flex justify-between font-mono text-[10px] tabular-nums text-muted-foreground/70"
+						className="flex justify-between font-mono text-3xs tabular-nums text-muted-foreground/70"
 						style={{ paddingLeft: TRACK_INSET_PX, paddingRight: TRACK_INSET_PX }}
 					>
 						{labels.map((label, index) => (

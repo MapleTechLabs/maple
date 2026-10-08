@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { TONE_FILL } from "@maple/ui/lib/tone"
+import { EMPTY_VALUE, countLabel, formatPercent } from "@maple/ui/lib/format"
 import { Link } from "@tanstack/react-router"
 import type { CodeReviewAnalytics, CodeReviewTotals, PrReviewSeverity } from "@maple/domain/http"
 import { QueryBuilderBarChart } from "@maple/ui/components/charts"
@@ -130,7 +131,7 @@ function HeadlineStrip({
 				value={formatCount(current.findings)}
 				subline={
 					current.repositoriesWithFindings > 0
-						? `in ${current.repositoriesWithFindings} ${current.repositoriesWithFindings === 1 ? "repo" : "repos"}`
+						? `in ${countLabel(current.repositoriesWithFindings, "repo")}`
 						: undefined
 				}
 			/>
@@ -452,12 +453,12 @@ function SecondaryStats({ current }: { current: CodeReviewTotals }) {
 	const stats = [
 		{
 			label: "Avg confidence",
-			value: current.avgConfidence === null ? "–" : `${current.avgConfidence.toFixed(1)}/5`,
+			value: current.avgConfidence === null ? EMPTY_VALUE : `${current.avgConfidence.toFixed(1)}/10`,
 			hint: "How safe the reviewer judged each change to merge",
 		},
 		{
 			label: "Avg quality",
-			value: current.avgScore === null ? "–" : `${Math.round(current.avgScore)}/100`,
+			value: current.avgScore === null ? EMPTY_VALUE : `${Math.round(current.avgScore)}/100`,
 			hint: "100 minus a fixed penalty per open finding",
 		},
 		{
@@ -469,13 +470,13 @@ function SecondaryStats({ current }: { current: CodeReviewTotals }) {
 			label: "Fixed rate",
 			value:
 				current.findings === 0
-					? "–"
-					: `${Math.round((current.resolvedFindings / current.findings) * 100)}%`,
+					? EMPTY_VALUE
+					: formatPercent(current.resolvedFindings / current.findings),
 			hint: "Issues a later push resolved",
 		},
 		{
 			label: "Dismissed",
-			value: settled === 0 ? "–" : formatCount(current.dismissedFindings),
+			value: settled === 0 ? EMPTY_VALUE : formatCount(current.dismissedFindings),
 			hint: "Issues a person dismissed as not worth fixing",
 		},
 		{

@@ -120,7 +120,7 @@ export function ContainerTable({
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 								{container.containerName}
 							</span>
 							<HostStatusBadge
@@ -163,7 +163,7 @@ export function ContainerTable({
 						<RelativeTime
 							value={container.lastSeen}
 							mono
-							className="cursor-default text-[11px] text-muted-foreground"
+							className="cursor-default text-2xs text-muted-foreground"
 						/>
 					</div>
 				</Link>

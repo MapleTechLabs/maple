@@ -464,6 +464,34 @@ const parameterNames = (entry: MapleToolCatalogEntry): ReadonlyArray<string> => 
 const normalizeFor = (entry: MapleToolCatalogEntry, input: unknown) =>
 	normalizeArguments(input, parameterNames(entry), entry.aliases, enumValues(inputSchemaOf(entry)))
 
+const isArgumentRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+
+/**
+ * A call read the way the dispatcher reads it, without running it: aliases applied, enum case
+ * fixed, unknown keys reported, and whether the result decodes. Undefined for a name the registry
+ * does not have. Evals score what a call means through this, never its raw spelling.
+ */
+export const readToolCall = (
+	name: string,
+	input: unknown,
+):
+	| {
+			readonly args: Readonly<Record<string, unknown>>
+			readonly unknown: ReadonlyArray<string>
+			readonly decodes: boolean
+	  }
+	| undefined => {
+	const definition = mapleToolDefinitions.find((candidate) => candidate.name === name)
+	if (definition === undefined) return undefined
+	const normalized = normalizeFor(definition, input ?? {})
+	return {
+		args: isArgumentRecord(normalized.args) ? normalized.args : {},
+		unknown: normalized.unknown.map((entry) => entry.key),
+		decodes: Schema.decodeUnknownOption(definition.schema)(normalized.args)._tag === "Some",
+	}
+}
+
 const phrasesByName = new Map(mapleToolDefinitions.map(({ name, phrases }) => [name, phrases]))
 
 /**

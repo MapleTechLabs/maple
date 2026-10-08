@@ -25,6 +25,7 @@ import { orgIdFromChatSessionId, type ChatMessage } from "@maple/domain/chat-ses
 import type { OrgId, ShareChartResponse } from "@maple/domain/http"
 import { ChartRanked, ChartTimeseries } from "@maple/domain/http"
 import { downsample, type ChartPoint } from "@maple/widgets/chart/static-chart"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 /**
  * Points kept per series. The alert card draws 60 across the same 720px and a
@@ -143,7 +144,7 @@ const seriesOf = (spec: TimeseriesSpec, scale: number): ReadonlyArray<ChartTimes
 	const byName = new Map<string, Array<ChartPoint>>()
 	for (const row of spec.data) {
 		// `parseChartSpec` has already dropped the rows whose bucket is not a time.
-		const at = Date.parse(row.bucket)
+		const at = parseWarehouseDateTime(row.bucket)
 		for (const [name, value] of Object.entries(row.series)) {
 			const scaledValue = scaled(value, scale)
 			if (scaledValue === null) continue

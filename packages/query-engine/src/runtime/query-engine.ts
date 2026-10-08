@@ -28,7 +28,7 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Duration, Effect, Match, Option, Result, Schema } from "effect"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
@@ -37,6 +37,7 @@ import {
 	BUCKET_POLICIES,
 	computeBucketSeconds,
 	formatWarehouseDateTime,
+	parseUtc,
 	parseWarehouseDateTime,
 } from "../datetime"
 import { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
@@ -144,7 +145,7 @@ interface BucketFillOptions {
 }
 
 interface MetricTimeseriesRow {
-	readonly bucket: string | Date
+	readonly bucket: string | Date | DateTime.Utc
 	readonly serviceName: string
 	readonly attributeValue: string
 	readonly avgValue: number
@@ -256,10 +257,10 @@ export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
  * retention window of `service_map_spans`.
  */
 function traceServicePartitionWindow(
-	rows: ReadonlyArray<{ readonly timestamp: unknown }>,
+	rows: ReadonlyArray<{ readonly timestamp: DateTime.Utc }>,
 	fallback: { readonly startTime: string; readonly endTime: string },
 ): { readonly startTime: string; readonly endTime: string } {
-	const pageTimes = rows.map((row) => parseWarehouseDateTime(String(row.timestamp))).filter(Number.isFinite)
+	const pageTimes = rows.map((row) => DateTime.toEpochMillis(row.timestamp))
 
 	if (pageTimes.length === 0) return fallback
 
@@ -312,7 +313,7 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	if (windowSeconds <= 0 || windowSeconds > 3600) return dateStr
 	// Snap by deriving epoch ms, flooring, formatting back. Handles cross-minute
 	// and cross-hour boundaries cleanly for windows up to 1h.
-	const ms = Date.parse(dateStr.replace(" ", "T") + "Z")
+	const ms = parseWarehouseDateTime(dateStr)
 	if (Number.isNaN(ms)) return dateStr
 	const snappedMs = Math.floor(ms / (windowSeconds * 1000)) * (windowSeconds * 1000)
 	const iso = new Date(snappedMs).toISOString()
@@ -457,7 +458,10 @@ const buildBucketTimeline = (startMs: number, endMs: number, bucketSeconds: numb
 	return timeline
 }
 
-const normalizeBucket = (bucket: string | Date): string => {
+const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
+	if (DateTime.isDateTime(bucket)) {
+		return DateTime.formatIso(bucket)
+	}
 	if (bucket instanceof Date) {
 		return bucket.toISOString()
 	}
@@ -732,7 +736,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 	}
 })
 
-function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: string }>(
+function groupTimeSeriesRows<T extends { bucket: string | Date | DateTime.Utc; groupName: string }>(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
 	fillOptions?: BucketFillOptions,
@@ -773,7 +777,7 @@ function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: strin
 
 function groupAllMetricsTimeSeriesRows<
 	T extends {
-		bucket: string | Date
+		bucket: string | Date | DateTime.Utc
 		groupName: string
 		count: number
 		avgDuration: number
@@ -1048,13 +1052,13 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 
 	const pageByDate = new Map<string, Array<CH.TraceListPageOutput>>()
 	for (const root of page) {
-		const date = String(root.ts).slice(0, 10)
+		const date = DateTime.formatIso(root.ts).slice(0, 10)
 		pageByDate.set(date, [...(pageByDate.get(date) ?? []), root])
 	}
 	const rows = yield* Effect.forEach(
 		pageByDate,
 		([date, roots]) => {
-			const times = roots.map((root) => parseWarehouseDateTime(String(root.ts)))
+			const times = roots.map((root) => DateTime.toEpochMillis(root.ts))
 			const dateEndMs = parseWarehouseDateTime(`${date} 23:59:59`)
 			const seekEndMs = Math.min(
 				endMs + TRACE_LIST_PAGE_BUFFER_MS,
@@ -1063,7 +1067,7 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 			return executeCHQuery(
 				warehouse,
 				tenant,
-				CH.traceListByTraceIdsQuery({ traceIds: roots.map((root) => String(root.traceId)) }),
+				CH.traceListByTraceIdsQuery({ traceIds: roots.map((root) => root.traceId) }),
 				{
 					orgId: window.orgId,
 					startTime: formatWarehouseDateTime(Math.min(...times) - TRACE_LIST_PAGE_BUFFER_MS),
@@ -1076,8 +1080,8 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 		{ concurrency: TRACE_LIST_FANOUT_CONCURRENCY },
 	)
 
-	const byTraceId = new Map(rows.flat().map((row) => [String(row.traceId), row] as const))
-	return page.flatMap((root) => byTraceId.get(String(root.traceId)) ?? [])
+	const byTraceId = new Map(rows.flat().map((row) => [row.traceId, row] as const))
+	return page.flatMap((root) => byTraceId.get(root.traceId) ?? [])
 })
 
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
@@ -1440,7 +1444,7 @@ function extractTracesDurationStatsOpts(
 }
 
 function signatureMetricsGroupRows<
-	T extends { bucket: string | Date; serviceName: string; attributeValue: string },
+	T extends { bucket: string | Date | DateTime.Utc; serviceName: string; attributeValue: string },
 >(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
@@ -1848,7 +1852,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const points = pointsByMetric.get(row.metricName) ?? []
 				if (points.length === 0) pointsByMetric.set(row.metricName, points)
 				points.push({
-					bucket: String(row.bucket),
+					bucket: DateTime.formatIso(row.bucket),
 					avgValue: Number(row.avgValue),
 					sumValue: Number(row.sumValue),
 					dataPointCount: Number(row.dataPointCount),
@@ -2016,8 +2020,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						source: "traces",
 						data: rows.map((row) => ({
 							traceId: row.traceId,
-							startTime: String(row.startTime),
-							endTime: String(row.endTime),
+							startTime: DateTime.formatIso(row.startTime),
+							endTime: DateTime.formatIso(row.endTime),
 							durationMs: Number(row.durationMicros) / 1000,
 							spanCount: Number(row.spanCount),
 							services: row.services.map(String),
@@ -2042,6 +2046,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			)
 			const maxLimit = hasIndexedFilter ? 200 : 50
 			const clampedLimit = Math.min(tracesQuery.limit ?? 25, maxLimit)
+			const cursor =
+				tracesQuery.cursor === undefined ? Option.none() : Option.some(parseUtc(tracesQuery.cursor))
+			if (Option.isSome(cursor) && Option.isNone(cursor.value)) {
+				return yield* new QueryEngineValidationError({
+					message: "Invalid traces list cursor",
+					details: ["`cursor` must be a timestamp from a previous page's last row"],
+				})
+			}
 
 			const rows = yield* executeCHQuery(
 				warehouse,
@@ -2052,7 +2064,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 						limit: clampedLimit,
 						offset: tracesQuery.offset,
-						cursor: tracesQuery.cursor,
+						cursor: Option.getOrUndefined(Option.flatten(cursor)),
 						sortBy: tracesQuery.sortBy,
 						sortDir: tracesQuery.sortDir,
 						columns: requestedColumns as string[] | undefined,
@@ -2063,7 +2075,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			)
 
 			const traceIds = Array.from(
-				new Set(rows.map((row) => String(row.traceId)).filter((traceId) => traceId.length > 0)),
+				new Set(rows.map((row) => row.traceId).filter((traceId) => traceId.length > 0)),
 			)
 			const wantsTraceServices = requestedColumns?.includes("services") === true
 			const serviceRows: ReadonlyArray<CH.TraceServicesByTraceIdsOutput> =
@@ -2096,7 +2108,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						)
 					: []
 			const servicesByTraceId = new Map(
-				serviceRows.map((row) => [String(row.traceId), row.services.map(String)] as const),
+				serviceRows.map((row) => [row.traceId, row.services.map(String)] as const),
 			)
 
 			return new QueryEngineExecuteResponse({
@@ -2105,7 +2117,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "traces",
 					data: rows.map((row) => ({
 						traceId: row.traceId,
-						timestamp: String(row.timestamp),
+						timestamp: DateTime.formatIso(row.timestamp),
 						spanId: row.spanId,
 						// Empty for a root span. Lets the traces list tell a child-span row
 						// apart from a root one and deep-link `?spanId=` only for children.
@@ -2116,10 +2128,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						statusCode: row.statusCode,
 						spanKind: row.spanKind,
 						hasError: Number(row.hasError) === 1,
-						services: servicesForTraceRow(
-							String(row.serviceName),
-							servicesByTraceId.get(String(row.traceId)),
-						),
+						services: servicesForTraceRow(row.serviceName, servicesByTraceId.get(row.traceId)),
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
 					})),
@@ -2142,7 +2151,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					kind: "list",
 					source: "product_events",
 					data: rows.map((row) => ({
-						timestamp: String(row.timestamp),
+						timestamp: DateTime.formatIso(row.timestamp),
 						eventName: row.eventName,
 						kind: row.kind,
 						source: row.source,

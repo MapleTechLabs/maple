@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react"
 import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
 import { useMountEffect } from "../../hooks/use-mount-effect"
+import { Eyebrow } from "../ui/eyebrow"
 import { HoverCard, HoverCardContent } from "../ui/hover-card"
 import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
@@ -40,6 +41,7 @@ export interface LogAttributeChipProps {
 	attrKey: string
 	value: string
 	tone: ChipTone
+	className?: string
 }
 
 /**
@@ -66,7 +68,7 @@ export interface LogAttributeChipProps {
  * the stable button rather than by Base UI's hover machinery, which is the price
  * of not having a Base UI trigger for that machinery to attach to.
  */
-export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps) {
+export function LogAttributeChip({ attrKey, value, tone, className }: LogAttributeChipProps) {
 	const [open, setOpen] = useState(false)
 	const triggerRef = useRef<HTMLButtonElement>(null)
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -150,13 +152,15 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 					}
 				}}
 				className={cn(
-					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-[10px] font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					TONE_CLASSES[tone],
+					className,
 				)}
 			>
-				<span className="opacity-70">{displayKey}</span>
-				<span className="opacity-40">:</span>
-				<span>{displayValue}</span>
+				<span className="shrink-0 opacity-70">{displayKey}</span>
+				<span className="shrink-0 opacity-40">:</span>
+				{/* Ellipsizes only when a caller caps the chip's width. */}
+				<span className="min-w-0 truncate">{displayValue}</span>
 			</button>
 			{open && (
 				<HoverCard open onOpenChange={(next) => !next && closeNow()}>
@@ -168,17 +172,17 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 						onPointerLeave={scheduleClose}
 					>
 						<div className="px-3 py-2 border-b">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<Eyebrow as="div" className="mb-0.5">
 								Attribute
-							</div>
+							</Eyebrow>
 							<div className="font-mono text-xs break-all">
 								<CopyableValue value={attrKey}>{attrKey}</CopyableValue>
 							</div>
 						</div>
 						<div className="px-3 py-2">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<Eyebrow as="div" className="mb-0.5">
 								Value
-							</div>
+							</Eyebrow>
 							<div className="font-mono text-xs break-all">
 								{parsed !== null ? (
 									<CollapsibleJsonValue value={value} parsed={parsed} />

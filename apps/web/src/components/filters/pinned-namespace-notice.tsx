@@ -1,7 +1,8 @@
 import { useRouter } from "@tanstack/react-router"
 import { LayersIcon } from "@/components/icons"
-import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
+import { eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { setGlobalNamespace } from "@/lib/services/common/global-namespace"
 
 /**
@@ -18,7 +19,7 @@ export function PinnedNamespaceNotice({ namespace }: { namespace: string }) {
 			<div
 				className={cn(
 					"flex w-full items-center justify-between gap-2 py-2 text-muted-foreground",
-					FILTER_SECTION_LABEL,
+					eyebrowVariants({ variant: "label" }),
 				)}
 			>
 				<span className="truncate">Namespace</span>
@@ -36,12 +37,9 @@ export function PinnedNamespaceNotice({ namespace }: { namespace: string }) {
 			<div className="flex items-center gap-2 py-1 text-sm">
 				<LayersIcon size={14} className="shrink-0 text-muted-foreground" />
 				<span className="truncate">{namespace}</span>
-				<span
-					title="Pinned for the whole app in the org menu"
-					className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground"
-				>
+				<Badge variant="tag" title="Pinned for the whole app in the org menu" className="ml-auto">
 					Pinned
-				</span>
+				</Badge>
 			</div>
 		</div>
 	)

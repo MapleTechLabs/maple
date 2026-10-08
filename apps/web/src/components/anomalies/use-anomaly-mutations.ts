@@ -1,8 +1,6 @@
-import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { showErrorToast } from "@/lib/error-toast"
+import { toastExit } from "@/lib/error-toast"
 import type { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/http"
 
 export function useAnomalyMutations() {
@@ -18,11 +16,7 @@ export function useAnomalyMutations() {
 			params: { id: incidentId },
 			reactivityKeys: ["anomalyIncidents", `anomalyIncident:${incidentId}`],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Anomaly resolved", type: "success" })
-		} else {
-			showErrorToast(result, { title: "Resolve failed" })
-		}
+		toastExit(result, { success: "Anomaly resolved", error: "Resolve failed" })
 		return result
 	}
 
@@ -43,14 +37,10 @@ export function useAnomalyMutations() {
 			payload: { issue_id: issueId },
 			reactivityKeys: ["anomalyIncidents", `anomalyIncident:${incidentId}`, ...issueKeys],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: issueId === null ? "Issue unlinked" : "Linked to issue",
-				type: "success",
-			})
-		} else {
-			showErrorToast(result, { title: issueId === null ? "Unlink failed" : "Link failed" })
-		}
+		toastExit(result, {
+			success: issueId === null ? "Issue unlinked" : "Linked to issue",
+			error: issueId === null ? "Unlink failed" : "Link failed",
+		})
 		return result
 	}
 

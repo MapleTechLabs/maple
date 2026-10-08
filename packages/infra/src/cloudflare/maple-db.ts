@@ -1,7 +1,7 @@
 /**
  * The `MAPLE_DB` Hyperdrive binding per the profile's database mode: `managed` and `ref` bind from the
  * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
- * `declared` binds from props via `mapleDbEnv`; `none` binds nothing.
+ * `declared` and `preview` bind from props via `mapleDbEnv`.
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Stage } from "alchemy/Stage"
@@ -51,13 +51,15 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 			},
 			// Read-after-write everywhere (alert state CAS, dashboard versioning).
 			caching: { disabled: true },
+			// The origin local workers actually dial. From `MAPLE_PG_URL` too: a hardcoded
+			// database here silently split a stack across two databases.
 			dev: {
 				scheme: "postgres",
-				host: "localhost",
-				port: 5499,
-				database: "maple",
-				user: "maple",
-				password: Redacted.make("maple"),
+				host: pgUrl.hostname,
+				port: Number(pgUrl.port || "5432"),
+				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				user: decodeURIComponent(pgUrl.username),
+				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 				// Docker Postgres has no TLS; alchemy's default `prefer` stalls until timeout.
 				sslmode: "disable",
 			},
@@ -67,12 +69,12 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 )
 
 /**
- * A Worker's env for prd's database. `MAPLE_DB_BRANCH` orders the upload after migrations (an
- * id-bound config gives alchemy no edge); on `"declared"` also the consumer's `MAPLE_DB`.
+ * A Worker's env for a declared database. `MAPLE_DB_BRANCH` orders the upload after migrations
+ * (an id-bound config gives alchemy no edge); with declared configs also the consumer's `MAPLE_DB`.
  */
 export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbConsumer) =>
 	db && {
-		MAPLE_DB_BRANCH: db.schema.name,
+		MAPLE_DB_BRANCH: db.branch,
 		...(db.hyperdrives && { [MAPLE_DB_BINDING]: db.hyperdrives[consumer] }),
 	}
 
@@ -99,9 +101,9 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 				})
 				return
 			}
-			// Bound from the Worker's props (`mapleDbEnv`), or not at all.
+			// Bound from the Worker's props (`mapleDbEnv`).
 			case "declared":
-			case "none":
+			case "preview":
 				return
 		}
 	})

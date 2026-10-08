@@ -19,7 +19,7 @@ export function HttpStatusCode({
 			className={cn(
 				"font-mono tabular-nums",
 				variant === "badge"
-					? cn("rounded-sm px-1 py-px text-[10px]", TONE_SOFT[tone])
+					? cn("rounded-sm px-1 py-px text-3xs", TONE_SOFT[tone])
 					: tone === "neutral"
 						? "text-muted-foreground"
 						: TONE_TEXT[tone],

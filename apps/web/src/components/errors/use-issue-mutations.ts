@@ -13,8 +13,9 @@ import {
 } from "@maple/domain/http"
 import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 import { logClientError } from "@/lib/services/common/telemetry"
-import { showErrorToast } from "@/lib/error-toast"
+import { showErrorToast, toastExit } from "@/lib/error-toast"
 import { batchOutcome, forEachIssue, ISSUES_KEY, issueKey } from "./issue-batch"
+import { countLabel } from "@maple/ui/lib/format"
 
 const INVALIDATE = [ISSUES_KEY] as const
 
@@ -85,13 +86,12 @@ export function useIssueMutations(onSuccess?: () => void) {
 			payload: new ErrorIssueTransitionRequest({ toState }),
 			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
-		if (Exit.isSuccess(result)) {
-			onSuccess?.()
-			toastManager.add({ title: `Moved to ${WORKFLOW_LABEL[toState]}`, type: "success" })
-		} else {
-			logFailure("transitionTo", result)
-			showErrorToast(result, { title: "State change failed" })
-		}
+		const ok = toastExit(result, {
+			success: `Moved to ${WORKFLOW_LABEL[toState]}`,
+			error: "State change failed",
+		})
+		if (ok) onSuccess?.()
+		else logFailure("transitionTo", result)
 		return result
 	}
 
@@ -124,13 +124,8 @@ export function useIssueMutations(onSuccess?: () => void) {
 			payload: new ErrorIssueClaimRequest({}),
 			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
-		if (Exit.isSuccess(result)) {
-			onSuccess?.()
-			toastManager.add({ title: "Claimed", type: "success" })
-		} else {
-			logFailure("claim", result)
-			showErrorToast(result, { title: "Claim failed" })
-		}
+		if (toastExit(result, { success: "Claimed", error: "Claim failed" })) onSuccess?.()
+		else logFailure("claim", result)
 		return result
 	}
 
@@ -140,7 +135,7 @@ export function useIssueMutations(onSuccess?: () => void) {
 		const outcome = batchOutcome(issueIds.length, exit, (failure) => logFailure("claimMany", failure))
 		if (outcome.failed === 0) {
 			onSuccess?.()
-			toastManager.add({ title: `Claimed ${issueIds.length} issues`, type: "success" })
+			toastManager.add({ title: `Claimed ${countLabel(issueIds.length, "issue")}`, type: "success" })
 		} else if (outcome.succeeded > 0) {
 			onSuccess?.()
 			showErrorToast(outcome.firstFailure, {
@@ -158,13 +153,8 @@ export function useIssueMutations(onSuccess?: () => void) {
 			payload: new ErrorIssueReleaseRequest({}),
 			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
-		if (Exit.isSuccess(result)) {
-			onSuccess?.()
-			toastManager.add({ title: "Released", type: "success" })
-		} else {
-			logFailure("release", result)
-			showErrorToast(result, { title: "Release failed" })
-		}
+		if (toastExit(result, { success: "Released", error: "Release failed" })) onSuccess?.()
+		else logFailure("release", result)
 		return result
 	}
 
@@ -174,16 +164,12 @@ export function useIssueMutations(onSuccess?: () => void) {
 			payload: new ErrorIssueSetSeverityRequest({ severity: value }),
 			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
-		if (Exit.isSuccess(result)) {
-			onSuccess?.()
-			toastManager.add({
-				title: value === null ? "Severity cleared" : `Severity set to ${value}`,
-				type: "success",
-			})
-		} else {
-			logFailure("setSeverity", result)
-			showErrorToast(result, { title: "Severity change failed" })
-		}
+		const ok = toastExit(result, {
+			success: value === null ? "Severity cleared" : `Severity set to ${value}`,
+			error: "Severity change failed",
+		})
+		if (ok) onSuccess?.()
+		else logFailure("setSeverity", result)
 		return result
 	}
 
@@ -195,7 +181,10 @@ export function useIssueMutations(onSuccess?: () => void) {
 		)
 		if (outcome.failed === 0) {
 			onSuccess?.()
-			toastManager.add({ title: `Updated severity for ${issueIds.length} issues`, type: "success" })
+			toastManager.add({
+				title: `Updated severity for ${countLabel(issueIds.length, "issue")}`,
+				type: "success",
+			})
 		} else if (outcome.succeeded > 0) {
 			onSuccess?.()
 			showErrorToast(outcome.firstFailure, {

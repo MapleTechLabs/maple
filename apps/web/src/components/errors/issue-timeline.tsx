@@ -7,13 +7,14 @@ import type {
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import type { ReactNode } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { TONE_FILL } from "@maple/ui/lib/tone"
+import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import { RelativeTime } from "@/components/common/relative-time"
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { useActorDirectory } from "@/hooks/use-actor-directory"
 import { IdentityAvatar, resolveActorIdentity, type ActorIdentity } from "./actor-chip"
+import { IN_FLIGHT_FILL } from "./workflow-badge"
 
 const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 	created: "Created",
@@ -40,27 +41,27 @@ const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 
 const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
 	created: "bg-primary",
-	state_change: "bg-blue-500",
+	state_change: IN_FLIGHT_FILL,
 	assignment: "bg-muted-foreground",
-	claim: "bg-violet-500",
-	release: "bg-violet-500/60",
+	claim: AGENT_ACCENT.fill,
+	release: "bg-chart-ai-agent/60",
 	lease_expired: TONE_FILL.warn,
 	comment: "bg-muted-foreground",
-	agent_note: "bg-violet-500",
+	agent_note: AGENT_ACCENT.fill,
 	fix_proposed: TONE_FILL.ok,
 	regression: TONE_FILL.crit,
 	snooze: "bg-muted-foreground/70",
 	unsnooze: "bg-muted-foreground/70",
-	ai_triage: "bg-violet-500",
+	ai_triage: AGENT_ACCENT.fill,
 	anomaly_linked: TONE_FILL.warn,
-	severity_change: "bg-orange-500",
+	severity_change: TONE_FILL.warn,
 	pr_linked: "bg-muted-foreground",
 	pr_unlinked: "bg-muted-foreground/60",
-	pr_merged: "bg-purple-500",
-	// Teal matches the `verifying` workflow badge, so the timeline row and the
+	pr_merged: TONE_FILL.ok,
+	// Matches the `verifying` workflow badge, so the timeline row and the
 	// state chip read as the same thing happening.
-	verification_started: "bg-teal-500",
-	verification_verdict: "bg-teal-500",
+	verification_started: IN_FLIGHT_FILL,
+	verification_verdict: IN_FLIGHT_FILL,
 } satisfies Record<ErrorIssueEventDocument["type"], string>
 
 /**
@@ -297,7 +298,7 @@ export function IssueTimeline({
 							<div className="min-w-0 py-2.5">
 								<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 									<span className="font-medium text-foreground">Escalation</span>
-									<span className="font-mono text-[11px] capitalize text-muted-foreground">
+									<span className="font-mono text-2xs capitalize text-muted-foreground">
 										{escalation.severity} · {escalation.status}
 									</span>
 								</div>
@@ -335,7 +336,7 @@ export function IssueTimeline({
 							<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 								<span className="font-medium text-foreground">{EVENT_LABEL[event.type]}</span>
 								{event.fromState && event.toState ? (
-									<span className="font-mono text-[11px] text-muted-foreground">
+									<span className="font-mono text-2xs text-muted-foreground">
 										{event.fromState} → {event.toState}
 									</span>
 								) : null}
@@ -367,8 +368,8 @@ function AuthorLabel({
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1 text-[11px]",
-				identity.kind === "agent" ? "text-violet-600 dark:text-violet-300" : "text-muted-foreground",
+				"inline-flex items-center gap-1 text-2xs",
+				identity.kind === "agent" ? AGENT_ACCENT.text : "text-muted-foreground",
 			)}
 			title={identity.detail ?? undefined}
 		>
@@ -380,7 +381,7 @@ function AuthorLabel({
 
 /**
  * A written message: avatar in the rail, author and time in the header, body in
- * a bubble. Agent messages are tinted violet so a room half-full of automation
+ * a bubble. Agent messages carry the agent accent so a room half-full of automation
  * still reads at a glance as "these two paragraphs weren't written by a person".
  */
 function MessageRow({
@@ -428,7 +429,7 @@ function MessageRow({
 								pill
 								size="xs"
 								mono
-								className="bg-violet-500/10 font-normal text-violet-600 dark:text-violet-300"
+								className={cn("font-normal", AGENT_ACCENT.soft)}
 								title={identity?.detail ?? undefined}
 							>
 								{identity?.detail ?? "agent"}
@@ -440,9 +441,7 @@ function MessageRow({
 				<div
 					className={cn(
 						"mt-1.5 max-w-prose overflow-x-auto rounded-xl border px-3 py-2 text-sm",
-						isAgent
-							? "border-violet-500/20 bg-violet-500/[0.06]"
-							: "border-border/70 bg-muted/40",
+						isAgent ? AGENT_ACCENT.surface : "border-border/70 bg-muted/40",
 					)}
 				>
 					<MessageResponse className="text-sm leading-relaxed">{body}</MessageResponse>
@@ -478,7 +477,7 @@ const MESSAGE_ITEM = `${ITEM} first:pt-0`
 // `whitespace-nowrap`: `formatRelativeTime` can return "just now", and a gutter
 // that wraps it onto two lines pushes the dot out of line with its own row.
 const STAMP =
-	"py-3 text-right text-[11px] leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
+	"py-3 text-right text-2xs leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
 
 /** The connector column: a hairline the full row height, marker centred on it. */
 function Rail({ children }: { children: ReactNode }) {

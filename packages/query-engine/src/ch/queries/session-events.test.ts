@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
-import { sessionActivityQuery, IDLE_GAP_THRESHOLD_MS } from "./session-events"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { sessionActivityQuery, sessionTranscriptQuery, IDLE_GAP_THRESHOLD_MS } from "./session-events"
 import { OrgId } from "@maple/domain"
 
 const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
-const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const WINDOW = {
+	startTime: DateTime.makeUnsafe("2026-06-24T04:00:00Z"),
+	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
+}
 
 // sessionActivityQuery
 //
@@ -52,4 +56,33 @@ describe("sessionActivityQuery", () => {
 		expect(sql).not.toContain("Timestamp >=")
 		expect(sql).not.toContain("Timestamp <=")
 	})
+})
+
+describe("session transcript rows decode timestamps to DateTime.Utc", () => {
+	it.effect("sessionTranscriptQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(sessionTranscriptQuery(), sessionParams)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					timestamp: "2026-06-24 04:00:00.123456789",
+					seq: 1,
+					type: "click",
+					url: "/",
+					traceId: "",
+					level: "",
+					message: "",
+					targetSelector: "button",
+					targetText: "Go",
+					netMethod: "",
+					netUrl: "",
+					netStatus: 0,
+					netDurationMs: 0,
+					errorStack: "",
+					attributes: "{}",
+				},
+			])
+			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:00.123Z")
+		}),
+	)
 })

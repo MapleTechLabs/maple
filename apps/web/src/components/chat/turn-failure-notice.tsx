@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Alert, AlertAction, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 
@@ -18,7 +19,7 @@ export function ChatFailureNotice({
 }) {
 	return (
 		<Alert variant="crit" size="sm" className="mb-3 text-sm">
-			<AlertDescription className={cn("min-w-0 text-destructive", truncate && "block truncate")}>
+			<AlertDescription className={cn("min-w-0", TONE_TEXT.crit, truncate && "block truncate")}>
 				{children}
 			</AlertDescription>
 			<AlertAction>

@@ -7,7 +7,8 @@ import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { ServiceMapView } from "@/components/service-map/service-map-view"
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -102,14 +103,7 @@ function ServiceMapContent() {
 		[environments],
 	)
 
-	const handleTimeChange = (
-		range: {
-			startTime?: string
-			endTime?: string
-			presetValue?: string
-		},
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => applyTimeRangeSearch(prev, range),
@@ -142,88 +136,80 @@ function ServiceMapContent() {
 		})
 	}
 
+	// No `time` prop: the refresh provider sits above this component (ServiceMapPage), so the
+	// facets atom read here is page-refreshable too.
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Service Map" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header>
-							{/* Wraps, and below the header's side-by-side breakpoint the
-							    environment select takes a row of its own: all three controls
-							    on one narrow row left it ~70px, and unwrapped they stacked
-							    into a ragged two-line block. */}
-							<div className="flex flex-wrap items-center gap-2">
-								<ToggleGroup
-									variant="outline"
-									size="sm"
-									aria-label="Service map view"
-									value={[search.view ?? "2d"]}
-									onValueChange={(values) => {
-										const view = values[0]
-										if (view === "2d" || view === "3d")
-											void navigate({ search: (prev) => ({ ...prev, view }) })
-									}}
-								>
-									<ToggleGroupItem value="2d" aria-label="2D map">
-										2D
-									</ToggleGroupItem>
-									<ToggleGroupItem value="3d" aria-label="3D map">
-										3D
-									</ToggleGroupItem>
-								</ToggleGroup>
-								<Select
-									items={environmentItems}
-									value={selectedEnvironment}
-									onValueChange={handleEnvironmentChange}
-								>
-									<SelectTrigger
-										size="sm"
-										className="w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-36"
-									>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{environmentItems.map((item) => (
-											<SelectItem key={item.value} value={item.value}>
-												{item.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-								<TimeRangeHeaderControls
-									startTime={search.startTime}
-									endTime={search.endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									presets={LONG_RANGE_PRESET_OPTIONS}
-									maxRangeSeconds={ONE_YEAR_SECONDS}
-									onTimeChange={handleTimeChange}
-								/>
-							</div>
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						{Result.isFailure(facetsResult) ? (
-							<ErrorState
-								error={facetsResult.cause}
-								title="Failed to load service environments"
-								onRetry={refreshFacets}
-							/>
-						) : (
-							<div className="-mx-4 -mb-4 h-[calc(100vh-10rem)]">
-								<ServiceMapView
-									viewMode={search.view ?? "2d"}
-									startTime={effectiveStartTime}
-									endTime={effectiveEndTime}
-									deploymentEnv={deploymentEnv}
-									focus={focus}
-									onFocusChange={handleFocusChange}
-								/>
-							</div>
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Service Map" }]}
+			headerActions={
+				// Wraps, and below the header's side-by-side breakpoint the environment select
+				// takes a row of its own: all three controls on one narrow row left it ~70px.
+				<div className="flex flex-wrap items-center gap-2">
+					<ToggleGroup
+						variant="outline"
+						size="sm"
+						aria-label="Service map view"
+						value={[search.view ?? "2d"]}
+						onValueChange={(values) => {
+							const view = values[0]
+							if (view === "2d" || view === "3d")
+								void navigate({ search: (prev) => ({ ...prev, view }) })
+						}}
+					>
+						<ToggleGroupItem value="2d" aria-label="2D map">
+							2D
+						</ToggleGroupItem>
+						<ToggleGroupItem value="3d" aria-label="3D map">
+							3D
+						</ToggleGroupItem>
+					</ToggleGroup>
+					<Select
+						items={environmentItems}
+						value={selectedEnvironment}
+						onValueChange={handleEnvironmentChange}
+					>
+						<SelectTrigger
+							size="sm"
+							className="w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-36"
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{environmentItems.map((item) => (
+								<SelectItem key={item.value} value={item.value}>
+									{item.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<TimeRangeHeaderControls
+						search={search}
+						defaultPreset="12h"
+						presets={LONG_RANGE_PRESET_OPTIONS}
+						maxRangeSeconds={ONE_YEAR_SECONDS}
+						onTimeChange={handleTimeChange}
+					/>
+				</div>
+			}
+		>
+			{Result.isFailure(facetsResult) ? (
+				<ErrorState
+					error={facetsResult.cause}
+					title="Failed to load service environments"
+					onRetry={refreshFacets}
+				/>
+			) : (
+				<div className="-mx-4 -mb-4 h-[calc(100vh-10rem)]">
+					<ServiceMapView
+						viewMode={search.view ?? "2d"}
+						startTime={effectiveStartTime}
+						endTime={effectiveEndTime}
+						deploymentEnv={deploymentEnv}
+						focus={focus}
+						onFocusChange={handleFocusChange}
+					/>
+				</div>
+			)}
+		</DashboardPage>
 	)
 }

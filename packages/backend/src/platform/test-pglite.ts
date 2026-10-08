@@ -79,8 +79,16 @@ const withDateParamGuard = <T extends object>(client: T): T =>
 		},
 	})
 
-export const createTestDb = (track?: TestDb[]): TestDb => {
-	const pglite = new PGlite({ fs: new FixtureMemoryFS(SNAPSHOT) })
+/**
+ * `startParams` are appended to PGlite's own Postgres arguments. PGlite is one
+ * backend, so the only way to hold a row lock the code under test does not own
+ * is a prepared transaction, which needs `-c max_prepared_transactions=1`.
+ */
+export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string> = []): TestDb => {
+	const pglite = new PGlite({
+		fs: new FixtureMemoryFS(SNAPSHOT),
+		startParams: [...PGlite.defaultStartParams, ...startParams],
+	})
 	// Building the layer twice over the same DB is legitimate (tests that provide
 	// makeLayer twice to simulate concurrent service instances). Restoring the
 	// snapshot is the constructor's job and happens once, so both builds just wait

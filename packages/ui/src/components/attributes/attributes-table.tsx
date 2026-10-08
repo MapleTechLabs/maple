@@ -6,6 +6,7 @@ import { Option } from "effect"
 import { trySync } from "../../lib/try-sync"
 import { ChevronRightIcon } from "../icons"
 import { cn } from "../../lib/utils"
+import { Badge } from "../ui/badge"
 import { useCopy } from "../../hooks/use-copy"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible"
 import { groupAttributesByNamespace } from "../../lib/log-attributes"
@@ -49,7 +50,7 @@ export function CopyableValue({
 				// hovering the thing you just clicked.
 				status === "idle" && "hover:bg-muted/50",
 				status === "copied" && "bg-severity-info/20",
-				status === "error" && "bg-destructive/20",
+				status === "error" && "bg-severity-error/20",
 				className,
 			)}
 			onClick={(event) => {
@@ -103,13 +104,13 @@ export function AttributeRow({
 				value={attrKey}
 				label="attribute key"
 				className={cn(
-					"text-[11px] leading-relaxed text-muted-foreground break-words",
+					"text-2xs leading-relaxed text-muted-foreground break-words",
 					!plainKey && "font-mono",
 				)}
 			>
 				{displayKey ?? attrKey}
 			</CopyableValue>
-			<div className="min-w-0 font-mono text-[11px] leading-relaxed text-foreground break-all">
+			<div className="min-w-0 font-mono text-2xs leading-relaxed text-foreground break-all">
 				{parsed !== null ? (
 					<CollapsibleJsonValue value={value} parsed={parsed} />
 				) : override != null ? (
@@ -154,15 +155,16 @@ function AttributeFilterAction({
 	children: React.ReactNode
 }) {
 	return (
-		<button
-			type="button"
+		<Badge
+			variant="tag"
+			render={<button type="button" />}
 			aria-label={label}
 			title={label}
 			onClick={onClick}
-			className="rounded-sm px-1 py-0.5 font-sans text-[10px] uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			className="bg-transparent font-sans transition-colors"
 		>
 			{children}
-		</button>
+		</Badge>
 	)
 }
 
@@ -224,7 +226,7 @@ export function AttributesTable({ attributes, title, searchQuery, groupByNamespa
 							key={group.namespace}
 							defaultOpen={group.entries.length <= 8 || !!searchQuery}
 						>
-							<CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground">
+							<CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-1.5 py-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground">
 								<ChevronRightIcon
 									size={11}
 									className="transition-transform group-data-[panel-open]:rotate-90"
@@ -232,7 +234,7 @@ export function AttributesTable({ attributes, title, searchQuery, groupByNamespa
 								<span className="font-mono font-semibold text-foreground/80">
 									{group.namespace}
 								</span>
-								<span className="ml-auto rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+								<span className="ml-auto rounded-full bg-muted px-1.5 text-3xs tabular-nums text-muted-foreground">
 									{group.entries.length}
 								</span>
 							</CollapsibleTrigger>
@@ -335,7 +337,7 @@ export function AttributesSection({
 			)}
 			{internalCount > 0 && (
 				<Collapsible>
-					<CollapsibleTrigger className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors group">
+					<CollapsibleTrigger className="flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground transition-colors group">
 						<ChevronRightIcon
 							size={10}
 							className="transition-transform group-data-[panel-open]:rotate-90"

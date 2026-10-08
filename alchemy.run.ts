@@ -6,6 +6,7 @@ import * as Alchemy from "alchemy"
 import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
+import * as Neon from "alchemy/Neon"
 import * as Output from "alchemy/Output"
 import * as Planetscale from "alchemy/Planetscale"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
@@ -13,14 +14,18 @@ import { ConfigError } from "effect/Config"
 import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Redacted from "effect/Redacted"
 import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
 	formatMapleDeployment,
+	formatMapleStage,
 	ManagedMapleDb,
 	type MapleDbConsumer,
+	type MapleDbLogin,
+	type MapleDbResources,
 	type MapleDeployment,
 	type MapleProfile,
 	MapleStack,
@@ -32,7 +37,7 @@ import {
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
-import { optionalPlain, plainWithDefault } from "@maple/infra/env"
+import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
@@ -94,20 +99,78 @@ const devEnv = devApps
 		}
 	: undefined
 
+/** A Hyperdrive config for every consumer of one shared config. */
+const sharedHyperdrive = (connection: Cloudflare.Hyperdrive.Connection) => ({
+	api: connection,
+	ai: connection,
+	"chat-bot": connection,
+	alerting: connection,
+})
+
 /**
- * prd's `main` branch (its deploy applies migrations). On EU, also a role and a Hyperdrive
- * config per consumer on the role's direct origin; US prd binds dashboard configs by id.
+ * A PR's own Neon branch, migrated by its deploy, behind one Hyperdrive config. Branches fork the
+ * `NEON_PROJECT_ID` project's empty default branch, whose project must allow logical replication.
  */
-const declareMapleDb = ({ stage, region }: MapleDeployment, profile: MapleProfile) =>
+const declarePreviewDb = ({ stage, region }: MapleDeployment, profile: MapleProfile) =>
 	Effect.gen(function* () {
-		if (!profile.migratesDatabase) return undefined
+		const branch = yield* Neon.Branch("maple-db-preview", {
+			project: { projectId: yield* requiredPlain("NEON_PROJECT_ID") },
+			name: formatMapleStage(stage),
+			migrations: "packages/db/drizzle",
+		})
+		const hyperdrive = yield* Cloudflare.Hyperdrive.Connection("db-preview", {
+			name: resolveWorkerName("db", stage, region),
+			origin: branch.origin,
+			caching: { disabled: true },
+		})
+		// The branch owner logs in everywhere; with logical replication on it may replicate.
+		const login = (url: Output.Output<string>): MapleDbLogin => ({
+			id: branch.branchId,
+			url: Output.map(url, Redacted.make),
+		})
+		return {
+			branch: branch.branchName,
+			hyperdrives: sharedHyperdrive(hyperdrive),
+			ingest: login(branch.pooledConnectionUri),
+			electric: profile.deploys.electric ? login(branch.connectionUri) : undefined,
+		} satisfies MapleDbResources
+	})
+
+/**
+ * prd's `main` branch (its deploy applies migrations) and the ECS services' roles. On EU, also a
+ * role and a Hyperdrive config per consumer on the role's direct origin; US prd binds dashboard
+ * configs by id.
+ */
+const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile) =>
+	Effect.gen(function* () {
 		const database = resolvePlanetscaleDatabase(region)
 		const schema = yield* Planetscale.PostgresBranch("maple-db-main", {
 			database,
 			name: "main",
 			migrations: "packages/db/drizzle",
 		}).pipe(RemovalPolicy.retain())
-		if (profile.database !== "declared") return { schema, hyperdrives: undefined }
+		// The ingest gateway's role. Changing it is a create-first replace (its id is in the task env).
+		const ingestRole = yield* Planetscale.PostgresRole("ingest-gateway", {
+			database,
+			branch: schema,
+			inheritedRoles: ["postgres"],
+		})
+		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
+		const electricRole = profile.deploys.electric
+			? yield* Planetscale.PostgresRole("electric-db-role", {
+					database,
+					branch: schema,
+					inheritedRoles: ["postgres"],
+					withReplication: true,
+				})
+			: undefined
+		const resources = {
+			branch: schema.name,
+			ingest: { id: ingestRole.id, url: ingestRole.connectionUrlPooled },
+			electric: electricRole && { id: electricRole.id, url: electricRole.connectionUrl },
+		}
+		if (profile.database !== "declared")
+			return { ...resources, hyperdrives: undefined } satisfies MapleDbResources
 		// Distinct ids on purpose: alchemy keys state by id alone, across resource types.
 		const hyperdrive = (consumer: MapleDbConsumer) =>
 			Effect.gen(function* () {
@@ -127,8 +190,18 @@ const declareMapleDb = ({ stage, region }: MapleDeployment, profile: MapleProfil
 		// alerting has its own config; the rest share api's (docs/infra.md).
 		const api = yield* hyperdrive("api")
 		const alerting = yield* hyperdrive("alerting")
-		return { schema, hyperdrives: { api, ai: api, "chat-bot": api, alerting } }
+		return {
+			...resources,
+			hyperdrives: { ...sharedHyperdrive(api), alerting },
+		} satisfies MapleDbResources
 	})
+
+const declareMapleDb = (deployment: MapleDeployment, profile: MapleProfile) =>
+	!profile.migratesDatabase
+		? Effect.succeed(undefined)
+		: profile.database === "preview"
+			? declarePreviewDb(deployment, profile)
+			: declarePrdDb(deployment, profile)
 
 /** What this deploy is, read by the Worker classes' props. */
 const MapleStackLive = Layer.effect(
@@ -189,6 +262,8 @@ const providers =
 		Layer.provideMerge(AWS.providers()),
 		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
 		Layer.provideMerge(isDevServer ? Layer.empty : Planetscale.providers()),
+		// Previews only; prd and dev deploys carry no NEON_API_KEY.
+		Layer.provideMerge(!isDevServer && process.env.NEON_API_KEY ? Neon.providers() : Layer.empty),
 		Layer.provideMerge(Portless.providers()),
 	)
 
@@ -217,17 +292,8 @@ export default Alchemy.Stack(
 			})
 		}
 
-		// The ingest gateway's Postgres role. Changing it is a create-first replace (its id
-		// is in the task env).
-		const ingestDbRole = db
-			? yield* Planetscale.PostgresRole("ingest-gateway", {
-					database: resolvePlanetscaleDatabase(region),
-					branch: db.schema,
-					inheritedRoles: ["postgres"],
-				})
-			: undefined
 		const ingest = profile.deploys.ingest
-			? yield* createMapleIngest({ stage, region, domains, profile, dbRole: ingestDbRole })
+			? yield* createMapleIngest({ stage, region, domains, profile, dbLogin: db?.ingest })
 			: undefined
 
 		// Yielded here first so its `MAPLE_PG_URL` read happens outside any Worker init,
@@ -246,27 +312,17 @@ export default Alchemy.Stack(
 		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
 
-		// Not wired into electric-sync: it reads `ELECTRIC_URL` from the secret store, so
-		// cutover is separate. Electric runs in ingest's VPC, hence `ingest &&`.
-		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
-		const electricDbRole =
-			db && profile.deploys.electric
-				? yield* Planetscale.PostgresRole("electric-db-role", {
-						database: resolvePlanetscaleDatabase(region),
-						branch: db.schema,
-						inheritedRoles: ["postgres"],
-						withReplication: true,
-					})
-				: undefined
+		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
+		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
 		const electric =
-			ingest && electricDbRole
+			ingest && db?.electric
 				? yield* createMapleElectric({
 						stage,
 						region,
 						domains,
 						profile,
 						network: ingest.network,
-						dbRole: electricDbRole,
+						dbLogin: db.electric,
 					})
 				: undefined
 
@@ -311,26 +367,20 @@ export default Alchemy.Stack(
 			localUiUrl: domains.local ? `https://${domains.local}` : "",
 		}
 
-		// Plan-time strings only; the ingest URL is written once its Output resolves.
+		// Plan-time strings only.
 		yield* Effect.sync(() =>
 			appendStepOutputs([
 				`web_url=${summary.webUrl}`,
 				`api_url=${summary.apiUrl}`,
 				`sync_url=${summary.electricSyncUrl}`,
+				`ingest_url=${ingest && domains.ingest ? `https://${domains.ingest}` : ""}`,
 			]),
 		)
 
 		return {
 			...summary,
-			// The ALB hostname exists only after apply (plain HTTP on PR previews).
-			ingestServiceUrl: ingest?.serviceUrl
-				? Output.mapEffect((serviceUrl: string | undefined) =>
-						Effect.sync(() => {
-							appendStepOutputs([`ingest_url=${serviceUrl ?? ""}`])
-							return serviceUrl
-						}),
-					)(ingest.serviceUrl)
-				: undefined,
+			// The ALB itself, behind `domains.ingest`.
+			ingestServiceUrl: ingest?.serviceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			electricServiceUrl: electric?.serviceUrl,
 			apiWorker: api.workerName,

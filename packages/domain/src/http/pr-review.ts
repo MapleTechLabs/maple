@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
+import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
 
 /**
@@ -63,6 +64,7 @@ export const PrReviewFailureReason = Schema.Literals([
 	"model_error",
 	"agent_error",
 	"no_report",
+	"ended_early",
 	"interrupted",
 ]).annotate({ identifier: "@maple/PrReviewFailureReason", title: "Pull Request Review Failure Reason" })
 export type PrReviewFailureReason = Schema.Schema.Type<typeof PrReviewFailureReason>
@@ -78,6 +80,7 @@ export const PR_REVIEW_FAILURE_COPY = {
 	model_error: "The model provider returned an error.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
+	ended_early: "It stopped before it finished, so its partial findings are not posted here.",
 	interrupted: "Maple was restarted while it ran, more than once. Ask again with @maple review.",
 } as const satisfies Record<PrReviewFailureReason, string>
 
@@ -197,6 +200,7 @@ export const PR_REVIEW_MODELS = [
 	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", eu: true },
 	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", eu: true },
 	{ id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", eu: true },
+	{ id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", eu: true },
 ] as const
 
 export const PrReviewModel = Schema.Literals(PR_REVIEW_MODELS.map((model) => model.id)).annotate({
@@ -233,6 +237,13 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	 * organization (the default), this repository only, or nobody (`off`).
 	 */
 	feedbackScope: Schema.optionalKey(PrReviewFeedbackScope),
+	/**
+	 * Fail the check run when the pull request removes a name an alert or dashboard reads and the
+	 * review could not show it is still emitted. Off by default: the review informs.
+	 */
+	blockOnContractBreaks: Schema.optionalKey(Schema.Boolean),
+	/** Look at production after the merged pull request ships and say how it went. On by default. */
+	postMergeCheck: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Organization-wide review settings; absent fields use the deployment's defaults. */
@@ -273,6 +284,8 @@ export const mergePrReviewConfig = (
 			...pick("dailyLimit"),
 			...pick("automaticReviewLimit"),
 			...pick("feedbackScope"),
+			...pick("blockOnContractBreaks"),
+			...pick("postMergeCheck"),
 		},
 		{ disableChecks: true },
 	)
@@ -291,7 +304,7 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	/** How much the touched code can break; one input to the confidence. */
 	risk: Schema.optionalKey(PrReviewRisk),
 	/**
-	 * How safe the change is to merge, 1 to 5, computed from the findings, tests, risk and
+	 * How safe the change is to merge, 1 to 10, computed from the findings, tests, risk and
 	 * observability coverage. Stored computed; see {@link confidencePrReview}.
 	 */
 	confidence: Schema.optionalKey(Schema.Number),
@@ -301,6 +314,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	findings: Schema.Array(PrReviewFinding),
 	/** Reviewed files whose diff the pass never read; set by the runner, never by the model. */
 	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** What production telemetry says about the change; set by the service, never by the model. */
+	telemetry: Schema.optionalKey(PrReviewTelemetry),
 }) {}
 
 /**
@@ -338,6 +353,13 @@ export const PrReviewCoverageSubmission = Schema.Struct({
 	evidence: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/** The reviewer's evidence that a removed name is still emitted at the head: where it still is. */
+export const PrReviewTelemetryDismissalSubmission = Schema.Struct({
+	name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	line: Schema.optionalKey(Schema.NullOr(LenientNumber)),
+})
+
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
@@ -351,6 +373,9 @@ export const PrReviewSubmission = Schema.Struct({
 	confidenceReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	coverage: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewCoverageSubmission))),
 	findings: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewFindingSubmission))),
+	telemetryDismissals: Schema.optionalKey(
+		Schema.NullOr(LenientArray(PrReviewTelemetryDismissalSubmission)),
+	),
 })
 export type PrReviewSubmission = Schema.Schema.Type<typeof PrReviewSubmission>
 
@@ -368,9 +393,11 @@ const MAX_SUMMARY = 800
 const MAX_KEY_CHANGES = 4
 const MAX_CHECKED = 3
 const MAX_BULLET = 200
+/** Removed names the reviewer may claim are still emitted; one per contract break is plenty. */
+const MAX_DISMISSALS = 20
 
 /** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
-const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM)-(\d{1,2}|[A-Z]+)$/
+const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM|TEL)-(\d{1,2}|[A-Z]+)$/
 
 const toNumber = (value: number | string | null | undefined): number | undefined => {
 	const n = typeof value === "string" ? Number(value.trim()) : value
@@ -387,6 +414,9 @@ const decodeCoverage = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(PrReviewCoverageSubmission)),
 )
 const decodeHandles = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+const decodeDismissals = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(PrReviewTelemetryDismissalSubmission)),
+)
 
 /** A lenient list as its items; JSON text that is not a list of them reads as empty. */
 const listOf = <A>(
@@ -456,6 +486,14 @@ export interface NormalizedPrReviewSubmission {
 	readonly droppedFindings: number
 	/** Handles of earlier findings the model says this head fixes, upper-cased and deduplicated. */
 	readonly resolved: ReadonlyArray<string>
+	/** Where the reviewer says each removed name is still emitted; the service verifies each one. */
+	readonly telemetryDismissals: ReadonlyArray<PrReviewTelemetryDismissal>
+}
+
+export interface PrReviewTelemetryDismissal {
+	readonly name: string
+	readonly path: string
+	readonly line: number
 }
 
 /**
@@ -508,7 +546,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	const risk = typeof submission.risk === "string" ? submission.risk.trim().toLowerCase() : undefined
 	const rawConfidence = toNumber(submission.confidence)
 	const confidence =
-		rawConfidence === undefined ? undefined : Math.min(5, Math.max(1, Math.round(rawConfidence)))
+		rawConfidence === undefined
+			? undefined
+			: Math.min(PR_REVIEW_CONFIDENCE_MAX, Math.max(1, Math.round(rawConfidence)))
 	const confidenceReason = submission.confidenceReason?.trim()
 	return {
 		report: new PrReviewReport({
@@ -532,6 +572,24 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 					.filter((handle) => /^F\d{1,4}$/.test(handle)),
 			),
 		].slice(0, MAX_FINDINGS),
+		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
+		telemetryDismissals: listOf(submission.telemetryDismissals, decodeDismissals)
+			.flatMap((raw) => {
+				const name = raw.name?.trim()
+				const path = raw.path?.trim().replace(/^\/+/, "")
+				const line = toNumber(raw.line)
+				return name && path && line !== undefined && line >= 1
+					? [{ name, path, line: Math.round(line) }]
+					: []
+			})
+			.filter(
+				(item, i, all) =>
+					all.findIndex(
+						(other) =>
+							other.name === item.name && other.path === item.path && other.line === item.line,
+					) === i,
+			)
+			.slice(0, MAX_DISMISSALS),
 	}
 }
 
@@ -563,16 +621,28 @@ export const scorePrReview = (
 	return { score, grade }
 }
 
-/** What each confidence level tells the author. */
+/** The top of the confidence scale. Reports stored before 2026-10-07 were on 1 to 5 and migrated. */
+export const PR_REVIEW_CONFIDENCE_MAX = 10
+
+/** What each confidence level tells the author: two levels per band. */
 export const PR_REVIEW_CONFIDENCE_LABEL = {
-	5: "safe to merge",
-	4: "likely safe to merge",
-	3: "needs attention",
-	2: "risky as written",
+	10: "safe to merge",
+	9: "safe to merge",
+	8: "likely safe to merge",
+	7: "likely safe to merge",
+	6: "needs attention",
+	5: "needs attention",
+	4: "risky as written",
+	3: "risky as written",
+	2: "do not merge",
 	1: "do not merge",
 } as const satisfies Record<number, string>
 
 export type PrReviewConfidence = keyof typeof PR_REVIEW_CONFIDENCE_LABEL
+
+/** The band a level reads as: green from 7, amber at 5 and 6, red below. */
+export const prReviewConfidenceTone = (confidence: number): "safe" | "attention" | "risky" =>
+	confidence >= 7 ? "safe" : confidence >= 5 ? "attention" : "risky"
 
 export interface PrReviewConfidenceResult {
 	readonly confidence: PrReviewConfidence
@@ -586,31 +656,52 @@ export interface PrReviewConfidenceResult {
 	readonly cappedBy?: "critical" | "warn" | "partial"
 }
 
-/** What each signal takes off a 5, before rounding. */
+/**
+ * What each signal takes off a 10. Whole points, so one soft signal (partial tests, a medium-risk
+ * area) moves a clean review from 10 to 9, still "safe to merge"; on the old 1 to 5 scale it cost
+ * a whole band.
+ */
 export const PR_REVIEW_CONFIDENCE_DEDUCTION = {
-	tests: { covered: 0, not_needed: 0, partial: 0.5, missing: 1 },
-	risk: { low: 0, medium: 0.5, high: 1 },
-	unobservable: 0.5,
+	tests: { covered: 0, not_needed: 0, partial: 1, missing: 2 },
+	risk: { low: 0, medium: 1, high: 2 },
+	unobservable: 1,
 } as const
 
-const toConfidence = (value: number): PrReviewConfidence =>
-	value >= 5 ? 5 : value >= 4 ? 4 : value >= 3 ? 3 : value >= 2 ? 2 : 1
+/** How far the reviewer's own number may move the computed one: down for what it read, up rarely. */
+export const PR_REVIEW_CONFIDENCE_JUDGEMENT = { lower: 2, raise: 1 } as const
 
-/** Findings' quality score on the confidence scale: one warning reads 4, two read 3. */
+const CONFIDENCE_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const satisfies ReadonlyArray<PrReviewConfidence>
+
+const toConfidence = (value: number): PrReviewConfidence =>
+	CONFIDENCE_LEVELS.filter((level) => level <= value).at(-1) ?? 1
+
+/** Findings' quality score on the confidence scale: a note reads 10, a warning 8, two warnings 6. */
+const QUALITY_LEVELS: ReadonlyArray<readonly [minScore: number, level: number]> = [
+	[98, 10],
+	[95, 9],
+	[90, 8],
+	[85, 7],
+	[80, 6],
+	[70, 5],
+	[60, 4],
+	[45, 3],
+	[25, 2],
+]
+
 const qualityLevel = (score: number): number =>
-	score >= 95 ? 5 : score >= 85 ? 4 : score >= 70 ? 3 : score >= 45 ? 2 : 1
+	QUALITY_LEVELS.find(([minScore]) => score >= minScore)?.[1] ?? 1
 
 const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? "" : "s"}`
 
 /**
- * The review's confidence that the change is safe to merge, 1 to 5, computed rather than asked of
+ * The review's confidence that the change is safe to merge, 1 to 10, computed rather than asked of
  * the model so the same change scores the same and the comment can say why.
  *
- * It starts from the findings' quality score, then takes off for untested behavior, a high-risk
- * area and new work that cannot be observed. Rounding is half-down, so one half-point signal is
- * enough to leave 5. Findings cap it: a critical at 2 (1 with more than one), a security warning
- * at 3, any warning at 4, and a review that ended early at 3. The reviewer's own number can lower
- * the result by one point, never raise it. `undefined` for a pull request with nothing to review.
+ * It starts from the findings' quality score, then takes whole points off for untested behavior, a
+ * risky area and new work that cannot be observed. Findings cap it: a critical at 4 (2 with more
+ * than one), a security warning at 6, any warning at 8, and a review that ended early at 6. The
+ * reviewer's own number can lower the result by up to two points or raise it by one, never past a
+ * cap. `undefined` for a pull request with nothing to review.
  */
 export const confidencePrReview = (
 	report: PrReviewReport,
@@ -646,13 +737,16 @@ export const confidencePrReview = (
 		(report.tests === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.tests[report.tests]) +
 		(report.risk === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.risk[report.risk]) +
 		(unobservable > 0 ? PR_REVIEW_CONFIDENCE_DEDUCTION.unobservable : 0)
-	const signals = Math.max(1, Math.ceil(qualityLevel(score) - deduction - 0.5))
+	const signals = Math.max(1, qualityLevel(score) - deduction)
 	const judged =
 		report.confidence === undefined
 			? signals
-			: Math.max(signals - 1, Math.min(signals, Math.round(report.confidence)))
+			: Math.max(
+					signals - PR_REVIEW_CONFIDENCE_JUDGEMENT.lower,
+					Math.min(signals + PR_REVIEW_CONFIDENCE_JUDGEMENT.raise, Math.round(report.confidence)),
+				)
 
-	// In the order the caps bind: a security warning holds at 3 like an early end, any other at 4.
+	// In the order the caps bind: a security warning holds at 6 like an early end, any other at 8.
 	const cappedBy =
 		criticals > 0
 			? "critical"
@@ -663,7 +757,16 @@ export const confidencePrReview = (
 					: warns > 0
 						? "warn"
 						: undefined
-	const cap = criticals > 1 ? 1 : criticals === 1 ? 2 : securityWarn || partial ? 3 : warns > 0 ? 4 : 5
+	const cap =
+		criticals > 1
+			? 2
+			: criticals === 1
+				? 4
+				: securityWarn || partial
+					? 6
+					: warns > 0
+						? 8
+						: PR_REVIEW_CONFIDENCE_MAX
 	const confidence = toConfidence(Math.min(cap, judged))
 	if (judged > cap) {
 		const why =
@@ -697,6 +800,10 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	partial: Schema.optionalKey(Schema.Boolean),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Where the reviewer says each removed telemetry name is still emitted; verified before use. */
+	telemetryDismissals: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, line: Schema.Number })),
+	),
 }) {}
 
 /** One review in a repository's list: enough to scan outcomes without loading the report. */
@@ -710,7 +817,7 @@ export class PrReviewListItem extends Schema.Class<PrReviewListItem>("PrReviewLi
 	skipReason: Schema.NullOr(PrReviewSkipReason),
 	verdict: Schema.NullOr(PrReviewVerdict),
 	score: Schema.NullOr(Schema.Number),
-	/** 1 to 5; null until a report is stored, and for reports stored before confidence existed. */
+	/** 1 to 10; null until a report is stored, and for reports stored before confidence existed. */
 	confidence: Schema.NullOr(Schema.Number),
 	findings: Schema.Number,
 	commentUrl: Schema.NullOr(Schema.String),
@@ -749,6 +856,9 @@ export class PrReview extends Schema.Class<PrReview>("PrReview")({
 	finishedAt: Schema.NullOr(Schema.Number),
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
+	/** Production after the pull request shipped; absent until a merge schedules the look. */
+	postMergeStatus: Schema.optionalKey(Schema.NullOr(PrReviewPostMergeStatus)),
+	postMerge: Schema.optionalKey(Schema.NullOr(PrReviewPostMerge)),
 }) {}
 
 /** One answer to a pull request comment that mentioned Maple; the id is its session's tab suffix. */

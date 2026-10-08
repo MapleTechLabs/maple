@@ -53,7 +53,7 @@ export function LogSearchHelp() {
 			</PopoverTrigger>
 			<PopoverContent align="start" side="right" className="w-80">
 				<p className="font-medium text-foreground text-xs">What you can search</p>
-				<p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+				<p className="mt-1 text-2xs text-muted-foreground leading-relaxed">
 					One box. It reads the shape of what you type and picks the lookup.
 				</p>
 
@@ -63,10 +63,10 @@ export function LogSearchHelp() {
 							<dt className="mt-px h-fit">
 								<LogSearchModeBadge mode={lookup.mode} className="block text-center" />
 							</dt>
-							<dd className="min-w-0 truncate font-mono text-[11px] text-foreground">
+							<dd className="min-w-0 truncate font-mono text-2xs text-foreground">
 								{lookup.example}
 							</dd>
-							<dd className="col-start-2 text-[11px] text-muted-foreground leading-relaxed">
+							<dd className="col-start-2 text-2xs text-muted-foreground leading-relaxed">
 								{lookup.does}{" "}
 								<span className="text-muted-foreground/60">({lookup.note})</span>
 							</dd>
@@ -76,11 +76,11 @@ export function LogSearchHelp() {
 
 				{/* The text row's claim, shown rather than asserted — and rendered through
 				    the same splitter the stream uses, so it cannot drift. */}
-				<div className="mt-3 break-words rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-[11px] text-foreground leading-relaxed">
+				<div className="mt-3 break-words rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-2xs text-foreground leading-relaxed">
 					<HighlightedText text={TEXT_EXAMPLE} query="conn reset" />
 				</div>
 
-				<p className="mt-2.5 text-[11px] text-muted-foreground leading-relaxed">
+				<p className="mt-2.5 text-2xs text-muted-foreground leading-relaxed">
 					A trace scope becomes a chip you can remove. Wrap an id in{" "}
 					<span className="font-mono text-foreground">"quotes"</span> to search it as text instead.
 				</p>

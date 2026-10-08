@@ -8,11 +8,13 @@ import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { SEVERITY_LABEL } from "@/components/errors/severity-badge"
+import { StatFigure } from "@/components/common/stat-rail"
 import { CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
 import { useTickingNow } from "@/hooks/use-ticking-now"
 import { type Elapsed, reportHeadline, splitDuration } from "./investigation-display"
 import { RunProgress } from "./run-progress"
 import { ConfidenceMeter } from "./confidence-meter"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 /**
  * What the investigation concluded, or how far it has got trying. One card, four
@@ -94,14 +96,7 @@ function Stat({ label, children, last }: { label: string; children: ReactNode; l
 
 /** A big number with a small unit riding its baseline. */
 function BigStat({ value, unit }: { value: string; unit: string }) {
-	return (
-		<span className="flex items-baseline gap-1">
-			<span className="font-display text-2xl font-semibold tracking-tight text-foreground tabular-nums">
-				{value}
-			</span>
-			<span className="text-sm text-muted-foreground">{unit}</span>
-		</span>
-	)
+	return <StatFigure value={value} unit={unit} mono={false} valueClassName="text-foreground" />
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -153,14 +148,14 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 						) : (
 							// The report judged no severity. "—" rather than a stand-in level,
 							// which would read as an assessment nobody made.
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 					<Stat label="Time to diagnosis" last>
 						{timeToDiagnosis ? (
 							<BigStat value={timeToDiagnosis.value} unit={timeToDiagnosis.unit} />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 				</>
@@ -290,7 +285,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 						{ranFor ? (
 							<BigStat value={ranFor.value} unit={ranFor.unit} />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 					<Stat label="Confidence" last>
@@ -369,7 +364,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 						{ranFor ? (
 							<BigStat value={ranFor.value} unit={ranFor.unit} />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 					{/* What was eliminated is the run's actual output, so it gets the stat. */}
@@ -383,7 +378,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 						{report ? (
 							<ConfidenceMeter confidence="low" />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 				</>
@@ -482,7 +477,7 @@ function elapsedBetween(from: string, to: string | null): Elapsed | null {
 function LiveElapsedStat({ from }: { from: string }) {
 	const now = useTickingNow(true)
 	const start = toEpochMs(from)
-	if (!Number.isFinite(start)) return <span className="text-muted-foreground">—</span>
+	if (!Number.isFinite(start)) return <span className="text-muted-foreground">{EMPTY_VALUE}</span>
 	const { value, unit } = splitDuration(Math.max(0, now - start))
 	return <BigStat value={value} unit={unit} />
 }

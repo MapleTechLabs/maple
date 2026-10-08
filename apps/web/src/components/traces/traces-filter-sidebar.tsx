@@ -13,6 +13,7 @@ import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import type { TracesFacetsResponse } from "@/api/warehouse/traces"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
@@ -66,6 +67,9 @@ function TracesFilterSidebarView({
 		>
 			{(facetsResponse, { waiting }) => {
 				const facets = facetsResponse.data
+				if (!hasActiveFilters && (facets.services ?? []).length === 0) {
+					return <FilterSidebarEmpty />
+				}
 
 				return (
 					<FilterSidebarFrame waiting={waiting}>

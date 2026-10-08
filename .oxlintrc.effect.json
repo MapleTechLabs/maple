@@ -69,7 +69,8 @@
 				"**/*.spec.tsx",
 				"**/test/**",
 				"**/tests/**",
-				"**/__tests__/**"
+				"**/__tests__/**",
+				"**/__evals__/**"
 			],
 			"rules": {
 				"effecttsgo/any-unknown-in-error-context": "off",

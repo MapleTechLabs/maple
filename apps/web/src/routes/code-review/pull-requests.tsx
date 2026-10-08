@@ -9,7 +9,12 @@ import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { ROW_LANE } from "@maple/ui/components/ui/list-row"
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import { formatCount, outcomeOf, SKIP_LABELS } from "@/components/code-review/code-review-format"
 import {
@@ -195,7 +200,7 @@ function ReviewTable({
 	onOpen: (review: CodeReviewListItem) => void
 }) {
 	return (
-		<div className="overflow-hidden rounded-xl border bg-card">
+		<Panel>
 			<Table size="sm" className="table-fixed">
 				<TableHeader className="bg-muted/30">
 					<TableRow>
@@ -223,10 +228,17 @@ function ReviewTable({
 								onClick={() => onOpen(review)}
 								className={cn(
 									"cursor-pointer transition-colors hover:bg-muted/40",
-									selected === review.id && "bg-muted/60",
+									selected === review.id && "bg-muted/40",
 								)}
 							>
-								<TableCell className="px-4 py-2.5 leading-normal">
+								{/* The lane's ::before goes on the cell: on a <tr> it becomes an extra table cell. */}
+								<TableCell
+									className={cn(
+										"px-4 py-2.5 leading-normal",
+										ROW_LANE,
+										selected === review.id ? "before:bg-primary" : "before:bg-transparent",
+									)}
+								>
 									<button
 										type="button"
 										onClick={(event) => {
@@ -260,12 +272,11 @@ function ReviewTable({
 								</TableCell>
 								<TableCell className="hidden px-3 py-2.5 leading-normal md:table-cell">
 									<span className={cn("inline-flex items-center gap-1.5", outcome.tone)}>
-										<Icon
-											size={14}
-											className={
-												outcome.kind === "running" ? "animate-spin" : undefined
-											}
-										/>
+										{outcome.kind === "running" ? (
+											<Spinner size={14} />
+										) : (
+											<Icon size={14} />
+										)}
 										{outcome.label}
 									</span>
 									{review.status === "skipped" && review.skipReason !== null ? (
@@ -276,17 +287,17 @@ function ReviewTable({
 								</TableCell>
 								<TableCell className="hidden px-3 text-right tabular-nums lg:table-cell">
 									{review.confidence === null ? (
-										<span className="text-muted-foreground">–</span>
+										<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 									) : (
 										<>
 											{review.confidence}
-											<span className="text-muted-foreground">/5</span>
+											<span className="text-muted-foreground">/10</span>
 										</>
 									)}
 								</TableCell>
 								<TableCell className="hidden px-3 text-right tabular-nums lg:table-cell">
 									{review.score === null ? (
-										<span className="text-muted-foreground">–</span>
+										<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 									) : (
 										<>
 											{review.score}
@@ -296,7 +307,7 @@ function ReviewTable({
 								</TableCell>
 								<TableCell className="px-3 text-right tabular-nums">
 									{review.status !== "completed" ? (
-										<span className="text-muted-foreground">–</span>
+										<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 									) : (
 										<span className="inline-flex items-center gap-1.5">
 											{review.criticalFindings > 0 ? (
@@ -314,13 +325,13 @@ function ReviewTable({
 									)}
 								</TableCell>
 								<TableCell className="hidden px-4 text-right text-muted-foreground sm:table-cell">
-									{formatRelativeFrom(review.createdAt)}
+									<RelativeTime value={review.createdAt} tooltip="title" />
 								</TableCell>
 							</TableRow>
 						)
 					})}
 				</TableBody>
 			</Table>
-		</div>
+		</Panel>
 	)
 }

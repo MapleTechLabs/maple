@@ -99,24 +99,24 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
 								{node.nodeName}
 							</span>
 							<HostStatusBadge quiet lastSeen={node.lastSeen} referenceTime={referenceTime} />
 						</div>
 						<MetaLine items={[node.kubeletVersion && `kubelet ${node.kubeletVersion}`]} />
 					</div>
-					<div className="hidden w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+					<div className="hidden w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 						{Number.isFinite(node.cpuUsage) ? node.cpuUsage.toFixed(2) : "—"}
 					</div>
-					<div className="hidden w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+					<div className="hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 						{formatUptime(node.uptime)}
 					</div>
 					<div className="w-[100px] text-right">
 						<RelativeTime
 							value={node.lastSeen}
 							mono
-							className="cursor-default text-[11px] text-muted-foreground"
+							className="cursor-default text-2xs text-muted-foreground"
 						/>
 					</div>
 				</Link>

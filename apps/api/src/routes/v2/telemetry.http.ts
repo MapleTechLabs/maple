@@ -41,7 +41,9 @@ import {
 	CH,
 	QueryEngineExecuteRequest,
 	formatWarehouseDateTime,
+	parseUtc,
 	formatWarehouseDateTimeMs,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
 import {
@@ -53,7 +55,7 @@ import {
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 } from "@maple/query-engine/runtime"
-import { Effect, Option, Result, Schema } from "effect"
+import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -114,8 +116,8 @@ const parseWindow = (
 		// ordering is the only thing left to check. Testing all three together used
 		// to report an unparseable `start_time` as "end_time must be later than
 		// start_time", blaming the wrong parameter.
-		const startMs = Date.parse(start)
-		const endMs = Date.parse(end)
+		const startMs = parseWarehouseDateTime(start)
+		const endMs = parseWarehouseDateTime(end)
 		if (endMs <= startMs) {
 			return yield* Effect.fail(
 				V2TimeRangeInvalid.make("end_time must be later than start_time.", {
@@ -144,12 +146,12 @@ const parseWindow = (
 const chToIso = (value: string): Timestamp => {
 	const normalized = value.includes("T") ? value : value.replace(" ", "T")
 	const zoned = /[zZ]|[+-]\d\d:?\d\d$/.test(normalized) ? normalized : `${normalized}Z`
-	const ms = Date.parse(zoned)
+	const ms = parseWarehouseDateTime(zoned)
 	return timestamp(Number.isNaN(ms) ? value : new Date(ms).toISOString())
 }
 
 const partitionWindow = (value: string) => {
-	const ms = Date.parse(value.includes("T") ? value : `${value.replace(" ", "T")}Z`)
+	const ms = parseWarehouseDateTime(value)
 	return {
 		startTime: formatWarehouseDateTimeMs(ms - PARTITION_HINT_RADIUS_MS),
 		endTime: formatWarehouseDateTimeMs(ms + PARTITION_HINT_RADIUS_MS),
@@ -173,7 +175,7 @@ type LogKey = readonly [timestamp: string, recordIdentity: string]
 const compactTimestamp = (value: string) => {
 	const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(value)
 	if (match === null) return value
-	const epochSeconds = Date.parse(`${match[1]}T${match[2]}Z`) / 1000
+	const epochSeconds = parseWarehouseDateTime(`${match[1]} ${match[2]}`) / 1000
 	return Number.isSafeInteger(epochSeconds) ? `~${epochSeconds.toString(36)}${match[3] ?? ""}` : value
 }
 const expandTimestamp = (value: string) => {
@@ -197,8 +199,8 @@ const expandHexId = (value: string): Option.Option<string> => {
 	if (Result.isFailure(decoded)) return Option.none()
 	return Option.some([...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join(""))
 }
-const logKey = (row: { timestamp: string; recordIdentity: string }) =>
-	JSON.stringify([compactTimestamp(row.timestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
+const logKey = (row: { exactTimestamp: string; recordIdentity: string }) =>
+	JSON.stringify([compactTimestamp(row.exactTimestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
 
 const decodeLogKeyParts = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
@@ -208,7 +210,7 @@ const parseLogKey = (value: string) =>
 	Option.match(
 		Option.flatMap(decodeLogKeyParts(value), ([rawTimestamp, rawIdentity]) => {
 			const logTimestamp = expandTimestamp(rawTimestamp)
-			if (Number.isNaN(Date.parse(logTimestamp.replace(" ", "T") + "Z"))) return Option.none()
+			if (Number.isNaN(parseWarehouseDateTime(logTimestamp))) return Option.none()
 			return expandHexId(rawIdentity).pipe(
 				Option.filter((hex) => /^[0-9A-F]{32}$/i.test(hex)),
 				Option.map((hex) => [logTimestamp, hex.toUpperCase()] as const),
@@ -221,7 +223,8 @@ const parseLogKey = (value: string) =>
 	)
 
 const toLog = (row: {
-	timestamp: string
+	timestamp: DateTime.Utc
+	exactTimestamp: string
 	severityText: string
 	severityNumber: number
 	serviceName: string
@@ -234,7 +237,7 @@ const toLog = (row: {
 }): V2Log => ({
 	id: logKey(row),
 	object: "log",
-	timestamp: chToIso(row.timestamp),
+	timestamp: timestamp(DateTime.formatIso(row.timestamp)),
 	severity_text: row.severityText,
 	severity_number: Number(row.severityNumber),
 	service_name: decodeServiceName(row.serviceName),
@@ -247,7 +250,7 @@ const toLog = (row: {
 
 const toTraceSummary = (row: {
 	traceId: string
-	startTime: string
+	startTime: DateTime.Utc
 	durationMs: number
 	rootSpanName: string
 	rootSpanKind: string
@@ -262,7 +265,7 @@ const toTraceSummary = (row: {
 }): V2TraceSummary => ({
 	id: decodeTraceId(row.traceId),
 	object: "trace",
-	start_time: chToIso(row.startTime),
+	start_time: timestamp(DateTime.formatIso(row.startTime)),
 	duration_ms: Number(row.durationMs),
 	root_span_name: row.rootSpanName,
 	root_span_kind: row.rootSpanKind,
@@ -284,7 +287,7 @@ const toSpan = (row: {
 	serviceName: string
 	spanKind: string
 	durationMs: number
-	startTime: string
+	startTime: DateTime.Utc
 	statusCode: string
 	statusMessage: string
 	spanAttributes: string
@@ -297,7 +300,7 @@ const toSpan = (row: {
 	name: row.spanName,
 	service_name: row.serviceName,
 	kind: row.spanKind,
-	start_time: chToIso(row.startTime),
+	start_time: timestamp(DateTime.formatIso(row.startTime)),
 	duration_ms: Number(row.durationMs),
 	status_code: row.statusCode,
 	status_message: row.statusMessage || null,
@@ -396,7 +399,8 @@ const validateTimeseriesBucket = (
 	requestedBucketSeconds: number | undefined,
 ) => {
 	const bucketSeconds =
-		requestedBucketSeconds ?? computeBucketSeconds(Date.parse(startTime), Date.parse(endTime))
+		requestedBucketSeconds ??
+		computeBucketSeconds(parseWarehouseDateTime(startTime), parseWarehouseDateTime(endTime))
 	return Math.floor(rangeSeconds / bucketSeconds) + 1 > MAX_TIMESERIES_BUCKETS
 		? Effect.fail(
 				V2TelemetryBucketCountTooLarge.make(
@@ -491,7 +495,12 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 							resourceAttributeFilters: internalFilters?.resourceAttributeFilters,
 							limit: limit + 1,
 							cursor: cursorParts
-								? { timestamp: cursorParts[0]!, traceId: cursorParts[1]! }
+								? Option.getOrUndefined(
+										Option.map(parseUtc(cursorParts[0]!), (at) => ({
+											timestamp: at,
+											traceId: cursorParts[1]!,
+										})),
+									)
 								: undefined,
 						}),
 						{ orgId: tenant.orgId, ...window },
@@ -510,7 +519,10 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 						has_more: hasMore,
 						next_cursor:
 							hasMore && last
-								? encodeKeysetCursor("trc", [last.startTime, last.traceId])
+								? encodeKeysetCursor("trc", [
+										formatWarehouseDateTime(DateTime.toEpochMillis(last.startTime)),
+										last.traceId,
+									])
 								: null,
 					}
 				}),
@@ -618,9 +630,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
 					const truncated = rows.length > CH.SPAN_HIERARCHY_MAX_SPANS
 					const spans = rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS).map(toSpan)
-					const startMs = Math.min(...spans.map((span) => Date.parse(span.start_time)))
+					const startMs = Math.min(...spans.map((span) => parseWarehouseDateTime(span.start_time)))
 					const endMs = Math.max(
-						...spans.map((span) => Date.parse(span.start_time) + span.duration_ms),
+						...spans.map((span) => parseWarehouseDateTime(span.start_time) + span.duration_ms),
 					)
 					return {
 						id: params.trace_id,
@@ -707,7 +719,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 						next_cursor:
 							hasMore && last
 								? encodeKeysetCursor("log", [
-										last.timestamp,
+										last.exactTimestamp,
 										last.serviceName,
 										last.traceId,
 										last.spanId,
@@ -873,8 +885,8 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 											unit: row.metricUnit,
 											is_monotonic: Number(row.isMonotonic) !== 0,
 											data_point_count: Number(row.dataPointCount),
-											first_seen: chToIso(row.firstSeen),
-											last_seen: chToIso(row.lastSeen),
+											first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
+											last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
 										})),
 									),
 								)
@@ -1080,7 +1092,7 @@ const toOverviewPoints = (
 	}))
 
 const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
-	name: String(row.spanName),
+	name: row.spanName,
 	span_count: Number(row.spanCount),
 	estimated_span_count: Number(row.estimatedSpanCount),
 	error_count: Number(row.errorCount),
@@ -1175,10 +1187,14 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							precision: "second",
 							rangeLabel: "Service queries",
 						})
-						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {
-							deploymentEnvironment: query.deployment_environment,
-							serviceNamespace: query.service_namespace,
-						})
+						const baselines = yield* loadBaselines(
+							tenant,
+							parseWarehouseDateTime(query.start_time),
+							{
+								deploymentEnvironment: query.deployment_environment,
+								serviceNamespace: query.service_namespace,
+							},
+						)
 						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 							execute(tenant, window, baselines, {
 								deploymentEnvironment: query.deployment_environment,
@@ -1199,7 +1215,11 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							precision: "second",
 							rangeLabel: "Service queries",
 						})
-						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {})
+						const baselines = yield* loadBaselines(
+							tenant,
+							parseWarehouseDateTime(query.start_time),
+							{},
+						)
 						const rows = yield* execute(tenant, window, baselines, {
 							serviceName: params.name,
 							limit: 1,
@@ -1272,7 +1292,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 						const summary = Effect.gen(function* () {
 							const baselines = yield* loadBaselines(
 								tenant,
-								Date.parse(query.start_time),
+								parseWarehouseDateTime(query.start_time),
 								environmentFilter,
 							)
 							const rows = yield* execute(tenant, window, baselines, {

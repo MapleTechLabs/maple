@@ -84,7 +84,7 @@ function SelectPlanPageInner() {
 						<Badge
 							pill
 							size="lg"
-							className="mb-6 gap-2 border-primary/20 bg-primary/5 px-3 text-[11px] tracking-wider text-primary uppercase sm:text-[11px]"
+							className="mb-6 gap-2 border-primary/20 bg-primary/5 px-3 text-2xs tracking-wider text-primary uppercase sm:text-2xs"
 						>
 							<RocketIcon size={14} className="size-3.5" />
 							{TRIAL_DURATION_DAYS}-day free trial

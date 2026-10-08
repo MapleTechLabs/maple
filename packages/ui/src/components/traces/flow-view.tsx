@@ -205,7 +205,7 @@ export function TraceFlowView({
 				</ReactFlow>
 			</div>
 
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground shrink-0">
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-2xs text-muted-foreground shrink-0">
 				<span className="font-medium">Click to select</span>
 				<span className="text-foreground/30">|</span>
 				<span className="font-medium">Scroll to zoom</span>

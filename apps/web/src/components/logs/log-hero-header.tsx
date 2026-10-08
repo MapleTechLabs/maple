@@ -89,7 +89,16 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>
 				{showClose && (
-					<SheetClose render={<Button variant="ghost" size="icon" className="ml-auto shrink-0" />}>
+					<SheetClose
+						render={
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label="Close"
+								className="ml-auto shrink-0"
+							/>
+						}
+					>
 						<XmarkIcon size={16} />
 					</SheetClose>
 				)}

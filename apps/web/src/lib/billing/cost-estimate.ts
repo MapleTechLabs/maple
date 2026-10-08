@@ -50,7 +50,7 @@ const featureUnit = (featureId: string): string => COUNT_UNITS[featureId] ?? "GB
 
 // Sub-cent rates (e.g. $0.003/session) would round to "$0.00" through the
 // 2-decimal currency formatter, so render those raw.
-const formatRate = (rate: number): string =>
+const formatUnitPrice = (rate: number): string =>
 	rate > 0 && rate < 0.01 ? `$${rate}` : formatCurrency(rate, "usd")
 
 const formatQuantity = (featureId: string, value: number): string => {
@@ -146,8 +146,8 @@ export function estimateCycleCost({
 		const unit = featureUnit(featureId)
 		const rateLabel =
 			billingUnits > 1
-				? `${formatRate(rate)} / ${billingUnits.toLocaleString("en-US")} ${unit}s`
-				: `${formatRate(rate)} / ${unit}`
+				? `${formatUnitPrice(rate)} / ${formatCount(billingUnits)} ${unit}s`
+				: `${formatUnitPrice(rate)} / ${unit}`
 		lines.push({
 			key: `overage:${featureId}`,
 			label: `${FEATURE_LABELS[featureId] ?? featureId} overage`,

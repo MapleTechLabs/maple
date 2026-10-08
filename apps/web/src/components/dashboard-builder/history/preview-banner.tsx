@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import type { DashboardId } from "@maple/domain/http"
 import { ArrowPathIcon, HistoryIcon } from "@/components/icons"
 import { RelativeTime } from "@/components/common/relative-time"
+import { toastExit } from "@/lib/error-toast"
 import { buildRestorePayload, useRestoreDashboardVersion } from "./use-dashboard-history"
 import type { PreviewedVersion } from "@/atoms/dashboard-history-atoms"
 import { useDashboardMutationSync } from "@/hooks/use-dashboard-store"
@@ -26,21 +26,22 @@ export function PreviewBanner({ dashboardId, preview, onCancel, onRestored }: Pr
 	const performRestore = async () => {
 		prepareForMutation()
 		const result = await restore(buildRestorePayload(dashboardId, preview.versionId) as never)
+		const restored = toastExit(result, {
+			success: `Restored from v${preview.versionNumber}`,
+			error: "Restore failed",
+		})
 		if (Exit.isSuccess(result)) {
 			void reconcileTxid(result.value.txid)
-			toastManager.add({ title: `Restored from v${preview.versionNumber}`, type: "success" })
 			onRestored()
-			return true
 		}
-		toastManager.add({ title: "Restore failed", type: "error" })
-		return false
+		return restored
 	}
 
 	return (
 		<>
 			<div className="mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
 				<HistoryIcon className="size-4 shrink-0 text-primary" />
-				<div className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] text-foreground/80">
+				<div className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground/80">
 					<span className="font-semibold text-primary">PREVIEW</span>
 					<span aria-hidden className="opacity-50">
 						·

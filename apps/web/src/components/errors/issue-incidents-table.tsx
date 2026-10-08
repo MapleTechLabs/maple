@@ -6,6 +6,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/t
 import { cn } from "@maple/ui/lib/utils"
 import { DocsLink } from "@/components/common/docs-link"
 import { RelativeTime } from "@/components/common/relative-time"
+import { formatNumber } from "@maple/ui/lib/format"
 
 interface IssueIncidentsTableProps {
 	incidents: ReadonlyArray<ErrorIncidentDocument>
@@ -96,7 +97,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 								<RelativeTime value={incident.lastTriggeredAt} tooltip="title" />
 							</TableCell>
 							<TableCell className="text-right font-mono tabular-nums">
-								{incident.occurrenceCount.toLocaleString()}
+								{formatNumber(incident.occurrenceCount)}
 							</TableCell>
 						</TableRow>
 					)

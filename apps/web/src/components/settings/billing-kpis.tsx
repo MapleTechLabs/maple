@@ -1,6 +1,7 @@
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 
 import { formatCurrency } from "@maple/domain/format"
+import { formatPercent } from "@maple/ui/lib/format"
 import { FEATURE_COLORS, type SpendModel } from "@/lib/billing/spend"
 import { formatFeatureUsage } from "./format-feature-usage"
 
@@ -9,7 +10,7 @@ import { formatFeatureUsage } from "./format-feature-usage"
  * reader touches a chart: spend so far, where it lands, the ceiling it's headed
  * for, and which signal is driving it.
  *
- * Deliberately four cards and not a chart summary — this row is what a customer
+ * Deliberately four cards and not a chart summary: this row is what a customer
  * screenshots into a finance thread.
  */
 
@@ -40,8 +41,9 @@ export function BillingKpis({
 				value={dollars(model.spendCents, model.currency)}
 				subline={wrap(
 					<>
-						Day {model.dayOfCycle} of {model.cycleDays} · {dollars(model.baseCents, model.currency)}{" "}
-						base + {dollars(model.overageCents, model.currency)} overage
+						Day {model.dayOfCycle} of {model.cycleDays} ·{" "}
+						{dollars(model.baseCents, model.currency)} base +{" "}
+						{dollars(model.overageCents, model.currency)} overage
 						{model.partial && " · some legacy items aren't itemized"}
 					</>,
 				)}
@@ -98,7 +100,7 @@ export function BillingKpis({
 					subline={wrap(
 						<>
 							{model.overageCents > 0
-								? `${Math.round((driver.overageCents / model.overageCents) * 100)}% of overage · `
+								? `${formatPercent(driver.overageCents / model.overageCents)} of overage · `
 								: ""}
 							{formatFeatureUsage(driver.featureId, driver.overageUnits)} over included
 						</>,

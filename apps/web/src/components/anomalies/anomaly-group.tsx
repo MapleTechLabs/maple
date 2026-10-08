@@ -93,7 +93,7 @@ export function AnomalyGroup({
 					{clusters.map((cluster) => (
 						<div key={cluster.key + cluster.incidents[0]!.id}>
 							{cluster.incidents.length >= 2 ? (
-								<div className="flex h-7 items-center gap-1.5 border-b border-border/40 bg-muted/20 pl-5 text-[11px] text-muted-foreground">
+								<div className="flex h-7 items-center gap-1.5 border-b border-border/40 bg-muted/20 pl-5 text-2xs text-muted-foreground">
 									<ServiceDot serviceName={cluster.serviceName} size="sm" />
 									<span className="font-medium text-foreground/80">
 										{cluster.serviceName}

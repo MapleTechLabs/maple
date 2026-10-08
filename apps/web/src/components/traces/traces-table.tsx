@@ -1,5 +1,5 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatDuration, pluralize } from "@maple/ui/lib/format"
+import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
@@ -18,8 +18,9 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Badge } from "@maple/ui/components/ui/badge"
-import { LoadingMoreRow, ListFooter } from "@maple/ui/components/ui/list-footer"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { VirtualTableBody } from "@/components/common/virtual-table-body"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
@@ -211,6 +212,8 @@ function LoadingState() {
 		<div className="flex-1 min-h-0 flex flex-col gap-4">
 			<TableSkeleton
 				rows={10}
+				// ROW_HEIGHT, so the list doesn't grow by a row's worth when data lands.
+				rowClassName="h-11"
 				tableClassName="w-full table-fixed"
 				columns={TRACE_COLUMNS.map((column) => ({
 					header: column.header,
@@ -307,7 +310,7 @@ function TracesTableView({
 							 * glance); the full timestamp stays available on the tooltip.
 							 */}
 							<span
-								className="truncate text-[10px] text-muted-foreground"
+								className="truncate text-3xs text-muted-foreground"
 								title={formatTimestampInTimezone(row.original.startTime, {
 									timeZone: effectiveTimezone,
 								})}
@@ -341,7 +344,7 @@ function TracesTableView({
 				size: 70,
 				cell: ({ row }) => (
 					<span className="font-mono text-xs text-muted-foreground">
-						{row.original.spanCount.toLocaleString()}
+						{formatNumber(row.original.spanCount)}
 					</span>
 				),
 			},
@@ -390,8 +393,6 @@ function TracesTableView({
 		estimateSize: () => ROW_HEIGHT,
 		overscan: 10,
 	})
-
-	const virtualItems = virtualizer.getVirtualItems()
 
 	useVirtualReachEnd(virtualizer, {
 		count: rows.length,
@@ -452,7 +453,7 @@ function TracesTableView({
 				<Table scroll={false} className="table-fixed" aria-label="Traces">
 					<TableHeader sticky className="z-20">
 						{table.getHeaderGroups().map((headerGroup) => (
-							<TableRow key={headerGroup.id} className="hover:bg-muted/50">
+							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
 									<TableHead
 										key={header.id}
@@ -476,68 +477,46 @@ function TracesTableView({
 							</TableRow>
 						))}
 					</TableHeader>
-					<TableBody>
-						{virtualItems.length > 0 && (
-							<tr style={{ height: virtualItems[0].start }} aria-hidden="true">
-								<td />
-							</tr>
-						)}
-						{virtualItems.map((virtualRow) => {
-							const row = rows[virtualRow.index]
-							return (
-								<TableRow
-									key={row.id}
-									ref={virtualizer.measureElement}
-									data-index={virtualRow.index}
-									data-focused={virtualRow.index === focusedIndex || undefined}
-									data-active={row.original.spanId === activeRowSpanId || undefined}
-									className="hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-									tabIndex={0}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											onTraceClick(row.original)
-										}
-									}}
-								>
-									{row.getAllCells().map((cell) => {
-										const { responsive, cellClass } = columnClasses(cell.column.id)
-										return (
-											<TableCell
-												key={cell.id}
-												className={cn(
-													"p-2 whitespace-normal leading-normal",
-													responsive,
-													cellClass,
-												)}
-											>
-												{flexRender(cell.column.columnDef.cell, cell.getContext())}
-											</TableCell>
-										)
-									})}
-								</TableRow>
-							)
-						})}
-						{virtualItems.length > 0 && (
-							<tr
-								style={{
-									height:
-										virtualizer.getTotalSize() -
-										virtualItems[virtualItems.length - 1].end,
+					<VirtualTableBody
+						virtualizer={virtualizer}
+						rows={rows}
+						colSpan={TRACE_COLUMNS.length}
+						loadingMore={isFetchingNextPage}
+						loadingLabel="Loading more traces…"
+						renderRow={(row, index, measureRef) => (
+							<TableRow
+								key={row.id}
+								ref={measureRef}
+								data-index={index}
+								data-focused={index === focusedIndex || undefined}
+								data-active={row.original.spanId === activeRowSpanId || undefined}
+								className="hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+								tabIndex={0}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault()
+										onTraceClick(row.original)
+									}
 								}}
-								aria-hidden="true"
 							>
-								<td />
-							</tr>
+								{row.getAllCells().map((cell) => {
+									const { responsive, cellClass } = columnClasses(cell.column.id)
+									return (
+										<TableCell
+											key={cell.id}
+											className={cn(
+												"p-2 whitespace-normal leading-normal",
+												responsive,
+												cellClass,
+											)}
+										>
+											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+										</TableCell>
+									)
+								})}
+							</TableRow>
 						)}
-						{isFetchingNextPage && (
-							<tr>
-								<td colSpan={TRACE_COLUMNS.length}>
-									<LoadingMoreRow label="Loading more traces…" />
-								</td>
-							</tr>
-						)}
-					</TableBody>
+					/>
 				</Table>
 			</div>
 
@@ -554,8 +533,7 @@ function TracesTableView({
 				{hiddenCount > 0 && (
 					<span>
 						{" · "}
-						{hiddenCount.toLocaleString()} single-span noise {pluralize(hiddenCount, "trace")}{" "}
-						hidden{" "}
+						{formatNumber(hiddenCount)} single-span noise {pluralize(hiddenCount, "trace")} hidden{" "}
 						<button
 							type="button"
 							onClick={onShowNoise}

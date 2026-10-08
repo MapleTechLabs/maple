@@ -23,7 +23,7 @@ export function ErrorList({ props }: RendererComponentProps<ErrorListProps>) {
 				return (
 					<div
 						key={err.errorType}
-						className="flex items-start gap-2 rounded p-1 text-[11px] hover:bg-muted/50"
+						className="flex items-start gap-2 rounded p-1 text-2xs hover:bg-muted/50"
 					>
 						<TruncatedText className="flex-1 text-severity-error">{err.errorType}</TruncatedText>
 						<Badge size="xs" mono className={TONE_SOFT.crit}>
@@ -36,12 +36,12 @@ export function ErrorList({ props }: RendererComponentProps<ErrorListProps>) {
 								</Badge>
 							))}
 							{err.affectedServices.length > 2 && (
-								<span className="text-[10px] text-muted-foreground">
+								<span className="text-3xs text-muted-foreground">
 									+{err.affectedServices.length - 2}
 								</span>
 							)}
 						</div>
-						<span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
+						<span className="shrink-0 text-3xs text-muted-foreground">{timeAgo}</span>
 					</div>
 				)
 			})}

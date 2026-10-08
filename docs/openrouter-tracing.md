@@ -16,7 +16,7 @@ References verified on August 4, 2026:
 | Path                                 | Client                              | Surfaces                                                   |
 | ------------------------------------ | ----------------------------------- | ---------------------------------------------------------- |
 | `apps/ai/src/platform/Llm.ts`        | Effect AI (`@effect/ai-openrouter`) | chat turns, investigation passes, and pull request reviews |
-| `apps/ai/src/mcp/__evals__/model.ts` | `@ai-sdk/openai-compatible`         | MCP evals in CI, **not** attributed or tagged              |
+| `apps/ai/src/mcp/__evals__/model.ts` | Effect AI (`@effect/ai-openrouter`) | evals in CI, **not** attributed or tagged                  |
 
 `apps/ai` can also run on Cloudflare Workers AI (`MAPLE_LLM_PROVIDER=workers-ai`). None of the
 attribution below applies on that path. The tag fields are OpenRouter's, and `resolveTriageModel`

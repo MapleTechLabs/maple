@@ -12,6 +12,7 @@ import { DatabaseIcon, GlobeIcon, NetworkNodesIcon, PaperPlaneIcon } from "@/com
 import type { DependencyKind } from "./dependency-type-badge"
 import { ViewAllButton } from "./view-all-button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 const STRIP_LIMIT = 8
 
@@ -149,10 +150,9 @@ function DependencyChip({ target, onClick }: { target: StripTarget; onClick: () 
 			type="button"
 			onClick={onClick}
 			className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-			title={`${target.name} — see Dependencies tab`}
 		>
 			<Icon size={11} />
-			<span className="truncate">{target.name}</span>
+			<TruncatedText text={target.name} />
 		</button>
 	)
 }

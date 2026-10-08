@@ -41,6 +41,7 @@ const LANDING_EVENTS = [
 	"pricing_plan_selected",
 	"pricing_calculator_changed",
 	"install_command_copied",
+	"agent_prompt_copied",
 	"docs_search",
 	"docs_snippet_copied",
 	"changelog_link_copied",

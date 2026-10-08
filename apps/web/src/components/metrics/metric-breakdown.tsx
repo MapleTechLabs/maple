@@ -2,7 +2,10 @@ import * as React from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { Meter } from "@maple/ui/components/ui/meter"
+import { BackdropBar } from "@maple/ui/components/ui/meter"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { formatNumber } from "@maple/ui/lib/format"
+import { ErrorState } from "@/components/common/error-state"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import {
 	Combobox,
@@ -16,7 +19,6 @@ import {
 	getQueryBuilderBreakdownResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { displayError } from "@/lib/error-messages"
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
@@ -163,12 +165,8 @@ function BreakdownBars({
 	)
 
 	return Result.builder(result)
-		.onInitial(() => (
-			<SkeletonList rows={5} rowClassName="h-6" gap="2" />
-		))
-		.onError((error) => (
-			<p className="py-4 text-center text-xs text-muted-foreground">{displayError(error).message}</p>
-		))
+		.onInitial(() => <SkeletonList rows={5} rowClassName="h-6" gap="2" />)
+		.onError((error) => <ErrorState error={error} title="Failed to load breakdown" variant="inline" />)
 		.onSuccess((response) => {
 			const rows = response.data
 				.map((row) => ({
@@ -190,18 +188,17 @@ function BreakdownBars({
 							key={row.name}
 							type="button"
 							onClick={() => onAddFilter(row.name)}
-							title={`Filter to ${filterKey} = "${row.name}"`}
 							className="group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left transition-colors hover:bg-accent"
 						>
-							<Meter
+							<BackdropBar
 								value={row.value}
 								max={max}
-								className="absolute inset-x-0 inset-y-0.5 h-auto rounded-sm bg-transparent"
-								fillClassName="bg-primary/10 transition-colors group-hover:bg-primary/15"
+								className="inset-y-0.5 left-0 bg-primary/10 transition-colors group-hover:bg-primary/15"
 							/>
-							<span className="relative z-10 truncate font-mono text-xs">{row.name}</span>
+							<span className="sr-only">Filter to {filterKey} = </span>
+							<TruncatedText text={row.name} mono className="relative z-10 text-xs" />
 							<span className="relative z-10 shrink-0 font-mono text-xs text-muted-foreground">
-								{formatBreakdownValue(row.value)}
+								{formatNumber(row.value)}
 							</span>
 						</button>
 					))}
@@ -209,11 +206,4 @@ function BreakdownBars({
 			)
 		})
 		.render()
-}
-
-function formatBreakdownValue(value: number): string {
-	if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-	if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-	if (Number.isInteger(value)) return String(value)
-	return value.toFixed(2)
 }

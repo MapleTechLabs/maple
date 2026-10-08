@@ -9,6 +9,7 @@ import {
 	errorsFacetsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
 	tracesDurationStatsQuery,
@@ -448,6 +449,19 @@ describe("errorTickIssuesQuery", () => {
 		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
 		expect(sql).toContain("sum(error_fingerprints_minutely.OccurrenceCount) AS count")
 		expect(sql).not.toContain("LIMIT")
+	})
+})
+
+describe("errorTickFirstErrorMinuteQuery", () => {
+	it("reads the org's earliest minute in the window from the minute rollup", () => {
+		const { sql } = compileUnsafe(errorTickFirstErrorMinuteQuery(), baseParams)
+
+		expect(sql).toContain("FROM error_fingerprints_minutely")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("Minute >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
+		expect(sql).toContain("ORDER BY minute ASC")
+		expect(sql).toContain("LIMIT 1")
 	})
 })
 
