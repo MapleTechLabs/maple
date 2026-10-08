@@ -88,8 +88,11 @@ const forwardOverBinding = (
 			)
 		},
 	).pipe(
-		Effect.catchTag("@maple/web/ApiProxyForwardError", () =>
-			Effect.succeed(new Response(null, { status: 502 })),
+		Effect.catchTag("@maple/web/ApiProxyForwardError", (error) =>
+			Effect.logError("The API binding rejected a /_api forward").pipe(
+				Effect.annotateLogs({ "error.type": error._tag, "url.path": error.path }),
+				Effect.as(new Response(null, { status: 502 })),
+			),
 		),
 	)
 }
