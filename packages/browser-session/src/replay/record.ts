@@ -77,6 +77,8 @@ export interface Recorder {
 // even if that one rotated out while the page was hidden.
 const MAX_PENDING_AGE_MS = 10 * 60_000
 const PAGE_STARTED_AT = Date.now()
+/** How long a stored chunk that found the keepalive budget full waits before its one re-attempt. */
+const KEEPALIVE_RETRY_MS = 1_000
 
 interface PendingChunk extends ChunkMeta {
 	readonly body: string
@@ -193,13 +195,16 @@ async function compressAndPost(
 	}
 	if (stored) {
 		// A request that does not get keepalive dies with the page, after the copy is
-		// gone. So one that does not fit the shared budget right now stays stored for
-		// the next recorder start. Released at once: the POST below reserves again
+		// gone. So with no room in the shared budget right now the copy stays stored
+		// and this waits once: the timer only fires on a page that is still alive,
+		// where the other unload writes have finished or a plain request completes.
+		// On a page that went away the copy is the next recorder start's to send.
+		// With room, the probe is released at once: the POST below reserves again
 		// synchronously, before anything else can run.
 		if (keepalive) {
 			const release = reserveKeepalive(true, gzipped.byteLength)
-			if (!release) return undefined
-			release()
+			if (release) release()
+			else await new Promise((resolve) => setTimeout(resolve, KEEPALIVE_RETRY_MS))
 		}
 		// Gone: a later recorder start already sent it, or a revoke discarded it.
 		if (!takePending(meta)) return undefined

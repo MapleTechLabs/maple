@@ -322,17 +322,39 @@ describe("startRecording", () => {
 			expect(stored()).toBeUndefined()
 		})
 
-		it("stays stored when the keepalive budget is full, and the next start sends it once", async () => {
+		/** An unload flush whose compression finishes with no room left in the keepalive budget. */
+		const fullBudgetFlush = async () => {
 			vi.mocked(reserveKeepalive).mockReturnValueOnce(undefined)
 			unloadFlush("session-1", 7)()
 			await vi.advanceTimersByTimeAsync(0)
-			// Posted without keepalive it would die with the page, its stored copy already gone.
+			// Posted without keepalive now, it would die with the page after its stored
+			// copy was gone. A page that went away never gets further than this.
 			expect(posted).toEqual([])
 			expect(stored()).toBeDefined()
+		}
+		const postedKeepalive = () => posted.map((chunk) => [chunk.meta.chunkSeq, chunk.keepalive])
 
+		it("waits when the keepalive budget is full, and a page still alive a second later posts it", async () => {
+			await fullBudgetFlush()
+			await vi.advanceTimersByTimeAsync(1_000)
+			expect(postedKeepalive()).toEqual([[7, true]])
+			expect(stored()).toBeUndefined()
+		})
+
+		it("waiting for keepalive room, is posted once when a recorder start comes first", async () => {
+			await fullBudgetFlush()
 			await nextStart()
+			expect(postedKeepalive()).toEqual([[7, false]])
+			await vi.advanceTimersByTimeAsync(1_000)
 			await nextStart()
-			expect(posted.map((chunk) => [chunk.meta.chunkSeq, chunk.keepalive])).toEqual([[7, false]])
+			expect(postedKeepalive()).toEqual([[7, false]])
+		})
+
+		it("waiting for keepalive room, is discarded by a consent revoke", async () => {
+			await fullBudgetFlush()
+			clearPendingChunk()
+			await vi.advanceTimersByTimeAsync(1_000)
+			expect(posted).toEqual([])
 		})
 
 		it("is left for the start after a page that goes away while sending it", async () => {
