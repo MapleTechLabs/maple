@@ -1,3 +1,4 @@
+import { DateTime } from "effect"
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
 import { HARD_SERIES_LIMIT } from "@maple/ui/components/plot"
 import { CH } from "@maple/query-engine"
@@ -76,7 +77,7 @@ export function useLocalMetricTimeseries(
 							signal,
 						)
 						return rows.map((r) => ({
-							bucket: r.bucket,
+							bucket: DateTime.formatIso(r.bucket),
 							series: r.groupName || "value",
 							value: Number(r.rateValue),
 						}))
@@ -88,7 +89,7 @@ export function useLocalMetricTimeseries(
 						signal,
 					)
 					return rows.map((r) => ({
-						bucket: r.bucket,
+						bucket: DateTime.formatIso(r.bucket),
 						series: r.groupName || "value",
 						value: Number(r.avgValue),
 					}))

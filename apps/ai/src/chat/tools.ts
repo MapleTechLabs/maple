@@ -38,6 +38,9 @@ import {
 } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
+import type { ModelCallUsage } from "@yielded/agent/usage"
+import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
+import { autumnModelId } from "../platform/ai-credits"
 import { type Cause, Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
@@ -119,9 +122,49 @@ export interface RunUsage {
 	input: number
 	output: number
 	cacheRead: number
+	/** The same calls as AI credit charges, in Autumn's exclusive pools; see {@link recordCharge}. */
+	readonly charges: Array<Mutable<AiModelSpend>>
 }
 
-export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0 })
+type Mutable<A> = { -readonly [K in keyof A]: A[K] }
+
+export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0, charges: [] })
+
+/**
+ * Below every long-context tier models.dev lists (the smallest is 32k). Autumn picks a model's
+ * tier from one charge's total input, so a charge that sums calls past a tier bills them all at
+ * the long-context rate. Calls are merged only while their sum stays under it.
+ */
+const MERGE_CEILING_TOKENS = 32_000
+
+const chargeInput = (spend: AiModelSpend) =>
+	spend.inputTokens + spend.cacheReadTokens + spend.cacheWriteTokens
+
+/** One model call into the run's AI credit charges, merged into the last one when that is safe. */
+const recordCharge = (usage: RunUsage, call: ModelCallUsage) => {
+	const charge = {
+		modelId: autumnModelId(call.model),
+		inputTokens: call.inputTokens.uncached,
+		outputTokens: call.outputTokens.text,
+		cacheReadTokens: call.inputTokens.cacheRead,
+		cacheWriteTokens: call.inputTokens.cacheWrite,
+		reasoningTokens: call.outputTokens.reasoning,
+	}
+	const last = usage.charges.at(-1)
+	if (
+		last === undefined ||
+		last.modelId !== charge.modelId ||
+		chargeInput(last) + chargeInput(charge) > MERGE_CEILING_TOKENS
+	) {
+		usage.charges.push(charge)
+		return
+	}
+	last.inputTokens += charge.inputTokens
+	last.outputTokens += charge.outputTokens
+	last.cacheReadTokens += charge.cacheReadTokens
+	last.cacheWriteTokens += charge.cacheWriteTokens
+	last.reasoningTokens += charge.reasoningTokens
+}
 
 /**
  * A budget hook that only watches.
@@ -138,6 +181,8 @@ export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
 			usage.input += delta.inputTokens
 			usage.output += delta.outputTokens
 			usage.cacheRead += delta.usage.inputTokens.cacheRead ?? 0
+			// Absent only on tool-only charges, which carry no tokens.
+			if (delta.modelUsage !== undefined) recordCharge(usage, delta.modelUsage)
 		}),
 })
 

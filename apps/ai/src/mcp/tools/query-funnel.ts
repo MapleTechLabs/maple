@@ -219,7 +219,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 							Effect.map((groupRows) => {
 								const byGroup = new Map<string, number[]>()
 								for (const row of groupRows) {
-									const group = String(row.group)
+									const group = row.group
 									const arr =
 										byGroup.get(group) ??
 										Array.from<number>({ length: steps.length }).fill(0)

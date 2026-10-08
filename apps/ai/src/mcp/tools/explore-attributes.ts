@@ -271,7 +271,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				const facet = (type: string) =>
 					result.data
 						.filter((r) => r.facetType === type)
-						.map((r) => ({ name: String(r.name), count: Number(r.count ?? 0) }))
+						.map((r) => ({ name: r.name, count: Number(r.count ?? 0) }))
 				const environments = facet("environment")
 				const commitShas = facet("commit_sha")
 				return {

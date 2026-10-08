@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto"
+import type { SchemaDefinitionError } from "@maple-dev/effect-orm/schema"
 import { buildProject, type Datafile } from "@maple-dev/effect-orm/tinybird"
+import { Effect } from "effect"
 import * as Datasources from "./datasources"
 import * as Materializations from "./materializations"
 
@@ -28,10 +30,12 @@ export const createTinybirdProjectRevision = (
 	return digest.digest("hex")
 }
 
-export const buildTinybirdProjectManifest = (): TinybirdProjectManifest => {
-	const { datasources, pipes } = buildProject(Datasources, Materializations)
-	return { datasources, pipes, projectRevision: createTinybirdProjectRevision(datasources, pipes) }
-}
+export const buildTinybirdProjectManifest: Effect.Effect<TinybirdProjectManifest, SchemaDefinitionError> =
+	Effect.map(buildProject(Datasources, Materializations), ({ datasources, pipes }) => ({
+		datasources,
+		pipes,
+		projectRevision: createTinybirdProjectRevision(datasources, pipes),
+	}))
 
 export const renderTinybirdProjectManifestModule = (manifest: TinybirdProjectManifest): string => {
 	const datasources = JSON.stringify(manifest.datasources, null, 2)

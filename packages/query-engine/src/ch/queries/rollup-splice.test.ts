@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "../index"
 import { compile as compileFragment } from "@maple-dev/effect-orm/sql"
 import * as CH from "../index"
-import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
+import { edgeCondition, hourGrain, interiorBounds, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 import { paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
@@ -38,13 +38,13 @@ describe("rollup splice boundaries", () => {
 		// A `<=` on the upper bound would include the trailing partial bucket that
 		// the raw edge also covers — the silent double-count.
 		it("bounds the interior with >= lower and strictly < upper", () => {
-			const [lower, upper] = interiorConditions(CH.rawExpr("Hour", T.dateTimeString))
+			const [lower, upper] = utcInteriorConditions(CH.rawExpr("Hour", T.dateTime))
 			expect(sqlOf(lower)).toContain(">=")
 			expect(sqlOf(upper)).toContain("<")
 			expect(sqlOf(upper)).not.toContain("<=")
 		})
 
-		it("uses the same bounds in interiorBounds as in interiorConditions", () => {
+		it("uses the same bounds in interiorBounds as in utcInteriorConditions", () => {
 			const bounds = interiorBounds()
 			expect(bounds.gte).toBe(hourGrain.firstFullBucket)
 			expect(bounds.lt).toBe(hourGrain.endFloor)
@@ -73,7 +73,7 @@ describe("rollup splice boundaries", () => {
 			const edge = sqlOf(edgeCondition("Timestamp", grain))
 			expect(edge).toBe(`(Timestamp < ${grain.firstFullBucket} OR Timestamp >= ${grain.endFloor})`)
 
-			const [lower, upper] = interiorConditions(CH.rawExpr("Hour", T.dateTimeString), grain)
+			const [lower, upper] = utcInteriorConditions(CH.rawExpr("Hour", T.dateTime), grain)
 			// The edge excludes exactly what the interior includes.
 			expect(sqlOf(lower)).toContain(grain.firstFullBucket)
 			expect(sqlOf(upper)).toContain(grain.endFloor)

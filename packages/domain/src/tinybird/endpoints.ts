@@ -87,6 +87,8 @@ export interface SpanHierarchyParams {
 
 export interface ListLogsOutput {
 	readonly timestamp: string
+	/** `timestamp` with its nanoseconds, for cursors and log keys. */
+	readonly exactTimestamp: string
 	readonly severityText: string
 	readonly severityNumber: number
 	readonly serviceName: string
