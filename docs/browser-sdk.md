@@ -123,6 +123,10 @@ session**. Sessions are never shared across them. When `sessionStorage` is unava
 some private-browsing modes), the SDK falls back to an in-memory record for the life of the
 page.
 
+The replay chunk a page is still sending when it unloads is kept in `sessionStorage` under
+`maple.replay.pending` and sent by the next page of the same session in that tab. Revoking
+consent removes it.
+
 SPA route changes do **not** start a new session: navigation spans (see
 [React integration](#react-integration)) stay within it. Session boundaries are purely
 time-based (see below).

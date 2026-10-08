@@ -121,6 +121,8 @@ Every span and replay event the SDK emits carries one **`session.id`** (a `crypt
 
 The session is stored in `sessionStorage` under the key `maple.session`, so it **survives reloads within a tab**. `sessionStorage` is per tab, so **each tab or window gets its own session**. When `sessionStorage` is unavailable (for example in some private-browsing modes), the SDK keeps the session in memory for the life of the page.
 
+The replay chunk a page is still sending when it unloads is kept in `sessionStorage` under `maple.replay.pending` and sent by the next page of the same session in that tab. Revoking consent removes it.
+
 Client-side route changes in a single-page app do **not** start a new session. Session boundaries are purely time-based.
 
 ### Rotation

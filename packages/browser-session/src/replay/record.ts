@@ -67,14 +67,16 @@ export interface Recorder {
 // sessionStorage (this tab, this origin, like the session record) for the next
 // recorder start of its session: the next page load, or this page shown again.
 const PENDING_KEY = "maple.replay.pending"
-// sessionStorage is ~5 MiB per origin and the host app shares it. A flush is
-// ~100 KB, so only a chunk carrying an outsized full snapshot is left out.
-const MAX_PENDING_CHARS = 512 * 1024
+// A streamed flush stays near FLUSH_BYTES. A buffered segment can run to
+// megabytes and is not kept: the host app shares the origin's storage quota.
+const MAX_PENDING_CHARS = 256 * 1024
 
 interface PendingChunk extends ChunkMeta {
 	readonly body: string
 	/** epoch ms; a chunk from before the last consent withdrawal is never sent. */
 	readonly createdAt: number
+	/** Where the recording page uploads; a page configured otherwise does not send it. */
+	readonly target: string
 }
 
 function isPendingChunk(value: unknown): value is PendingChunk {
@@ -86,63 +88,70 @@ function isPendingChunk(value: unknown): value is PendingChunk {
 		typeof value.eventCount === "number" &&
 		typeof value.durationMs === "number" &&
 		typeof value.body === "string" &&
-		typeof value.createdAt === "number"
+		typeof value.createdAt === "number" &&
+		typeof value.target === "string"
 	)
 }
 
-function readPending(): PendingChunk[] {
+/** Endpoint plus an FNV-1a hash of the key, so the key itself is not stored. */
+function targetOf(config: IngestConfig): string {
+	let hash = 0x811c9dc5
+	for (const char of config.ingestKey ?? "") hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193)
+	return `${config.endpoint}|${hash >>> 0}`
+}
+
+function readPending(): PendingChunk | undefined {
 	try {
-		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "[]")
-		return Array.isArray(parsed) ? parsed.filter(isPendingChunk) : []
+		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "null")
+		return isPendingChunk(parsed) ? parsed : undefined
 	} catch {
-		return []
+		return undefined
 	}
 }
 
-/** False when storage is blocked or full: the chunk is then only as durable as its upload. */
-function writePending(chunks: ReadonlyArray<PendingChunk>): boolean {
+/**
+ * Keep `chunk` unless one is already waiting. False when it was not kept
+ * (storage blocked or full, chunk too large): it is then only as durable as its upload.
+ */
+function storePending(chunk: PendingChunk): boolean {
 	try {
-		if (chunks.length === 0) window.sessionStorage.removeItem(PENDING_KEY)
-		else window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(chunks))
+		const value = JSON.stringify(chunk)
+		if (value.length > MAX_PENDING_CHARS || readPending()) return false
+		window.sessionStorage.setItem(PENDING_KEY, value)
 		return true
 	} catch {
 		return false
 	}
 }
 
-function storePending(chunk: PendingChunk): boolean {
-	const stored = readPending()
-	const chars = stored.reduce((sum, entry) => sum + entry.body.length, chunk.body.length)
-	return chars <= MAX_PENDING_CHARS && writePending([...stored, chunk])
+/** Remove the stored chunk; a consent revoke discards it along with the buffer. */
+export function clearPendingChunk(): boolean {
+	try {
+		window.sessionStorage.removeItem(PENDING_KEY)
+		return true
+	} catch {
+		return false
+	}
 }
 
 /**
- * Remove a stored chunk, reporting whether it was still there. Whoever removes
- * it sends it, so a seq is posted once: ingest appends an index row per POST.
+ * Remove the stored chunk if it is `meta`'s, reporting whether it was. Whoever
+ * removes it sends it, so a seq is posted once: ingest appends an index row per POST.
  */
 function takePending(meta: ChunkMeta): boolean {
-	const stored = readPending()
-	const rest = stored.filter(
-		(entry) => entry.sessionId !== meta.sessionId || entry.chunkSeq !== meta.chunkSeq,
-	)
-	return rest.length < stored.length && writePending(rest)
+	const chunk = readPending()
+	return chunk?.sessionId === meta.sessionId && chunk.chunkSeq === meta.chunkSeq && clearPendingChunk()
 }
 
-/** A consent revoke discards what was kept for the next load along with the buffer. */
-export function clearPendingChunks(): void {
-	writePending([])
-}
-
-/** Send what an earlier flush of this session left behind; anything else stored is dropped. */
-function sendPendingChunks(config: IngestConfig, sessionId: string): void {
-	const stored = readPending()
-	if (stored.length === 0) return
-	clearPendingChunks()
-	const revokedAt = consentRevokedAt()
-	for (const chunk of stored) {
-		if (chunk.sessionId !== sessionId || chunk.createdAt <= revokedAt) continue
-		void compressAndPost(config, chunk, chunk.body, false, false)
-	}
+/** Send the chunk an earlier flush of this session left behind; any other stored chunk is dropped. */
+function sendPendingChunk(config: IngestConfig, sessionId: string): void {
+	const chunk = readPending()
+	if (!chunk || !clearPendingChunk()) return
+	const sendable =
+		chunk.sessionId === sessionId &&
+		chunk.target === targetOf(config) &&
+		chunk.createdAt > consentRevokedAt()
+	if (sendable) void compressAndPost(config, chunk, chunk.body, false, false)
 }
 
 /**
@@ -159,7 +168,8 @@ function uploadChunk(
 ): Promise<BlobPostOutcome | undefined> {
 	const meta: ChunkMeta = { sessionId, chunkSeq: nextChunkSeq(), ...chunk }
 	// Stored synchronously: on a page going away nothing after the first await runs.
-	const stored = keepalive && storePending({ ...meta, body, createdAt: Date.now() })
+	const stored =
+		keepalive && storePending({ ...meta, body, createdAt: Date.now(), target: targetOf(config) })
 	return compressAndPost(config, meta, body, keepalive, stored)
 }
 
@@ -187,7 +197,7 @@ async function compressAndPost(
 }
 
 export function startRecording(config: IngestConfig, sessionId: string): Recorder {
-	sendPendingChunks(config, sessionId)
+	sendPendingChunk(config, sessionId)
 	// Events are serialized once at emit time and buffered as JSON strings, so
 	// flushing is a cheap `join` instead of re-stringifying the whole buffer
 	// (which stalls the main thread for hundreds of ms on full snapshots).
