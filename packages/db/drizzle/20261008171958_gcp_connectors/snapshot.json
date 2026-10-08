@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "cede4985-423f-4e80-bdb7-25d4319189ed",
+  "id": "c2de92d1-c56e-4b42-b7af-16fa811a694e",
   "prevIds": [
     "a9ce02f8-139d-4eb9-bf09-315c5936b0fa"
   ],
@@ -4125,7 +4125,59 @@
       "default": null,
       "generated": null,
       "identity": null,
+      "name": "scope_type",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "scope_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
       "name": "project_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "logs_enabled",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "metrics_enabled",
       "entityType": "columns",
       "schema": "public",
       "table": "gcp_connectors"
@@ -14633,7 +14685,14 @@
           "opclass": null
         },
         {
-          "value": "project_id",
+          "value": "scope_type",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "scope_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -14645,7 +14704,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "gcp_connectors_org_project_idx",
+      "name": "gcp_connectors_org_scope_idx",
       "entityType": "indexes",
       "schema": "public",
       "table": "gcp_connectors"

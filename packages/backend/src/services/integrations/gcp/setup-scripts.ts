@@ -1,5 +1,10 @@
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
-import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
+import type {
+	GcpConnectorId,
+	GcpProjectId,
+	GcpResourceNumber,
+	GcpScopeType,
+} from "@maple/domain/primitives"
 
 /** Single-quote a value for bash. Every value that reaches a script goes through here. */
 const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
@@ -16,82 +21,61 @@ export const gcpLogFilter = (excludeGkeContainerLogs: boolean): string =>
 		" AND ",
 	)
 
-const logVariables = (connectorId: GcpConnectorId, projectId: GcpProjectId): string => {
-	const names = gcpConnectorResourceNames(connectorId)
-	return `PROJECT_ID=${sh(projectId)}
+/** What a connector covers and where Maple's own resources live. */
+export interface GcpScriptTarget {
+	readonly connectorId: GcpConnectorId
+	readonly scopeType: GcpScopeType
+	readonly scopeId: GcpProjectId | GcpResourceNumber
+	/** The host project: topic, subscription and service account are created here. */
+	readonly projectId: GcpProjectId
+}
+
+// How each scope is addressed: the flag that places a log sink, the command family that edits its
+// IAM policy, and the roles the person running the script needs there.
+const SCOPES = {
+	project: {
+		sink: '--project="$SCOPE_ID"',
+		iam: "gcloud projects",
+		needs: "#   Owner on the project (PROJECT_ID below).",
+	},
+	folder: {
+		sink: '--folder="$SCOPE_ID"',
+		iam: "gcloud resource-manager folders",
+		needs: `#   Owner on the host project (PROJECT_ID below), which holds Maple's Pub/Sub topic,
+#   subscription and service account. On the folder (SCOPE_ID below): Logs Configuration
+#   Writer for the log sink, and Folder IAM Admin for the read-only roles.`,
+	},
+	organization: {
+		sink: '--organization="$SCOPE_ID"',
+		iam: "gcloud organizations",
+		needs: `#   Owner on the host project (PROJECT_ID below), which holds Maple's Pub/Sub topic,
+#   subscription and service account. On the organization (SCOPE_ID below): Logs Configuration
+#   Writer for the log sink, and Organization Administrator for the read-only roles.`,
+	},
+} as const
+
+// A folder or organization sink also routes the logs of every project underneath.
+const includeChildren = (scopeType: GcpScopeType): string =>
+	scopeType === "project" ? "" : " --include-children"
+
+const variables = (target: GcpScriptTarget): string => {
+	const names = gcpConnectorResourceNames(target.connectorId)
+	return `PROJECT_ID=${sh(target.projectId)}
+SCOPE_ID=${sh(target.scopeId)}
 TOPIC=${sh(names.topic)}
 SUBSCRIPTION=${sh(names.subscription)}
-SINK=${sh(names.sink)}`
-}
-
-const serviceAccountVariables = (connectorId: GcpConnectorId): string =>
-	`SERVICE_ACCOUNT=${sh(gcpConnectorResourceNames(connectorId).serviceAccountId)}
+SINK=${sh(names.sink)}
+SERVICE_ACCOUNT=${sh(names.serviceAccountId)}
 SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"`
-
-const metricsSteps = (connectorId: GcpConnectorId, mapleServiceAccountEmail: string): string => `
-# Metrics: a read-only service account in this project that Maple may impersonate.
-${serviceAccountVariables(connectorId)}
-MAPLE_SERVICE_ACCOUNT=${sh(mapleServiceAccountEmail)}
-
-if ! gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
-  gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
-    --display-name="Maple metrics reader"
-fi
-
-# A new service account can take a minute to become visible to IAM.
-retry() {
-  for _ in 1 2 3 4 5 6; do
-    "$@" && return
-    sleep 10
-  done
-  "$@"
 }
 
-retry gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
-  --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" --role=roles/monitoring.viewer \\
-  --condition=None >/dev/null
-
-retry gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
-  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator >/dev/null
-`
-
-export interface GcpSetupScriptInput {
-	readonly connectorId: GcpConnectorId
-	readonly projectId: GcpProjectId
-	/** The ingest gateway's receiver URL for this connector, including its secret. */
-	readonly pushEndpoint: string
-	/** Maple's own Google service account. Undefined renders a logs-only script. */
-	readonly mapleServiceAccountEmail: string | undefined
-	readonly excludeGkeContainerLogs: boolean
-}
-
-/**
- * The script a project owner runs in Cloud Shell: a Log Router sink into a Pub/Sub topic whose
- * push subscription delivers each LogEntry to Maple. Every step first looks for the resource, so
- * re-running applies an edited filter instead of failing on what already exists.
- */
-export const renderGcpSetupScript = (input: GcpSetupScriptInput): string => {
-	const mapleAccount = input.mapleServiceAccountEmail
-	const metrics = mapleAccount !== undefined
-	return `#!/usr/bin/env bash
-# Maple: forward this Google Cloud project's logs${metrics ? " and metrics" : ""} to Maple.
-# Run in Cloud Shell as a project owner. Safe to re-run.
-# Keep this script private: PUSH_ENDPOINT contains this connector's secret.
-set -euo pipefail
-
-# ---- Edit this to change which logs are forwarded, then re-run. ----
-# Cloud Logging query language: https://cloud.google.com/logging/docs/view/logging-query-language
-LOG_FILTER=${sh(gcpLogFilter(input.excludeGkeContainerLogs))}
-# --------------------------------------------------------------------
-
-${logVariables(input.connectorId, input.projectId)}
-PUSH_ENDPOINT=${sh(input.pushEndpoint)}
+const logsSetup = (scopeType: GcpScopeType, pushEndpoint: string): string => `
+# ---- Logs: on ----
+PUSH_ENDPOINT=${sh(pushEndpoint)}
 DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
-gcloud services enable pubsub.googleapis.com logging.googleapis.com${
-		metrics ? " monitoring.googleapis.com iam.googleapis.com iamcredentials.googleapis.com" : ""
-	} \\
-  --project="$PROJECT_ID"
+# APIs in the host project: Pub/Sub carries the log entries, Cloud Logging routes them.
+gcloud services enable pubsub.googleapis.com logging.googleapis.com --project="$PROJECT_ID"
 
 if ! gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud pubsub topics create "$TOPIC" --project="$PROJECT_ID"
@@ -111,42 +95,157 @@ else
   gcloud pubsub subscriptions create "$SUBSCRIPTION" --topic="$TOPIC" "\${SUBSCRIPTION_FLAGS[@]}"
 fi
 
-if gcloud logging sinks describe "$SINK" --project="$PROJECT_ID" >/dev/null 2>&1; then
-  gcloud logging sinks update "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" --project="$PROJECT_ID"
+if gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} >/dev/null 2>&1; then
+  gcloud logging sinks update "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
 else
-  gcloud logging sinks create "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" --project="$PROJECT_ID"
+  gcloud logging sinks create "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
 fi
 
-# The sink writes as a Google-managed identity, which needs to route logs and publish to the topic.
-WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" --project="$PROJECT_ID" --format='value(writerIdentity)')"
+# The sink writes as a Google-managed identity. Google requires Logs Writer for it on the project
+# that holds the destination, and it needs Pub/Sub Publisher on this one topic.
+WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} --format='value(writerIdentity)')"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
   --member="$WRITER_IDENTITY" --role=roles/logging.logWriter --condition=None >/dev/null
 gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
   --member="$WRITER_IDENTITY" --role=roles/pubsub.publisher >/dev/null
-${mapleAccount === undefined ? "" : metricsSteps(input.connectorId, mapleAccount)}
-echo "Maple setup complete for $PROJECT_ID. Logs start arriving in Maple within a few minutes."
+`
+
+const logsRemoval = (scopeType: GcpScopeType): string => `
+# ---- Logs: off. Remove what an earlier run created. ----
+# The Logs Writer grant on the host project stays: the sink wrote as the logging service agent
+# of the ${scopeType}, an identity every other sink there shares.
+if gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} >/dev/null 2>&1; then
+  gcloud logging sinks delete "$SINK" ${SCOPES[scopeType].sink} --quiet
+fi
+if gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
+fi
+if gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
+fi
+`
+
+const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
+
+const metricsSetup = (scopeType: GcpScopeType, mapleServiceAccountEmail: string): string => `
+# ---- Metrics and resources: on ----
+MAPLE_SERVICE_ACCOUNT=${sh(mapleServiceAccountEmail)}
+
+# APIs in the host project, the project Maple's reads are made through:
+#   monitoring.googleapis.com      Cloud Monitoring, to read metrics
+#   cloudasset.googleapis.com      Cloud Asset Inventory, to list resources
+#   iam.googleapis.com             to create the service account below
+#   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
+gcloud services enable monitoring.googleapis.com cloudasset.googleapis.com \\
+  iam.googleapis.com iamcredentials.googleapis.com --project="$PROJECT_ID"
+
+if ! gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
+    --display-name="Maple metrics and resource reader"
+fi
+
+# A new service account can take a minute to become visible to IAM.
+retry() {
+  for _ in 1 2 3 4 5 6; do
+    "$@" && return
+    sleep 10
+  done
+  "$@"
+}
+
+# Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
+#   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list)
+#   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
+for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
+  retry ${SCOPES[scopeType].iam} add-iam-policy-binding "$SCOPE_ID" \\
+    ${serviceAccountMember} --role="$ROLE" --condition=None >/dev/null
+done
+
+# Cloud Asset Inventory checks serviceusage.services.use on the project its API is called through.
+retry gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
+  ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None >/dev/null
+
+# Maple's own account may mint short-lived tokens for this one service account, nothing else.
+retry gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator >/dev/null
+`
+
+const metricsRemoval = (scopeType: GcpScopeType): string => `
+# ---- Metrics and resources: off. Remove what an earlier run created. ----
+if gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  # Role bindings first, or the deleted account would stay listed in the IAM policy. A binding
+  # that is already gone is reported and skipped.
+  for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
+    ${SCOPES[scopeType].iam} remove-iam-policy-binding "$SCOPE_ID" \\
+      ${serviceAccountMember} --role="$ROLE" --condition=None >/dev/null || true
+  done
+  gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
+    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None >/dev/null || true
+  gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
+fi
+`
+
+export interface GcpSetupScriptInput extends GcpScriptTarget {
+	/** The ingest gateway's receiver URL for this connector, including its secret. */
+	readonly pushEndpoint: string
+	/** Maple's own Google service account. Undefined: metrics cannot be set up. */
+	readonly mapleServiceAccountEmail: string | undefined
+	readonly logsEnabled: boolean
+	readonly metricsEnabled: boolean
+	readonly excludeGkeContainerLogs: boolean
+}
+
+/**
+ * The script an administrator runs in Cloud Shell. Logs: a Log Router sink on the scope into a
+ * Pub/Sub topic whose push subscription delivers each LogEntry to Maple. Metrics and resources: a
+ * read-only service account Maple may impersonate. The script converges: what the connector has
+ * enabled is created or updated, what it has not is removed, so a re-run applies an opt-out.
+ */
+export const renderGcpSetupScript = (input: GcpSetupScriptInput): string => {
+	const mapleAccount = input.metricsEnabled ? input.mapleServiceAccountEmail : undefined
+	const logs = input.logsEnabled
+		? {
+				note: "#\n# Keep this script private: PUSH_ENDPOINT contains this connector's secret.\n",
+				filter: `
+# ---- Edit this to change which logs are forwarded, then re-run. ----
+# Cloud Logging query language: https://cloud.google.com/logging/docs/view/logging-query-language
+LOG_FILTER=${sh(gcpLogFilter(input.excludeGkeContainerLogs))}
+# --------------------------------------------------------------------
+`,
+				section: logsSetup(input.scopeType, input.pushEndpoint),
+			}
+		: { note: "", filter: "", section: logsRemoval(input.scopeType) }
+	return `#!/usr/bin/env bash
+# Maple: connect a Google Cloud ${input.scopeType} to Maple.
+#   Logs:                  ${input.logsEnabled ? "on" : "off"}
+#   Metrics and resources: ${mapleAccount === undefined ? "off" : "on"}
+# Run in Cloud Shell. Safe to re-run: it sets up what is on and removes what is off.
+#
+# You need:
+${SCOPES[input.scopeType].needs}
+${logs.note}set -euo pipefail
+${logs.filter}
+${variables(input)}
+${logs.section}${
+		mapleAccount === undefined
+			? metricsRemoval(input.scopeType)
+			: metricsSetup(input.scopeType, mapleAccount)
+	}
+echo "Maple setup complete."
 `
 }
 
 /** Removes what the setup script created. Carries no secret, so it outlives the connector. */
-export const renderGcpCleanupScript = (connectorId: GcpConnectorId, projectId: GcpProjectId): string =>
+export const renderGcpCleanupScript = (target: GcpScriptTarget): string =>
 	`#!/usr/bin/env bash
-# Maple: remove what the Maple setup script created in this Google Cloud project.
-# Run in Cloud Shell as a project owner. No "set -e": every step runs, and a
-# NOT_FOUND error only means that resource is already gone. The logging service
-# agent keeps its Logs Writer role: every sink in the project shares that identity.
-set -uo pipefail
+# Maple: remove what the Maple setup script created for a Google Cloud ${target.scopeType}.
+# Run in Cloud Shell. Safe to re-run. APIs the setup enabled stay enabled.
+#
+# You need:
+${SCOPES[target.scopeType].needs}
+set -euo pipefail
 
-${logVariables(connectorId, projectId)}
-${serviceAccountVariables(connectorId)}
-
-gcloud logging sinks delete "$SINK" --project="$PROJECT_ID" --quiet
-gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID"
-gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID"
-gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
-  --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" --role=roles/monitoring.viewer \\
-  --condition=None >/dev/null
-gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
-
-echo "Maple cleanup finished for $PROJECT_ID."
+${variables(target)}
+${logsRemoval(target.scopeType)}${metricsRemoval(target.scopeType)}
+echo "Maple cleanup complete."
 `

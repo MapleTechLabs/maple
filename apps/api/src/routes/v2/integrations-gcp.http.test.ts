@@ -24,7 +24,8 @@ import {
 
 /**
  * `/v2/integrations/gcp` over an embedded PGlite with the real connector service: the wire shape
- * a script parses, the admin gate, and who can reach the push secret.
+ * a script parses, the scope and capability rules, the admin gate, and who can reach the push
+ * secret.
  */
 
 const createdDbs: TestDb[] = []
@@ -34,7 +35,7 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_gcp_e2e")
 const USER = Schema.decodeUnknownSync(UserId)("user_gcp_e2e")
 const BASE = "/v2/integrations/gcp"
 
-const testConfig = () =>
+const testConfig = (metricsAvailable: boolean) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3478",
@@ -48,12 +49,15 @@ const testConfig = () =>
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 			MAPLE_INGEST_PUBLIC_URL: "https://ingest.test",
 			INTERNAL_SERVICE_TOKEN: "test-internal-token",
+			...(metricsAvailable
+				? { MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: "collector@maple-prod.iam.gserviceaccount.com" }
+				: undefined),
 		}),
 	)
 
-const makeHarness = () => {
+const makeHarness = (options: { readonly metricsAvailable: boolean } = { metricsAvailable: true }) => {
 	const testDb = createTestDb(createdDbs)
-	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
+	const envLive = Env.layer.pipe(Layer.provide(testConfig(options.metricsAvailable)))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
@@ -123,41 +127,62 @@ const makeHarness = () => {
 	}
 }
 
+const CONNECTORS = `${BASE}/connectors`
+const organizationConnector = {
+	scope_type: "organization",
+	scope_id: "123456789012",
+	project_id: "acme-host",
+	metrics_enabled: true,
+}
+const projectConnector = { scope_type: "project", scope_id: "acme-prod" }
+
 describe("v2 gcp integration over HTTP", () => {
-	it("creates a connector, lists it for any member, and deletes it with a cleanup script", async () => {
+	it("creates connectors per scope, lists them for any member, deletes with a cleanup script", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 		const member = await harness.memberKey()
 
-		const created = await harness.request("POST", `${BASE}/connectors`, admin.secret, {
-			project_id: "acme-prod",
-		})
-		expect(created.status).toBe(200)
-		expect(created.body).toEqual({
+		const organization = await harness.request("POST", CONNECTORS, admin.secret, organizationConnector)
+		expect(organization.status).toBe(200)
+		expect(organization.body).toEqual({
 			id: expect.stringMatching(/^gcpc_/),
 			object: "gcp_connector",
-			project_id: "acme-prod",
+			scope_type: "organization",
+			scope_id: "123456789012",
+			project_id: "acme-host",
+			logs_enabled: true,
+			metrics_enabled: true,
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
 			last_log_received_at: null,
 			last_log_error: null,
 		})
 
-		const status = await harness.request("GET", BASE, member.secret)
-		expect(status.status).toBe(200)
-		expect(status.body).toEqual({
-			object: "gcp_integration",
-			metrics_available: false,
-			connectors: [created.body],
+		// A project is its own host project, and forwards logs only unless asked otherwise.
+		const project = await harness.request("POST", CONNECTORS, admin.secret, projectConnector)
+		expect(project.body).toMatchObject({
+			scope_type: "project",
+			scope_id: "acme-prod",
+			project_id: "acme-prod",
+			logs_enabled: true,
+			metrics_enabled: false,
 		})
 
-		const path = `${BASE}/connectors/${created.body.id}`
+		const status = await harness.request("GET", BASE, member.secret)
+		expect(status.status).toBe(200)
+		expect(status.body).toMatchObject({ object: "gcp_integration", metrics_available: true })
+		expect(status.body.connectors).toEqual(expect.arrayContaining([organization.body, project.body]))
+		expect(status.body.connectors).toHaveLength(2)
+
+		const path = `${CONNECTORS}/${organization.body.id}`
 		const deleted = await harness.request("DELETE", path, admin.secret)
 		expect(deleted.status).toBe(200)
 		expect(deleted.body).toEqual({
-			id: created.body.id,
+			id: organization.body.id,
 			object: "gcp_connector",
 			deleted: true,
-			cleanup_script: expect.stringContaining("gcloud logging sinks delete"),
+			cleanup_script: expect.stringContaining(
+				'gcloud logging sinks delete "$SINK" --organization="$SCOPE_ID"',
+			),
 		})
 
 		const gone = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
@@ -169,29 +194,72 @@ describe("v2 gcp integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("renders the scripts for an admin, with the push secret only in the setup script", async () => {
+	it("renders scripts that follow the connector's scope and switches", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
-		const created = await harness.request("POST", `${BASE}/connectors`, admin.secret, {
-			project_id: "acme-prod",
+		const created = await harness.request("POST", CONNECTORS, admin.secret, {
+			...organizationConnector,
+			scope_type: "folder",
 		})
-		const path = `${BASE}/connectors/${created.body.id}/setup_scripts`
+		const path = `${CONNECTORS}/${created.body.id}`
 
-		const { status, body } = await harness.request("POST", path, admin.secret, {
+		const both = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {
 			exclude_gke_container_logs: true,
 		})
-		expect(status).toBe(200)
-		expect(Object.keys(body).sort()).toEqual(["cleanup_script", "object", "setup_script"])
-		expect(body.object).toBe("gcp_connector.setup_scripts")
-		expect(body.setup_script).toMatch(
+		expect(both.status).toBe(200)
+		expect(Object.keys(both.body).sort()).toEqual(["cleanup_script", "object", "setup_script"])
+		expect(both.body.object).toBe("gcp_connector.setup_scripts")
+		expect(both.body.setup_script).toMatch(
 			/PUSH_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}\?secret=maple_gcp_/,
 		)
-		expect(body.setup_script).toContain("PROJECT_ID='acme-prod'")
-		expect(body.setup_script).toContain('NOT resource.type="k8s_container"')
-		expect(body.cleanup_script).not.toContain("maple_gcp_")
+		expect(both.body.setup_script).toContain("PROJECT_ID='acme-host'")
+		expect(both.body.setup_script).toContain("SCOPE_ID='123456789012'")
+		expect(both.body.setup_script).toContain('--folder="$SCOPE_ID" --include-children')
+		expect(both.body.setup_script).toContain('NOT resource.type="k8s_container"')
+		expect(both.body.setup_script).toContain(
+			'gcloud resource-manager folders add-iam-policy-binding "$SCOPE_ID"',
+		)
+		expect(both.body.cleanup_script).not.toContain("maple_gcp_")
 
-		const defaults = await harness.request("POST", path, admin.secret, {})
-		expect(defaults.body.setup_script).not.toContain("k8s_container")
+		const patched = await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
+		expect(patched.status).toBe(200)
+		expect(patched.body).toEqual({ ...created.body, logs_enabled: false })
+
+		const metricsOnly = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
+		expect(metricsOnly.body.setup_script).not.toContain("maple_gcp_")
+		expect(metricsOnly.body.setup_script).toContain("gcloud logging sinks delete")
+		await harness.dispose()
+	})
+
+	it("keeps one capability on, and refuses metrics on a deployment without a Google identity", async () => {
+		const harness = makeHarness({ metricsAvailable: false })
+		const admin = await harness.adminKey()
+
+		const unavailable = await harness.request("POST", CONNECTORS, admin.secret, organizationConnector)
+		expect(unavailable.status).toBe(409)
+		expect(unavailable.body.error).toMatchObject({
+			_tag: "@maple/http/errors/GcpMetricsUnavailableError",
+			code: "gcp_metrics_unavailable",
+			param: "metrics_enabled",
+		})
+
+		const nothing = await harness.request("POST", CONNECTORS, admin.secret, {
+			...projectConnector,
+			logs_enabled: false,
+		})
+		expect(nothing.status).toBe(400)
+		expect(nothing.body.error.code).toBe("integration_request_invalid")
+
+		const created = await harness.request("POST", CONNECTORS, admin.secret, projectConnector)
+		const path = `${CONNECTORS}/${created.body.id}`
+		expect((await harness.request("GET", BASE, admin.secret)).body.metrics_available).toBe(false)
+
+		const turnOn = await harness.request("PATCH", path, admin.secret, { metrics_enabled: true })
+		expect(turnOn.status).toBe(409)
+		expect(turnOn.body.error.code).toBe("gcp_metrics_unavailable")
+		const turnOff = await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
+		expect(turnOff.status).toBe(400)
+		expect(turnOff.body.error.code).toBe("integration_request_invalid")
 		await harness.dispose()
 	})
 
@@ -200,71 +268,88 @@ describe("v2 gcp integration over HTTP", () => {
 		const admin = await harness.adminKey()
 		const member = await harness.memberKey()
 		const readOnly = await harness.adminKey(["integrations:read"])
-		const created = await harness.request("POST", `${BASE}/connectors`, admin.secret, {
-			project_id: "acme-prod",
-		})
-		const path = `${BASE}/connectors/${created.body.id}`
+		const created = await harness.request("POST", CONNECTORS, admin.secret, projectConnector)
+		const path = `${CONNECTORS}/${created.body.id}`
 
 		for (const [method, target, body] of [
-			["POST", `${BASE}/connectors`, { project_id: "other-project" }],
+			["POST", CONNECTORS, { scope_type: "project", scope_id: "other-project" }],
+			["PATCH", path, { metrics_enabled: true }],
 			["POST", `${path}/setup_scripts`, {}],
 			["DELETE", path, undefined],
 		] as const) {
 			const asMember = await harness.request(method, target, member.secret, body)
-			expect(asMember.status).toBe(403)
+			expect(asMember.status, `${method} as member`).toBe(403)
 			expect(asMember.body.error).toMatchObject({
 				type: "permission_error",
 				code: "insufficient_permissions",
 			})
 			const asReadOnly = await harness.request(method, target, readOnly.secret, body)
-			expect(asReadOnly.status).toBe(403)
+			expect(asReadOnly.status, `${method} with a read-only key`).toBe(403)
 			expect(asReadOnly.body.error.code).toBe("insufficient_scope")
 		}
 
 		const status = await harness.request("GET", BASE, readOnly.secret)
 		expect(status.status).toBe(200)
-		expect(status.body.connectors).toHaveLength(1)
+		expect(status.body.connectors).toEqual([created.body])
 		expect(JSON.stringify(status.body)).not.toContain("maple_gcp_")
 		await harness.dispose()
 	})
 
-	it("answers a project that is already connected with a 409 naming the field", async () => {
+	it("answers a scope that is already connected with a 409 naming the field", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
-		await harness.request("POST", `${BASE}/connectors`, admin.secret, { project_id: "acme-prod" })
+		await harness.request("POST", CONNECTORS, admin.secret, organizationConnector)
 
-		const { status, body } = await harness.request("POST", `${BASE}/connectors`, admin.secret, {
-			project_id: "acme-prod",
+		const { status, body } = await harness.request("POST", CONNECTORS, admin.secret, {
+			...organizationConnector,
+			project_id: "another-host",
 		})
 		expect(status).toBe(409)
 		expect(body.error).toMatchObject({
-			_tag: "@maple/http/errors/GcpProjectAlreadyConnectedError",
+			_tag: "@maple/http/errors/GcpScopeAlreadyConnectedError",
 			type: "conflict_error",
-			code: "gcp_project_already_connected",
-			param: "project_id",
+			code: "gcp_scope_already_connected",
+			param: "scope_id",
 		})
 		await harness.dispose()
 	})
 
-	it("answers malformed project and connector ids with 400, an unknown connector with 404", async () => {
+	it("answers malformed scopes and connector ids with 400, an unknown connector with 404", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 
-		for (const projectId of ["acme'; rm -rf /; '", "Acme-Prod", "short", "acme-prod-", "$(id)-project"]) {
-			const { status, body } = await harness.request("POST", `${BASE}/connectors`, admin.secret, {
-				project_id: projectId,
-			})
-			expect(status, projectId).toBe(400)
-			expect(body.error.type).toBe("invalid_request_error")
+		for (const body of [
+			{ scope_type: "project", scope_id: "acme'; echo pwned; '" },
+			{ scope_type: "project", scope_id: "Acme-Prod" },
+			{ scope_type: "project", scope_id: "$(id)-project" },
+			// A project hosts itself.
+			{ scope_type: "project", scope_id: "acme-prod", project_id: "acme-host" },
+			// Folders and organizations are numbers and need a host project.
+			{ scope_type: "organization", scope_id: "acme.example", project_id: "acme-host" },
+			{ scope_type: "folder", scope_id: "123456789012" },
+			{ scope_type: "folder", scope_id: "123456789012", project_id: "123456789012" },
+			{ scope_type: "billing_account", scope_id: "123456789012", project_id: "acme-host" },
+			{ scope_id: "acme-prod" },
+		]) {
+			const response = await harness.request("POST", CONNECTORS, admin.secret, body)
+			expect(response.status, JSON.stringify(body)).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
 		}
+		// The accepted spelling of the rejected project case above.
+		const selfHosted = await harness.request("POST", CONNECTORS, admin.secret, {
+			...projectConnector,
+			project_id: "acme-prod",
+		})
+		expect(selfHosted.status).toBe(200)
 
 		const wrongPrefix = encodePublicId("scrp", "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
-		const { status } = await harness.request("DELETE", `${BASE}/connectors/${wrongPrefix}`, admin.secret)
-		expect(status).toBe(400)
+		const malformed = await harness.request("DELETE", `${CONNECTORS}/${wrongPrefix}`, admin.secret)
+		expect(malformed.status).toBe(400)
 
-		const unknown = encodePublicId("gcpc", "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
-		const missing = await harness.request("DELETE", `${BASE}/connectors/${unknown}`, admin.secret)
-		expect(missing.status).toBe(404)
+		const unknown = `${CONNECTORS}/${encodePublicId("gcpc", "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")}`
+		expect((await harness.request("DELETE", unknown, admin.secret)).status).toBe(404)
+		const patch = await harness.request("PATCH", unknown, admin.secret, { logs_enabled: true })
+		expect(patch.status).toBe(404)
 		await harness.dispose()
 	})
 })

@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { hashIngestKey } from "@maple/db"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
-import { GcpProjectId, OrgId, UserId } from "@maple/domain/primitives"
+import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -11,7 +11,7 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
-import { GcpConnectorService, type GcpConnector } from "./GcpConnectorService"
+import { GcpConnectorService, type CreateGcpConnectorInput } from "./GcpConnectorService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -48,7 +48,27 @@ const makeLayer = (testDb: TestDb, mapleServiceAccount?: string) =>
 const orgId = Schema.decodeUnknownSync(OrgId)("org_gcp")
 const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
 const userId = Schema.decodeUnknownSync(UserId)("user_1")
-const projectId = Schema.decodeUnknownSync(GcpProjectId)
+const project = Schema.decodeUnknownSync(GcpProjectId)
+const number = Schema.decodeUnknownSync(GcpResourceNumber)
+
+const projectScope = (id: string, flags?: Partial<CreateGcpConnectorInput>): CreateGcpConnectorInput => ({
+	scopeType: "project",
+	scopeId: project(id),
+	projectId: project(id),
+	logsEnabled: true,
+	metricsEnabled: false,
+	...flags,
+})
+
+const organizationScope: CreateGcpConnectorInput = {
+	scopeType: "organization",
+	scopeId: number("123456789012"),
+	projectId: project("acme-host"),
+	logsEnabled: true,
+	metricsEnabled: true,
+}
+
+const scriptOptions = { excludeGkeContainerLogs: false }
 
 interface StoredConnector {
 	readonly secret_ciphertext: string
@@ -61,14 +81,13 @@ describe("GcpConnectorService", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
-			const connector = yield* gcp.create(orgId, userId, projectId("acme-prod"))
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			assert.strictEqual(connector.scopeId, "acme-prod")
 			assert.strictEqual(connector.projectId, "acme-prod")
 			assert.isNull(connector.lastLogReceivedAt)
 			assert.isNull(connector.lastLogError)
 
-			const { setupScript } = yield* gcp.scripts(orgId, connector.id, {
-				excludeGkeContainerLogs: false,
-			})
+			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
 			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
 			assert.isDefined(endpoint)
 			const url = new URL(endpoint!)
@@ -90,25 +109,82 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("refuses a project the organization already connected, but not another organization's", () => {
+	it.effect("connects a scope once per organization, whatever its host project", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
-			yield* gcp.create(orgId, userId, projectId("acme-prod"))
-			const duplicate = yield* Effect.flip(gcp.create(orgId, userId, projectId("acme-prod")))
-			assert.strictEqual(duplicate._tag, "@maple/http/errors/GcpProjectAlreadyConnectedError")
+			yield* gcp.create(orgId, userId, organizationScope)
+			const duplicate = yield* Effect.flip(
+				gcp.create(orgId, userId, { ...organizationScope, projectId: project("another-host") }),
+			)
+			assert.strictEqual(duplicate._tag, "@maple/http/errors/GcpScopeAlreadyConnectedError")
 
-			yield* gcp.create(otherOrgId, userId, projectId("acme-prod"))
-			assert.lengthOf((yield* gcp.status(orgId)).connectors, 1)
+			// A folder with the same number is a different scope, and so is a project inside it.
+			yield* gcp.create(orgId, userId, { ...organizationScope, scopeType: "folder" })
+			yield* gcp.create(orgId, userId, projectScope("acme-host"))
+			yield* gcp.create(otherOrgId, userId, organizationScope)
+			assert.lengthOf((yield* gcp.status(orgId)).connectors, 3)
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
+	it.effect("requires one capability to stay on and refuses metrics without a Google identity", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			assert.isFalse((yield* gcp.status(orgId)).metricsAvailable)
+
+			const nothing = yield* Effect.flip(
+				gcp.create(orgId, userId, projectScope("acme-prod", { logsEnabled: false })),
+			)
+			assert.strictEqual(nothing._tag, "@maple/http/errors/IntegrationsValidationError")
+			const metrics = yield* Effect.flip(
+				gcp.create(orgId, userId, projectScope("acme-prod", { metricsEnabled: true })),
+			)
+			assert.strictEqual(metrics._tag, "@maple/http/errors/GcpMetricsUnavailableError")
+
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			const turnOn = yield* Effect.flip(gcp.update(orgId, connector.id, { metricsEnabled: true }))
+			assert.strictEqual(turnOn._tag, "@maple/http/errors/GcpMetricsUnavailableError")
+			const turnOff = yield* Effect.flip(gcp.update(orgId, connector.id, { logsEnabled: false }))
+			assert.strictEqual(turnOff._tag, "@maple/http/errors/IntegrationsValidationError")
+			// An empty patch changes nothing.
+			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, {}), connector)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("reports the gateway's last push and renders metrics steps only with a Google identity", () => {
+	it.effect("switches capabilities, and the scripts follow the stored flags", () => {
 		const testDb = createTestDb(trackedDbs)
-		const withoutMetrics = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
-			const connector = yield* gcp.create(orgId, userId, projectId("acme-prod"))
-			// What the ingest gateway writes after a rejected push.
+			assert.isTrue((yield* gcp.status(orgId)).metricsAvailable)
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			const both = yield* gcp.scripts(orgId, connector.id, { excludeGkeContainerLogs: true })
+			assert.include(both.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
+			assert.include(both.setupScript, 'NOT resource.type="k8s_container"')
+			assert.include(both.setupScript, '--organization="$SCOPE_ID" --include-children')
+			assert.include(both.setupScript, "PROJECT_ID='acme-host'")
+			assert.notInclude(both.cleanupScript, "maple_gcp_")
+
+			const metricsOnly = yield* gcp.update(orgId, connector.id, { logsEnabled: false })
+			assert.deepStrictEqual(metricsOnly, { ...connector, logsEnabled: false })
+			const afterOptOut = yield* gcp.scripts(orgId, connector.id, scriptOptions)
+			assert.notInclude(afterOptOut.setupScript, "maple_gcp_")
+			assert.include(afterOptOut.setupScript, "gcloud logging sinks delete")
+
+			const logsOnly = yield* gcp.update(orgId, connector.id, {
+				logsEnabled: true,
+				metricsEnabled: false,
+			})
+			assert.deepStrictEqual(logsOnly, { ...connector, metricsEnabled: false })
+			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [logsOnly])
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
+	it.effect("reports what the ingest gateway recorded for the last push", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -116,42 +192,22 @@ describe("GcpConnectorService", () => {
 					["2026-10-08T09:12:00.000Z", "payload was not a LogEntry", connector.id],
 				),
 			)
-			const status = yield* gcp.status(orgId)
-			assert.isFalse(status.metricsAvailable)
-			assert.deepStrictEqual(status.connectors, [
+			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [
 				{
 					...connector,
 					lastLogReceivedAt: Date.parse("2026-10-08T09:12:00.000Z"),
 					lastLogError: "payload was not a LogEntry",
 				},
 			])
-			const scripts = yield* gcp.scripts(orgId, connector.id, { excludeGkeContainerLogs: true })
-			assert.notInclude(scripts.setupScript, "service-accounts")
-			assert.include(scripts.setupScript, 'NOT resource.type="k8s_container"')
-			return connector
 		}).pipe(Effect.provide(makeLayer(testDb)))
-
-		const withMetrics = Effect.fnUntraced(function* (connectorId: GcpConnector["id"]) {
-			const gcp = yield* GcpConnectorService
-			assert.isTrue((yield* gcp.status(orgId)).metricsAvailable)
-			const scripts = yield* gcp.scripts(orgId, connectorId, { excludeGkeContainerLogs: false })
-			assert.include(scripts.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
-			assert.notInclude(scripts.cleanupScript, "maple_gcp_")
-		})
-
-		return withoutMetrics.pipe(
-			Effect.flatMap((connector) =>
-				withMetrics(connector.id).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT))),
-			),
-		)
 	})
 
 	it.effect("refuses to render a secret that was moved onto another connector's row", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
-			const source = yield* gcp.create(orgId, userId, projectId("acme-prod"))
-			const target = yield* gcp.create(orgId, userId, projectId("acme-staging"))
+			const source = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			const target = yield* gcp.create(orgId, userId, projectScope("acme-staging"))
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -161,27 +217,28 @@ describe("GcpConnectorService", () => {
 					[source.id, target.id],
 				),
 			)
-			const error = yield* Effect.flip(
-				gcp.scripts(orgId, target.id, { excludeGkeContainerLogs: false }),
-			)
+			const error = yield* Effect.flip(gcp.scripts(orgId, target.id, scriptOptions))
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPersistenceError")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("scopes scripts and deletion to the owning organization", () => {
+	it.effect("scopes updates, scripts and deletion to the owning organization", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
-			const connector = yield* gcp.create(orgId, userId, projectId("acme-prod"))
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
 
-			const options = { excludeGkeContainerLogs: false }
-			const foreignScripts = yield* Effect.flip(gcp.scripts(otherOrgId, connector.id, options))
-			assert.strictEqual(foreignScripts._tag, "@maple/http/errors/IntegrationsNotFoundError")
-			const foreignDelete = yield* Effect.flip(gcp.delete(otherOrgId, connector.id))
-			assert.strictEqual(foreignDelete._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			for (const foreign of [
+				gcp.update(otherOrgId, connector.id, { logsEnabled: true }),
+				gcp.scripts(otherOrgId, connector.id, scriptOptions),
+				gcp.delete(otherOrgId, connector.id),
+			]) {
+				const error = yield* Effect.flip(foreign)
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			}
 
 			const deleted = yield* gcp.delete(orgId, connector.id)
-			assert.strictEqual(deleted.projectId, "acme-prod")
+			assert.deepStrictEqual(deleted.connector, connector)
 			assert.include(deleted.cleanupScript, gcpConnectorResourceNames(connector.id).sink)
 			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [])
 			const again = yield* Effect.flip(gcp.delete(orgId, connector.id))
