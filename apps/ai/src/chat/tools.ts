@@ -318,7 +318,7 @@ export const buildReplyCompletion = (
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
 		"Record your review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, the steps someone must take outside the diff before merge, coverage, line-anchored findings and the " +
+		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
 		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
 		"pass that location in telemetryDismissals. It " +
 		"persists the review and posts it to the pull request. After calling it, stop.",

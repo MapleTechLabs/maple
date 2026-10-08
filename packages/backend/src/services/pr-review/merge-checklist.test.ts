@@ -1,7 +1,13 @@
 import { GitCommitSha, PrReviewMergeStep, PrReviewReport, type PullRequestFile } from "@maple/domain/http"
 import { Schema } from "effect"
 import { assert, describe, it } from "vitest"
-import { detectMergeSteps, mergeChecklist, nameStep } from "./merge-checklist"
+import {
+	buildChecklist,
+	checklistAttributes,
+	detectMergeSteps,
+	type NameVerdict,
+	searchVerdict,
+} from "./merge-checklist"
 import { renderSummaryComment } from "./PrReviewService"
 
 const file = (
@@ -75,7 +81,6 @@ describe("detectMergeSteps", () => {
 				["env", "APP_NAME", false],
 			],
 		)
-		assert.include(nameStep(detected.names[0]!).title, "CI secrets")
 	})
 
 	it("lists added migrations, warehouse schema and deployment config by file", () => {
@@ -97,32 +102,89 @@ describe("detectMergeSteps", () => {
 	})
 })
 
-describe("mergeChecklist", () => {
-	const diff = [
-		new PrReviewMergeStep({
-			kind: "infra",
-			title: "Deployment config changed in `wrangler.jsonc`",
-			source: "diff",
-		}),
-		nameStep({ name: "STRIPE_KEY", kind: "secret", ci: false, path: "src/env.ts", line: 3 }),
-	]
+const checklistOf = (
+	files: ReadonlyArray<PullRequestFile>,
+	verdicts: Readonly<Record<string, NameVerdict>> = {},
+	reviewer: ReadonlyArray<PrReviewMergeStep> = [],
+	ignored: ReadonlyArray<string> = [],
+) =>
+	buildChecklist({
+		detected: detectMergeSteps(files),
+		verdicts: new Map(Object.entries(verdicts)),
+		reviewer,
+		isIgnored: (path) => ignored.includes(path),
+	})
 
-	it("orders secrets first and lets a reviewer step that names a subject replace it", () => {
+const envFile = file(
+	"src/env.ts",
+	'@@ -1 +1,3 @@\n+optionalSecret("STRIPE_KEY")\n+optionalPlain("STRIPE_URL")\n+optionalPlain("STRIPE_REGION")',
+)
+const wrangler = file("apps/api/wrangler.jsonc", "@@ -1 +1 @@\n+x")
+
+describe("searchVerdict", () => {
+	it("counts a hit only when it holds the whole name, or no text to check", () => {
+		assert.equal(searchVerdict("STRIPE_KEY", []), "new")
+		assert.equal(searchVerdict("STRIPE_KEY", [{ snippets: ["STRIPE_KEY_ID", "MY_STRIPE_KEY"] }]), "new")
+		assert.equal(searchVerdict("STRIPE_KEY", [{ snippets: ['env("STRIPE_KEY")'] }]), "exists")
+		assert.equal(searchVerdict("STRIPE_KEY", [{ snippets: [] }]), "exists")
+	})
+})
+
+describe("buildChecklist", () => {
+	it("drops names the default branch reads and keeps new and unverified ones, secrets first", () => {
+		const { steps, trace } = checklistOf([wrangler, envFile], { STRIPE_KEY: "new", STRIPE_URL: "exists" })
+		assert.deepEqual(
+			steps.map((step) => [step.kind, step.subject]),
+			[
+				["secret", "STRIPE_KEY"],
+				["env", "STRIPE_REGION"],
+				["infra", "apps/api/wrangler.jsonc"],
+			],
+		)
+		assert.deepEqual(trace.names, [
+			{ name: "STRIPE_KEY", verdict: "new" },
+			{ name: "STRIPE_URL", verdict: "exists" },
+			{ name: "STRIPE_REGION", verdict: "unverified" },
+		])
+	})
+
+	it("replaces a diff step with a reviewer step that names its subject exactly", () => {
 		const reviewer = [
 			new PrReviewMergeStep({
 				kind: "manual",
 				title: "Add `STRIPE_KEY` to the prd and dev secret stores",
 				source: "reviewer",
 			}),
+			new PrReviewMergeStep({ kind: "manual", title: "Update wrangler bindings", source: "reviewer" }),
 		]
+		const { steps, trace } = checklistOf([wrangler, envFile], { STRIPE_URL: "exists" }, reviewer)
+		// "wrangler" alone is not the file's subject, so the infra step stays.
+		assert.deepEqual(trace.replaced, ["STRIPE_KEY"])
 		assert.deepEqual(
-			mergeChecklist(diff, reviewer).map((step) => step.source),
-			["diff", "reviewer"],
+			steps.map((step) => step.source),
+			["diff", "diff", "reviewer", "reviewer"],
 		)
-		assert.deepEqual(
-			mergeChecklist(diff, []).map((step) => step.kind),
-			["secret", "infra"],
+	})
+
+	it("drops steps under ignored paths and records them", () => {
+		const { steps, trace } = checklistOf([wrangler], {}, [], ["apps/api/wrangler.jsonc"])
+		assert.deepEqual(steps, [])
+		assert.deepEqual(trace.ignored, ["apps/api/wrangler.jsonc"])
+	})
+
+	it("states every decision as span attributes", () => {
+		const attributes = checklistAttributes(
+			"read",
+			checklistOf([wrangler, envFile], { STRIPE_KEY: "new", STRIPE_URL: "exists" }),
 		)
+		assert.deepInclude(attributes, {
+			"maple.pr_review.checklist.status": "read",
+			"maple.pr_review.checklist.steps": 3,
+			"maple.pr_review.checklist.names_new": "STRIPE_KEY",
+			"maple.pr_review.checklist.names_exists": "STRIPE_URL",
+			"maple.pr_review.checklist.names_unverified": "STRIPE_REGION",
+			"maple.pr_review.checklist.file_steps": 1,
+		})
 	})
 })
 
@@ -133,9 +195,7 @@ describe("the Before merge section", () => {
 			summary: "Adds Stripe webhooks.",
 			coverage: [],
 			findings: [],
-			beforeMerge: [
-				nameStep({ name: "STRIPE_KEY", kind: "secret", ci: false, path: "src/env.ts", line: 3 }),
-			],
+			beforeMerge: checklistOf([envFile], { STRIPE_URL: "exists", STRIPE_REGION: "exists" }).steps,
 		})
 		const body = renderSummaryComment("<!-- m -->", {
 			report,
@@ -146,7 +206,7 @@ describe("the Before merge section", () => {
 		assert.include(body, "### Before merge")
 		assert.include(
 			body,
-			`- [ ] **Secret** · Add the secret \`STRIPE_KEY\` to every environment this deploys to · [\`src/env.ts:3\`](https://github.com/acme/shop/blob/${"a".repeat(40)}/src/env.ts#L3)`,
+			`- [ ] **Secret** · Add secret \`STRIPE_KEY\` to every environment · [\`src/env.ts:1\`](https://github.com/acme/shop/blob/${"a".repeat(40)}/src/env.ts#L1)`,
 		)
 		assert.isBelow(body.indexOf("Adds Stripe webhooks."), body.indexOf("### Before merge"))
 	})

@@ -47,7 +47,7 @@ import {
 	PR_REVIEW_RULE_FILES,
 	type RepositoryRuleFile,
 } from "@maple/backend/services/pr-review/PrReviewService"
-import { detectMergeSteps, mergeChecklist, nameStep } from "@maple/backend/services/pr-review/merge-checklist"
+import { buildChecklist, detectMergeSteps } from "@maple/backend/services/pr-review/merge-checklist"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -155,7 +155,7 @@ const readRules = (dir: string, baseSha: string): ReadonlyArray<RepositoryRuleFi
 	return files
 }
 
-const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
+export const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 	const [bin = "", ...rest] = cmd
 	const proc = spawnSync(bin, rest, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
 	return {
@@ -179,7 +179,7 @@ const runScript = (cmd: ReadonlyArray<string>, cwd: string) => {
 	return { code: proc.status, stdout: proc.stdout ?? "", stderr: proc.stderr ?? "" }
 }
 
-const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
+export const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
 	const result = run(cmd, cwd)
 	if (!result.ok) {
 		console.error(`\n${cmd.join(" ")} failed:\n${result.stderr.trim()}`)
@@ -248,7 +248,7 @@ const orExit = <A>(value: Option.Option<A>, what: string): A =>
 
 const isFileStatus = Schema.is(PullRequestFileStatus)
 
-const fetchPullRequest = (args: Args) => {
+export const fetchPullRequest = (args: Pick<Args, "owner" | "repo" | "number">) => {
 	const slug = `repos/${args.owner}/${args.repo}/pulls/${args.number}`
 	const pr = orExit(decodePullRequestJson(must(["gh", "api", slug])), "pull request")
 	const pages = orExit(
@@ -1114,13 +1114,14 @@ export const reviewLocally = async (
 		return dir
 	}
 
-	// No code search here: every new-looking name is listed, where the service lists only unknown ones.
-	const detected = detectMergeSteps(files)
+	// No code search here: every name is listed unverified. `review:checklist` runs the searches.
 	const { beforeMerge: reviewerSteps, ...submittedReport } = submitted.report
-	const beforeMerge = mergeChecklist(
-		[...detected.names.map(nameStep), ...detected.steps],
-		reviewerSteps ?? [],
-	)
+	const { steps: beforeMerge } = buildChecklist({
+		detected: detectMergeSteps(files),
+		verdicts: new Map(),
+		reviewer: reviewerSteps ?? [],
+		isIgnored: () => false,
+	})
 	const report = new PrReviewReport({
 		...submittedReport,
 		...(beforeMerge.length > 0 ? { beforeMerge } : undefined),

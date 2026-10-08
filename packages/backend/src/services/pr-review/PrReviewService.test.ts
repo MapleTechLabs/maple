@@ -15,8 +15,10 @@ import {
 	PR_REVIEW_FAILURE_COPY,
 	PrReviewFinding,
 	PrReviewId,
+	PrReviewMergeStep,
 	PrReviewReport,
 	PrReviewContractBreak,
+	type PullRequestFile,
 	PrReviewRepositoryConfig,
 	PrReviewTelemetry,
 	PrReviewTelemetryReference,
@@ -119,6 +121,10 @@ const layerFor = (
 		readonly sourceFiles?: Readonly<Record<string, string>>
 		/** Paths code search returns for any query. */
 		readonly searchHits?: ReadonlyArray<string>
+		/** One hit per query listed here, with these snippets; a query not listed finds nothing. */
+		readonly searchSnippets?: Readonly<Record<string, ReadonlyArray<string>>>
+		/** The pull request's changed files. */
+		readonly prFiles?: ReadonlyArray<PullRequestFile>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -135,7 +141,7 @@ const layerFor = (
 		fetchCommit: unused,
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
-		fetchPullRequestFiles: () => Effect.succeed([]),
+		fetchPullRequestFiles: () => Effect.succeed(options.prFiles ?? []),
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
 		resolveReviewThread: (_installation, _repo, input) =>
@@ -148,12 +154,25 @@ const layerFor = (
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
 		commitFiles: unused,
-		searchCode: () =>
-			options.searchHits === undefined
-				? unused()
-				: Effect.succeed(
-						options.searchHits.map((path) => ({ path, sha: "s", htmlUrl: "", snippets: [] })),
-					),
+		searchCode: (_installation, _repo, query) =>
+			options.searchSnippets !== undefined
+				? Effect.succeed(
+						options.searchSnippets[query] === undefined
+							? []
+							: [
+									{
+										path: "a.ts",
+										sha: "s",
+										htmlUrl: "",
+										snippets: options.searchSnippets[query] ?? [],
+									},
+								],
+					)
+				: options.searchHits === undefined
+					? unused()
+					: Effect.succeed(
+							options.searchHits.map((path) => ({ path, sha: "s", htmlUrl: "", snippets: [] })),
+						),
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
 		fetchSourceFile: (_installation, _repo, path) =>
@@ -1908,5 +1927,111 @@ describe("PrReviewService telemetry, unchanged code and late merges", () => {
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.isNull(stored.postMergeStatus ?? null)
 		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
+	})
+})
+
+describe("PrReviewService before-merge checklist", () => {
+	const envFile: PullRequestFile = {
+		path: "apps/api/src/env.ts",
+		previousPath: null,
+		status: "modified",
+		additions: 3,
+		deletions: 0,
+		patch: [
+			"@@ -1,1 +1,4 @@",
+			" export const env = merge(",
+			'+\toptionalSecret("BILLING_TOKEN"),',
+			'+\toptionalPlain("BILLING_URL"),',
+			'+\toptionalPlain("BILLING_REGION"),',
+		].join("\n"),
+	}
+	const migration: PullRequestFile = {
+		path: "packages/db/drizzle/20261008_billing/migration.sql",
+		previousPath: null,
+		status: "added",
+		additions: 1,
+		deletions: 0,
+		patch: "@@ -0,0 +1 @@\n+ALTER TABLE orgs ADD billing text",
+	}
+
+	it.effect(
+		"lists new names and file steps, drops names on the default branch, lets the reviewer say where",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				yield* seed(true)
+				const reviews = yield* PrReviewService
+				const started = yield* reviews.onPullRequestEvent(orgId, job())
+				yield* reviews.submitReview(
+					orgId,
+					started.reviewId!,
+					new SubmitPrReviewRequest({
+						report: new PrReviewReport({
+							...report([]),
+							beforeMerge: [
+								new PrReviewMergeStep({
+									kind: "manual",
+									title: "Add `BILLING_TOKEN` to the prd and dev secret stores",
+									source: "reviewer",
+								}),
+							],
+						}),
+					}),
+				)
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+				// BILLING_URL is already read on main; BILLING_REGION only matched a longer name there.
+				assert.deepStrictEqual(
+					stored.report?.beforeMerge?.map((step) => [step.kind, step.subject ?? step.title]),
+					[
+						["env", "BILLING_REGION"],
+						["migration", "packages/db/drizzle/20261008_billing/migration.sql"],
+						["manual", "Add `BILLING_TOKEN` to the prd and dev secret stores"],
+					],
+				)
+				assert.include(published[0]!.summaryComment.body, "### Before merge")
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, {
+						published,
+						prFiles: [envFile, migration],
+						searchSnippets: {
+							'"BILLING_URL"': ['const url = optionalPlain("BILLING_URL")'],
+							'"BILLING_REGION"': ["BILLING_REGION_FALLBACK"],
+						},
+					}),
+				),
+			)
+		},
+	)
+
+	it.effect("posts the reviewer's steps alone when the diff implies none", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: new PrReviewReport({
+						...report([]),
+						beforeMerge: [
+							new PrReviewMergeStep({
+								kind: "manual",
+								title: "Create the flag",
+								source: "reviewer",
+							}),
+						],
+					}),
+				}),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepStrictEqual(
+				stored.report?.beforeMerge?.map((step) => step.title),
+				["Create the flag"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, {})))
 	})
 })

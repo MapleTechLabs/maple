@@ -386,22 +386,35 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 ### Before merge
 
 Every review comment carries a "Before merge" task list: what has to happen outside the diff
-before the change ships. The service builds it at submit from the pull request's files
-(`services/pr-review/merge-checklist.ts`), never from the model's say-so:
+before the change ships. It is built at submit (`services/pr-review/merge-checklist.ts`) in three
+pure steps, with the service doing only the GitHub reads between them:
 
-- **Secrets and env vars**: names the diff starts reading (`process.env.X`, `Config.redacted("X")`,
-  `requiredSecret("X")`, `${{ secrets.X }}`, `.env.example` keys, and the other languages'
-  equivalents). A name a removed line still mentions is a move, not a new read. Each candidate is
-  then searched for on the default branch, and only names found nowhere are listed. Tests, docs
-  and `scripts/` are skipped.
-- **Migrations** added under a migrations directory, **warehouse schema** (`datasources.ts`,
-  `.datasource`, `.pipe`) and **deployment config** (`wrangler.*`, `alchemy.run.ts`, Terraform,
-  Dockerfiles) changes, one step per file.
+1. `detectMergeSteps` reads the changed files. **Names** the diff starts reading: config helpers
+   (`requiredSecret("X")`, `Config.redacted("X")`), runtime reads (`process.env.X` and the other
+   languages' equivalents), `${{ secrets.X }}` / `${{ vars.X }}` in workflows, `.env.example` keys.
+   A name a removed line still mentions is a move; tests, docs and `scripts/` are skipped.
+   **File steps**: added migrations, warehouse schema (`datasources.ts`, `.datasource`, `.pipe`)
+   and deployment config (`wrangler.*`, `alchemy.run.ts`, Terraform, Dockerfiles).
+2. `searchVerdict` rules on each name from a code search of the default branch (up to 10 names, 5
+   hits each): `exists` only when a hit holds the name as a whole word, `new` otherwise, and
+   `unverified` when no search ran or it failed.
+3. `buildChecklist` lists new and unverified names (a missed secret costs more than a redundant
+   line), the file steps and the reviewer's own steps (`beforeMerge` on `submit_review`, up to six).
+   A reviewer step whose text contains a diff step's `subject` (the exact name or path) replaces it.
+   `ignorePaths` apply. The list never changes the check's conclusion.
 
-The agent adds up to six steps of its own through `beforeMerge` on `submit_review`, in the
-repository's terms (where a secret goes, a flag to create, a backfill to run). A reviewer step that
-names a detected secret or file replaces the detected one. Repository `ignorePaths` apply. The list
-is informational: it never changes the check's conclusion.
+**Debugging.** `submitReview` sets `maple.pr_review.checklist.*` on its span: `status` (`unread`
+when the files could not be read), `names_new` / `names_exists` / `names_unverified`, `file_steps`,
+`reviewer_steps`, `replaced`, `ignored`, `cut`. It also logs `[PrReview] before-merge checklist`
+with the same fields for any review that found something. To see what a pull request would get
+without running the model:
+
+```bash
+bun run --cwd apps/ai review:checklist MapleTechLabs/maple 1081
+```
+
+It prints each name's verdict, the file steps and the section as the comment renders it. Against a
+merged pull request, names read `exists`, since the default branch now has them.
 
 ### Learning from feedback
 

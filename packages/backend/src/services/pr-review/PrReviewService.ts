@@ -84,7 +84,14 @@ import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
-import { detectMergeSteps, mergeChecklist, nameStep } from "./merge-checklist"
+import {
+	buildChecklist,
+	checklistAttributes,
+	detectMergeSteps,
+	NO_DETECTED_STEPS,
+	type NameVerdict,
+	searchVerdict,
+} from "./merge-checklist"
 import {
 	fixedContractBreaks,
 	lineStillEmits,
@@ -120,7 +127,7 @@ export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
 
 /** Removed names the service searches the repository for before the review starts. */
 const MAX_CONFIRMED_BREAKS = 8
-/** New-looking names searched for at the base before the checklist lists them. */
+/** Names searched for on the default branch per review; the rest are listed unverified. */
 const MAX_CHECKLIST_SEARCHES = 10
 
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
@@ -638,7 +645,7 @@ const MERGE_STEP_LABEL = {
  * What has to happen outside the diff before merge, as a task list people tick off on the comment.
  * Right under the summary: it is what gets forgotten, and it is not a finding against the code.
  */
-const renderBeforeMerge = (
+export const renderBeforeMerge = (
 	steps: ReadonlyArray<PrReviewMergeStep>,
 	fileUrl: (path: string, line?: number) => string,
 ): ReadonlyArray<string> =>
@@ -1278,39 +1285,37 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/**
-			 * The diff's "before merge" steps, at submit. A name only counts once a code search finds it
-			 * nowhere on the default branch; a search that fails keeps it, since a missing secret costs
-			 * more than a redundant line. Best effort: no steps when the files cannot be read.
+			 * The reads behind the "before merge" checklist, at submit: the diff's candidates, and a
+			 * verdict for each name from a search of the default branch (5 hits, so a whole-word match
+			 * can be found among token matches). A failed search leaves the name unverified.
+			 * `undefined` when the files cannot be read; the review posts without diff steps.
 			 */
 			const mergeStepsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
 				Effect.gen(function* () {
 					const target = yield* providerFor(orgId, repo)
-					if (Option.isNone(target)) return []
+					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value
 					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
 					const detected = detectMergeSteps(files)
-					const fresh = yield* Effect.forEach(
+					const verdicts = yield* Effect.forEach(
 						detected.names.slice(0, MAX_CHECKLIST_SEARCHES),
-						(candidate) =>
-							provider.searchCode(installation, ref, `"${candidate.name}"`, { limit: 1 }).pipe(
-								Effect.map((hits) => (hits.length === 0 ? [nameStep(candidate)] : [])),
-								Effect.catchCause(() => Effect.succeed([nameStep(candidate)])),
+						({ name }) =>
+							provider.searchCode(installation, ref, `"${name}"`, { limit: 5 }).pipe(
+								Effect.map((hits) => [[name, searchVerdict(name, hits)] as const]),
+								Effect.catchCause(() => Effect.succeed([])),
 							),
 						{ concurrency: 2 },
 					)
-					yield* Effect.annotateCurrentSpan({
-						"maple.pr_review.checklist.candidates": detected.names.length,
-						"maple.pr_review.checklist.new_names": fresh.flat().length,
-						"maple.pr_review.checklist.file_steps": detected.steps.length,
-					})
-					return [...fresh.flat(), ...detected.steps]
+					return { detected, verdicts: new Map<string, NameVerdict>(verdicts.flat()) }
 				}).pipe(
 					Effect.timeout("15 seconds"),
 					Effect.withSpan("PrReviewService.mergeStepsFor"),
 					Effect.catchCause((cause) =>
-						Effect.logWarning("[PrReview] could not read the before-merge steps").pipe(
+						Effect.logWarning(
+							"[PrReview] could not read the diff for the before-merge steps",
+						).pipe(
 							Effect.annotateLogs({ orgId, number, cause: summarizeCause(cause) }),
-							Effect.as([]),
+							Effect.as(undefined),
 						),
 					),
 				)
@@ -2297,15 +2302,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					installation,
 				)
 
-				const diffSteps = Option.isNone(repository)
-					? []
+				const read = Option.isNone(repository)
+					? undefined
 					: yield* mergeStepsFor(orgId, repository.value, review.number)
-				const beforeMerge = mergeChecklist(
-					diffSteps.filter(
-						(step) => step.path === undefined || !pathIgnored(step.path, config.ignorePaths),
-					),
-					request.report.beforeMerge ?? [],
-				)
+				const checklist = buildChecklist({
+					detected: read?.detected ?? NO_DETECTED_STEPS,
+					verdicts: read?.verdicts ?? new Map(),
+					reviewer: request.report.beforeMerge ?? [],
+					isIgnored: (path) => pathIgnored(path, config.ignorePaths),
+				})
+				const beforeMerge = checklist.steps
+				const checklistTrace = checklistAttributes(read === undefined ? "unread" : "read", checklist)
+				yield* Effect.annotateCurrentSpan(checklistTrace)
+				// One line per review that found anything, so a missed or spurious step can be traced.
+				if (checklist.trace.names.length > 0 || beforeMerge.length > 0) {
+					yield* Effect.logInfo("[PrReview] before-merge checklist").pipe(
+						Effect.annotateLogs({ orgId, reviewId, ...checklistTrace }),
+					)
+				}
 
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)

@@ -310,6 +310,8 @@ export type PrReviewMergeStepKind = Schema.Schema.Type<typeof PrReviewMergeStepK
 export class PrReviewMergeStep extends Schema.Class<PrReviewMergeStep>("PrReviewMergeStep")({
 	kind: PrReviewMergeStepKind,
 	title: Schema.String,
+	/** The secret, variable or file the step is about; what a reviewer step must name to replace it. */
+	subject: Schema.optionalKey(Schema.String),
 	path: Schema.optionalKey(Schema.String),
 	line: Schema.optionalKey(Schema.Number),
 	source: Schema.Literals(["diff", "reviewer"]),

@@ -194,7 +194,13 @@ function ReviewDetailContent({
 						) : null}
 						{report.beforeMerge && report.beforeMerge.length > 0 ? (
 							<Section title="Before merge">
-								<BulletList items={report.beforeMerge.map((step) => step.title)} />
+								<BulletList
+									items={report.beforeMerge.map((step) =>
+										step.path === undefined || step.subject !== step.path
+											? step.title
+											: `${step.title} (${step.path})`,
+									)}
+								/>
 							</Section>
 						) : null}
 						<Section title={`Issues (${report.findings.length})`}>

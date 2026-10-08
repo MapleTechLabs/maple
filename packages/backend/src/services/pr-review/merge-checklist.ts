@@ -1,7 +1,13 @@
 /**
- * The "before merge" checklist read off a pull request's diff: secrets and environment variables
- * the change starts reading, migrations it adds, warehouse schema and deployment config it edits.
- * Pure over the changed files; the service confirms each name is new before it is listed.
+ * The "before merge" checklist: what has to happen outside the diff before a change ships.
+ *
+ * Three pure steps, so every decision is testable and lands in the trace:
+ * 1. `detectMergeSteps` reads the changed files: names the diff starts reading (secrets, env vars,
+ *    CI secrets) and files that imply a step (migrations, warehouse schema, deployment config).
+ * 2. `searchVerdict` rules on each name from a code search of the default branch: `new`, `exists`
+ *    (already read there, nothing to add) or `unverified` (no search ran, or it failed).
+ * 3. `buildChecklist` lists new and unverified names, file steps and the reviewer's steps, and
+ *    traces what it dropped and why. The service only does the reads between them.
  */
 import { PrReviewMergeStep, type PullRequestFile } from "@maple/domain/http"
 
@@ -88,8 +94,6 @@ const WAREHOUSE = /\.(datasource|pipe)$|(^|\/)datasources\.ts$|(^|\/)clickhouse\
 const INFRA =
 	/(^|\/)(wrangler\.(toml|jsonc?)|alchemy\.run\.ts|fly\.toml|vercel\.json|render\.ya?ml|serverless\.ya?ml|docker-compose[\w.-]*\.ya?ml|Dockerfile[\w.-]*)$|\.(tf|tfvars)$/
 
-const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
-
 interface PatchLine {
 	readonly text: string
 	/** The line in the new file; the line it sat before for a removed one. */
@@ -155,7 +159,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 			steps.push(
 				new PrReviewMergeStep({
 					kind: "migration",
-					title: `New migration \`${path}\`: check it runs against production data and the code still deployed`,
+					title: "Check it is safe on production data and with the code still deployed",
+					subject: path,
 					path,
 					source: "diff",
 				}),
@@ -166,7 +171,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 			steps.push(
 				new PrReviewMergeStep({
 					kind: "warehouse",
-					title: `Warehouse schema changed in \`${basename(path)}\`: deploy it before the code that reads it`,
+					title: "Deploy the schema before the code that reads it",
+					subject: path,
 					path,
 					source: "diff",
 				}),
@@ -175,7 +181,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 			steps.push(
 				new PrReviewMergeStep({
 					kind: "infra",
-					title: `Deployment config changed in \`${basename(path)}\`: check every environment has what it now expects`,
+					title: "Check every environment has what this config now expects",
+					subject: path,
 					path,
 					source: "diff",
 				}),
@@ -222,46 +229,134 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 	}
 }
 
-/** The step for a name the base does not read yet. */
-export const nameStep = (candidate: MergeStepName): PrReviewMergeStep => {
+/** Whether a name was already read on the default branch before this pull request. */
+export type NameVerdict = "new" | "exists" | "unverified"
+
+/** What a verdict is read from: a search hit's matched text. */
+export interface SearchHit {
+	readonly snippets: ReadonlyArray<string>
+}
+
+/**
+ * A name's verdict from a code search of the default branch. Search matches tokens, so a hit on
+ * `STRIPE_KEY_ID` comes back for `STRIPE_KEY`: a hit counts only when a snippet holds the name as
+ * a whole word, or carries no text to check.
+ */
+export const searchVerdict = (name: string, hits: ReadonlyArray<SearchHit>): NameVerdict => {
+	const whole = new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`)
+	return hits.some((hit) => hit.snippets.length === 0 || hit.snippets.some((text) => whole.test(text)))
+		? "exists"
+		: "new"
+}
+
+const nameStep = (candidate: MergeStepName): PrReviewMergeStep => {
 	const name = `\`${candidate.name}\``
 	const title = candidate.ci
-		? candidate.kind === "secret"
-			? `Add the ${name} secret to the repository's CI secrets`
-			: `Add the ${name} variable to the repository's CI variables`
+		? `Add ${name} to the repository's CI ${candidate.kind === "secret" ? "secrets" : "variables"}`
 		: candidate.kind === "secret"
-			? `Add the secret ${name} to every environment this deploys to`
-			: `Set ${name} in every environment this deploys to, or confirm its default is right`
+			? `Add secret ${name} to every environment`
+			: `Set ${name} in every environment, or confirm its default`
 	return new PrReviewMergeStep({
 		kind: candidate.kind,
 		title,
+		subject: candidate.name,
 		path: candidate.path,
 		line: candidate.line,
 		source: "diff",
 	})
 }
 
-/** The steps for one pull request, most likely to be forgotten first. */
+/** Most likely to be forgotten first. */
 const KIND_ORDER = { secret: 0, env: 1, migration: 2, warehouse: 3, infra: 4, manual: 5 } as const
 const MAX_STEPS = 15
 
+/** Every decision `buildChecklist` made, for the span and the log. */
+export interface ChecklistTrace {
+	readonly names: ReadonlyArray<{ readonly name: string; readonly verdict: NameVerdict }>
+	readonly fileSteps: number
+	readonly reviewerSteps: number
+	/** Subjects whose diff step a reviewer step replaced. */
+	readonly replaced: ReadonlyArray<string>
+	/** Subjects under the repository's ignored paths. */
+	readonly ignored: ReadonlyArray<string>
+	/** Steps past the cap. */
+	readonly cut: number
+}
+
+export interface Checklist {
+	readonly steps: ReadonlyArray<PrReviewMergeStep>
+	readonly trace: ChecklistTrace
+}
+
+export const NO_DETECTED_STEPS: DetectedMergeSteps = { names: [], steps: [] }
+
 /**
- * The diff's steps and the reviewer's, as one list. A reviewer step that names a diff step's
- * secret or file replaces it: the reviewer read the repository's conventions and says where.
+ * The checklist from the diff's candidates, each name's verdict (absent reads as `unverified`)
+ * and the reviewer's steps. A name already on the default branch is dropped; an unverified one is
+ * kept, since a missed secret costs more than a redundant line. A reviewer step that names a diff
+ * step's subject replaces it: the reviewer read the repository's conventions and says where.
  */
-export const mergeChecklist = (
-	diff: ReadonlyArray<PrReviewMergeStep>,
-	reviewer: ReadonlyArray<PrReviewMergeStep>,
-): ReadonlyArray<PrReviewMergeStep> => {
-	const subjectOf = (step: PrReviewMergeStep) => /`([^`]+)`/.exec(step.title)?.[1] ?? step.path
-	const covered = (step: PrReviewMergeStep) => {
-		const subject = subjectOf(step)
-		return (
-			subject !== undefined &&
-			reviewer.some((other) => other.title.includes(subject) || other.title.includes(basename(subject)))
-		)
+export const buildChecklist = (input: {
+	readonly detected: DetectedMergeSteps
+	readonly verdicts: ReadonlyMap<string, NameVerdict>
+	readonly reviewer: ReadonlyArray<PrReviewMergeStep>
+	readonly isIgnored: (path: string) => boolean
+}): Checklist => {
+	const names = input.detected.names.map((candidate) => ({
+		candidate,
+		verdict: input.verdicts.get(candidate.name) ?? ("unverified" as const),
+	}))
+	const fromDiff = [
+		...names.filter(({ verdict }) => verdict !== "exists").map(({ candidate }) => nameStep(candidate)),
+		...input.detected.steps,
+	]
+	const ignored = fromDiff.filter((step) => step.path !== undefined && input.isIgnored(step.path))
+	const replaced = fromDiff.filter(
+		(step) =>
+			!ignored.includes(step) &&
+			input.reviewer.some((other) => step.subject !== undefined && other.title.includes(step.subject)),
+	)
+	const kept = fromDiff.filter((step) => !ignored.includes(step) && !replaced.includes(step))
+	const all = [...kept, ...input.reviewer].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind])
+	const subjects = (steps: ReadonlyArray<PrReviewMergeStep>) =>
+		steps.map((step) => step.subject ?? step.title)
+	return {
+		steps: all.slice(0, MAX_STEPS),
+		trace: {
+			names: names.map(({ candidate, verdict }) => ({ name: candidate.name, verdict })),
+			fileSteps: input.detected.steps.length,
+			reviewerSteps: input.reviewer.length,
+			replaced: subjects(replaced),
+			ignored: subjects(ignored),
+			cut: Math.max(0, all.length - MAX_STEPS),
+		},
 	}
-	return [...diff.filter((step) => !covered(step)), ...reviewer]
-		.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind])
-		.slice(0, MAX_STEPS)
+}
+
+/**
+ * The trace as span attributes under `maple.pr_review.checklist.*`. `status` says whether the diff
+ * was read: `unread` means the list holds the reviewer's steps alone.
+ */
+export const checklistAttributes = (
+	status: "read" | "unread",
+	checklist: Checklist,
+): Record<string, string | number> => {
+	const { trace } = checklist
+	const named = (verdict: NameVerdict) =>
+		trace.names
+			.filter((item) => item.verdict === verdict)
+			.map((item) => item.name)
+			.join(",")
+	return {
+		"maple.pr_review.checklist.status": status,
+		"maple.pr_review.checklist.steps": checklist.steps.length,
+		"maple.pr_review.checklist.names_new": named("new"),
+		"maple.pr_review.checklist.names_exists": named("exists"),
+		"maple.pr_review.checklist.names_unverified": named("unverified"),
+		"maple.pr_review.checklist.file_steps": trace.fileSteps,
+		"maple.pr_review.checklist.reviewer_steps": trace.reviewerSteps,
+		"maple.pr_review.checklist.replaced": trace.replaced.join(","),
+		"maple.pr_review.checklist.ignored": trace.ignored.join(","),
+		"maple.pr_review.checklist.cut": trace.cut,
+	}
 }
