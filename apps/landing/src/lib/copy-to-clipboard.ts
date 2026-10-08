@@ -77,6 +77,8 @@ export function bindCopyButtons({
 			trackLanding(track.event, { [track.key]: text.slice(0, 120), copied: ok })
 			label.textContent = ok ? copiedLabel : errorLabel
 			button.classList.toggle(doneClass, ok)
+			// Lets CSS animate between idle / copied / error without reading text.
+			button.dataset.copyState = ok ? "copied" : "error"
 
 			// A re-click during the hold restarts the window rather than letting the
 			// first timer snap the label back early.
@@ -84,6 +86,7 @@ export function bindCopyButtons({
 			timer = setTimeout(() => {
 				label.textContent = resting
 				button.classList.remove(doneClass)
+				delete button.dataset.copyState
 			}, RESET_MS)
 		})
 	}
