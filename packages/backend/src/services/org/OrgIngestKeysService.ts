@@ -16,8 +16,8 @@ import {
 	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
 } from "@maple/db"
-import { eq } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { eq, inArray } from "drizzle-orm"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
@@ -218,6 +218,58 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				return yield* toResponse(row)
 			})
 
+			// Batch form for the scraper's target list: memo hits, then one SELECT for
+			// every missing org, then the per-org create path only for orgs with no row.
+			const getOrCreateMany = Effect.fn("OrgIngestKeysService.getOrCreateMany")(function* (
+				orgIds: ReadonlyArray<OrgId>,
+				userId: UserId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const [memoHits, misses] = Arr.partition(Arr.dedupe(orgIds), (orgId) => {
+					const memoized = ingestKeysMemo.get(orgId)
+					return memoized !== undefined && memoized.expiresAt > now
+						? Result.succeed([orgId, memoized.row] as const)
+						: Result.fail(orgId)
+				})
+				yield* Effect.annotateCurrentSpan({
+					"ingestKeys.requested": memoHits.length + misses.length,
+					"ingestKeys.memoMisses": misses.length,
+				})
+
+				const selected = Arr.isArrayNonEmpty(misses)
+					? yield* database
+							.execute((db) =>
+								db.select().from(orgIngestKeys).where(inArray(orgIngestKeys.orgId, misses)),
+							)
+							.pipe(Effect.mapError(toPersistenceError))
+					: []
+				yield* Effect.forEach(
+					selected,
+					(row) =>
+						Effect.sync(() =>
+							ingestKeysMemo.set(row.orgId, {
+								row,
+								expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS,
+							}),
+						),
+					{ discard: true },
+				)
+
+				const withoutRow = Arr.difference(
+					misses,
+					selected.map((row) => row.orgId),
+				)
+				const created = yield* Effect.forEach(withoutRow, (orgId) =>
+					ensureRow(orgId, userId).pipe(Effect.map((row) => [orgId, row] as const)),
+				)
+				const responses = yield* Effect.forEach(
+					[...memoHits, ...selected.map((row) => [row.orgId, row] as const), ...created],
+					([orgId, row]) =>
+						toResponse(row).pipe(Effect.map((response) => [orgId, response] as const)),
+				)
+				return new Map(responses)
+			})
+
 			const rerollPublic = Effect.fn("OrgIngestKeysService.rerollPublic")(function* (
 				orgId: OrgId,
 				userId: UserId,
@@ -336,6 +388,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			return {
 				getOrCreate,
+				getOrCreateMany,
 				rerollPublic,
 				rerollPrivate,
 				resolveIngestKey,
