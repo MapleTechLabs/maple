@@ -29,6 +29,7 @@ const ATTRIBUTE_VALUE = "wide-value-".repeat(12)
 
 const LOGS: Log[] = Array.from({ length: ROW_COUNT }, (_, index) => ({
 	timestamp: new Date(Date.UTC(2026, 6, 17, 18, 30) - index * 1_000).toISOString(),
+	exactTimestamp: new Date(Date.UTC(2026, 6, 17, 18, 30) - index * 1_000).toISOString().replace("T", " ").replace("Z", ""),
 	severityText: index % 17 === 0 ? "ERROR" : index % 5 === 0 ? "WARN" : "INFO",
 	severityNumber: index % 17 === 0 ? 17 : index % 5 === 0 ? 13 : 9,
 	serviceName: `checkout-worker-${index % 24}`,

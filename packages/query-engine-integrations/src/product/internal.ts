@@ -76,8 +76,8 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.SpanName.eq("WarehouseQueryService.executeSql"),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			// Spans without a fingerprint pre-date this attribute or come from
 			// the in-process `EXPLAIN` calls the bench itself makes — neither
 			// is interesting for ranking.

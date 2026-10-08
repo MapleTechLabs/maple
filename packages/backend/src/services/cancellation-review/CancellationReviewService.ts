@@ -21,10 +21,10 @@ import {
 } from "@maple/db"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import { CancellationSnapshot, type OrgId } from "@maple/domain/http"
-import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm"
 import type { PgTable } from "drizzle-orm/pg-core"
-import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -191,7 +191,10 @@ export class CancellationReviewService extends Context.Service<
 					state: onboarding.findState(orgId).pipe(Effect.map(Option.getOrNull)),
 					supportChannels: count(
 						orgSupportChannels,
-						and(eq(orgSupportChannels.orgId, orgId), isNotNull(orgSupportChannels.slackChannelId)),
+						and(
+							eq(orgSupportChannels.orgId, orgId),
+							isNotNull(orgSupportChannels.slackChannelId),
+						),
 					),
 				},
 				{ concurrency: 4 },
@@ -268,12 +271,14 @@ export class CancellationReviewService extends Context.Service<
 				// "nobody opened the app" off that would be wrong for every review.
 				const anyone = yield* pageViews(undefined, (WINDOW_DAYS * 2 * DAY_MS) / 1000)
 				if (anyone.length === 0) {
-					yield* Effect.logWarning("cancellation review found no app page views under the product-events key's org")
+					yield* Effect.logWarning(
+						"cancellation review found no app page views under the product-events key's org",
+					)
 					return null
 				}
 			}
 			return summarizeVisits(
-				rows.map((row) => ({ dayMs: parseWarehouseDateTime(row.bucket), users: row.value })),
+				rows.map((row) => ({ dayMs: DateTime.toEpochMillis(row.bucket), users: row.value })),
 				atMs,
 			)
 		})
@@ -301,7 +306,8 @@ export class CancellationReviewService extends Context.Service<
 							})
 							.onConflictDoNothing()
 							.returning({ id: cancellationReviews.id })
-						if (inserted[0] !== undefined) return { id: inserted[0].id, state: "claimed" as const }
+						if (inserted[0] !== undefined)
+							return { id: inserted[0].id, state: "claimed" as const }
 						const [existing] = yield* db
 							.select({
 								id: cancellationReviews.id,
@@ -330,7 +336,10 @@ export class CancellationReviewService extends Context.Service<
 							return { id: existing.id, state: "posted" as const }
 						}
 						// Unposted and recently touched: another delivery is on it.
-						if (existing.postedAt === null && nowMs - dateToMs(existing.updatedAt) < CLAIM_LEASE_MS) {
+						if (
+							existing.postedAt === null &&
+							nowMs - dateToMs(existing.updatedAt) < CLAIM_LEASE_MS
+						) {
 							return { id: existing.id, state: "busy" as const }
 						}
 						// Take it over, unless another delivery took it between the read and here.
@@ -344,7 +353,10 @@ export class CancellationReviewService extends Context.Service<
 								),
 							)
 							.returning({ id: cancellationReviews.id })
-						return { id: existing.id, state: taken.length === 0 ? ("busy" as const) : ("claimed" as const) }
+						return {
+							id: existing.id,
+							state: taken.length === 0 ? ("busy" as const) : ("claimed" as const),
+						}
 					}),
 				)
 				.pipe(Effect.mapError(failedAt("claim", "Could not claim the cancellation review")))
@@ -530,7 +542,13 @@ export class CancellationReviewService extends Context.Service<
 				yield* Effect.annotateCurrentSpan({
 					"maple.cancellation.reason": reason,
 					// A report can go out missing sections; this is how that shows on the span.
-					"maple.cancellation.unread_sources": Object.entries({ org, ingest, visits, adoption, billing })
+					"maple.cancellation.unread_sources": Object.entries({
+						org,
+						ingest,
+						visits,
+						adoption,
+						billing,
+					})
 						.filter(([, section]) => section === null)
 						.map(([name]) => name)
 						.join(","),

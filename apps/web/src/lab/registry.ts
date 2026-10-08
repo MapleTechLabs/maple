@@ -148,6 +148,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/logs",
+		title: "Logs stream",
+		description:
+			"The `/logs` stream over a production-like fixture: access lines, slow queries, a payment outage with stack traces, JSON bodies. Toggles for wrap, density, search and pinned columns.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:

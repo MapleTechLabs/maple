@@ -130,7 +130,7 @@ export class RecommendationIssueService extends Context.Service<
 					),
 				)
 			return rows.map((row) => ({
-				attributeKey: String(row.attributeKey),
+				attributeKey: row.attributeKey,
 				usageCount: Number(row.usageCount),
 			}))
 		})

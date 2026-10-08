@@ -410,8 +410,8 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.checkOptions).toMatchObject({
-			since: "2026-09-24T00:00:00Z",
-			until: "2026-09-24T12:00:00Z",
+			since: "2026-09-24 00:00:00",
+			until: "2026-09-24 12:00:00",
 			status: "error",
 			limit: 100,
 		})

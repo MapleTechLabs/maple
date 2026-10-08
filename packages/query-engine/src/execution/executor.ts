@@ -881,8 +881,22 @@ WHERE name = 'enable_full_text_index'`,
 			),
 		)
 
+		// Pipes are a wire contract (`@maple/domain/tinybird` types, the CLI over
+		// HTTP), so rows go back out in their wire form: decoding validated them,
+		// and encoding turns a `DateTime.Utc` column back into the string it was.
+		const wireRows = yield* compiled.encodeRows(decodedRows).pipe(
+			Effect.mapError(
+				(error) =>
+					new WarehouseResultDecodeError({
+						pipeName: payload.pipeName,
+						message: error.message,
+						cause: error,
+					}),
+			),
+		)
+
 		return new WarehouseQueryResponse({
-			data: Array.from(decodedRows),
+			data: Array.from(wireRows),
 		})
 	})
 

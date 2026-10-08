@@ -18,6 +18,7 @@
 import { Schema } from "effect"
 import { DashboardId, DashboardShareId, IsoDateTimeString } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
+import { WireValue } from "../wire"
 
 /**
  * The single body every "no such share" answer carries.
@@ -427,7 +428,7 @@ export const ShareWidgetDataOutcome = Schema.Union([
 	Schema.Struct({
 		widgetId: Schema.String,
 		ok: Schema.Literal(true),
-		data: Schema.Unknown,
+		data: WireValue,
 		/** Set when the server narrowed the window for this widget's shape. */
 		narrowedToSeconds: Schema.optionalKey(Schema.Number),
 	}),

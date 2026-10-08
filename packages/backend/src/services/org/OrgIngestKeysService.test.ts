@@ -6,7 +6,13 @@ import { hashIngestKey } from "@maple/db"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	makeStatementRecorder,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`
@@ -288,4 +294,41 @@ describe("OrgIngestKeysService", () => {
 			assert.instanceOf(failure, IngestKeyPersistenceError)
 		}),
 	)
+
+	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
+		const testDb = createTestDb(trackedDbs)
+		const user = asUserId("user_a")
+		const seededOrgs = ["org_a", "org_b", "org_c"].map(asOrgId)
+		const newOrg = asOrgId("org_d")
+		const orgs = [...seededOrgs, newOrg]
+		const coldBatch = makeStatementRecorder()
+		const warmBatch = makeStatementRecorder()
+		return Effect.gen(function* () {
+			// Seed three orgs through one instance, then read through a fresh one so
+			// its memo is cold, like a new isolate.
+			const seeded = yield* Effect.forEach(seededOrgs, (orgId) =>
+				OrgIngestKeysService.getOrCreate(orgId, user),
+			).pipe(Effect.provide(makeLayer(testDb)))
+
+			const keys = yield* Effect.gen(function* () {
+				const service = yield* OrgIngestKeysService
+				const cold = yield* service
+					.getOrCreateMany([...orgs, ...seededOrgs], user)
+					.pipe(Effect.withTracer(coldBatch.tracer))
+				yield* service.getOrCreateMany(orgs, user).pipe(Effect.withTracer(warmBatch.tracer))
+				return cold
+			}).pipe(Effect.provide(makeLayer(testDb)))
+
+			// One batched SELECT for all four orgs, then org_d's first-use create path.
+			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "SELECT"])
+			// Every org is memoized after the first batch: no statements at all.
+			assert.deepStrictEqual(warmBatch.verbs(), [])
+			assert.strictEqual(keys.size, 4)
+			assert.deepStrictEqual(
+				seededOrgs.map((orgId) => keys.get(orgId)?.publicKey),
+				seeded.map((response) => response.publicKey),
+			)
+			assert.isTrue(keys.get(newOrg)?.publicKey.startsWith("maple_pk_"))
+		})
+	})
 })

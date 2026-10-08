@@ -1,6 +1,6 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as React from "react"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { Result } from "@/lib/effect-atom"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
@@ -28,7 +28,7 @@ import { pickImportantAttributes } from "@/lib/log-attributes"
 import { LogAttributeChip } from "./log-attribute-chip"
 import { HighlightedText } from "./highlighted-text"
 import { shortId } from "@maple/ui/lib/ids"
-import { ChevronRightIcon } from "@/components/icons"
+import { ChevronRightIcon, CopyIcon, ExternalLinkIcon, PulseIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { usePageScrolledReporter } from "@maple/ui/components/ui/page-layout"
@@ -38,16 +38,35 @@ import {
 	canWidenTimeRange,
 	WIDEN_TIME_PRESET,
 } from "@/components/time-range-picker/search"
-import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { ServiceDot } from "@maple/ui/components/service-dot"
+import { useCopy } from "@maple/ui/hooks/use-copy"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
-const ROW_HEIGHT = 36
-const ROW_HEIGHT_COMFORTABLE = 48
+const ROW_HEIGHT = 30
+const ROW_HEIGHT_COMFORTABLE = 42
 const PINNED_COL_WIDTH = "150px"
-/** Fixed message-column width in the default (horizontally scrollable) layout. */
-const BODY_WIDTH = 480
+/** Chips shown beside the message; the rest are one expand away. */
+const MAX_INLINE_CHIPS = 3
 
 const EMPTY_COLUMNS: string[] = []
+
+/** Left-edge rail (and, for errors, a tint) so a scan down the stream stops on what is wrong. */
+const SEVERITY_ROW = new Map([
+	["FATAL", "before:bg-severity-error bg-severity-error/[0.08]"],
+	["CRITICAL", "before:bg-severity-error bg-severity-error/[0.08]"],
+	["ERROR", "before:bg-severity-error bg-severity-error/[0.05]"],
+	["WARN", "before:bg-severity-warn"],
+	["WARNING", "before:bg-severity-warn"],
+])
+
+/** Debug and trace chatter is read last, so its message is set back a step. */
+const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
+
+/** First line of a multi-line body (a stack trace, a dump) and how many lines the row hides. */
+function splitFirstLine(body: string): { first: string; hidden: number } {
+	const lines = body.split("\n")
+	return { first: lines[0] ?? "", hidden: lines.length - 1 }
+}
 
 interface LogsTableViewProps {
 	allData: Log[]
@@ -119,12 +138,22 @@ interface LogRowProps {
 	/** Text to mark in the message. Only a text search highlights; an id lookup
 	 *  matches the id columns, not the body. */
 	highlight?: string
-	/** Visible width of the list's scroller, in px. The inline expansion is
-	 *  pinned to it so a wide row's horizontal track doesn't stretch the panel. */
-	viewportWidth: number
 	measureRef?: (node: Element | null) => void
 	onClick: (log: Log) => void
 	onToggleExpand: (index: number) => void
+}
+
+/** `HH:MM:SS` at full strength, the milliseconds a step back: the eye reads seconds first. */
+function LogTime({ timestamp, timeZone }: { timestamp: string; timeZone: string }) {
+	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
+	const dot = formatted.lastIndexOf(".")
+	if (dot === -1) return formatted
+	return (
+		<>
+			{formatted.slice(0, dot)}
+			<span className="text-muted-foreground/50">{formatted.slice(dot)}</span>
+		</>
+	)
 }
 
 const LogRow = React.memo(function LogRow({
@@ -139,24 +168,28 @@ const LogRow = React.memo(function LogRow({
 	density,
 	pinnedColumns,
 	highlight,
-	viewportWidth,
 	measureRef,
 	onClick,
 	onToggleExpand,
 }: LogRowProps) {
-	const all = React.useMemo(() => pickImportantAttributes(log, Number.POSITIVE_INFINITY), [log])
-	// Every important (non-pinned) attribute is shown inline — the row scrolls
-	// horizontally to reach them rather than clipping behind a "+N".
+	// Only chips that add to the message: resource attributes (region, env, pod)
+	// repeat down the whole stream, and a value the body already spells out
+	// (`503`, the exception message) is said twice. Both wait in the expansion.
 	const chips = React.useMemo(() => {
 		const pinned = new Set(pinnedColumns)
-		return all.filter((attr) => !pinned.has(attr.key))
-	}, [all, pinnedColumns])
+		return pickImportantAttributes(log, Number.POSITIVE_INFINITY)
+			.filter(
+				(attr) =>
+					attr.source === "log" &&
+					!pinned.has(attr.key) &&
+					!(attr.value.length >= 3 && log.body.includes(attr.value)),
+			)
+			.slice(0, MAX_INLINE_CHIPS)
+	}, [log, pinnedColumns])
+	const { first, hidden } = React.useMemo(() => splitFirstLine(log.body), [log.body])
+	const severity = log.severityText.toUpperCase()
 	const severityColor = getSeverityColor(log.severityText)
-	// When `fill` the header line stretches to the container (no horizontal
-	// scroll): wrap mode wraps the body, expanded keeps a one-line summary with
-	// the full body in the panel below. Otherwise (the default), the row sizes to
-	// its content (body + every chip) and the stream scrolls sideways.
-	const fill = wrap || isExpanded
+	const { copy } = useCopy({ successMessage: "Copied log message" })
 
 	return (
 		<div
@@ -166,17 +199,15 @@ const LogRow = React.memo(function LogRow({
 				position: "absolute",
 				top: 0,
 				left: 0,
-				// The track owns the horizontal size (see `trackStyle`). A row that
-				// needs more than the track still overflows via the inner `w-max`,
-				// which is what grows the track on the next frame.
 				width: "100%",
 				transform: `translateY(${top}px)`,
 			}}
-			className="border-b border-border"
+			className="border-b border-border/70"
 		>
 			<div
 				data-selected={isSelected || undefined}
 				data-focused={isFocused || undefined}
+				data-expanded={isExpanded || undefined}
 				tabIndex={0}
 				role="listitem"
 				onClick={() => onClick(log)}
@@ -187,10 +218,12 @@ const LogRow = React.memo(function LogRow({
 					}
 				}}
 				className={cn(
-					"flex gap-2 px-3 text-xs font-mono cursor-pointer hover:bg-muted/50 data-[selected]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					"group/row relative flex w-full gap-3 pl-3 pr-3 text-xs font-mono cursor-pointer",
+					"before:absolute before:inset-y-0 before:left-0 before:w-0.5",
+					"hover:bg-muted/50 data-[selected]:bg-primary/5 data-[expanded]:bg-muted/40 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					SEVERITY_ROW.get(severity),
 					wrap ? "items-start" : "items-center",
-					fill ? "w-full" : "w-max min-w-full",
-					density === "comfortable" ? "py-2.5" : "py-1.5",
+					density === "comfortable" ? "py-3" : "py-[7px]",
 				)}
 			>
 				<button
@@ -204,29 +237,25 @@ const LogRow = React.memo(function LogRow({
 					onKeyDown={(e) => {
 						if (e.key === "Enter" || e.key === " ") e.stopPropagation()
 					}}
-					className="shrink-0 flex items-center justify-center size-4 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:text-foreground"
+					className="-mr-1.5 shrink-0 flex h-4 items-center justify-center w-4 text-muted-foreground/40 group-hover/row:text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:text-foreground"
 				>
 					<ChevronRightIcon
 						size={12}
 						className={cn("transition-transform", isExpanded && "rotate-90")}
 					/>
 				</button>
-				{/* h-4 wrapper = the text line-box height, so the dot centers on the
-				    first line even when the row is top-aligned in wrap mode. */}
-				<span className="shrink-0 flex h-4 items-center" aria-hidden="true">
-					<StatusDot tone="custom" style={{ backgroundColor: severityColor }} />
+				<span className="shrink-0 w-[92px] text-foreground/75 tabular-nums">
+					<LogTime timestamp={log.timestamp} timeZone={timeZone} />
 				</span>
 				<span
-					className="shrink-0 w-12 text-3xs uppercase tabular-nums font-semibold hidden md:inline-block"
+					className="shrink-0 w-11 text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide"
 					style={{ color: severityColor }}
 				>
 					{log.severityText}
 				</span>
-				<span className="shrink-0 w-24 text-muted-foreground tabular-nums">
-					{formatCompactTimeInTimezone(log.timestamp, { timeZone })}
-				</span>
-				<span className="shrink-0 w-[120px] truncate text-muted-foreground/60 hidden md:inline-block">
-					{log.serviceName}
+				<span className="shrink-0 w-[128px] hidden md:flex h-4 items-center gap-1.5 min-w-0 text-muted-foreground">
+					<ServiceDot serviceName={log.serviceName} size="sm" />
+					<span className="truncate">{log.serviceName}</span>
 				</span>
 				{pinnedColumns.map((key) => {
 					const value = log.logAttributes[key] ?? log.resourceAttributes[key] ?? EMPTY_VALUE
@@ -239,6 +268,7 @@ const LogRow = React.memo(function LogRow({
 							style={{ width: PINNED_COL_WIDTH }}
 							className={cn(
 								"shrink-0 truncate text-foreground/80 hidden md:block",
+								value === EMPTY_VALUE && "text-muted-foreground/40",
 								numeric && "tabular-nums",
 							)}
 						>
@@ -246,76 +276,117 @@ const LogRow = React.memo(function LogRow({
 						</span>
 					)
 				})}
-				{fill ? (
+				<span className={cn("min-w-0 flex-1 flex gap-2", wrap ? "items-start" : "items-center")}>
+					{/* The message keeps at least 60% of the lane; chips clip after it. */}
 					<span
 						className={cn(
-							"min-w-0 flex-1 text-foreground text-xs",
+							"min-w-[60%]",
+							QUIET_SEVERITIES.has(severity) ? "text-muted-foreground" : "text-foreground",
 							wrap ? "whitespace-pre-wrap break-words" : "truncate",
 						)}
 					>
-						<HighlightedText text={log.body} query={highlight} />
+						<HighlightedText text={wrap ? log.body : first} query={highlight} />
 					</span>
-				) : (
-					<span style={{ width: BODY_WIDTH }} className="shrink-0 truncate text-foreground text-xs">
-						<HighlightedText text={log.body} query={highlight} />
-					</span>
-				)}
-				{!fill && chips.length > 0 && (
-					<div className="flex items-center gap-1 shrink-0">
-						{chips.map((chip) => (
-							<LogAttributeChip
-								key={chip.key}
-								attrKey={chip.key}
-								value={chip.value}
-								tone={chip.tone}
-							/>
-						))}
-					</div>
-				)}
-				{/* Fills the row background to the container edge when content is
-				    narrower than the viewport; collapses to 0 when the row overflows. */}
-				{!fill && <span className="flex-1" aria-hidden="true" />}
+					{!wrap && hidden > 0 && (
+						<span className="shrink-0 rounded border border-border/70 px-1 text-3xs leading-4 text-muted-foreground">
+							+{hidden} {hidden === 1 ? "line" : "lines"}
+						</span>
+					)}
+					{chips.length > 0 && (
+						// A chip that does not fit wraps onto a hidden second line, so chips
+						// drop out whole instead of clipping mid-word; a narrow stream shows none.
+						<span className="ml-auto hidden h-[18px] min-w-0 flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex">
+							{chips.map((chip) => (
+								<LogAttributeChip
+									key={chip.key}
+									attrKey={chip.key}
+									value={chip.value}
+									tone={chip.tone}
+									className="max-w-full"
+								/>
+							))}
+						</span>
+					)}
+				</span>
+				{/* Row actions, shown on hover or keyboard focus. A wide stream reserves
+				    their slot so they never cover a chip; a narrow one (no chips) overlays. */}
+				<span
+					className={cn(
+						"absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-md border border-border bg-background p-0.5 group-hover/row:flex group-data-[focused]/row:flex",
+						"@3xl/log:static @3xl/log:flex @3xl/log:shrink-0 @3xl/log:translate-y-0 @3xl/log:-my-1 @3xl/log:invisible @3xl/log:group-hover/row:visible @3xl/log:group-data-[focused]/row:visible",
+					)}
+				>
+					<RowAction
+						label="Copy message"
+						onClick={(e) => {
+							e.stopPropagation()
+							void copy(log.body)
+						}}
+					>
+						<CopyIcon size={13} />
+					</RowAction>
+					{log.traceId && (
+						<Link
+							to="/traces/$traceId"
+							params={{ traceId: log.traceId }}
+							onClick={(e) => e.stopPropagation()}
+							aria-label="Open trace"
+							title="Open trace"
+							className={ROW_ACTION_CLASS}
+						>
+							<PulseIcon size={13} />
+						</Link>
+					)}
+					<RowAction
+						label="Open details"
+						onClick={(e) => {
+							e.stopPropagation()
+							onClick(log)
+						}}
+					>
+						<ExternalLinkIcon size={12} />
+					</RowAction>
+				</span>
 			</div>
 			{isExpanded && (
-				// The row sits on a track as wide as the widest row in the list, so an
-				// expansion left at `width: 100%` inherits that width and has to be
-				// scrolled sideways to read. Pinned to the scroller's visible width
-				// instead, it reads in place at any horizontal scroll position.
-				<div
-					className="sticky left-0"
-					style={viewportWidth > 0 ? { width: viewportWidth } : undefined}
-				>
-					<LogRowExpanded log={log} highlight={highlight} onOpenDetail={() => onClick(log)} />
-				</div>
+				<LogRowExpanded log={log} highlight={highlight} onOpenDetail={() => onClick(log)} />
 			)}
 		</div>
 	)
 })
 
-/** Slim sticky header that labels the pinned-attribute columns. */
-function PinnedHeader({
-	pinnedColumns,
-	wrap,
-	trackStyle,
+const ROW_ACTION_CLASS =
+	"inline-flex size-5 items-center justify-center rounded text-3xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+
+function RowAction({
+	label,
+	onClick,
+	children,
 }: {
-	pinnedColumns: string[]
-	wrap: boolean
-	trackStyle: React.CSSProperties
+	label: string
+	onClick: (e: React.MouseEvent) => void
+	children: React.ReactNode
 }) {
+	return (
+		<button type="button" aria-label={label} title={label} onClick={onClick} className={ROW_ACTION_CLASS}>
+			{children}
+		</button>
+	)
+}
+
+/** Sticky column labels, always shown: a dense stream without them reads as a wall of text. */
+function ColumnHeader({ pinnedColumns, timeZone }: { pinnedColumns: string[]; timeZone: string }) {
 	return (
 		<Eyebrow
 			as="div"
-			// `top-0` only: a `left-0` sticky header stays glued to the viewport
-			// while the rows scroll sideways underneath it, so the labels drift off
-			// the columns they name. It shares the rows' track width instead.
-			style={trackStyle}
-			className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-background border-b border-border select-none"
+			className="sticky top-0 z-10 flex items-center gap-3 px-3 py-1.5 bg-background border-b border-border select-none"
 		>
-			<span className="shrink-0 size-4" aria-hidden="true" />
-			<span className="shrink-0 size-1.5" aria-hidden="true" />
-			<span className="shrink-0 w-12 hidden md:inline-block" aria-hidden="true" />
-			<span className="shrink-0 w-24">Time</span>
-			<span className="shrink-0 w-[120px] hidden md:inline-block">Service</span>
+			<span className="-mr-1.5 shrink-0 w-4" aria-hidden="true" />
+			<span className="shrink-0 w-[92px]" title={`Times in ${timeZone}`}>
+				Time
+			</span>
+			<span className="shrink-0 w-11">Level</span>
+			<span className="shrink-0 w-[128px] hidden md:inline-block">Service</span>
 			{pinnedColumns.map((key) => (
 				<span
 					key={key}
@@ -326,16 +397,7 @@ function PinnedHeader({
 					{key}
 				</span>
 			))}
-			{wrap ? (
-				<span className="min-w-0 flex-1">Message</span>
-			) : (
-				<>
-					<span style={{ width: BODY_WIDTH }} className="shrink-0">
-						Message
-					</span>
-					<span className="flex-1" aria-hidden="true" />
-				</>
-			)}
+			<span className="min-w-0 flex-1">Message</span>
 		</Eyebrow>
 	)
 }
@@ -447,11 +509,14 @@ export function LogsTableView({
 	// A global wrap/density change resizes every row at once. Clear the
 	// measurement cache so off-screen rows re-measure from the corrected
 	// estimate instead of jumping on the stale one. Per-row expand/collapse
-	// re-measures automatically via the row's ResizeObserver.
+	// re-measures automatically via the row's ResizeObserver. Mounted rows are
+	// re-measured by hand: one whose height did not change fires no resize, and
+	// would otherwise keep the (now wrong) estimate as its slot.
 	React.useLayoutEffect(() => {
 		sizeStatsRef.current = { sum: 0, byIndex: new Map() }
 		virtualizer.measure()
-	}, [wrap, density, virtualizer])
+		scrollContainerRef.current?.querySelectorAll("[role='log'] > [data-index]").forEach(measureElement)
+	}, [wrap, density, virtualizer, measureElement])
 
 	const virtualItems = virtualizer.getVirtualItems()
 
@@ -459,65 +524,6 @@ export function LogsTableView({
 		traceId ? ` in trace ${shortId(traceId, "trace")}` : "",
 		searchText ? ` matching “${searchText}”` : "",
 	].join("")
-
-	// A virtualized list's horizontal scroll width is the width of whichever rows
-	// happen to be mounted, and in the default layout a row sizes to its content
-	// — so scrolling vertically swung `scrollWidth` by hundreds of px and the
-	// browser yanked `scrollLeft` along with it. The track is sized to the widest
-	// row seen so far and only ever grows, which keeps the horizontal range
-	// still while you scroll. It resets when the layout or the query changes.
-	const [trackWidth, setTrackWidth] = React.useState(0)
-	// Mirrored in a ref so the effect can decide *not* to call `setTrackWidth` at
-	// all: a `setState` in a layout effect costs a second commit even when the
-	// updater returns the current value, and this effect runs on every scroll
-	// frame — which doubled the list's commits per frame.
-	const trackWidthRef = React.useRef(0)
-	const trackResetKey = `${wrap}|${density}|${pinnedColumns.join("\u0000")}`
-	const trackStateRef = React.useRef({ key: trackResetKey, count: allData.length })
-
-	React.useLayoutEffect(() => {
-		const element = scrollContainerRef.current
-		if (!element) return
-		const previous = trackStateRef.current
-		const reset = previous.key !== trackResetKey || allData.length < previous.count
-		trackStateRef.current = { key: trackResetKey, count: allData.length }
-		if (reset) {
-			if (trackWidthRef.current === 0) return
-			trackWidthRef.current = 0
-			setTrackWidth(0)
-			return
-		}
-		// Wrap mode fills the container and never scrolls sideways.
-		if (wrap) return
-		const measured = element.scrollWidth
-		if (measured <= trackWidthRef.current) return
-		trackWidthRef.current = measured
-		setTrackWidth(measured)
-	}, [virtualItems, trackResetKey, allData.length, wrap])
-
-	// The scroller's own visible width (not `scrollWidth`), for the expansions.
-	// Mirrored in a ref so a resize that lands on the same width costs no commit.
-	const [viewportWidth, setViewportWidth] = React.useState(0)
-	const viewportWidthRef = React.useRef(0)
-	React.useLayoutEffect(() => {
-		const element = scrollContainerRef.current
-		if (!element) return
-		const sync = () => {
-			const width = element.clientWidth
-			if (width === viewportWidthRef.current) return
-			viewportWidthRef.current = width
-			setViewportWidth(width)
-		}
-		sync()
-		const observer = new ResizeObserver(sync)
-		observer.observe(element)
-		return () => observer.disconnect()
-	}, [])
-
-	const trackStyle = React.useMemo<React.CSSProperties>(
-		() => ({ width: trackWidth > 0 ? trackWidth : "100%", minWidth: "100%" }),
-		[trackWidth],
-	)
 
 	// Index-keyed nav ids: logs have no stable row id, and the list is
 	// append-only for a given query, so indices stay stable while browsing.
@@ -653,14 +659,11 @@ export function LogsTableView({
 					<div
 						ref={scrollContainerRef}
 						onScroll={(e) => reportScrolled(e.currentTarget.scrollTop > 0)}
-						className="absolute inset-0 overflow-auto overscroll-contain rounded-md border"
+						className="@container/log absolute inset-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-md border"
 					>
-						{pinnedColumns.length > 0 && (
-							<PinnedHeader pinnedColumns={pinnedColumns} wrap={wrap} trackStyle={trackStyle} />
-						)}
+						<ColumnHeader pinnedColumns={pinnedColumns} timeZone={effectiveTimezone} />
 						<div
 							style={{
-								...trackStyle,
 								height: virtualizer.getTotalSize(),
 								position: "relative",
 							}}
@@ -680,7 +683,6 @@ export function LogsTableView({
 										isSelected={isSelected}
 										isFocused={virtualRow.index === focusedIndex}
 										isExpanded={isExpanded}
-										viewportWidth={viewportWidth}
 										wrap={wrap}
 										density={density}
 										pinnedColumns={pinnedColumns}

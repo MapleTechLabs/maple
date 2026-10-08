@@ -506,8 +506,7 @@ export const runClickHouseSchemaApply = (
 	Effect.gen(function* () {
 		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
 			Effect.mapError(
-				(error) =>
-					new SchemaApplyPayloadError({ message: error.message, rawOrgId: String(payload.orgId) }),
+				(error) => new SchemaApplyPayloadError({ message: error.message, rawOrgId: payload.orgId }),
 			),
 		)
 		const database = yield* Database

@@ -1,4 +1,4 @@
-import { Array as Arr, Clock, Effect, HashMap, HashSet, Option, Schema, pipe } from "effect"
+import { Array as Arr, Clock, DateTime, Effect, HashMap, HashSet, Option, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import * as CH from "../ch"
@@ -6,7 +6,7 @@ import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecuto
 import type { InspectTraceOutput, SpanNode, TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
 
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
+import { formatWarehouseDateTime } from "../datetime"
 const SKIP_ATTR_PREFIXES = ["http.request.header.", "http.response.header.", "signoz."]
 const SKIP_ATTR_KEYS = HashSet.fromIterable([
 	"http.request.method",
@@ -167,11 +167,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 						}),
 						{ profile: "discovery", context: "inspectTraceProbe" },
 					)
-					const foundMs = pipe(
-						probe,
-						Option.map((row) => parseWarehouseDateTime(row.timestamp)),
-						Option.filter((ms) => !Number.isNaN(ms)),
-					)
+					const foundMs = Option.map(probe, (row) => DateTime.toEpochMillis(row.timestamp))
 					yield* Effect.annotateCurrentSpan("widenedLookback", Option.isSome(foundMs))
 					if (Option.isNone(foundMs)) {
 						const probed = {
