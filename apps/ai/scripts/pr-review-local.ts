@@ -47,7 +47,11 @@ import {
 	PR_REVIEW_RULE_FILES,
 	type RepositoryRuleFile,
 } from "@maple/backend/services/pr-review/PrReviewService"
-import { buildChecklist, detectMergeSteps } from "@maple/backend/services/pr-review/merge-checklist"
+import {
+	buildChecklist,
+	detectMergeSteps,
+	type NameVerdict,
+} from "@maple/backend/services/pr-review/merge-checklist"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -164,6 +168,19 @@ export const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 		stdout: proc.stdout ?? "",
 		stderr: proc.stderr ?? "",
 	}
+}
+
+/**
+ * A name's verdict from the clone at the base commit, as a whole word: `git grep` exits 0 on a
+ * match and 1 on none; anything else (a missing commit) leaves the name unverified, as a failed
+ * search does in the service.
+ */
+const nameAtBase = (dir: string, baseSha: string, name: string): NameVerdict => {
+	const result = run(
+		["git", "grep", "-I", "-q", "-E", "-e", `(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`, baseSha, "--"],
+		dir,
+	)
+	return result.code === 0 ? "exists" : result.code === 1 ? "new" : "unverified"
 }
 
 /** A model-written script: no inherited secrets, a wall-clock limit like the sandbox's. */
@@ -1114,11 +1131,15 @@ export const reviewLocally = async (
 		return dir
 	}
 
-	// No code search here: every name is listed unverified. `review:checklist` runs the searches.
+	// The clone answers what the service asks code search: is the name already read at the base?
+	const detected = detectMergeSteps(files)
+	const verdicts = new Map(
+		detected.names.map(({ name }) => [name, nameAtBase(clone.dir, pr.base.sha, name)]),
+	)
 	const { beforeMerge: reviewerSteps, ...submittedReport } = submitted.report
 	const { steps: beforeMerge } = buildChecklist({
-		detected: detectMergeSteps(files),
-		verdicts: new Map(),
+		detected,
+		verdicts,
 		reviewer: reviewerSteps ?? [],
 		isIgnored: () => false,
 	})

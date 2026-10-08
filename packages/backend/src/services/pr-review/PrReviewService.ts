@@ -2292,19 +2292,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
-				// The facts read at start, with the dismissals the reviewer could prove.
-				const telemetry = yield* telemetryAtSubmit(
-					orgId,
-					reviewId,
-					review.headSha,
-					request.telemetryDismissals ?? [],
-					repository,
-					installation,
+				// The telemetry facts read at start, with the dismissals the reviewer could prove, and the
+				// checklist's reads; independent, so neither waits on the other.
+				const [telemetry, read] = yield* Effect.all(
+					[
+						telemetryAtSubmit(
+							orgId,
+							reviewId,
+							review.headSha,
+							request.telemetryDismissals ?? [],
+							repository,
+							installation,
+						),
+						Option.isNone(repository)
+							? Effect.succeed(undefined)
+							: mergeStepsFor(orgId, repository.value, review.number),
+					],
+					{ concurrency: "unbounded" },
 				)
-
-				const read = Option.isNone(repository)
-					? undefined
-					: yield* mergeStepsFor(orgId, repository.value, review.number)
 				const checklist = buildChecklist({
 					detected: read?.detected ?? NO_DETECTED_STEPS,
 					verdicts: read?.verdicts ?? new Map(),
