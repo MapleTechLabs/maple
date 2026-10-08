@@ -7,7 +7,7 @@ vi.mock("../session/session", () => ({
 }))
 vi.mock("../platform/transport", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../platform/transport")>()),
-	postSessionEvents: vi.fn(async () => {}),
+	postSessionEvents: vi.fn(async () => "accepted" as const),
 }))
 
 const { resetSinkForTests, startEventSink } = await import("./events-sink")
@@ -151,6 +151,97 @@ describe("startEventSink identity stamping", () => {
 			expect(row.user_id).toBe("")
 			expect(row.group_id).toBe("")
 		}
+		sink.stop()
+	})
+})
+
+// A periodic flush that gets no response is the one failure the sink resends.
+// `session_events` has no dedup, so every other failure must stay a drop.
+describe("startEventSink resend after a failed flush", () => {
+	const post = vi.mocked(postSessionEvents)
+	const messagesOf = (call: number) => post.mock.calls[call]?.[1].map((row) => row.message)
+
+	beforeEach(() => {
+		resetSinkForTests()
+		post.mockReset().mockResolvedValue("accepted")
+	})
+
+	it("resends the same rows with the next flush", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-1")
+		sink.emit({ type: "custom", message: "first" })
+		post.mockResolvedValueOnce("failed")
+		await sink.flush()
+		await new Promise((resolve) => setTimeout(resolve, 5))
+		sink.emit({ type: "custom", message: "second" })
+		await sink.flush()
+
+		const [failed, resent] = post.mock.calls.map(([, rows]) => rows)
+		// Same seq and timestamp as the first attempt, alongside the newer event.
+		expect(resent).toEqual(expect.arrayContaining([...(failed ?? [])]))
+		expect(messagesOf(1)).toContain("second")
+
+		post.mockClear()
+		await sink.flush()
+		expect(post).not.toHaveBeenCalled()
+		sink.stop()
+	})
+
+	it("does not resend a batch ingest answered, whatever the status", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-2")
+		post.mockResolvedValueOnce("rejected")
+		await sink.flush()
+		post.mockClear()
+		await sink.flush()
+
+		expect(post).not.toHaveBeenCalled()
+		sink.stop()
+	})
+
+	it("does not resend a keepalive flush", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-3")
+		post.mockResolvedValueOnce("failed")
+		await sink.flush(true)
+		post.mockClear()
+		await sink.flush()
+
+		expect(post).not.toHaveBeenCalled()
+		sink.stop()
+	})
+
+	it("does not resend a flush that was in flight across pagehide", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-4")
+		// An unloading document sees the POST reject even when ingest answered it.
+		post.mockImplementationOnce(async () => {
+			window.dispatchEvent(new Event("pagehide"))
+			return "failed"
+		})
+		await sink.flush()
+		post.mockClear()
+		await sink.flush()
+
+		expect(post).not.toHaveBeenCalled()
+		sink.stop()
+	})
+
+	it("keeps the newest events when the unsent backlog passes the byte cap", async () => {
+		const big = (message: string) => ({
+			type: "custom" as const,
+			message,
+			attrs: { pad: "x".repeat(30_000) },
+		})
+		const sink = startEventSink(CONFIG, "sess-retry-5")
+		post.mockResolvedValue("failed")
+		sink.emit(big("a"))
+		sink.emit(big("b"))
+		await sink.flush()
+		sink.emit(big("c"))
+		await sink.flush()
+		post.mockClear()
+		await sink.flush()
+
+		// 64 KiB holds two of the three; the oldest (and the page view before it) go.
+		expect(messagesOf(0)).toHaveLength(2)
+		expect(messagesOf(0)).toEqual(expect.arrayContaining(["b", "c"]))
 		sink.stop()
 	})
 })

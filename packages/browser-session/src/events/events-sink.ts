@@ -79,6 +79,7 @@ export interface SessionEventSink {
 interface BufferedEvent {
 	readonly ev: SessionEvent
 	readonly seq: number
+	readonly bytes: number
 }
 
 /**
@@ -127,18 +128,42 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 
 	let buffer: BufferedEvent[] = []
 	let bufferBytes = 0
+	// Events whose POST got no response; they go out again with the next flush.
+	let retry: BufferedEvent[] = []
 	let seq = 0
 	let pageViews = 0
 	let clickCount = 0
 	let errorCount = 0
 
+	let pageHides = 0
+	const onPageHide = (): void => {
+		pageHides++
+	}
+	const pageHideTarget = typeof window === "undefined" ? undefined : window
+	pageHideTarget?.addEventListener("pagehide", onPageHide)
+
 	const flush = async (keepalive = false): Promise<void> => {
-		if (buffer.length === 0) return
-		const batch = buffer
+		if (buffer.length === 0 && retry.length === 0) return
+		const batch = [...retry, ...buffer]
+		retry = []
 		buffer = []
 		bufferBytes = 0
+		const hidesAtSend = pageHides
 		const rows = batch.map(({ ev, seq }) => toRow(config, sessionId, ev, seq))
-		await postSessionEvents(config, rows, keepalive)
+		const outcome = await postSessionEvents(config, rows, keepalive)
+		// `session_events` has no dedup, so a row sent twice is counted twice:
+		// resend only when no response came back from a live page. A POST sent on
+		// the way out (keepalive), or in flight across `pagehide`, rejects in the
+		// unloading document even when ingest answered it.
+		if (outcome !== "failed" || keepalive || pageHides !== hidesAtSend) return
+		// Newest first, so the byte cap drops the oldest.
+		let bytes = 0
+		retry = [...batch, ...retry]
+			.sort((a, b) => b.seq - a.seq)
+			.filter((event) => {
+				bytes += event.bytes
+				return bytes <= FLUSH_BYTES
+			})
 	}
 
 	const emit = (ev: SessionEvent): void => {
@@ -161,8 +186,10 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 			noteNavigation(ev.url ?? (typeof location !== "undefined" ? location.href : ""))
 		} else if (ev.type === "click") clickCount++
 		else if (ev.type === "error" || (ev.type === "console" && ev.level === "error")) errorCount++
-		buffer.push({ ev, seq: seq++ })
-		bufferBytes += approximateSize(ev)
+		const bytes = approximateSize(ev)
+		// Timestamped here, not when the row is built: a resent event keeps its time.
+		buffer.push({ ev: { ...ev, timestamp: ev.timestamp ?? Date.now() }, seq: seq++, bytes })
+		bufferBytes += bytes
 		if (bufferBytes >= FLUSH_BYTES) void flush()
 		for (const listener of listeners()) {
 			// A listener must never break capture.
@@ -191,6 +218,7 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 		flush,
 		stop: () => {
 			clearInterval(flushTimer)
+			pageHideTarget?.removeEventListener("pagehide", onPageHide)
 			stopNavigation()
 			stopBaselineCapture()
 			if (holder()[SINK_KEY]?.sink === sink) holder()[SINK_KEY] = undefined
