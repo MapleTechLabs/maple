@@ -58,13 +58,7 @@ export interface SignalState {
  * `pagehide` survive the unload.
  */
 export interface FlushTransport {
-	/** `keepalive` is false for a body that must go without it; only the browser client reads it. */
-	readonly post: (
-		url: string,
-		headers: Record<string, string>,
-		body: unknown,
-		keepalive: boolean,
-	) => Promise<void>
+	readonly post: (url: string, headers: Record<string, string>, body: unknown) => Promise<void>
 }
 
 /**
@@ -178,48 +172,44 @@ const flushSignal = async <A>(args: {
 	if (batch.length === 0) return
 	// Asked per signal, right before the split: the room depends on what the
 	// signals before this one have just reserved.
-	const start = tailBytes ? tailStart(batch, body, tailBytes()) : 0
-	// Newest first, and only they ask for keepalive: the older rest would take
-	// the room that the next signal's newest items need.
-	const chunks = [
-		{ items: batch.slice(start), keepalive: true },
-		{ items: batch.slice(0, start), keepalive: false },
-	].filter(({ items }) => items.length > 0)
+	const tail = tailBytes?.()
+	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
 	const posted = await Promise.all(
-		chunks.map(async ({ items, keepalive }) => ({
-			items,
+		chunks.map(async (chunk) => ({
+			chunk,
 			result: await Effect.runPromise(
 				Effect.result(
 					Effect.tryPromise({
-						try: () => transport.post(url, headers, body(items), keepalive),
+						try: () => transport.post(url, headers, body(chunk)),
 						catch: (cause) => cause,
 					}),
 				),
 			),
 		})),
 	)
-	const failed = posted.flatMap(({ items, result }) =>
-		Result.isFailure(result) ? [{ items, cause: result.failure }] : [],
+	const failed = posted.flatMap(({ chunk, result }) =>
+		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
 	)
 	const [first] = failed
 	if (first) {
 		// One restore, back in drain order.
-		buffer.restore(failed.reverse().flatMap(({ items }) => items))
+		buffer.restore(failed.reverse().flatMap(({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
 		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause)
 	}
 }
 
 /**
- * Where the newest items that fit one body of `maxBytes` (UTF-8) begin: 0 when
- * the whole batch fits, `items.length` when not even the newest item does.
- * Only that tail is measured, so a large backlog is not serialized here.
+ * Split a batch for a document that may be unloading: the newest items that
+ * fit `maxBytes` (UTF-8) in one body, issued first so it gets the keepalive
+ * attempt, then everything older in a second. Only the tail is measured, so a
+ * large backlog is not serialized here. No split when nothing or everything fits.
  */
-const tailStart = <A>(
+const newestFirst = <A>(
 	items: ReadonlyArray<A>,
 	body: (items: ReadonlyArray<A>) => unknown,
 	maxBytes: number,
-): number => {
+): Array<ReadonlyArray<A>> => {
 	const encoder = new TextEncoder()
 	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
 	const envelope = size([])
@@ -232,7 +222,7 @@ const tailStart = <A>(
 		bytes += next
 		start -= 1
 	}
-	return start
+	return start > 0 && start < items.length ? [items.slice(start), items.slice(0, start)] : [items]
 }
 
 /**
@@ -293,9 +283,9 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
  * - `tailBytes` (browser, document hidden or unloading): each signal goes out
- *   as at most two requests. Its newest items go first, in a body of at most
- *   the size this returns for it, and only that one asks for keepalive. Every
- *   request is issued before `runFlush` returns, traces first.
+ *   as at most two requests, its newest items first in a body of at most the
+ *   size this returns for it. Every request is issued before `runFlush`
+ *   returns, traces first.
  * - `ignoreCooldown` (browser `pagehide`): no later flush is coming, so a
  *   signal in cooldown is sent anyway.
  */

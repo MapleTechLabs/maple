@@ -659,7 +659,7 @@ describe("MapleFlush.make (client)", () => {
 		await tick()
 	})
 
-	it("sends only the newest part of each signal with keepalive, which leaves room for metrics", async () => {
+	it("leaves room for the metrics request next to two full newest-first bodies", async () => {
 		// Effect's default logger prints every log line.
 		vi.spyOn(console, "log").mockImplementation(() => {})
 		const inflight = pendingResponses()
@@ -691,7 +691,8 @@ describe("MapleFlush.make (client)", () => {
 			["logs", false],
 			["metrics", true],
 		])
-		// Both tails are full, and OTLP's share still holds the metrics snapshot.
+		// Both newest-first bodies are full, the older parts are too large for what
+		// is left, and OTLP's share still holds the metrics snapshot.
 		const keepalive = calls.filter((call) => call.keepalive)
 		expect(keepalive[0].bytes + keepalive[1].bytes).toBeGreaterThan(24 * 1024)
 		expect(keepalive.reduce((sum, call) => sum + call.bytes, 0)).toBeLessThanOrEqual(OTLP_KEEPALIVE_BYTES)
@@ -700,7 +701,7 @@ describe("MapleFlush.make (client)", () => {
 		await tick()
 	})
 
-	it("sends the older part without keepalive even when room is left", async () => {
+	it("sends the older part with keepalive too when it fits what is left", async () => {
 		const inflight = pendingResponses()
 		const { calls, restore: rf } = setupFetch(inflight.responder)
 		const dom = setupDom()
@@ -716,9 +717,10 @@ describe("MapleFlush.make (client)", () => {
 		const [newest, older] = traceCalls(calls)
 		expect(newest.keepalive).toBe(true)
 		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
-		// It would fit OTLP's share; the next signal's newest items need that room more.
-		expect(newest.bytes + older.bytes).toBeLessThan(OTLP_KEEPALIVE_BYTES)
-		expect(older.keepalive).toBe(false)
+		// A plain request issued at unload is often lost, so room that is left is used.
+		expect(spanNames([newest, older])).toHaveLength(62)
+		expect(newest.bytes + older.bytes).toBeLessThanOrEqual(OTLP_KEEPALIVE_BYTES)
+		expect(older.keepalive).toBe(true)
 
 		inflight.resolveAll()
 		await tick()
