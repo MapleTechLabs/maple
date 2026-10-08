@@ -161,6 +161,11 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	},
 	{ pipe: "slow_traces", label: "default", params: { service: "api", deployment_env: "production" } },
 	{ pipe: "span_search", label: "default", params: { search: "timeout" }, allCapabilities: true },
+	{
+		pipe: "span_search",
+		label: "span-name-contains",
+		params: { span_name: "/v1/", span_name_match_mode: "contains" },
+	},
 	{ pipe: "top_operations", label: "default", params: { service_name: "api", metric: "p95_duration" } },
 
 	// NB: the pipe adapter never forwards `bucket_seconds` into the query opts,
@@ -1223,13 +1228,38 @@ const hasSpliceBoundary = (sql: string): boolean => {
  */
 export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): ReadonlyArray<string> {
 	return entries
-		.filter(
-			(entry) =>
-				ROLLUP_TABLE_RE.test(entry.sql) &&
-				RAW_TABLE_RE.test(entry.sql) &&
-				!hasSpliceBoundary(entry.sql),
-		)
+		.filter((entry) => {
+			const tiers = withoutLookupSubqueries(entry.sql)
+			return ROLLUP_TABLE_RE.test(tiers) && RAW_TABLE_RE.test(tiers) && !hasSpliceBoundary(entry.sql)
+		})
 		.map((entry) => entry.id)
+}
+
+const ROW_SOURCE_RE = /\b(?:FROM|JOIN|UNION ALL|AS)\s*$/
+
+/**
+ * `sql` without the subqueries it only consults. A scalar or `IN (SELECT …)`
+ * operand decides which rows match and contributes none of its own, so the
+ * window it reads has nothing to tile against: the span-name lookup reads
+ * `service_operations_hourly` for every hour the window touches, on purpose.
+ * A tier is a row source — it follows `FROM`, `JOIN`, `UNION ALL` or `AS`.
+ */
+function withoutLookupSubqueries(sql: string): string {
+	let kept = ""
+	for (let i = 0; i < sql.length; i++) {
+		if (!sql.startsWith("(SELECT", i) || ROW_SOURCE_RE.test(sql.slice(0, i))) {
+			kept += sql[i]
+			continue
+		}
+		let depth = 0
+		do {
+			if (sql[i] === "(") depth++
+			else if (sql[i] === ")") depth--
+			i++
+		} while (depth > 0 && i < sql.length)
+		i--
+	}
+	return kept
 }
 
 export function uncoveredPipes(entries: ReadonlyArray<CatalogEntry>): ReadonlyArray<WarehouseQueryName> {

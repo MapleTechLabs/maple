@@ -508,7 +508,10 @@ describe("traceListQuery", () => {
 		const inner = pageSubquery(
 			compileUnsafe(
 				traceListQuery({
-					cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00.123Z"), traceId: "trace123" },
+					cursor: {
+						timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00.123Z"),
+						traceId: "trace123",
+					},
 				}),
 				baseParams,
 			).sql,
@@ -679,6 +682,93 @@ describe("spanSearchQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).not.toContain("SELECT min(ts)")
+	})
+})
+
+describe("span-name filter", () => {
+	const DISPLAY_NAME = "if(((traces.SpanName LIKE 'http.server %'"
+	const breakdown = (opts: Parameters<typeof tracesBreakdownQuery>[0]) =>
+		compileUnsafe(tracesBreakdownQuery(opts), baseParams).sql
+	const byService = { metric: "count", groupBy: "service" } as const
+
+	it("matches a name with no method-route split on the stored name alone", () => {
+		const sql = breakdown({ ...byService, spanName: "WarehouseQueryService.executeSql" })
+
+		expect(sql).toContain("traces.SpanName = 'WarehouseQueryService.executeSql'")
+		expect(sql).not.toContain("SpanAttributes")
+	})
+
+	it("reads the display name only for the stored names that can display as the value", () => {
+		const sql = breakdown({ ...byService, spanName: "GET /users" })
+
+		expect(sql).toContain(
+			`(traces.SpanName = 'GET /users' OR (traces.SpanName IN ('http.server GET', 'GET') AND ${DISPLAY_NAME}`,
+		)
+	})
+
+	it("derives a stored name for every method-route split, and none for an empty route", () => {
+		// `http.server <anything>` is rewritten, so every space is a possible split.
+		expect(breakdown({ ...byService, spanNames: ["rpc call /a b", "GET "] })).toContain(
+			"traces.SpanName IN ('http.server rpc', 'http.server rpc call', 'http.server rpc call /a') AND",
+		)
+		expect(breakdown({ ...byService, spanName: "GET " })).not.toContain("SpanAttributes")
+	})
+
+	it("excludes through the same reduction", () => {
+		expect(breakdown({ ...byService, excludedSpanNames: ["checkout"] })).toContain(
+			"NOT (traces.SpanName = 'checkout')",
+		)
+		expect(breakdown({ ...byService, excludedSpanNames: ["GET /users"] })).toContain(
+			`NOT ((traces.SpanName = 'GET /users' OR (traces.SpanName IN ('http.server GET', 'GET') AND ${DISPLAY_NAME}`,
+		)
+	})
+
+	it("resolves a contains match through the hourly operations rollup", () => {
+		const sql = breakdown({ ...byService, spanName: "users", matchModes: { spanName: "contains" } })
+		const rollup =
+			"FROM service_operations_hourly WHERE service_operations_hourly.OrgId = 'org_1' " +
+			"AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00')) " +
+			"AND service_operations_hourly.Hour <= '2024-01-02 00:00:00' " +
+			"AND positionCaseInsensitive(service_operations_hourly.SpanName, 'users') > 0"
+		const flat = sql.replace(/\s+/g, " ")
+
+		// Names that are their own display name become a sorting-key lookup.
+		expect(flat).toContain(
+			`traces.SpanName IN (SELECT service_operations_hourly.SpanName AS spanName ${rollup})`,
+		)
+		// HTTP-named spans are matched on the row; the Map read is gated on a
+		// rewritten name in the window containing the needle.
+		expect(flat).toContain(
+			"OR ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) " +
+				"AND (positionCaseInsensitive(traces.SpanName, 'users') > 0 OR ((SELECT count() FROM (",
+		)
+		expect(flat).toContain(
+			`${rollup} AND service_operations_hourly.SpanName LIKE '% %' LIMIT 1)) > 0 AND positionCaseInsensitive(${DISPLAY_NAME}`,
+		)
+	})
+
+	it("floors a fractional window bound for the rollup's second-precision Hour", () => {
+		const { sql } = compileUnsafe(
+			tracesBreakdownQuery({ ...byService, spanName: "users", matchModes: { spanName: "contains" } }),
+			{ ...baseParams, startTime: "2024-01-01 00:30:00.250", endTime: "2024-01-02 00:00:00.750" },
+		)
+
+		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:30:00'))")
+		expect(sql).toContain("Hour <= '2024-01-02 00:00:00'")
+	})
+
+	it("matches on the row when the search is confined to one trace", () => {
+		const { sql } = compileUnsafe(
+			spanSearchQuery({
+				traceId: "trace_123",
+				spanName: "users",
+				matchModes: { spanName: "contains" },
+			}),
+			baseParams,
+		)
+
+		expect(sql).not.toContain("service_operations_hourly")
+		expect(sql).toContain("positionCaseInsensitive(trace_detail_spans.SpanName, 'users') > 0 OR")
 	})
 })
 

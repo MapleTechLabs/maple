@@ -1241,7 +1241,7 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	// the filter is a sort-key prefix and the row set is one trace, so the whole
 	// Maps are cheap to read directly.
 	if (opts.traceId) {
-		return spanSearchFrom(TraceDetailSpans, opts, limit, offset)
+		return spanSearchFrom(TraceDetailSpans, { ...opts, matchSpanNamePerRow: true }, limit, offset)
 	}
 
 	// Without one, this reads raw `traces`, whose sort key

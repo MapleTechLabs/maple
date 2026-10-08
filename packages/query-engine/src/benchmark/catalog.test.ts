@@ -105,6 +105,22 @@ describe("sql catalog", () => {
 		).toEqual([])
 	})
 
+	// A rollup consulted for which names exist is not a tier of the result.
+	it("tells a rollup lookup from a rollup tier", () => {
+		const withSql = (id: string, sql: string) => ({ ...entries[0]!, id, sql })
+		const hourly =
+			"FROM service_operations_hourly WHERE Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))"
+		expect(
+			unsplicedTwoTierQueries([
+				withSql("lookup", `SELECT count() FROM traces WHERE SpanName IN (SELECT SpanName ${hourly})`),
+				withSql(
+					"tier",
+					`SELECT sum(n) FROM (SELECT count() AS n FROM traces UNION ALL SELECT sum(SpanCount) AS n ${hourly})`,
+				),
+			]),
+		).toEqual(["tier"])
+	})
+
 	// Asserted exactly, not as a ceiling: a query that stops deriving a row
 	// schema fails here, and so does one still listed after it starts. The
 	// `decodeRows` identity cast is invisible at runtime, so this list is the
