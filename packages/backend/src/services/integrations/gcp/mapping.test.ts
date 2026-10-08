@@ -257,4 +257,15 @@ describe("mapGcpResource", () => {
 			}),
 		).toBeUndefined()
 	})
+
+	it("shortens the path Pub/Sub answers as a display name to the resource's own id", () => {
+		expect(
+			mapGcpResource({
+				name: "//pubsub.googleapis.com/projects/acme-prod/topics/orders",
+				assetType: "pubsub.googleapis.com/Topic",
+				displayName: "projects/acme-prod/topics/orders",
+				location: "global",
+			}),
+		).toMatchObject({ projectId: "acme-prod", displayName: "orders" })
+	})
 })
