@@ -68,25 +68,30 @@ describe("HTTP error tag contract", () => {
 		}
 	})
 
-	it("declares the shared request-validation and unexpected-error boundary on every v1 operation", () => {
-		const spec = OpenApi.fromApi(Http.MapleApi)
-		const operations = Object.entries(spec.paths ?? {}).flatMap(([path, item]) =>
-			Object.entries(item ?? {})
-				.filter(([method]) => ["get", "post", "put", "patch", "delete"].includes(method))
-				.map(([method, operation]) => ({
-					method,
-					path,
-					operation: operation as { readonly responses?: Record<string, unknown> },
-				})),
-		)
+	it.each([
+		{ name: "MapleApi", spec: OpenApi.fromApi(Http.MapleApi) },
+		{ name: "MapleInternalApi", spec: OpenApi.fromApi(Http.MapleInternalApi) },
+	])(
+		"declares the shared request-validation and unexpected-error boundary on every $name operation",
+		({ spec }) => {
+			const operations = Object.entries(spec.paths ?? {}).flatMap(([path, item]) =>
+				Object.entries(item ?? {})
+					.filter(([method]) => ["get", "post", "put", "patch", "delete"].includes(method))
+					.map(([method, operation]) => ({
+						method,
+						path,
+						operation: operation as { readonly responses?: Record<string, unknown> },
+					})),
+			)
 
-		for (const { method, path, operation } of operations) {
-			for (const status of ["400", "500"]) {
-				expect(
-					operation.responses?.[status],
-					`${method.toUpperCase()} ${path} declares ${status}`,
-				).toBeDefined()
+			for (const { method, path, operation } of operations) {
+				for (const status of ["400", "500"]) {
+					expect(
+						operation.responses?.[status],
+						`${method.toUpperCase()} ${path} declares ${status}`,
+					).toBeDefined()
+				}
 			}
-		}
-	})
+		},
+	)
 })

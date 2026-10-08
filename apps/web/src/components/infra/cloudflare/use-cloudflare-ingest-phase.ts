@@ -1,5 +1,5 @@
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { cloudflareIngestPhase } from "./ingest-phase"
 
@@ -20,10 +20,10 @@ const REFRESH_MS = 30_000
  */
 export function useCloudflareIngestPhase() {
 	// Assigned through these so the value hooks and the refresh hooks address the same atoms.
-	const statusQuery = retainedQuery("integrations", "cloudflareStatus", {
+	const statusQuery = retainedInternalQuery("integrations", "cloudflareStatus", {
 		reactivityKeys: ["cloudflareIntegrationStatus"],
 	})
-	const usageQuery = retainedQuery("integrations", "cloudflareUsage", {
+	const usageQuery = retainedInternalQuery("integrations", "cloudflareUsage", {
 		reactivityKeys: ["cloudflareIntegrationUsage"],
 	})
 	const statusResult = useAtomValue(statusQuery)

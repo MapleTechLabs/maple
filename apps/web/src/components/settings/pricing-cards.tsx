@@ -47,6 +47,7 @@ import {
 	ShieldIcon,
 	PlayRotateClockwiseIcon,
 	GlobePointerIcon,
+	SquareSparkleIcon,
 } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
@@ -57,6 +58,7 @@ const FEATURE_ICONS: Record<string, IconComponent> = {
 	metrics: ChartLineIcon,
 	browser_sessions: PlayRotateClockwiseIcon,
 	product_events: GlobePointerIcon,
+	ai_credits: SquareSparkleIcon,
 } satisfies Record<string, IconComponent>
 
 // Display labels for the metered data rows, keyed by Autumn featureId (Autumn
@@ -68,6 +70,7 @@ const DATA_FEATURE_LABELS: Record<string, string> = {
 	metrics: "Metrics",
 	browser_sessions: "Browser Sessions",
 	product_events: "Product Events",
+	ai_credits: "AI usage",
 } satisfies Record<string, string>
 
 // Count-metered features and their plural unit — everything else is GB.
@@ -113,6 +116,10 @@ function getPlanPrice(plan: Plan): {
 
 function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
+	// A dollar allowance of model usage, priced per model, not a volume.
+	if (item.featureId === "ai_credits" && item.included != null) {
+		return `${formatCurrency(Number(item.included), "usd")} included`
+	}
 	if (item.included != null) {
 		const unit = (item.featureId ? COUNT_UNITS[item.featureId] : undefined) ?? "GB"
 		return `${formatCount(Number(item.included))} ${unit}`

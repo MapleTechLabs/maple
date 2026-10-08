@@ -39,7 +39,7 @@ import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
 import { ResultView } from "@/components/common/result-view"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewIssuesSearchFields)
 type IssuesSearch = Schema.Schema.Type<typeof searchSchema>
@@ -62,7 +62,7 @@ function CodeReviewIssuesPage() {
 	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 	const [limit, setLimit] = useState(PAGE)
 
-	const query = retainedQuery("codeReview", "listFindings", {
+	const query = retainedInternalQuery("codeReview", "listFindings", {
 		query: {
 			...window,
 			repositoryId: search.repo,

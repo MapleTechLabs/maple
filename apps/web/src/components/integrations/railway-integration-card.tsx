@@ -22,7 +22,7 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, toastExit } from "@/lib/error-toast"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { IntegrationIconPlate, RAILWAY_ACCENT } from "./integration-catalog"
 import {
 	IntegrationEmpty,
@@ -39,7 +39,7 @@ const TOKENS_URL = "https://railway.com/account/tokens"
 
 const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
 
-export const railwayStatusAtom = retainedQuery("integrations", "railwayStatus", {
+export const railwayStatusAtom = retainedInternalQuery("integrations", "railwayStatus", {
 	reactivityKeys: ["railwayIntegrationStatus"],
 })
 
@@ -82,7 +82,7 @@ function RailwayTokenForm({
 	onSaved?: () => void
 	onCancel?: () => void
 }) {
-	const connect = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwayConnect"), {
+	const connect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "railwayConnect"), {
 		mode: "promiseExit",
 	})
 	const [token, setToken] = useState("")
@@ -158,10 +158,10 @@ function RailwayTokenForm({
 export function RailwayIntegrationCard() {
 	const statusResult = useAtomValue(railwayStatusAtom)
 	const refreshStatus = useAtomRefresh(railwayStatusAtom)
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwayDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "railwayDisconnect"), {
 		mode: "promiseExit",
 	})
-	const sync = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwaySync"), {
+	const sync = useAtomSet(MapleInternalAtomClient.mutation("integrations", "railwaySync"), {
 		mode: "promiseExit",
 	})
 	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(

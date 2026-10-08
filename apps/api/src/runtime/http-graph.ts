@@ -8,32 +8,32 @@ import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
-import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/v1/auth.http"
+import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
-import { HttpBillingPublicLive } from "@/routes/v1/billing-public.http"
-import { HttpEmailPublicLive } from "@/routes/v1/email-public.http"
+import { HttpBillingPublicLive } from "@/routes/billing-public.http"
+import { HttpEmailPublicLive } from "@/routes/email-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
-import { HttpCodeReviewLive } from "@/routes/v1/code-review.http"
-import { HttpErrorsLive } from "@/routes/v1/errors.http"
-import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "@/routes/v1/integrations.http"
-import { OAuthDiscoveryRouter } from "@/routes/v1/oauth-discovery.http"
-import { HttpOrgClickHouseSettingsLive } from "@/routes/v1/org-clickhouse-settings.http"
+import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
+import { HttpErrorsLive } from "@/routes/internal/errors.http"
+import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
+import { IntegrationsCallbackRouter } from "@/routes/integrations-callback.http"
+import { OAuthDiscoveryRouter } from "@/routes/oauth-discovery.http"
+import { HttpOrgClickHouseSettingsLive } from "@/routes/internal/org-clickhouse-settings.http"
 import {
 	HttpOrganizationCreationLive,
 	HttpOrganizationRegionLive,
 	HttpOrganizationsLive,
-} from "@/routes/v1/organizations.http"
-import { PlanetScaleWebhookRouter } from "@/routes/v1/planetscale-webhook.http"
+} from "@/routes/internal/organizations.http"
+import { PlanetScaleWebhookRouter } from "@/routes/webhooks/planetscale.http"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replays.http"
-import { ScraperInternalRouter } from "@/routes/v1/scraper-internal.http"
-import { HttpSessionReplaysLive } from "@/routes/v1/session-replay.http"
-import { ChatCallbackRouter } from "@/routes/v1/chat-integration.http"
-import { VcsWebhookRouter } from "@/routes/v1/vcs-webhook.http"
+import { ScraperInternalRouter } from "@/routes/scraper-internal.http"
+import { ChatCallbackRouter } from "@/routes/chat-integration.http"
+import { VcsWebhookRouter } from "@/routes/webhooks/vcs.http"
 import { AutumnWebhookRouter } from "@/routes/webhooks/autumn.http"
 import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
 import { HttpV2AlertDeliveriesLive } from "@/routes/v2/alert-deliveries.http"
@@ -92,44 +92,31 @@ const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", Htt
 // `layerCdn` loads Scalar's browser bundle from jsDelivr at runtime instead of
 // inlining its ~MB `standalone.min.js` string into the worker bundle — keeps the
 // script out of the deployed bundle (guards the 3 MB worker size limit, error
-// 10027). The `/docs` page now depends on jsDelivr being reachable from the
-// client browser.
-const DocsRoute = HttpApiScalar.layerCdn(MapleApi, {
-	path: "/docs",
-})
-
-// Public v2 API reference (only v2 groups — the internal v1 surface stays on /docs).
-const DocsV2Route = Layer.unwrap(
-	Effect.gen(function* () {
-		const env = yield* Env
-		return HttpApiScalar.layerCdn(instanceApiV2(env.MAPLE_API_BASE_URL.replace(/\/+$/, "")), {
-			path: "/v2/docs",
-		})
-	}),
-)
+// 10027). The reference pages depend on jsDelivr being reachable from the browser.
+// `/docs` and `/v2/docs` serve the same public v2 reference.
+const apiReferenceRoute = (path: `/${string}`) =>
+	Layer.unwrap(
+		Effect.gen(function* () {
+			const env = yield* Env
+			return HttpApiScalar.layerCdn(instanceApiV2(env.MAPLE_API_BASE_URL.replace(/\/+$/, "")), { path })
+		}),
+	)
+const DocsRoute = apiReferenceRoute("/docs")
+const DocsV2Route = apiReferenceRoute("/v2/docs")
 
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
 	Layer.provide(HttpBillingPublicLive),
-	Layer.provide(HttpCodeReviewLive),
 	Layer.provide(HttpEmailPublicLive),
-	Layer.provide(HttpErrorsLive),
-	Layer.provide(HttpIntegrationsLive),
-	Layer.provide(HttpOrgClickHouseSettingsLive),
-	Layer.provide(HttpOrganizationsLive),
-	Layer.provide(HttpOrganizationCreationLive),
-	Layer.provide(HttpOrganizationRegionLive),
-	Layer.provide(HttpSessionReplaysLive),
-	Layer.provide(V1ErrorBoundaryLive),
+	Layer.provide(ApiErrorBoundaryLive),
 )
 
 /**
  * The dashboard's private transport, served under `/internal/*`.
  *
  * Session-only: `SessionAuthorizationLayer` refuses API-key-shaped bearers, so
- * nothing here is reachable as public API. It is also absent from `/docs`,
- * which is generated from `MapleApi`.
+ * nothing here is reachable as public API, and it is absent from the API reference.
  */
 const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 	Layer.provide(
@@ -141,7 +128,18 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 		),
 	),
 	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpDemoLive, HttpDigestLive)),
-	Layer.provide(V1ErrorBoundaryLive),
+	Layer.provide(
+		Layer.mergeAll(
+			HttpCodeReviewLive,
+			HttpErrorsLive,
+			HttpIntegrationsLive,
+			HttpOrgClickHouseSettingsLive,
+			HttpOrganizationsLive,
+			HttpOrganizationCreationLive,
+			HttpOrganizationRegionLive,
+		),
+	),
+	Layer.provide(ApiErrorBoundaryLive),
 )
 
 const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(

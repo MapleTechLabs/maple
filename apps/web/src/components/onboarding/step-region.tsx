@@ -10,7 +10,7 @@ import { MapleRegion as MapleRegionSchema } from "@maple/domain/organization-reg
 
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomSet } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { OptionCard } from "@/components/common/option-card"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { RegionFlag } from "@/components/region/region-flag"
@@ -51,7 +51,7 @@ export function StepRegion() {
 	const { organization } = useOrganization()
 	const [region, setRegion] = useState<MapleRegion>(currentRegion)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
-	const chooseRegion = useAtomSet(MapleApiAtomClient.mutation("organizationRegion", "choose"), {
+	const chooseRegion = useAtomSet(MapleInternalAtomClient.mutation("organizationRegion", "choose"), {
 		mode: "promiseExit",
 	})
 

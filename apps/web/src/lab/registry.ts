@@ -225,6 +225,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/bench/dashboard-grid",
+		title: "Dashboard grid",
+		description:
+			"A `?n=`-widget dashboard (default 50) in edit mode for drag, resize and mount timing via window.__dashboardGridBench.",
+		kind: "bench",
+		session: "none",
+	},
+	{
 		path: "/lab/charts",
 		title: "TanStack charts",
 		description:

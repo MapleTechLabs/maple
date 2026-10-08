@@ -325,6 +325,8 @@ export interface LogRow {
 	timestamp: string
 	/** The stored `DateTime64(9)` literal with its nanoseconds: the list cursor and the log key. */
 	exactTimestamp: string
+	/** The query's stable per-record hash; absent on rows built outside the list query. */
+	recordIdentity?: string | undefined
 	severityText: string
 	severityNumber: number
 	serviceName: string
@@ -361,6 +363,7 @@ export function coerceLogRow(raw: Record<string, unknown>): LogRow {
 	return {
 		timestamp: isoTimestamp(raw.timestamp),
 		exactTimestamp: String(raw.exactTimestamp ?? ""),
+		recordIdentity: typeof raw.recordIdentity === "string" ? raw.recordIdentity : undefined,
 		severityText: String(raw.severityText ?? ""),
 		severityNumber: Number(raw.severityNumber ?? 0),
 		serviceName: String(raw.serviceName ?? ""),

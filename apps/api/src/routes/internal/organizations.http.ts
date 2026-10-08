@@ -1,10 +1,10 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleApi } from "@maple/domain/http"
+import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 
-export const HttpOrganizationsLive = HttpApiBuilder.group(MapleApi, "organizations", (handlers) =>
+export const HttpOrganizationsLive = HttpApiBuilder.group(MapleInternalApi, "organizations", (handlers) =>
 	Effect.gen(function* () {
 		const organizationService = yield* OrganizationService
 
@@ -23,7 +23,7 @@ export const HttpOrganizationsLive = HttpApiBuilder.group(MapleApi, "organizatio
 )
 
 export const HttpOrganizationCreationLive = HttpApiBuilder.group(
-	MapleApi,
+	MapleInternalApi,
 	"organizationCreation",
 	(handlers) =>
 		Effect.gen(function* () {
@@ -38,21 +38,24 @@ export const HttpOrganizationCreationLive = HttpApiBuilder.group(
 		}),
 )
 
-export const HttpOrganizationRegionLive = HttpApiBuilder.group(MapleApi, "organizationRegion", (handlers) =>
-	Effect.gen(function* () {
-		const organizationService = yield* OrganizationService
+export const HttpOrganizationRegionLive = HttpApiBuilder.group(
+	MapleInternalApi,
+	"organizationRegion",
+	(handlers) =>
+		Effect.gen(function* () {
+			const organizationService = yield* OrganizationService
 
-		return handlers.handle("choose", ({ payload }) =>
-			Effect.gen(function* () {
-				const tenant = yield* CurrentTenant.Context
-				const chosen = yield* organizationService.chooseRegion(
-					tenant.orgId,
-					tenant.roles,
-					payload.region,
-				)
-				yield* recordHttpAudit("organization.region_chosen")
-				return chosen
-			}),
-		)
-	}),
+			return handlers.handle("choose", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const chosen = yield* organizationService.chooseRegion(
+						tenant.orgId,
+						tenant.roles,
+						payload.region,
+					)
+					yield* recordHttpAudit("organization.region_chosen")
+					return chosen
+				}),
+			)
+		}),
 )
