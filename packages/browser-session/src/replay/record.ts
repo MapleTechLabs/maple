@@ -115,9 +115,8 @@ function readPending(): PendingChunk | undefined {
  */
 function storePending(chunk: PendingChunk): boolean {
 	try {
-		const value = JSON.stringify(chunk)
-		if (value.length > MAX_PENDING_CHARS || readPending()) return false
-		window.sessionStorage.setItem(PENDING_KEY, value)
+		if (chunk.body.length > MAX_PENDING_CHARS || readPending()) return false
+		window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(chunk))
 		return true
 	} catch {
 		return false
