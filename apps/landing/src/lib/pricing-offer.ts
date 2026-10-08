@@ -63,13 +63,15 @@ const dataFeatureRank = (id: string | undefined) => {
 	return i === -1 ? DATA_FEATURE_ORDER.length : i
 }
 
-const FEATURE_UNITS: Record<string, Unit> = {
+const FEATURE_UNITS = {
 	browser_sessions: "sessions",
 	product_events: "events",
 	ai_credits: "usd",
-}
+} as const satisfies Record<string, Unit>
 
-const unitFor = (featureId: string): Unit => FEATURE_UNITS[featureId] ?? "gb"
+const hasOwnUnit = (featureId: string): featureId is keyof typeof FEATURE_UNITS => featureId in FEATURE_UNITS
+
+const unitFor = (featureId: string): Unit => (hasOwnUnit(featureId) ? FEATURE_UNITS[featureId] : "gb")
 
 /**
  * Capitalized, localized labels for the metered rows, keyed by Autumn featureId
