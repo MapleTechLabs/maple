@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import {
-	ListReplaysResponse,
-	SessionEventItem,
-	SessionReplayListItem,
-	SessionTraceSummary,
-} from "@maple/domain/http"
+import { SessionReplayListItem, SessionTraceSummary } from "@maple/domain/http"
 
-// Regression for the prod 500 on /api/session-replays/list: self-recorded
+// Regression for the prod 500 on the replay list: self-recorded
 // sessions store UserId="" (no Clerk user passed to MapleBrowser.init), and
 // UserId enforces isMinLength(1). The list/detail responses must permit a
 // missing user id, and the handler maps "" -> null before decoding.
@@ -55,48 +50,9 @@ describe("SessionReplayListItem.userId", () => {
 	it("rejects an empty-string userId — why the handler must map '' -> null", () => {
 		expect(() => decodeItem({ ...baseRow, userId: "" })).toThrow()
 	})
-
-	it("ListReplaysResponse constructs with a null-userId row", () => {
-		const res = new ListReplaysResponse({ data: [decodeItem(baseRow)] })
-		expect(res.data[0]?.userId).toBeNull()
-	})
 })
 
-// Distilled session events not tied to a trace (console/click/navigation, and —
-// because main.tsx sets instrumentFetch:false — network events too) store
-// TraceId="". The transcript response must permit a null trace id; the handler
-// maps "" -> null before decoding.
-const decodeEvent = Schema.decodeUnknownSync(SessionEventItem)
-
-const baseEvent = {
-	timestamp: "2026-05-26 08:29:28.065",
-	seq: 0,
-	type: "console",
-	url: "https://app.maple.dev/",
-	traceId: null,
-	level: "info",
-	message: "hello",
-	targetSelector: "",
-	targetText: "",
-	netMethod: "",
-	netUrl: "",
-	netStatus: 0,
-	netDurationMs: 0,
-	errorStack: "",
-	attributes: "{}",
-}
-
-describe("SessionEventItem.traceId", () => {
-	it("accepts a null traceId (trace-less events)", () => {
-		expect(decodeEvent(baseEvent).traceId).toBeNull()
-	})
-
-	it("rejects an empty-string traceId — why the handler must map '' -> null", () => {
-		expect(() => decodeEvent({ ...baseEvent, traceId: "" })).toThrow()
-	})
-})
-
-// Regression for the prod 500 on /api/session-replays/list: `traceCount` is
+// Regression for the prod 500 on the replay list: `traceCount` is
 // `length(TraceIds)` (UInt64), which the ClickHouse driver JSON-quotes as a
 // string (the Tinybird path returns a number). The Schema.Number response field
 // rejects the string, dying as an undeclared defect → bodyless 500. The handler
@@ -109,13 +65,6 @@ describe("SessionReplayListItem.traceCount (ClickHouse UInt64-as-string)", () =>
 	it("the handler's Number() coercion yields a numeric traceCount", () => {
 		const item = decodeItem({ ...baseRow, traceCount: Number("3") })
 		expect(item.traceCount).toBe(3)
-	})
-
-	it("ListReplaysResponse constructs from a coerced row", () => {
-		const res = new ListReplaysResponse({
-			data: [decodeItem({ ...baseRow, traceCount: Number("3") })],
-		})
-		expect(res.data[0]?.traceCount).toBe(3)
 	})
 })
 

@@ -1,7 +1,7 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import type { VcsCommitDetailResponse } from "@maple/domain/http"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@maple/ui/components/ui/hover-card"
@@ -154,11 +154,11 @@ export function CommitShaHoverCard({
 
 const COMMIT_DETAIL_TTL_MS = 5 * 60_000
 
-// Per-SHA query atom. Wrapping `MapleApiAtomClient.query` in `Atom.family` keyed by
+// Per-SHA query atom. Wrapping `MapleInternalAtomClient.query` in `Atom.family` keyed by
 // the SHA *string* is what actually lets the prefetch subscriber, the popup body,
 // the deploy-marker flags, and the commit-list rows share ONE fetch + cached result.
 export const commitQueryAtom = Atom.family((sha: string) =>
-	retainedQuery("integrations", "vcsCommitDetail", {
+	retainedInternalQuery("integrations", "vcsCommitDetail", {
 		params: { sha },
 		timeToLive: COMMIT_DETAIL_TTL_MS,
 	}),
@@ -172,7 +172,7 @@ export const commitQueryAtom = Atom.family((sha: string) =>
  * reuses the same atom (and its cached result).
  */
 export const commitsQueryAtom = Atom.family((shasKey: string) =>
-	retainedQuery("integrations", "vcsCommitDetails", {
+	retainedInternalQuery("integrations", "vcsCommitDetails", {
 		query: { shas: shasKey },
 		timeToLive: COMMIT_DETAIL_TTL_MS,
 	}),

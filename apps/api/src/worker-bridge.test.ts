@@ -155,8 +155,8 @@ const EchoHandlersLive = HttpApiBuilder.group(EchoApi, "echo", (handlers) =>
 )
 
 /**
- * One route that logs from inside its handler, the way `V1ErrorBoundaryLive`
- * logs a defect before answering `V1UnexpectedError`.
+ * One route that logs from inside its handler, the way `ApiErrorBoundaryLive`
+ * logs a defect before answering `ApiUnexpectedError`.
  *
  * The graph is built under the isolate's context, not the first event's, and
  * the HttpApi group layers wrap every handler in the context they were built
@@ -336,9 +336,9 @@ describe("the api Worker through alchemy's bridge", () => {
 				String(v2WorkerUnavailableDefinition.retryAfterSeconds),
 			)
 			assert.strictEqual(JSON.parse(v2.body).error.code, v2WorkerUnavailableDefinition.code)
-			const v1 = yield* event("GET", "/api/errors", broken)
-			assert.strictEqual(v1.response.status, 504)
-			assert.strictEqual(v1.body, "The API worker is temporarily unavailable.")
+			const other = yield* event("GET", "/internal/errors/escalation-policy", broken)
+			assert.strictEqual(other.response.status, 504)
+			assert.strictEqual(other.body, "The API worker is temporarily unavailable.")
 		}),
 	)
 

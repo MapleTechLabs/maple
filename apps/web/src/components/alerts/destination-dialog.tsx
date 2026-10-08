@@ -27,7 +27,7 @@ import {
 	channelPickerView,
 	resolveSearchQuery,
 } from "@/components/alerts/channel-search"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -325,11 +325,11 @@ function HazelOAuthFields({
 	isEditing: boolean
 }) {
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "hazelStatus", {
+		retainedInternalQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
-	const organizationsAtom = retainedQuery("integrations", "hazelOrganizations", {
+	const organizationsAtom = retainedInternalQuery("integrations", "hazelOrganizations", {
 		reactivityKeys: ["hazelIntegrationStatus", "hazelOrganizations"],
 	})
 	const organizationsResult = useAtomValue(organizationsAtom)
@@ -337,17 +337,17 @@ function HazelOAuthFields({
 	const orgIdForChannels = form.hazelOrganizationId.trim()
 	const channelsAtom =
 		orgIdForChannels.length > 0
-			? retainedQuery("integrations", "hazelChannels", {
+			? retainedInternalQuery("integrations", "hazelChannels", {
 					params: { organizationId: orgIdForChannels },
 					reactivityKeys: ["hazelIntegrationStatus", "hazelChannels", orgIdForChannels],
 				})
 			: disabledResultAtom<HazelChannelsListResponse>()
 	const channelsResult = useAtomValue(channelsAtom)
 
-	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelStart"), {
+	const startConnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelStart"), {
 		mode: "promiseExit",
 	})
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelDisconnect"), {
 		mode: "promiseExit",
 	})
 
