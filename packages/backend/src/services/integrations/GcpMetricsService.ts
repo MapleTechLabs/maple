@@ -11,7 +11,7 @@
  */
 import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { GcpProjectId, OrgId } from "@maple/domain/primitives"
 import { gcpConnectors, gcpResources, type GcpConnectorRow } from "@maple/db"
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -74,8 +74,18 @@ const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
 const SETUP_HINT =
 	"Run the setup script in Cloud Shell to grant Maple read access; if it already ran, wait a few minutes for the grant to apply."
 
-const describeApiError = (error: GcpApiError) =>
-	error.kind === "denied" || error.kind === "not_found" ? `${error.message}. ${SETUP_HINT}` : error.message
+/** What the connection shows for a failed call. The host project is the one Google checks. */
+const describeApiError = (error: GcpApiError, hostProject: GcpProjectId) => {
+	if (error.reason === "BILLING_DISABLED") {
+		return `${error.message}. This API requires billing to be enabled on the host project ${hostProject}.`
+	}
+	if (error.reason === "SERVICE_DISABLED") {
+		return `${error.message}. This API is not enabled in the host project ${hostProject}; run the setup script again.`
+	}
+	return error.kind === "denied" || error.kind === "not_found"
+		? `${error.message}. ${SETUP_HINT}`
+		: error.message
+}
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -313,7 +323,9 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					})),
 					Effect.catchTags({
 						"@maple/api/integrations/GcpApiError": (error) =>
-							Effect.succeed({ lastResourcesError: describeApiError(error) }),
+							Effect.succeed({
+								lastResourcesError: describeApiError(error, connector.projectId),
+							}),
 						"@maple/http/errors/IntegrationsPersistenceError": () =>
 							Effect.succeed({ lastResourcesError: "Maple could not store the inventory." }),
 					}),
@@ -460,7 +472,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						}),
 						Effect.catchTags({
 							"@maple/api/integrations/GcpApiError": (error) =>
-								recordFailure(connector, describeApiError(error)),
+								recordFailure(connector, describeApiError(error, connector.projectId)),
 							"@maple/api/integrations/GcpMetricsIngestError": (error) =>
 								error.status === 402
 									? recordFailure(
