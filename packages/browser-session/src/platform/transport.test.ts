@@ -194,12 +194,25 @@ describe("transport", () => {
 		expect(await postSessionBlob(CONFIG, CHUNK, bytes)).toBe("failed")
 	})
 
+	it("reports how ingest answered an events batch", async () => {
+		expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe("accepted")
+		fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }))
+		expect(await postSessionEvents(CONFIG, [{ seq: 0 }])).toBe("rejected")
+	})
+
 	it("never throws into the host app when ingest is unreachable", async () => {
 		fetchMock.mockRejectedValue(new Error("network down"))
-		vi.spyOn(console, "warn").mockImplementation(() => {})
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
 
 		await expect(postSessionMeta(CONFIG, { session_id: "s1" })).resolves.toBeUndefined()
-		await expect(postSessionEvents(CONFIG, [{ seq: 0 }])).resolves.toBeUndefined()
+		// No response: the one outcome the event sink resends.
+		await expect(postSessionEvents(CONFIG, [{ seq: 0 }])).resolves.toBe("failed")
+		// Says what failed and nothing about replay or a retry: metadata-only
+		// sessions post these too, and what happens next is the caller's policy.
+		expect(warn.mock.calls.map(([message]) => message)).toEqual([
+			"[maple] session metadata POST failed:",
+			"[maple] session events POST failed:",
+		])
 	})
 })
 

@@ -64,17 +64,18 @@ export function ingestHeaders(config: Pick<IngestConfig, "ingestKey" | "sdk">): 
 	return { Authorization: `Bearer ${config.ingestKey}`, ...identity }
 }
 
-// Replay POSTs are best-effort and must never throw into the host app, but a
+// Session writes are best-effort and must never throw into the host app, but a
 // fully broken ingest endpoint should not be *silent*. Warn at most once every
 // 30s so a misconfigured endpoint is visible in the console without spamming it.
 // Rate-limited per call site, so a broken endpoint surfaces each distinct
-// failure rather than whichever one happened to warn first.
+// failure rather than whichever one happened to warn first. The message says
+// only what failed: what happens to the data is each caller's policy.
 const lastWarnAt = new Map<string, number>()
 export function warnDropped(what: string, error: unknown): void {
 	const now = Date.now()
 	if (now - (lastWarnAt.get(what) ?? 0) < 30_000) return
 	lastWarnAt.set(what, now)
-	console.warn(`[maple] session replay ${what} failed (dropping; will retry on next chunk):`, error)
+	console.warn(`[maple] session ${what} failed:`, error)
 }
 
 /**
@@ -249,22 +250,30 @@ export async function postSessionMeta(
 	})
 }
 
-/** POST distilled session events (NDJSON, one row per event). Best-effort. */
+/**
+ * POST distilled session events (NDJSON, one row per event). Never throws.
+ * `"failed"` means no response came back, so the rows may or may not have
+ * reached ingest.
+ */
 export async function postSessionEvents(
 	config: IngestConfig,
 	rows: ReadonlyArray<Record<string, unknown>>,
 	keepalive = false,
-): Promise<void> {
-	if (rows.length === 0) return
+): Promise<"accepted" | "rejected" | "failed"> {
+	if (rows.length === 0) return "accepted"
 	const body = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`
-	await postToIngest(
-		`${config.endpoint}/v1/sessionEvents`,
-		{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
-		body,
-		keepalive,
-	).catch((error) => {
+	try {
+		const response = await postToIngest(
+			`${config.endpoint}/v1/sessionEvents`,
+			{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
+			body,
+			keepalive,
+		)
+		return response.ok ? "accepted" : "rejected"
+	} catch (error) {
 		warnDropped("events POST", error)
-	})
+		return "failed"
+	}
 }
 
 export interface ChunkMeta {
