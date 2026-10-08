@@ -1235,28 +1235,32 @@ export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): R
 		.map((entry) => entry.id)
 }
 
-const ROW_SOURCE_RE = /\b(?:FROM|JOIN|UNION ALL|AS)\s*$/
+const ROW_SOURCE_RE = /\b(?:FROM|JOIN|UNION ALL|AS)[\s(]*$/
+const STRING_LITERAL_RE = /'(?:[^'\\]|\\.|'')*'/g
 
 /**
  * `sql` without the subqueries it only consults. A scalar or `IN (SELECT …)`
  * operand decides which rows match and contributes none of its own, so the
  * window it reads has nothing to tile against: the span-name lookup reads
  * `service_operations_hourly` for every hour the window touches, on purpose.
- * A tier is a row source — it follows `FROM`, `JOIN`, `UNION ALL` or `AS`.
+ * A tier is a row source — it follows `FROM`, `JOIN`, `UNION ALL` or `AS`,
+ * possibly behind more opening parentheses.
  */
 function withoutLookupSubqueries(sql: string): string {
+	// A parenthesis inside a literal would unbalance the scan below.
+	const text = sql.replace(STRING_LITERAL_RE, "''")
 	let kept = ""
-	for (let i = 0; i < sql.length; i++) {
-		if (!sql.startsWith("(SELECT", i) || ROW_SOURCE_RE.test(sql.slice(0, i))) {
-			kept += sql[i]
+	for (let i = 0; i < text.length; i++) {
+		if (!text.startsWith("(SELECT", i) || ROW_SOURCE_RE.test(text.slice(0, i))) {
+			kept += text[i]
 			continue
 		}
 		let depth = 0
 		do {
-			if (sql[i] === "(") depth++
-			else if (sql[i] === ")") depth--
+			if (text[i] === "(") depth++
+			else if (text[i] === ")") depth--
 			i++
-		} while (depth > 0 && i < sql.length)
+		} while (depth > 0 && i < text.length)
 		i--
 	}
 	return kept

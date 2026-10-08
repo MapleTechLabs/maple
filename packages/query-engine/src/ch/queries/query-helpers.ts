@@ -320,8 +320,9 @@ function spanNameIn($: ColumnAccessor<SpanNameColumns>, values: readonly string[
  *     read is planned.
  *
  * The rollup is read for every hour the window touches, so it covers each row
- * the `Timestamp` bounds admit. `perRow` skips it and compares both names on
- * the row.
+ * the `Timestamp` bounds admit, as long as the window lies inside the rollup's
+ * 365 days. A local store can keep raw spans longer; past that horizon, and
+ * with `perRow`, both names are compared on the row.
  */
 function spanNameContains(
 	$: ColumnAccessor<SpanNameColumns>,
@@ -342,11 +343,19 @@ function spanNameContains(
 		displayNames.where((rollup) => [rollup.SpanName.like("% %")]).limit(1),
 		(sql) => `(SELECT count() FROM (${sql})) > 0`,
 	)
-	return inSubquery($.SpanName, displayNames).or(
-		isHttpSpanName($.SpanName).and(
-			contains($.SpanName).or(anyRewrittenNameMatches.and(contains(displaySpanName($)))),
-		),
+	// A constant like the scalar subquery, so inside the horizon it costs nothing.
+	const pastRollupHorizon = CH.toDateTime(utcSecondsParam("startTime")).lt(
+		CH.rawExpr("now() - INTERVAL 364 DAY", T.dateTime),
 	)
+	return inSubquery($.SpanName, displayNames)
+		.or(pastRollupHorizon.and(contains($.SpanName)))
+		.or(
+			isHttpSpanName($.SpanName).and(
+				contains($.SpanName).or(
+					pastRollupHorizon.or(anyRewrittenNameMatches).and(contains(displaySpanName($))),
+				),
+			),
+		)
 }
 
 type TracesBaseWhereColumns = Pick<

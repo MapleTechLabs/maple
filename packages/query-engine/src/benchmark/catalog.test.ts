@@ -110,15 +110,19 @@ describe("sql catalog", () => {
 		const withSql = (id: string, sql: string) => ({ ...entries[0]!, id, sql })
 		const hourly =
 			"FROM service_operations_hourly WHERE Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))"
+		const raw = "SELECT count() AS n FROM traces"
+		const rollup = `SELECT sum(SpanCount) AS n ${hourly}`
 		expect(
 			unsplicedTwoTierQueries([
-				withSql("lookup", `SELECT count() FROM traces WHERE SpanName IN (SELECT SpanName ${hourly})`),
+				withSql("lookup", `${raw} WHERE SpanName IN (SELECT SpanName ${hourly})`),
 				withSql(
-					"tier",
-					`SELECT sum(n) FROM (SELECT count() AS n FROM traces UNION ALL SELECT sum(SpanCount) AS n ${hourly})`,
+					"literal",
+					`${raw} WHERE x = ')' AND SpanName IN (SELECT SpanName ${hourly} AND y = '(')`,
 				),
+				withSql("tier", `SELECT sum(n) FROM (${raw} UNION ALL ${rollup})`),
+				withSql("nested-tier", `SELECT sum(n) FROM ((${raw}) UNION ALL (${rollup}))`),
 			]),
-		).toEqual(["tier"])
+		).toEqual(["tier", "nested-tier"])
 	})
 
 	// Asserted exactly, not as a ceiling: a query that stops deriving a row

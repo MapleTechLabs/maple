@@ -732,6 +732,8 @@ describe("span-name filter", () => {
 			"AND positionCaseInsensitive(service_operations_hourly.SpanName, 'users') > 0"
 		const flat = sql.replace(/\s+/g, " ")
 
+		const pastHorizon = "toDateTime('2024-01-01 00:00:00') < now() - INTERVAL 364 DAY"
+
 		// Names that are their own display name become a sorting-key lookup.
 		expect(flat).toContain(
 			`traces.SpanName IN (SELECT service_operations_hourly.SpanName AS spanName ${rollup})`,
@@ -740,10 +742,14 @@ describe("span-name filter", () => {
 		// rewritten name in the window containing the needle.
 		expect(flat).toContain(
 			"OR ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) " +
-				"AND (positionCaseInsensitive(traces.SpanName, 'users') > 0 OR ((SELECT count() FROM (",
+				`AND (positionCaseInsensitive(traces.SpanName, 'users') > 0 OR ((${pastHorizon} OR (SELECT count() FROM (`,
 		)
 		expect(flat).toContain(
-			`${rollup} AND service_operations_hourly.SpanName LIKE '% %' LIMIT 1)) > 0 AND positionCaseInsensitive(${DISPLAY_NAME}`,
+			`${rollup} AND service_operations_hourly.SpanName LIKE '% %' LIMIT 1)) > 0) AND positionCaseInsensitive(${DISPLAY_NAME}`,
+		)
+		// Past the rollup's retention both names are compared on the row again.
+		expect(flat).toContain(
+			`OR (${pastHorizon} AND positionCaseInsensitive(traces.SpanName, 'users') > 0)`,
 		)
 	})
 
