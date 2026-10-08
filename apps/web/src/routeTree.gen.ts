@@ -58,6 +58,7 @@ import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
 import { Route as LabInfraRouteImport } from './routes/lab/infra'
 import { Route as LabLoadersRouteImport } from './routes/lab/loaders'
+import { Route as LabLogsRouteImport } from './routes/lab/logs'
 import { Route as LabNodesRouteImport } from './routes/lab/nodes'
 import { Route as LabOnboardingRouteImport } from './routes/lab/onboarding'
 import { Route as LabQueryBuilderRouteImport } from './routes/lab/query-builder'
@@ -357,6 +358,11 @@ const LabInfraRoute = LabInfraRouteImport.update({
 const LabLoadersRoute = LabLoadersRouteImport.update({
   id: '/loaders',
   path: '/loaders',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabLogsRoute = LabLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabNodesRoute = LabNodesRouteImport.update({
@@ -688,6 +694,7 @@ export interface FileRoutesByFullPath {
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
+  '/lab/logs': typeof LabLogsRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -793,6 +800,7 @@ export interface FileRoutesByTo {
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
+  '/lab/logs': typeof LabLogsRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -900,6 +908,7 @@ export interface FileRoutesById {
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
+  '/lab/logs': typeof LabLogsRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -1008,6 +1017,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/infra'
     | '/lab/loaders'
+    | '/lab/logs'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1113,6 +1123,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/infra'
     | '/lab/loaders'
+    | '/lab/logs'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1219,6 +1230,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/infra'
     | '/lab/loaders'
+    | '/lab/logs'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1712,6 +1724,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabLoadersRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/logs': {
+      id: '/lab/logs'
+      path: '/logs'
+      fullPath: '/lab/logs'
+      preLoaderRoute: typeof LabLogsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/nodes': {
       id: '/lab/nodes'
       path: '/nodes'
@@ -2110,6 +2129,7 @@ interface LabRouteRouteChildren {
   LabFlowRoute: typeof LabFlowRoute
   LabInfraRoute: typeof LabInfraRoute
   LabLoadersRoute: typeof LabLoadersRoute
+  LabLogsRoute: typeof LabLogsRoute
   LabNodesRoute: typeof LabNodesRoute
   LabOnboardingRoute: typeof LabOnboardingRoute
   LabQueryBuilderRoute: typeof LabQueryBuilderRoute
@@ -2139,6 +2159,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabFlowRoute: LabFlowRoute,
   LabInfraRoute: LabInfraRoute,
   LabLoadersRoute: LabLoadersRoute,
+  LabLogsRoute: LabLogsRoute,
   LabNodesRoute: LabNodesRoute,
   LabOnboardingRoute: LabOnboardingRoute,
   LabQueryBuilderRoute: LabQueryBuilderRoute,
