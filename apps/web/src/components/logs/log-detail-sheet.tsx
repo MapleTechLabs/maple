@@ -1,5 +1,11 @@
 import { useState } from "react"
-import { CircleInfoIcon, PulseIcon, ServerIcon, SquareTerminalIcon } from "@/components/icons"
+import {
+	CircleInfoIcon,
+	PulseIcon,
+	ServerIcon,
+	SquareTerminalIcon,
+	UnorderedListIcon,
+} from "@/components/icons"
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
@@ -11,6 +17,7 @@ import { LogHeroHeader } from "./log-hero-header"
 import { LogMetaStrip } from "./log-meta-strip"
 import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
 import { LogTraceTimeline } from "./log-trace-timeline"
+import { LogContextPanel } from "./log-context-panel"
 import { LogAttributesPanel } from "./log-attributes-panel"
 import { LogRawPanel } from "./log-raw-panel"
 
@@ -66,6 +73,9 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 								<PulseIcon size={14} /> Trace
 							</TabsTrigger>
 						)}
+						<TabsTrigger value="context">
+							<UnorderedListIcon size={14} /> Context
+						</TabsTrigger>
 						<TabsTrigger value="raw">
 							<SquareTerminalIcon size={14} /> Raw
 						</TabsTrigger>
@@ -93,6 +103,10 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 							</ScrollArea>
 						</TabsContent>
 					)}
+
+					<TabsContent value="context" className="flex-1 min-h-0 mt-0 p-3">
+						<LogContextPanel key={logKey} log={viewedLog} onLogSelect={setViewedLog} />
+					</TabsContent>
 
 					<TabsContent value="raw" className="flex-1 min-h-0 mt-0">
 						<ScrollArea className="h-full">
