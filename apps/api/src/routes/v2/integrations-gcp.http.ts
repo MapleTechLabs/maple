@@ -31,6 +31,9 @@ const toV2Connector = (connector: GcpConnector): V2GcpConnector => ({
 	created_at: isoTimestamp(connector.createdAt),
 	last_log_received_at: isoTimestampOrNull(connector.lastLogReceivedAt),
 	last_log_error: connector.lastLogError,
+	applied_logs_enabled: connector.appliedLogsEnabled,
+	applied_metrics_enabled: connector.appliedMetricsEnabled,
+	setup_reported_at: isoTimestampOrNull(connector.setupReportedAt),
 })
 
 const auditMetadata = (connector: GcpConnector) => ({
@@ -96,7 +99,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
 					const scripts = yield* gcp.scripts(tenant.orgId, params.id, {
-						excludeGkeContainerLogs: payload.exclude_gke_container_logs === true,
+						logFilter: payload.log_filter ?? "keep",
 					})
 					return {
 						object: "gcp_connector.setup_scripts" as const,

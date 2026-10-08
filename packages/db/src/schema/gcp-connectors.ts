@@ -5,7 +5,8 @@ import { boolean, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-c
 // organization. `project_id` is the host project, where Maple's own resources live (Pub/Sub topic,
 // subscription, service account); for a project scope it equals `scope_id`. The ingest gateway's
 // `/v1/logpush/gcp/...` receiver authenticates a push by `id` + `secret_hash` and writes
-// `last_received_at` / `last_error`. `metrics_enabled` covers metrics and resource collection.
+// `last_received_at` / `last_error` and the setup report. `metrics_enabled` covers metrics and
+// resource collection.
 export const gcpConnectors = pgTable(
 	"gcp_connectors",
 	{
@@ -22,6 +23,11 @@ export const gcpConnectors = pgTable(
 		secretHash: text("secret_hash").notNull(),
 		lastReceivedAt: timestamp("last_received_at", { withTimezone: true, mode: "date" }),
 		lastError: text("last_error"),
+		// What the latest setup script run reported it set up in Google Cloud, written by the
+		// receiver. Null until a run reports: the switches above say what should be there.
+		appliedLogsEnabled: boolean("applied_logs_enabled"),
+		appliedMetricsEnabled: boolean("applied_metrics_enabled"),
+		setupReportedAt: timestamp("setup_reported_at", { withTimezone: true, mode: "date" }),
 		createdBy: text("created_by").notNull(),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
