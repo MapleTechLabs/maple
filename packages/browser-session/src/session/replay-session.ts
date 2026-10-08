@@ -10,6 +10,7 @@
 import { type EventCapture, startEventCapture } from "../replay/events"
 import {
 	type BufferedRecorder,
+	clearPendingChunks,
 	type Recorder,
 	startBufferedRecording,
 	startRecording,
@@ -150,7 +151,11 @@ export function startReplaySession(options: ReplaySessionOptions): ReplaySession
 			return lifecycle.sessionId
 		},
 		announce: lifecycle.announce,
-		shutdown: lifecycle.shutdown,
+		shutdown: (shutdownOptions) => {
+			// Here rather than in `onSuspend`: a revoke on a hidden page has no run to suspend.
+			if (shutdownOptions?.flush === false) clearPendingChunks()
+			return lifecycle.shutdown(shutdownOptions)
+		},
 		trigger: async () => {
 			if (triggered) return
 			triggered = true

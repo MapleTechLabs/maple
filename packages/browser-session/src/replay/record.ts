@@ -1,6 +1,8 @@
 import { record } from "rrweb"
+import { consentRevokedAt } from "../identity/consent"
 import { BLOCK_SELECTOR } from "../privacy-markers"
 import { markActivity, nextChunkSeq } from "../session/session"
+import { isJsonObject } from "../platform/json"
 import type { IngestConfig } from "../platform/transport"
 import {
 	type BlobPostOutcome,
@@ -60,19 +62,114 @@ export interface Recorder {
 	getClickCount: () => number
 }
 
+// The chunk a page was flushing as it went away. `gzip` is async and an
+// unloading document is torn down before it resolves, so the chunk waits in
+// sessionStorage (this tab, this origin, like the session record) for the next
+// recorder start of its session: the next page load, or this page shown again.
+const PENDING_KEY = "maple.replay.pending"
+// sessionStorage is ~5 MiB per origin and the host app shares it. A flush is
+// ~100 KB, so only a chunk carrying an outsized full snapshot is left out.
+const MAX_PENDING_CHARS = 512 * 1024
+
+interface PendingChunk extends ChunkMeta {
+	readonly body: string
+	/** epoch ms; a chunk from before the last consent withdrawal is never sent. */
+	readonly createdAt: number
+}
+
+function isPendingChunk(value: unknown): value is PendingChunk {
+	return (
+		isJsonObject(value) &&
+		typeof value.sessionId === "string" &&
+		typeof value.chunkSeq === "number" &&
+		typeof value.isCheckpoint === "boolean" &&
+		typeof value.eventCount === "number" &&
+		typeof value.durationMs === "number" &&
+		typeof value.body === "string" &&
+		typeof value.createdAt === "number"
+	)
+}
+
+function readPending(): PendingChunk[] {
+	try {
+		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "[]")
+		return Array.isArray(parsed) ? parsed.filter(isPendingChunk) : []
+	} catch {
+		return []
+	}
+}
+
+/** False when storage is blocked or full: the chunk is then only as durable as its upload. */
+function writePending(chunks: ReadonlyArray<PendingChunk>): boolean {
+	try {
+		if (chunks.length === 0) window.sessionStorage.removeItem(PENDING_KEY)
+		else window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(chunks))
+		return true
+	} catch {
+		return false
+	}
+}
+
+function storePending(chunk: PendingChunk): boolean {
+	const stored = readPending()
+	const chars = stored.reduce((sum, entry) => sum + entry.body.length, chunk.body.length)
+	return chars <= MAX_PENDING_CHARS && writePending([...stored, chunk])
+}
+
 /**
- * gzip and POST one chunk. `seq` is claimed here, monotonic across reloads
+ * Remove a stored chunk, reporting whether it was still there. Whoever removes
+ * it sends it, so a seq is posted once: ingest appends an index row per POST.
+ */
+function takePending(meta: ChunkMeta): boolean {
+	const stored = readPending()
+	const rest = stored.filter(
+		(entry) => entry.sessionId !== meta.sessionId || entry.chunkSeq !== meta.chunkSeq,
+	)
+	return rest.length < stored.length && writePending(rest)
+}
+
+/** A consent revoke discards what was kept for the next load along with the buffer. */
+export function clearPendingChunks(): void {
+	writePending([])
+}
+
+/** Send what an earlier flush of this session left behind; anything else stored is dropped. */
+function sendPendingChunks(config: IngestConfig, sessionId: string): void {
+	const stored = readPending()
+	if (stored.length === 0) return
+	clearPendingChunks()
+	const revokedAt = consentRevokedAt()
+	for (const chunk of stored) {
+		if (chunk.sessionId !== sessionId || chunk.createdAt <= revokedAt) continue
+		void compressAndPost(config, chunk, chunk.body, false, false)
+	}
+}
+
+/**
+ * Claim a seq and upload one chunk. The seq is monotonic across reloads
  * (persisted on the session record), so a refresh continues the sequence
  * instead of overwriting the previous load's blobs.
  */
-async function uploadChunk(
+function uploadChunk(
 	config: IngestConfig,
 	sessionId: string,
 	body: string,
 	chunk: Omit<ChunkMeta, "sessionId" | "chunkSeq">,
 	keepalive: boolean,
 ): Promise<BlobPostOutcome | undefined> {
-	const chunkSeq = nextChunkSeq()
+	const meta: ChunkMeta = { sessionId, chunkSeq: nextChunkSeq(), ...chunk }
+	// Stored synchronously: on a page going away nothing after the first await runs.
+	const stored = keepalive && storePending({ ...meta, body, createdAt: Date.now() })
+	return compressAndPost(config, meta, body, keepalive, stored)
+}
+
+async function compressAndPost(
+	config: IngestConfig,
+	meta: ChunkMeta,
+	body: string,
+	keepalive: boolean,
+	stored: boolean,
+): Promise<BlobPostOutcome | undefined> {
 	// `gzip` rejects rather than returning a truncated stream, and callers run
 	// this as a floating promise: an escaping rejection would surface in the
 	// host app's console as ours. Dropping the chunk is the same outcome ingest
@@ -84,10 +181,13 @@ async function uploadChunk(
 		warnDropped("chunk compression", error)
 		return undefined
 	}
-	return postSessionBlob(config, { sessionId, chunkSeq, ...chunk }, gzipped, keepalive)
+	// Gone: a later recorder start already sent it, or a revoke discarded it.
+	if (stored && !takePending(meta)) return undefined
+	return postSessionBlob(config, meta, gzipped, keepalive)
 }
 
 export function startRecording(config: IngestConfig, sessionId: string): Recorder {
+	sendPendingChunks(config, sessionId)
 	// Events are serialized once at emit time and buffered as JSON strings, so
 	// flushing is a cheap `join` instead of re-stringifying the whole buffer
 	// (which stalls the main thread for hundreds of ms on full snapshots).
