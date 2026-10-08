@@ -2,8 +2,9 @@
 /**
  * The Google calls the poller makes, over WebCrypto and `fetch` so they run in a Worker. Nothing
  * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and
- * Google's error code only, never a response body, transport error or schema issue. Untraced on
- * purpose: the HTTP client records a span per request, and "not set up yet" is not an exception.
+ * Google's error code and reason only, never a response body, transport error or schema issue.
+ * Untraced on purpose: the HTTP client records a span per request, and "not set up yet" is not an
+ * exception.
  */
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import {
@@ -37,6 +38,11 @@ export class GcpApiError extends Schema.TaggedError<GcpApiError>()("@maple/api/i
 	 * `upstream`: 5xx, transport, timeout or an undecodable body.
 	 */
 	kind: Schema.Literals(["denied", "not_found", "rate_limited", "invalid", "upstream"]),
+	/**
+	 * Why Google refused a call made through the host project, where its answer says so:
+	 * `SERVICE_DISABLED`, `BILLING_DISABLED`, ...
+	 */
+	reason: Schema.optionalKey(Schema.String),
 }) {}
 
 const errorKind = (status: number): GcpApiError["kind"] =>
@@ -66,6 +72,23 @@ const errorCode = (body: unknown): string => {
 	return /^[A-Za-z_]{1,40}$/.test(code) ? ` ${code}` : ""
 }
 
+// A refusal can name its cause in `error.details`, as a `google.rpc.ErrorInfo` whose `reason` is
+// UPPER_SNAKE_CASE and 63 characters at most. Nothing else of the details is kept.
+const decodeErrorDetails = Schema.decodeUnknownOption(
+	Schema.Struct({ error: Schema.Struct({ details: Schema.Array(Schema.Unknown) }) }),
+)
+const decodeErrorInfo = Schema.decodeUnknownOption(
+	Schema.Struct({
+		"@type": Schema.Literal("type.googleapis.com/google.rpc.ErrorInfo"),
+		reason: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9_]{1,61}[A-Z0-9]$/)),
+	}),
+)
+
+const errorReason = (body: unknown): string | undefined =>
+	Option.toArray(decodeErrorDetails(body))
+		.flatMap((decoded) => decoded.error.details)
+		.flatMap((detail) => Option.toArray(decodeErrorInfo(detail)))[0]?.reason
+
 /** One JSON call. `api` names the Google service in the error message. */
 const call = <A>(
 	httpClient: HttpClient.HttpClient,
@@ -79,9 +102,11 @@ const call = <A>(
 		const response = yield* httpClient.execute(request)
 		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
 		if (response.status >= 300) {
+			const reason = errorReason(body)
 			return yield* new GcpApiError({
-				message: `${api} returned ${response.status}${errorCode(body)}`,
+				message: `${api} returned ${response.status}${errorCode(body)}${reason === undefined ? "" : ` (${reason})`}`,
 				kind: errorKind(response.status),
+				...(reason === undefined ? undefined : { reason }),
 			})
 		}
 		return yield* decode(body)
@@ -223,6 +248,9 @@ export const impersonateReader = Effect.fnUntraced(function* (
 			}),
 		),
 		decodeImpersonatedToken,
+	).pipe(
+		// Not made through the host project, so its reason says nothing about that project.
+		Effect.mapError(({ message, kind }) => new GcpApiError({ message, kind })),
 	)
 	return { accessToken: response.accessToken, quotaProject: connector.projectId } satisfies GcpReader
 })
