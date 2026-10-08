@@ -7,7 +7,7 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
-import { type Context, Effect, Exit, Layer } from "effect"
+import { Clock, type Context, Effect, Exit, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
@@ -63,6 +63,7 @@ export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =
  * reject outright.
  */
 export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: AiPortsLayer) => {
+	const recordIsolateAge = makeIsolateAgeRecorder()
 	return Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)
@@ -70,6 +71,7 @@ export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: AiPortsLa
 			return yield* healthResponse
 		}
 
+		yield* recordIsolateAge
 		const built = yield* Effect.exit(app)
 		if (Exit.isFailure(built)) {
 			yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
@@ -82,6 +84,24 @@ export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: AiPortsLa
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
 		Effect.provide(ports),
 	)
+}
+
+/**
+ * Isolate-scoped: the Worker's init calls `makeFetch` once, so ordinal 1 is the request that
+ * builds the route graph. Counts graph-build failures too, so cold and warm compare unconditioned.
+ */
+export const makeIsolateAgeRecorder = () => {
+	let firstRequestAt: number | undefined
+	let served = 0
+	return Effect.gen(function* () {
+		const startedAt = yield* Clock.currentTimeMillis
+		firstRequestAt ??= startedAt
+		served += 1
+		yield* Effect.annotateCurrentSpan({
+			"maple.isolate.age_ms": startedAt - firstRequestAt,
+			"maple.isolate.request_ordinal": served,
+		})
+	})
 }
 
 const pathOf = (url: string): string => {
