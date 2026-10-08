@@ -5,7 +5,6 @@ import {
 	buildResolved,
 	makeSerializedFlush,
 	runFlush,
-	runUnloadFlush,
 	type FlushTransport,
 	type SignalState,
 } from "./flush-core.js"
@@ -183,81 +182,41 @@ describe("runFlush", () => {
 		expect(seen).toEqual([1, 2, 3])
 	})
 
-	it.live("unload flush issues every signal before returning, in byte-capped chunks, cooldown or not", () =>
+	it.live("restores the failed chunks of a chunked flush once, in drain order", () =>
 		Effect.gen(function* () {
 			const spans = makeSpanBuffer()
-			const logs = makeLogBuffer()
-			const names = Array.from({ length: 40 }, (_, i) => `span-${i}`)
-			yield* Effect.forEach(names, (name) => recordSpan(spans, name), { discard: true })
-			yield* recordLog(logs, "last-log")
-			const posts: Array<{ readonly url: string; readonly body: unknown }> = []
-
-			void runUnloadFlush({
-				resolved,
-				spans,
-				logs,
-				metrics: makeMetricBuffer(),
-				tracesState: { disabledUntil: Date.now() + 60_000 },
-				logsState: { disabledUntil: 0 },
-				metricsState: { disabledUntil: 0 },
-				transport: { post: async (url, _headers, body) => void posts.push({ url, body }) },
-				logPrefix: "[test]",
-				maxChunkBytes: 4_096,
-			})
-
-			// Nothing awaited: a page that is going away gets no later turn.
-			const traces = posts.filter((post) => post.url.endsWith("/v1/traces"))
-			expect(traces.length).toBeGreaterThan(1)
-			for (const post of posts) {
-				expect(new TextEncoder().encode(JSON.stringify(post.body)).byteLength).toBeLessThanOrEqual(
-					4_096,
-				)
-			}
-			const sent = traces.flatMap(
-				(post) =>
-					(
-						post.body as {
-							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
-						}
-					).resourceSpans[0]!.scopeSpans[0]!.spans,
-			)
-			expect(sent.map((span) => span.name)).toEqual(names)
-			expect(posts.at(-1)?.url).toBe("https://collector.test/v1/logs")
-		}),
-	)
-
-	it.live("unload flush restores only the chunks that failed, and cools the signal down", () =>
-		Effect.gen(function* () {
-			const spans = makeSpanBuffer()
-			yield* Effect.forEach(["a", "b", "c"], (name) => recordSpan(spans, name), { discard: true })
+			yield* Effect.forEach(["a", "b", "c", "d"], (name) => recordSpan(spans, name), { discard: true })
 			const tracesState: SignalState = { disabledUntil: 0 }
 			let attempts = 0
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
-			yield* Effect.promise(() =>
-				runUnloadFlush({
-					resolved,
-					spans,
-					logs: makeLogBuffer(),
-					metrics: makeMetricBuffer(),
-					tracesState,
-					logsState: { disabledUntil: 0 },
-					metricsState: { disabledUntil: 0 },
-					transport: {
-						post: async () => {
-							attempts += 1
-							if (attempts === 2) throw new Error("collector unavailable")
-						},
+			const flushed = runFlush({
+				resolved,
+				spans,
+				logs: makeLogBuffer(),
+				metrics: makeMetricBuffer(),
+				tracesState,
+				logsState: { disabledUntil: 0 },
+				metricsState: { disabledUntil: 0 },
+				transport: {
+					post: async () => {
+						attempts += 1
+						// "a" fails after "c" does: completion order must not decide the restore order.
+						if (attempts === 1) await new Promise((resolve) => setTimeout(resolve, 5))
+						if (attempts !== 2) throw new Error("collector unavailable")
 					},
-					logPrefix: "[test]",
-					// Smaller than any span: each travels alone.
-					maxChunkBytes: 1,
-				}),
-			)
-			errorSpy.mockRestore()
+				},
+				logPrefix: "[test]",
+				// Smaller than any span: each travels alone.
+				maxChunkBytes: 1,
+			})
+			yield* recordSpan(spans, "newer")
+			yield* Effect.promise(() => flushed)
 
-			expect(attempts).toBe(3)
-			expect(spans.size()).toBe(1)
+			expect(attempts).toBe(4)
+			expect(errorSpy).toHaveBeenCalledTimes(1)
+			errorSpy.mockRestore()
+			expect(spans.drain().map((span) => span.name)).toEqual(["a", "c", "d", "newer"])
 			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
 		}),
 	)

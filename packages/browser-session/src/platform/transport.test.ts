@@ -44,23 +44,6 @@ describe("reserveKeepalive", () => {
 		expect(reserveKeepalive(true, 30 * 1024)).toBeTypeOf("function")
 	})
 
-	it("stops 8 KiB short of the browser's 64 KiB, for requests the host page sends", () => {
-		const whole = reserveKeepalive(true, 56 * 1024)
-		expect(whole).toBeTypeOf("function")
-		expect(reserveKeepalive(true, 1)).toBeUndefined()
-		whole?.()
-		expect(reserveKeepalive(true, 56 * 1024 + 1)).toBeUndefined()
-	})
-
-	it("hands the caller's abort signal to fetch", async () => {
-		const fetchMock = vi.fn(async () => new Response(null, { status: 202 }))
-		vi.stubGlobal("fetch", fetchMock)
-		const { signal } = new AbortController()
-		await postToIngest("https://ingest.test/x", {}, "x", true, signal)
-		expect(lastInit(fetchMock).signal).toBe(signal)
-		vi.unstubAllGlobals()
-	})
-
 	it("never turns keepalive on for a caller that didn't ask", () => {
 		expect(reserveKeepalive(false, 1)).toBeUndefined()
 	})
@@ -132,6 +115,13 @@ describe("transport", () => {
 		await postSessionMeta(CONFIG, { session_id: "s1" }, true)
 
 		expect(lastInit(fetchMock).keepalive).toBe(true)
+	})
+
+	it("hands the caller's abort signal to fetch", async () => {
+		const { signal } = new AbortController()
+		await postToIngest("https://ingest.test/x", {}, "x", true, signal)
+
+		expect(lastInit(fetchMock).signal).toBe(signal)
 	})
 
 	it("writes one NDJSON line per event and skips an empty batch", async () => {

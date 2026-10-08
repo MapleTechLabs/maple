@@ -23,7 +23,6 @@ import {
 	type Resolved,
 	type ResourceInput,
 	runFlush,
-	runUnloadFlush,
 	type SignalState,
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
@@ -38,10 +37,10 @@ import type { PrivacyOptions } from "./track.js"
 /** Default auto-flush cadence (ms), matching `Otlp.layerJson`'s 5s export interval. */
 const DEFAULT_AUTO_FLUSH_MS = 5_000
 
-/** A POST unanswered for this long is aborted, so it cannot hold up the flushes queued behind it. */
+/** Abort a POST after this long so it cannot block the flush queue. */
 const POST_TIMEOUT_MS = 30_000
 
-/** Body size of one unload request: small enough that several fit the keepalive budget next to the session writes. */
+/** Max body of one unload request, so several fit the keepalive budget. */
 const UNLOAD_CHUNK_BYTES = 16 * 1024
 
 const browserInstanceId =
@@ -278,45 +277,42 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
 
-	// True from `pagehide` until `pageshow` (a back/forward-cache restore). An
-	// unloading page rejects its keepalive fetches even when ingest accepted
-	// them, so a failure seen in that window is neither retried nor reported.
+	// Between `pagehide` and `pageshow` (a back/forward-cache restore) a rejected
+	// POST says nothing about delivery: an unloading page rejects keepalive
+	// fetches that ingest still receives. It is not restored, cooled down or logged.
 	let unloading = false
-	const flushArgs = {
-		resolved,
-		spans,
-		logs,
-		metrics,
-		tracesState,
-		logsState,
-		metricsState,
-		transport: {
-			post: (url, headers, body) =>
-				postOtlp(url, headers, body).catch((cause: unknown) =>
-					unloading ? undefined : Promise.reject(cause),
-				),
-		} satisfies FlushTransport,
-		logPrefix: "[MapleClientSDK]",
-	}
-	const dropWithoutConsent = (): boolean => {
-		if (hasConsent()) return false
-		spans.drain()
-		logs.drain()
-		metrics.drain()
-		return true
+	const transport: FlushTransport = {
+		post: (url, headers, body) =>
+			postOtlp(url, headers, body).catch((cause: unknown) =>
+				unloading ? undefined : Promise.reject(cause),
+			),
 	}
 
-	// Never rejects — fired from the auto-flush timer as `void flush()`.
-	const flush = makeSerializedFlush(
+	// Never rejects: fired as `void` from the auto-flush timer and the unload handlers.
+	const makeFlush = (maxChunkBytes?: number) =>
 		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
-			if (!dropWithoutConsent()) await runFlush(flushArgs)
-		}),
-	)
-	// The page may not live to see a queued flush start, so this one skips the
-	// queue and issues its requests inside the event handler that called it.
-	const flushOnUnload = guardFlush("[MapleClientSDK]", async (): Promise<void> => {
-		if (!dropWithoutConsent()) await runUnloadFlush({ ...flushArgs, maxChunkBytes: UNLOAD_CHUNK_BYTES })
-	})
+			if (!hasConsent()) {
+				spans.drain()
+				logs.drain()
+				metrics.drain()
+				return
+			}
+			await runFlush({
+				resolved,
+				spans,
+				logs,
+				metrics,
+				tracesState,
+				logsState,
+				metricsState,
+				transport,
+				logPrefix: "[MapleClientSDK]",
+				maxChunkBytes,
+			})
+		})
+	const flush = makeSerializedFlush(makeFlush())
+	// Skips the queue: the page may not live to see a queued flush start.
+	const unloadFlush = makeFlush(UNLOAD_CHUNK_BYTES)
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -392,13 +388,13 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 
 	const onPageHide = (): void => {
 		unloading = true
-		void flushOnUnload()
+		void unloadFlush()
 	}
 	const onPageShow = (): void => {
 		unloading = false
 	}
 	const onVisibilityChange = (): void => {
-		if (browserDocument()?.visibilityState === "hidden") void flushOnUnload()
+		if (browserDocument()?.visibilityState === "hidden") void unloadFlush()
 	}
 	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
 	if (canListen) {

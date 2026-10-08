@@ -84,15 +84,15 @@ export function warnDropped(what: string, error: unknown): void {
  * page, and the browser rejects a request that would cross it. On the way out
  * several of our writes go at once (metadata row, final events batch, last
  * replay chunk, the Effect SDK's OTLP flush), so the budget has to be shared
- * rather than checked per request: all of them go through
- * {@link postToIngest}. It stops short of 64 KiB to leave room for keepalive
- * requests and beacons the host page sends itself.
+ * rather than checked per request. It stops short of 64 KiB because the
+ * browser SDK's OpenTelemetry trace exporter spends from the same page-wide
+ * allowance under its own accounting.
  *
  * Over the budget a write goes out as a normal request, which the page may or
  * may not survive long enough to finish: strictly better than a guaranteed
  * rejection.
  */
-const KEEPALIVE_BUDGET_BYTES = 56 * 1024
+const KEEPALIVE_BUDGET_BYTES = 48 * 1024
 
 /** On `globalThis`: two bundled SDK copies still share one page-wide allowance. */
 const KEEPALIVE_KEY = "__MAPLE_KEEPALIVE_INFLIGHT__"

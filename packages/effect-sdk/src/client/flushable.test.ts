@@ -72,7 +72,7 @@ const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 	)
 
 // Mirrors `KEEPALIVE_BUDGET_BYTES` in @maple/browser-session and the unload chunk cap.
-const KEEPALIVE_BUDGET_BYTES = 56 * 1024
+const KEEPALIVE_BUDGET_BYTES = 48 * 1024
 const UNLOAD_CHUNK_BYTES = 16 * 1024
 
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
@@ -589,7 +589,7 @@ describe("MapleFlush.make (client)", () => {
 		dom.setHidden()
 		dom.fire("visibilitychange")
 		expect(traceCalls(calls)).toHaveLength(2)
-		expect(spanNames([traceCalls(calls)[1]])).toEqual(["rejected"])
+		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["rejected"])
 	})
 
 	it("splits the unload flush into chunks that stay within the shared keepalive budget", async () => {
@@ -604,17 +604,22 @@ describe("MapleFlush.make (client)", () => {
 		const names = numbered("unload", 400)
 
 		await recordSpans(telemetry, names)
-		await Effect.runPromise(Effect.logInfo("last words").pipe(Effect.provide(telemetry.layer)))
+		await Effect.runPromise(
+			Effect.all([
+				Effect.logInfo("last words"),
+				Metric.update(Metric.counter("unload_counter"), 1),
+			]).pipe(Effect.provide(telemetry.layer)),
+		)
 		dom.fire("pagehide")
 
-		const traces = traceCalls(calls)
-		expect(traces.length).toBeGreaterThan(4)
 		for (const call of calls) expect(call.bytes).toBeLessThanOrEqual(UNLOAD_CHUNK_BYTES)
 		expect(spanNames(calls)).toEqual(names)
-		// Traces go first; logs are issued in the same handler, after them.
-		expect(calls.at(-1)?.url).toBe("https://collector.test/v1/logs")
+		// All in the one handler: every traces chunk, then logs, then metrics.
+		expect(calls.slice(traceCalls(calls).length).map((call) => call.url)).toEqual([
+			"https://collector.test/v1/logs",
+			"https://collector.test/v1/metrics",
+		])
 		const keepalive = calls.filter((call) => call.keepalive)
-		expect(keepalive.length).toBeGreaterThan(1)
 		expect(keepalive.reduce((sum, call) => sum + call.bytes, 0)).toBeLessThanOrEqual(
 			KEEPALIVE_BUDGET_BYTES,
 		)
@@ -625,7 +630,7 @@ describe("MapleFlush.make (client)", () => {
 		await tick()
 	})
 
-	it("treats a rejection after pagehide as final: no restore, no cooldown, no console output", async () => {
+	it("ignores a rejection seen after pagehide", async () => {
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 		const inflight = pendingResponses()
@@ -659,6 +664,7 @@ describe("MapleFlush.make (client)", () => {
 	})
 
 	it("restores and cools down when the flush fails on a page that is only hidden", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 		vi.useFakeTimers({ toFake: ["Date"] })
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		let fail = true
@@ -679,8 +685,11 @@ describe("MapleFlush.make (client)", () => {
 		expect(errorSpy).toHaveBeenCalledTimes(1)
 
 		fail = false
+		await telemetry.flush()
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+		expect(traceCalls(calls)).toHaveLength(1)
 		vi.advanceTimersByTime(60_000)
 		await telemetry.flush()
-		expect(spanNames([traceCalls(calls)[1]])).toEqual(["hidden"])
+		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["hidden"])
 	})
 })

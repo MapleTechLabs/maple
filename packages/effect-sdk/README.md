@@ -313,7 +313,7 @@ const telemetry = MapleFlush.make({
 // telemetry.layer keeps the replay-session trace linking from Maple.layer.
 ```
 
-By default the client preset flushes on `pagehide` and `visibilitychange→hidden` so the tail of a session isn't lost when the tab goes away. Flush uses `fetch(url, { keepalive: true })`, **not** `navigator.sendBeacon`: Maple's ingest authenticates via the `Authorization` header (no query-param auth) and sendBeacon can't set headers, so it would 401 whenever an ingest key is set. `keepalive` carries the header and survives unload, but browsers cap a page's in-flight keepalive bodies at 64 KiB combined and reject a request that would cross it. The unload flush therefore goes out in ~16 KiB requests, and any request that no longer fits the SDK's shared 56 KiB budget is sent without `keepalive`, so it may not finish if the page is already going away.
+By default the client preset flushes on `pagehide` and `visibilitychange→hidden` so the tail of a session isn't lost when the tab goes away. Flush uses `fetch` with `keepalive`, **not** `navigator.sendBeacon`: Maple's ingest authenticates via the `Authorization` header (no query-param auth) and sendBeacon can't set headers, so it would 401 whenever an ingest key is set. `keepalive` carries the header and survives unload. Browsers cap a page's in-flight keepalive bodies at 64 KiB combined, so the unload flush is sent in small requests; anything past the cap goes out as a plain request and may not finish.
 
 ## Configuration
 
