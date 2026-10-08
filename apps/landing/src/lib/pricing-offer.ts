@@ -19,10 +19,10 @@ import * as m from "../paraglide/messages.js"
 const AUTUMN_API_VERSION = "2.3.0"
 
 /**
- * browser_sessions is metered per session, product_events per event; every
- * other signal is per GB.
+ * browser_sessions is metered per session, product_events per event, and
+ * ai_credits in dollars of model usage; every other signal is per GB.
  */
-export type Unit = "gb" | "sessions" | "events"
+export type Unit = "gb" | "sessions" | "events" | "usd"
 
 export interface Allotment {
 	featureId: string
@@ -56,15 +56,22 @@ export interface Offer {
 const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
 
 /** Canonical row order: Autumn can return items in any order. */
-const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events"]
+const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events", "ai_credits"]
 
 const dataFeatureRank = (id: string | undefined) => {
 	const i = id ? DATA_FEATURE_ORDER.indexOf(id) : -1
 	return i === -1 ? DATA_FEATURE_ORDER.length : i
 }
 
-const unitFor = (featureId: string): Unit =>
-	featureId === "browser_sessions" ? "sessions" : featureId === "product_events" ? "events" : "gb"
+const FEATURE_UNITS = {
+	browser_sessions: "sessions",
+	product_events: "events",
+	ai_credits: "usd",
+} as const satisfies Record<string, Unit>
+
+const hasOwnUnit = (featureId: string): featureId is keyof typeof FEATURE_UNITS => featureId in FEATURE_UNITS
+
+const unitFor = (featureId: string): Unit => (hasOwnUnit(featureId) ? FEATURE_UNITS[featureId] : "gb")
 
 /**
  * Capitalized, localized labels for the metered rows, keyed by Autumn featureId
@@ -76,6 +83,7 @@ const dataFeatureLabels = (): Record<string, string> => ({
 	metrics: m.pricing_metrics(),
 	browser_sessions: m.nav_browser_sessions(),
 	product_events: m.pricing_product_events(),
+	ai_credits: m.pricing_ai_usage(),
 })
 
 /**
@@ -194,6 +202,14 @@ export async function getOffer(): Promise<Offer> {
 				unlimited: true,
 				rateUnits: 1,
 			},
+			{
+				featureId: "ai_credits",
+				label: labels.ai_credits!,
+				unit: "usd",
+				included: 10,
+				rate: 1,
+				rateUnits: 1,
+			},
 		],
 		ctaLabel: m.pricing_start_trial({ duration: "14" }),
 	}
@@ -221,4 +237,16 @@ export const rateLabel = (n: number) => `$${n < 0.01 ? n.toFixed(3) : n.toFixed(
 export const rateBlock = (a: Allotment) => a.rateUnits.toLocaleString("en-US")
 
 export const volume = (a: Allotment, n: number) =>
-	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : n.toLocaleString("en-US")
+	a.unlimited
+		? m.pricing_unlimited()
+		: a.unit === "gb"
+			? `${n} GB`
+			: a.unit === "usd"
+				? money(n)
+				: n.toLocaleString("en-US")
+
+/**
+ * AI usage has no flat rate: a credit is a dollar of model spend, priced per
+ * model from its token rates, so the row states how it bills instead of "$1 / $1".
+ */
+export const isUsageCredit = (a: Allotment) => a.unit === "usd"
