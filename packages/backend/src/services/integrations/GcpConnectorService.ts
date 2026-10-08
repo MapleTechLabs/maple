@@ -8,7 +8,9 @@ import {
 } from "@maple/db"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
+	GCP_RESOURCES_LIMIT,
 	GcpMetricsUnavailableError,
+	type GcpResource,
 	GcpScopeAlreadyConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
@@ -60,6 +62,22 @@ export type CreateGcpConnectorInput = Pick<
 
 type GcpCapabilityError = GcpMetricsUnavailableError | IntegrationsValidationError
 
+export interface GcpResourceFilter {
+	readonly assetType?: string | undefined
+	readonly projectId?: string | undefined
+}
+
+export interface GcpResourceInventory {
+	/** The first `GCP_RESOURCES_LIMIT` resources matching the filter, by asset type and name. */
+	readonly resources: ReadonlyArray<GcpResource>
+	/** How many resources match the filter. */
+	readonly total: number
+	/** The whole inventory by asset type. */
+	readonly types: ReadonlyArray<{ readonly assetType: string; readonly count: number }>
+	/** Every project with a resource. */
+	readonly projects: ReadonlyArray<string>
+}
+
 export interface GcpConnectorServiceApi {
 	readonly status: (orgId: OrgId) => Effect.Effect<
 		{
@@ -94,6 +112,11 @@ export interface GcpConnectorServiceApi {
 		{ readonly setupScript: string; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
+	/** What the latest inventory syncs of the org's connectors found. */
+	readonly resources: (
+		orgId: OrgId,
+		filter: GcpResourceFilter,
+	) => Effect.Effect<GcpResourceInventory, IntegrationsPersistenceError>
 	/** Deleting the row is the disconnect: the ingest gateway stops accepting the connector's pushes. */
 	readonly delete: (
 		orgId: OrgId,
@@ -215,6 +238,74 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				return {
 					metricsAvailable: mapleServiceAccountEmail !== undefined,
 					connectors: rows.map((row) => toConnector(row, counts.get(row.id))),
+				}
+			})
+
+			const resources = Effect.fn("GcpConnectorService.resources")(function* (
+				orgId: OrgId,
+				filter: GcpResourceFilter,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				// Reached through the org's connectors, which is what the primary key covers.
+				// Overlapping scopes list a resource once per connector: it counts and shows once.
+				const ofOrg = eq(gcpConnectors.orgId, orgId)
+				const counts = yield* dbExecute((db) =>
+					db
+						.select({
+							assetType: gcpResources.assetType,
+							projectId: gcpResources.projectId,
+							count: sql<number>`count(distinct ${gcpResources.name})::int`,
+						})
+						.from(gcpResources)
+						.innerJoin(gcpConnectors, eq(gcpResources.connectorId, gcpConnectors.id))
+						.where(ofOrg)
+						.groupBy(gcpResources.assetType, gcpResources.projectId),
+				)
+				const rows = yield* dbExecute((db) =>
+					db
+						.selectDistinctOn([gcpResources.assetType, gcpResources.name], {
+							name: gcpResources.name,
+							assetType: gcpResources.assetType,
+							projectId: gcpResources.projectId,
+							location: gcpResources.location,
+							displayName: gcpResources.displayName,
+							state: gcpResources.state,
+							labels: gcpResources.labels,
+						})
+						.from(gcpResources)
+						.innerJoin(gcpConnectors, eq(gcpResources.connectorId, gcpConnectors.id))
+						.where(
+							and(
+								ofOrg,
+								filter.assetType === undefined
+									? undefined
+									: eq(gcpResources.assetType, filter.assetType),
+								filter.projectId === undefined
+									? undefined
+									: eq(gcpResources.projectId, filter.projectId),
+							),
+						)
+						.orderBy(asc(gcpResources.assetType), asc(gcpResources.name))
+						.limit(GCP_RESOURCES_LIMIT),
+				)
+				const byType = new Map<string, number>()
+				let total = 0
+				for (const { assetType, projectId, count } of counts) {
+					byType.set(assetType, (byType.get(assetType) ?? 0) + count)
+					if (
+						(filter.assetType === undefined || filter.assetType === assetType) &&
+						(filter.projectId === undefined || filter.projectId === projectId)
+					) {
+						total += count
+					}
+				}
+				return {
+					resources: rows,
+					total,
+					types: [...byType]
+						.map(([assetType, count]) => ({ assetType, count }))
+						.sort((a, b) => a.assetType.localeCompare(b.assetType)),
+					projects: [...new Set(counts.map((row) => row.projectId))].sort(),
 				}
 			})
 
@@ -371,6 +462,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 
 			return {
 				status,
+				resources,
 				create,
 				update,
 				scripts,

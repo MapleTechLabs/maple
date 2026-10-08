@@ -10,6 +10,7 @@ import {
 	CloudflareUsageResponse,
 	CurrentTenant,
 	ExternalUserId,
+	GcpResourcesResponse,
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
@@ -58,6 +59,7 @@ import {
 	topTrafficQuery,
 	type TopTrafficGroupDefinition,
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
@@ -122,6 +124,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
+		const gcp = yield* GcpConnectorService
 		const database = yield* Database
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -502,6 +505,12 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
 						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+					}),
+				)
+				.handle("gcpResources", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return new GcpResourcesResponse(yield* gcp.resources(tenant.orgId, query))
 					}),
 				)
 				.handle("githubStatus", () =>

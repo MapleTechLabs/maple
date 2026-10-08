@@ -26,21 +26,11 @@ type MetricsAccessor =
 	| ColumnAccessor<typeof MetricsSum.columns>
 	| ColumnAccessor<typeof MetricsGauge.columns>
 
-export interface GcpInfraMetricsOutput {
-	/** The workload's identity values, in the order of the service's `identity`. */
-	readonly keys: ReadonlyArray<string>
-	readonly metric: string
-	/** The metric's label value or quantile; empty when it has neither. */
-	readonly label: string
-	/** Sum of the points in the window. */
-	readonly total: number
-	/** Number of points in the window. */
-	readonly samples: number
-}
-
 /**
- * Every curated metric of one service: one row per workload, metric and label value. A counter
- * reads as `total`, a gauge or percentile as the mean `total / samples`.
+ * Every curated metric of one service: one row per workload (`keys`, the values of the service's
+ * `identity`), metric and `label` (the metric's label value or quantile, empty without one).
+ * `total` sums the window's points and `samples` counts them: a counter reads as `total`, a
+ * gauge or percentile as the mean `total / samples`.
  */
 export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 	const metrics = gcpInfraMetrics(service)
@@ -90,10 +80,6 @@ export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 		.orderBy(["keys", "asc"], ["metric", "asc"], ["label", "asc"])
 		.limit(GCP_INFRA_ROW_LIMIT)
 		.format("JSON")
-}
-
-export interface GcpInfraPresenceOutput {
-	readonly metric: string
 }
 
 /** Which of the page's metrics reported in the window, from the hourly `metric_catalog` rollup. */
