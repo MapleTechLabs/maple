@@ -447,7 +447,7 @@ describe("v2 dashboard shares", () => {
 	 */
 	const resolve = (harness: Harness, token: string) =>
 		harness.runtime.runPromise(
-			SharedDashboardService.resolveByToken(token).pipe(
+			SharedDashboardService.use((shares) => shares.resolveByToken(token)).pipe(
 				Effect.map((resolved) => encodeDashboardPublicId(resolved.share.dashboardId)),
 				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
 					Effect.succeed("__not_found__"),
@@ -458,7 +458,7 @@ describe("v2 dashboard shares", () => {
 	/** The mode a token actually grants, or `"__not_found__"`. */
 	const resolveMode = (harness: Harness, token: string) =>
 		harness.runtime.runPromise(
-			SharedDashboardService.resolveByToken(token).pipe(
+			SharedDashboardService.use((shares) => shares.resolveByToken(token)).pipe(
 				Effect.map((resolved) => resolved.share.mode),
 				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
 					Effect.succeed("__not_found__"),

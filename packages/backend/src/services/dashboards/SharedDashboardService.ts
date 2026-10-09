@@ -652,21 +652,4 @@ export class SharedDashboardService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly get = (orgId: OrgId, scope: ShareScope) =>
-		this.use((service) => service.get(orgId, scope))
-
-	static readonly listForDashboard = (orgId: OrgId, dashboardId: DashboardId) =>
-		this.use((service) => service.listForDashboard(orgId, dashboardId))
-
-	static readonly upsert = (orgId: OrgId, userId: UserId, scope: ShareScope, mode: DashboardShareMode) =>
-		this.use((service) => service.upsert(orgId, userId, scope, mode))
-
-	static readonly rotate = (orgId: OrgId, userId: UserId, scope: ShareScope) =>
-		this.use((service) => service.rotate(orgId, userId, scope))
-
-	static readonly revoke = (orgId: OrgId, userId: UserId, scope: ShareScope) =>
-		this.use((service) => service.revoke(orgId, userId, scope))
-
-	static readonly resolveByToken = (token: string) => this.use((service) => service.resolveByToken(token))
 }

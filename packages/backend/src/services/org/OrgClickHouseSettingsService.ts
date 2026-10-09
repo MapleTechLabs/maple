@@ -1818,29 +1818,4 @@ export class OrgClickHouseSettingsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
-
-	static readonly get = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.get(orgId, roles))
-
-	static readonly upsert = (
-		orgId: OrgId,
-		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
-		payload: OrgClickHouseSettingsUpsertRequest,
-	) => this.use((service) => service.upsert(orgId, userId, roles, payload))
-
-	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.delete(orgId, roles))
-
-	static readonly resolveRuntimeConfig = (orgId: OrgId) =>
-		this.use((service) => service.resolveRuntimeConfig(orgId))
-
-	static readonly invalidateRuntimeConfig = (orgId: OrgId) =>
-		this.use((service) => service.invalidateRuntimeConfig(orgId))
-
-	static readonly isWarehouseWriteReady = (orgId: OrgId) =>
-		this.use((service) => service.isWarehouseWriteReady(orgId))
-
-	static readonly collectorConfig = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.collectorConfig(orgId, roles))
 }

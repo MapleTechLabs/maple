@@ -844,41 +844,4 @@ export class DashboardPersistenceService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly list = (orgId: OrgId) => this.use((service) => service.list(orgId))
-
-	static readonly get = (orgId: OrgId, dashboardId: DashboardId) =>
-		this.use((service) => service.get(orgId, dashboardId))
-
-	static readonly create = (orgId: OrgId, userId: UserId, dashboard: PortableDashboardDocument) =>
-		this.use((service) => service.create(orgId, userId, dashboard))
-
-	static readonly upsert = (orgId: OrgId, userId: UserId, dashboard: DashboardDocument) =>
-		this.use((service) => service.upsert(orgId, userId, dashboard))
-
-	static readonly mutate = <E>(
-		orgId: OrgId,
-		userId: UserId,
-		dashboardId: DashboardId,
-		transform: (dashboard: DashboardDocument) => Effect.Effect<DashboardDocument, E>,
-	) => this.use((service) => service.mutate(orgId, userId, dashboardId, transform))
-
-	static readonly delete = (orgId: OrgId, dashboardId: DashboardId) =>
-		this.use((service) => service.delete(orgId, dashboardId))
-
-	static readonly listVersions = (
-		orgId: OrgId,
-		dashboardId: DashboardId,
-		options?: { readonly limit?: number; readonly before?: number },
-	) => this.use((service) => service.listVersions(orgId, dashboardId, options))
-
-	static readonly getVersion = (orgId: OrgId, dashboardId: DashboardId, versionId: DashboardVersionId) =>
-		this.use((service) => service.getVersion(orgId, dashboardId, versionId))
-
-	static readonly restoreVersion = (
-		orgId: OrgId,
-		userId: UserId,
-		dashboardId: DashboardId,
-		versionId: DashboardVersionId,
-	) => this.use((service) => service.restoreVersion(orgId, userId, dashboardId, versionId))
 }
