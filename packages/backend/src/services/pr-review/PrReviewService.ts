@@ -21,6 +21,9 @@ import {
 	type OrgId,
 	PrReview,
 	PrReviewFinding,
+	mergeStepKey,
+	mergeStepTag,
+	PR_REVIEW_COMMENT_MARKER_PREFIX,
 	type PrReviewMergeStep,
 	PrReviewId,
 	PrReviewNotFoundError,
@@ -44,6 +47,7 @@ import {
 	prReviewConfidenceTone,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
+	type PullRequestChecklistJob,
 	type PullRequestEventJob,
 	type PullRequestReviewComment,
 	type PullRequestReviewPublication,
@@ -58,6 +62,7 @@ import { UserId } from "@maple/domain/primitives"
 import {
 	prReviewFindingEmbeddings,
 	prReviewFindings,
+	prReviewMergeSteps,
 	prReviews,
 	type PrReviewFindingRow,
 	type PrReviewRow,
@@ -90,6 +95,7 @@ import {
 	detectMergeSteps,
 	NO_DETECTED_STEPS,
 	type NameVerdict,
+	reconcileMergeSteps,
 	searchVerdict,
 } from "./merge-checklist"
 import {
@@ -208,6 +214,11 @@ export interface PrReviewServiceApi {
 	 * head that was already reviewed is reviewed again. Never fails, like the webhook entry.
 	 */
 	readonly reviewNow: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
+	/**
+	 * Someone ticked or unticked "Before merge" steps on a review comment. Never fails, like the
+	 * webhook entry: a lost tick shows unticked on the next comment, and can be ticked again.
+	 */
+	readonly onMergeStepsTicked: (orgId: OrgId, job: PullRequestChecklistJob) => Effect.Effect<void>
 	/** The turn ended without a report. */
 	readonly failReview: (
 		orgId: OrgId,
@@ -430,7 +441,7 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
  * `attempt` counts repeats of a finished review of the same head, which reuse its row.
  */
 export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string =>
-	`<!-- maple-pr-review ${reviewId} ${attempt} -->`
+	`${PR_REVIEW_COMMENT_MARKER_PREFIX}${reviewId} ${attempt} -->`
 
 const STATUS_OPEN = "<!-- maple-pr-review:status "
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
@@ -659,10 +670,27 @@ export const renderBeforeMerge = (
 						step.path === undefined
 							? ""
 							: ` · [\`${step.line === undefined ? step.path : `${step.path}:${step.line}`}\`](${fileUrl(step.path, step.line)})`
-					return `- [ ] **${MERGE_STEP_LABEL[step.kind]}** · ${step.title}${where}`
+					const by =
+						step.done === true && step.doneBy !== undefined ? ` · ticked by @${step.doneBy}` : ""
+					// The tag ties a tick to the step, whichever review's comment it is ticked on.
+					return `- [${step.done === true ? "x" : " "}] **${MERGE_STEP_LABEL[step.kind]}** · ${step.title}${where}${by} ${mergeStepTag(step.key ?? mergeStepKey(step))}`
 				}),
 				"",
 			]
+
+/** Hidden first line of the merge reminder. */
+export const MERGE_REMINDER_MARKER = "<!-- maple-pr-merge-steps -->"
+
+/** What a pull request merged without: the steps nobody ticked, as a plain list. */
+export const renderMergeReminder = (
+	steps: ReadonlyArray<Pick<PrReviewMergeStep, "kind" | "title">>,
+): string =>
+	[
+		MERGE_REMINDER_MARKER,
+		`**Merged with ${steps.length === 1 ? "1 step" : `${steps.length} steps`} from "Before merge" still open.** If ${steps.length === 1 ? "it is" : "they are"} done, tick ${steps.length === 1 ? "it" : "them"} on the review comment; if not, now is the time.`,
+		"",
+		...steps.map((step) => `- **${MERGE_STEP_LABEL[step.kind]}** · ${step.title}`),
+	].join("\n")
 
 /**
  * The review as markdown, most important first: the confidence and what decides it, a short summary
@@ -1932,6 +1960,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								},
 								nowMs,
 							)
+							yield* remindOpenMergeSteps(orgId, closedRepo.value, job.number, nowMs)
 						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
@@ -2275,6 +2304,105 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return withDismissals(telemetry.value, verified.flat())
 			})
 
+			/** The pull request's tracked "Before merge" steps, every status. */
+			const loadMergeSteps = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
+				database
+					.execute((db) =>
+						db
+							.select({
+								key: prReviewMergeSteps.key,
+								kind: prReviewMergeSteps.kind,
+								title: prReviewMergeSteps.title,
+								status: prReviewMergeSteps.status,
+								doneBy: prReviewMergeSteps.doneBy,
+							})
+							.from(prReviewMergeSteps)
+							.where(
+								and(
+									eq(prReviewMergeSteps.orgId, orgId),
+									eq(prReviewMergeSteps.repositoryId, repositoryId),
+									eq(prReviewMergeSteps.number, number),
+								),
+							),
+					)
+					.pipe(Effect.mapError(toPersistence))
+
+			/**
+			 * This review's steps, upserted by key: the wording follows the latest review, a step that
+			 * is back after going obsolete opens again, and a done step stays done. Open steps this
+			 * head no longer produces become obsolete.
+			 */
+			const storeMergeSteps = (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				number: number,
+				reviewId: PrReviewId,
+				reconciled: ReturnType<typeof reconcileMergeSteps>,
+				nowMs: number,
+			) =>
+				Effect.gen(function* () {
+					if (reconciled.upserts.length > 0) {
+						yield* database.execute((db) =>
+							db
+								.insert(prReviewMergeSteps)
+								.values(
+									reconciled.upserts.map(({ key, step }) => ({
+										id: randomUUID(),
+										orgId,
+										repositoryId,
+										number,
+										key,
+										kind: step.kind,
+										title: step.title,
+										source: step.source,
+										path: step.path ?? null,
+										status: "open" as const,
+										firstReviewId: reviewId,
+										lastReviewId: reviewId,
+										createdAt: msToDate(nowMs),
+										updatedAt: msToDate(nowMs),
+									})),
+								)
+								.onConflictDoUpdate({
+									target: [
+										prReviewMergeSteps.repositoryId,
+										prReviewMergeSteps.number,
+										prReviewMergeSteps.key,
+									],
+									set: {
+										kind: sql`excluded.kind`,
+										title: sql`excluded.title`,
+										source: sql`excluded.source`,
+										path: sql`excluded.path`,
+										status: sql`case when ${prReviewMergeSteps.status} = 'obsolete' then 'open' else ${prReviewMergeSteps.status} end`,
+										lastReviewId: sql`excluded.last_review_id`,
+										updatedAt: sql`excluded.updated_at`,
+									},
+								}),
+						)
+					}
+					if (reconciled.obsolete.length > 0) {
+						yield* database.execute((db) =>
+							db
+								.update(prReviewMergeSteps)
+								.set({
+									status: "obsolete",
+									lastReviewId: reviewId,
+									updatedAt: msToDate(nowMs),
+								})
+								.where(
+									and(
+										eq(prReviewMergeSteps.orgId, orgId),
+										eq(prReviewMergeSteps.repositoryId, repositoryId),
+										eq(prReviewMergeSteps.number, number),
+										eq(prReviewMergeSteps.status, "open"),
+										inArray(prReviewMergeSteps.key, [...reconciled.obsolete]),
+									),
+								),
+						)
+					}
+				}).pipe(Effect.mapError(toPersistence))
+
 			const submitReview: PrReviewServiceApi["submitReview"] = Effect.fn(
 				"PrReviewService.submitReview",
 			)(function* (orgId, reviewId, request) {
@@ -2322,8 +2450,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					reviewer: request.report.beforeMerge ?? [],
 					isIgnored: (path) => pathIgnored(path, config.ignorePaths),
 				})
-				const beforeMerge = checklist.steps
-				const checklistTrace = checklistAttributes(read === undefined ? "unread" : "read", checklist)
+				// Ticks from earlier comments on this pull request carry onto this review's steps.
+				const trackedSteps = yield* loadMergeSteps(orgId, review.repositoryId, review.number)
+				const reconciled = reconcileMergeSteps(checklist.steps, trackedSteps)
+				const beforeMerge = reconciled.steps
+				const checklistTrace = {
+					...checklistAttributes(read === undefined ? "unread" : "read", checklist),
+					"maple.pr_review.checklist.done": beforeMerge.filter((step) => step.done === true).length,
+					"maple.pr_review.checklist.obsolete": reconciled.obsolete.length,
+				}
 				yield* Effect.annotateCurrentSpan(checklistTrace)
 				// One line per review that found anything, so a missed or spurious step can be traced.
 				if (checklist.trace.names.length > 0 || beforeMerge.length > 0) {
@@ -2542,6 +2677,17 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					resolved.map((finding) => finding.id),
 					{ status: "resolved", resolvedSha: review.headSha, updatedAt: msToDate(nowMs) },
 				)
+				// Like findings, a partial's steps were never posted, so they are not tracked.
+				if (request.partial !== true) {
+					yield* storeMergeSteps(
+						orgId,
+						review.repositoryId,
+						review.number,
+						reviewId,
+						reconciled,
+						nowMs,
+					)
+				}
 
 				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
@@ -2719,11 +2865,124 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Effect.withSpan("PrReviewService.reviewModel"),
 				)
 
+			const onMergeStepsTicked: PrReviewServiceApi["onMergeStepsTicked"] = (orgId, job) =>
+				Effect.gen(function* () {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.pull_request.number": job.number,
+						"maple.pr_review.checklist.ticked": job.ticks.filter((tick) => tick.done).length,
+						"maple.pr_review.checklist.unticked": job.ticks.filter((tick) => !tick.done).length,
+					})
+					const repository = yield* repositories
+						.resolveRepository(orgId, job.provider, job.externalRepoId)
+						.pipe(Effect.mapError(toPersistence))
+					if (Option.isNone(repository)) return
+					const nowMs = yield* Clock.currentTimeMillis
+					const where = (keys: ReadonlyArray<string>) =>
+						and(
+							eq(prReviewMergeSteps.orgId, orgId),
+							eq(prReviewMergeSteps.repositoryId, repository.value.id),
+							eq(prReviewMergeSteps.number, job.number),
+							ne(prReviewMergeSteps.status, "obsolete"),
+							inArray(prReviewMergeSteps.key, [...keys]),
+						)
+					const done = job.ticks.filter((tick) => tick.done).map((tick) => tick.key)
+					const undone = job.ticks.filter((tick) => !tick.done).map((tick) => tick.key)
+					const updated = yield* Effect.forEach(
+						[
+							{
+								keys: done,
+								set: {
+									status: "done" as const,
+									doneBy: job.editorLogin,
+									doneAt: msToDate(nowMs),
+									updatedAt: msToDate(nowMs),
+								},
+							},
+							{
+								keys: undone,
+								set: {
+									status: "open" as const,
+									doneBy: null,
+									doneAt: null,
+									updatedAt: msToDate(nowMs),
+								},
+							},
+						].filter(({ keys }) => keys.length > 0),
+						({ keys, set }) =>
+							database
+								.execute((db) =>
+									db
+										.update(prReviewMergeSteps)
+										.set(set)
+										.where(where(keys))
+										.returning({ key: prReviewMergeSteps.key }),
+								)
+								.pipe(Effect.mapError(toPersistence)),
+					)
+					yield* Effect.annotateCurrentSpan({
+						"maple.pr_review.checklist.updated": updated.flat().length,
+					})
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not record ticked before-merge steps").pipe(
+							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
+						),
+					),
+					Effect.withSpan("PrReviewService.onMergeStepsTicked"),
+				)
+
+			/**
+			 * The pull request merged with steps still open: say so once, on the pull request, while
+			 * someone can still act. Claimed before the post, so a redelivered `closed` posts nothing.
+			 */
+			const remindOpenMergeSteps = (orgId: OrgId, repo: VcsRepo, number: number, nowMs: number) =>
+				Effect.gen(function* () {
+					const open = yield* database
+						.execute((db) =>
+							db
+								.update(prReviewMergeSteps)
+								.set({ remindedAt: msToDate(nowMs) })
+								.where(
+									and(
+										eq(prReviewMergeSteps.orgId, orgId),
+										eq(prReviewMergeSteps.repositoryId, repo.id),
+										eq(prReviewMergeSteps.number, number),
+										eq(prReviewMergeSteps.status, "open"),
+										isNull(prReviewMergeSteps.remindedAt),
+									),
+								)
+								.returning({
+									kind: prReviewMergeSteps.kind,
+									title: prReviewMergeSteps.title,
+								}),
+						)
+						.pipe(Effect.mapError(toPersistence))
+					yield* Effect.annotateCurrentSpan({
+						"maple.pr_review.checklist.open_at_merge": open.length,
+					})
+					if (open.length === 0) return
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return
+					const { provider, installation, ref } = target.value
+					yield* provider.postPullRequestReply(installation, ref, {
+						number,
+						body: renderMergeReminder(open),
+					})
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not post the open before-merge steps").pipe(
+							Effect.annotateLogs({ orgId, number, cause: summarizeCause(cause) }),
+						),
+					),
+				)
+
 			return {
 				reviewTarget,
 				reviewModel,
 				onPullRequestEvent,
 				reviewNow,
+				onMergeStepsTicked,
 				getReview,
 				submitReview,
 				failReview,

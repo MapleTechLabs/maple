@@ -9,7 +9,12 @@
  * 3. `buildChecklist` lists new and unverified names, file steps and the reviewer's steps, and
  *    traces what it dropped and why. The service only does the reads between them.
  */
-import { PrReviewMergeStep, type PullRequestFile } from "@maple/domain/http"
+import {
+	mergeStepKey,
+	PrReviewMergeStep,
+	type PrReviewMergeStepStatus,
+	type PullRequestFile,
+} from "@maple/domain/http"
 
 /** A name the diff starts reading, before the service checks the base does not already. */
 export interface MergeStepName {
@@ -46,6 +51,16 @@ const ENV_READS = [
 const CONFIG_CALL = new RegExp(`([A-Za-z_$][\\w$.]*)\\s*\\(\\s*["'\`]${NAME}["'\`]`, "g")
 const CONFIG_CALLEE = /config|env|secret|redacted|plain|setting/i
 const SECRET_CALLEE = /secret|redacted/i
+
+/**
+ * A name held in a constant named for what it is, then read through the constant:
+ * `CLIENT_SECRET_CONFIG = "MAPLE_SLACK_CLIENT_SECRET"`. The constant's name says it is config; a
+ * bare `const LABEL = "SOME_TEXT"` is not.
+ */
+const NAMED_CONSTANT = new RegExp(
+	`\\b([A-Z][A-Z0-9_]*_(?:CONFIG|ENV|ENV_VAR|VAR|SECRET|TOKEN|KEY)(?:_NAME)?)\\s*(?::\\s*[\\w<>]+\\s*)?=\\s*["'\`]${NAME}["'\`]`,
+	"g",
+)
 
 const CI_READ = new RegExp(`\\$\\{\\{[^}]*\\b(secrets|vars)\\.${NAME}`, "g")
 const DOTENV_LINE = new RegExp(`^\\s*(?:export\\s+)?${NAME}\\s*=`)
@@ -94,6 +109,10 @@ const WAREHOUSE = /\.(datasource|pipe)$|(^|\/)datasources\.ts$|(^|\/)clickhouse\
 const INFRA =
 	/(^|\/)(wrangler\.(toml|jsonc?)|alchemy\.run\.ts|fly\.toml|vercel\.json|render\.ya?ml|serverless\.ya?ml|docker-compose[\w.-]*\.ya?ml|Dockerfile[\w.-]*)$|\.(tf|tfvars)$/
 
+/** Whether detection reads names off a file's added lines: not tests, docs or hand-run scripts. */
+export const readsNamesIn = (path: string): boolean =>
+	!TEST_PATH.test(path) && !DOC_PATH.test(path) && !LOCAL_PATH.test(path)
+
 interface PatchLine {
 	readonly text: string
 	/** The line in the new file; the line it sat before for a removed one. */
@@ -131,6 +150,10 @@ const namesRead = (text: string): Array<{ name: string; secret: boolean }> => {
 			const name = match.slice(1).find((group) => group !== undefined)
 			if (name !== undefined) found.push({ name, secret: false })
 		}
+	}
+	for (const [, constant = "", name] of text.matchAll(NAMED_CONSTANT)) {
+		if (name !== undefined && name.includes("_"))
+			found.push({ name, secret: /SECRET|TOKEN/.test(constant) })
 	}
 	for (const match of text.matchAll(CONFIG_CALL)) {
 		const [, callee = "", name] = match
@@ -189,7 +212,7 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 			)
 		}
 
-		if (TEST_PATH.test(path) || DOC_PATH.test(path) || LOCAL_PATH.test(path)) continue
+		if (!readsNamesIn(path)) continue
 		const remember = (candidate: MergeStepName) => {
 			if (PROVIDED.has(candidate.name) || names.has(candidate.name)) return
 			names.set(candidate.name, candidate)
@@ -317,7 +340,17 @@ export const buildChecklist = (input: {
 			input.reviewer.some((other) => step.subject !== undefined && other.title.includes(step.subject)),
 	)
 	const kept = fromDiff.filter((step) => !ignored.includes(step) && !replaced.includes(step))
-	const all = [...kept, ...input.reviewer].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind])
+	// A reviewer step that replaces a diff step takes over its identity, so a tick on either
+	// wording carries across pushes and the comment still labels it a secret, not a manual step.
+	const reviewer = input.reviewer.map((step) => {
+		const named = replaced.find(
+			(other) => other.subject !== undefined && step.title.includes(other.subject),
+		)
+		return named === undefined
+			? step
+			: new PrReviewMergeStep({ ...named, title: step.title, source: "reviewer" })
+	})
+	const all = [...kept, ...reviewer].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind])
 	const subjects = (steps: ReadonlyArray<PrReviewMergeStep>) =>
 		steps.map((step) => step.subject ?? step.title)
 	return {
@@ -358,5 +391,107 @@ export const checklistAttributes = (
 		"maple.pr_review.checklist.replaced": trace.replaced.join(","),
 		"maple.pr_review.checklist.ignored": trace.ignored.join(","),
 		"maple.pr_review.checklist.cut": trace.cut,
+	}
+}
+
+/** A step as stored for the pull request, from earlier reviews. */
+export interface StoredMergeStep {
+	readonly key: string
+	readonly kind: PrReviewMergeStep["kind"]
+	readonly title: string
+	readonly status: PrReviewMergeStepStatus
+	readonly doneBy: string | null
+}
+
+export interface ReconciledMergeSteps {
+	/** This review's steps, keyed, with the ticks earlier comments carried. */
+	readonly steps: ReadonlyArray<PrReviewMergeStep>
+	/** Each step to write, by key; an obsolete step that is back opens again. */
+	readonly upserts: ReadonlyArray<{ readonly key: string; readonly step: PrReviewMergeStep }>
+	/** Open steps this head no longer produces. */
+	readonly obsolete: ReadonlyArray<string>
+}
+
+/** Words that say nothing about which step it is. */
+const FILLER = new Set(
+	"the and for add run set with from into this that every all environment environments before after merge make sure check".split(
+		" ",
+	),
+)
+
+/** A title's telling words, plural folded: `stores` and `store` are one word. */
+const words = (text: string) =>
+	new Set(
+		(text.toLowerCase().match(/[a-z0-9_]{2,}/g) ?? [])
+			.map((word) => word.replace(/(?<=[a-z]{3})s$/, ""))
+			.filter((word) => !FILLER.has(word)),
+	)
+
+/**
+ * How much of the shorter title the longer one repeats. A reviewer rewording a manual step between
+ * pushes keeps its nouns; two different steps on the same thing share only that thing.
+ */
+const similarity = (a: string, b: string): number => {
+	const left = words(a)
+	const right = words(b)
+	const shared = [...left].filter((word) => right.has(word)).length
+	const smaller = Math.min(left.size, right.size)
+	return smaller === 0 ? 0 : shared / smaller
+}
+
+/**
+ * This review's steps against the pull request's stored ones. A step keeps its stored key, and
+ * shows done when it was ticked. A manual step without a subject is matched to a stored manual
+ * step by wording when its key is new, so a reworded step keeps its tick. A stored step this head
+ * no longer produces becomes obsolete, unless it was done: a tick is never taken back.
+ */
+export const reconcileMergeSteps = (
+	steps: ReadonlyArray<PrReviewMergeStep>,
+	stored: ReadonlyArray<StoredMergeStep>,
+): ReconciledMergeSteps => {
+	const byKey = new Map(stored.map((row) => [row.key, row] as const))
+	const claimed = new Set<string>()
+	const keyed = steps.map((step) => {
+		const own = mergeStepKey(step)
+		if (byKey.has(own) || step.subject !== undefined || step.kind !== "manual") return { key: own, step }
+		const reworded = stored
+			.filter(
+				(row) =>
+					row.kind === "manual" &&
+					row.status !== "obsolete" &&
+					!steps.some((other) => mergeStepKey(other) === row.key),
+			)
+			.map((row) => ({ row, score: similarity(row.title, step.title) }))
+			.filter(({ row, score }) => score >= 0.6 && !claimed.has(row.key))
+			.sort((a, b) => b.score - a.score)[0]
+		const key = reworded?.row.key ?? own
+		claimed.add(key)
+		return { key, step }
+	})
+	for (const { key } of keyed) claimed.add(key)
+	// Two steps can land on one key (a reviewer step repeating a diff step's subject); keep the first.
+	const unique = keyed.filter(({ key }, i) => keyed.findIndex((other) => other.key === key) === i)
+	const withTicks = unique.map(({ key, step }) => {
+		const row = byKey.get(key)
+		const { done: _done, doneBy: _doneBy, key: _key, ...base } = step
+		const rest = { ...base, key }
+		return {
+			key,
+			step:
+				row?.status === "done"
+					? new PrReviewMergeStep({
+							...rest,
+							done: true,
+							...(row.doneBy === null ? undefined : { doneBy: row.doneBy }),
+						})
+					: new PrReviewMergeStep(rest),
+		}
+	})
+	return {
+		steps: withTicks.map(({ step }) => step),
+		upserts: withTicks,
+		obsolete: stored
+			.filter((row) => row.status === "open" && !claimed.has(row.key))
+			.map((row) => row.key),
 	}
 }

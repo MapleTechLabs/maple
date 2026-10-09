@@ -315,7 +315,65 @@ export class PrReviewMergeStep extends Schema.Class<PrReviewMergeStep>("PrReview
 	path: Schema.optionalKey(Schema.String),
 	line: Schema.optionalKey(Schema.Number),
 	source: Schema.Literals(["diff", "reviewer"]),
+	/** Its identity across pushes ({@link mergeStepKey}), set once the step is tracked. */
+	key: Schema.optionalKey(Schema.String),
+	/** Ticked on the pull request, on this review's comment or an earlier one. */
+	done: Schema.optionalKey(Schema.Boolean),
+	/** Who ticked it. */
+	doneBy: Schema.optionalKey(Schema.String),
 }) {}
+
+export const PrReviewMergeStepStatus = Schema.Literals(["open", "done", "obsolete"]).annotate({
+	identifier: "PrReviewMergeStepStatus",
+})
+export type PrReviewMergeStepStatus = Schema.Schema.Type<typeof PrReviewMergeStepStatus>
+
+/**
+ * A step's identity across pushes: the kind and what it is about, or its wording for a reviewer
+ * step without a subject. A tick is stored against this key, so it survives a new review comment.
+ */
+export const mergeStepKey = (step: Pick<PrReviewMergeStep, "kind" | "subject" | "title">): string => {
+	const about =
+		step.subject ??
+		step.title
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.slice(0, 80)
+	// It is written into an HTML comment: no whitespace, no `--`, no `>`.
+	return `${step.kind}:${about.replace(/\s+/g, "_").replace(/-{2,}/g, "-").replace(/>/g, "")}`
+}
+
+/** How every review comment starts: `<!-- maple-pr-review <reviewId> <attempt> -->`. */
+export const PR_REVIEW_COMMENT_MARKER_PREFIX = "<!-- maple-pr-review "
+
+/** The hidden tag after a rendered step, so a tick is read by key rather than by wording. */
+export const mergeStepTag = (key: string): string => `<!-- ms:${key} -->`
+
+const TICK_LINE = /^\s*[-*] \[([ xX])\] .*<!-- ms:(\S+) -->\s*$/
+
+/** The task-list state of every tagged step in a comment body. */
+export const parseMergeStepTicks = (body: string): ReadonlyMap<string, boolean> =>
+	new Map(
+		body.split("\n").flatMap((line) => {
+			const match = TICK_LINE.exec(line)
+			return match === null || match[2] === undefined ? [] : [[match[2], match[1] !== " "] as const]
+		}),
+	)
+
+/**
+ * The steps an edit ticked or unticked: tagged in both bodies with a different state. A step only
+ * one body holds is not a tick, and neither is an edit that left every box alone.
+ */
+export const mergeStepTickChanges = (
+	before: string,
+	after: string,
+): ReadonlyArray<{ readonly key: string; readonly done: boolean }> => {
+	const was = parseMergeStepTicks(before)
+	return [...parseMergeStepTicks(after)].flatMap(([key, done]) =>
+		was.has(key) && was.get(key) !== done ? [{ key, done }] : [],
+	)
+}
 
 /** The stored review: the shape a reader can rely on. */
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({

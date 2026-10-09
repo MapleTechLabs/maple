@@ -18,7 +18,10 @@ import { fixVerificationPullRequestHandler } from "@maple/backend/services/error
 import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
-import { prReviewCommentSinkLive } from "@maple/backend/services/pr-review/pull-request-comment-handler"
+import {
+	prReviewChecklistSinkLive,
+	prReviewCommentSinkLive,
+} from "@maple/backend/services/pr-review/pull-request-comment-handler"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 
@@ -37,13 +40,16 @@ export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" }
 // One delivery, two readers: the issue link / verification window, and the
 // review trigger. Each is isolated in the fan-out so a defect in
 // one never costs the other the event.
+// The review trigger re-enqueues a push to debounce it, so it gets the queue here. One value, so
+// the event fan-out and the checklist sink share the instance.
+const PrReviewLive = PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer))
+
 const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerificationService | PrReviewService>([
 	{ name: "fix-verification", handler: fixVerificationPullRequestHandler },
 	{ name: "pr-review", handler: prReviewPullRequestHandler },
 ]).pipe(
 	Layer.provide(IssueFixVerificationService.layer),
-	// The review trigger re-enqueues a push to debounce it, so it gets the queue here.
-	Layer.provide(PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer))),
+	Layer.provide(PrReviewLive),
 	Layer.provide(PullRequestLookup.none),
 )
 
@@ -51,6 +57,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),
 	// `@maple` mentions on pull requests; the review debounce's queue is not needed to answer.
 	Layer.provide(prReviewCommentSinkLive),
+	// Ticked "Before merge" boxes on review comments.
+	Layer.provide(prReviewChecklistSinkLive.pipe(Layer.provide(PrReviewLive))),
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 

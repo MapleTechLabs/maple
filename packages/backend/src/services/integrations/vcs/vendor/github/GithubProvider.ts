@@ -7,6 +7,8 @@ import {
 	type PullRequestHead,
 	type PullRequestReviewThread,
 	mentionsReviewer,
+	mergeStepTickChanges,
+	PR_REVIEW_COMMENT_MARKER_PREFIX,
 	reviewerMention as reviewerMentionFor,
 	type PullRequestSummary,
 	type RepoUpsertInput,
@@ -160,6 +162,12 @@ const IssueCommentPayload = Schema.Struct({
 	}),
 	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
 	installation: Schema.Struct({ id: Schema.Number }),
+	/** On `edited`: the body before the edit, which is how a ticked box is told from a re-render. */
+	changes: Schema.optionalKey(
+		Schema.Struct({ body: Schema.optionalKey(Schema.Struct({ from: Schema.String })) }),
+	),
+	/** Who did it; on `edited`, the editor rather than the comment's author. */
+	sender: Schema.optionalKey(CommentUser),
 })
 
 // `pull_request_review_comment`: a comment on a line of the diff, possibly a reply in a thread.
@@ -345,6 +353,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const env = yield* Env
 			const client = yield* GithubAppClient
 			const reviewerMention = reviewerMentionFor(Option.getOrUndefined(env.GITHUB_APP_SLUG))
+			/** The login the App comments as; unknown without a slug, when any bot's comment is read. */
+			const appBotLogin = Option.match(env.GITHUB_APP_SLUG, {
+				onNone: () => undefined,
+				onSome: (slug) => `${slug}[bot]`,
+			})
 
 			// Stamp the (low-cardinality) signature *result* on the active span. NEVER
 			// records the signature value or the secret — only the outcome enum. The
@@ -685,10 +698,55 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					"vcs.webhook.skip_reason": reason,
 				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
 
+			/**
+			 * A person ticked a box on one of our review comments. Only the App's own comments count,
+			 * only a person's edit, and only an edit that changed a tagged "Before merge" box: GitHub
+			 * also sends `edited` for every re-render the App does itself.
+			 */
+			const mapChecklistEdit = (payload: typeof IssueCommentPayload.Type) =>
+				Effect.gen(function* () {
+					const author = payload.comment.user
+					const ours =
+						author !== null &&
+						author.type === "Bot" &&
+						(appBotLogin === undefined || author.login === appBotLogin) &&
+						(payload.comment.body ?? "").startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)
+					if (
+						!ours ||
+						payload.issue.pull_request === undefined ||
+						payload.issue.pull_request === null
+					)
+						return yield* commentSkip("edit_not_review_comment")
+					const editor = payload.sender
+					if (editor === undefined || editor.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					const before = payload.changes?.body?.from
+					const ticks =
+						before === undefined ? [] : mergeStepTickChanges(before, payload.comment.body ?? "")
+					if (ticks.length === 0) return yield* commentSkip("checklist_unchanged")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.issue.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-checklist",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.issue.number,
+						commentId: String(payload.comment.id),
+						editorLogin: editor.login,
+						ticks,
+					}
+					return [job]
+				})
+
 			const mapIssueComment = (raw: unknown) =>
 				Effect.gen(function* () {
 					const payload = yield* parsePayload("issue_comment", decodeIssueComment(raw))
 					const body = payload.comment.body ?? ""
+					if (payload.action === "edited") return yield* mapChecklistEdit(payload)
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.issue.pull_request === undefined || payload.issue.pull_request === null)
 						return yield* commentSkip("issue_comment_not_pull_request")

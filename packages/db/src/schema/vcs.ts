@@ -16,6 +16,8 @@ import type {
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
+	PrReviewMergeStepKind,
+	PrReviewMergeStepStatus,
 	PrReviewPostMerge,
 	PrReviewPostMergeStatus,
 	PrReviewReport,
@@ -348,6 +350,40 @@ export const prReviewReplies = pgTable(
 	(table) => [
 		uniqueIndex("pr_review_replies_repo_comment_idx").on(table.repositoryId, table.commentId),
 		index("pr_review_replies_org_created_idx").on(table.orgId, table.createdAt),
+	],
+)
+
+/**
+ * A "Before merge" step, tracked per pull request rather than per review: each review posts its
+ * own comment, so a box ticked on one push must carry to the next. `key` is the step's identity
+ * (`mergeStepKey`), the same one the comment tags each task with.
+ */
+export const prReviewMergeSteps = pgTable(
+	"pr_review_merge_steps",
+	{
+		id: text("id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		key: text("key").notNull(),
+		kind: text("kind").$type<PrReviewMergeStepKind>().notNull(),
+		/** The latest review's wording. */
+		title: text("title").notNull(),
+		source: text("source").$type<"diff" | "reviewer">().notNull(),
+		path: text("path"),
+		status: text("status").$type<PrReviewMergeStepStatus>().notNull().default("open"),
+		doneBy: text("done_by"),
+		doneAt: timestamp("done_at", { withTimezone: true, mode: "date" }),
+		/** When the pull request merged with this step open and the reminder claimed it; posts once. */
+		remindedAt: timestamp("reminded_at", { withTimezone: true, mode: "date" }),
+		firstReviewId: text("first_review_id").$type<PrReviewId>().notNull(),
+		lastReviewId: text("last_review_id").$type<PrReviewId>().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("pr_review_merge_steps_pr_key_idx").on(table.repositoryId, table.number, table.key),
+		index("pr_review_merge_steps_org_created_idx").on(table.orgId, table.createdAt),
 	],
 )
 

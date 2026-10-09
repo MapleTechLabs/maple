@@ -60,6 +60,7 @@ import {
 	prReviewSettings,
 	prReviewFindings,
 	prReviewFindingEmbeddings,
+	prReviewMergeSteps,
 	prReviewReplies,
 	prReviewEdits,
 	vcsInstallations,
@@ -126,6 +127,7 @@ const ORG_SCOPED_TABLES = [
 	prReviewSettings,
 	prReviewFindings,
 	prReviewFindingEmbeddings,
+	prReviewMergeSteps,
 	prReviewReplies,
 	prReviewEdits,
 	// Credentials that outlive the org unless they are purged here. `api_keys`
