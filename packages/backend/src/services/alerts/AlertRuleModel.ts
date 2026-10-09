@@ -456,9 +456,7 @@ const parseCompiledPlan = (
 		})
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
-			return Effect.fail(
-				invalid("Stored raw alert is missing its SQL query", new Error("rawQuerySql is null")),
-			)
+			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
 		}
 		return Schema.decodeUnknownEffect(CompiledAlertQueryPlan)({
 			kind: "raw_sql",

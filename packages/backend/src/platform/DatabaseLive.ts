@@ -83,7 +83,7 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 		const statement = cause instanceof Orm.DatabaseError ? capQueryMessage(cause.sql) : undefined
 		return new DatabaseError({
 			message: statement === undefined || statement === "" ? root : `${root} [while: ${statement}]`,
-			cause: driverSqlError(cause.cause) ?? new Error(cause.message),
+			cause: driverSqlError(cause.cause) ?? cause.message,
 		})
 	}
 	const message = cause instanceof Error ? cause.message : "Database operation failed"

@@ -546,8 +546,13 @@ export class PlanetScaleConnectionService extends Context.Service<
 				// The secret is minted once and retained across organization rebindings.
 				const encryptedWebhookSecret =
 					existing === null
-						? yield* encryptAes256Gcm(randomBytes(32).toString("hex"), encryptionKey, () =>
-								toPersistenceError(new Error("Failed to encrypt PlanetScale webhook secret")),
+						? yield* encryptAes256Gcm(
+								randomBytes(32).toString("hex"),
+								encryptionKey,
+								() =>
+									new IntegrationsPersistenceError({
+										message: "Failed to encrypt PlanetScale webhook secret",
+									}),
 							)
 						: null
 
@@ -816,7 +821,10 @@ export class PlanetScaleConnectionService extends Context.Service<
 					tag: connection.webhookSecretTag,
 				},
 				encryptionKey,
-				() => toPersistenceError(new Error("Failed to decrypt PlanetScale webhook secret")),
+				() =>
+					new IntegrationsPersistenceError({
+						message: "Failed to decrypt PlanetScale webhook secret",
+					}),
 			)
 			return {
 				configured: true,
