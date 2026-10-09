@@ -46,26 +46,6 @@ const catalog = async (db: PGlite, tables: ReadonlyArray<string>) => {
 	return { columns: columns.rows, constraints: constraints.rows, indexes: indexes.rows }
 }
 
-/**
- * What the migrations build that an old schema dropped without a migration
- * dropping it: still in every database, read by nothing. Remove an entry with
- * the migration that drops it.
- */
-const KNOWN_DRIFT = {
-	tables: ["ai_triage_runs"],
-	columns: [{ table: "ai_triage_settings", column: "fanout_enabled" }],
-} as const
-
-const isDriftColumn = (row: Record<string, unknown>) =>
-	KNOWN_DRIFT.columns.some((drift) => row.table_name === drift.table && row.column_name === drift.column)
-
-/** Postgres 17 lists a column's NOT NULL as a constraint named after it. */
-const isDriftConstraint = (row: Record<string, unknown>) =>
-	KNOWN_DRIFT.columns.some(
-		(drift) =>
-			row.table_name === drift.table && row.conname === `${drift.table}_${drift.column}_not_null`,
-	)
-
 const isTable = (value: unknown): value is PgSchemaTable<string, ColumnDefs, string> =>
 	typeof value === "object" && value !== null && "_tag" in value && value._tag === "Table" && "ddl" in value
 
@@ -123,14 +103,14 @@ export const describeParity = (
 				const extra = rows
 					.map((row) => row.table_name)
 					.filter((name) => !ormTables.has(name) && !LEDGER.has(name))
-				expect(extra).toEqual([...KNOWN_DRIFT.tables])
+				expect(extra).toEqual([])
 			})
 
 			it("has the same columns, constraints and indexes", async () => {
 				const tables = [...ormTables].sort()
 				const [want, have] = await Promise.all([catalog(migrated, tables), catalog(defined, tables)])
-				expect(have.columns).toEqual(want.columns.filter((row) => !isDriftColumn(row)))
-				expect(have.constraints).toEqual(want.constraints.filter((row) => !isDriftConstraint(row)))
+				expect(have.columns).toEqual(want.columns)
+				expect(have.constraints).toEqual(want.constraints)
 				expect(have.indexes).toEqual(want.indexes)
 			})
 		})
