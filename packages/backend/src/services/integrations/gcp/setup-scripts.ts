@@ -17,6 +17,10 @@ const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
 const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
 
+// A connection's IDs are fixed once it exists, so a wrong one is fixed by connecting again.
+const WRONG_ID =
+	"If it is wrong, remove the connection in Maple and connect the right ID: a connection's ID can't be changed."
+
 // High volume that says little about a workload. Data Access audit logs record every API read.
 // Load balancer health-check probes hit each backend every few seconds. A GKE cluster renews
 // its leader-election leases all day, about 570 audit entries a minute for one idle node. A VM
@@ -67,6 +71,10 @@ const SCOPES = {
 	},
 } as const
 
+// A project is its own host project, so its script says "the project".
+const hostProject = (scopeType: GcpScopeType): string =>
+	scopeType === "project" ? "the project" : "the host project"
+
 // A folder or organization sink also routes the logs of every project underneath.
 const includeChildren = (scopeType: GcpScopeType): string =>
 	scopeType === "project" ? "" : " --include-children"
@@ -75,7 +83,7 @@ const variables = (target: GcpScriptTarget, more: ReadonlyArray<string>): string
 	const names = gcpConnectorResourceNames(target.connectorId)
 	return `
 # ---- This connection ----
-# PROJECT_ID is the host project: it holds Maple's Pub/Sub topic, subscription and service account.
+# PROJECT_ID ${target.scopeType === "project" ? "" : "is the host project: it "}holds Maple's Pub/Sub topic, subscription and service account.
 PROJECT_ID=${sh(target.projectId)}
 SCOPE_ID=${sh(target.scopeId)}
 TOPIC=${sh(names.topic)}
@@ -183,10 +191,10 @@ notify() {
 // otherwise be left routing into a topic the next step deletes.
 const REMOVAL_HELPERS = `
 # remains <what it is> <role that may look> <gcloud ... describe ...>: whether a resource is still
-# there. NOT_FOUND means it is not, and so does a disabled API for the host project's own
-# resources: setup switches their APIs on before it creates them (a sink can exist without).
-# Any other answer stops the script: the resource may still be there, and nothing that it
-# depends on is removed before it.
+# there. NOT_FOUND means it is not, and so does a disabled API for the topic, the subscription
+# and the service account: setup switches their APIs on before it creates them (a sink can exist
+# without). Any other answer stops the script: the resource may still be there, and nothing that
+# it depends on is removed before it.
 remains() {
   local what="$1" role="$2" output
   shift 2
@@ -225,8 +233,9 @@ const METRIC_APIS = [
 // which has the Cloud Resource Manager API. With it off for a service account, every describe
 // and role grant fails.
 const apisOff = (
+	scopeType: GcpScopeType,
 	apis: ReadonlyArray<string>,
-) => `# Which of the APIs this script needs are off in the host project, asked once.
+) => `# Which of the APIs this script needs are off in ${hostProject(scopeType)}, asked once.
 APIS_OFF="$(off ${apis.join(" ")})"
 # gcloud needs the Cloud Resource Manager API of the project its calls are counted against. For a
 # service account that is its own project, usually this one, so it is switched on before the
@@ -272,7 +281,7 @@ const openScope = (scopeType: Exclude<GcpScopeType, "project">, mustOpen: boolea
 	const label = scopeType === "folder" ? "Folder" : "Organization"
 	return mustOpen
 		? `if ! SCOPE_NAME="$(${describe} --format='value(displayName)' 2>/dev/null)"; then
-  stop "Can't open $SCOPE as $ACCOUNT." "Check the ID with: ${scope.list}. If it is right, this account needs ${scope.iamRole} there." "$(${describe} 2>&1 || true)"
+  stop "Can't open $SCOPE as $ACCOUNT." "Check the ID with: ${scope.list}. ${WRONG_ID} If it is right, this account needs ${scope.iamRole} there." "$(${describe} 2>&1 || true)"
 fi
 ok "${label} $SCOPE_ID found ($SCOPE_NAME)"
 `
@@ -305,7 +314,7 @@ allowed() {
   if [ -z "$lacking" ]; then return 0; fi
   # None of several held: a wrong ID is likelier than a list of missing rights.
   if [ "$held" = 0 ] && [ "$#" -gt 1 ]; then
-    stop "$ACCOUNT has none of the permissions this script needs on $where." "Check the ID in Maple. If it is right, this account has no rights there. $ask"
+    stop "$ACCOUNT has none of the permissions this script needs on $where." "Check the ID in Maple. ${WRONG_ID} If it is right, this account has no rights there. $ask"
   fi
   stop "$ACCOUNT is missing permissions on $where: \${lacking#, }." "$ask"
 }
@@ -322,8 +331,8 @@ if [ -z "$ACCOUNT" ] || [ -z "$TOKEN" ]; then
   stop "You are not signed in to Google Cloud." "In Cloud Shell, click Authorize when it asks. Elsewhere, run: gcloud auth login"
 fi
 ok "Signed in as $ACCOUNT"
-${checks.apis.length === 0 ? "" : apisOff(checks.apis)}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
-  stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
+${checks.apis.length === 0 ? "" : apisOff(scopeType, checks.apis)}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
+  stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). ${WRONG_ID} If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
 fi
 ok "${scopeType === "project" ? "Project" : "Host project"} $PROJECT_ID found ($PROJECT_NAME)"
 ${
@@ -395,8 +404,8 @@ const logsSetup = (scopeType: GcpScopeType): string => `
 section "Log forwarding"
 DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
-# APIs in the host project: Pub/Sub carries the log entries, Cloud Logging routes them, and
-# Cloud Resource Manager is what gcloud grants the roles below through.
+# APIs in ${hostProject(scopeType)}: Pub/Sub carries the log entries, Cloud Logging routes them,
+# and Cloud Resource Manager is what gcloud grants the roles below through.
 apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${LOG_APIS.join(" ")}
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
@@ -456,9 +465,9 @@ const logsRemoval = (scopeType: GcpScopeType, notifies: boolean): string => `
 # ---- Log forwarding: off. Remove what an earlier run created. ----
 # The sink goes first, so nothing routes into a topic that is gone. Google keeps routing for a
 # while after a sink is deleted, and with the topic gone by then it logs an error in this project
-# and may notify its contacts, so the topic waits a minute. The Logs Writer grant on the host
-# project stays: the sink wrote as the logging service agent of the ${scopeType}, an identity
-# every other sink there shares.
+# and may notify its contacts, so the topic waits a minute. The Logs Writer grant on
+# ${hostProject(scopeType)} stays: the sink wrote as the logging service agent of the ${scopeType},
+# an identity every other sink there shares.
 section "Log forwarding"
 if remains "the log sink" "$SINK_ROLE" gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink}; then
   run "Log sink deleted" "Couldn't delete the log sink." "$SINK_ROLE" \\
@@ -486,7 +495,7 @@ const metricsSetup = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: on ----
 section "Metrics and resources"
 
-# APIs in the host project, the project Maple's reads are made through:
+# APIs in ${scopeType === "project" ? "the project" : "the host project, the project Maple's reads are made through"}:
 #   monitoring.googleapis.com      Cloud Monitoring, to read metrics
 #   cloudasset.googleapis.com      Cloud Asset Inventory, to list resources
 #   iam.googleapis.com             to create the service account below
@@ -677,9 +686,9 @@ ${output("Setup did not finish. Nothing needs undoing: fix this and paste the sc
 # which reports for itself.
 exists() { "$@" >/dev/null 2>&1; }
 
-# off <api...>: the APIs of the list that are not switched on in the host project. All of them
-# when the list of enabled APIs cannot be read. Asking first lets someone who may not switch APIs
-# on run a script whose APIs are on already.
+# off <api...>: the APIs of the list that are not switched on in ${hostProject(scopeType)}. All of
+# them when the list of enabled APIs cannot be read. Asking first lets someone who may not switch
+# APIs on run a script whose APIs are on already.
 off() {
   local on api nl=$'\\n'
   on="$(gcloud services list --enabled --project="$PROJECT_ID" --format='value(config.name)' 2>/dev/null || true)"
@@ -719,9 +728,9 @@ ${access(scopeType, {
 					: ""
 		}
 if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
-  printf '\\nDone. Everything was already in place.\\n'
+  printf '\\nDone. Everything is in place.\\n'
 elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
-  printf '\\nDone. The log sink has the filter of this script. Everything else was already in place.\\n'
+  printf '\\nDone. The log sink has the filter of this script. Everything else is in place.\\n'
 elif [ "$REMOVED" = 1 ]; then
   printf '\\nDone. Google Cloud matches your Maple switches.\\n'
 else
