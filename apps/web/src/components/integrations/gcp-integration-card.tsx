@@ -42,6 +42,7 @@ import { OptionCard } from "@/components/common/option-card"
 import { RelativeTime } from "@/components/common/relative-time"
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import {
+	AlertWarningIcon,
 	ChevronDownIcon,
 	ChevronUpIcon,
 	CircleInfoIcon,
@@ -67,6 +68,8 @@ import {
 	cloudShellUrl,
 	gcpConnectionState,
 	gcpCreateRequest,
+	gcpLogFilterChoice,
+	gcpLogFilters,
 	gcpLogState,
 	gcpMetricsState,
 	gcpOverlapNote,
@@ -142,12 +145,6 @@ const LOCK_NOTES = {
 	"last-on": "A connection keeps one switch on. To stop collecting, disconnect.",
 	"metrics-unavailable": "Not available on this Maple deployment.",
 } as const satisfies { readonly [Lock in GcpSwitchLock]: string }
-
-const LOG_FILTERS = [
-	{ value: "keep", label: "Keep the sink's current filter" },
-	{ value: "default", label: "Maple default" },
-	{ value: "exclude_gke_container_logs", label: "Maple default, without GKE container logs" },
-] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string }>
 
 /** The card's one link style, the other integrations' (Railway's token link). */
 const LINK = "underline underline-offset-2 hover:no-underline"
@@ -456,7 +453,8 @@ function GcpConnectForm({
 					/>
 					<FieldLabel htmlFor="gcp-logs-enabled">Log forwarding</FieldLabel>
 					<FieldDescription className="col-start-2">
-						A log sink sends Cloud Logging entries to Maple through Pub/Sub.
+						A log sink sends Cloud Logging entries to Maple through Pub/Sub. GKE container logs
+						are left out by default.
 					</FieldDescription>
 				</Field>
 				<Field
@@ -525,6 +523,51 @@ function GcpConnectForm({
 	)
 }
 
+/**
+ * Stands where the script would be until the admin confirms that GKE container logs should be
+ * forwarded. Not remembered: choosing the filter again asks again.
+ */
+function GkeContainerLogsAcknowledgement({
+	onConfirm,
+	onBack,
+}: {
+	onConfirm: () => void
+	onBack: () => void
+}) {
+	const [understood, setUnderstood] = useState(false)
+	const checkboxId = useId()
+	return (
+		<Alert variant="warn" size="sm">
+			<AlertWarningIcon size={14} />
+			<AlertTitle>Not recommended when these workloads send traces to Maple</AlertTitle>
+			<AlertDescription>
+				<p>
+					Instrumented workloads already send their logs to Maple, linked to their traces.
+					Forwarding the same container logs from Google Cloud stores each line twice, and that copy
+					has no trace link.
+				</p>
+				<div className="flex items-start gap-2 text-foreground">
+					<Checkbox
+						id={checkboxId}
+						className="mt-px"
+						checked={understood}
+						onCheckedChange={(checked) => setUnderstood(checked === true)}
+					/>
+					<label htmlFor={checkboxId}>I understand that container logs can be stored twice</label>
+				</div>
+				<div className="flex flex-wrap gap-2">
+					<Button size="sm" disabled={!understood} onClick={onConfirm}>
+						Include GKE container logs
+					</Button>
+					<Button size="sm" variant="outline" onClick={onBack}>
+						Use the recommended filter
+					</Button>
+				</div>
+			</AlertDescription>
+		</Alert>
+	)
+}
+
 type SetupStepId = "shell" | "script" | "confirm"
 
 /**
@@ -552,12 +595,18 @@ function GcpSetup({
 	confirmed: boolean
 }) {
 	const sinkExists = connector.applied_logs_enabled === true
-	// Null until chosen. An existing sink keeps its filter unless the admin asks for another, so
-	// copying the script again for a switch change never resets it.
+	// Null until chosen.
 	const [chosenFilter, setChosenFilter] = useState<GcpLogFilter | null>(null)
-	const logFilter = chosenFilter ?? (sinkExists ? "keep" : "default")
-	const { scripts, failure } = useGcpScripts(connector, logFilter)
+	const [acknowledged, setAcknowledged] = useState(false)
+	const logFilter = gcpLogFilterChoice(chosenFilter, acknowledged, sinkExists)
+	const chooseFilter = (next: GcpLogFilter | null) => {
+		setChosenFilter(next)
+		setAcknowledged(false)
+	}
+	const { scripts, failure } = useGcpScripts(connector, logFilter.scriptFilter)
 	const script = scripts?.setup_script ?? null
+	// With log forwarding off the script carries no filter, so there is nothing to acknowledge.
+	const acknowledging = connector.logs_enabled && logFilter.unacknowledged
 
 	const reportedAt = connector.setup_reported_at
 	const overdue = gcpScriptOverdue(connector, opened.at, nowMs)
@@ -565,7 +614,7 @@ function GcpSetup({
 	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
 	const scopeName = GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()
 	const host = <Mono>{connector.project_id}</Mono>
-	const filters = LOG_FILTERS.filter((filter) => filter.value !== "keep" || sinkExists)
+	const filters = gcpLogFilters(sinkExists)
 	const todo = confirmed ? "done" : "current"
 
 	const steps: ReadonlyArray<ChecklistStep<SetupStepId>> = [
@@ -641,10 +690,10 @@ function GcpSetup({
 									<FieldLabel className="text-xs sm:text-xs">Log filter</FieldLabel>
 									<Select
 										items={filters}
-										value={logFilter}
-										onValueChange={(next) => setChosenFilter(next)}
+										value={logFilter.selected}
+										onValueChange={chooseFilter}
 									>
-										<SelectTrigger size="sm" className="w-full text-xs sm:w-80">
+										<SelectTrigger size="sm" className="w-full text-xs sm:w-96">
 											<SelectValue />
 										</SelectTrigger>
 										<SelectContent alignItemWithTrigger={false}>
@@ -655,48 +704,60 @@ function GcpSetup({
 											))}
 										</SelectContent>
 									</Select>
-									<FieldDescription>
-										{sinkExists ? (
-											<>
-												Keeping the current filter leaves the sink as it is. Maple
-												can&apos;t see that filter: read it in the Google Cloud
-												console under{" "}
-												<ExternalLink href={logRouterUrl(connector)}>
-													Log Router
-												</ExternalLink>
-												.{" "}
-											</>
-										) : null}
-										Maple default leaves out Data Access audit logs, load balancer health
-										checks, Kubernetes lease renewals and VM serial console output. Leave
-										out GKE container logs too if your pods already send them through an
-										OpenTelemetry collector. For any other filter, edit{" "}
-										<Mono>LOG_FILTER</Mono> in the script before you paste it
-										{logFilter === "keep" ? (
-											<>
-												{" "}
-												and change <Mono>LOG_FILTER_MODE</Mono> to <Mono>set</Mono>
-											</>
-										) : null}
-										.
-									</FieldDescription>
+									{acknowledging ? null : (
+										<FieldDescription>
+											{logFilter.selected === "keep" ? (
+												<>
+													Leaves the sink as it is. Maple can&apos;t see that
+													filter: read it in the Google Cloud console under{" "}
+													<ExternalLink href={logRouterUrl(connector)}>
+														Log Router
+													</ExternalLink>
+													.
+												</>
+											) : logFilter.selected === "default" ? (
+												"Forwards platform logs such as request logs, audit logs and managed services. Leaves out GKE container logs, and noise such as health checks and Data Access audit logs."
+											) : (
+												"Forwards the recommended logs and GKE container logs. Workloads that send their logs through OpenTelemetry are then stored twice."
+											)}{" "}
+											For any other filter, edit <Mono>LOG_FILTER</Mono> in the script
+											before you paste it
+											{logFilter.selected === "keep" ? (
+												<>
+													{" "}
+													and change <Mono>LOG_FILTER_MODE</Mono> to{" "}
+													<Mono>set</Mono>
+												</>
+											) : null}
+											.
+										</FieldDescription>
+									)}
 								</Field>
 							) : null}
-							<div>
-								<CopyScriptButton script={script} label="script" />
-							</div>
-							<ScriptPreview script={script} label="Setup script" failure={failure} />
-							<div className="flex flex-col gap-1 text-xs text-muted-foreground">
-								<p>
-									The script contains this connection&apos;s secret. Don&apos;t share or
-									commit it. If it leaks, disconnect and connect again.
-								</p>
-								<p>
-									Its first two and last two lines run it in a bash process of its own, so a
-									failed step can&apos;t close your Cloud Shell session. In Cloud Shell they
-									also keep the paste out of shell history.
-								</p>
-							</div>
+							{acknowledging ? (
+								<GkeContainerLogsAcknowledgement
+									onConfirm={() => setAcknowledged(true)}
+									onBack={() => chooseFilter("default")}
+								/>
+							) : (
+								<>
+									<div>
+										<CopyScriptButton script={script} label="script" />
+									</div>
+									<ScriptPreview script={script} label="Setup script" failure={failure} />
+									<div className="flex flex-col gap-1 text-xs text-muted-foreground">
+										<p>
+											The script contains this connection&apos;s secret. Don&apos;t
+											share or commit it. If it leaks, disconnect and connect again.
+										</p>
+										<p>
+											Its first two and last two lines run it in a bash process of its
+											own, so a failed step can&apos;t close your Cloud Shell session.
+											In Cloud Shell they also keep the paste out of shell history.
+										</p>
+									</div>
+								</>
+							)}
 						</div>
 					),
 				}}
@@ -1361,8 +1422,8 @@ export function GcpIntegrationCard() {
 					<IntegrationEmptyFeatures>
 						<IntegrationEmptyFeature
 							label="Logs"
-							title="Every Cloud Logging entry"
-							description="Cloud Run, GKE, Cloud SQL and audit logs, next to your traces."
+							title="Platform logs, next to your traces"
+							description="Request logs, audit logs and managed services such as Cloud SQL. GKE container logs are left out by default."
 						/>
 						<IntegrationEmptyFeature
 							label="Metrics"
