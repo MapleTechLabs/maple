@@ -140,6 +140,9 @@ export function compilePipeQuery(
 	// `has_error` feeds a tri-state filter where `false` means "exclude errors";
 	// the pipe flag only ever asks for errors, so absent or falsy means no filter.
 	const hasError = errorsOnlyParam(str("has_error"))
+	// The pipe surface has no missing-table retry of its own, so it reads
+	// `trace_list_mv` alone unless the caller says it retries (`roots_only: false`).
+	const rootsOnly = str("roots_only") !== "false"
 
 	/** A single-valued param as the one-element list the query filters take. */
 	const strList = (key: string): string[] | undefined => {
@@ -278,8 +281,7 @@ export function compilePipeQuery(
 				eraseType(
 					compile(
 						tracesDurationStatsQuery({
-							// The pipe surface has no missing-table retry, so it keeps the raw read.
-							rawOnly: true,
+							rawOnly: rootsOnly,
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							hasError,
@@ -304,8 +306,7 @@ export function compilePipeQuery(
 				eraseType(
 					compileUnion(
 						tracesFacetsQuery({
-							// The pipe surface has no missing-table retry, so it keeps the raw read.
-							rawOnly: true,
+							rawOnly: rootsOnly,
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							hasError,
@@ -824,6 +825,7 @@ export function compilePipeQuery(
 							service: str("service"),
 							environment: str("deployment_env") ?? str("environment"),
 							limit: int("limit", 10),
+							rootsOnly,
 						}),
 						{ orgId, startTime, endTime },
 					),

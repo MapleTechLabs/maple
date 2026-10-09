@@ -54,6 +54,7 @@ import {
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
+	withRootSpansOnlyFallback,
 } from "@maple/query-engine/runtime"
 import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
@@ -477,38 +478,41 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "trc", 2)
 					const filters = payload.filters
 					const internalFilters = traceFilters(filters)
-					const compiled = CH.compile(
-						CH.traceSummariesQuery({
-							serviceName: filters?.service_name,
-							spanName: filters?.span_name,
-							statusCode: filters?.status_code,
-							hasError: filters?.has_error,
-							minDurationMs: filters?.min_duration_ms,
-							maxDurationMs: filters?.max_duration_ms,
-							httpMethod: filters?.http_method,
-							httpRoute: filters?.http_route,
-							httpStatusCode: filters?.http_status_code,
-							deploymentEnv: filters?.deployment_environment,
-							namespace: filters?.service_namespace,
-							spanScope: filters?.span_scope,
-							attributeFilters: internalFilters?.attributeFilters,
-							resourceAttributeFilters: internalFilters?.resourceAttributeFilters,
-							limit: limit + 1,
-							cursor: cursorParts
-								? Option.getOrUndefined(
-										Option.map(parseUtc(cursorParts[0]!), (at) => ({
-											timestamp: at,
-											traceId: cursorParts[1]!,
-										})),
-									)
-								: undefined,
-						}),
-						{ orgId: tenant.orgId, ...window },
+					const rows = yield* withRootSpansOnlyFallback(tenant.orgId, (rootsOnly) =>
+						warehouse.compiledQuery(
+							tenant,
+							CH.compile(
+								CH.traceSummariesQuery({
+									serviceName: filters?.service_name,
+									spanName: filters?.span_name,
+									statusCode: filters?.status_code,
+									hasError: filters?.has_error,
+									minDurationMs: filters?.min_duration_ms,
+									maxDurationMs: filters?.max_duration_ms,
+									httpMethod: filters?.http_method,
+									httpRoute: filters?.http_route,
+									httpStatusCode: filters?.http_status_code,
+									deploymentEnv: filters?.deployment_environment,
+									namespace: filters?.service_namespace,
+									spanScope: filters?.span_scope,
+									attributeFilters: internalFilters?.attributeFilters,
+									resourceAttributeFilters: internalFilters?.resourceAttributeFilters,
+									limit: limit + 1,
+									cursor: cursorParts
+										? Option.getOrUndefined(
+												Option.map(parseUtc(cursorParts[0]!), (at) => ({
+													timestamp: at,
+													traceId: cursorParts[1]!,
+												})),
+											)
+										: undefined,
+									rootsOnly,
+								}),
+								{ orgId: tenant.orgId, ...window },
+							),
+							{ profile: "list", context: "v2TraceSearch" },
+						),
 					)
-					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-						profile: "list",
-						context: "v2TraceSearch",
-					})
 
 					const dataRows = rows.slice(0, limit)
 					const last = dataRows.at(-1)

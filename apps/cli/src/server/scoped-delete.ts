@@ -139,6 +139,7 @@ export const TABLE_DELETE_PLAN = {
 	span_metrics_calls_hourly: derived("Hour", { env: null }),
 	trace_detail_spans: derived("Timestamp", { namespace: RESOURCE, env: RESOURCE }),
 	trace_facets_hourly: derived("Hour", { namespace: SERVICE_NAMESPACE }),
+	trace_list_entry_spans: derived("Timestamp", { namespace: SERVICE_NAMESPACE }),
 	trace_list_mv: derived("Timestamp", { namespace: SERVICE_NAMESPACE }),
 	traces: raw("Timestamp"),
 	traces_aggregates_hourly: derived("Hour"),

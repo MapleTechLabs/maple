@@ -95,6 +95,21 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
+	// The caller that retries on a missing table (`findSlowTraces`) says so; every
+	// other caller of these pipes has no retry and must not name the newer tables.
+	it("reads traces with no root span only for a caller that can retry without them", () => {
+		const sqlOf = (pipe: string, rootsOnly?: boolean) =>
+			compilePipeQuery(pipe, { ...baseParams(), roots_only: rootsOnly })!.sql
+
+		for (const pipe of ["slow_traces", "traces_duration_stats"]) {
+			expect(sqlOf(pipe, false)).toContain("trace_list_entry_spans")
+			for (const sql of [sqlOf(pipe, true), sqlOf(pipe)]) {
+				expect(sql).not.toContain("trace_list_entry_spans")
+				expect(sql).not.toContain("trace_facets_hourly")
+			}
+		}
+	})
+
 	it("returns undefined for unknown pipes", () => {
 		const result = compilePipeQuery("nonexistent_pipe", baseParams())
 		expect(result).toBeUndefined()

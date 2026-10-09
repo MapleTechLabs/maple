@@ -1640,6 +1640,24 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// telemetry.http.ts v2TraceSearch
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "span-filter",
+		compile: () => CH.compileUnsafe(CH.traceSummariesQuery({ serviceName: "api", limit: 21 }), window),
+	},
+	{
+		// The querySpec fixtures cover the default sort on both page tables.
+		module: "traces",
+		name: "traceListQuery",
+		label: "duration-sort",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceListQuery({ limit: 50, offset: 50, sortBy: "durationMs", sortDir: "desc" }),
+				window,
+			),
+	},
+	{
 		module: "traces",
 		name: "traceSpanStatsByTraceIdsQuery",
 		label: "page-enrichment",

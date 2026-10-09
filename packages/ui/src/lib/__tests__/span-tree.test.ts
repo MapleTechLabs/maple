@@ -103,17 +103,30 @@ describe("buildSpanTree", () => {
 		expect(tree[0].children).toHaveLength(0)
 	})
 
-	it("groups orphans under a missing-span placeholder", () => {
+	it("groups a rooted trace's orphans under a missing-span placeholder", () => {
 		const tree = buildSpanTree([
+			span({ spanId: "root" }),
 			span({ spanId: "orphan-1", parentSpanId: "gone" }),
 			span({ spanId: "orphan-2", parentSpanId: "gone" }),
 		])
 
-		expect(tree).toHaveLength(1)
-		expect(tree[0].isMissing).toBe(true)
-		expect(tree[0].spanId).toBe("gone")
-		expect(tree[0].children.map((c) => c.spanId)).toEqual(["orphan-1", "orphan-2"])
-		expect(tree[0].children[0].depth).toBe(1)
+		expect(tree.map((n) => n.spanId)).toEqual(["root", "gone"])
+		expect(tree[1].isMissing).toBe(true)
+		expect(tree[1].children.map((c) => c.spanId)).toEqual(["orphan-1", "orphan-2"])
+		expect(tree[1].children[0].depth).toBe(1)
+	})
+
+	it("puts the spans of a trace with no root at the top level, with no placeholder", () => {
+		const tree = buildSpanTree([
+			span({ spanId: "entry-b", parentSpanId: "proxy-2", startTime: "2026-01-01T00:00:01.000Z" }),
+			span({ spanId: "entry-a", parentSpanId: "proxy-1", startTime: "2026-01-01T00:00:00.000Z" }),
+			span({ spanId: "child", parentSpanId: "entry-a", startTime: "2026-01-01T00:00:00.500Z" }),
+		])
+
+		expect(tree.map((n) => n.spanId)).toEqual(["entry-a", "entry-b"])
+		expect(tree.some((n) => n.isMissing)).toBe(false)
+		expect(tree[0].depth).toBe(0)
+		expect(tree[0].children.map((c) => c.spanId)).toEqual(["child"])
 	})
 })
 

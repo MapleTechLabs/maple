@@ -3,17 +3,19 @@ import { TraceId } from "@maple/domain"
 import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
 import { WarehouseExecutor } from "./WarehouseExecutor"
+import { withRootSpansOnlyFallback } from "../runtime/trace-list-tiers"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
 import { safeUInt } from "./sql-utils"
 
 const MAX_LIMIT = 1000
 
 /**
- * Returns the slowest root spans in a time range, ordered by Duration DESC at
- * the database via the `slow_traces` pipe. Previously this fetched 500 rows
- * from the `list_traces` pipe (sorted by recency) and sorted them in JS, which
- * both over-fetched and returned the wrong page when the actual slowest traces
- * were older than the 500 most-recent.
+ * Returns the slowest traces in a time range (by root span, or by entry span
+ * when a trace has no root), ordered by Duration DESC at the database via the
+ * `slow_traces` pipe. Previously this fetched 500 rows from the `list_traces`
+ * pipe (sorted by recency) and sorted them in JS, which both over-fetched and
+ * returned the wrong page when the actual slowest traces were older than the
+ * 500 most-recent.
  *
  * Routing through a named pipe (rather than building raw SQL here) lets the
  * same code run unchanged against both local chDB and the remote warehouse —
@@ -36,32 +38,24 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 		readonly timestamp: string
 	}
 
-	const [slowResult, statsResult] = yield* Effect.all(
-		[
-			executor.query<SlowTraceRow>(
-				"slow_traces",
-				{
-					start_time: input.timeRange.startTime,
-					end_time: input.timeRange.endTime,
-					...(input.service && { service: input.service }),
-					...(input.environment && { deployment_env: input.environment }),
-					limit,
-				},
-				{ profile: "list" },
-			),
-			executor.query<TracesDurationStatsOutput>(
-				"traces_duration_stats",
-				{
-					start_time: input.timeRange.startTime,
-					end_time: input.timeRange.endTime,
-					...(input.service && { service: input.service }),
-					...(input.environment && { deployment_env: input.environment }),
-				},
-				{ profile: "aggregation" },
-			),
-		],
-		{ concurrency: "unbounded" },
-	)
+	const [slowResult, statsResult] = yield* withRootSpansOnlyFallback(executor.orgId, (rootsOnly) => {
+		const params = {
+			start_time: input.timeRange.startTime,
+			end_time: input.timeRange.endTime,
+			...(input.service && { service: input.service }),
+			...(input.environment && { deployment_env: input.environment }),
+			roots_only: rootsOnly,
+		}
+		return Effect.all(
+			[
+				executor.query<SlowTraceRow>("slow_traces", { ...params, limit }, { profile: "list" }),
+				executor.query<TracesDurationStatsOutput>("traces_duration_stats", params, {
+					profile: "aggregation",
+				}),
+			],
+			{ concurrency: "unbounded" },
+		)
+	})
 
 	const rows = slowResult.data
 

@@ -1,6 +1,6 @@
 # Warehouse rollups and materialized views
 
-We have 44 materialized views across 42 datasources. They accreted one product feature at a
+We have 45 materialized views across 43 datasources. They accreted one product feature at a
 time, and for a long time nobody could answer "should this be an MV?" without re-deriving it
 from scratch. This is that answer.
 
@@ -44,7 +44,10 @@ of a table we already have.
 3. **Filtered projection.** `error_events` keeps only `StatusCode = 'Error'` and unwraps the
    exception event. When both the event and the status message are absent, it falls back to the
    `exception.*` / `error.*` span attributes. Error queries never touch the Map columns of the
-   full traces table.
+   full traces table. `trace_list_entry_spans` is the same shape beside `trace_list_mv`: the
+   Server/Consumer spans that have a parent, read to list a trace whose root span never
+   arrived. Whether a parent is stored is unknowable at insert, so it admits every such span
+   and the read decides per trace (`packages/query-engine/src/ch/queries/rootless-traces.ts`).
 
 Storage is not free and the ratio is worse than it looks: `traces` is 110 GB, and its MV
 descendants total roughly 116 GB. **We store traces more than twice over.** Every new MV on
@@ -165,6 +168,11 @@ Recorded so the next sweep does not re-derive them.
 - **`alertRawQuery`: 173,000 s/week**, the single largest consumer of warehouse time. It is
   user-authored SQL against raw tables, so no MV can see it and no routing guard applies.
   Needs its own design: a rollup users can target, or per-rule result caching.
+- **Traces with no root span, past the read-time budget.** Ruling a trace out reads one
+  `trace_list_mv` TraceId per root span in the window, so the fallback stops at
+  `ROOTLESS_ROOT_BUDGET` roots and a busy organization's occasional rootless trace is listed
+  only in a narrower window. Lifting that needs the per-trace answer materialized (the
+  service map's scheduled join is the nearest precedent), not a wider read.
 - **`trace_detail_spans` TTL.** 82 GB, and TTL is the only remaining lever. Column narrowing
   recovered 1.19 GB (1.5%) and the rest is `SpanAttributes` (31 GB) and the incompressible
   `SpanId` (17 GB). A product decision about the trace-drilldown window.

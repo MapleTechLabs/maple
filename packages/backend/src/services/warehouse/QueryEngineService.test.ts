@@ -351,6 +351,45 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	it.effect("reads root spans only when the cluster lacks trace_list_entry_spans", () =>
+		Effect.gen(function* () {
+			for (const kind of ["list", "facets", "stats"] as const) {
+				const queries: Array<string> = []
+				const execute = makeQueryEngineExecute(
+					makeTinybirdStub({
+						sqlQuery: (_tenant, sql) => {
+							queries.push(sql)
+							return sql.includes("trace_list_entry_spans")
+								? Effect.fail(
+										new WarehouseConfigError({
+											message:
+												"Unknown table expression identifier 'trace_list_entry_spans'",
+											pipeName: "traceList",
+											clickhouseType: "UNKNOWN_TABLE",
+										}),
+									)
+								: Effect.succeed([])
+						},
+					}),
+				)
+				const response = yield* execute(tenant, {
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 06:00:00",
+					query:
+						kind === "list"
+							? { kind, source: "traces" as const, groupByTrace: true, limit: 10 }
+							: { kind, source: "traces" as const },
+				})
+
+				assert.strictEqual(queries.length, 2, kind)
+				assert.ok(queries[0]!.includes("trace_list_entry_spans"), kind)
+				assert.ok(!queries[1]!.includes("trace_list_entry_spans"), kind)
+				assert.ok(queries[1]!.includes("FROM trace_list_mv"), kind)
+				assert.strictEqual(response.result.kind, kind)
+			}
+		}),
+	)
+
 	it.effect("surfaces a rollup read that failed for another reason instead of rereading raw", () =>
 		Effect.gen(function* () {
 			const { queries, execute } = traceSidebarStub(

@@ -23,6 +23,14 @@ const baseParams = {
 	bucketSeconds: 3600,
 }
 
+/** The two conditions that keep the entry spans of traces with no root span. */
+const WITHIN_ROOT_BUDGET =
+	/\(SELECT count\(\) FROM \(SELECT\s+1 AS one\s+FROM trace_list_mv[\s\S]+?LIMIT 250001\)\) <= 250000/
+const noRootSpan = (table: string) =>
+	new RegExp(
+		`cityHash64\\(${table}\\.TraceId\\) NOT IN \\(SELECT\\s+cityHash64\\(trace_list_mv\\.TraceId\\) AS id\\s+FROM trace_list_mv`,
+	)
+
 describe("traceSummariesQuery", () => {
 	it("matches any span through a filtered semi-join and paginates root summaries deterministically", () => {
 		const { sql } = compileUnsafe(
@@ -31,10 +39,12 @@ describe("traceSummariesQuery", () => {
 				hasError: true,
 				limit: 21,
 				cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00Z"), traceId: "trace123" },
+				rootsOnly: true,
 			}),
 			baseParams,
 		)
 		expect(sql).toContain("FROM trace_list_mv")
+		expect(sql).not.toContain("trace_list_entry_spans")
 		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
 		expect(sql.match(/Timestamp >= '2024-01-01 00:00:00'/g)).toHaveLength(2)
 		expect(sql.match(/Timestamp <= '2024-01-02 00:00:00'/g)).toHaveLength(2)
@@ -73,6 +83,37 @@ describe("traceSummariesQuery", () => {
 			baseParams,
 		)
 		expect(sql).not.toContain("FROM traces")
+	})
+
+	it("summarizes a trace with no root span by its earliest entry span", () => {
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({
+				serviceName: "api",
+				limit: 21,
+				offset: 4,
+				cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00Z"), traceId: "trace123" },
+			}),
+			baseParams,
+		)
+		const [roots, rootless] = sql.split("UNION ALL")
+		expect(roots).toContain("FROM trace_list_mv")
+		expect(roots).not.toContain("NOT IN")
+		expect(rootless).toContain("FROM trace_list_entry_spans")
+		expect(rootless).toMatch(WITHIN_ROOT_BUDGET)
+		expect(rootless).toMatch(noRootSpan("trace_list_entry_spans"))
+		// Entry spans carry the trace list's columns, so both arms take the same
+		// span semi-join, cursor and earliest-row summary.
+		for (const arm of [roots, rootless]) {
+			expect(arm).toMatch(/TraceId IN \(SELECT\s+traces\.TraceId AS traceId/)
+			expect(arm).toContain("Timestamp < '2024-01-01 12:00:00'")
+			expect(arm).toMatch(/argMin\(\w+\.SpanName, \w+\.Timestamp\) AS rootSpanName/)
+			expect(arm).toContain("GROUP BY traceId")
+			// Each arm feeds the merged page everything it can need.
+			expect(arm).toContain("LIMIT 25")
+		}
+		expect(sql.slice(sql.lastIndexOf("AS summaries"))).toMatch(
+			/ORDER BY startTime DESC, traceId DESC\s+LIMIT 21\s+OFFSET 4/,
+		)
 	})
 })
 
@@ -473,7 +514,10 @@ describe("traceListQuery", () => {
 
 	it("falls back to raw traces paging when a filter the MV lacks is present", () => {
 		const { sql } = compileUnsafe(
-			traceListQuery({ attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }] }),
+			traceListQuery({
+				attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }],
+				rootsOnly: true,
+			}),
 			baseParams,
 		)
 		const inner = pageSubquery(sql)
@@ -484,6 +528,88 @@ describe("traceListQuery", () => {
 		// one span per service and would re-introduce duplicate rows per trace.
 		expect(inner).not.toContain("SpanKind IN ('Server', 'Consumer')")
 		expect(inner).toContain("SpanAttributes['user.id'] = 'u1'")
+	})
+
+	describe("traces with no root span", () => {
+		const arms = (opts: Parameters<typeof traceListQuery>[0]) => {
+			const inner = pageSubquery(compileUnsafe(traceListQuery(opts), baseParams).sql)
+			const [roots, rootless, ...rest] = inner
+				.slice(0, inner.lastIndexOf(") AS heads"))
+				.split("UNION ALL")
+			expect(rest).toEqual([])
+			return { inner, roots: roots!, rootless: rootless! }
+		}
+
+		it("merges the roots page with one row per rootless trace", () => {
+			const { inner, roots, rootless } = arms({ limit: 50, offset: 20, serviceName: "api" })
+
+			// The roots arm is the page this always read.
+			expect(roots).toContain("FROM trace_list_mv")
+			expect(roots).not.toContain("NOT IN")
+			expect(roots).not.toContain("DISTINCT")
+
+			expect(rootless).toContain("SELECT DISTINCT ON (traceId)")
+			expect(rootless).toContain("FROM trace_list_entry_spans")
+			expect(rootless).toMatch(WITHIN_ROOT_BUDGET)
+			expect(rootless).toMatch(noRootSpan("trace_list_entry_spans"))
+
+			for (const arm of [roots, rootless]) {
+				expect(arm).toContain("ServiceName = 'api'")
+				// `limit + offset` from each arm makes the merged page exact.
+				expect(arm).toMatch(/ORDER BY ts DESC, traceId DESC\s+LIMIT 70\s/)
+				expect(arm).not.toContain("OFFSET")
+			}
+			expect(inner.slice(inner.lastIndexOf("AS heads"))).toMatch(
+				/ORDER BY ts DESC, traceId DESC\s+LIMIT 50\s+OFFSET 20/,
+			)
+		})
+
+		it("rules a trace out by a root span that started up to an hour before the window", () => {
+			const { rootless } = arms({})
+			const rootIds = rootless.slice(rootless.indexOf("NOT IN"))
+
+			expect(rootIds).toContain("trace_list_mv.OrgId = 'org_1'")
+			expect(rootIds).toContain(
+				"trace_list_mv.Timestamp >= subtractHours(toDateTime('2024-01-01 00:00:00'), 1)",
+			)
+			expect(rootIds).toContain("trace_list_mv.Timestamp <= '2024-01-02 00:00:00'")
+			// Unfiltered: a root that fails the caller's filters still claims its trace.
+			expect(rootIds).not.toContain("ServiceName")
+		})
+
+		it("keeps the slowest matching entry span when sorting by duration", () => {
+			const { rootless } = arms({ sortBy: "durationMs", sortDir: "desc" })
+
+			expect(rootless).toContain("SELECT DISTINCT ON (traceId)")
+			expect(rootless).toContain("ORDER BY d DESC, ts DESC, traceId DESC")
+		})
+
+		it("reads entry spans off raw traces when a filter the MV lacks is present", () => {
+			const { roots, rootless } = arms({
+				attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }],
+			})
+
+			expect(roots).toContain("traces.ParentSpanId = ''")
+			expect(roots).not.toContain("SpanKind")
+			expect(rootless).toContain("SELECT DISTINCT ON (traceId)")
+			expect(rootless).toContain("traces.SpanKind IN ('Server', 'Consumer')")
+			expect(rootless).toContain("traces.ParentSpanId != ''")
+			expect(rootless).toMatch(noRootSpan("traces"))
+			for (const arm of [roots, rootless]) {
+				expect(arm).toContain("FROM traces")
+				expect(arm).toContain("SpanAttributes['user.id'] = 'u1'")
+			}
+		})
+
+		it("reads root spans only when asked to", () => {
+			const inner = pageSubquery(
+				compileUnsafe(traceListQuery({ limit: 50, offset: 20, rootsOnly: true }), baseParams).sql,
+			)
+
+			expect(inner).not.toContain("UNION ALL")
+			expect(inner).not.toContain("trace_list_entry_spans")
+			expect(inner).toMatch(/ORDER BY ts DESC, traceId DESC\s+LIMIT 50\s+OFFSET 20/)
+		})
 	})
 
 	it("maps HTTP method/status attribute filters onto the MV's pre-extracted columns", () => {
@@ -508,7 +634,10 @@ describe("traceListQuery", () => {
 		const inner = pageSubquery(
 			compileUnsafe(
 				traceListQuery({
-					cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00.123Z"), traceId: "trace123" },
+					cursor: {
+						timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00.123Z"),
+						traceId: "trace123",
+					},
 				}),
 				baseParams,
 			).sql,
@@ -587,8 +716,7 @@ describe("traceListQuery", () => {
 		const { sql } = compileUnsafe(traceListQuery({ limit: 50, offset: 20 }), baseParams)
 		const inner = pageSubquery(sql)
 
-		expect(inner).toContain("LIMIT 50")
-		expect(inner).toContain("OFFSET 20")
+		expect(inner).toMatch(/LIMIT 50\s+OFFSET 20$/)
 		// The outer aggregate re-caps at `limit` but must never re-apply the
 		// offset — that would skip the first 20 traces of the page.
 		expect(sql.slice(sql.indexOf("GROUP BY traceId"))).not.toContain("OFFSET")
@@ -624,16 +752,39 @@ describe("traceListQuery", () => {
 
 describe("slowTracesQuery", () => {
 	it("reads slow root spans from the pre-extracted trace list MV", () => {
-		const q = slowTracesQuery({ service: "api", environment: "prod", limit: 5 })
+		const q = slowTracesQuery({ service: "api", environment: "prod", limit: 5, rootsOnly: true })
 		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).toContain("FROM trace_list_mv")
+		expect(sql).not.toContain("trace_list_entry_spans")
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("DeploymentEnv = 'prod'")
 		expect(sql).toContain("ORDER BY durationMs DESC")
 		expect(sql).toContain("LIMIT 5")
 		expect(sql).not.toContain("ParentSpanId")
 		expect(sql).not.toContain("ResourceAttributes")
+	})
+
+	it("ranks a trace with no root span by its slowest entry span", () => {
+		const { sql } = compileUnsafe(
+			slowTracesQuery({ service: "api", environment: "prod", limit: 5 }),
+			baseParams,
+		)
+		const [roots, rootless] = sql.split("UNION ALL")
+
+		// The roots arm keeps its top-N sort: no per-trace pass over rooted traces.
+		expect(roots).toContain("FROM trace_list_mv")
+		expect(roots).not.toContain("DISTINCT")
+		expect(rootless).toContain("SELECT DISTINCT ON (traceId)")
+		expect(rootless).toContain("FROM trace_list_entry_spans")
+		expect(rootless).toMatch(WITHIN_ROOT_BUDGET)
+		expect(rootless).toMatch(noRootSpan("trace_list_entry_spans"))
+		for (const arm of [roots, rootless]) {
+			expect(arm).toContain("ServiceName = 'api'")
+			expect(arm).toContain("DeploymentEnv = 'prod'")
+			expect(arm).toMatch(/ORDER BY durationMs DESC\s+LIMIT 5/)
+		}
+		expect(sql.slice(sql.lastIndexOf("AS slowest"))).toMatch(/ORDER BY durationMs DESC\s+LIMIT 5/)
 	})
 })
 

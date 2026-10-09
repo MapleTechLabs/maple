@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { WarehouseUpstreamError } from "@maple/domain/http"
+import { WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
 import { findSlowTraces } from "./find-slow-traces"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -148,6 +148,41 @@ describe("findSlowTraces", () => {
 
 			assert.instanceOf(error, WarehouseUpstreamError)
 			assert.strictEqual(error.message, "ClickHouse exploded")
+		}),
+	)
+
+	it.effect("asks both pipes for rootless traces, and for root spans only on a cluster without them", () =>
+		Effect.gen(function* () {
+			const captured: CapturedCalls = { pipeCalls: [] }
+			const executor: WarehouseExecutorApi = {
+				...makeMockExecutor(captured),
+				query: (pipe: string, params: Record<string, unknown>) => {
+					captured.pipeCalls.push({ pipe, params })
+					return params.roots_only === false && pipe === "slow_traces"
+						? Effect.fail(
+								new WarehouseConfigError({
+									pipeName: pipe,
+									message: "Unknown table expression identifier 'trace_list_entry_spans'",
+									clickhouseType: "UNKNOWN_TABLE",
+								}),
+							)
+						: Effect.succeed({ data: [] })
+				},
+			}
+
+			yield* findSlowTraces({
+				timeRange: { startTime: "2026-04-01 00:00:00", endTime: "2026-04-02 00:00:00" },
+			}).pipe(Effect.provide(makeLayer(executor)))
+
+			assert.deepStrictEqual(
+				captured.pipeCalls.map((call) => [call.pipe, call.params.roots_only]),
+				[
+					["slow_traces", false],
+					["traces_duration_stats", false],
+					["slow_traces", true],
+					["traces_duration_stats", true],
+				],
+			)
 		}),
 	)
 })
