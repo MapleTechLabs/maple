@@ -904,7 +904,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					return { outcome: "refreshed" as const, deployEvents }
 				}
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
-					Effect.ignore,
+					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				// Fail inside a span so poll failures surface in find_errors, mirroring
 				// the Cloudflare poller's observeDatasetFailure seam — EXCEPT an upstream

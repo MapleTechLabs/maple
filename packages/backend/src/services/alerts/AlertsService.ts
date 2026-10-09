@@ -2771,7 +2771,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										),
 									]),
 							)
-							.pipe(Effect.ignore)
+							.pipe(
+								Effect.ignore({
+									log: "Warn",
+									message: "Failed to stamp lastScheduledAt on claimed alert rules",
+								}),
+							)
 
 						return claimed
 					}),
@@ -3032,7 +3037,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// take down a tick that would otherwise resolve each config on demand.
 				yield* orgChSettings
 					.primeRuntimeConfigs(Arr.dedupe(Arr.map(rows, (row) => row.orgId)))
-					.pipe(Effect.ignore)
+					.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime alert runtime configs" }))
 
 				// Incremented from fibers running under the concurrent per-rule forEach
 				// below, so it must be a Ref rather than a mutable closure variable.

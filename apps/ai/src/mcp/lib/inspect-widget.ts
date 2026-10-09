@@ -1044,7 +1044,11 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		}
 		return summary
 	},
-	Effect.catchCause(() => Effect.succeed(SKIPPED_SUMMARY)),
+	Effect.catchCause((cause) =>
+		Effect.logWarning("Widget inspection failed; reporting it as skipped", cause).pipe(
+			Effect.as(SKIPPED_SUMMARY),
+		),
+	),
 )
 
 /**
