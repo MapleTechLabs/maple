@@ -99,7 +99,7 @@ export function ToolDetailSessions({
 
 								<span className="flex w-0 min-w-0 flex-1 flex-col gap-px">
 									<span
-										className="truncate font-mono text-sm font-medium leading-[18px] text-foreground"
+										className="truncate font-mono text-sm font-medium leading-4.5 text-foreground"
 										title={session.sessionId}
 									>
 										{sessionRowId(session.sessionId)}

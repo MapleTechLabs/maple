@@ -89,7 +89,7 @@ export function TagInput({ value, onChange, suggestions, id, placeholder }: TagI
 				onKeyDown={handleKeyDown}
 				onBlur={() => commit(draft)}
 				placeholder={value.length === 0 ? (placeholder ?? "Add tags…") : undefined}
-				className="min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-muted-foreground/72"
+				className="min-w-[80px] flex-1 bg-transparent leading-6 outline-none placeholder:text-muted-foreground/70"
 			/>
 			{availableSuggestions.length > 0 && (
 				<datalist id={listId}>

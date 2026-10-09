@@ -46,7 +46,8 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 			},
 			() => {
 				toastManager.add({
-					title: "Couldn't reach the ingest endpoint. Double-check your API key.",
+					title: "Failed to reach the ingest endpoint",
+					description: "Double-check your API key.",
 					type: "error",
 				})
 			},
@@ -161,7 +162,7 @@ function CredentialRow({
 					/>
 				</button>
 				{description && (
-					<span className="text-muted-foreground/75 text-2xs leading-3.5">{description}</span>
+					<span className="text-muted-foreground/70 text-2xs leading-3.5">{description}</span>
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5">

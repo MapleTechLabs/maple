@@ -164,10 +164,11 @@ export function RuleDiagnosisPanel({
 						))}
 					</ol>
 					{hasHiddenSteps && (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setShowAll((v) => !v)}
-							className="mt-1.5 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+							className="mt-1.5 text-muted-foreground hover:text-foreground"
 						>
 							<ChevronDownIcon
 								size={13}
@@ -178,7 +179,7 @@ export function RuleDiagnosisPanel({
 								: passingCount === hiddenCount
 									? `${countLabel(passingCount, "check")} passing`
 									: `Show ${hiddenCount} more ${pluralize(hiddenCount, "step")}`}
-						</button>
+						</Button>
 					)}
 				</div>
 			)}
@@ -241,13 +242,14 @@ function DiagnosisStageRow({
 					))}
 					{hiddenEvidence > 0 && (
 						<li>
-							<button
-								type="button"
+							<Button
+								variant="link"
+								size="xs"
 								onClick={() => setShowAllEvidence(true)}
-								className="text-xs text-muted-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+								className="text-muted-foreground/80 hover:text-foreground"
 							>
 								+{hiddenEvidence} more
-							</button>
+							</Button>
 						</li>
 					)}
 				</ul>

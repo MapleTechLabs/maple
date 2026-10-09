@@ -12,7 +12,7 @@ import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam
 import { replaysFilterInputs } from "@/components/replays/replays-filter-inputs"
 import { isQualityTier, nextTagSelection, sessionTagsFromSearch } from "@/components/replays/session-tags"
 import { REPLAYS_PAGE_SIZE, useInfiniteReplays } from "@/hooks/use-infinite-replays"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { listReplaysResultAtom, replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -104,6 +104,9 @@ function ReplaysPage() {
 
 	const { firstPageResult, allData, hasNextPage, isCapped, isFetchingNextPage, fetchNextPage } =
 		useInfiniteReplays(filterInputs)
+	const retryFirstPage = useAtomRefresh(
+		listReplaysResultAtom({ data: { ...filterInputs, limit: REPLAYS_PAGE_SIZE } }),
+	)
 	// Retained for the same reason as the list: without it, ticking one sidebar
 	// checkbox drops the sidebar that contains it into its own skeleton, and the
 	// option you just clicked disappears out from under the cursor.
@@ -269,7 +272,7 @@ function ReplaysPage() {
 			)}
 			{Result.builder(firstPageResult)
 				.onInitial(() => <SessionsListSkeleton />)
-				.onError((error) => <ErrorState error={error} title="Failed to load session replays" />)
+				.onError((error) => <ErrorState error={error} title="Failed to load session replays" onRetry={retryFirstPage} />)
 				.onSuccess(() => (
 					<SessionsList
 						sessions={allData}

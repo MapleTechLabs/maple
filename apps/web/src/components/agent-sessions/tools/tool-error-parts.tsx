@@ -6,6 +6,7 @@ import { formatErrorRate } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { formatToolCount } from "@/lib/agent-sessions/tool-analytics"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
 import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "@/lib/agent-sessions/tool-error-display"
 
 // The pieces the Errors table and the error group modal both draw a failure
@@ -19,7 +20,7 @@ export function MaskChip({ label, raw, className }: { label: string; raw: string
 		<InlineCode
 			title={raw === "" ? undefined : raw}
 			className={cn(
-				"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-2xs leading-[15px] font-normal text-muted-foreground",
+				"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-2xs leading-3.75 font-normal text-muted-foreground",
 				className,
 			)}
 		>
@@ -135,7 +136,7 @@ function HeadingToken({ token }: { token: ErrorTextToken }) {
  */
 export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextToken> }) {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	const heading = "font-mono text-lg leading-[26px] font-semibold tracking-[-0.01em] text-foreground"
+	const heading = "font-mono text-lg leading-6.5 font-semibold tracking-[-0.01em] text-foreground"
 	if (pathIndex < 0) {
 		return (
 			<h2 className={cn(heading, "line-clamp-3 break-words")}>
@@ -155,7 +156,7 @@ export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextTo
 					<HeadingToken key={index} token={token} />
 				))}
 			</span>
-			<span className="flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-[26px]">
+			<span className="flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5">
 				<span className="text-muted-foreground">at</span>
 				<span className={cn("break-all font-semibold tracking-[-0.01em]", TONE_TEXT.crit)}>
 					{path?.kind === "path" ? (
@@ -168,7 +169,7 @@ export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextTo
 				</span>
 			</span>
 			{tail.length > 0 ? (
-				<span className="line-clamp-2 break-words pl-6 font-mono text-[13px] leading-[18px] text-foreground/85">
+				<span className="line-clamp-2 break-words pl-6 font-mono text-[13px] leading-4.5 text-foreground/80">
 					{tail.map((token, index) => (
 						<HeadingToken key={index} token={token} />
 					))}
@@ -197,16 +198,10 @@ const STATUS_TONE = {
 } satisfies Record<FailureStatus["kind"], Tone>
 
 const shortDate = (ms: number, timeZone: string) =>
-	new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(ms)
+	formatDateInTimezone(ms, { timeZone, withYear: false })
 
 const dateTime = (ms: number, timeZone: string) =>
-	new Intl.DateTimeFormat("en-US", {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		timeZone,
-	}).format(ms)
+	formatTimestampInTimezone(ms, { timeZone, style: "range" })
 
 /**
  * Whether failing has stopped, in one line.

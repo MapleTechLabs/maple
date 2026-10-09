@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
-import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { ChartCard } from "@/components/common/chart-card"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 
@@ -16,7 +17,7 @@ import {
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
 } from "./release-model"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
 
 /** Lanes beyond this fold into a trailing count; the table still lists every release. */
 const MAX_LANES = 12
@@ -155,7 +156,7 @@ function axisLabels(startMs: number, endMs: number, timeZone: string): string[] 
 		const date = new Date(startMs + span * ratio)
 		return showTime
 			? formatTimestampInTimezone(date, { timeZone, style: "range" })
-			: date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
+			: formatDateInTimezone(date, { timeZone, withYear: false })
 	})
 }
 
@@ -210,25 +211,20 @@ export function ReleasesTimeline({
 	)
 
 	return (
-		<Panel className="overflow-visible">
-			<PanelHeader
-				title="Deploys over time"
-				action={
-					<div className="flex items-center gap-3 text-3xs text-muted-foreground">
-						{RELEASE_HEALTH_ORDER.map((band) => (
-							<span key={band} className="inline-flex items-center gap-1">
-								<span
-									className={cn(
-										"inline-block size-2 rounded-full",
-										RELEASE_HEALTH_DOT_CLASS[band],
-									)}
-								/>
-								{RELEASE_HEALTH_LABEL[band]}
-							</span>
-						))}
-					</div>
-				}
-			/>
+		<ChartCard
+			className="overflow-visible"
+			title="Deploys over time"
+			legend={
+				<div className="flex items-center gap-3 text-3xs text-muted-foreground">
+					{RELEASE_HEALTH_ORDER.map((band) => (
+						<span key={band} className="inline-flex items-center gap-1">
+							<StatusDot tone="custom" size="lg" className={RELEASE_HEALTH_DOT_CLASS[band]} />
+							{RELEASE_HEALTH_LABEL[band]}
+						</span>
+					))}
+				</div>
+			}
+		>
 			<div className="px-3 pb-2 pt-1">
 				{visible.map((lane, laneIndex) => (
 					<div
@@ -302,6 +298,6 @@ export function ReleasesTimeline({
 					</div>
 				</div>
 			</div>
-		</Panel>
+		</ChartCard>
 	)
 }

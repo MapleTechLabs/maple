@@ -3,6 +3,7 @@ import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { useMemo, useState } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import {
 	Dialog,
 	DialogContent,
@@ -82,6 +83,7 @@ export function PlanetScaleIntegrationCard() {
 	const actionBusy = connectFlow.busy || disconnectBusy
 	const [pickerOpen, setPickerOpen] = useState(false)
 	const [rotateOpen, setRotateOpen] = useState(false)
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	const status = Result.builder(statusResult)
 		.onSuccess((s) => s)
@@ -106,10 +108,23 @@ export function PlanetScaleIntegrationCard() {
 	async function handleDisconnect() {
 		if (await runDisconnect()) refreshStatus()
 	}
+	const disconnectConfirm = (
+		<ConfirmDialog
+			open={confirmingDisconnect}
+			onOpenChange={setConfirmingDisconnect}
+			title="Disconnect PlanetScale"
+			description="Maple stops collecting data from PlanetScale. You can reconnect later."
+			confirmLabel="Disconnect"
+			onConfirm={() => {
+				setConfirmingDisconnect(false)
+				void handleDisconnect()
+			}}
+		/>
+	)
 
 	// Guard the first fetch so a connected org doesn't flash the "Connect" empty state.
 	if (Result.isInitial(statusResult)) {
-		return <Skeleton className="h-40 w-full rounded-lg" />
+		return <Skeleton className="h-40 w-full rounded-md" />
 	}
 
 	// A failed status fetch is not "not connected" — don't offer the connect CTA
@@ -152,10 +167,11 @@ export function PlanetScaleIntegrationCard() {
 				<div className="border-t border-border/60 p-4">
 					<PlanetScaleOrgPicker
 						onDone={() => refreshStatus()}
-						onCancel={handleDisconnect}
+						onCancel={() => setConfirmingDisconnect(true)}
 						cancelLabel="Disconnect"
 					/>
 				</div>
+				{disconnectConfirm}
 			</Panel>
 		)
 	}
@@ -250,12 +266,13 @@ export function PlanetScaleIntegrationCard() {
 						<Button
 							size="sm"
 							variant="outline"
-							onClick={handleDisconnect}
+							onClick={() => setConfirmingDisconnect(true)}
 							disabled={actionBusy}
 							loading={disconnectBusy}
 						>
 							Disconnect
 						</Button>
+						{disconnectConfirm}
 					</ItemActions>
 				</Item>
 
@@ -312,13 +329,14 @@ export function PlanetScaleIntegrationCard() {
 						metricsAuth={status.metrics_auth}
 						action={
 							status.metrics_auth === "service_token" && !rotateOpen ? (
-								<button
-									type="button"
+								<Button
+									variant="link"
+									size="xs"
 									onClick={() => setRotateOpen(true)}
-									className={QUIET_LINK}
+									className={`h-auto p-0 font-normal ${QUIET_LINK}`}
 								>
 									Rotate token
-								</button>
+								</Button>
 							) : null
 						}
 					/>

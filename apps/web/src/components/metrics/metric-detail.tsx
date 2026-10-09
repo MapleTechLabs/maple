@@ -6,7 +6,7 @@ import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { ChartLoading } from "@maple/ui/components/charts/_shared/chart-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { ChartCard } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
@@ -279,13 +279,10 @@ function MetricChart({
 	}`
 
 	return (
-		<Panel>
-			<PanelHeader
-				title={<span className="font-mono">{queryLabel}</span>}
-				action={
-					unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined
-				}
-			/>
+		<ChartCard
+			title={<span className="font-mono">{queryLabel}</span>}
+			legend={unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined}
+		>
 			<div className="h-80 p-3">
 				{Result.builder(result)
 					.onInitial(() => <ChartSkeleton variant="area" />)
@@ -309,6 +306,6 @@ function MetricChart({
 					)
 					.render()}
 			</div>
-		</Panel>
+		</ChartCard>
 	)
 }

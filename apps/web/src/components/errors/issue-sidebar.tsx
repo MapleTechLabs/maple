@@ -20,7 +20,7 @@ import { SeveritySelect } from "./severity-select"
 import { StateSelect } from "./state-select"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { DetailRail } from "@maple/ui/components/detail-rail"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 type Busy =
@@ -217,7 +217,7 @@ const ENVIRONMENT_ROWS_SHOWN = 4
  * in the window, or no `deployment.environment` set) is the Assignee dash.
  */
 function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorIssueEnvironment> }) {
-	if (environments.length === 0) return <span className="text-xs text-muted-foreground">–</span>
+	if (environments.length === 0) return <span className="text-xs text-muted-foreground">{EMPTY_VALUE}</span>
 	const shown = environments.slice(0, ENVIRONMENT_ROWS_SHOWN)
 	const hidden = environments.length - shown.length
 	return (

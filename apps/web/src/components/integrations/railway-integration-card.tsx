@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router"
 import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
@@ -174,6 +175,7 @@ export function RailwayIntegrationCard() {
 		toastExit(result, { error: "Failed to sync Railway" })
 	})
 	const [rotating, setRotating] = useState(false)
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	// Keep the last loaded status if a refetch fails.
 	const status = Option.getOrNull(AsyncResult.value(statusResult))
@@ -183,7 +185,7 @@ export function RailwayIntegrationCard() {
 	useIntervalRefresh(refreshStatus, { intervalMs: SETTLING_REFRESH_MS, enabled: queued > 0 })
 
 	if (Result.isInitial(statusResult) && status === null) {
-		return <Skeleton className="h-32 w-full rounded-lg" />
+		return <Skeleton className="h-32 w-full rounded-md" />
 	}
 	if (Result.isFailure(statusResult) && status === null) {
 		return (
@@ -303,13 +305,24 @@ export function RailwayIntegrationCard() {
 							<Button
 								size="sm"
 								variant="outline"
-								onClick={handleDisconnect}
+								onClick={() => setConfirmingDisconnect(true)}
 								loading={disconnectBusy}
 							>
 								Disconnect
 							</Button>
 						</div>
 					)}
+					<ConfirmDialog
+						open={confirmingDisconnect}
+						onOpenChange={setConfirmingDisconnect}
+						title="Disconnect Railway"
+						description="Maple stops collecting metrics from your Railway projects. You can reconnect later."
+						confirmLabel="Disconnect"
+						onConfirm={() => {
+							setConfirmingDisconnect(false)
+							void handleDisconnect()
+						}}
+					/>
 				</ItemContent>
 			</Item>
 

@@ -10,6 +10,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -257,7 +258,7 @@ function InvestigationsHub() {
 						query={query}
 						onSearch={(value) => void navigate({ search: (prev) => ({ ...prev, q: value }) })}
 						placeholder="Search subjects and findings"
-						className="h-7 w-[200px]"
+						className="w-[200px]"
 					/>
 				</>
 			}
@@ -514,7 +515,7 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 							type="button"
 							disabled={busy}
 							onClick={() => void onSubmit(suggestion)}
-							className="flex w-full items-center gap-3 rounded-lg border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-ring hover:bg-accent/40 disabled:opacity-60"
+							className="flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-ring hover:bg-accent/40 disabled:opacity-60"
 						>
 							<span aria-hidden className="shrink-0 text-muted-foreground">
 								›
@@ -549,20 +550,11 @@ function HubEmptyState({
 }) {
 	if (filtered) {
 		return (
-			<Empty>
-				<EmptyHeader>
-					<EmptyTitle>No investigations match these filters</EmptyTitle>
-					<EmptyDescription>
-						Nothing in {view === "active" ? "Active" : "History"} matches the kind or search you
-						picked.
-					</EmptyDescription>
-				</EmptyHeader>
-				<EmptyContent>
-					<Button variant="outline" size="sm" onClick={onClear}>
-						Clear filters
-					</Button>
-				</EmptyContent>
-			</Empty>
+			<FilteredEmpty
+				noun="investigations"
+				description={`Nothing in ${view === "active" ? "Active" : "History"} matches the kind or search you picked.`}
+				onClear={onClear}
+			/>
 		)
 	}
 	return (

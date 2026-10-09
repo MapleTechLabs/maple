@@ -236,7 +236,7 @@ export function NothingInWindow({
 	onClear?: () => void
 }) {
 	return (
-		<Empty className="rounded-xl border border-dashed md:py-14">
+		<Empty className="rounded-md border border-dashed md:py-14">
 			<EmptyHeader>
 				<EmptyTitle>{title}</EmptyTitle>
 				<EmptyDescription>{description}</EmptyDescription>

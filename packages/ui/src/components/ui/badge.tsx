@@ -25,9 +25,9 @@ export const badgeVariants = cva(
 				default:
 					"h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs",
 				lg: "h-6.5 min-w-6.5 px-[calc(--spacing(1.5)-1px)] text-base sm:h-5.5 sm:min-w-5.5 sm:text-sm",
-				sm: "h-5 min-w-5 rounded-[.25rem] px-[calc(--spacing(1)-1px)] text-xs sm:h-4 sm:min-w-4 sm:text-[.625rem]",
+				sm: "h-5 min-w-5 rounded-sm px-[calc(--spacing(1)-1px)] text-xs sm:h-4 sm:min-w-4 sm:text-3xs",
 				// Dense tables and meta rows: fixed 10px on every breakpoint.
-				xs: "h-4 min-w-4 rounded-[.25rem] px-1 text-3xs sm:h-4 sm:min-w-4 sm:text-3xs [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
+				xs: "h-4 min-w-4 rounded-sm px-1 text-3xs sm:h-4 sm:min-w-4 sm:text-3xs [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
 			},
 			pill: {
 				false: "",

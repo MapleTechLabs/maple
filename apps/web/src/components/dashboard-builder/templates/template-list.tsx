@@ -274,7 +274,7 @@ export function TemplateList({
 								/>
 								{gatedByCategory.map(({ category, templates: group }) => (
 									<div key={category}>
-										<div className="text-muted-foreground/75 pt-3.5 pr-5 pb-1 pl-12.75 text-2xs">
+										<div className="text-muted-foreground/70 pt-3.5 pr-5 pb-1 pl-12.75 text-2xs">
 											{CATEGORY_LABELS[category] ?? category}
 										</div>
 										{group.map((template) => (

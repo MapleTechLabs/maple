@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import type { DashboardId, DashboardVersionId } from "@maple/domain/http"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Result } from "@/lib/effect-atom"
 import { ErrorState } from "@/components/common/error-state"
 import { HistoryIcon, XmarkIcon } from "@/components/icons"
@@ -42,7 +43,7 @@ export function DashboardHistoryPanel({
 					onClick={onClose}
 					className="ml-auto text-muted-foreground hover:text-foreground"
 				>
-					<XmarkIcon className="size-4" />
+					<XmarkIcon size={14} />
 				</IconButton>
 			</div>
 
@@ -62,21 +63,23 @@ export function DashboardHistoryPanel({
 					<ErrorState
 						variant="inline"
 						error={result.cause}
-						title="Couldn't load history"
+						title="Failed to load history"
 						className="px-4"
 					/>
 				)}
 
 				{!isLoading && !isError && versions.length === 0 && (
-					<div className="px-4 py-12 text-center">
-						<div className="mx-auto mb-3 grid size-9 place-items-center rounded-full bg-muted">
-							<HistoryIcon className="size-4 text-muted-foreground" />
-						</div>
-						<p className="text-xs font-medium text-foreground">No history yet</p>
-						<p className="mt-1 text-2xs text-muted-foreground">
-							Each save is captured here so you can revisit or restore.
-						</p>
-					</div>
+					<Empty className="gap-0 px-4 py-12 md:py-12">
+						<EmptyHeader>
+							<EmptyMedia className="mb-3 size-9 rounded-full bg-muted">
+								<HistoryIcon size={16} className="text-muted-foreground" />
+							</EmptyMedia>
+							<EmptyTitle className="text-xs font-medium">No history yet</EmptyTitle>
+							<EmptyDescription className="text-2xs">
+								Each save is captured here so you can revisit or restore.
+							</EmptyDescription>
+						</EmptyHeader>
+					</Empty>
 				)}
 
 				{!isLoading && !isError && versions.length > 0 && (

@@ -8,6 +8,7 @@ import { ArrowRotateClockwiseIcon, ClockIcon } from "./icons"
 import { Button } from "./ui/button"
 import { NativeSelect, NativeSelectOption } from "./ui/native-select"
 import { SearchInput } from "./ui/search-input"
+import { StatusDot } from "./ui/status-dot"
 import { useDebouncedCallback } from "../hooks/use-debounced-callback"
 import { cn } from "../lib/utils"
 import { TONE_TEXT } from "../lib/tone"
@@ -126,7 +127,7 @@ export function ToolbarStat({
 }) {
 	return (
 		<span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
-			{dot ? <span className="size-1.5 rounded-full bg-severity-info" /> : null}
+			{dot ? <StatusDot tone="info" /> : null}
 			<span className={cn("font-medium tabular-nums", danger && value > 0 && TONE_TEXT.crit)}>
 				{formatNumber(value)}
 			</span>

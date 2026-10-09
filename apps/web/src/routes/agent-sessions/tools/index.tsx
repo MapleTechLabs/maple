@@ -10,7 +10,10 @@ import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-vi
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
 import { ErrorState } from "@/components/common/error-state"
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import {
+	PageRefreshProvider,
+	usePageRefreshContext,
+} from "@/components/time-range-picker/page-refresh-context"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -115,6 +118,7 @@ function AgentToolsBody({
 	actions: ReactNode
 }) {
 	const results = useToolAnalytics(search, window)
+	const { reload } = usePageRefreshContext()
 	const tabCounts = useAgentSessionsTabCounts(window)
 	// Memoized: it is memo input for the detail links the table builds.
 	const timeRange = useMemo(
@@ -179,7 +183,7 @@ function AgentToolsBody({
 				<Skeleton className="mx-6 h-80" />
 			</div>
 		))
-		.onError((error) => <ErrorState error={error} title="Failed to load agent tool analytics" />)
+		.onError((error) => <ErrorState error={error} title="Failed to load agent tool analytics" onRetry={reload} />)
 		.onSuccess((totals, result) => (
 			<AgentToolsView
 				search={search}

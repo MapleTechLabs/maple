@@ -13,6 +13,7 @@ import {
 	useTableSort,
 } from "@/components/common/data-table"
 import { MetaLine } from "./primitives/meta-line"
+import { formatCores } from "./format"
 import { formatUptime } from "@maple/ui/lib/format"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -107,7 +108,7 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 						<MetaLine items={[node.kubeletVersion && `kubelet ${node.kubeletVersion}`]} />
 					</div>
 					<div className="hidden w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
-						{Number.isFinite(node.cpuUsage) ? node.cpuUsage.toFixed(2) : "—"}
+						{formatCores(node.cpuUsage)}
 					</div>
 					<div className="hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 						{formatUptime(node.uptime)}

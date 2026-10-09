@@ -100,7 +100,7 @@ export function MembersSection() {
 		return withRemoveLoading(async () => {
 			// On failure the confirmation stays open with its member selected so the admin can retry.
 			const ok = await settleClerk(memberToRemove.destroy(), {
-				success: `${memberToRemove.name} has been removed`,
+				success: `${memberToRemove.name} removed`,
 				error: "Failed to remove member",
 			})
 			if (!ok) return

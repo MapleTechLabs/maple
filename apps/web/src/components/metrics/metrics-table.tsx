@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
@@ -28,7 +28,7 @@ interface MetricsTableProps {
 }
 
 const SKELETON_COLUMNS = [
-	{ header: "Metric Name", headClassName: "w-[40%]", skeleton: "w-48" },
+	{ header: "Metric name", headClassName: "w-[40%]", skeleton: "w-48" },
 	{
 		header: "Type",
 		headClassName: "hidden md:table-cell w-[100px]",
@@ -48,7 +48,7 @@ const SKELETON_COLUMNS = [
 		skeleton: "w-12",
 	},
 	{
-		header: "Last Seen",
+		header: "Last seen",
 		headClassName: "hidden md:table-cell w-[100px]",
 		cellClassName: "hidden md:table-cell",
 		skeleton: "w-16",
@@ -124,11 +124,11 @@ export function MetricsTable({
 				<Table className="table-fixed">
 					<TableHeader>
 						<TableRow>
-							<TableHead className="w-[40%]">Metric Name</TableHead>
+							<TableHead className="w-[40%]">Metric name</TableHead>
 							<TableHead className="w-[100px]">Type</TableHead>
 							<TableHead className="w-[120px]">Service</TableHead>
 							<TableHead className="w-[100px]">Points</TableHead>
-							<TableHead className="w-[100px]">Last Seen</TableHead>
+							<TableHead className="w-[100px]">Last seen</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -163,7 +163,7 @@ export function MetricsTable({
 												{metric.serviceName}
 											</Badge>
 										) : (
-											<span className="text-xs text-muted-foreground">-</span>
+											<span className="text-xs text-muted-foreground">{EMPTY_VALUE}</span>
 										)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell font-mono text-xs">

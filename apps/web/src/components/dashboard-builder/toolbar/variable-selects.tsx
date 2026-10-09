@@ -1,5 +1,7 @@
 import { useRef } from "react"
 import { Button } from "@maple/ui/components/ui/button"
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@maple/ui/components/ui/input-group"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import {
 	Combobox,
 	ComboboxChipsInput,
@@ -66,9 +68,9 @@ function chipLabel(variable: DashboardVariable): string {
 }
 
 function displayValue(resolved: ResolvedVariable | undefined, options: VariableOptionsState): string {
-	if (resolved === undefined) return options.loading ? "…" : "—"
+	if (resolved === undefined) return options.loading ? "…" : EMPTY_VALUE
 	if (resolved.isAll) return "All"
-	return resolved.value === "" ? "—" : resolved.value
+	return resolved.value === "" ? EMPTY_VALUE : resolved.value
 }
 
 function VariableControl({
@@ -166,18 +168,19 @@ function TextboxControl({
 }) {
 	const current = resolved?.value ?? ""
 	return (
-		<div className="flex h-8 items-center overflow-hidden rounded-lg border border-input bg-transparent text-xs shadow-xs focus-within:ring-2 focus-within:ring-ring">
-			<span className="border-r border-input px-2 font-mono text-muted-foreground">
+		<InputGroup className="h-8 w-auto text-xs sm:text-xs">
+			<InputGroupAddon className="border-r border-input pe-2 font-mono text-muted-foreground">
 				{chipLabel(variable)}
-			</span>
+			</InputGroupAddon>
 			{/* Uncontrolled + keyed so external value changes (URL nav) reset the
 			    field while typing stays local until commit (blur / Enter). */}
-			<input
+			<InputGroupInput
 				key={current}
+				size="sm"
 				defaultValue={current}
 				placeholder="any"
 				aria-label={`${chipLabel(variable)} variable`}
-				className="h-full w-28 bg-transparent px-2 font-mono outline-none placeholder:text-muted-foreground"
+				controlClassName="w-28 font-mono"
 				onBlur={(event) => {
 					if (event.target.value !== current) onChange(event.target.value)
 				}}
@@ -185,6 +188,6 @@ function TextboxControl({
 					if (event.key === "Enter") event.currentTarget.blur()
 				}}
 			/>
-		</div>
+		</InputGroup>
 	)
 }

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -237,13 +237,14 @@ function WebAnalyticsPage() {
 							{chip.label} ✕
 						</Badge>
 					))}
-					<button
-						type="button"
+					<Button
+						variant="link"
+						size="xs"
 						onClick={onClearFilters}
-						className="px-1 text-3xs text-muted-foreground underline-offset-2 hover:underline"
+						className="h-auto px-1 text-3xs text-muted-foreground sm:text-3xs"
 					>
 						Clear all
-					</button>
+					</Button>
 				</div>
 			) : null}
 			{activeTab === "ai" ? (
@@ -328,6 +329,12 @@ function AnalyticsContent({
 	const [picked, setPicked] = useState<AnalyticsMetricKey | null>(null)
 
 	const summaryResult = useRefreshableAtomValue(webAnalyticsSummaryResultAtom({ data: windowInput }))
+	const retrySummary = useAtomRefresh(webAnalyticsSummaryResultAtom({ data: windowInput }))
+	const retryBreakdowns = useAtomRefresh(
+		webAnalyticsBreakdownsResultAtom({
+			data: { startTime, endTime, limitPerDimension: BREAKDOWN_LIMIT, ...filters },
+		}),
+	)
 
 	// The bot split for this window, measured over every agent regardless of the
 	// Traffic filter — which is the only way it can be reported while that filter
@@ -387,7 +394,9 @@ function AnalyticsContent({
 						<ChartLoading variant="area" height={224} />
 					</>
 				))
-				.onError((error) => <ErrorState error={error} />)
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load analytics summary" onRetry={retrySummary} />
+				))
 				.onSuccess((summary) => {
 					const source: AnalyticsMetricSource = { summary, timeseries, pageviews }
 					// An explicit pick wins while it still holds; a filter change that
@@ -433,7 +442,9 @@ function AnalyticsContent({
 						<Skeleton className="h-72 w-full" />
 					</div>
 				))
-				.onError((error) => <ErrorState error={error} />)
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load breakdowns" onRetry={retryBreakdowns} />
+				))
 				.onSuccess((breakdowns, result) => {
 					const pages = Result.builder(pagesResult)
 						.onSuccess((rows) => rows.data)

@@ -137,7 +137,7 @@ export function DashboardToolbar({
 							className="whitespace-nowrap"
 						>
 							<GridIcon size={14} />
-							Auto Layout
+							Auto layout
 						</DropdownMenuItem>
 					)}
 					{isEdit && (

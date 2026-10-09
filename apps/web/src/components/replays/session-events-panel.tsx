@@ -4,6 +4,8 @@ import { shortId } from "@maple/ui/lib/ids"
 import * as Predicate from "effect/Predicate"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { latencyLevel } from "@maple/ui/lib/latency-tone"
@@ -240,7 +242,7 @@ function useClockAt() {
 	return React.useCallback(
 		(ts: string) => {
 			const epoch = parseChTimestampMs(ts)
-			if (Number.isNaN(epoch)) return "—"
+			if (Number.isNaN(epoch)) return EMPTY_VALUE
 			const realOffset = Math.max(0, Math.min(epoch - recordingStartEpochMs, realTotalMs))
 			return formatClock(timeline.toDisplay(realOffset))
 		},
@@ -300,12 +302,12 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 	}
 
 	return Result.builder(result)
-		.onInitial(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
+		.onInitial(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-md" />)
 		.onError((error) => (
 			<ErrorState error={error} title="Couldn't load session events" className="flex-1 border-0" />
 		))
 		.onSuccess((data) => renderBody(data.data as ReadonlyArray<EventRow>))
-		.orElse(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
+		.orElse(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-md" />)
 }
 
 // Status 0 is a request that never got a response: as bad as a 5xx.
@@ -765,10 +767,10 @@ function TracesTab({
 }) {
 	if (traceIds.length === 0) {
 		return (
-			<p className="p-4 text-xs leading-relaxed text-muted-foreground">
+			<EmptyMessage className="leading-relaxed">
 				No backend traces were linked to this session. Correlation populates automatically when the
 				page is instrumented with <InlineCode>@maple-dev/browser</InlineCode> tracing.
-			</p>
+			</EmptyMessage>
 		)
 	}
 	return <TracesTabLive traceIds={traceIds} window={window} />
@@ -871,7 +873,7 @@ function TraceListRow({ summary }: { summary: SessionTraceSummary }) {
 			</div>
 			<div className="flex items-center gap-2 pl-[3.125rem]">
 				<span className="min-w-0 truncate text-2xs text-muted-foreground">
-					{summary.rootServiceName} · {summary.spanCount} span{summary.spanCount === 1 ? "" : "s"}
+					{summary.rootServiceName} · {countLabel(summary.spanCount, "span")}
 					{isError ? " · error" : ""}
 				</span>
 				<Link
@@ -1037,7 +1039,7 @@ function SessionTab({ sessionId, session }: { sessionId: string; session: Sessio
 				)}
 				{session.userAgent && (
 					<DetailRail.Field label="User agent">
-						<span className="break-words font-mono text-3xs leading-[15px] text-muted-foreground">
+						<span className="break-words font-mono text-3xs leading-3.75 text-muted-foreground">
 							{session.userAgent}
 						</span>
 					</DetailRail.Field>
@@ -1152,13 +1154,13 @@ function IdentityGroup({ session }: { session: SessionRailSession }) {
 				<DetailRail.Field label="Traits">
 					<div className="flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
 						{traits.map(([key, value]) => (
-							<span
+							<TruncatedText
 								key={key}
-								className="min-w-0 max-w-full truncate"
-								title={`${key}: ${value}`}
+								className="max-w-full"
+								text={`${key}: ${value}`}
 							>
 								{key}=<span className="text-foreground/80">{value}</span>
-							</span>
+							</TruncatedText>
 						))}
 					</div>
 				</DetailRail.Field>
@@ -1258,7 +1260,7 @@ function SessionSummary({ session }: { session: SessionRailSession }) {
 function Legend({ swatch, label, value }: { swatch: string; label: string; value: string }) {
 	return (
 		<span className="flex items-center gap-1.5">
-			<span aria-hidden className={cn("size-1.5 rounded-full", swatch)} />
+			<StatusDot tone="custom" className={swatch} />
 			{label}
 			<span className="font-mono tabular-nums text-foreground">{value}</span>
 		</span>
@@ -1330,7 +1332,7 @@ function EnvFact({
 					className,
 				)}
 			>
-				{value || "—"}
+				{value || EMPTY_VALUE}
 			</span>
 		</span>
 	)

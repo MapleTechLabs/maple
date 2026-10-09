@@ -145,7 +145,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 
 			<div className="flex flex-col gap-2">
 				<TemplateLivePreview template={template} parameters={values} />
-				<p className="text-muted-foreground/85 text-2xs">That's the dashboard you'd get right now.</p>
+				<p className="text-muted-foreground/80 text-2xs">That's the dashboard you'd get right now.</p>
 			</div>
 
 			<RequirementBlock template={template} readiness={readiness} />

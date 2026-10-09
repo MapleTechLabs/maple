@@ -716,7 +716,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 					{sides.map((side) => (
 						<div key={side.label} className="flex flex-col gap-0.5">
 							<span className="flex items-center gap-1.5 font-medium">
-								<span aria-hidden className={cn("size-1.5 rounded-full", side.fill)} />
+								<StatusDot tone="custom" className={side.fill} />
 								{side.title}: {side.count.toLocaleString()}
 							</span>
 							{side.parts.map((bucket) => (
@@ -757,7 +757,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 	// Unlike cost, none is a measurement here — the index counts every errored
 	// span — so the cell says so rather than sitting empty.
 	if (session.errorSpanCount === 0) {
-		return <span className="text-xs text-muted-foreground/50">—</span>
+		return <span className="text-xs text-muted-foreground/50">{EMPTY_VALUE}</span>
 	}
 	const classified = session.toolErrorCount + session.turnErrorCount
 	const other = session.errorSpanCount - classified

@@ -4,9 +4,7 @@ import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useMutationAction } from "@/hooks/use-mutation-action"
-import { Exit } from "effect"
 import { useMemo } from "react"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import type { V2Recommendation } from "@maple/domain/http/v2"
 
@@ -121,6 +119,7 @@ function RecommendationDetailPage() {
 	const [create, applying] = useMutationAction(
 		MapleApiV2AtomClient.mutation("attributeMappings", "create"),
 		{
+			success: (mapping) => `Mapping created: ${mapping.source_key} → ${mapping.target_key}`,
 			error: "Failed to create mapping",
 			onSuccess: () => {
 				refreshIssues()
@@ -149,7 +148,7 @@ function RecommendationDetailPage() {
 	async function handleApply(target: V2Recommendation) {
 		if (target.kind !== "rename" || !target.canonical_key) return
 		const canonicalKey = target.canonical_key
-		const result = await create({
+		await create({
 			payload: {
 				name: `Rename ${target.source_key} → ${canonicalKey}`,
 				source_context: "span",
@@ -158,12 +157,6 @@ function RecommendationDetailPage() {
 				operation: "copy",
 			},
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: `Mapping created — ${target.source_key} → ${canonicalKey}`,
-				type: "success",
-			})
-		}
 	}
 
 	return (
@@ -174,7 +167,7 @@ function RecommendationDetailPage() {
 			crumb={(issue) => `Recommendation #${issue.number}`}
 			width="narrow"
 			gap="lg"
-			errorTitle="Couldn't load recommendation"
+			errorTitle="Failed to load recommendation"
 			onRetry={refreshIssues}
 			loading={
 				<>
@@ -494,7 +487,7 @@ function DetailSidebar({
 				{isLive ? (
 					<div className="flex flex-col gap-3">
 						<p className="flex items-center gap-2 text-sm text-severity-info">
-							<CircleCheckIcon size={15} />
+							<CircleCheckIcon size={14} />
 							{issue.status === "resolved" ? "Resolved" : "Mapping is active"}
 						</p>
 						<Button
@@ -515,7 +508,7 @@ function DetailSidebar({
 							onClick={onReopen}
 							loading={busy === "reopen"}
 						>
-							<ArrowRotateAnticlockwiseIcon size={15} />
+							<ArrowRotateAnticlockwiseIcon size={14} />
 							Reopen recommendation
 						</Button>
 						<p className="text-xs leading-relaxed text-muted-foreground">
@@ -526,7 +519,7 @@ function DetailSidebar({
 					<div className="flex flex-col gap-2">
 						{isApplyable ? (
 							<Button className="w-full" onClick={onApply} loading={busy === "apply"}>
-								<BoltIcon size={15} />
+								<BoltIcon size={14} />
 								Apply mapping
 							</Button>
 						) : (
@@ -536,7 +529,7 @@ function DetailSidebar({
 							</p>
 						)}
 						<Button className="w-full" onClick={onDismiss} loading={busy === "dismiss"}>
-							<XmarkIcon size={15} />
+							<XmarkIcon size={14} />
 							Dismiss recommendation
 						</Button>
 					</div>

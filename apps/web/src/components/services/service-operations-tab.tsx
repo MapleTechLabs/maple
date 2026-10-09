@@ -13,7 +13,6 @@ import {
 	MobileStat,
 	MobileStatLine,
 	SortColumnHead,
-	TABLE_CARD_CLASS,
 } from "./service-table-cells"
 import { SampledValue } from "./sampled-value"
 import { useTableSort } from "@/hooks/use-table-sort"
@@ -301,18 +300,20 @@ export function ServiceOperationsTab({
 
 function OperationsLoadingState() {
 	return (
-		<SkeletonList
-			rows={10}
-			className={cn("gap-0", TABLE_CARD_CLASS)}
-			renderRow={() => (
-				<div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
-					<Skeleton className="h-3 flex-1" />
-					<Skeleton className="h-3 w-12" />
-					<Skeleton className="h-3 w-10" />
-					<Skeleton className="h-3 w-12" />
-					<Skeleton className="hidden h-5 w-[120px] md:block" />
-				</div>
-			)}
-		/>
+		<Panel>
+			<SkeletonList
+				rows={10}
+				className="gap-0"
+				renderRow={() => (
+					<div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
+						<Skeleton className="h-3 flex-1" />
+						<Skeleton className="h-3 w-12" />
+						<Skeleton className="h-3 w-10" />
+						<Skeleton className="h-3 w-12" />
+						<Skeleton className="hidden h-5 w-[120px] md:block" />
+					</div>
+				)}
+			/>
+		</Panel>
 	)
 }

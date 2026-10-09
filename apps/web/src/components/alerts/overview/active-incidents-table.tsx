@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { RelativeTime } from "@/components/common/relative-time"
 import { Fragment, useMemo } from "react"
 
@@ -136,8 +137,8 @@ export function ActiveIncidentsTable({
 				<TableBody>
 					{sorted.length === 0 ? (
 						<TableRow>
-							<TableCell colSpan={6} className="py-8 text-center text-muted-foreground text-sm">
-								No active incidents match the selected tags.
+							<TableCell colSpan={6} className="p-0">
+								<EmptyMessage>No active incidents match the selected tags.</EmptyMessage>
 							</TableCell>
 						</TableRow>
 					) : groups ? (

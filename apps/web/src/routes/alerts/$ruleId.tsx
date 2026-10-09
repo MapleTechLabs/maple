@@ -19,7 +19,11 @@ import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { LONG_RANGE_PRESET_OPTIONS, presetLabel, formatTimeRangeDisplay } from "@/lib/time-utils"
-import { normalizeTimestampInput, formatTimestampInTimezone } from "@/lib/timezone-format"
+import {
+	normalizeTimestampInput,
+	formatTimeInTimezone,
+	formatTimestampInTimezone,
+} from "@/lib/timezone-format"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-series"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
@@ -86,15 +90,14 @@ const SIGNAL_SOURCE_DESCRIPTION: Record<SignalSource, string> = {
 } satisfies Record<SignalSource, string>
 
 function formatBucketRange(bucket: { start: number; end: number }, timeZone: string): string {
-	const time = (ms: number) =>
-		new Date(ms).toLocaleTimeString(undefined, { timeZone, hour: "2-digit", minute: "2-digit" })
+	const time = (ms: number) => formatTimeInTimezone(ms, { timeZone })
 	return `${time(bucket.start)}–${time(bucket.end)}`
 }
 
 function formatBucketSpan(seconds: number): string {
 	if (seconds < 60) return `${Math.round(seconds)}s`
 	const minutes = Math.round(seconds / 60)
-	if (minutes < 60) return `${minutes}min`
+	if (minutes < 60) return `${minutes}m`
 	const hours = minutes / 60
 	return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`
 }

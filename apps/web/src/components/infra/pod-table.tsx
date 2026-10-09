@@ -2,6 +2,7 @@ import type { MouseEvent } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 
 import type { ListPodsResponse } from "@maple/domain/http"
@@ -175,7 +176,7 @@ export function PodTable({
 						to="/infra/kubernetes/pods/$podName"
 						params={{ podName: pod.podName }}
 						search={{ ...timeSearch, namespace: pod.namespace || undefined }}
-						className={cn(ROW_LINK_CLASS, "data-active:bg-muted/50")}
+						className={cn(ROW_LINK_CLASS, rowSelectedClass(activeKey === key))}
 						data-active={activeKey === key || undefined}
 						onClick={
 							onPeek

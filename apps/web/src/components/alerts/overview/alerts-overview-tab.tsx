@@ -21,6 +21,7 @@ import { MagnifierIcon } from "@/components/icons"
 import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { toastExit } from "@/lib/error-toast"
 import { needsAttention } from "@/lib/alerts/rule-status"
+import { formatResolutionDuration } from "@/lib/alerts/form-utils"
 import {
 	filterByTags,
 	groupByTag as groupItemsByTag,
@@ -249,9 +250,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			resolved.reduce((sum, i) => {
 				return sum + (new Date(i.resolvedAt!).getTime() - new Date(i.firstTriggeredAt).getTime())
 			}, 0) / resolved.length
-		if (avg < 60_000) return `${Math.round(avg / 1000)}s`
-		if (avg < 3_600_000) return `${(avg / 60_000).toFixed(1)}m`
-		return `${(avg / 3_600_000).toFixed(1)}h`
+		return formatResolutionDuration(avg)
 	}, [incidents])
 
 	const enabledRules = rules.filter((r) => r.enabled).length
@@ -295,7 +294,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 								})
 							}
 						>
-							<SelectTrigger className="w-[170px]">
+							<SelectTrigger size="sm" className="w-[170px]">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>

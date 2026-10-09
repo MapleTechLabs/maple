@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react"
 import "./service-map.css"
+import { Eyebrow } from "../ui/eyebrow"
 
 /**
  * Loading state for the service map.
@@ -244,14 +245,14 @@ export function ServiceMapLoading() {
 				})}
 			</svg>
 
-			<div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+			<Eyebrow as="div" variant="mono" className="flex items-center gap-2">
 				<span>Mapping service connections</span>
 				<span className="inline-flex" aria-hidden>
 					<span className="pulse-dot">.</span>
 					<span className="pulse-dot">.</span>
 					<span className="pulse-dot">.</span>
 				</span>
-			</div>
+			</Eyebrow>
 		</div>
 	)
 }

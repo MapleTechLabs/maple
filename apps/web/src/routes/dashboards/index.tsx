@@ -202,7 +202,7 @@ function DashboardListPage() {
 			</Button>
 			<Button size="sm" disabled={readOnly} onClick={handleCreate}>
 				<PlusIcon size={14} data-icon="inline-start" />
-				Create Dashboard
+				Create dashboard
 			</Button>
 			<input
 				ref={importInputRef}

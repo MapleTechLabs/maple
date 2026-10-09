@@ -423,7 +423,7 @@ function DashboardContent({
 
 	const environmentItems = useMemo(
 		() => [
-			{ value: "__all__", label: "All Environments" },
+			{ value: "__all__", label: "All environments" },
 			...environments.map((e) => ({ value: e.name, label: e.name })),
 		],
 		[environments],

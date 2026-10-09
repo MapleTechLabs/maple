@@ -215,7 +215,7 @@ function ChatPageInner({
 								aria-label="Switch conversation"
 							>
 								<span className="truncate text-sm font-medium">{activeTitle}</span>
-								<ChevronDownIcon size={14} className="shrink-0 opacity-60" />
+								<ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/70" />
 							</button>
 							<IconButton
 								label="Copy share link"
@@ -304,7 +304,7 @@ function SharedChatView({
 				<div className="flex h-full min-h-0 flex-1 flex-col">
 					<header className="flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-2 text-sidebar-foreground">
 						<SidebarTrigger className="size-9" />
-						<LinkIcon size={14} className="shrink-0 opacity-60" />
+						<LinkIcon size={14} className="shrink-0 text-muted-foreground/70" />
 						<div className="flex min-w-0 flex-1 flex-col justify-center">
 							<TruncatedText text={heading} className="text-sm font-medium leading-tight">
 								{heading}
@@ -358,7 +358,7 @@ function ChatConversationFallback() {
 				<Skeleton className="h-3 w-1/3" />
 			</div>
 			<div className="mx-auto w-full max-w-3xl px-4 pb-4" aria-hidden>
-				<Skeleton className="h-[88px] rounded-lg border" />
+				<Skeleton className="h-[88px] rounded-md border" />
 			</div>
 		</div>
 	)

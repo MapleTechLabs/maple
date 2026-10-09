@@ -19,6 +19,7 @@ import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { NodeDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
+import { formatCores } from "@/components/infra/format"
 import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
@@ -119,9 +120,7 @@ function NodeDetailPage() {
 					<StatRail columns={3}>
 						<StatRailItem
 							eyebrow="CPU cores"
-							value={
-								Number.isFinite(summary.cpuUsage) ? summary.cpuUsage.toFixed(2) : EMPTY_VALUE
-							}
+							value={formatCores(summary.cpuUsage)}
 							compact
 						/>
 						<StatRailItem eyebrow="Uptime" value={formatUptime(summary.uptime)} compact />

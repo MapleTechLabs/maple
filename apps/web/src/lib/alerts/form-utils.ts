@@ -823,14 +823,7 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 				}, 0) / resolvedIncidents.length
 			: 0
 
-	const avgResolution =
-		avgResolutionMs > 0
-			? avgResolutionMs < 60_000
-				? `${Math.round(avgResolutionMs / 1000)}s`
-				: avgResolutionMs < 3_600_000
-					? `${(avgResolutionMs / 60_000).toFixed(1)}m`
-					: `${(avgResolutionMs / 3_600_000).toFixed(1)}h`
-			: EMPTY_VALUE
+	const avgResolution = avgResolutionMs > 0 ? formatResolutionDuration(avgResolutionMs) : EMPTY_VALUE
 
 	const groupCounts: Record<string, number> = {}
 	for (const i of incidents) {
@@ -951,4 +944,11 @@ export function formatAlertDuration(startStr: string | null, endStr: string | nu
 	if (hours < 24) return remainMins > 0 ? `${hours}h ${remainMins}m` : `${hours}h`
 	const days = Math.floor(hours / 24)
 	return `${days}d ${hours % 24}h`
+}
+
+/** Mean time to resolve: whole seconds under a minute, one decimal of minutes or hours above. */
+export function formatResolutionDuration(ms: number): string {
+	if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+	if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`
+	return `${(ms / 3_600_000).toFixed(1)}h`
 }

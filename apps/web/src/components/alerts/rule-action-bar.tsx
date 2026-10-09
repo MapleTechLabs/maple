@@ -119,9 +119,10 @@ function ValidationSummary({
 				<Tooltip>
 					<TooltipTrigger
 						render={
-							<button
-								type="button"
-								className="rounded-sm px-1 text-xs underline decoration-dotted underline-offset-2 hover:text-foreground"
+							<Button
+								variant="link"
+								size="xs"
+								className="text-muted-foreground underline decoration-dotted hover:text-foreground"
 							/>
 						}
 					>

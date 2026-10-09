@@ -177,12 +177,12 @@ export function PlanOffer({
 					window.location.href = result.paymentUrl
 					return
 				}
-				toastManager.add({ title: "Plan updated successfully.", type: "success" })
+				toastManager.add({ title: "Plan updated successfully", type: "success" })
 				refreshCustomer()
 				setAttaching(null)
 			},
 			(error: unknown) => {
-				showErrorToast(error, { title: "Couldn't update your plan" })
+				showErrorToast(error, { title: "Failed to update your plan" })
 				setAttaching(null)
 			},
 		)
