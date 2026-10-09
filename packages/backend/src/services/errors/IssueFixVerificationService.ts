@@ -270,7 +270,7 @@ const make: Effect.Effect<
 			),
 		)
 
-	const hydrateLinks = Effect.fn("IssueFixVerification.hydrateLinks")(function* (
+	const hydrateLinks = Effect.fn("IssueFixVerificationService.hydrateLinks")(function* (
 		orgId: OrgId,
 		rows: ReadonlyArray<ErrorIssuePullRequestRow>,
 		suggestedRepository: string | null = null,
@@ -298,7 +298,7 @@ const make: Effect.Effect<
 	 * A wrong preselection is worse than none: it is silent, and it is the kind of
 	 * mistake somebody only notices after attaching the wrong PR.
 	 */
-	const suggestRepository = Effect.fn("IssueFixVerification.suggestRepository")(function* (
+	const suggestRepository = Effect.fn("IssueFixVerificationService.suggestRepository")(function* (
 		orgId: OrgId,
 		serviceName: string,
 		existingLinks: ReadonlyArray<ErrorIssuePullRequestRow>,
@@ -344,7 +344,7 @@ const make: Effect.Effect<
 	})
 
 	const listPullRequests: IssueFixVerificationServiceApi["listPullRequests"] = Effect.fn(
-		"IssueFixVerification.listPullRequests",
+		"IssueFixVerificationService.listPullRequests",
 	)(function* (orgId, issueId) {
 		const issue = yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* selectLinks(orgId, issueId)
@@ -353,7 +353,7 @@ const make: Effect.Effect<
 	})
 
 	const listVerifications: IssueFixVerificationServiceApi["listVerifications"] = Effect.fn(
-		"IssueFixVerification.listVerifications",
+		"IssueFixVerificationService.listVerifications",
 	)(function* (orgId, issueId) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
@@ -375,7 +375,7 @@ const make: Effect.Effect<
 	 * create the same link — `propose_fix`, the manual dialog, and the webhook's
 	 * body scan — and two of them can race on a single PR.
 	 */
-	const upsertLink = Effect.fn("IssueFixVerification.upsertLink")(function* (input: {
+	const upsertLink = Effect.fn("IssueFixVerificationService.upsertLink")(function* (input: {
 		readonly orgId: OrgId
 		readonly issueId: ErrorIssueId
 		readonly actorId: ActorId | null
@@ -472,7 +472,7 @@ const make: Effect.Effect<
 	})
 
 	const linkPullRequest: IssueFixVerificationServiceApi["linkPullRequest"] = Effect.fn(
-		"IssueFixVerification.linkPullRequest",
+		"IssueFixVerificationService.linkPullRequest",
 	)(function* (orgId, actorId, issueId, url, source) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const parsed = parsePullRequestUrl(url)
@@ -570,7 +570,7 @@ const make: Effect.Effect<
 	})
 
 	const unlinkPullRequest: IssueFixVerificationServiceApi["unlinkPullRequest"] = Effect.fn(
-		"IssueFixVerification.unlinkPullRequest",
+		"IssueFixVerificationService.unlinkPullRequest",
 	)(function* (orgId, actorId, issueId, pullRequestId) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const existing = yield* dbExecute((db) =>
@@ -624,7 +624,7 @@ const make: Effect.Effect<
 	 * was mid-transition, and GitHub retries a 500 on the whole delivery, which
 	 * would re-verify the issues that already succeeded.
 	 */
-	const openVerification = Effect.fn("IssueFixVerification.openVerification")(function* (input: {
+	const openVerification = Effect.fn("IssueFixVerificationService.openVerification")(function* (input: {
 		readonly orgId: OrgId
 		readonly issue: ErrorIssueRow
 		readonly link: ErrorIssuePullRequestRow
@@ -720,103 +720,105 @@ const make: Effect.Effect<
 	 * this call from the link path the window would never open and the issue would
 	 * sit in `in_review` forever.
 	 */
-	const openMergedVerifications = Effect.fn("IssueFixVerification.openMergedVerifications")(function* (
-		orgId: OrgId,
-		links: ReadonlyArray<ErrorIssuePullRequestRow>,
-		merge: {
-			readonly mergedAtMs: number
-			readonly mergeCommitSha: string | null
-			readonly nowMs: number
-		},
-	) {
-		const { mergedAtMs, mergeCommitSha, nowMs } = merge
-		const systemActor = yield* actors.ensureSystemActor(orgId)
-
-		// One issue's problem must not cost the others. The API doc on
-		// `onPullRequestEvent` and `openVerification`'s both promise a multi-issue
-		// delivery does not lose the rest when one issue fails, but only the
-		// transition/not-found cases were caught — every `dbExecute` in here fails
-		// outward as `ErrorPersistenceError` and aborted the remaining links, which
-		// the sink then swallowed, so those links were dropped with no retry and no
-		// trace of why.
-		const openForLink = Effect.fn("IssueFixVerification.openForLink")(function* (
-			link: (typeof links)[number],
+	const openMergedVerifications = Effect.fn("IssueFixVerificationService.openMergedVerifications")(
+		function* (
+			orgId: OrgId,
+			links: ReadonlyArray<ErrorIssuePullRequestRow>,
+			merge: {
+				readonly mergedAtMs: number
+				readonly mergeCommitSha: string | null
+				readonly nowMs: number
+			},
 		) {
-			// One live verification per issue. A `synchronize` after a merge, a
-			// redelivered webhook, or a second PR attached to the same issue must
-			// not open a second window.
-			const open = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssueVerifications)
-						.select()
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.eq(link.issueId),
-							$.status.in_("waiting", "running"),
-						])
-						.limit(1),
-				),
-			)
-			if (Arr.isReadonlyArrayNonEmpty(open)) return false
+			const { mergedAtMs, mergeCommitSha, nowMs } = merge
+			const systemActor = yield* actors.ensureSystemActor(orgId)
 
-			const issueRows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssues)
-						.select()
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(link.issueId)])
-						.limit(1),
-				),
-			)
-			const issue = Arr.head(issueRows)
-			if (Option.isNone(issue)) return false
+			// One issue's problem must not cost the others. The API doc on
+			// `onPullRequestEvent` and `openVerification`'s both promise a multi-issue
+			// delivery does not lose the rest when one issue fails, but only the
+			// transition/not-found cases were caught — every `dbExecute` in here fails
+			// outward as `ErrorPersistenceError` and aborted the remaining links, which
+			// the sink then swallowed, so those links were dropped with no retry and no
+			// trace of why.
+			const openForLink = Effect.fn("IssueFixVerificationService.openForLink")(function* (
+				link: (typeof links)[number],
+			) {
+				// One live verification per issue. A `synchronize` after a merge, a
+				// redelivered webhook, or a second PR attached to the same issue must
+				// not open a second window.
+				const open = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIssueVerifications)
+							.select()
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.issueId.eq(link.issueId),
+								$.status.in_("waiting", "running"),
+							])
+							.limit(1),
+					),
+				)
+				if (Arr.isReadonlyArrayNonEmpty(open)) return false
 
-			yield* workflow.recordEvent(orgId, link.issueId, systemActor.id, "pr_merged", {
-				payload: {
-					pullRequestId: link.id,
-					url: link.url,
-					repoFullName: link.repoFullName,
-					number: link.number,
-					mergeCommitSha,
-					mergedAt: new Date(mergedAtMs).toISOString(),
-				},
-				timestamp: nowMs,
+				const issueRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIssues)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(link.issueId)])
+							.limit(1),
+					),
+				)
+				const issue = Arr.head(issueRows)
+				if (Option.isNone(issue)) return false
+
+				yield* workflow.recordEvent(orgId, link.issueId, systemActor.id, "pr_merged", {
+					payload: {
+						pullRequestId: link.id,
+						url: link.url,
+						repoFullName: link.repoFullName,
+						number: link.number,
+						mergeCommitSha,
+						mergedAt: new Date(mergedAtMs).toISOString(),
+					},
+					timestamp: nowMs,
+				})
+
+				yield* openVerification({
+					orgId,
+					issue: issue.value,
+					link: { ...link, mergedAt: mergedAtMs, mergeCommitSha },
+					mergedAtMs,
+					nowMs,
+					systemActor,
+				})
+				return true
 			})
 
-			yield* openVerification({
-				orgId,
-				issue: issue.value,
-				link: { ...link, mergedAt: mergedAtMs, mergeCommitSha },
-				mergedAtMs,
-				nowMs,
-				systemActor,
-			})
-			return true
-		})
-
-		let opened = 0
-		for (const link of links) {
-			const didOpen = yield* openForLink(link).pipe(
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.interrupt
-						: Effect.logError("[IssueFixVerification] could not open a verification").pipe(
-								Effect.annotateLogs({
-									orgId,
-									issueId: link.issueId,
-									pullRequestId: link.id,
-									error: summarizeCause(cause),
-								}),
-								Effect.as(false),
-							),
-				),
-			)
-			if (didOpen) opened += 1
-		}
-		return opened
-	})
+			let opened = 0
+			for (const link of links) {
+				const didOpen = yield* openForLink(link).pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logError("[IssueFixVerification] could not open a verification").pipe(
+									Effect.annotateLogs({
+										orgId,
+										issueId: link.issueId,
+										pullRequestId: link.id,
+										error: summarizeCause(cause),
+									}),
+									Effect.as(false),
+								),
+					),
+				)
+				if (didOpen) opened += 1
+			}
+			return opened
+		},
+	)
 
 	const onPullRequestEvent: IssueFixVerificationServiceApi["onPullRequestEvent"] = Effect.fn(
-		"IssueFixVerification.onPullRequestEvent",
+		"IssueFixVerificationService.onPullRequestEvent",
 	)(function* (input) {
 		const nowMs = yield* Clock.currentTimeMillis
 		let linksAutoCreated = 0
@@ -934,7 +936,7 @@ const make: Effect.Effect<
 	})
 
 	const refuteOnPostMergeOccurrence: IssueFixVerificationServiceApi["refuteOnPostMergeOccurrence"] =
-		Effect.fn("IssueFixVerification.refuteOnPostMergeOccurrence")(
+		Effect.fn("IssueFixVerificationService.refuteOnPostMergeOccurrence")(
 			function* (orgId, issueId, observedVersions, nowMs) {
 				const rows = yield* dbExecute((db) =>
 					db.run(
@@ -963,7 +965,7 @@ const make: Effect.Effect<
 		)
 
 	const settledRuns: IssueFixVerificationServiceApi["settledRuns"] = Effect.fn(
-		"IssueFixVerification.settledRuns",
+		"IssueFixVerificationService.settledRuns",
 	)(function* (limit) {
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -996,7 +998,7 @@ const make: Effect.Effect<
 	})
 
 	const dueVerifications: IssueFixVerificationServiceApi["dueVerifications"] = Effect.fn(
-		"IssueFixVerification.dueVerifications",
+		"IssueFixVerificationService.dueVerifications",
 	)(function* (nowMs, limit) {
 		return yield* dbExecute((db) =>
 			db.run(
@@ -1009,7 +1011,7 @@ const make: Effect.Effect<
 	})
 
 	const markRunning: IssueFixVerificationServiceApi["markRunning"] = Effect.fn(
-		"IssueFixVerification.markRunning",
+		"IssueFixVerificationService.markRunning",
 	)(function* (row, investigationId, nowMs) {
 		// CAS on the state the tick selected the row in: the error tick can refute
 		// this row while the agent is being enqueued, and resurrecting a terminal
@@ -1030,7 +1032,7 @@ const make: Effect.Effect<
 	})
 
 	const applyVerdict: IssueFixVerificationServiceApi["applyVerdict"] = Effect.fn(
-		"IssueFixVerification.applyVerdict",
+		"IssueFixVerificationService.applyVerdict",
 	)(function* (row, verdict, note, nowMs) {
 		const systemActor = yield* actors.ensureSystemActor(row.orgId)
 

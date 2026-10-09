@@ -348,7 +348,7 @@ export class AlertDestinationsService extends Context.Service<
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
 
-		const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (
+		const requireAdmin = Effect.fn("AlertDestinationsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
 		) {
 			if (roles.some((role) => adminRoles.includes(role))) return
@@ -360,7 +360,7 @@ export class AlertDestinationsService extends Context.Service<
 			)
 		})
 
-		const requireDestinationRow = Effect.fn("AlertsService.requireDestinationRow")(function* (
+		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
 			orgId: OrgId,
 			destinationId: AlertDestinationDocument["id"],
 		) {
@@ -392,7 +392,7 @@ export class AlertDestinationsService extends Context.Service<
 					),
 				)
 
-		const markDestinationTest = Effect.fn("AlertsService.markDestinationTest")(function* (
+		const markDestinationTest = Effect.fn("AlertDestinationsService.markDestinationTest")(function* (
 			orgId: OrgId,
 			destinationId: AlertDestinationDocument["id"],
 			errorMessage: string | null,
@@ -418,7 +418,9 @@ export class AlertDestinationsService extends Context.Service<
 			)
 		})
 
-		const listDestinations = Effect.fn("AlertsService.listDestinations")(function* (orgId: OrgId) {
+		const listDestinations = Effect.fn("AlertDestinationsService.listDestinations")(function* (
+			orgId: OrgId,
+		) {
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertDestinations)
@@ -433,7 +435,7 @@ export class AlertDestinationsService extends Context.Service<
 			return new AlertDestinationsListResponse({ destinations })
 		})
 
-		const validatePagerDutyKey = Effect.fn("AlertsService.validatePagerDutyKey")(function* (
+		const validatePagerDutyKey = Effect.fn("AlertDestinationsService.validatePagerDutyKey")(function* (
 			integrationKey: string,
 		) {
 			if (!PAGERDUTY_ROUTING_KEY_PATTERN.test(integrationKey)) {
@@ -455,25 +457,24 @@ export class AlertDestinationsService extends Context.Service<
 			}
 		})
 
-		const validateTelegramCredentials = Effect.fn("AlertsService.validateTelegramCredentials")(function* (
-			botToken: string,
-			chatId: string,
-		) {
-			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(botToken)) {
-				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
-			}
-			const result = yield* verifyTelegramCredentials(
-				botToken,
-				chatId,
-				runtime.deliveryTimeoutMs(),
-			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
-			if (result.status === "invalid") {
-				return yield* Effect.fail(makeValidationError(result.reason))
-			}
-		})
+		const validateTelegramCredentials = Effect.fn("AlertDestinationsService.validateTelegramCredentials")(
+			function* (botToken: string, chatId: string) {
+				if (!TELEGRAM_BOT_TOKEN_PATTERN.test(botToken)) {
+					return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
+				}
+				const result = yield* verifyTelegramCredentials(
+					botToken,
+					chatId,
+					runtime.deliveryTimeoutMs(),
+				).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+				if (result.status === "invalid") {
+					return yield* Effect.fail(makeValidationError(result.reason))
+				}
+			},
+		)
 
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
-			"AlertsService.listTelegramChats",
+			"AlertDestinationsService.listTelegramChats",
 		)(function* (roles, botToken) {
 			// Admin-gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
@@ -491,7 +492,7 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const createDestination: AlertDestinationsServiceApi["createDestination"] = Effect.fn(
-			"AlertsService.createDestination",
+			"AlertDestinationsService.createDestination",
 		)(function* (orgId, userId, roles, request) {
 			yield* requireAdmin(roles)
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
@@ -584,7 +585,7 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const updateDestination: AlertDestinationsServiceApi["updateDestination"] = Effect.fn(
-			"AlertsService.updateDestination",
+			"AlertDestinationsService.updateDestination",
 		)(function* (orgId, userId, roles, destinationId, request) {
 			yield* requireAdmin(roles)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
@@ -861,7 +862,7 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const deleteDestination: AlertDestinationsServiceApi["deleteDestination"] = Effect.fn(
-			"AlertsService.deleteDestination",
+			"AlertDestinationsService.deleteDestination",
 		)(function* (orgId, roles, destinationId) {
 			yield* requireAdmin(roles)
 			yield* requireDestinationRow(orgId, destinationId)
@@ -947,7 +948,7 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const testDestination: AlertDestinationsServiceApi["testDestination"] = Effect.fn(
-			"AlertsService.testDestination",
+			"AlertDestinationsService.testDestination",
 		)(function* (orgId, _userId, roles, destinationId) {
 			yield* requireAdmin(roles)
 			const row = yield* requireDestinationRow(orgId, destinationId)

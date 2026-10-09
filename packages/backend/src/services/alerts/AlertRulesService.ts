@@ -79,7 +79,9 @@ export const makeAlertRulePersistence = (options: {
 
 	const dbExecute = makeDbExecute(database, "AlertRulesService", makePersistenceError)
 
-	const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (roles: ReadonlyArray<RoleName>) {
+	const requireAdmin = Effect.fn("AlertRulesService.requireAdmin")(function* (
+		roles: ReadonlyArray<RoleName>,
+	) {
 		if (isAdmin(roles)) return
 		return yield* Effect.fail(
 			new AlertForbiddenError({
@@ -89,7 +91,7 @@ export const makeAlertRulePersistence = (options: {
 		)
 	})
 
-	const findRuleRow = Effect.fn("AlertsService.findRuleRow")(function* (
+	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
 		orgId: OrgId,
 		ruleId: AlertRuleDocument["id"],
 	) {
@@ -103,7 +105,7 @@ export const makeAlertRulePersistence = (options: {
 		return rows[0]
 	})
 
-	const requireRuleRow = Effect.fn("AlertsService.requireRuleRow")(function* (
+	const requireRuleRow = Effect.fn("AlertRulesService.requireRuleRow")(function* (
 		orgId: OrgId,
 		ruleId: AlertRuleDocument["id"],
 	) {
@@ -117,7 +119,7 @@ export const makeAlertRulePersistence = (options: {
 		)
 	})
 
-	const requireDestinationIds = Effect.fn("AlertsService.requireDestinationIds")(function* (
+	const requireDestinationIds = Effect.fn("AlertRulesService.requireDestinationIds")(function* (
 		orgId: OrgId,
 		destinationIds: ReadonlyArray<AlertDestinationId>,
 	) {
@@ -142,7 +144,7 @@ export const makeAlertRulePersistence = (options: {
 		}
 	})
 
-	const writeRuleRow = Effect.fn("AlertsService.writeRuleRow")(function* (
+	const writeRuleRow = Effect.fn("AlertRulesService.writeRuleRow")(function* (
 		orgId: OrgId,
 		userId: UserId,
 		existingId: AlertRuleId | null,
@@ -257,7 +259,7 @@ export const makeAlertRulePersistence = (options: {
 		}
 	})
 
-	const upsertRuleRow = Effect.fn("AlertsService.upsertRuleRow")(function* (
+	const upsertRuleRow = Effect.fn("AlertRulesService.upsertRuleRow")(function* (
 		orgId: OrgId,
 		userId: UserId,
 		existingId: AlertRuleId,
@@ -276,7 +278,7 @@ export const makeAlertRulePersistence = (options: {
 		return txid === undefined ? document : new AlertRuleDocument({ ...document, txid })
 	})
 
-	const listRules = Effect.fn("AlertsService.listRules")(function* (orgId: OrgId) {
+	const listRules = Effect.fn("AlertRulesService.listRules")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				selectStoredAlertRules()
@@ -306,7 +308,7 @@ export const makeAlertRulePersistence = (options: {
 		return new AlertRulesListResponse({ rules })
 	})
 
-	const createRule = Effect.fn("AlertsService.createRule")(function* (
+	const createRule = Effect.fn("AlertRulesService.createRule")(function* (
 		orgId: OrgId,
 		userId: UserId,
 		roles: ReadonlyArray<RoleName>,
@@ -322,7 +324,7 @@ export const makeAlertRulePersistence = (options: {
 		})
 	})
 
-	const deleteRule = Effect.fn("AlertsService.deleteRule")(function* (
+	const deleteRule = Effect.fn("AlertRulesService.deleteRule")(function* (
 		orgId: OrgId,
 		roles: ReadonlyArray<RoleName>,
 		ruleId: AlertRuleDocument["id"],
