@@ -80,7 +80,7 @@ function GcpPage() {
 		.onSuccess((status) =>
 			status.connectors.some((connector) => {
 				const kind = gcpMetricsState(connector, nowMs).kind
-				return kind === "setup-pending" || kind === "waiting"
+				return kind === "setup-pending" || kind === "setup-running" || kind === "waiting"
 			}),
 		)
 		.orElse(() => false)
@@ -105,29 +105,21 @@ function GcpPage() {
 			/>
 			<ResultView result={statusResult} loading={<Skeleton className="h-64 w-full" />}>
 				{(status) => {
-					const connectors = status.connectors.filter((connector) => connector.metrics_enabled)
-					if (connectors.length === 0) {
-						const connected = status.connectors.length > 0
+					if (status.connectors.length === 0) {
 						return (
 							<IntegrationNotConnected
 								icon={<GoogleCloudIcon size={16} />}
-								title={
-									connected
-										? "Turn on metrics for Google Cloud"
-										: "Connect Google Cloud to see your infrastructure"
-								}
-								description={
-									connected
-										? "Your Google Cloud connections forward logs only. Switch on Metrics and resources in the Google Cloud integration, then run the setup script again."
-										: "Connect an organization, folder or project with metrics and resources switched on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
-								}
+								title="Connect Google Cloud to see your infrastructure"
+								description="Connect an organization, folder or project with metrics and resources switched on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
 								integration="gcp"
-								actionLabel={connected ? "Open the integration" : "Connect Google Cloud"}
+								actionLabel="Connect Google Cloud"
 								docsPage="gcp"
 							/>
 						)
 					}
-					if (gcpInfraSetupPending(connectors, nowMs)) {
+					// None when metrics are switched off everywhere: what was collected before still shows.
+					const connectors = status.connectors.filter((connector) => connector.metrics_enabled)
+					if (connectors.length > 0 && gcpInfraSetupPending(connectors, nowMs)) {
 						return (
 							<IntegrationNotConnected
 								icon={<GoogleCloudIcon size={16} />}
@@ -176,7 +168,7 @@ function GcpInfra({
 	endTime,
 	onFilterChange,
 }: {
-	/** The connections that collect metrics; never empty. */
+	/** The connections that collect metrics; none when metrics are switched off on all of them. */
 	connectors: ReadonlyArray<V2GcpConnector>
 	nowMs: number
 	search: TimeRangeSearch & GcpResourceFilter & { tab?: string | undefined }
@@ -204,6 +196,19 @@ function GcpInfra({
 	const tabs = gcpInfraTabs(reporting, requested)
 	const tab = requested ?? tabs[0]
 
+	// Metrics switched off, and nothing collected before in this range.
+	if (connectors.length === 0 && Result.isSuccess(presenceResult) && reporting.length === 0) {
+		return (
+			<IntegrationNotConnected
+				icon={<GoogleCloudIcon size={16} />}
+				title="Turn on metrics for Google Cloud"
+				description="Your Google Cloud connections forward logs only. Switch on Metrics and resources in the Google Cloud integration, then run the setup script again."
+				integration="gcp"
+				actionLabel="Open the integration"
+				docsPage="gcp"
+			/>
+		)
+	}
 	return (
 		<ResultView result={presenceResult} loading={<Skeleton className="h-64 w-full" />}>
 			{() => (
@@ -270,14 +275,14 @@ function GcpServiceTab({
 }
 
 function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
-	const settings = (
+	const integration = (label: string) => (
 		<AlertAction>
 			<Button
 				size="sm"
 				variant="outline"
 				render={<Link to="/integrations" search={{ integration: "gcp" }} />}
 			>
-				Check the connection
+				{label}
 			</Button>
 		</AlertAction>
 	)
@@ -290,7 +295,7 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 					<AlertDescription>
 						<GcpMessage text={notice.error} />
 					</AlertDescription>
-					{settings}
+					{integration("Check the connection")}
 				</Alert>
 			)
 		case "incomplete":
@@ -323,6 +328,18 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 						numbers land within about 10 minutes of the setup script. This page updates on its
 						own.
 					</AlertDescription>
+				</Alert>
+			)
+		case "off":
+			return (
+				<Alert variant="info" role="status">
+					<CircleInfoIcon size={16} />
+					<AlertTitle>Google Cloud metrics are switched off</AlertTitle>
+					<AlertDescription>
+						These tables show what Maple collected before. To collect again, switch on Metrics and
+						resources in the Google Cloud integration, then run the setup script again.
+					</AlertDescription>
+					{integration("Open the integration")}
 				</Alert>
 			)
 		case "quiet":

@@ -253,6 +253,8 @@ export type GcpInfraNotice =
 	| { readonly kind: "waiting" }
 	/** Metrics arrive, but none in the selected window. */
 	| { readonly kind: "quiet" }
+	/** Metrics are switched off on every connection: the tables show what was collected before. */
+	| { readonly kind: "off" }
 
 type MetricsFields = Parameters<typeof gcpMetricsState>[0]
 
@@ -260,12 +262,16 @@ type MetricsFields = Parameters<typeof gcpMetricsState>[0]
 export const gcpInfraSetupPending = (connectors: ReadonlyArray<MetricsFields>, nowMs: number): boolean =>
 	connectors.every((connector) => gcpMetricsState(connector, nowMs).kind === "setup-pending")
 
-/** What to say above the tabs, given the connectors that collect metrics. Worst first. */
+/**
+ * What to say above the tabs, given the connectors that collect metrics: none when metrics are
+ * switched off on every connection. Worst first.
+ */
 export function gcpInfraNotice(
 	connectors: ReadonlyArray<MetricsFields>,
 	reporting: boolean,
 	nowMs: number,
 ): GcpInfraNotice | null {
+	if (connectors.length === 0) return { kind: "off" }
 	const states = connectors.map((connector) => gcpMetricsState(connector, nowMs))
 	const broken =
 		states.find((state) => state.kind === "failing") ??
@@ -275,7 +281,8 @@ export function gcpInfraNotice(
 	if (has("stalled")) return { kind: "stalled" }
 	if (reporting) return null
 	if (has("receiving")) return { kind: "quiet" }
-	return has("waiting") ? { kind: "waiting" } : null
+	// A run that is still working is minutes from its first read too.
+	return has("waiting") || has("setup-running") ? { kind: "waiting" } : null
 }
 
 /** Why the inventory may be stale: the first failing resource sync, or null. */

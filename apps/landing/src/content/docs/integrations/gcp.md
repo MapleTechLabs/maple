@@ -302,7 +302,7 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 
 ## Infrastructure → Google Cloud
 
-**Infrastructure → Google Cloud** appears in the sidebar and on the Infrastructure overview once a connection has **Metrics and resources** switched on. It has one tab per service that reported metrics in the selected time range, with one row per workload. The tab you are on stays when you change the range. Counts and byte totals cover the time range; everything else is the average over it.
+**Infrastructure → Google Cloud** is in the sidebar and on the Infrastructure overview while a connection has **Metrics and resources** switched on. The overview row names the services that reported in the time range. The page has one tab per service that reported metrics in the selected time range, with one row per workload. The tab you are on stays when you change the range. Counts and byte totals cover the time range; everything else is the average over it.
 
 | Tab             | One row per                               | Columns                                                                                                |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -320,6 +320,8 @@ Search a tab by name, project or location, and click a column to sort by it. A d
 The **Resources** tab shows the first 500 resources that match its filters, and how many projects Maple found. It does not depend on the time range.
 
 Until a connection's setup script has run, the page reads **Finish setting up Google Cloud**. After the run it reads **Collecting your first Google Cloud metrics** until the first read lands, within about 10 minutes.
+
+With **Metrics and resources** switched off on every connection, the page leaves the sidebar and the overview. Its address still opens it: for a time range with data it shows what Maple collected before, under the notice **Google Cloud metrics are switched off**, and otherwise it reads **Turn on metrics for Google Cloud**.
 
 ## Google Cloud costs
 

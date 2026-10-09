@@ -230,6 +230,20 @@ describe("gcpInfraNotice", () => {
 		expect(gcpInfraNotice([unset, waiting], false, NOW)).toEqual({ kind: "waiting" })
 	})
 
+	it("waits while a run that reported on logs is still working on metrics", () => {
+		const running = connector({
+			applied_metrics_enabled: null,
+			setup_reported_at: ago(1),
+			last_metrics_received_at: null,
+		})
+		expect(gcpInfraSetupPending([running], NOW)).toBe(false)
+		expect(gcpInfraNotice([running], false, NOW)).toEqual({ kind: "waiting" })
+	})
+
+	it("says metrics are switched off when no connection collects them", () => {
+		expect(gcpInfraNotice([], true, NOW)).toEqual({ kind: "off" })
+	})
+
 	it("tells a quiet window from a connector that never read", () => {
 		expect(gcpInfraNotice([waiting, connector()], false, NOW)).toEqual({ kind: "quiet" })
 	})
