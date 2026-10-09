@@ -385,6 +385,13 @@ Done. Google Cloud is set up for Maple.
 `)
 	})
 
+	it("says host project only where the scope is not the project itself", () => {
+		for (const enabled of [true, false]) {
+			const script = setup(setupInput(scopeType, { logs: enabled, metrics: enabled }))
+			expect(/host project/i.test(script)).toBe(scopeType !== "project")
+		}
+	})
+
 	it("with logs only, sets up logs and removes an earlier metrics setup", () => {
 		const script = setup(setupInput(scopeType, { logs: true, metrics: false }))
 		expect(script).not.toContain(MAPLE_ACCOUNT)
@@ -565,7 +572,7 @@ Metrics and resources
   ✓ Maple allowed to read as that account
   ✓ Maple notified
 
-Done. Everything was already in place.
+Done. Everything is in place.
   Maple confirms it within a minute: ${MAPLE_URL}
 `)
 		expect(stdout).not.toMatch(/Logs: {4}|Metrics: /)
@@ -584,7 +591,7 @@ Done. Everything was already in place.
 		expect(stdout).toContain("  ✓ Log filter accepted\n")
 		expect(stdout).toContain("  ✓ Log sink up to date (filter replaced)")
 		// The closing line says what this run changed.
-		expect(stdout).not.toContain("Done. Everything was already in place.")
+		expect(stdout).not.toContain("Done. Everything is in place.")
 		expect(commands).toContain(
 			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(true)} --project=acme-host`,
 		)
@@ -678,7 +685,7 @@ Checking access
 
       ERROR: (gcloud) PERMISSION_DENIED: Permission denied on resource (or it may not exist).
 
-    What to do: Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). If it is right, this account has no access to the project.
+    What to do: Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). If it is wrong, remove the connection in Maple and connect the right ID: a connection's ID can't be changed. If it is right, this account has no access to the project.
 ${UNFINISHED}`)
 	})
 
@@ -689,7 +696,7 @@ ${UNFINISHED}`)
 		expect(both.commands).toEqual([])
 		expect(both.stdout).toContain("  ✗ Can't open organization 123456789012 as jane@acme.com.")
 		expect(both.stdout).toContain(
-			"What to do: Check the ID with: gcloud organizations list. If it is right, this account needs Organization Administrator there.",
+			"What to do: Check the ID with: gcloud organizations list. If it is wrong, remove the connection in Maple and connect the right ID: a connection's ID can't be changed. If it is right, this account needs Organization Administrator there.",
 		)
 
 		// Logs Configuration Writer does not include reading the organization.
@@ -816,7 +823,7 @@ ${UNFINISHED}`)
 		expect(stdout)
 			.toContain(`  ✗ jane@acme.com has none of the permissions this script needs on project acme-host.
 
-    What to do: Check the ID in Maple. If it is right, this account has no rights there. Ask for Owner there, or have an administrator run this script.
+    What to do: Check the ID in Maple. If it is wrong, remove the connection in Maple and connect the right ID: a connection's ID can't be changed. If it is right, this account has no rights there. Ask for Owner there, or have an administrator run this script.
 `)
 		expect(stdout).not.toContain("pubsub.topics.create")
 	})
