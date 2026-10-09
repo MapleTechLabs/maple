@@ -7,7 +7,7 @@ import {
 	isJsonValue,
 	ProjectorRegistry,
 	SignalSourceRegistry,
-	assertSignalProjectionInputBudget,
+	checkSignalProjectionInputBudget,
 	SignalProjectionSpecSchema,
 	type MapleCloudEvent,
 	type JsonValue,
@@ -261,11 +261,11 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 		const prepareActivation = Effect.fn("LocalEventing.prepareActivation")(function* (
 			candidate: unknown,
 		) {
+			yield* Effect.fromResult(checkSignalProjectionInputBudget(candidate)).pipe(
+				Effect.mapError(activationInvalid),
+			)
 			const spec = yield* Effect.try({
-				try: () => {
-					assertSignalProjectionInputBudget(candidate)
-					return Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate)
-				},
+				try: () => Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate),
 				catch: activationInvalid,
 			})
 			if (spec.tenantId !== TENANT_ID)

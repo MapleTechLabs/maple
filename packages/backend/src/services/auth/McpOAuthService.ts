@@ -286,10 +286,10 @@ export class McpOAuthService extends Context.Service<
 		const env = yield* Env
 		// Absent outside the api Worker (tests): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(McpOAuthRateLimit)
-		const apiKeyHmacKey = yield* Effect.try({
-			try: () => parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY)),
-			catch: persistenceError,
-		}).pipe(Effect.orDie)
+		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
+			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			(message) => new McpOAuthPersistenceError({ message }),
+		).pipe(Effect.orDie)
 
 		const checkRateLimit = Effect.fn("McpOAuthService.checkRateLimit")(function* (key: string) {
 			if (Option.isNone(rateLimit)) return

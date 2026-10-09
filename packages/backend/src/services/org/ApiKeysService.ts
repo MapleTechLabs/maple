@@ -173,7 +173,10 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "ApiKeysService", toPersistenceError)
 		const env = yield* Env
-		const hmacKey = parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY))
+		const hmacKey = yield* parseIngestKeyLookupHmacKey(
+			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			(message) => new ApiKeyPersistenceError({ message }),
+		).pipe(Effect.orDie)
 
 		const selectById = Effect.fn("ApiKeysService.selectById")(function* (orgId: OrgId, keyId: ApiKeyId) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.id": keyId })
