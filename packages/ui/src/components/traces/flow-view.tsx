@@ -156,7 +156,7 @@ export function TraceFlowView({
 						void rfInstance?.fitView({ padding: 0.2, maxZoom: 1.5 })
 					}}
 				>
-					<EyeIcon size={12} />
+					<EyeIcon />
 					Fit view
 				</Button>
 			</div>

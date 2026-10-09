@@ -247,7 +247,7 @@ function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailRespon
 				<p
 					className={cn(
 						"font-medium leading-snug text-foreground",
-						compact ? "line-clamp-2 text-[13px]" : "line-clamp-2 text-sm",
+						compact ? "line-clamp-2 text-ui" : "line-clamp-2 text-sm",
 					)}
 				>
 					{title}

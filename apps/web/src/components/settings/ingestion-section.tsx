@@ -85,7 +85,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 					render={<Link to="/traces" />}
 				>
 					Explore traces
-					<ArrowRightIcon size={13} />
+					<ArrowRightIcon />
 				</Button>
 			) : (
 				<Button
@@ -96,7 +96,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 					loading={sending}
 					disabled={!connection.apiKey}
 				>
-					<PaperPlaneIcon size={13} />
+					<PaperPlaneIcon />
 					Send test event
 				</Button>
 			)}
@@ -174,7 +174,6 @@ function CredentialRow({
 						disabled={disabled}
 					>
 						<EyeIcon
-							size={13}
 							className={isVisible ? "text-foreground" : "text-muted-foreground"}
 						/>
 					</IconButton>
@@ -189,7 +188,7 @@ function CredentialRow({
 						label={`Regenerate ${label.toLowerCase()}`}
 						disabled={disabled}
 					>
-						<ArrowPathIcon size={13} className="text-destructive" />
+						<ArrowPathIcon className="text-destructive" />
 					</IconButton>
 				)}
 			</div>

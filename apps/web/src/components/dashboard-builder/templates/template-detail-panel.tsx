@@ -213,13 +213,13 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 					{ready ? (
 						<Button onClick={submit} disabled={missingRequired.length > 0} loading={creating}>
 							Create dashboard
-							<ArrowRightIcon size={13} data-icon="inline-end" />
+							<ArrowRightIcon data-icon="inline-end" />
 						</Button>
 					) : (
 						<>
 							<Button render={<Link to={destination.to} search={destination.search} />}>
 								Set up {template.requirement?.setupLabel ?? "the collector"}
-								<ExternalLinkIcon size={13} data-icon="inline-end" />
+								<ExternalLinkIcon data-icon="inline-end" />
 							</Button>
 							<Button
 								variant="outline"

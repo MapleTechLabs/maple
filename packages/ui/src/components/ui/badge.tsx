@@ -42,6 +42,7 @@ export const badgeVariants = cva(
 				destructive: "bg-destructive text-white [button&,a&]:hover:bg-destructive/90",
 				crit: TONE_SOFT.crit,
 				info: TONE_SOFT.info,
+				done: TONE_SOFT.done,
 				// Neutral tinted chip: counts, kinds, quiet metadata.
 				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-muted/80",
 				// Bordered meta chip on the page surface: services, environments, reopen markers.

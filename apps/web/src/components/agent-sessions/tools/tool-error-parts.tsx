@@ -117,7 +117,7 @@ function HeadingToken({ token }: { token: ErrorTextToken }) {
 				<MaskChip
 					label={token.label}
 					raw={token.raw}
-					className="border border-border bg-transparent text-[15px] leading-5"
+					className="border border-border bg-transparent text-title leading-5"
 				/>
 			)
 		case "at":
@@ -163,13 +163,13 @@ export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextTo
 						<PathParts
 							parts={path.parts}
 							keyClassName=""
-							maskClassName="border border-border bg-transparent text-[15px] leading-5"
+							maskClassName="border border-border bg-transparent text-title leading-5"
 						/>
 					) : null}
 				</span>
 			</span>
 			{tail.length > 0 ? (
-				<span className="line-clamp-2 break-words pl-6 font-mono text-[13px] leading-4.5 text-foreground/80">
+				<span className="line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground/80">
 					{tail.map((token, index) => (
 						<HeadingToken key={index} token={token} />
 					))}

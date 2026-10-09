@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react"
+import { useMemo, type MouseEvent, type ReactNode } from "react"
 import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
@@ -23,6 +23,7 @@ import { formatCount } from "@maple/ui/components/filters/range-filter-section"
 import { cn } from "@maple/ui/lib/utils"
 import { FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@/components/icons"
 import { ServicePills } from "@/components/common/service-pills"
+import { ROW_LIFT_TOOLTIPS, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { VirtualTableBody } from "@/components/common/virtual-table-body"
@@ -467,14 +468,17 @@ export function AgentSessionsList({
 									key={row.id}
 									ref={measureRef}
 									data-index={index}
-									onClick={() =>
+									// The stretched link covers the row; lifted tooltip triggers sit above
+									// it, so a plain click on one still opens the session from here.
+									onClick={(event) => {
+										if (!isPlainClick(event) || isInsideLink(event)) return
 										navigate({
 											to: "/agent-sessions/$sessionId",
 											params: { sessionId: session.sessionId },
 											search: sessionLinkWindow(session),
 										})
-									}
-									className="cursor-pointer hover:bg-muted/50"
+									}}
+									className={cn("cursor-pointer hover:bg-muted/50", ROW_LIFT_TOOLTIPS)}
 								>
 									{row.getAllCells().map((cell) => (
 										<TableCell
@@ -505,6 +509,12 @@ export function AgentSessionsList({
 		</div>
 	)
 }
+
+const isPlainClick = (event: MouseEvent) =>
+	event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+
+const isInsideLink = (event: MouseEvent) =>
+	event.target instanceof Element && event.target.closest("a") !== null
 
 /** An inline figure with a tooltip saying what it counts. */
 function Hint({
@@ -557,6 +567,14 @@ function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone
 	const id = sessionRowIdParts(session.sessionId)
 	return (
 		<div className="min-w-0">
+			<Link
+				to="/agent-sessions/$sessionId"
+				params={{ sessionId: session.sessionId }}
+				search={sessionLinkWindow(session)}
+				tabIndex={-1}
+				aria-hidden
+				className={ROW_STRETCHED_LINK_CLASS}
+			/>
 			<div className="flex min-w-0 items-center gap-2">
 				<Tooltip>
 					<TooltipTrigger
@@ -579,9 +597,6 @@ function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone
 								// extent until the row's details land, the true one after — so the
 								// detail page reads straight from these.
 								search={sessionLinkWindow(session)}
-								// The row navigates on its own; the link is for a new tab and the
-								// keyboard, and must not navigate twice.
-								onClick={(event) => event.stopPropagation()}
 							/>
 						}
 						className="min-w-0 truncate text-sm font-medium hover:underline focus-visible:underline focus-visible:outline-none"

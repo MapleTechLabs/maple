@@ -252,11 +252,11 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 					className="rounded-full before:rounded-full"
 				>
 					{finished ? (
-						<ArrowPathIcon size={14} />
+						<ArrowPathIcon />
 					) : isPlaying ? (
-						<MediaPauseIcon size={14} />
+						<MediaPauseIcon />
 					) : (
-						<MediaPlayIcon size={14} className="translate-x-px" />
+						<MediaPlayIcon className="translate-x-px" />
 					)}
 				</IconButton>
 
@@ -308,7 +308,7 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 					size="icon"
 					className="text-muted-foreground hover:text-foreground max-sm:ml-auto"
 				>
-					{isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
+					{isFullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
 				</IconButton>
 			</div>
 		</div>

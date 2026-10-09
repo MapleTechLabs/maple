@@ -2,7 +2,7 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { MouseEvent } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
@@ -142,9 +142,12 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 /** Ghosts the real row rhythm, so the list doesn't reflow when rows land. */
 export function InvestigationTableSkeleton() {
 	return (
-		<ul aria-label="Loading investigations" className="flex flex-col">
-			{Array.from({ length: 5 }, (_, index) => (
-				<li key={index} className="flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0">
+		<SkeletonList
+			rows={5}
+			gap="0"
+			label="Loading investigations"
+			renderRow={() => (
+				<div className="flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0">
 					<Skeleton className="size-3.5 shrink-0 rounded-full" />
 					<div className="flex min-w-0 flex-1 flex-col gap-2">
 						<Skeleton className="h-3.5 w-[45%]" />
@@ -154,8 +157,8 @@ export function InvestigationTableSkeleton() {
 					<Skeleton className="h-4 w-14 shrink-0 max-sm:hidden" />
 					<Skeleton className="h-4 w-20 shrink-0 max-lg:hidden" />
 					<Skeleton className="h-3 w-10 shrink-0" />
-				</li>
-			))}
-		</ul>
+				</div>
+			)}
+		/>
 	)
 }

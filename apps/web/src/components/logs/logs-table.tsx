@@ -12,6 +12,7 @@ import { useHotkeys } from "@tanstack/react-hotkeys"
 import { cn } from "@maple/ui/lib/utils"
 import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { type Log } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "./log-detail-sheet"
 import { LogRowExpanded } from "./log-row-expanded"
@@ -297,18 +298,18 @@ const LogRow = React.memo(function LogRow({
 					const numeric =
 						value !== EMPTY_VALUE && value.trim() !== "" && !Number.isNaN(Number(value))
 					return (
-						<span
+						<TruncatedText
 							key={key}
-							title={`${key}=${value}`}
+							text={`${key}=${value}`}
 							style={{ width: PINNED_COL_WIDTH }}
 							className={cn(
-								"shrink-0 truncate text-foreground/80 hidden md:block",
+								"shrink-0 text-foreground/80 hidden md:block",
 								value === EMPTY_VALUE && "text-muted-foreground/40",
 								numeric && "tabular-nums",
 							)}
 						>
 							{value}
-						</span>
+						</TruncatedText>
 					)
 				})}
 				<span className={cn("min-w-0 flex-1 flex gap-2", wrap ? "items-start" : "items-center")}>
@@ -453,14 +454,13 @@ function ColumnHeader({ pinnedColumns, timeZone }: { pinnedColumns: string[]; ti
 			<span className="shrink-0 w-11">Level</span>
 			<span className="shrink-0 w-[128px] hidden md:inline-block">Service</span>
 			{pinnedColumns.map((key) => (
-				<span
+				<TruncatedText
 					key={key}
-					title={key}
 					style={{ width: PINNED_COL_WIDTH }}
-					className="shrink-0 truncate text-foreground/60 hidden md:block"
+					className="shrink-0 text-foreground/60 hidden md:block"
 				>
 					{key}
-				</span>
+				</TruncatedText>
 			))}
 			<span className="min-w-0 flex-1">Message</span>
 		</Eyebrow>

@@ -846,7 +846,7 @@ function ChatDestinationFields({
 						}
 					>
 						Open {connectorName} integration
-						<ArrowRightIcon size={12} />
+						<ArrowRightIcon />
 					</Button>
 				</div>
 			) : failure !== null ? (

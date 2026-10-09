@@ -172,7 +172,7 @@ export function Flamegraph({
 				</div>
 				{focusedSpan && (
 					<Button variant="ghost" size="sm" onClick={handleReset} className="h-6 gap-1 text-xs">
-						<XmarkIcon size={12} />
+						<XmarkIcon />
 						Reset
 					</Button>
 				)}

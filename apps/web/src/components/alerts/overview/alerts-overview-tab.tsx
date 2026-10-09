@@ -36,7 +36,7 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 import { ErrorState } from "@/components/common/error-state"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 /** Sentinel value for the "Created by" filter meaning no creator restriction. */
 const ANY_CREATOR = "__anyone__"
@@ -65,13 +65,15 @@ export function AlertsOverviewTab() {
 	)
 }
 
+const OVERVIEW_SKELETON_ROWS = ["h-21 w-full", "h-10 w-full", "h-48 w-full"]
+
 function OverviewSkeleton() {
 	return (
-		<div className="space-y-6">
-			<Skeleton className="h-[84px] w-full" />
-			<Skeleton className="h-10 w-full" />
-			<Skeleton className="h-48 w-full" />
-		</div>
+		<SkeletonList
+			rows={OVERVIEW_SKELETON_ROWS.length}
+			gap="6"
+			renderRow={(index) => <Skeleton className={OVERVIEW_SKELETON_ROWS[index]} />}
+		/>
 	)
 }
 
@@ -276,6 +278,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			<div className="space-y-4">
 				<div className="flex items-center gap-3">
 					<SearchInput
+						size="default"
 						className="flex-1 max-w-xs"
 						placeholder="Search rules..."
 						value={searchQuery}
@@ -294,7 +297,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 								})
 							}
 						>
-							<SelectTrigger size="sm" className="w-[170px]">
+							<SelectTrigger className="w-[170px]">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>

@@ -507,7 +507,7 @@ function SessionBadges({ session }: { session: SessionRow }) {
 		<>
 			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
-				<Badge pill size="xs" mono className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+				<Badge pill size="xs" mono className="bg-chart-1/12 text-chart-1">
 					{countLabel(session.traceCount, "trace")}
 				</Badge>
 			)}

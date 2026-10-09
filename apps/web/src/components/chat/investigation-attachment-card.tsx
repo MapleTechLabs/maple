@@ -66,7 +66,7 @@ export function AttachmentCard({
 							</Fragment>
 						))}
 					</Eyebrow>
-					<div className="mt-1 truncate text-[13px] font-medium text-foreground">{title}</div>
+					<div className="mt-1 truncate text-ui font-medium text-foreground">{title}</div>
 					{children}
 				</div>
 			</Panel>

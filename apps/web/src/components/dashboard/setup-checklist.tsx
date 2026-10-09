@@ -62,7 +62,7 @@ function SetupChecklistCard() {
 						label={checklistExpanded ? "Collapse" : "Expand"}
 						onClick={() => setChecklistExpanded(!checklistExpanded)}
 					>
-						{checklistExpanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
+						{checklistExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
 					</IconButton>
 					<IconButton
 						size="icon"
@@ -75,7 +75,7 @@ function SetupChecklistCard() {
 							})
 						}}
 					>
-						<XmarkIcon size={14} />
+						<XmarkIcon />
 					</IconButton>
 				</div>
 			</div>
@@ -127,7 +127,7 @@ function FirstTraceCelebration({ serviceName, onDismiss }: { serviceName?: strin
 					className="gap-2 shrink-0 max-sm:order-last max-sm:w-full"
 				>
 					Explore your traces
-					<RocketIcon size={14} />
+					<RocketIcon />
 				</Button>
 				<Button
 					variant="ghost"
@@ -136,7 +136,7 @@ function FirstTraceCelebration({ serviceName, onDismiss }: { serviceName?: strin
 					className="size-8 p-0 shrink-0"
 					onClick={onDismiss}
 				>
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</Button>
 			</CardContent>
 		</Card>

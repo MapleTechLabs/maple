@@ -508,7 +508,7 @@ export function TraceTimeline() {
 								aria-label="Fit trace to view"
 								className="h-5 w-5 p-0 pointer-coarse:size-7"
 							>
-								<AspectRatioIcon size={11} />
+								<AspectRatioIcon />
 							</Button>
 						}
 					/>

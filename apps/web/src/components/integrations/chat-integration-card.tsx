@@ -296,7 +296,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
 					<Button onClick={handleInstall} disabled={connectDisabled} loading={busy === "install"}>
-						<MonoIcon size={16} />
+						<MonoIcon />
 						Add to {manifest.name}
 					</Button>
 					<IntegrationEmptyFooter>

@@ -189,7 +189,7 @@ function DashboardRow({
 					onClick={() => onToggleFavorite(dashboard.id)}
 					className={isFavorite ? "text-primary" : "text-muted-foreground/40"}
 				>
-					{isFavorite ? <StarFilledIcon size={14} /> : <StarIcon size={14} />}
+					{isFavorite ? <StarFilledIcon /> : <StarIcon />}
 				</IconButton>
 				<DashboardRowMenu
 					dashboard={dashboard}
@@ -364,7 +364,6 @@ export function DashboardList({
 					options={SCOPE_OPTIONS}
 					value={scope}
 					onChange={onScopeChange}
-					size="sm"
 					aria-label="Filter dashboards by favorite"
 					className="shrink-0"
 				/>
@@ -528,7 +527,7 @@ function SortMenu({
 }) {
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button variant="outline" size="sm" className="shrink-0" />}>
+			<DropdownMenuTrigger render={<Button variant="outline" className="shrink-0" />}>
 				{SORT_LABELS[sort]}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start">
@@ -570,7 +569,7 @@ function TagFilterMenu({
 	if (allTags.length === 0) {
 		return (
 			<DisabledReason reason="No dashboard carries a tag yet">
-				<Button variant="outline" size="sm" disabled className="shrink-0">
+				<Button variant="outline" disabled className="shrink-0">
 					Tags
 				</Button>
 			</DisabledReason>
@@ -582,6 +581,7 @@ function TagFilterMenu({
 			clearLabel={() => "Clear tags"}
 			emptyMessage="No matching tags"
 			mode="trigger"
+			triggerSize="default"
 			onChange={onChange}
 			options={allTags.map((tag) => ({ value: tag }))}
 			searchPlaceholder="Filter tags…"

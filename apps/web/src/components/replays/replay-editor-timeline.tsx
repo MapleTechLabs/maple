@@ -392,9 +392,9 @@ function TraceRow({ summary, seek }: { summary: SessionTraceSummary; seek: SeekC
 						className="size-5 text-muted-foreground sm:size-5"
 					>
 						{expanded ? (
-							<ChevronDownIcon size={14} />
+							<ChevronDownIcon />
 						) : (
-							<ChevronRightIcon size={14} />
+							<ChevronRightIcon />
 						)}
 					</IconButton>
 					<Tooltip>

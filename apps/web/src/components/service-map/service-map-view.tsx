@@ -312,7 +312,7 @@ function ServiceDetailPanel({
 							onClick={onFocus}
 							label="Focus the map on this service's neighborhood"
 						>
-							<MagnifierIcon size={13} />
+							<MagnifierIcon />
 						</IconButton>
 						<Link
 							to="/services/$serviceName"
@@ -322,7 +322,7 @@ function ServiceDetailPanel({
 							View service
 						</Link>
 						<IconButton size="icon-xs" onClick={onClose} label="Close">
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 						</IconButton>
 					</>
 				}
@@ -1125,7 +1125,7 @@ function DatabaseDetailPanel({
 				accentColor={dbColor}
 				actions={
 					<IconButton size="icon-xs" onClick={onClose} label="Close">
-						<XmarkIcon size={14} />
+						<XmarkIcon />
 					</IconButton>
 				}
 			>

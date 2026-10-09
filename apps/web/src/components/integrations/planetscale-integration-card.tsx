@@ -206,7 +206,7 @@ export function PlanetScaleIntegrationCard() {
 						Your databases and branches will appear here after connecting.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
-						<PlanetScaleIcon size={16} />
+						<PlanetScaleIcon />
 						Connect PlanetScale
 					</Button>
 				</IntegrationEmptyCard>

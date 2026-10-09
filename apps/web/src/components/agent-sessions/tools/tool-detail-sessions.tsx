@@ -116,7 +116,7 @@ export function ToolDetailSessions({
 								</span>
 
 								<span className="hidden w-[216px] shrink-0 items-baseline gap-2 @min-[560px]/panel:flex">
-									<span className="font-mono text-[13px] font-semibold tabular-nums text-foreground">
+									<span className="font-mono text-ui font-semibold tabular-nums text-foreground">
 										{formatSessionDuration(session.durationMs)}
 									</span>
 									<span className="truncate text-xs text-muted-foreground">

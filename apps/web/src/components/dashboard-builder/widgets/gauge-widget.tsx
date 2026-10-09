@@ -314,7 +314,7 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 					textAnchor="middle"
 					dominantBaseline="central"
 					className="fill-foreground"
-					style={{ fontSize: valueFontSize, fontWeight: 700, letterSpacing: "-0.02em" }}
+					style={{ fontSize: valueFontSize, fontWeight: 600, letterSpacing: "-0.02em" }}
 				>
 					{formattedValue}
 				</text>

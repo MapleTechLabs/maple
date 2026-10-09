@@ -2,6 +2,7 @@ import { lazy, Suspense, useMemo, type ReactNode } from "react"
 
 import { normalizeUnit, parseChartSpec, type ChartSpec } from "@maple/domain/chat-chart-spec"
 import { ChartSkeleton } from "@maple/ui/components/charts"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /**
  * The chart Streamdown renders for a ```chart fence in an assistant reply.
@@ -44,9 +45,14 @@ export function MarkdownChart({ code, isIncomplete }: MarkdownChartProps) {
 	// payload should be debuggable, not silently missing.
 	if (spec === null) {
 		return (
-			<pre className="my-3 overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+			<Panel
+				render={<pre />}
+				tone="muted"
+				padded="sm"
+				className="my-3 block overflow-auto text-xs text-muted-foreground"
+			>
 				<code>{code}</code>
-			</pre>
+			</Panel>
 		)
 	}
 
@@ -67,11 +73,11 @@ const skeletonVariant = (spec: ChartSpec) => (spec.type === "ranked" ? "hbar" : 
  */
 function ChartFrame({ title, children }: { title: string | null; children: ReactNode }) {
 	return (
-		<figure className="my-3 space-y-2 rounded-md border border-border bg-card p-3">
+		<Panel render={<figure />} padded="sm" className="my-3 block space-y-2 overflow-visible">
 			{title ? (
 				<figcaption className="text-2xs font-medium text-muted-foreground">{title}</figcaption>
 			) : null}
 			{children}
-		</figure>
+		</Panel>
 	)
 }

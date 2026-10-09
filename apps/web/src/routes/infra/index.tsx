@@ -94,7 +94,7 @@ function InfraOverviewPage() {
 							</span>
 						</div>
 						<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
-							<PlusIcon size={14} />
+							<PlusIcon />
 							Install a collector
 						</Button>
 						<Button size="sm" render={<Link to="/integrations" />}>

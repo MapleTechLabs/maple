@@ -2,6 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 
 import { XmarkIcon } from "@/components/icons"
 
@@ -67,17 +68,18 @@ export function TagInput({ value, onChange, suggestions, id, placeholder }: TagI
 			{value.map((tag, index) => (
 				<Badge key={tag} variant="secondary" size="sm" className="gap-1 pr-1">
 					{tag}
-					<button
-						type="button"
-						aria-label={`Remove ${tag}`}
+					<IconButton
+						size="icon-2xs"
+						label={`Remove ${tag}`}
+						tooltip={false}
 						onClick={(e) => {
 							e.stopPropagation()
 							removeAt(index)
 						}}
-						className="-mr-0.5 rounded-sm text-muted-foreground hover:text-foreground"
+						className="-mr-0.5 text-muted-foreground hover:text-foreground"
 					>
-						<XmarkIcon size={11} />
-					</button>
+						<XmarkIcon />
+					</IconButton>
 				</Badge>
 			))}
 			<input

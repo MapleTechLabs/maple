@@ -56,10 +56,11 @@ import {
 	type AlertRuleDocument,
 } from "@maple/domain/http"
 import { useAlertDestinationsList, useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon } from "@/components/icons"
+import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon, XmarkIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Meter } from "@maple/ui/components/ui/meter"
@@ -67,7 +68,7 @@ import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
@@ -539,7 +540,7 @@ function RuleDetailContent() {
 								size="sm"
 								render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
 							>
-								<PencilIcon size={14} />
+								<PencilIcon />
 								Edit rule
 							</Button>
 						</>
@@ -547,17 +548,20 @@ function RuleDetailContent() {
 				/>
 			)}
 			tabs={() => (
-				<Tabs
-					value={activeTab}
-					onValueChange={(v) => {
-						if (isRuleDetailTab(v)) navigate({ search: (prev) => ({ ...prev, tab: v }) })
-					}}
-				>
-					<TabsList variant="underline">
-						<TabsTrigger value="overview">Overview</TabsTrigger>
-						<TabsTrigger value="history">History</TabsTrigger>
-					</TabsList>
-				</Tabs>
+				<UnderlineTabStrip navigation label="Rule sections">
+					{tabValues.map((tab) => (
+						<Link
+							key={tab}
+							to="/alerts/$ruleId"
+							params={{ ruleId: ruleIdParam }}
+							search={(prev) => ({ ...prev, tab })}
+							aria-current={tab === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab === activeTab)}
+						>
+							{tab === "overview" ? "Overview" : "History"}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			)}
 		>
 			{(rule) => (
@@ -644,14 +648,14 @@ function RuleDetailContent() {
 										size="sm"
 										onClick={() => void openInvestigation(overviewIncident)}
 									>
-										<ChatBubbleSparkleIcon size={14} />
+										<ChatBubbleSparkleIcon />
 										Open investigation
 									</Button>
 								</Panel>
 							) : null}
 
 							<div className="space-y-3">
-								<h2 className="text-lg font-semibold">Configuration</h2>
+								<SectionHeading title="Configuration" />
 								<Card>
 									<CardContent className="p-5">
 										<KeyValueList className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
@@ -813,7 +817,7 @@ function RuleDetailContent() {
 							{Result.builder(checksResult)
 								.onError((error) => (
 									<div className="space-y-4">
-										<h2 className="text-lg font-semibold">Checks</h2>
+										<SectionHeading title="Checks" />
 										<ErrorState
 											error={error}
 											title="Failed to load checks"
@@ -858,7 +862,7 @@ function RuleDetailContent() {
 								<div className="space-y-6">
 									<div className="flex items-center justify-between">
 										<div>
-											<h2 className="text-lg font-semibold">History</h2>
+											<SectionHeading title="History" />
 											<p className="text-muted-foreground text-sm">
 												{stats.totalTriggered} total triggers
 											</p>
@@ -1057,7 +1061,6 @@ function RuleDetailContent() {
 																			}
 																		>
 																			<ChatBubbleSparkleIcon
-																				size={14}
 																			/>
 																			Open investigation
 																		</DropdownMenuItem>
@@ -1305,7 +1308,7 @@ function ChecksPanel({
 
 	return (
 		<div className="space-y-4">
-			<h2 className="text-lg font-semibold">Checks</h2>
+			<SectionHeading title="Checks" />
 			<StatRail columns={totals.errored > 0 ? 5 : 4}>
 				<StatRailItem size="sm" eyebrow="Total checks" value={totals.total} />
 				<StatRailItem
@@ -1329,14 +1332,15 @@ function ChecksPanel({
 							{bucket != null && (
 								<Badge variant="secondary" className="gap-1.5 font-mono text-xs">
 									{formatBucketRange(bucket, effectiveTimezone)}
-									<button
-										type="button"
+									<IconButton
+										size="icon-2xs"
+										label="Clear bucket filter"
+										tooltip={false}
 										onClick={onClearBucket}
-										aria-label="Clear bucket filter"
 										className="text-muted-foreground hover:text-foreground"
 									>
-										×
-									</button>
+										<XmarkIcon />
+									</IconButton>
 								</Badge>
 							)}
 						</div>

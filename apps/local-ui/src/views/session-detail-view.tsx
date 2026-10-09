@@ -62,7 +62,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 		<div className="flex h-full flex-col">
 			<div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
-					<ArrowLeftIcon size={14} />
+					<ArrowLeftIcon />
 					{backLabel}
 				</Button>
 				<TruncatedText mono className="text-xs text-muted-foreground">

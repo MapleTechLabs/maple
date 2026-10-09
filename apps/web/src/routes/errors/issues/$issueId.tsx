@@ -15,6 +15,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 
 import { RelatedAnomaliesSection } from "@/components/anomalies/related-anomalies-section"
 import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
 import { AlertSourceCard } from "@/components/errors/alert-source-card"
 import { IssueCommentComposer } from "@/components/errors/issue-comment-composer"
 import { IssueCulpritPanel } from "@/components/errors/issue-culprit-panel"
@@ -750,10 +751,8 @@ function windowLabel(search: { startTime?: string; timePreset?: string }): strin
 /**
  * A titled block in the page body.
  *
- * The eyebrow `SectionHeading`'s 10px overline is the rail's typography, it is what
- * `DetailRail.Group` uses — so applying it to main-column sections made the two
- * read at the same rank and left the page with no heading hierarchy at all. This
- * is the investigation page's section heading instead.
+ * The title `SectionHeading`, not the eyebrow: the overline is the rail's
+ * typography (`DetailRail.Group`), so main-column sections would read at its rank.
  */
 function BodySection({
 	id,
@@ -768,15 +767,7 @@ function BodySection({
 }) {
 	return (
 		<section aria-labelledby={`${id}-heading`} className="flex shrink-0 flex-col gap-3.5">
-			<div className="flex items-baseline gap-2.5">
-				<h2
-					id={`${id}-heading`}
-					className="font-display text-base font-semibold tracking-[-0.01em] text-foreground"
-				>
-					{title}
-				</h2>
-				{count ? <span className="text-sm text-muted-foreground">{count}</span> : null}
-			</div>
+			<SectionHeading id={`${id}-heading`} title={title} hint={count} />
 			{children}
 		</section>
 	)

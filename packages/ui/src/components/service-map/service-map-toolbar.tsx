@@ -72,7 +72,7 @@ export const ServiceMapToolbar = memo(function ServiceMapToolbar({
 							onClick={() => onFocusChange(null)}
 							className="-mr-0.5 size-5 text-muted-foreground hover:text-foreground sm:size-5"
 						>
-							<XmarkIcon size={12} />
+							<XmarkIcon />
 						</IconButton>
 					</span>
 					<Select
@@ -219,7 +219,7 @@ export const ServiceMapToolbar = memo(function ServiceMapToolbar({
 									aria-label="Re-sort"
 									className="max-sm:size-8 max-sm:px-0"
 								>
-									<ArrowRotateAnticlockwiseIcon size={13} />
+									<ArrowRotateAnticlockwiseIcon />
 									<span className="max-sm:sr-only">Re-sort</span>
 								</Button>
 							}

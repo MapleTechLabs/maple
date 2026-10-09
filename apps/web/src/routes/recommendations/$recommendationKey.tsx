@@ -56,12 +56,12 @@ const KIND_BADGE: Record<IssueKind, { label: string; variant: "ok" | "warn" | "i
 	naming: { label: "Naming", variant: "info" },
 } satisfies Record<IssueKind, { label: string; variant: "ok" | "warn" | "info" }>
 
-const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "secondary" | "outline" }> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" | "outline" }> = {
 	open: { label: "Open", variant: "outline" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
 	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "ok" },
-} satisfies Record<IssueStatus, { label: string; variant: "ok" | "secondary" | "outline" }>
+	resolved: { label: "Resolved", variant: "done" },
+} satisfies Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" | "outline" }>
 
 const MODE = {
 	auto: {
@@ -508,7 +508,7 @@ function DetailSidebar({
 							onClick={onReopen}
 							loading={busy === "reopen"}
 						>
-							<ArrowRotateAnticlockwiseIcon size={14} />
+							<ArrowRotateAnticlockwiseIcon />
 							Reopen recommendation
 						</Button>
 						<p className="text-xs leading-relaxed text-muted-foreground">
@@ -519,7 +519,7 @@ function DetailSidebar({
 					<div className="flex flex-col gap-2">
 						{isApplyable ? (
 							<Button className="w-full" onClick={onApply} loading={busy === "apply"}>
-								<BoltIcon size={14} />
+								<BoltIcon />
 								Apply mapping
 							</Button>
 						) : (
@@ -529,7 +529,7 @@ function DetailSidebar({
 							</p>
 						)}
 						<Button className="w-full" onClick={onDismiss} loading={busy === "dismiss"}>
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 							Dismiss recommendation
 						</Button>
 					</div>

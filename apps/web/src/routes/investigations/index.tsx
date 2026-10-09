@@ -9,13 +9,11 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/comp
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { ToolbarSearch, ToolbarStat, ToolbarStats } from "@maple/ui/components/toolbar"
 import { FilteredEmpty } from "@/components/common/filtered-empty"
-import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { DocsLink } from "@/components/common/docs-link"
-import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { ResultView } from "@/components/common/result-view"
 import { ListToolbar } from "@/components/common/list-toolbar"
 import { PageHero } from "@/components/common/page-hero"
@@ -205,6 +203,7 @@ function InvestigationsHub() {
 			totalCount={hasMore ? undefined : investigations.length}
 			trailing={
 				<>
+					<TriageStrip investigations={page} />
 					<Select
 						value={search.kind ?? "all"}
 						onValueChange={(value) =>
@@ -216,7 +215,7 @@ function InvestigationsHub() {
 							})
 						}
 					>
-						<SelectTrigger size="sm" className="w-[122px]">
+						<SelectTrigger className="w-[122px]">
 							{/* The trigger renders before the items register, so it
 							    resolves its own label rather than echoing the value. */}
 							<SelectValue>{kindFilterLabel}</SelectValue>
@@ -243,7 +242,7 @@ function InvestigationsHub() {
 							})
 						}}
 					>
-						<SelectTrigger size="sm" className="w-[136px]">
+						<SelectTrigger className="w-[136px]">
 							<SelectValue>{sortLabel}</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
@@ -279,7 +278,6 @@ function InvestigationsHub() {
 								canEditSettings={isOrgAdmin}
 							/>
 						) : null}
-						<TriageStrip investigations={page} />
 						<InvestigateBar onSubmit={handleCreate} busy={creating} />
 					</>
 				)
@@ -396,8 +394,8 @@ function BudgetExhaustedNotice({
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * Three numbers, above the fold: what is running, what is waiting on a human,
- * and what the last day cost. Derived from the fetched page rather than a
+ * Three toolbar numbers: what is running, what is waiting on a human, and what
+ * the last day resolved. Derived from the fetched page rather than a
  * separate request — the page is the 100 most recent, which is the window these
  * counts are about anyway.
  */
@@ -414,53 +412,26 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 			(entry) => (entry.severity ?? entry.snapshot.severity) === "critical",
 		).length
 
-		const durations = resolved
-			.map((entry) =>
-				entry.diagnosed_at ? toEpochMs(entry.diagnosed_at) - toEpochMs(entry.created_at) : null,
-			)
-			.filter((ms): ms is number => ms !== null && Number.isFinite(ms) && ms >= 0)
-			.sort((a, b) => a - b)
-		const median = durations.length > 0 ? durations[Math.floor(durations.length / 2)]! : null
-
-		return { running, review, resolved, critical, median }
+		return { running, review, resolved, critical }
 	}, [investigations])
 
 	return (
-		<StatRail columns={3}>
-			<StatRailItem
-				size="sm"
-				eyebrow="Investigating now"
-				tone={stats.running.length > 0 ? "info" : "neutral"}
+		<ToolbarStats className="hidden sm:flex">
+			<ToolbarStat
 				value={stats.running.length}
-				hint={
-					stats.running.length === 0
-						? "nothing in flight"
-						: `${stats.running.length === 1 ? "an agent is" : "agents are"} gathering evidence`
-				}
+				label="investigating"
+				tone={stats.running.length > 0 ? "info" : undefined}
 			/>
-			<StatRailItem
-				size="sm"
-				eyebrow="Needs review"
-				tone={stats.review.length > 0 ? "warn" : "neutral"}
+			<ToolbarStat
 				value={stats.review.length}
-				hint={
-					stats.review.length === 0
-						? "nothing waiting on you"
-						: stats.critical > 0
-							? `${stats.critical} critical`
-							: "diagnosed, not resolved"
-				}
+				label={stats.critical > 0 ? `to review (${stats.critical} critical)` : "to review"}
+				tone={stats.review.length > 0 ? "warn" : undefined}
 			/>
-			<StatRailItem
-				size="sm"
-				eyebrow="Resolved · 24h"
-				tone="neutral"
+			<ToolbarStat
 				value={stats.resolved.length}
-				hint={
-					stats.median === null ? "none in the last day" : `median ${formatDuration(stats.median)}`
-				}
+				label="resolved in 24h"
 			/>
-		</StatRail>
+		</ToolbarStats>
 	)
 }
 
@@ -496,7 +467,7 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 						className="gap-2"
 						render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 					>
-						<ConnectionIcon size={14} />
+						<ConnectionIcon />
 						Set up tracing
 					</Button>
 					<DocsLink page="instrumentation">Setup guide</DocsLink>

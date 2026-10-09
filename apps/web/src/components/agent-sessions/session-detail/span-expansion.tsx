@@ -184,7 +184,7 @@ function OpenInTracesLink({ span }: { span: AiSessionSpan }) {
 			}
 		>
 			Open in Traces
-			<ExternalLinkIcon size={11} />
+			<ExternalLinkIcon />
 		</Button>
 	)
 }
@@ -676,7 +676,7 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 		<div className="flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5">
 			<div className="flex flex-wrap items-center gap-2">
 				<CircleWarningIcon size={13} className="shrink-0 text-severity-error" />
-				<span className="font-medium text-[13px] text-severity-error">This call failed</span>
+				<span className="font-medium text-ui text-severity-error">This call failed</span>
 				{span.statusCode === "Error" && (
 					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						span status Error

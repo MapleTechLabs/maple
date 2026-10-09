@@ -94,13 +94,13 @@ function NamespaceScopeList({ emptyNotice = false }: { emptyNotice?: boolean }) 
 				{trimmed === "" && (
 					<DropdownMenuItem onClick={() => select(null)}>
 						<span className="truncate">All namespaces</span>
-						{pinned === null && <CheckIcon size={16} className="ml-auto" />}
+						{pinned === null && <CheckIcon className="ml-auto" />}
 					</DropdownMenuItem>
 				)}
 				{matches.map((item) => (
 					<DropdownMenuItem key={item.name} onClick={() => select(item.name)}>
 						<span className="truncate">{item.name}</span>
-						{pinned === item.name && <CheckIcon size={16} className="ml-auto" />}
+						{pinned === item.name && <CheckIcon className="ml-auto" />}
 					</DropdownMenuItem>
 				))}
 				{matches.length === 0 && trimmed !== "" && (
@@ -112,7 +112,7 @@ function NamespaceScopeList({ emptyNotice = false }: { emptyNotice?: boolean }) 
 						<DropdownMenuItem onClick={() => select(pinned)}>
 							<span className="truncate">{pinned}</span>
 							<span className="ml-2 text-xs text-muted-foreground">no recent data</span>
-							<CheckIcon size={16} className="ml-auto" />
+							<CheckIcon className="ml-auto" />
 						</DropdownMenuItem>
 					)}
 			</div>
@@ -132,7 +132,7 @@ export function NamespaceScopeSubmenu() {
 			<DropdownMenuSeparator />
 			<DropdownMenuSub>
 				<DropdownMenuSubTrigger>
-					<LayersIcon size={14} />
+					<LayersIcon />
 					Namespace
 					<span className="ml-auto max-w-32 truncate pl-4 text-xs text-muted-foreground">
 						{pinned ?? "All"}

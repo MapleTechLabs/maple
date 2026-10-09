@@ -350,7 +350,7 @@ function RepositoryRow({
 					disabled={!enabled}
 					title={enabled ? "Repository overrides" : "Turn reviews on to configure this repository"}
 				>
-					<GearIcon size={14} aria-hidden />
+					<GearIcon aria-hidden />
 					Configure
 				</Button>
 				<DialogContent className="sm:max-w-2xl">

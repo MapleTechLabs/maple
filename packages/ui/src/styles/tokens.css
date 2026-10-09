@@ -384,6 +384,9 @@
 	--text-2xs: 0.6875rem;
 	--text-3xs: 0.625rem;
 	--text-4xs: 0.5625rem;
+	/* Dense body (13px) and sheet/detail titles (15px). */
+	--text-ui: 0.8125rem;
+	--text-title: 0.9375rem;
 	--animate-skeleton: skeleton 2s -1s infinite linear;
 	--animate-caret-blink: 1s ease-out infinite caret-blink;
 	--animate-tile-in: tile-in 0.35s ease both;

@@ -268,7 +268,7 @@ export function ServiceOperationsTab({
 						sorted.map((op) => {
 							return (
 								<MobileListRow key={op.spanName} onClick={() => handleRowClick(op)}>
-									<span className="truncate font-mono text-[13px] text-foreground">
+									<span className="truncate font-mono text-ui text-foreground">
 										{op.spanName}
 									</span>
 									<MobileStatLine>

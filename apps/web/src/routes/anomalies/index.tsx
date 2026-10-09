@@ -429,7 +429,7 @@ function AnomaliesPageBody({
 								className="gap-2"
 								render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 							>
-								<ConnectionIcon size={14} />
+								<ConnectionIcon />
 								Set up tracing
 							</Button>
 							<DocsLink page="instrumentation">Setup guide</DocsLink>

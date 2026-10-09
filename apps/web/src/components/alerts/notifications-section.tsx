@@ -163,7 +163,7 @@ export function NotificationsSection({
 							label="Stop notifying this unavailable destination"
 							onClick={() => remove(id)}
 						>
-							<XmarkIcon size={12} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				))}
@@ -222,7 +222,7 @@ function SelectedDestination({
 				label={`Stop notifying ${primary}`}
 				onClick={onRemove}
 			>
-				<XmarkIcon size={12} />
+				<XmarkIcon />
 			</IconButton>
 		</div>
 	)
@@ -407,7 +407,7 @@ function EmailMeItem({
 				})
 			}
 		>
-			<EnvelopeIcon size={16} className="shrink-0" />
+			<EnvelopeIcon className="shrink-0" />
 			<span className="flex-1">Email me</span>
 			{email ? <span className="max-w-32 truncate text-xs text-muted-foreground">{email}</span> : null}
 		</DropdownMenuItem>

@@ -217,7 +217,7 @@ function ReplaysPage() {
 					/>
 				}
 			>
-				<ChartBarHorizontalIcon size={14} />
+				<ChartBarHorizontalIcon />
 				<span className="hidden sm:inline">Analytics</span>
 			</Button>
 		</div>

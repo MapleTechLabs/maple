@@ -440,7 +440,7 @@ function LinkButton({ href, children }: { href: string; children: React.ReactNod
 	return (
 		<Button variant="outline" size="xs" render={<a href={href} target="_blank" rel="noreferrer" />}>
 			{children}
-			<ExternalLinkIcon size={12} aria-hidden />
+			<ExternalLinkIcon aria-hidden />
 		</Button>
 	)
 }

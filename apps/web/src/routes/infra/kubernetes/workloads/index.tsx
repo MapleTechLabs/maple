@@ -261,7 +261,7 @@ function WorkloadsPage() {
 								noun={kindOption.label.slice(0, -1).toLowerCase()}
 								caption="share of the fleet by average utilization"
 								segments={[
-									{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
 										key: "elevated",
 										count: elevated,
