@@ -41,6 +41,29 @@ export const clampQueueDelaySeconds = (seconds: number): number =>
 const textEncoder = new TextEncoder()
 const jsonByteLength = (body: unknown): number => textEncoder.encode(JSON.stringify(body)).length
 
+/** Greedy packing into `sendBatch` calls under both the message-count and byte caps. */
+const packMessages = (
+	sized: ReadonlyArray<{ readonly message: { body: unknown }; readonly size: number }>,
+): Array<Array<{ body: unknown }>> => {
+	const chunks: Array<Array<{ body: unknown }>> = []
+	let current: Array<{ body: unknown }> = []
+	let currentBytes = 0
+	for (const { message, size } of sized) {
+		const wouldOverflow =
+			current.length >= QUEUE_BATCH_MAX_MESSAGES ||
+			(current.length > 0 && currentBytes + size > QUEUE_BATCH_MAX_BYTES)
+		if (wouldOverflow) {
+			chunks.push(current)
+			current = []
+			currentBytes = 0
+		}
+		current.push(message)
+		currentBytes += size
+	}
+	if (current.length > 0) chunks.push(current)
+	return chunks
+}
+
 export interface VcsSyncQueueApi {
 	/**
 	 * Enqueue a job. `delaySeconds` (0–86,400) holds it invisible until the delay
@@ -104,22 +127,7 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 					const body = encodeJob(job)
 					return { message: { body }, size: jsonByteLength(body) }
 				})
-				const chunks: Array<Array<{ body: unknown }>> = []
-				let current: Array<{ body: unknown }> = []
-				let currentBytes = 0
-				for (const { message, size } of sized) {
-					const wouldOverflow =
-						current.length >= QUEUE_BATCH_MAX_MESSAGES ||
-						(current.length > 0 && currentBytes + size > QUEUE_BATCH_MAX_BYTES)
-					if (wouldOverflow) {
-						chunks.push(current)
-						current = []
-						currentBytes = 0
-					}
-					current.push(message)
-					currentBytes += size
-				}
-				if (current.length > 0) chunks.push(current)
+				const chunks = packMessages(sized)
 
 				yield* Effect.annotateCurrentSpan({ "vcs.jobs.batches": chunks.length })
 				yield* Effect.forEach(
