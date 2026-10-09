@@ -528,7 +528,7 @@ export const runClickHouseSchemaApply = (
 					status: "failed",
 					errorMessage: message,
 					finishedAt,
-				}).pipe(Effect.ignore)
+				}).pipe(Effect.ignore({ log: true, message: "Failed to mark schema apply run failed" }))
 				yield* database
 					.execute((db) =>
 						db.run(
@@ -541,7 +541,12 @@ export const runClickHouseSchemaApply = (
 								.where(($) => [$.orgId.eq(orgId)]),
 						),
 					)
-					.pipe(Effect.ignore)
+					.pipe(
+						Effect.ignore({
+							log: true,
+							message: "Failed to record schema apply error on settings",
+						}),
+					)
 				yield* bustRuntimeConfigCache(orgId)
 			})
 
