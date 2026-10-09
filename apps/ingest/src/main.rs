@@ -1077,7 +1077,10 @@ async fn entitlement_rejection(
     if allowed {
         return None;
     }
-    warn!(
+    // `debug!`, not `warn!`: this runs once per refused request. The denial is
+    // already on the span, and `AutumnEntitlements::post_check` warns with
+    // Autumn's answer each time the decision is fetched.
+    debug!(
         org_id,
         feature_id, "Ingestion blocked: plan limit reached or no active subscription"
     );
