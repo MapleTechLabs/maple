@@ -831,7 +831,10 @@ jobs:
                       timeout 180 bunx playwright install-deps "$PW_BROWSER" && exit 0
                       echo "::warning::playwright install-deps attempt $attempt failed"
                       sudo pkill -x apt-get || true
-                      sudo timeout 60 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done' || true
+                      if ! sudo timeout 60 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done'; then
+                          echo "::error::dpkg lock still held 60s after stopping apt-get"
+                          exit 1
+                      fi
                       sudo dpkg --configure -a || true
                   done
                   exit 1
