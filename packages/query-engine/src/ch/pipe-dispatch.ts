@@ -88,9 +88,6 @@ export type PipeCompiledQuery = CompiledQuery<unknown>
 
 type PipeParams = Record<string, unknown> & { org_id: OrgId }
 
-/** Stands in for an absent required param; matches nothing. */
-const MISSING_REQUIRED_PARAM = "__maple_missing_required_param__"
-
 /**
  * Erase the specific output type for the generic pipe dispatcher.
  *
@@ -132,10 +129,20 @@ export function compilePipeQuery(
 	const startTime = str("start_time") ?? "2023-01-01 00:00:00"
 	const endTime = str("end_time") ?? "2099-12-31 23:59:59"
 	/**
-	 * A param the pipe cannot run without. Absent, it compiles to a value no row
-	 * carries: `""` would read as "no filter" and return every service.
+	 * Compiles with a param the pipe cannot run without, or fails before compiling.
+	 * No stand-in value: `""` reads as "no filter", and any other string could match.
 	 */
-	const reqStr = (key: string) => str(key) ?? MISSING_REQUIRED_PARAM
+	const withParam = (key: string, f: (value: string) => PipeCompiled): PipeCompiled => {
+		const value = str(key)
+		return value === undefined
+			? Effect.fail(
+					new QueryBuilderError({
+						code: "UnresolvedParam",
+						message: `pipe \`${pipe}\` requires \`${key}\``,
+					}),
+				)
+			: f(value)
+	}
 	// Overloaded rather than `def?: number`: with an optional default every
 	// defaulted call still typed as `number | undefined` and every call site paid
 	// for it with a `!`.
@@ -265,23 +272,25 @@ export function compilePipeQuery(
 					),
 				),
 			),
-			Match.when("span_hierarchy", () => {
-				// Caller may pass `start_time` / `end_time` (typically a tight ±1h
-				// window around the parent span timestamp). Without them, the query
-				// scans the full retention window — present for correctness, but
-				// strongly recommended.
-				const narrowByTime = params.start_time != null && params.end_time != null
-				return eraseType(
-					compile(
-						spanHierarchyQuery({
-							traceId: reqStr("trace_id"),
-							spanId: str("span_id"),
-							narrowByTime,
-						}),
-						narrowByTime ? { orgId, startTime, endTime } : { orgId },
-					),
-				)
-			}),
+			Match.when("span_hierarchy", () =>
+				withParam("trace_id", (traceId) => {
+					// Caller may pass `start_time` / `end_time` (typically a tight ±1h
+					// window around the parent span timestamp). Without them, the query
+					// scans the full retention window — present for correctness, but
+					// strongly recommended.
+					const narrowByTime = params.start_time != null && params.end_time != null
+					return eraseType(
+						compile(
+							spanHierarchyQuery({
+								traceId,
+								spanId: str("span_id"),
+								narrowByTime,
+							}),
+							narrowByTime ? { orgId, startTime, endTime } : { orgId },
+						),
+					)
+				}),
+			),
 			Match.when("traces_duration_stats", () =>
 				eraseType(
 					compile(
@@ -443,31 +452,35 @@ export function compilePipeQuery(
 			Match.when("services_facets", () =>
 				eraseType(compileUnion(servicesFacetsQuery(), { orgId, startTime, endTime })),
 			),
-			Match.when("service_releases_timeline", () => {
-				const bucketSeconds = int("bucket_seconds", 300)
-				return eraseType(
-					compile(
-						serviceReleasesTimelineQuery({
-							serviceName: reqStr("service_name"),
-							bucketSeconds,
-						}),
-						{ orgId, startTime, endTime, bucketSeconds },
-					),
-				)
-			}),
-			Match.when("service_apdex_time_series", () => {
-				const bucketSeconds = int("bucket_seconds", 60)
-				return eraseType(
-					compile(
-						serviceApdexTimeseriesQuery({
-							serviceName: reqStr("service_name"),
-							apdexThresholdMs: int("apdex_threshold_ms", 500),
-							bucketSeconds,
-						}),
-						{ orgId, startTime, endTime, bucketSeconds },
-					),
-				)
-			}),
+			Match.when("service_releases_timeline", () =>
+				withParam("service_name", (serviceName) => {
+					const bucketSeconds = int("bucket_seconds", 300)
+					return eraseType(
+						compile(
+							serviceReleasesTimelineQuery({
+								serviceName,
+								bucketSeconds,
+							}),
+							{ orgId, startTime, endTime, bucketSeconds },
+						),
+					)
+				}),
+			),
+			Match.when("service_apdex_time_series", () =>
+				withParam("service_name", (serviceName) => {
+					const bucketSeconds = int("bucket_seconds", 60)
+					return eraseType(
+						compile(
+							serviceApdexTimeseriesQuery({
+								serviceName,
+								apdexThresholdMs: int("apdex_threshold_ms", 500),
+								bucketSeconds,
+							}),
+							{ orgId, startTime, endTime, bucketSeconds },
+						),
+					)
+				}),
+			),
 			Match.when("get_service_usage", () =>
 				eraseType(
 					compile(
@@ -527,13 +540,15 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("errors_timeseries", () =>
-				eraseType(
-					compile(
-						errorsTimeseriesQuery({
-							fingerprintHash: reqStr("fingerprint_hash"),
-							services: str("services")?.split(",").filter(Boolean),
-						}),
-						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(
+							errorsTimeseriesQuery({
+								fingerprintHash,
+								services: str("services")?.split(",").filter(Boolean),
+							}),
+							{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
+						),
 					),
 				),
 			),
@@ -564,15 +579,17 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("error_detail_traces", () =>
-				eraseType(
-					compile(
-						errorDetailTracesQuery({
-							fingerprintHash: reqStr("fingerprint_hash"),
-							rootOnly: bool("root_only"),
-							services: str("services")?.split(",").filter(Boolean),
-							limit: int("limit", 10),
-						}),
-						{ orgId, startTime, endTime },
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(
+							errorDetailTracesQuery({
+								fingerprintHash,
+								rootOnly: bool("root_only"),
+								services: str("services")?.split(",").filter(Boolean),
+								limit: int("limit", 10),
+							}),
+							{ orgId, startTime, endTime },
+						),
 					),
 				),
 			),
@@ -591,34 +608,40 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("error_issue_timeseries", () =>
-				eraseType(
-					compile(errorIssueTimeseriesQuery(), {
-						orgId,
-						startTime,
-						endTime,
-						fingerprintHash: reqStr("fingerprint_hash"),
-						bucketSeconds: int("bucket_seconds", 3600),
-					}),
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(errorIssueTimeseriesQuery(), {
+							orgId,
+							startTime,
+							endTime,
+							fingerprintHash,
+							bucketSeconds: int("bucket_seconds", 3600),
+						}),
+					),
 				),
 			),
 			Match.when("error_issue_sample_traces", () =>
-				eraseType(
-					compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
-						orgId,
-						startTime,
-						endTime,
-						fingerprintHash: reqStr("fingerprint_hash"),
-					}),
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
+							orgId,
+							startTime,
+							endTime,
+							fingerprintHash,
+						}),
+					),
 				),
 			),
 			Match.when("error_issue_environments", () =>
-				eraseType(
-					compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
-						orgId,
-						startTime,
-						endTime,
-						fingerprintHash: reqStr("fingerprint_hash"),
-					}),
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
+							orgId,
+							startTime,
+							endTime,
+							fingerprintHash,
+						}),
+					),
 				),
 			),
 			Match.when("list_metrics", () =>
@@ -719,80 +742,86 @@ export function compilePipeQuery(
 					}),
 				)
 			}),
-			Match.when("span_attribute_values", () => {
-				const serviceName = str("service_name")
-				if (serviceName) {
+			Match.when("span_attribute_values", () =>
+				withParam("attribute_key", (attributeKey) => {
+					const serviceName = str("service_name")
+					if (serviceName) {
+						return eraseType(
+							compile(
+								serviceScopedAttributeValuesQuery({
+									scope: "span",
+									attributeKey,
+									limit: int("limit", 50),
+								}),
+								{ orgId, startTime, endTime, serviceName },
+							),
+						)
+					}
 					return eraseType(
 						compile(
-							serviceScopedAttributeValuesQuery({
-								scope: "span",
-								attributeKey: reqStr("attribute_key"),
+							spanAttributeValuesQuery({
+								attributeKey,
 								limit: int("limit", 50),
 							}),
-							{ orgId, startTime, endTime, serviceName },
+							{ orgId, startTime, endTime },
 						),
 					)
-				}
-				return eraseType(
-					compile(
-						spanAttributeValuesQuery({
-							attributeKey: reqStr("attribute_key"),
-							limit: int("limit", 50),
-						}),
-						{ orgId, startTime, endTime },
-					),
-				)
-			}),
-			Match.when("resource_attribute_values", () => {
-				const serviceName = str("service_name")
-				if (serviceName) {
+				}),
+			),
+			Match.when("resource_attribute_values", () =>
+				withParam("attribute_key", (attributeKey) => {
+					const serviceName = str("service_name")
+					if (serviceName) {
+						return eraseType(
+							compile(
+								serviceScopedAttributeValuesQuery({
+									scope: "resource",
+									attributeKey,
+									limit: int("limit", 50),
+								}),
+								{ orgId, startTime, endTime, serviceName },
+							),
+						)
+					}
 					return eraseType(
 						compile(
-							serviceScopedAttributeValuesQuery({
-								scope: "resource",
-								attributeKey: reqStr("attribute_key"),
+							resourceAttributeValuesQuery({
+								attributeKey,
 								limit: int("limit", 50),
 							}),
-							{ orgId, startTime, endTime, serviceName },
+							{ orgId, startTime, endTime },
 						),
 					)
-				}
-				return eraseType(
-					compile(
-						resourceAttributeValuesQuery({
-							attributeKey: reqStr("attribute_key"),
-							limit: int("limit", 50),
-						}),
-						{ orgId, startTime, endTime },
-					),
-				)
-			}),
-			Match.when("metric_attribute_values", () => {
-				const metricName = str("metric_name")
-				const metricType = parseMetricType(str("metric_type"))
-				if (metricName && metricType) {
+				}),
+			),
+			Match.when("metric_attribute_values", () =>
+				withParam("attribute_key", (attributeKey) => {
+					const metricName = str("metric_name")
+					const metricType = parseMetricType(str("metric_type"))
+					if (metricName && metricType) {
+						return eraseType(
+							compile(
+								metricScopedAttributeValuesQuery({
+									metricType,
+									serviceName: str("service_name"),
+									attributeKey,
+									limit: int("limit", 50),
+								}),
+								{ orgId, startTime, endTime, metricName },
+							),
+						)
+					}
 					return eraseType(
 						compile(
-							metricScopedAttributeValuesQuery({
-								metricType,
-								serviceName: str("service_name"),
-								attributeKey: reqStr("attribute_key"),
+							metricAttributeValuesQuery({
+								attributeKey,
 								limit: int("limit", 50),
 							}),
-							{ orgId, startTime, endTime, metricName },
+							{ orgId, startTime, endTime },
 						),
 					)
-				}
-				return eraseType(
-					compile(
-						metricAttributeValuesQuery({
-							attributeKey: reqStr("attribute_key"),
-							limit: int("limit", 50),
-						}),
-						{ orgId, startTime, endTime },
-					),
-				)
-			}),
+				}),
+			),
 			Match.when("custom_traces_timeseries", () => {
 				const tsOpts = {
 					...pipeParamsToTracesTimeseriesOpts(params),

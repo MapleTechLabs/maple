@@ -260,12 +260,15 @@ describe("compilePipeQuery", () => {
 		expect(result!.sql).toContain("2024-01-02 00:00:00")
 	})
 
-	// An absent required param must not read as "no filter": `""` would return
-	// every service in the org merged into one series.
-	it("compiles an absent required service_name to a value that matches nothing", () => {
-		const compiled = compilePipeQuery("service_releases_timeline", baseParams())!
-		expect(JSON.stringify(compiled)).toContain("__maple_missing_required_param__")
-	})
+	// An absent required param fails the compile: any stand-in value would be an
+	// ordinary string, and `""` reads as "no filter" and returns every service.
+	it.effect("fails an absent required param before compiling", () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(lowerPipeQuery("service_releases_timeline", baseParams())!)
+			expect(failure.code).toBe("UnresolvedParam")
+			expect(failure.message).toContain("service_name")
+		}),
+	)
 
 	// `list_traces` derives its row schema from the SELECT, so `decodeRows`
 	// validates rather than casting: a row missing a selected column is a decode
