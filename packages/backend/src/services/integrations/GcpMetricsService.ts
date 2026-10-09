@@ -74,25 +74,36 @@ const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
 const RETRIES = "Maple retries in 5 minutes."
 const NOT_STORED = `${RETRIES} Nothing to do.`
 
+/** What helps a scope too large for one read. A project has no parts to connect instead. */
+const whenTooLarge = (connector: GcpConnectorRow) =>
+	connector.scopeType === "project"
+		? "write to support@maple.dev"
+		: "connect its folders or projects separately"
+
 /** Why a failed call failed and what to do about it, in the customer's terms. */
 const explainApiError = (
 	error: GcpApiError,
 	connector: GcpConnectorRow,
 	reading: "metrics" | "resources",
 ) => {
-	// The host project is the one Google checks for billing, enabled APIs and quota.
-	const host = connector.projectId
+	// The host project is the one Google checks for billing, enabled APIs and quota. A project
+	// scope is its own host, and reads as "the project".
+	const host = `${connector.scopeType === "project" ? "project" : "host project"} ${connector.projectId}`
 	const scope = `${connector.scopeType} ${connector.scopeId}`
 	if (error.reason === "BILLING_DISABLED") {
-		return `The host project ${host} has no active billing account, and ${error.api} only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${host} Maple retries every 5 minutes.`
+		return `The ${host} has no active billing account, and ${error.api} only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${connector.projectId} Maple retries every 5 minutes.`
 	}
 	if (error.reason === "SERVICE_DISABLED") {
-		return `The ${error.api} API is switched off in the host project ${host}. Run the setup script again: it switches the API on.`
+		return `The ${error.api} API is switched off in the ${host}. Run the setup script again: it switches the API on.`
 	}
 	if (error.kind === "denied" || error.kind === "not_found") {
-		// Shown both before the script ever ran and for the minute or two after a run in which
-		// Google does not accept the new grant yet, so it has to read right in both.
 		if (error.api === "IAM Credentials") {
+			// A connection that has been read before lost its account or its grant.
+			if (connector.lastMetricsReceivedAt !== null) {
+				return "Maple can no longer sign in as this connection's read-only service account. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it."
+			}
+			// Shown both before the script ever ran and for the minute or two after a run in
+			// which Google does not accept the new grant yet, so it has to read right in both.
 			return "Maple can't sign in as this connection's read-only service account yet. After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script and read its last lines."
 		}
 		return reading === "metrics"
@@ -101,7 +112,7 @@ const explainApiError = (
 	}
 	// Signing in is counted against Maple's own project, not the host project.
 	if (error.kind === "rate_limited" && error.api !== "IAM Credentials") {
-		return `Google rate-limited the ${error.api} API for the host project ${host}. ${RETRIES} If this repeats, raise that API's quota on the project.`
+		return `Google rate-limited the ${error.api} API for the ${host}. ${RETRIES} If this repeats, raise that API's quota on the project.`
 	}
 	return `Maple's request to Google's ${error.api} API failed. ${RETRIES} If this repeats, write to support@maple.dev.`
 }
@@ -324,7 +335,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						return null
 					}
 				}
-				return `The scope holds more than ${(MAX_RESOURCE_PAGES * RESOURCE_PAGE_SIZE).toLocaleString("en-US")} resources, so the resource list is incomplete. Metrics are unaffected. Connect folders or projects separately for a full list.`
+				return `The ${connector.scopeType} holds more than ${(MAX_RESOURCE_PAGES * RESOURCE_PAGE_SIZE).toLocaleString("en-US")} resources, so the resource list is incomplete. Metrics are unaffected. For a full list, ${whenTooLarge(connector)}.`
 			})
 
 			/**
@@ -466,7 +477,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						...(incomplete === 0
 							? []
 							: [
-									`${incomplete} of ${METRICS.length} metric queries were not read in full: the scope holds more series than one read takes. Connect the folders or projects separately to collect all of it.`,
+									`${incomplete} of ${METRICS.length} metric queries were not read in full: the ${connector.scopeType} holds more series than one read takes. To collect all of it, ${whenTooLarge(connector)}.`,
 								]),
 						...(firstFailure === undefined
 							? []
@@ -501,7 +512,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							orElse: () =>
 								recordFailure(
 									connector,
-									`Reading the metrics took longer than two minutes. ${RETRIES} If this repeats, connect folders or projects separately.`,
+									`Reading the metrics took longer than two minutes. ${RETRIES} If this repeats, ${whenTooLarge(connector)}.`,
 								),
 						}),
 						Effect.catchTags({
