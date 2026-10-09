@@ -806,7 +806,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:tracesDurationStatsQuery:rollup  [34b089db]
+-- builder:errors:tracesDurationStatsQuery:rollup  [433f5dee]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -838,9 +838,12 @@ SELECT
 UNION ALL
 SELECT
           count() AS traceCount,
-          min(trace_list_entry_spans.Duration) AS durationMin,
-          max(trace_list_entry_spans.Duration) AS durationMax,
-          quantilesTDigestState(0.5, 0.95)(Duration) AS durationQuantiles
+          min(rootless.slowest) AS durationMin,
+          max(rootless.slowest) AS durationMax,
+          quantilesTDigestState(0.5, 0.95)(slowest) AS durationQuantiles
+        FROM (SELECT
+          trace_list_entry_spans.TraceId AS traceId,
+          max(trace_list_entry_spans.Duration) AS slowest
         FROM trace_list_entry_spans
         WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
           AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -881,6 +884,7 @@ SELECT
           AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
         LIMIT 1000001)) <= 1000000)
+        GROUP BY traceId) AS rootless
 ) AS duration_tiers
         FORMAT JSON
 
@@ -16573,7 +16577,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-stats:baseline  [18d80455]
+-- spec:traces-stats:baseline  [3ddfcb7e]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -16607,9 +16611,12 @@ SELECT
 UNION ALL
 SELECT
           count() AS traceCount,
-          min(trace_list_entry_spans.Duration) AS durationMin,
-          max(trace_list_entry_spans.Duration) AS durationMax,
-          quantilesTDigestState(0.5, 0.95)(Duration) AS durationQuantiles
+          min(rootless.slowest) AS durationMin,
+          max(rootless.slowest) AS durationMax,
+          quantilesTDigestState(0.5, 0.95)(slowest) AS durationQuantiles
+        FROM (SELECT
+          trace_list_entry_spans.TraceId AS traceId,
+          max(trace_list_entry_spans.Duration) AS slowest
         FROM trace_list_entry_spans
         WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
           AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -16651,6 +16658,7 @@ SELECT
           AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
         LIMIT 1000001)) <= 1000000)
+        GROUP BY traceId) AS rootless
 ) AS duration_tiers
         FORMAT JSON
 

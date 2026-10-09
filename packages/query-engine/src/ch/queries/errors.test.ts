@@ -673,7 +673,10 @@ describe("trace facets for traces with no root span", () => {
 		expect(errorTier).toContain("HasError = 1")
 
 		const stats = rootlessTier(compileUnsafe(tracesDurationStatsQuery({}), baseParams).sql)
-		expect(stats).toContain("quantilesTDigestState(0.5, 0.95)(Duration)")
+		// One sample per trace, its slowest entry span: not one per entry span.
+		expect(stats).toContain("max(trace_list_entry_spans.Duration) AS slowest")
+		expect(stats).toContain("GROUP BY traceId) AS rootless")
+		expect(stats).toContain("quantilesTDigestState(0.5, 0.95)(slowest)")
 		expect(stats).toContain("NOT IN (SELECT")
 	})
 

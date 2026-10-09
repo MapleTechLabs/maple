@@ -17,7 +17,7 @@ import {
 	type CHQuery,
 	type ColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import type { ColumnDefs, Table } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
@@ -704,17 +704,28 @@ export function tracesDurationStatsQuery(
 	// Each tier reports its row count beside its extremes: an aggregate over an
 	// empty tier returns 0 rather than nothing, and that 0 must not win the
 	// outer `min`. The t-digest states merge across tiers; an empty one is inert.
-	const rows = <Name extends string>(source: Table<Name, typeof TraceListMv.columns>, rootless: boolean) =>
-		from(source)
-			.select(($) => ({
-				traceCount: CH.count(),
-				durationMin: CH.min_($.Duration),
-				durationMax: CH.max_($.Duration),
-				durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(Duration)", T.string),
-			}))
-			.where(($) => traceListWindowConditions($, opts, rootless))
-	const raw = rows(TraceListMv, false)
-	const rootless = () => rows(TraceListEntrySpans, true)
+	const raw = from(TraceListMv)
+		.select(($) => ({
+			traceCount: CH.count(),
+			durationMin: CH.min_($.Duration),
+			durationMax: CH.max_($.Duration),
+			durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(Duration)", T.string),
+		}))
+		.where(($) => traceListWindowConditions($, opts))
+	// One sample per trace: its slowest matching entry span, as the list ranks it.
+	const rootless = () =>
+		fromQuery(
+			from(TraceListEntrySpans)
+				.select(($) => ({ traceId: $.TraceId, slowest: CH.max_($.Duration) }))
+				.where(($) => traceListWindowConditions($, opts, true))
+				.groupBy("traceId"),
+			"rootless",
+		).select(($) => ({
+			traceCount: CH.count(),
+			durationMin: CH.min_($.slowest),
+			durationMax: CH.max_($.slowest),
+			durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(slowest)", T.string),
+		}))
 	const hourly = () =>
 		from(TraceFacetsHourly)
 			.select(($) => ({

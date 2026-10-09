@@ -1946,8 +1946,11 @@ export function traceListQuery(opts: TraceListOpts) {
 		.format("JSON")
 }
 
+// One type for either stage-1 source, so a page compiles as a statement of its own.
+type TraceListPage = CHQuery<any, TraceListPositionOutput>
+
 /** The root spans a list page is cut from, at the positions `traceListQuery` pages them. */
-export function traceListRootPageQuery(opts: TraceListOpts) {
+export function traceListRootPageQuery(opts: TraceListOpts): TraceListPage {
 	return traceListPositions(opts, false).format("JSON")
 }
 
@@ -1958,7 +1961,7 @@ export function traceListRootPageQuery(opts: TraceListOpts) {
  * question. `DISTINCT ON` keeps the first row per trace of the ordered read,
  * which still stops at the limit (measured: the newest 400 of 7 days in 0.1 s).
  */
-export function traceListEntryPageQuery(opts: TraceListOpts) {
+export function traceListEntryPageQuery(opts: TraceListOpts): TraceListPage {
 	return traceListPositions(opts, true).distinctOn("traceId").format("JSON")
 }
 
