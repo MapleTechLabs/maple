@@ -58,6 +58,8 @@ export const migrateBundled = Effect.flatMap(bundledMigrations, (migrations) =>
 export const runMigrations = (pglite: PGlite): Promise<ReadonlyArray<Migrate.AppliedMigration>> =>
 	Effect.runPromise(
 		migrateBundled.pipe(
+			// A Promise boundary for the test harness: the run owns its client.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(
 				Migrate.layerSqlClient().pipe(Layer.provide(PgliteClient.layer({ liveClient: pglite }))),
 			),

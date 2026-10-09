@@ -66,6 +66,7 @@ const bustRuntimeConfigCache = (orgId: OrgId): Effect.Effect<void> =>
 		yield* cache.invalidate({ bucket: ORG_CH_CONFIG_CACHE_BUCKET, key: orgId })
 	}).pipe(
 		// The workflow isolate has no application runtime to own this cache layer.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(EdgeCacheServiceLive),
 		Effect.ignore,
 	)

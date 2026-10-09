@@ -57,4 +57,5 @@ const Driver = Migrate.layerSqlClient().pipe(
 	Layer.provideMerge(PgClient.layer({ url: Redacted.make(url), maxConnections: 1 })),
 )
 
+// oxlint-disable-next-line effecttsgo/strict-effect-provide
 if (import.meta.main) await Effect.runPromise(program.pipe(Effect.provide(Driver), Effect.orDie))

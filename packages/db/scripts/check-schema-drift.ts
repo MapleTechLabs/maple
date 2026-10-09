@@ -17,7 +17,7 @@ import { PGlite } from "@electric-sql/pglite"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Redacted, Schema } from "effect"
+import { Console, Effect, Redacted, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { runMigrations } from "../src/migrate"
 import { withBranchConnection } from "./planetscale-connection"
@@ -82,6 +82,8 @@ const migratedCatalog = Effect.acquireRelease(
 	}),
 	(pglite) => Effect.promise(() => pglite.close()),
 ).pipe(
+	// Each side of the comparison owns its own client; this script is the entry point.
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.flatMap((pglite) => catalog.pipe(Effect.provide(PgliteClient.layer({ liveClient: pglite })))),
 	Effect.scoped,
 )
@@ -90,6 +92,7 @@ const check = (url: string) =>
 	Effect.gen(function* () {
 		const want = yield* migratedCatalog
 		const have = yield* catalog.pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(PgClient.layer({ url: Redacted.make(url), maxConnections: 1, prepare: false })),
 		)
 		const keys = [...new Set([...want.keys(), ...have.keys()])].sort()
@@ -101,11 +104,9 @@ const check = (url: string) =>
 			if (actual === undefined) return [`missing  ${key}: ${expected}`]
 			return [`differs  ${key}\n           migrations: ${expected}\n           database:   ${actual}`]
 		})
-		yield* Effect.forEach(differences, (line) => Effect.sync(() => console.log(line)))
-		yield* Effect.sync(() =>
-			console.log(
-				`${want.size} objects from the migrations, ${have.size} in the database, ${differences.length} differ`,
-			),
+		yield* Effect.forEach(differences, (line) => Console.log(line))
+		yield* Console.log(
+			`${want.size} objects from the migrations, ${have.size} in the database, ${differences.length} differ`,
 		)
 		return differences.length
 	}).pipe(Effect.orDie)

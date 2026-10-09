@@ -14,7 +14,7 @@
 import * as PgClient from "@effect/sql-pg/PgClient"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Exit, Layer, Redacted, Schema } from "effect"
+import { Console, Effect, Exit, Layer, Redacted, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { allTables } from "../src/tables"
 import { withBranchConnection } from "./planetscale-connection"
@@ -114,16 +114,11 @@ const decodeTable = (orm: Orm.DatabaseApi, table: AnyTable) => {
 
 const printReport = (report: TableReport) =>
 	Effect.gen(function* () {
-		if (!report.exists)
-			return yield* Effect.sync(() => console.log(`skip ${report.table}: not in this database`))
+		if (!report.exists) return yield* Console.log(`skip ${report.table}: not in this database`)
 		const status = report.failures === 0 ? "ok  " : "FAIL"
-		yield* Effect.sync(() =>
-			console.log(`${status} ${report.table}: ${report.rows} rows, ${report.failures} undecodable`),
-		)
+		yield* Console.log(`${status} ${report.table}: ${report.rows} rows, ${report.failures} undecodable`)
 		yield* Effect.forEach(report.samples, (sample) =>
-			Effect.sync(() =>
-				console.log(`       ${sample.key}: ${sample.error.split("\n").slice(0, 6).join(" | ")}`),
-			),
+			Console.log(`       ${sample.key}: ${sample.error.split("\n").slice(0, 6).join(" | ")}`),
 		)
 	})
 
@@ -134,6 +129,8 @@ const check = (url: string) =>
 		yield* Effect.forEach(reports, printReport)
 		return reports.reduce((sum, report) => sum + report.failures, 0)
 	}).pipe(
+		// The script's entry point: it owns the connection.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			PgClient.layer({ url: Redacted.make(url), maxConnections: 1, prepare: false }).pipe(Layer.orDie),
 		),
