@@ -15,8 +15,10 @@ import {
 	PlanetScaleDiscoveryService,
 	type PlanetScaleSubTarget,
 } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
-import type { ScrapeTargetRow } from "@maple/db/tables"
-import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import {
+	type EnabledScrapeTarget,
+	ScrapeTargetsService,
+} from "@maple/backend/services/integrations/ScrapeTargetsService"
 
 const decodeTargetIdSync = Schema.decodeUnknownSync(ScrapeTargetId)
 const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
@@ -158,7 +160,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 		// Expand the logical target into its discovered per-branch endpoints.
 		// Discovery failure with no cache skips the row this round; the scheduler
 		// re-fetches the list every reconcile.
-		const planetScaleTargets = (row: ScrapeTargetRow, ingestKey: string) =>
+		const planetScaleTargets = (row: EnabledScrapeTarget, ingestKey: string) =>
 			discovery.discover(row).pipe(
 				Effect.catch((error) =>
 					logSkip("Skipping PlanetScale target (discovery failed)", row, {
@@ -184,7 +186,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 		// A credential that no longer decrypts (rotated master key, corrupt row)
 		// skips this target for the round rather than failing the whole list; the
 		// target's own `lastScrapeError` already tells the org.
-		const directTargets = (row: ScrapeTargetRow, ingestKey: string) =>
+		const directTargets = (row: EnabledScrapeTarget, ingestKey: string) =>
 			service.authHeaders(row).pipe(
 				Effect.flatMap((authHeaders) => toInternalScrapeTarget(row, ingestKey, authHeaders)),
 				Effect.tap(warnIfNone(() => logSkip("Skipping scrape target (invalid row)", row))),
@@ -196,7 +198,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				),
 			)
 
-		const resolveRowTargets = (row: ScrapeTargetRow, ingestKey: string) =>
+		const resolveRowTargets = (row: EnabledScrapeTarget, ingestKey: string) =>
 			row.targetType === "planetscale"
 				? planetScaleTargets(row, ingestKey)
 				: directTargets(row, ingestKey)

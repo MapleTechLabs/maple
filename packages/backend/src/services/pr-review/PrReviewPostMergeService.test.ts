@@ -15,7 +15,7 @@ import { PrReviews } from "@maple/db/tables"
 import { DateTime, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	asOrgId,
 	asUserId,
@@ -239,6 +239,28 @@ describe("PrReviewPostMergeService.runTick", () => {
 			assert.lengthOf(posted, 0)
 			assert.equal((yield* rowState)?.status, "failed")
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: true })))
+	})
+})
+
+describe("PrReviewPostMergeService.runTick, stored telemetry", () => {
+	it.effect("gives up on a row whose telemetry is in an older shape instead of failing the tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const posted: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seedDueReview
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update pr_reviews set telemetry_json = $1::jsonb where id = $2", [
+					JSON.stringify({ services: "checkout" }),
+					reviewId,
+				]),
+			)
+			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
+			const result = yield* (yield* PrReviewPostMergeService).runTick()
+			assert.equal(result.examined, 1)
+			assert.equal(result.gaveUp, 1)
+			assert.lengthOf(posted, 0)
+			assert.equal((yield* rowState)?.status, "no_traffic")
+		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false })))
 	})
 })
 

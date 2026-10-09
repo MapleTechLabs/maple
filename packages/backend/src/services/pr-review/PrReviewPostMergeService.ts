@@ -14,6 +14,7 @@ import {
 	PrReviewPostMerge,
 	PrReviewPostMergeIssue,
 	type PrReviewPostMergeStatus,
+	PrReviewTelemetry,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviews, type PrReviewRow } from "@maple/db/tables"
@@ -59,6 +60,12 @@ export interface PrReviewPostMergeServiceApi {
 type Outcome = "reported" | "waiting" | "gave_up" | "skipped"
 
 const encodePostMerge = Schema.encodeEffect(PrReviewPostMerge)
+// Lenient: a document stored in an older shape reads as no facts, so its row gives up rather than
+// failing the whole tick's read.
+const decodeTelemetry = Schema.decodeUnknownOption(PrReviewTelemetry)
+
+/** A due review, its telemetry as stored. */
+type DueRow = Omit<PrReviewRow, "telemetryJson"> & { readonly telemetryJson: unknown }
 const toMs = DateTime.toEpochMillis
 
 export class PrReviewPostMergeService extends Context.Service<
@@ -90,7 +97,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			settle(orgId, id, "waiting", toMs(at), now)
 
 		const examine = Effect.fn("PrReviewPostMerge.examine")(function* (
-			row: PrReviewRow,
+			row: DueRow,
 			now: DateTime.Utc,
 			/** The lease this examination holds; it reports only while the row still carries it. */
 			leaseUntil: DateTime.Utc,
@@ -98,7 +105,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			const orgId = row.orgId
 			const mergedAt = row.mergedAt === null ? now : DateTime.makeUnsafe(row.mergedAt)
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": row.id })
-			const facts = row.telemetryJson ?? undefined
+			const facts = Option.getOrUndefined(decodeTelemetry(row.telemetryJson))
 			const services = facts === undefined ? [] : postMergeServices(facts)
 			// A review that only found a removed name has no service to narrow by: it reads every
 			// service's versions and waits for the merge commit itself.
@@ -245,7 +252,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			return "reported" satisfies Outcome
 		})
 
-		const postComment = (orgId: OrgId, row: PrReviewRow, body: string) =>
+		const postComment = (orgId: OrgId, row: DueRow, body: string) =>
 			Effect.gen(function* () {
 				const repository = yield* repositories.getRepositoryById(orgId, row.repositoryId)
 				if (Option.isNone(repository)) return
@@ -275,7 +282,7 @@ export class PrReviewPostMergeService extends Context.Service<
 				const due = yield* database.execute((db) =>
 					db.run(
 						PG.from(PrReviews)
-							.select()
+							.select(($) => ({ ...$, telemetryJson: PG.undecoded($.telemetryJson) }))
 							.where(($) => [$.postMergeStatus.eq("waiting"), $.postMergeAfter.lte(toMs(now))])
 							.orderBy(["postMergeAfter", "asc"])
 							.limit(TICK_LIMIT),

@@ -7,7 +7,10 @@ import {
 	ScrapeTargetUpstreamError,
 } from "@maple/domain/http"
 import { globToRegExp } from "@maple/domain/glob"
-import type { ScrapeTargetRow } from "@maple/db/tables"
+import type { ScrapeTargetRow as StoredScrapeTargetRow } from "@maple/db/tables"
+
+/** Discovery reads a target's connection, never its labels. */
+type ScrapeTargetRow = Omit<StoredScrapeTargetRow, "labelsJson">
 import {
 	Clock,
 	Context,

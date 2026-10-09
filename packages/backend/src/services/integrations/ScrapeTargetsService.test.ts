@@ -99,6 +99,32 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("listAllEnabled lists a target whose stored labels are malformed, labels as stored", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const target = yield* service.create(
+				asOrgId("org_1"),
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE scrape_targets SET labels_json = $1::jsonb WHERE id = $2", [
+					JSON.stringify({ team: 7 }),
+					target.id,
+				]),
+			)
+			const rows = yield* service.listAllEnabled()
+			assert.deepStrictEqual(
+				rows.map((row) => [row.id, row.labelsJson]),
+				[[target.id, { team: 7 }]],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("recordScrapeResults updates lastScrapeAt on success and clears the error", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

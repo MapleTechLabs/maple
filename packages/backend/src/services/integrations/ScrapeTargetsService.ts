@@ -189,7 +189,7 @@ export interface ScrapeTargetsServiceApi {
 	) => Effect.Effect<ScrapeTargetDeleteResponse, ScrapeTargetNotFoundError | ScrapeTargetPersistenceError>
 	readonly listAllEnabled: (
 		interval?: ScrapeIntervalSeconds,
-	) => Effect.Effect<ReadonlyArray<ScrapeTargetRow>, ScrapeTargetPersistenceError>
+	) => Effect.Effect<ReadonlyArray<EnabledScrapeTarget>, ScrapeTargetPersistenceError>
 	/**
 	 * The request headers a target's stored credential decrypts to (an
 	 * `Authorization` entry, or `{}` for `none`). For managed PlanetScale rows
@@ -198,7 +198,7 @@ export interface ScrapeTargetsServiceApi {
 	 * for it (branch scrapes carry a signed URL).
 	 */
 	readonly authHeaders: (
-		row: ScrapeTargetRow,
+		row: ScrapeTargetCredentials,
 	) => Effect.Effect<Record<string, string>, ScrapeTargetEncryptionError | PlanetScaleAccessTokenError>
 	readonly recordScrapeResults: (
 		results: ReadonlyArray<{
@@ -338,8 +338,13 @@ const validateAuthCredentials = (authType: string, authCredentials: string | nul
 	)
 }
 
+/** A row the scraper lists, its labels as stored. */
+export type EnabledScrapeTarget = Omit<ScrapeTargetRow, "labelsJson"> & { readonly labelsJson: unknown }
+/** What resolving a target's credential reads: everything but its labels. */
+type ScrapeTargetCredentials = Omit<ScrapeTargetRow, "labelsJson">
+
 const storedConfigInvalid = (
-	row: ScrapeTargetRow,
+	row: ScrapeTargetCredentials,
 	component: ScrapeTargetStoredConfigInvalidError["component"],
 	cause: unknown,
 ) =>
@@ -351,7 +356,7 @@ const storedConfigInvalid = (
 	})
 
 const decodeStored = <A, E>(
-	row: ScrapeTargetRow,
+	row: ScrapeTargetCredentials,
 	component: ScrapeTargetStoredConfigInvalidError["component"],
 	decode: (value: unknown) => Effect.Effect<A, E>,
 	value: unknown,
@@ -613,7 +618,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			// is resolved (and refreshed) at scrape time. Everything else decrypts the
 			// row's stored credentials.
 			const authHeadersForRow = Effect.fn("ScrapeTargetsService.authHeadersForRow")(function* (
-				row: ScrapeTargetRow,
+				row: ScrapeTargetCredentials,
 			) {
 				if (row.authType !== "planetscale_oauth") {
 					return yield* buildScrapeAuthHeaders(row, encryptionKey)
@@ -1101,7 +1106,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					.execute((db) =>
 						db.run(
 							PG.from(ScrapeTargets)
-								.select()
+								// Labels as stored: the scraper reads a malformed document as no labels
+								// rather than failing every org's target list.
+								.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
 								.where(($) => [
 									$.enabled.eq(true),
 									interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
