@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
@@ -195,15 +196,15 @@ export function DashboardSectionView<W extends CanvasWidget>({
 			{!collapsed &&
 				(widgets.length === 0 ? (
 					editable ? (
-						<div className="flex items-center gap-2 px-1 py-6 text-xs text-muted-foreground">
+						<EmptyMessage className="flex items-center gap-2 px-1 py-6 text-left">
 							<span>No widgets in this group yet.</span>
 							<Button variant="ghost" size="sm" onClick={() => onAddWidget(activeTabId)}>
 								<PlusIcon size={14} />
 								Add widget
 							</Button>
-						</div>
+						</EmptyMessage>
 					) : (
-						<p className="px-1 py-6 text-xs text-muted-foreground">This group is empty.</p>
+						<EmptyMessage className="px-1 py-6 text-left">This group is empty.</EmptyMessage>
 					)
 				) : (
 					<div className="pt-2">

@@ -12,6 +12,7 @@ import {
 	DropdownMenuSubTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
 import { Input } from "@maple/ui/components/ui/input"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { setGlobalNamespace } from "@/lib/services/common/global-namespace"
@@ -61,7 +62,11 @@ function NamespaceScopeList({ emptyNotice = false }: { emptyNotice?: boolean }) 
 	}
 
 	if (loading && observed.length === 0) {
-		return <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading namespaces…</div>
+		return (
+			<div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
+				<Spinner className="size-3.5" /> Loading namespaces…
+			</div>
+		)
 	}
 	if (observed.length === 0 && pinned === null) {
 		return emptyNotice ? (

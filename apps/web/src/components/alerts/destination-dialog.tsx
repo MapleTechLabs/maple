@@ -48,6 +48,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import {
@@ -414,6 +415,7 @@ function HazelOAuthFields({
 			hazelChannelName: "",
 		}))
 	})
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	if (!status || !status.connected) {
 		return (
@@ -471,7 +473,7 @@ function HazelOAuthFields({
 					type="button"
 					size="sm"
 					variant="outline"
-					onClick={() => void handleDisconnect()}
+					onClick={() => setConfirmingDisconnect(true)}
 					loading={disconnecting}
 					disabled={connecting}
 				>
@@ -581,6 +583,17 @@ function HazelOAuthFields({
 					</p>
 				) : null}
 			</Field>
+			<ConfirmDialog
+				open={confirmingDisconnect}
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect Hazel"
+				description="Maple loses access to your Hazel organizations and channels until you reconnect."
+				confirmLabel="Disconnect Hazel"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
+				}}
+			/>
 		</div>
 	)
 }

@@ -3,6 +3,7 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { countLabel } from "@maple/ui/lib/format"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
@@ -85,7 +86,7 @@ function InfraOverviewPage() {
 				) : null}
 
 				{missing.length > 0 ? (
-					<div className="flex flex-wrap items-center gap-4 rounded-lg border border-dashed px-4 py-4">
+					<EmptyMessage dashed className="flex flex-wrap items-center gap-4 px-4 py-4 text-left">
 						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 							<span className="text-sm text-foreground">Add a source</span>
 							<span className="text-xs text-muted-foreground">
@@ -99,7 +100,7 @@ function InfraOverviewPage() {
 						<Button size="sm" render={<Link to="/integrations" />}>
 							Connect a provider
 						</Button>
-					</div>
+					</EmptyMessage>
 				) : null}
 			</div>
 

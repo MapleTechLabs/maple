@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
@@ -406,7 +407,7 @@ function TurnChapter({
 	// itself only has to say where a turn starts and how long it ran.
 	const detail = [
 		turn.agentName,
-		`${turn.traceIds.length} trace${turn.traceIds.length === 1 ? "" : "s"}`,
+		countLabel(turn.traceIds.length, "trace"),
 		`${row.aiSpanCount} agent spans`,
 	]
 		.filter((part) => part !== undefined)
@@ -489,7 +490,7 @@ function EmptyTurnRow({ row }: { row: Extract<TranscriptRow, { kind: "empty-turn
 /** A collapsed chapter keeps its whole summary on the header row, so a long
  *  session can be skimmed one line per turn. */
 function summariseTurn(row: Extract<TranscriptRow, { kind: "turn" }>): string {
-	const parts = [`${row.llmCalls} LLM call${row.llmCalls === 1 ? "" : "s"}`]
+	const parts = [countLabel(row.llmCalls, "LLM call")]
 	if (row.toolNames.length > 0) parts.push(row.toolNames.join(", "))
 	return parts.join(" · ")
 }
@@ -909,9 +910,8 @@ function ToolBlock({
 
 	return (
 		<Row depth={row.depth} className="pt-1.5">
-			<div
+			<Panel
 				className={cn(
-					"flex min-w-0 flex-col overflow-hidden rounded-md border",
 					row.failed
 						? "border-severity-error/40 bg-severity-error/5"
 						: open
@@ -977,7 +977,7 @@ function ToolBlock({
 						onToggleRow={onToggleRow}
 					/>
 				)}
-			</div>
+			</Panel>
 		</Row>
 	)
 }
@@ -1105,7 +1105,7 @@ function LaneOpen({
 			    the sub-agent's work with no record of what was asked for. Behind the
 			    same chip as a tool card's payloads — it is one. */}
 			{showPayloads && row.args !== undefined && (
-				<div className="overflow-hidden rounded-md border border-border bg-card">
+				<Panel>
 					<PayloadSection
 						label="Task prompt"
 						payload={row.args}
@@ -1114,7 +1114,7 @@ function LaneOpen({
 						onToggleRow={onToggleRow}
 						textKey={`${row.key}:args-text`}
 					/>
-				</div>
+				</Panel>
 			)}
 		</Row>
 	)
@@ -1144,15 +1144,14 @@ function LaneClose({
 					{row.parentAgentName === undefined
 						? " finished"
 						: ` returned to ${row.parentAgentName}`}{" "}
-					· {formatDuration(row.durationMs)} · {row.llmCalls} LLM call
-					{row.llmCalls === 1 ? "" : "s"} · {row.toolCalls} tool call
-					{row.toolCalls === 1 ? "" : "s"}
+					· {formatDuration(row.durationMs)} · {countLabel(row.llmCalls, "LLM call")} ·{" "}
+					{countLabel(row.toolCalls, "tool call")}
 				</span>
 			</div>
 			{/* What the sub-agent handed back, read off the delegating tool call's
 			    result — the only place the answer is recorded. */}
 			{showPayloads && row.result !== undefined && (
-				<div className="overflow-hidden rounded-md border border-border bg-card">
+				<Panel>
 					<PayloadSection
 						label="Returned"
 						payload={row.result}
@@ -1161,7 +1160,7 @@ function LaneClose({
 						onToggleRow={onToggleRow}
 						textKey={`${row.key}:result-text`}
 					/>
-				</div>
+				</Panel>
 			)}
 		</Row>
 	)

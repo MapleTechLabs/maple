@@ -3,7 +3,7 @@ import React, { Fragment, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
@@ -96,7 +96,7 @@ function BaselineShift({ value, baseline, format, tone }: BaselineShiftProps) {
 function IssueCounts({ counts }: { counts: ReleaseIssueCounts | undefined | null }) {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0)) {
-		return <span className="font-mono text-xs text-muted-foreground/50">-</span>
+		return <span className="font-mono text-xs text-muted-foreground/50">{EMPTY_VALUE}</span>
 	}
 	return (
 		<span className="inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums">

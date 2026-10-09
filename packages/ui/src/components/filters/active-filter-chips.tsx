@@ -1,5 +1,7 @@
 import { XmarkIcon } from "../icons"
 import { cn } from "../../lib/utils"
+import { Button } from "../ui/button"
+import { IconButton } from "../ui/icon-button"
 
 /** Values past this collapse into a "+N" suffix rather than wrapping the bar. */
 const MAX_CHIP_VALUES = 3
@@ -78,26 +80,26 @@ export function ActiveFilterChips({ chips, onClearAll, className }: ActiveFilter
 								<span className="font-medium">{summary}</span>
 							)}
 						</span>
-						<button
-							type="button"
+						<IconButton
+							size="icon-xs"
+							label={`Remove filter: ${description}`}
 							onClick={chip.onRemove}
-							aria-label={`Remove filter: ${description}`}
-							title={`Remove filter: ${description}`}
-							className="shrink-0 rounded-sm p-0.5 text-current/60 transition-colors hover:bg-current/10 hover:text-current"
+							className="-my-1 text-current/60 hover:bg-current/10 hover:text-current"
 						>
 							<XmarkIcon className="size-3" />
-						</button>
+						</IconButton>
 					</span>
 				)
 			})}
 			{onClearAll && chips.length > 1 && (
-				<button
-					type="button"
+				<Button
+					variant="link"
+					size="xs"
 					onClick={onClearAll}
-					className="ml-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+					className="ml-1 text-muted-foreground hover:text-foreground"
 				>
 					Clear all
-				</button>
+				</Button>
 			)}
 		</div>
 	)

@@ -4,6 +4,8 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
@@ -161,12 +163,7 @@ export function ErrorSignalHeader({
 	select?: { readonly selection: HeaderSelection; readonly onToggleAll: () => void }
 }) {
 	return (
-		<div
-			className={cn(
-				ROW_SHELL,
-				"h-7 border-b border-border/60 bg-muted/30 text-3xs font-medium tracking-wide text-muted-foreground uppercase",
-			)}
-		>
+		<Eyebrow as="div" className={cn(ROW_SHELL, "h-7 border-b border-border/60 bg-muted/30")}>
 			<span className={cn(LANE.select, "flex items-center justify-center")}>
 				{select !== undefined ? (
 					<Checkbox
@@ -187,7 +184,7 @@ export function ErrorSignalHeader({
 			<span className={LANE.state}>Status</span>
 			<span className={LANE.actor} />
 			<span className={cn(LANE.lastSeen, "text-right")}>Last seen</span>
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -362,19 +359,13 @@ export function ErrorSignalRow({
 				    thing you scan for, and a half-truncated pair loses both. Where both
 				    fit, the type holds up to 60% and the message gives way first. */}
 				<span className={cn(LANE.identity, "flex items-baseline gap-2")}>
-					<span
-						className="min-w-0 truncate font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0"
-						title={signal.title}
-					>
+					<TruncatedText className="font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0">
 						{signal.title}
-					</span>
+					</TruncatedText>
 					{signal.detail ? (
-						<span
-							className="hidden min-w-0 flex-1 truncate text-muted-foreground @4xl/page:inline"
-							title={signal.detail}
-						>
+						<TruncatedText className="hidden flex-1 text-muted-foreground @4xl/page:inline">
 							{signal.detail}
-						</span>
+						</TruncatedText>
 					) : null}
 					<SignalActivity
 						investigation={signal.investigation}

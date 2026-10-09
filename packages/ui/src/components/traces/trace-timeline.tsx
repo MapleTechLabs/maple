@@ -4,6 +4,8 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { AlertWarningIcon, AspectRatioIcon } from "../icons"
 import { Button } from "../ui/button"
+import { EmptyMessage } from "../ui/empty"
+import { Kbd } from "../ui/kbd"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { formatDuration } from "../../lib/format"
 import { summarizeClockSkew } from "../../lib/span-tree"
@@ -458,9 +460,7 @@ export function TraceTimeline() {
 
 	if (rootSpans.length === 0) {
 		return (
-			<div className="border p-8 text-center">
-				<p className="text-muted-foreground">No spans found for this trace</p>
-			</div>
+			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 		)
 	}
 
@@ -667,21 +667,21 @@ export function TraceTimeline() {
 				{/* Pointer/keyboard hints are meaningless on touch — the legend takes the whole bar there. */}
 				<div className="hidden shrink-0 items-center gap-3 text-foreground/30 @min-[560px]/timeline:flex">
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
+						<Kbd className="h-4 font-mono text-4xs">
 							Drag
-						</kbd>{" "}
+						</Kbd>{" "}
 						zoom
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
+						<Kbd className="h-4 font-mono text-4xs">
 							W A S D
-						</kbd>{" "}
+						</Kbd>{" "}
 						navigate
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
+						<Kbd className="h-4 font-mono text-4xs">
 							/
-						</kbd>{" "}
+						</Kbd>{" "}
 						search
 					</span>
 					<button
@@ -689,9 +689,9 @@ export function TraceTimeline() {
 						onClick={() => setShowShortcuts((v) => !v)}
 						className="hover:text-foreground/70"
 					>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-4xs">
+						<Kbd className="h-4 font-mono text-4xs">
 							?
-						</kbd>{" "}
+						</Kbd>{" "}
 						all shortcuts
 					</button>
 				</div>
@@ -724,13 +724,9 @@ export function TraceTimeline() {
 					>
 						<div className="mb-3 flex items-center justify-between">
 							<span className="text-xs font-medium">Timeline shortcuts</span>
-							<button
-								type="button"
-								onClick={() => setShowShortcuts(false)}
-								className="text-muted-foreground hover:text-foreground text-xs"
-							>
+							<Button variant="link" size="xs" onClick={() => setShowShortcuts(false)}>
 								Esc
-							</button>
+							</Button>
 						</div>
 						<div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-2xs">
 							{(
@@ -752,9 +748,9 @@ export function TraceTimeline() {
 								] as const
 							).map(([keys, desc]) => (
 								<React.Fragment key={keys}>
-									<kbd className="justify-self-start border border-foreground/10 bg-muted px-1.5 py-0.5 font-mono text-3xs whitespace-nowrap">
+									<Kbd className="justify-self-start whitespace-nowrap font-mono text-3xs">
 										{keys}
-									</kbd>
+									</Kbd>
 									<span className="text-muted-foreground self-center">{desc}</span>
 								</React.Fragment>
 							))}

@@ -532,10 +532,16 @@
 	border-bottom: none !important;
 }
 
-.react-flow__controls-button svg {
+.react-flow__controls-button svg:not([fill="none"]) {
 	fill: var(--foreground) !important;
 }
 
-.react-flow__controls-button svg path {
+.react-flow__controls-button svg:not([fill="none"]) path {
 	fill: var(--foreground) !important;
+}
+
+/* Stroke icons (Nucleo) keep their outline instead of the filled-glyph rules above. */
+.react-flow__controls-button svg[fill="none"] {
+	fill: none;
+	color: var(--foreground);
 }

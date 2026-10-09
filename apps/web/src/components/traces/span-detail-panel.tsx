@@ -6,6 +6,7 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
@@ -293,9 +294,9 @@ export function SpanDetailPanel({
 							</span>
 						)}
 						{cacheInfo.name && (
-							<span className="font-mono text-muted-foreground truncate" title={cacheInfo.name}>
+							<TruncatedText mono className="text-muted-foreground">
 								{cacheInfo.name}
-							</span>
+							</TruncatedText>
 						)}
 					</div>
 				)}
@@ -403,7 +404,7 @@ export function SpanDetailPanel({
 										/>
 									)}
 									<KeyValueList className="gap-1">
-										<KeyValue mono label="Start Time">
+										<KeyValue mono label="Start time">
 											<CopyableValue value={span.startTime}>
 												{formatTimestampInTimezone(span.startTime, {
 													timeZone: effectiveTimezone,
@@ -415,7 +416,7 @@ export function SpanDetailPanel({
 											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
 										</KeyValue>
 										{span.parentSpanId && (
-											<KeyValue mono label="Parent Span ID">
+											<KeyValue mono label="Parent span ID">
 												<CopyableValue value={span.parentSpanId}>
 													{span.parentSpanId}
 												</CopyableValue>
@@ -431,7 +432,7 @@ export function SpanDetailPanel({
 								<TraceAttributeFilterProvider scope="span">
 									<AttributesSection
 										attributes={span.spanAttributes ?? {}}
-										title="Span Attributes"
+										title="Span attributes"
 									/>
 								</TraceAttributeFilterProvider>
 							) : (
@@ -453,7 +454,7 @@ export function SpanDetailPanel({
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={span.spanAttributes ?? {}}
-													title="Span Attributes"
+													title="Span attributes"
 												/>
 											</TraceAttributeFilterProvider>
 											<TraceAttributeFilterProvider scope="resource">
@@ -468,7 +469,7 @@ export function SpanDetailPanel({
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={detail.spanAttributes}
-													title="Span Attributes"
+													title="Span attributes"
 												/>
 											</TraceAttributeFilterProvider>
 											<TraceAttributeFilterProvider scope="resource">

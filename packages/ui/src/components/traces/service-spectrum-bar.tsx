@@ -1,6 +1,6 @@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip"
 import { cn } from "../../lib/utils"
-import { formatDuration } from "../../lib/format"
+import { formatDuration, formatPercent } from "../../lib/format"
 import { getServiceColor } from "../../lib/colors"
 
 /** The minimal span shape the share computation needs — both the web app's
@@ -91,7 +91,7 @@ export function ServiceSpectrumBar({
 						<TooltipContent side="top">
 							<span className="font-mono tabular-nums">
 								{share.serviceName} · {formatDuration(share.durationMs)} ·{" "}
-								{share.percent.toFixed(1)}%
+								{formatPercent(share.percent / 100)}
 							</span>
 						</TooltipContent>
 					</Tooltip>

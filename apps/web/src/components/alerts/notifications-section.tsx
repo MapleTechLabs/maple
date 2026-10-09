@@ -5,6 +5,7 @@ import { useState, type Dispatch, type SetStateAction } from "react"
 import { useUser } from "@clerk/clerk-react"
 
 import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
@@ -442,9 +443,9 @@ function MessageTemplate({
 					Message template
 				</span>
 				{hasTemplate && !open && (
-					<span className="rounded-full bg-primary/10 px-2 py-0.5 text-3xs text-primary">
+					<Badge pill size="xs" className="bg-primary/10 text-primary">
 						Customized
-					</span>
+					</Badge>
 				)}
 			</button>
 
@@ -484,10 +485,11 @@ function MessageTemplate({
 								<Tooltip key={variable.key}>
 									<TooltipTrigger
 										render={
-											<button
-												type="button"
+											<Button
+												variant="outline"
+												size="xs"
 												onClick={() => appendToBody(`{{ ${variable.key} }}`)}
-												className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground hover:border-border hover:text-foreground"
+												className="font-mono text-3xs text-muted-foreground hover:text-foreground sm:text-3xs"
 											/>
 										}
 									>

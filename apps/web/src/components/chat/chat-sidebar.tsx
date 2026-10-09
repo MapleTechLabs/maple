@@ -248,7 +248,7 @@ function ChatSidebarRow({
 				{isLoading ? (
 					<DotLoader label="Working" color="var(--primary)" />
 				) : Icon ? (
-					<Icon size={14} className="shrink-0 opacity-70" />
+					<Icon size={14} className="shrink-0 text-muted-foreground/70" />
 				) : null}
 				{isRenaming ? (
 					<input

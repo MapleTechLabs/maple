@@ -14,6 +14,7 @@ import {
 	formatLatency,
 	formatNumber,
 	formatPercent,
+	pluralize,
 } from "@maple/ui/lib/format"
 import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
 
@@ -378,7 +379,7 @@ export function toolChartTitle({
  * accounts for, and across how many sessions.
  */
 export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject?: string): string {
-	const sessions = `${formatToolCount(totals.sessions)} session${totals.sessions === 1 ? "" : "s"}`
+	const sessions = `${formatToolCount(totals.sessions)} ${pluralize(totals.sessions, "session")}`
 	// The tool detail page names the tool in its denominator ("of 3,908
 	// run_tests calls"), because there the whole page is one tool's and an
 	// unqualified "calls" would read as the org's.
@@ -493,7 +494,7 @@ export function toolsTableFooter(
 		subject:
 			rows.length >= limit
 				? `Showing the ${formatToolCount(limit)} busiest tools`
-				: `Showing all ${formatToolCount(rows.length)} tool${rows.length === 1 ? "" : "s"}`,
+				: `Showing all ${formatToolCount(rows.length)} ${pluralize(rows.length, "tool")}`,
 		detail: `· ${formatToolCount(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
 	}
 }

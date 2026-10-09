@@ -1,4 +1,5 @@
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useMemo, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
@@ -623,15 +624,16 @@ export function CloudflareWorkersCard({
 						</div>
 					))}
 					{scripts.length > WORKERS_COLLAPSED_COUNT ? (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setExpanded((current) => !current)}
-							className="pb-1 pt-2.5 text-left text-2xs text-muted-foreground transition-colors hover:text-foreground"
+							className="h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground"
 						>
 							{expanded
 								? "Show fewer"
 								: `Showing ${visible.length} of ${scripts.length} · View all →`}
-						</button>
+						</Button>
 					) : null}
 				</div>
 			)}

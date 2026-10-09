@@ -17,7 +17,7 @@ import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { SectionHeading } from "@/components/common/section-heading"
 import { cn } from "@maple/ui/lib/utils"
 
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { GridIcon } from "@/components/icons"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
@@ -141,9 +141,9 @@ function LensBody({
 		[workloadsResult],
 	)
 
-	const overviewResult = useAtomValue(
-		getServiceDetailOverviewResultAtom({ data: { serviceName, startTime, endTime } }),
-	)
+	const overviewAtom = getServiceDetailOverviewResultAtom({ data: { serviceName, startTime, endTime } })
+	const overviewResult = useAtomValue(overviewAtom)
+	const refreshOverview = useAtomRefresh(overviewAtom)
 
 	const points = useMemo(
 		() =>
@@ -195,18 +195,18 @@ function LensBody({
 		}),
 	)
 
-	const podsResult = useAtomValue(
-		listPodsResultAtom({
-			data: {
-				startTime,
-				endTime,
-				workloadKind: workload?.workloadKind,
-				workloadName: workload?.workloadName || undefined,
-				namespaces: workload?.namespace ? [workload.namespace] : undefined,
-				limit: POD_LIMIT,
-			},
-		}),
-	)
+	const podsAtom = listPodsResultAtom({
+		data: {
+			startTime,
+			endTime,
+			workloadKind: workload?.workloadKind,
+			workloadName: workload?.workloadName || undefined,
+			namespaces: workload?.namespace ? [workload.namespace] : undefined,
+			limit: POD_LIMIT,
+		},
+	})
+	const podsResult = useAtomValue(podsAtom)
+	const refreshPods = useAtomRefresh(podsAtom)
 
 	/**
 	 * The pod gauges, re-keyed onto the service series' bucket format.
@@ -307,7 +307,13 @@ function LensBody({
 	)
 
 	if (Result.isFailure(overviewResult)) {
-		return <ErrorState error={overviewResult.cause} title="Failed to load this service" />
+		return (
+			<ErrorState
+				error={overviewResult.cause}
+				title="Failed to load this service"
+				onRetry={refreshOverview}
+			/>
+		)
 	}
 
 	// The headline reads pods and CPU as well as the overview, and both of those
@@ -414,7 +420,9 @@ function LensBody({
 						/>
 						{Result.builder(podsResult)
 							.onInitial(() => <PodTableLoading />)
-							.onError((error) => <ErrorState error={error} title="Failed to load pods" />)
+							.onError((error) => (
+								<ErrorState error={error} title="Failed to load pods" onRetry={refreshPods} />
+							))
 							.onSuccess((response, holder) =>
 								response.data.length === 0 ? (
 									<EmptyMessage dashed className="py-12">

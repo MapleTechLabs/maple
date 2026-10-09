@@ -4,6 +4,7 @@ import { ChevronRightIcon, ChevronDownIcon, GlobeIcon } from "../icons"
 import { Badge } from "../ui/badge"
 import { IconButton } from "../ui/icon-button"
 import { TruncatedId } from "../ui/truncated-id"
+import { TruncatedText } from "../ui/truncated-text"
 import { cn } from "../../lib/utils"
 import { formatDuration } from "../../lib/format"
 import { spanStartMs as spanStartMsOf } from "../../lib/span-tree"
@@ -73,12 +74,12 @@ function SpanRowImpl({
 						missing
 					</Badge>
 
-					<span
-						className="flex-1 truncate font-mono text-xs italic text-muted-foreground"
-						title={`Missing span: ${span.spanId}`}
+					<TruncatedText
+						text={`Missing span: ${span.spanId}`}
+						className="flex-1 font-mono text-xs italic text-muted-foreground"
 					>
-						Missing Span
-					</span>
+						Missing span
+					</TruncatedText>
 				</div>
 
 				<div className="flex items-center gap-2 shrink-0 ml-2">
@@ -196,9 +197,9 @@ function SpanRowImpl({
 						<span className="truncate">{httpInfo.route || span.spanName}</span>
 					</span>
 				) : (
-					<span className="flex-1 truncate font-mono text-xs" title={span.spanName}>
+					<TruncatedText mono className="flex-1 text-xs">
 						{span.spanName}
-					</span>
+					</TruncatedText>
 				)}
 
 				{hasChildren && !expanded && (

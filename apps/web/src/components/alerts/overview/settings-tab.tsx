@@ -1,5 +1,5 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { Exit, Option } from "effect"
+import { Exit } from "effect"
 import { Fragment, useState, type Dispatch, type SetStateAction } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -27,7 +27,6 @@ import {
 	type DestinationFormState,
 } from "@/lib/alerts/form-utils"
 import { toastExit } from "@/lib/error-toast"
-import { publicError } from "@/lib/error-messages"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
@@ -166,19 +165,8 @@ export function useDestinationManager(options?: {
 			params: { id },
 			reactivityKeys: ["alertDestinations", "alertRules"],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Destination deleted", type: "success" })
-			return true
-		}
-		// A destination still referenced by rules deletes with a 409
-		// conflict_error whose message already names the referencing rules.
-		const v2 = publicError(Option.getOrUndefined(Exit.findErrorOption(result)))
-		if (v2 !== null && v2.type === "conflict_error") {
-			toastManager.add({ title: v2.message, type: "error" })
-		} else {
-			toastExit(result, { error: "Failed to delete destination" })
-		}
-		return false
+		// A 409 from a destination still referenced by rules names those rules in its message.
+		return toastExit(result, { success: "Destination deleted", error: "Failed to delete destination" })
 	})
 
 	return {

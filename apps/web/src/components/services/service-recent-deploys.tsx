@@ -17,7 +17,8 @@ import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout
 import { DocsLink } from "@/components/common/docs-link"
 import { ResultView } from "@/components/common/result-view"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -287,7 +288,7 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 			action={
 				deploys.length > 0 ? (
 					<span className="text-xs text-muted-foreground/70">
-						{deploys.length === 1 ? "1 version" : `${deploys.length} versions`} in window
+						{countLabel(deploys.length, "version")} in window
 					</span>
 				) : undefined
 			}
@@ -316,17 +317,20 @@ export function ServiceRecentDeploys({ releases, isLoading = false }: ServiceRec
 						) : null}
 					</div>
 					{deploys.length > RAIL_LIMIT ? (
-						<button
-							type="button"
-							onClick={() => setExpanded((v) => !v)}
-							className="w-full border-t px-4 py-2 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-						>
-							{expanded
-								? "Show fewer"
-								: deploys.length <= EXPANDED_LIMIT
-									? `Show all ${deploys.length} deploys`
-									: `Show latest ${EXPANDED_LIMIT} deploys`}
-						</button>
+						<div className="border-t p-1">
+							<LoadMoreButton
+								variant="ghost"
+								onClick={() => setExpanded((v) => !v)}
+								className="w-full text-xs text-muted-foreground hover:text-foreground"
+								label={
+									expanded
+										? "Show fewer"
+										: deploys.length <= EXPANDED_LIMIT
+											? `Show all ${deploys.length} deploys`
+											: `Show latest ${EXPANDED_LIMIT} deploys`
+								}
+							/>
+						</div>
 					) : null}
 					{firstResolvable ? <ConnectRepoFooter sha={firstResolvable.sha} /> : null}
 				</>

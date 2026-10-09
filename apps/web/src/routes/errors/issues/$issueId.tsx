@@ -1,10 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit, Schema } from "effect"
 import { useMemo, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { showErrorToast } from "@/lib/error-toast"
+import { displayError } from "@/lib/error-messages"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -65,7 +68,9 @@ const decodeIssueId = Schema.decodeSync(ErrorIssueId)
  */
 const AWAITING_FIX_STATES = new Set<WorkflowState>(["in_progress", "in_review"])
 
-const ISSUE_LOADING_BREADCRUMBS = [{ label: "Errors", href: "/errors" }, { label: "…" }] as const
+const ERRORS_CRUMB = { label: "Errors", href: "/errors" } as const
+const isIssueNotFound = (error: unknown) =>
+	displayError(error)._tag === "@maple/http/errors/ErrorIssueNotFoundError"
 
 /**
  * How many buckets the detail chart gets. Denser than the list row's 32 — this
@@ -193,33 +198,37 @@ function IssueDetailContent() {
 
 	const [transitionIssue, transitioning] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "transitionIssue"),
-		{ error: "State change failed" },
+		{ error: "Failed to change state" },
 	)
 	const [claimIssue, claiming] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "claimIssue"),
 		{
 			success: "Claimed",
-			error: "Claim failed",
+			error: "Failed to claim issue",
 		},
 	)
 	const [heartbeatIssue, heartbeating] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "heartbeatIssue"),
-		{ success: "Lease extended", error: "Heartbeat failed" },
+		{ success: "Lease extended", error: "Failed to extend lease" },
 	)
 	const [releaseIssue, releasing] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "releaseIssue"),
 		{
 			success: "Released",
-			error: "Release failed",
+			error: "Failed to release issue",
 		},
 	)
 	const [commentOnIssue, commenting] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "commentOnIssue"),
-		{ success: "Comment added", error: "Comment failed", onSuccess: () => setCommentDraft("") },
+		{ success: "Comment added", error: "Failed to add comment", onSuccess: () => setCommentDraft("") },
 	)
 	const [setIssueSeverity, settingSeverity] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "setIssueSeverity"),
-		{ error: "Severity change failed" },
+		{
+			success: (issue) =>
+				issue.severity === null ? "Severity cleared" : `Severity set to ${issue.severity}`,
+			error: "Failed to change severity",
+		},
 	)
 	const evaluateEscalation = useAtomSet(
 		MapleInternalAtomClient.mutation("errors", "evaluateEscalationPolicy"),
@@ -235,7 +244,7 @@ function IssueDetailContent() {
 	})
 	const [unlinkPullRequest, detachingPullRequest] = useMutationAction(
 		MapleInternalAtomClient.mutation("errors", "unlinkIssuePullRequest"),
-		{ success: "Pull request detached", error: "Could not detach the pull request" },
+		{ success: "Pull request detached", error: "Failed to detach the pull request" },
 	)
 
 	const [attachDialogOpen, setAttachDialogOpen] = useState(false)
@@ -268,7 +277,7 @@ function IssueDetailContent() {
 			reactivityKeys: invalidateKeys,
 		})
 		if (!Exit.isSuccess(result)) return
-		toastManager.add({ title: `Moved to ${next}`, type: "success" })
+		toastManager.add({ title: `Moved to ${WORKFLOW_LABEL[next]}`, type: "success" })
 		// "In review" with no pull request attached is the exact moment the link is
 		// worth asking for — it is what opens the verification window later. Offered
 		// after the transition has already committed, so dismissing it costs nothing.
@@ -319,17 +328,11 @@ function IssueDetailContent() {
 		void unlinkPullRequest({ params: { issueId, pullRequestId }, reactivityKeys: invalidateKeys })
 
 	const applySeverity = async (next: IssueSeverity | null) => {
-		const result = await setIssueSeverity({
+		await setIssueSeverity({
 			params: { issueId },
 			payload: new ErrorIssueSetSeverityRequest({ severity: next }),
 			reactivityKeys: invalidateKeys,
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: next === null ? "Severity cleared" : `Severity set to ${next}`,
-				type: "success",
-			})
-		}
 	}
 
 	const changeSeverity = async (next: IssueSeverity | null) => {
@@ -482,11 +485,21 @@ function IssueDetailContent() {
 					windowLabel={windowLabel(search)}
 				/>
 			))
-			.onError((error) => (
-				<DashboardPage breadcrumbs={[...ISSUE_LOADING_BREADCRUMBS]}>
-					<ErrorState error={error} title="Failed to load issue" onRetry={refreshDetail} />
-				</DashboardPage>
-			))
+			.onError((error) =>
+				isIssueNotFound(error) ? (
+					<DashboardPage breadcrumbs={[ERRORS_CRUMB, { label: "Not found" }]}>
+						<ResourceNotFound
+							title="Issue not found"
+							backLink={<Link to="/errors" />}
+							backLabel="Back to errors"
+						/>
+					</DashboardPage>
+				) : (
+					<DashboardPage breadcrumbs={[ERRORS_CRUMB, { label: "Error" }]}>
+						<ErrorState error={error} title="Failed to load issue" onRetry={refreshDetail} />
+					</DashboardPage>
+				),
+			)
 			.onSuccess((v2Detail) => {
 				const detail = errorIssueDetailFromV2(v2Detail)
 				const { issue, timeseries, sampleTraces, incidents, environments } = detail

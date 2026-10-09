@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { SectionHeading } from "@/components/common/section-heading"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -189,9 +189,11 @@ function PlanetScaleDatabasePage() {
 	const neverCollected = status !== null && status.connected && metricsNeverCollected(status)
 	const setupSteps = status !== null ? derivePlanetScaleSetup(status, Date.now()).steps : []
 
-	const branchStatsResult = useRefreshableAtomValue(
-		getPlanetScaleBranchStatsResultAtom({ data: { database: dbName, startTime, endTime } }),
-	)
+	const branchStatsAtom = getPlanetScaleBranchStatsResultAtom({
+		data: { database: dbName, startTime, endTime },
+	})
+	const branchStatsResult = useRefreshableAtomValue(branchStatsAtom)
+	const refreshBranchStats = useAtomRefresh(branchStatsAtom)
 	const branchStats = Result.builder(branchStatsResult)
 		.onSuccess((r) => r.branches)
 		.orElse(() => NO_BRANCH_STATS)
@@ -319,6 +321,7 @@ function PlanetScaleDatabasePage() {
 						selectedBranches={filters.branches ?? EMPTY_SELECTION}
 						onToggleBranch={toggleBranch}
 						branchStatsResult={branchStatsResult}
+						onRetryBranchStats={refreshBranchStats}
 						selectedBranchName={selectedBranch?.name ?? null}
 						onSelectBranch={selectBranch}
 					/>
@@ -414,6 +417,7 @@ function PlanetScaleDatabaseData({
 	selectedBranches,
 	onToggleBranch,
 	branchStatsResult,
+	onRetryBranchStats,
 	selectedBranchName,
 	onSelectBranch,
 }: {
@@ -429,21 +433,22 @@ function PlanetScaleDatabaseData({
 	selectedBranches: ReadonlyArray<string>
 	onToggleBranch: (branch: string) => void
 	branchStatsResult: Result.Result<{ branches: ReadonlyArray<PlanetScaleBranchStat> }, unknown>
+	onRetryBranchStats: () => void
 	selectedBranchName: string | null
 	onSelectBranch: (branch: string | undefined) => void
 }) {
 	const bucketSeconds = chartBucketSeconds(startTime, endTime)
-	const timeseriesResult = useRefreshableAtomValue(
-		planetscaleInfraTimeseriesResultAtom({
-			data: {
-				database,
-				startTime,
-				endTime,
-				bucketSeconds,
-				...(!(branch === undefined) ? { branch } : undefined),
-			},
-		}),
-	)
+	const timeseriesAtom = planetscaleInfraTimeseriesResultAtom({
+		data: {
+			database,
+			startTime,
+			endTime,
+			bucketSeconds,
+			...(!(branch === undefined) ? { branch } : undefined),
+		},
+	})
+	const timeseriesResult = useRefreshableAtomValue(timeseriesAtom)
+	const refreshTimeseries = useAtomRefresh(timeseriesAtom)
 
 	const buckets = Result.builder(timeseriesResult)
 		.onSuccess((r) => r.buckets)
@@ -492,7 +497,11 @@ function PlanetScaleDatabaseData({
 	) : Result.isFailure(timeseriesResult) ? (
 		// Section-scoped: a failed chart query must not take the branch table and
 		// query insights down with it — they are separate queries.
-		<ErrorState error={timeseriesResult.cause} />
+		<ErrorState
+			error={timeseriesResult.cause}
+			title="Failed to load database metrics"
+			onRetry={refreshTimeseries}
+		/>
 	) : (
 		<div className="space-y-4">
 			<PlanetScaleChart
@@ -556,7 +565,11 @@ function PlanetScaleDatabaseData({
 				{Result.isInitial(branchStatsResult) ? (
 					<PlanetScaleBranchBreakdownPanelLoading />
 				) : Result.isFailure(branchStatsResult) ? (
-					<ErrorState error={branchStatsResult.cause} />
+					<ErrorState
+						error={branchStatsResult.cause}
+						title="Failed to load branch stats"
+						onRetry={onRetryBranchStats}
+					/>
 				) : (
 					<PlanetScaleBranchBreakdownPanel
 						candidates={candidates}

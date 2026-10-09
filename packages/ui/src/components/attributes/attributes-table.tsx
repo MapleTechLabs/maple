@@ -234,9 +234,9 @@ export function AttributesTable({ attributes, title, searchQuery, groupByNamespa
 								<span className="font-mono font-semibold text-foreground/80">
 									{group.namespace}
 								</span>
-								<span className="ml-auto rounded-full bg-muted px-1.5 text-3xs tabular-nums text-muted-foreground">
+								<Badge variant="muted" size="xs" mono className="ml-auto">
 									{group.entries.length}
-								</span>
+								</Badge>
 							</CollapsibleTrigger>
 							<CollapsibleContent>
 								<div className="divide-y divide-border/40 border-t border-border/60 bg-muted/15">
@@ -348,7 +348,7 @@ export function AttributesSection({
 						<div className="mt-1">
 							<AttributesTable
 								attributes={internal}
-								title="Maple Internal"
+								title="Maple internal"
 								searchQuery={searchQuery}
 							/>
 						</div>
@@ -367,7 +367,7 @@ export function ResourceAttributesSection({
 	return (
 		<AttributesSection
 			attributes={attributes}
-			title="Resource Attributes"
+			title="Resource attributes"
 			searchQuery={searchQuery}
 			groupByNamespace={groupByNamespace}
 		/>

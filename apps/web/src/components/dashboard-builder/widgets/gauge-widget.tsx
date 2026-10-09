@@ -1,6 +1,6 @@
 import { memo, useId } from "react"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
-import { formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
 
@@ -115,7 +115,7 @@ export const GaugeWidget = memo(function GaugeWidget({ dataState, display, mode 
 	const formattedValue =
 		value !== null
 			? `${display.prefix ?? ""}${formatValueByUnit(value, display.unit)}${display.suffix ?? ""}`
-			: "—"
+			: EMPTY_VALUE
 	// "1,240.5ms" at full size is wider than the hole; scale the font down rather
 	// than let the value run into the blades.
 	const valueFontSize = Math.min(VALUE_FONT_SIZE, VALUE_MAX_WIDTH / (formattedValue.length * MONO_ADVANCE))

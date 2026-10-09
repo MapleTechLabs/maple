@@ -425,7 +425,7 @@ function ScalarReduction() {
 					</SelectContent>
 				</Select>
 			</RailSetting>
-			<RailSetting label="Value Field">
+			<RailSetting label="Value field">
 				<Select
 					value={valueField || seriesFieldOptions[0]}
 					onValueChange={(value) => set({ statValueField: value ?? "" })}
@@ -553,7 +553,7 @@ function Thresholds() {
 function RowLimit() {
 	const { state, set } = useSettings()
 	return (
-		<RailSetting label="Row Limit">
+		<RailSetting label="Row limit">
 			<Input
 				value={state.tableLimit}
 				onChange={(event) => set({ tableLimit: event.target.value })}

@@ -44,7 +44,7 @@ export function MarkdownChart({ code, isIncomplete }: MarkdownChartProps) {
 	// payload should be debuggable, not silently missing.
 	if (spec === null) {
 		return (
-			<pre className="my-3 overflow-x-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+			<pre className="my-3 overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
 				<code>{code}</code>
 			</pre>
 		)
@@ -67,7 +67,7 @@ const skeletonVariant = (spec: ChartSpec) => (spec.type === "ranked" ? "hbar" : 
  */
 function ChartFrame({ title, children }: { title: string | null; children: ReactNode }) {
 	return (
-		<figure className="my-3 space-y-2 rounded-lg border border-border bg-card p-3">
+		<figure className="my-3 space-y-2 rounded-md border border-border bg-card p-3">
 			{title ? (
 				<figcaption className="text-2xs font-medium text-muted-foreground">{title}</figcaption>
 			) : null}

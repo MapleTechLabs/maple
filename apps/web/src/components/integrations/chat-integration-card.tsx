@@ -18,6 +18,7 @@ import {
 } from "@maple/ui/components/ui/item"
 import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 
 import { ErrorState } from "@/components/common/error-state"
@@ -257,11 +258,14 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 
 	if (Result.isInitial(listResult) && status === null) {
 		return (
-			<div className="flex min-h-70 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-input px-6 py-10">
+			<EmptyMessage
+				dashed
+				className="flex min-h-70 flex-col items-center justify-center gap-4 border-input px-6 py-10"
+			>
 				<Skeleton className="size-14 rounded-xl" />
 				<Skeleton className="h-4 w-72 max-w-full" />
 				<Skeleton className="h-9 w-36 rounded-md" />
-			</div>
+			</EmptyMessage>
 		)
 	}
 	if (Result.isFailure(listResult) && status === null) {

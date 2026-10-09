@@ -199,13 +199,14 @@ function CheckBlock({
 						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
 						<span>
 							Check the{" "}
-							<button
-								type="button"
+							<Button
+								variant="link"
+								size="xs"
 								onClick={onOpenTools}
-								className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground"
+								className="h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground"
 							>
 								Tools section
-							</button>{" "}
+							</Button>{" "}
 							at the bottom of this page for details.
 						</span>
 					</p>

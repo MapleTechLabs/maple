@@ -252,7 +252,7 @@ export function GithubIntegrationCard() {
 function LoadingState() {
 	return (
 		<div className="space-y-4">
-			<Skeleton className="h-16 w-full rounded-lg" />
+			<Skeleton className="h-16 w-full rounded-md" />
 			<Panel className="overflow-hidden">
 				<Skeleton className="h-11 w-full rounded-none" />
 				<div className="divide-y">
