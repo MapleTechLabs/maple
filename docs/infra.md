@@ -329,7 +329,8 @@ What each kind of Worker keeps beside the module:
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is its
   bundle entry. Its `Sandbox` Durable Object owns one container per repository per org and
   drives it through `ctx.container` (Sandbox SDK 1.0: the SDK no longer ships the class, only
-  `Files` and `DirectoryBackup`). The deployed script must export that class and the SDK's
+  `DirectoryBackup`). Its one RPC method, `run`, takes the whole request, so the Worker makes
+  one call per tool call. The deployed script must export that class and the SDK's
   `DirectoryBackupGateway` entrypoint. An Effect-native Worker cannot, because alchemy
   generates its entry (`makeEffectVirtualEntry`) and exports only the bridge classes it
   created. A plain module is used verbatim, so the exports in `apps/sandbox/src/worker.ts`
@@ -349,16 +350,17 @@ What each kind of Worker keeps beside the module:
     What runs inside is one full `git clone` per commit under `/workspace/maple/<sha>`, kept
     to the newest three. The clone is a **background process** the Worker polls, because a
     container request is capped well below what a cold clone of a real repository takes. A
-    call that arrives first gets `SandboxRunCheckoutPending` and retries. 1.0 has no process
-    table, so each background process gets a directory under `/var/lib/maple-processes` holding
-    its pid, exit code and logs (`src/processes.ts`), and a command's timeout is coreutils
+    call that arrives first gets `SandboxRunCheckoutPending` and retries. One status script
+    (`checkoutStatusScript`) reads the clone's state from `/var/lib/maple-clones/<sha>` (pid,
+    exit code, stderr) and claims the clone with a `mkdir` when nobody has. A failed clone is
+    reported once and cloned again on the next call. A command's timeout is coreutils
     `timeout`, which takes down everything the command started. The repository's bare mirror is
     archived to the `sandbox-mirrors` R2 bucket through `DirectoryBackup` and restored into a
     cold container before its first clone; the container never holds R2 credentials. The credential is a
-    GitHub token minted for that one repository with read-only contents, staged through the
-    container's file API into a root-only path and read by a git credential helper. It is
-    never put in a command, because every process's arguments are readable by the account
-    the agent's own commands run as. Commands run through a wrapper (`wrapCommand`): `env -i`
+    GitHub token minted for that one repository with read-only contents, passed in the clone
+    process's environment and read by a git credential helper. It is never put in a command,
+    because every process's arguments are readable by the account the agent's own commands
+    run as, while a root process's environment is not. Commands run through a wrapper (`wrapCommand`): `env -i`
     with a fixed environment, `runuser` to an unprivileged account that does not own the
     tree, `unshare -n` for a network namespace with no egress, and each stream cut to the
     request's bound where it is produced. The command's real exit status and whether the

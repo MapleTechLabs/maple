@@ -23,13 +23,6 @@ export const MIRROR_BACKUP_KEY = "maple:mirror-backup"
  */
 export const MIRROR_BACKUP_REFRESH = Duration.hours(24)
 
-/**
- * How long an archive is trusted. Longer than the refresh so an active repository always has one,
- * short enough that a disconnected repository's source does not sit in R2 for long. The bucket's
- * lifecycle rule deletes the objects a day after; `DirectoryBackup` itself never expires anything.
- */
-export const MIRROR_BACKUP_TTL = Duration.days(7)
-
 /** The bound on a restore, which sits in the path of a clone. Past it the clone starts from scratch. */
 export const MIRROR_RESTORE_TIMEOUT = Duration.seconds(30)
 
@@ -90,7 +83,7 @@ const call = <A>(what: string, run: () => Promise<A>) =>
 
 const stored = (host: MirrorBackupHost) => call("read the backup record", () => host.readBackup())
 
-export type RestoreOutcome = "unconfigured" | "none" | "present" | "restored" | "expired"
+export type RestoreOutcome = "unconfigured" | "none" | "present" | "restored" | "gone"
 
 /**
  * Restore the latest mirror backup to the seed path, if this container has neither a mirror nor
@@ -101,10 +94,6 @@ export const restoreMirror = (host: MirrorBackupHost): Effect.Effect<RestoreOutc
 		if (!host.configured) return "unconfigured"
 		const backup = yield* stored(host)
 		if (Option.isNone(backup)) return "none"
-		if (host.now() - backup.value.createdAt >= Duration.toMillis(MIRROR_BACKUP_TTL)) {
-			yield* call("forget an expired backup", () => host.forgetBackup())
-			return "expired"
-		}
 		const present = yield* call("look for a mirror", () =>
 			host.exec(
 				`test -d ${shellQuote(SANDBOX_MIRROR_DIR)}/objects || test -d ${shellQuote(SANDBOX_SEED_DIR)}/objects`,
@@ -125,9 +114,10 @@ export const restoreMirror = (host: MirrorBackupHost): Effect.Effect<RestoreOutc
 			}),
 		)
 		if (restored === "restored") return "restored"
-		// R2 lost the archive or it aged out: forget it, or every cold container would try again.
+		// The bucket's lifecycle rule aged it out, or R2 lost it: forget it, or every cold container
+		// would try again.
 		yield* call("forget a missing backup", () => host.forgetBackup())
-		return "expired"
+		return "gone"
 	})
 
 export type BackupOutcome = "unconfigured" | "fresh" | "no-mirror" | "created"

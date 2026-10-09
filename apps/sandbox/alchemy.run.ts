@@ -23,9 +23,10 @@ const SANDBOX_IMAGE_CONTEXT = `${import.meta.dirname}/image`
 
 /**
  * Git mirror archives between container lifetimes. Customer source: follows the storage
- * jurisdiction; expires a day after the 7-day `MIRROR_BACKUP_TTL`, since nothing else deletes
- * archives. The container never holds credentials for it: `DirectoryBackupGateway` moves each
- * archive through the Worker.
+ * jurisdiction, and the lifecycle rule is the only thing that deletes an archive, so it bounds how
+ * long a disconnected repository's source stays in R2. Daily refreshes keep an active one fresh.
+ * The container never holds credentials for it: `DirectoryBackupGateway` moves each archive
+ * through the Worker.
  */
 const mirrorBackups = Effect.gen(function* () {
 	const { stage, region } = yield* MapleStack

@@ -1,7 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
-import { SANDBOX_EXEC_PATH, SandboxExecRequest, sandboxCredentialPath } from "@maple/domain/sandbox"
+import {
+	SANDBOX_EXEC_PATH,
+	SandboxExecRequest,
+	SandboxExecResponse,
+	SandboxRunExited,
+} from "@maple/domain/sandbox"
 import { Effect, Schema } from "effect"
-import type { SandboxLike } from "./checkout"
 import { handle, type SandboxHandleEnv } from "./handle"
 
 const SHA = "a".repeat(40)
@@ -35,10 +39,10 @@ const post = (payload: unknown = body(), authorization = `Bearer ${SERVICE_TOKEN
 		body: JSON.stringify(payload),
 	})
 
-const env = (open: SandboxHandleEnv["open"]): SandboxHandleEnv => ({ token: SERVICE_TOKEN, open })
+const env = (run: SandboxHandleEnv["run"]): SandboxHandleEnv => ({ token: SERVICE_TOKEN, run })
 
-const unreachable: SandboxHandleEnv["open"] = () => {
-	throw new TypeError("Cannot read properties of undefined (reading 'idFromName')")
+const unreachable: SandboxHandleEnv["run"] = () => {
+	throw new TypeError("Cannot read properties of undefined (reading 'getByName')")
 }
 
 const answered = (response: Response) => response.json() as Promise<Record<string, unknown>>
@@ -50,15 +54,14 @@ describe("handle", () => {
 			assert.strictEqual(response.status, 200)
 			const payload = yield* Effect.promise(() => answered(response))
 			assert.strictEqual(payload._tag, "SandboxRunUnavailable")
-			assert.include(String(payload.message), "idFromName")
+			assert.include(String(payload.message), "getByName")
 		}),
 	)
 
-	it.effect("keeps the clone credential out of a failure it did not expect", () =>
+	it.effect("keeps the clone token out of a Durable Object failure", () =>
 		Effect.gen(function* () {
-			const leaky: SandboxHandleEnv["open"] = () => {
-				throw new Error(`clone failed: ${sandboxCredentialPath(SHA)} held ${TOKEN}`)
-			}
+			const leaky: SandboxHandleEnv["run"] = () =>
+				Promise.reject(new Error(`clone failed with ${TOKEN}`))
 			const response = yield* handle(post(), env(leaky))
 			const payload = yield* Effect.promise(() => answered(response))
 			assert.notInclude(String(payload.message), TOKEN)
@@ -66,28 +69,33 @@ describe("handle", () => {
 		}),
 	)
 
-	it.effect("answers a command the container ran", () =>
+	it.effect("hands the Durable Object the encoded request and returns its answer", () =>
 		Effect.gen(function* () {
-			const container: SandboxLike = {
-				exec: async () => ({
+			const seen: Array<{ key: string; request: unknown }> = []
+			const answer = Schema.encodeSync(SandboxExecResponse)(
+				new SandboxRunExited({
 					exitCode: 0,
-					stdout: "apps\n__maple_sandbox_trailer__ 0 5 0 isolated\n",
+					stdout: "apps",
 					stderr: "",
-					duration: 12,
-					timedOut: false,
+					stdoutBytes: 4,
+					stderrBytes: 0,
+					stdoutTruncated: false,
+					stderrTruncated: false,
+					wallTimeMs: 12,
 				}),
-				startProcess: async () => ({ id: "p", status: "running" as const }),
-				getProcess: async () => ({ id: "p", status: "running" as const }),
-				getProcessLogs: async () => ({ stdout: "", stderr: "" }),
-				writeFile: async () => ({ success: true }),
-			}
+			)
 			const response = yield* handle(
 				post(),
-				env(() => container),
+				env(async (key, request) => {
+					seen.push({ key, request })
+					return answer
+				}),
 			)
 			const payload = yield* Effect.promise(() => answered(response))
 			assert.strictEqual(payload._tag, "SandboxRunExited")
 			assert.strictEqual(payload.stdout, "apps")
+			assert.strictEqual(seen[0]?.key, "repo-0123456789abcdef")
+			assert.deepStrictEqual(seen[0]?.request, body())
 		}),
 	)
 

@@ -4,7 +4,6 @@ import { Duration, Effect, Exit, Option } from "effect"
 import {
 	MIRROR_BACKUP_KEY,
 	MIRROR_BACKUP_REFRESH,
-	MIRROR_BACKUP_TTL,
 	type MirrorBackupHost,
 	type MirrorBackupRecord,
 	StoredMirrorBackup,
@@ -118,7 +117,7 @@ describe("restoreMirror", () => {
 				exits: [1],
 				restoreFails: "gone",
 			})
-			assert.strictEqual(yield* restoreMirror(host), "expired")
+			assert.strictEqual(yield* restoreMirror(host), "gone")
 			assert.isFalse(host.store.has(MIRROR_BACKUP_KEY))
 		}),
 	)
@@ -139,16 +138,6 @@ describe("restoreMirror", () => {
 		assert.isTrue(Option.isNone(decodeStoredMirrorBackup({ id: "backup-0", createdAt: NOW })))
 		assert.isTrue(Option.isSome(decodeStoredMirrorBackup({ record: record("backup-1"), createdAt: NOW })))
 	})
-
-	it.effect("forgets a backup older than R2 keeps it", () =>
-		Effect.gen(function* () {
-			const expired = NOW - Duration.toMillis(MIRROR_BACKUP_TTL)
-			const host = fakeHost({ stored: { id: "backup-1", createdAt: expired } })
-			assert.strictEqual(yield* restoreMirror(host), "expired")
-			assert.isFalse(host.store.has(MIRROR_BACKUP_KEY))
-			assert.isFalse(host.calls.some((call) => call.startsWith("restore:")))
-		}),
-	)
 })
 
 describe("backupMirror", () => {

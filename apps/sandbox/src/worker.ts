@@ -1,25 +1,15 @@
 /**
  * The sandbox Worker and its Durable Object, which owns one container per repository per org.
  * It must stay a plain bundle entry: an alchemy-generated entry would drop the `Sandbox` and
- * `DirectoryBackupGateway` exports. Reached only over a service binding; request logic lives
+ * `DirectoryBackupGateway` exports. Reached only over a service binding; request handling lives
  * in `handle.ts`, and everything the container is asked to do in `checkout.ts`.
  */
-import { DirectoryBackup, Files, SandboxBackupError } from "@cloudflare/sandbox"
+import { DirectoryBackup, SandboxBackupError } from "@cloudflare/sandbox"
+import { SandboxExecRequest, SandboxExecResponse, SandboxRunUnavailable } from "@maple/domain/sandbox"
 import { DurableObject } from "cloudflare:workers"
 import { Duration, Effect, Option, Schema } from "effect"
-import type { SandboxExecResult, SandboxLike, SandboxProcess, SandboxWriteResult } from "./checkout"
+import { SandboxCallError, type SandboxContainer, commandArgv, execute, isTimedOut } from "./checkout"
 import { handle } from "./handle"
-import {
-	claimProcessArgv,
-	commandArgv,
-	isSafeProcessId,
-	isTimedOut,
-	parseProcessStatus,
-	processDir,
-	processLogArgv,
-	processStatusArgv,
-	startProcessArgv,
-} from "./processes"
 import {
 	MIRROR_BACKUP_KEY,
 	type MirrorBackupHost,
@@ -54,16 +44,14 @@ const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000
 /** `exec()` passes on only `PATH`; git and node expect the rest of what a login shell had. */
 const EXEC_ENV = { HOME: "/root", LANG: "C.UTF-8" }
 
-class SandboxContainerError extends Schema.TaggedError<SandboxContainerError>()(
-	"@maple/sandbox/SandboxContainerError",
-	{ message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
-) {}
+const decodeRequest = Schema.decodeEffect(SandboxExecRequest)
+const encodeResponse = Schema.encodeSync(SandboxExecResponse)
 
 const attempt = <A>(what: string, run: () => Promise<A>) =>
 	Effect.tryPromise({
 		try: () => run(),
 		catch: (cause) =>
-			new SandboxContainerError({
+			new SandboxCallError({
 				message: `${what}: ${cause instanceof Error ? cause.message : String(cause)}`,
 				cause,
 			}),
@@ -71,38 +59,18 @@ const attempt = <A>(what: string, run: () => Promise<A>) =>
 
 const decoder = new TextDecoder()
 
-const run = (container: Container, argv: ReadonlyArray<string>, options?: { readonly cwd?: string }) =>
-	attempt(`run ${argv[0]}`, async () => {
-		const process = await container.exec([...argv], { env: EXEC_ENV, cwd: options?.cwd })
-		const output = await process.output()
-		return {
-			exitCode: output.exitCode,
-			stdout: decoder.decode(output.stdout),
-			stderr: decoder.decode(output.stderr),
-		}
-	})
-
-/** `null` for an id no process in this container has used. */
-const processState = (container: Container, id: string) =>
-	run(container, processStatusArgv(id)).pipe(Effect.map((result) => parseProcessStatus(id, result.stdout)))
-
-const noBackups = () =>
-	Promise.reject(new SandboxContainerError({ message: "this Worker has no backup bucket" }))
-
-/** The repository's container, and the port `checkout.ts` drives it through. */
-export class Sandbox extends DurableObject<SandboxWorkerEnv> implements SandboxLike {
-	private readonly files: Files | undefined
+/** The repository's container. Its one RPC method is {@link Sandbox.run}. */
+export class Sandbox extends DurableObject<SandboxWorkerEnv> {
 	private readonly backups: DirectoryBackup | undefined
 	/** Set up once per container; cleared when the container stops so the next call starts one. */
 	private setup: Promise<void> | undefined
 	private backupRunning = false
-	/** Shared in-flight restore: a second restore would replace the seed a clone is moving. */
+	/** Shared in-flight restore: two clones claimed at once must not both replace the seed. */
 	private restoring: Promise<void> | undefined
 
 	constructor(ctx: DurableObjectState, env: SandboxWorkerEnv) {
 		super(ctx, env)
 		const container = ctx.container
-		this.files = container && new Files(container)
 		this.backups =
 			container &&
 			env.BACKUP_BUCKET &&
@@ -115,17 +83,28 @@ export class Sandbox extends DurableObject<SandboxWorkerEnv> implements SandboxL
 			void ctx.blockConcurrencyWhile(() => container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS))
 	}
 
-	private readonly container = Effect.suspend(() =>
-		this.ctx.container === undefined
-			? Effect.fail(
-					new SandboxContainerError({ message: "no container is bound to this Durable Object" }),
-				)
-			: Effect.succeed(this.ctx.container),
-	)
+	/** One sandbox request, encoded both ways because it crosses RPC: the whole of `handle.ts`'s call. */
+	async run(request: typeof SandboxExecRequest.Encoded): Promise<typeof SandboxExecResponse.Encoded> {
+		return Effect.runPromise(
+			decodeRequest(request).pipe(
+				Effect.flatMap((exec) => execute(this.port, exec)),
+				// Encoded by the same module in the same bundle; reaching this is a bug.
+				Effect.orElseSucceed(
+					() => new SandboxRunUnavailable({ message: "the sandbox could not read the request" }),
+				),
+				Effect.map(encodeResponse),
+			),
+		)
+	}
 
 	/** The running container. `exec()` itself waits out one that is still booting. */
-	private readonly running = Effect.flatMap(this.container, (container) =>
-		attempt("start the container", () => {
+	private readonly running = Effect.suspend(() => {
+		const container = this.ctx.container
+		if (container === undefined)
+			return Effect.fail(
+				new SandboxCallError({ message: "no container is bound to this Durable Object" }),
+			)
+		return attempt("start the container", () => {
 			if (this.setup === undefined || !container.running) {
 				this.setup = (async () => {
 					// The image and instance size come from the application: `default` scheduling policy.
@@ -137,103 +116,58 @@ export class Sandbox extends DurableObject<SandboxWorkerEnv> implements SandboxL
 				})
 			}
 			return this.setup
-		}).pipe(Effect.as(container)),
-	)
+		}).pipe(Effect.as(container))
+	})
 
-	async exec(
-		command: string,
-		options?: { readonly cwd?: string; readonly timeout?: number },
-	): Promise<SandboxExecResult> {
-		const timeout = options?.timeout
-		return Effect.runPromise(
+	private readonly port: SandboxContainer = {
+		exec: (command, options) =>
 			Effect.gen({ self: this }, function* () {
 				const container = yield* this.running
-				const [elapsed, result] = yield* Effect.timed(
-					run(container, commandArgv(command, timeout), { cwd: options?.cwd }),
+				const argv = [...commandArgv(command, options?.timeout)]
+				const [elapsed, output] = yield* Effect.timed(
+					attempt(`run ${argv[0]}`, async () => {
+						const process = await container.exec(argv, { env: EXEC_ENV, cwd: options?.cwd })
+						return process.output()
+					}),
 				)
 				const duration = Duration.toMillis(elapsed)
-				return { ...result, duration, timedOut: isTimedOut(result.exitCode, duration, timeout) }
+				return {
+					exitCode: output.exitCode,
+					stdout: decoder.decode(output.stdout),
+					stderr: decoder.decode(output.stderr),
+					duration,
+					timedOut: isTimedOut(output.exitCode, duration, options?.timeout),
+				}
 			}),
-		)
-	}
-
-	async startProcess(command: string, options?: { readonly processId?: string }): Promise<SandboxProcess> {
-		const id = options?.processId ?? crypto.randomUUID()
-		return Effect.runPromise(
-			Effect.gen({ self: this }, function* () {
-				if (!isSafeProcessId(id))
-					return yield* new SandboxContainerError({ message: `unsafe process id: ${id}` })
-				const container = yield* this.running
-				const created = yield* run(container, claimProcessArgv(id))
-				if (created.exitCode !== 0)
-					return (yield* processState(container, id)) ?? { id, status: "starting" as const }
-				// Ignored output is what lets the process outlive this request.
-				yield* attempt("start a process", () =>
-					container.exec([...startProcessArgv(id, command)], {
-						env: EXEC_ENV,
+		// Ignored output is what lets the process outlive this request.
+		spawn: (command, env) =>
+			Effect.flatMap(this.running, (container) =>
+				attempt("start a background command", () =>
+					container.exec(["bash", "-c", command], {
+						env: { ...EXEC_ENV, ...env },
 						stdout: "ignore",
 						stderr: "ignore",
 					}),
-				).pipe(
-					// A claim with no process behind it would read as starting until the container stops.
-					Effect.tapError(() => run(container, ["rm", "-rf", processDir(id)]).pipe(Effect.ignore)),
-				)
-				return { id, status: "starting" as const }
-			}),
-		)
-	}
-
-	async getProcess(id: string): Promise<SandboxProcess | null> {
-		if (!isSafeProcessId(id)) return null
-		return Effect.runPromise(
-			Effect.gen({ self: this }, function* () {
-				const container = yield* this.container
-				// A stopped container took its processes with it.
-				if (!container.running) return null
-				return yield* processState(container, id)
-			}),
-		)
-	}
-
-	async getProcessLogs(id: string): Promise<{ readonly stdout: string; readonly stderr: string }> {
-		return Effect.runPromise(
-			Effect.gen({ self: this }, function* () {
-				if (!isSafeProcessId(id)) return { stdout: "", stderr: "" }
-				const container = yield* this.container
-				const read = (stream: "stdout" | "stderr") =>
-					run(container, processLogArgv(id, stream)).pipe(Effect.map((result) => result.stdout))
-				return { stdout: yield* read("stdout"), stderr: yield* read("stderr") }
-			}),
-		)
-	}
-
-	async writeFile(path: string, content: string): Promise<SandboxWriteResult> {
-		return Effect.runPromise(
-			Effect.gen({ self: this }, function* () {
-				const files = this.files
-				if (files === undefined)
-					return yield* new SandboxContainerError({
-						message: "no container is bound to this Durable Object",
-					})
-				yield* this.running
-				yield* attempt("write a file", () => files.writeFile(path, content))
-				return { success: true }
-			}),
-		)
+				),
+			).pipe(Effect.asVoid),
+		restoreMirror: Effect.promise(() => this.restoreMirror()),
+		backupMirror: Effect.sync(() => this.backupMirror()),
 	}
 
 	private mirrorHost(): MirrorBackupHost {
 		const backups = this.backups
+		const unavailable = () =>
+			Promise.reject(new SandboxCallError({ message: "this Worker has no backup bucket" }))
 		return {
 			configured: backups !== undefined,
-			exec: (command) => this.exec(command),
+			exec: (command) => Effect.runPromise(this.port.exec(command)),
 			createBackup: async (options) => {
-				if (backups === undefined) return noBackups()
+				if (backups === undefined) return unavailable()
 				await Effect.runPromise(this.running)
 				return backups.backup(options)
 			},
 			restoreBackup: async (record, dir) => {
-				if (backups === undefined) return noBackups()
+				if (backups === undefined) return unavailable()
 				await Effect.runPromise(this.running)
 				return backups.restore(record, { dir }).then(
 					() => "restored" as const,
@@ -261,13 +195,18 @@ export class Sandbox extends DurableObject<SandboxWorkerEnv> implements SandboxL
 		}
 	}
 
-	/** Awaited by the clone path: the seed has to be in place before the clone script looks for it. */
-	async restoreMirror(): Promise<void> {
+	/** Best effort and never rejects: a failed restore only costs a full fetch. */
+	private restoreMirror(): Promise<void> {
 		this.restoring ??= Effect.runPromise(
 			restoreMirror(this.mirrorHost()).pipe(
 				Effect.tap((outcome) =>
 					Effect.logInfo("sandbox mirror restore").pipe(
 						Effect.annotateLogs({ "maple.sandbox.mirror.restore": outcome }),
+					),
+				),
+				Effect.catch((error) =>
+					Effect.logWarning("sandbox mirror restore failed").pipe(
+						Effect.annotateLogs({ "error.message": error.message }),
 					),
 				),
 				Effect.asVoid,
@@ -280,7 +219,7 @@ export class Sandbox extends DurableObject<SandboxWorkerEnv> implements SandboxL
 	}
 
 	/** Returns at once and archives in the background. A call while one runs is dropped. */
-	async backupMirror(): Promise<void> {
+	private backupMirror(): void {
 		if (this.backupRunning) return
 		this.backupRunning = true
 		this.ctx.waitUntil(
@@ -306,7 +245,7 @@ export default {
 		Effect.runPromise(
 			handle(request, {
 				token: env.SANDBOX_INTERNAL_SERVICE_TOKEN,
-				open: (sandboxKey) => env.Sandbox.getByName(sandboxKey),
+				run: (sandboxKey, exec) => env.Sandbox.getByName(sandboxKey).run(exec),
 			}).pipe(
 				// `handle` answers every readable request; reaching here is a bug before auth.
 				Effect.catchCause((cause) =>
