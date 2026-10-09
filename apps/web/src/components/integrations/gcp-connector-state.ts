@@ -4,7 +4,12 @@
 
 import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
-import { GcpProjectId, GcpResourceNumber, type GcpScopeType } from "@maple/domain/primitives"
+import {
+	GcpProjectId,
+	GcpResourceNumber,
+	type GcpLogFilter,
+	type GcpScopeType,
+} from "@maple/domain/primitives"
 import type { Tone } from "@maple/ui/lib/tone"
 
 const MINUTE_MS = 60_000
@@ -352,6 +357,33 @@ export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpC
 
 export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)
+
+const LOG_FILTERS = [
+	{ value: "default", label: "Recommended: without GKE container logs" },
+	{ value: "include_gke_container_logs", label: "Include GKE container logs" },
+	{ value: "keep", label: "Keep the sink's current filter" },
+] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string }>
+
+/** The setup panel's log filters in display order. Keeping a filter needs a sink that has one. */
+export const gcpLogFilters = (sinkExists: boolean) =>
+	LOG_FILTERS.filter((filter) => filter.value !== "keep" || sinkExists)
+
+/**
+ * What the setup panel's log filter stands on. Nothing chosen: an existing sink keeps its filter,
+ * so copying the script again for a switch change never resets it, and a new sink gets the
+ * recommended one. Including GKE container logs counts once it is acknowledged: until then the
+ * script stays on the filter the panel started with.
+ */
+export const gcpLogFilterChoice = (
+	chosen: GcpLogFilter | null,
+	acknowledged: boolean,
+	sinkExists: boolean,
+) => {
+	const initial: GcpLogFilter = sinkExists ? "keep" : "default"
+	const selected = chosen ?? initial
+	const unacknowledged = selected === "include_gke_container_logs" && !acknowledged
+	return { selected, unacknowledged, scriptFilter: unacknowledged ? initial : selected }
+}
 
 const LOG_ROUTER_SCOPE = { project: "project", folder: "folder", organization: "organizationId" } as const
 

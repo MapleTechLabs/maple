@@ -5,6 +5,8 @@ import {
 	cloudShellUrl,
 	gcpConnectionState,
 	gcpCreateRequest,
+	gcpLogFilterChoice,
+	gcpLogFilters,
 	gcpLogState,
 	gcpMetricsState,
 	gcpOverlapNote,
@@ -518,6 +520,56 @@ describe("gcpCreateRequest opt-ins", () => {
 
 	it("needs at least one opt-in", () => {
 		expect(Option.isNone(gcpCreateRequest(draft(false, false)))).toBe(true)
+	})
+})
+
+describe("gcpLogFilters", () => {
+	it("lists the recommended filter first, and keeping a filter only when a sink exists", () => {
+		expect(gcpLogFilters(false).map((filter) => filter.value)).toEqual([
+			"default",
+			"include_gke_container_logs",
+		])
+		expect(gcpLogFilters(true).map((filter) => filter.value)).toEqual([
+			"default",
+			"include_gke_container_logs",
+			"keep",
+		])
+		expect(gcpLogFilters(false)[0].label).toBe("Recommended: without GKE container logs")
+	})
+})
+
+describe("gcpLogFilterChoice", () => {
+	it("starts a new sink on the recommended filter and leaves an existing sink's filter alone", () => {
+		expect(gcpLogFilterChoice(null, false, false)).toEqual({
+			selected: "default",
+			unacknowledged: false,
+			scriptFilter: "default",
+		})
+		expect(gcpLogFilterChoice(null, false, true)).toEqual({
+			selected: "keep",
+			unacknowledged: false,
+			scriptFilter: "keep",
+		})
+	})
+
+	it("includes GKE container logs only once acknowledged", () => {
+		expect(gcpLogFilterChoice("include_gke_container_logs", false, false)).toEqual({
+			selected: "include_gke_container_logs",
+			unacknowledged: true,
+			scriptFilter: "default",
+		})
+		// An existing sink's filter is not replaced by a choice that was never confirmed.
+		expect(gcpLogFilterChoice("include_gke_container_logs", false, true).scriptFilter).toBe("keep")
+		expect(gcpLogFilterChoice("include_gke_container_logs", true, true)).toEqual({
+			selected: "include_gke_container_logs",
+			unacknowledged: false,
+			scriptFilter: "include_gke_container_logs",
+		})
+	})
+
+	it("applies the other filters as chosen", () => {
+		expect(gcpLogFilterChoice("default", false, true).scriptFilter).toBe("default")
+		expect(gcpLogFilterChoice("keep", false, true).scriptFilter).toBe("keep")
 	})
 })
 
