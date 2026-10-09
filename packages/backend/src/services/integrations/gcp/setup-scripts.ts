@@ -33,7 +33,7 @@ const NOISE = [
 	'NOT logName:"serialconsole.googleapis.com"',
 ]
 
-// Left out unless asked for: a workload that sends its logs to Maple through OpenTelemetry would
+// Left out unless asked for: a workload that sends its logs to Maple over OpenTelemetry would
 // have every container line stored twice, and Google's copy carries no trace link.
 const GKE_CONTAINER_LOGS = 'NOT resource.type="k8s_container"'
 
@@ -666,15 +666,15 @@ ${
 # logs, load balancer health checks, Kubernetes lease renewals and VM serial console output.
 ${
 	input.logFilter === "include_gke_container_logs"
-		? `# GKE container logs are included, as chosen in Maple. Workloads that send their logs through
-# OpenTelemetry are then stored twice: ${OTEL_DOCS_URL}`
-		: `# It also leaves out GKE container logs: workloads that send their logs through OpenTelemetry
-# would be stored twice. To include them, choose "Include GKE container logs" under Log filter
-# in Maple, or delete the last clause of LOG_FILTER and set LOG_FILTER_MODE to set.
-# Details: ${OTEL_DOCS_URL}`
+		? `# GKE container logs are included, as chosen in Maple. Logs from workloads that also send them
+# over OpenTelemetry are then stored twice: ${OTEL_DOCS_URL}`
+		: `# It also leaves out GKE container logs: logs from workloads that also send them over
+# OpenTelemetry would be stored twice. To include them, choose "Include GKE container logs" under
+# Log filter in Maple, or delete AND ${GKE_CONTAINER_LOGS} from LOG_FILTER and make
+# LOG_FILTER_MODE 'set'. Details: ${OTEL_DOCS_URL}`
 }
-# keep: an existing sink keeps its filter, a new sink gets LOG_FILTER.
-# set:  LOG_FILTER replaces the sink's filter.
+# LOG_FILTER_MODE keep: an existing sink keeps its filter, a new sink gets LOG_FILTER.
+# LOG_FILTER_MODE set:  LOG_FILTER replaces the sink's filter.
 # Filter syntax: https://cloud.google.com/logging/docs/view/logging-query-language
 LOG_FILTER_MODE=${sh(input.logFilter === "keep" ? "keep" : "set")}
 LOG_FILTER=${sh(gcpLogFilter(input.logFilter === "include_gke_container_logs"))}
