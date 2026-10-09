@@ -1649,14 +1649,14 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			yield* seedStateRow({
 				dataset: "workers_invocations",
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1667,9 +1667,9 @@ describe("CloudflareAnalyticsService", () => {
 			const rows = yield* loadStateRows
 			const httpRow = rows.find((row) => row.dataset === "http_requests")
 			assert.include(httpRow!.lastError ?? "", "ingest returned 402")
-			assert.strictEqual(httpRow!.watermarkAt?.getTime(), T0 - 30 * MIN)
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
 			const anchor = rows.find((row) => row.dataset === "workers_invocations" && row.zoneId === "")
-			assert.isAbove(anchor!.leaseUntil!.getTime(), T0)
+			assert.isAbove(anchor!.leaseUntil!, T0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 402 })))
 	})
 
