@@ -10,9 +10,32 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 
 pub const INGEST_SOURCE: &str = "gcp-logpush";
 
-/// Stored as the connector's `last_error` when a push body is not a `LogEntry`.
-pub const NOT_A_LOG_ENTRY: &str =
-    "Payload is not a Cloud Logging LogEntry; the push subscription must use --push-no-wrapper";
+// What a connector's `last_error` holds. The customer reads it on the
+// connection: one sentence of cause, one of what to do.
+
+/// A push body that is not a `LogEntry`.
+pub const NOT_A_LOG_ENTRY: &str = "The Pub/Sub subscription wraps each entry in an envelope \
+    Maple can't read. Run the setup script again: it resets the subscription. Entries sent \
+    meanwhile are lost.";
+
+/// An entry Maple accepted but could not hand to the pipeline.
+pub const ENTRY_NOT_STORED: &str = "Maple could not store an entry just now. Pub/Sub retries it \
+    for up to a day. Nothing to do.";
+
+/// An entry refused because the organization is over its plan limit.
+pub const OVER_PLAN_LIMIT: &str = "This Maple organization is over its plan limit, so Maple \
+    refuses new logs. Pub/Sub retries for up to a day. See Settings, Billing.";
+
+/// The log a setup script names in the entry that reports what it applied.
+const SETUP_REPORT_LOG: &str = "/logs/maple-setup";
+
+/// What a run of the setup or cleanup script applied in Google Cloud. `None`
+/// for a capability the reporting section did not touch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SetupReport {
+    pub logs: Option<bool>,
+    pub metrics: Option<bool>,
+}
 
 type JsonObject = JsonMap<String, JsonValue>;
 
@@ -47,6 +70,29 @@ pub fn parse_log_entry(payload: &[u8]) -> Option<JsonObject> {
     let entry: JsonObject = serde_json::from_slice(payload).ok()?;
     let is_log_entry = entry.get("logName").is_some_and(JsonValue::is_string);
     is_log_entry.then_some(entry)
+}
+
+/// A setup report is a `LogEntry` on the `maple-setup` log whose payload says
+/// what the run applied. The script publishes it through the sink's topic, or
+/// posts it here when there is no topic.
+pub fn parse_setup_report(payload: &[u8]) -> Option<SetupReport> {
+    // Asked of every pushed log line, so the bytes are searched before
+    // anything is parsed.
+    let marker = SETUP_REPORT_LOG.as_bytes();
+    if !payload.windows(marker.len()).any(|window| window == marker) {
+        return None;
+    }
+    let entry = parse_log_entry(payload)?;
+    if !text(&entry, "logName")?.ends_with(SETUP_REPORT_LOG) {
+        return None;
+    }
+    let applied = object(&entry, "jsonPayload")?;
+    let flag = |key: &str| applied.get(key).and_then(JsonValue::as_bool);
+    let report = SetupReport {
+        logs: flag("logs"),
+        metrics: flag("metrics"),
+    };
+    (report.logs.is_some() || report.metrics.is_some()).then_some(report)
 }
 
 pub fn build_logs_request(
@@ -749,5 +795,42 @@ mod tests {
             br#"{"message":{"data":"e30=","messageId":"1"},"subscription":"projects/p/subscriptions/s"}"#
         )
         .is_none());
+    }
+
+    #[test]
+    fn only_an_entry_on_the_setup_log_with_a_flag_is_a_setup_report() {
+        let report = |payload: JsonValue| {
+            parse_setup_report(
+                json!({ "logName": "projects/p/logs/maple-setup", "jsonPayload": payload })
+                    .to_string()
+                    .as_bytes(),
+            )
+        };
+        assert_eq!(
+            report(json!({ "logs": true })),
+            Some(SetupReport {
+                logs: Some(true),
+                metrics: None
+            })
+        );
+        assert_eq!(
+            report(json!({ "logs": false, "metrics": false })),
+            Some(SetupReport {
+                logs: Some(false),
+                metrics: Some(false)
+            })
+        );
+        // Nothing a script sends: no flag, or a flag that is not a boolean.
+        assert_eq!(report(json!({})), None);
+        assert_eq!(report(json!({ "logs": "true" })), None);
+
+        // A customer's own entry that mentions the log, on another log.
+        let elsewhere = json!({
+            "logName": "projects/p/logs/app",
+            "textPayload": "wrote projects/p/logs/maple-setup",
+            "jsonPayload": { "logs": true }
+        });
+        assert_eq!(parse_setup_report(elsewhere.to_string().as_bytes()), None);
+        assert_eq!(parse_setup_report(b"not json /logs/maple-setup"), None);
     }
 }

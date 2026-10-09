@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "c2de92d1-c56e-4b42-b7af-16fa811a694e",
+  "id": "7b6e40a7-3210-4afa-9815-9f703b97f891",
   "prevIds": [
     "a9ce02f8-139d-4eb9-bf09-315c5936b0fa"
   ],
@@ -4256,6 +4256,45 @@
       "generated": null,
       "identity": null,
       "name": "last_error",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "applied_logs_enabled",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "applied_metrics_enabled",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "gcp_connectors"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "setup_reported_at",
       "entityType": "columns",
       "schema": "public",
       "table": "gcp_connectors"
