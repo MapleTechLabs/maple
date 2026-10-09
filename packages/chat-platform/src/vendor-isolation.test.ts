@@ -26,7 +26,7 @@ const GUARDED_ROOTS = ["packages/chat-platform/src", "apps/chat-bot/src"]
  * belongs on this list; that is what makes the guard cover it.
  */
 const GUARDED_FILES = [
-	"packages/db/src/schema/chat-workspaces.ts",
+	"packages/db/src/tables/chat-workspaces.ts",
 	"packages/domain/src/http/v2/integrations-chat.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.test.ts",
@@ -39,7 +39,7 @@ const GUARDED_FILES = [
 	"packages/backend/src/services/alerts/ChatAlertPoster.ts",
 	"packages/backend/src/services/alerts/ChatAlertPoster.test.ts",
 	// The user-linking half: one table, its queries, and the revocation that ends a link.
-	"packages/db/src/schema/chat-identities.ts",
+	"packages/db/src/tables/chat-identities.ts",
 	"packages/backend/src/services/integrations/chat-identity-rows.ts",
 	"packages/backend/src/services/auth/MembershipRevocationService.ts",
 	"apps/api/src/routes/v2/integrations-chat.http.ts",

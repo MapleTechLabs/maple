@@ -22,27 +22,26 @@ import {
 	CLOSED_WORKFLOW_STATES,
 	MACHINE_OWNED_WORKFLOW_STATES,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	actors,
-	alertIncidents,
-	errorIncidents,
-	errorIssues,
-	errorIssueEvents,
-	errorIssuePullRequests,
-	errorIssueStates,
+	Actors,
+	AlertIncidents,
+	ErrorIncidents,
+	ErrorIssues,
+	ErrorIssueEvents,
+	ErrorIssuePullRequests,
+	ErrorIssueStates,
 	type ErrorIssueEventInsert,
 	type ErrorIssueEventRow,
 	type ErrorIssueRow,
-	issueEscalations,
-} from "@maple/db"
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+	IssueEscalations,
+} from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
-import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
+import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { escalationDedupeKey, escalationReasonFor } from "./issue-severity"
@@ -201,7 +200,7 @@ const make: Effect.Effect<
 
 	const newEventId = () => decodeEventIdSync(randomUUID())
 	const newIssueEscalationId = () => decodeIssueEscalationIdSync(randomUUID())
-	const isoFromDate = (date: Date) => decodeIssueDateTimeSync(date.toISOString())
+	const isoFromMs = (ms: number) => decodeIssueDateTimeSync(new Date(ms).toISOString())
 
 	const parseSourceRef = (json: unknown): StoredJsonRecord | null => {
 		if (json == null) return null
@@ -234,19 +233,19 @@ const make: Effect.Effect<
 			assignedActor: row.assignedActorId == null ? null : (actorMap.get(row.assignedActorId) ?? null),
 			leaseHolder:
 				row.leaseHolderActorId == null ? null : (actorMap.get(row.leaseHolderActorId) ?? null),
-			leaseExpiresAt: row.leaseExpiresAt == null ? null : isoFromDate(row.leaseExpiresAt),
-			claimedAt: row.claimedAt == null ? null : isoFromDate(row.claimedAt),
+			leaseExpiresAt: row.leaseExpiresAt == null ? null : isoFromMs(row.leaseExpiresAt),
+			claimedAt: row.claimedAt == null ? null : isoFromMs(row.claimedAt),
 			notes: row.notes ?? null,
-			firstSeenAt: isoFromDate(row.firstSeenAt),
-			lastSeenAt: isoFromDate(row.lastSeenAt),
+			firstSeenAt: isoFromMs(row.firstSeenAt),
+			lastSeenAt: isoFromMs(row.lastSeenAt),
 			occurrenceCount: row.occurrenceCount,
-			resolvedAt: row.resolvedAt == null ? null : isoFromDate(row.resolvedAt),
-			lastResolvedAt: row.lastResolvedAt == null ? null : isoFromDate(row.lastResolvedAt),
-			lastRegressedAt: row.lastRegressedAt == null ? null : isoFromDate(row.lastRegressedAt),
+			resolvedAt: row.resolvedAt == null ? null : isoFromMs(row.resolvedAt),
+			lastResolvedAt: row.lastResolvedAt == null ? null : isoFromMs(row.lastResolvedAt),
+			lastRegressedAt: row.lastRegressedAt == null ? null : isoFromMs(row.lastRegressedAt),
 			regressionCount: row.regressionCount,
 			resolvedVersions: row.resolvedVersionsJson,
-			snoozeUntil: row.snoozeUntil == null ? null : isoFromDate(row.snoozeUntil),
-			archivedAt: row.archivedAt == null ? null : isoFromDate(row.archivedAt),
+			snoozeUntil: row.snoozeUntil == null ? null : isoFromMs(row.snoozeUntil),
+			archivedAt: row.archivedAt == null ? null : isoFromMs(row.archivedAt),
 			hasOpenIncident,
 			commentCount: activity.commentCount,
 			openPullRequestCount: activity.openPullRequestCount,
@@ -268,18 +267,19 @@ const make: Effect.Effect<
 				onNone: (): StoredJsonRecord => ({}),
 				onSome: (parsed) => ({ ...parsed }),
 			}),
-			createdAt: isoFromDate(row.createdAt),
+			createdAt: isoFromMs(row.createdAt),
 		})
 
 	const requireIssue: ErrorIssueWorkflowServiceApi["requireIssue"] = Effect.fn(
 		"ErrorsService.requireIssue",
 	)(function* (orgId, issueId) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssues)
-				.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-				.limit(1),
+			db.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+					.limit(1),
+			),
 		)
 		const row = rows[0]
 		if (!row) {
@@ -300,28 +300,22 @@ const make: Effect.Effect<
 		if (issueIds.length === 0) return Effect.succeed(new Set<ErrorIssueId>())
 		return Effect.all([
 			dbExecute((db) =>
-				db
-					.select({ issueId: errorIncidents.issueId })
-					.from(errorIncidents)
-					.where(
-						and(
-							eq(errorIncidents.orgId, orgId),
-							eq(errorIncidents.status, "open"),
-							inArray(errorIncidents.issueId, issueIds),
-						),
-					),
+				db.run(
+					PG.from(ErrorIncidents)
+						.select("issueId")
+						.where(($) => [$.orgId.eq(orgId), $.status.eq("open"), $.issueId.in_(...issueIds)]),
+				),
 			),
 			dbExecute((db) =>
-				db
-					.select({ issueId: alertIncidents.errorIssueId })
-					.from(alertIncidents)
-					.where(
-						and(
-							eq(alertIncidents.orgId, orgId),
-							eq(alertIncidents.status, "open"),
-							inArray(alertIncidents.errorIssueId, issueIds),
-						),
-					),
+				db.run(
+					PG.from(AlertIncidents)
+						.select(($) => ({ issueId: $.errorIssueId }))
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.status.eq("open"),
+							$.errorIssueId.in_(...issueIds),
+						]),
+				),
 			),
 		]).pipe(
 			Effect.map(
@@ -351,36 +345,24 @@ const make: Effect.Effect<
 				rollups.set(issueId, { ...(rollups.get(issueId) ?? EMPTY_ACTIVITY), ...patch })
 			const [commentRows, prRows] = yield* Effect.all([
 				dbExecute((db) =>
-					db
-						.select({
-							issueId: errorIssueEvents.issueId,
-							count: sql<number>`count(*)::int`,
-						})
-						.from(errorIssueEvents)
-						.where(
-							and(
-								eq(errorIssueEvents.orgId, orgId),
-								inArray(errorIssueEvents.issueId, issueIds),
-								inArray(errorIssueEvents.type, ["comment", "agent_note"]),
-							),
-						)
-						.groupBy(errorIssueEvents.issueId),
+					db.run(
+						PG.from(ErrorIssueEvents)
+							.select(($) => ({ issueId: $.issueId, count: PG.count() }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.issueId.in_(...issueIds),
+								$.type.in_("comment", "agent_note"),
+							])
+							.groupBy("issueId"),
+					),
 				),
 				dbExecute((db) =>
-					db
-						.select({
-							issueId: errorIssuePullRequests.issueId,
-							state: errorIssuePullRequests.state,
-							count: sql<number>`count(*)::int`,
-						})
-						.from(errorIssuePullRequests)
-						.where(
-							and(
-								eq(errorIssuePullRequests.orgId, orgId),
-								inArray(errorIssuePullRequests.issueId, issueIds),
-							),
-						)
-						.groupBy(errorIssuePullRequests.issueId, errorIssuePullRequests.state),
+					db.run(
+						PG.from(ErrorIssuePullRequests)
+							.select(($) => ({ issueId: $.issueId, state: $.state, count: PG.count() }))
+							.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...issueIds)])
+							.groupBy("issueId", "state"),
+					),
 				),
 			])
 			for (const row of commentRows) upsert(row.issueId, { commentCount: row.count })
@@ -433,7 +415,7 @@ const make: Effect.Effect<
 		fromState: opts.fromState ?? null,
 		toState: opts.toState ?? null,
 		payloadJson: opts.payload ?? {},
-		createdAt: msToDate(timestamp),
+		createdAt: timestamp,
 	})
 
 	/**
@@ -450,11 +432,12 @@ const make: Effect.Effect<
 	) =>
 		Effect.gen(function* () {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(actors)
-					.where(and(eq(actors.orgId, orgId), eq(actors.id, actorId)))
-					.limit(1),
+				db.run(
+					PG.from(Actors)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(actorId)])
+						.limit(1),
+				),
 			)
 			const actor = rows[0]
 			if (actor === undefined || (actor.type !== "agent" && actor.type !== "user")) return
@@ -517,7 +500,7 @@ const make: Effect.Effect<
 		function* (orgId, issueId, actorId, type, opts = {}) {
 			const timestamp = opts.timestamp ?? (yield* Clock.currentTimeMillis)
 			const insert = buildEventInsert(orgId, issueId, actorId ?? null, type, timestamp, opts)
-			const inserted = yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
+			const inserted = yield* dbExecute((db) => db.run(PG.insertInto(ErrorIssueEvents).values(insert)))
 			// System/sweep events carry no actor and stay out of the audit log.
 			if (actorId !== null) {
 				yield* recordEventAudit(orgId, issueId, actorId, type, opts)
@@ -560,45 +543,51 @@ const make: Effect.Effect<
 		if (fromState === toState) return row
 		yield* validateTransition(row.id, fromState, toState)
 
-		const update: Partial<ErrorIssueRow> = {
+		const previousLease = row.leaseExpiresAt ?? timestamp
+		const refreshesLease = actorId !== null && actorId !== undefined && row.leaseHolderActorId === actorId
+		const update: PG.UpdateSetOf<typeof ErrorIssues> = {
 			workflowState: toState,
-			updatedAt: msToDate(timestamp),
-		}
-		if (toState === "done") {
-			update.resolvedAt = msToDate(timestamp)
-			update.resolvedByActorId = actorId ?? null
-			// Survives the next reopen, so a regressed issue can still show when it
-			// was last fixed instead of looking untouched.
-			update.lastResolvedAt = msToDate(timestamp)
-			// Snapshot the builds this issue has been seen from. Occurrences from
-			// any of them afterwards are old clients still running the broken
-			// build, not a regression — see `isRegression` in
-			// error-tick-persistence.ts. Without this, `maple-cli` issues could
-			// never stay fixed: every binary already installed keeps reporting the
-			// bug for as long as it is in use.
-			update.resolvedVersionsJson = row.seenVersionsJson
-		} else if (fromState === "done") {
-			update.resolvedAt = null
-			update.resolvedByActorId = null
-		}
-		if (toState === "wontfix") {
-			if (opts.snoozeUntilMs !== undefined) update.snoozeUntil = msToDate(opts.snoozeUntilMs)
-		} else if (fromState === "wontfix") {
-			update.snoozeUntil = null
-		}
-		if (CLOSED_WORKFLOW_STATES.has(toState)) {
+			updatedAt: timestamp,
+			...(toState === "done"
+				? {
+						resolvedAt: timestamp,
+						resolvedByActorId: actorId ?? null,
+						// Survives the next reopen, so a regressed issue can still show when it
+						// was last fixed instead of looking untouched.
+						lastResolvedAt: timestamp,
+						// Snapshot the builds this issue has been seen from. Occurrences from
+						// any of them afterwards are old clients still running the broken
+						// build, not a regression — see `isRegression` in
+						// error-tick-persistence.ts. Without this, `maple-cli` issues could
+						// never stay fixed: every binary already installed keeps reporting the
+						// bug for as long as it is in use.
+						resolvedVersionsJson: row.seenVersionsJson,
+					}
+				: fromState === "done"
+					? { resolvedAt: null, resolvedByActorId: null }
+					: undefined),
+			...(toState === "wontfix"
+				? opts.snoozeUntilMs !== undefined
+					? { snoozeUntil: opts.snoozeUntilMs }
+					: undefined
+				: fromState === "wontfix"
+					? { snoozeUntil: null }
+					: undefined),
 			// Reaching a terminal state ends the work, so the lease ends with it.
-			update.leaseHolderActorId = null
-			update.leaseExpiresAt = null
-			update.claimedAt = null
-		} else if (actorId !== null && actorId !== undefined && row.leaseHolderActorId === actorId) {
-			// Still working, and just proved it. Folded into this same UPDATE rather
-			// than issued separately — the row is already being written.
-			const previous = dateToMs(row.leaseExpiresAt) ?? timestamp
-			update.leaseExpiresAt = msToDate(
-				timestamp +
-					Math.max(DEFAULT_LEASE_DURATION_MS, previous - (dateToMs(row.claimedAt) ?? previous)),
-			)
+			// Otherwise a holder still working just proved it, folded into this same
+			// UPDATE rather than issued separately: the row is already being written.
+			...(CLOSED_WORKFLOW_STATES.has(toState)
+				? { leaseHolderActorId: null, leaseExpiresAt: null, claimedAt: null }
+				: refreshesLease
+					? {
+							leaseExpiresAt:
+								timestamp +
+								Math.max(
+									DEFAULT_LEASE_DURATION_MS,
+									previousLease - (row.claimedAt ?? previousLease),
+								),
+						}
+					: undefined),
 		}
 
 		const notePayload: StoredJsonRecord = opts.note
@@ -613,35 +602,26 @@ const make: Effect.Effect<
 		// incident resolution or its timeline event could never be repaired: a
 		// retry sees `fromState === toState` and returns before reaching them.
 		yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.transaction(
 				Effect.gen(function* () {
-					yield* tx
-						.update(errorIssues)
-						.set(update)
-						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, row.id)))
+					yield* db.run(
+						PG.update(ErrorIssues)
+							.set(update)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+					)
 					if (toState === "done") {
-						yield* tx
-							.update(errorIncidents)
-							.set({
-								status: "resolved",
-								resolvedAt: msToDate(timestamp),
-								updatedAt: msToDate(timestamp),
-							})
-							.where(
-								and(
-									eq(errorIncidents.orgId, orgId),
-									eq(errorIncidents.issueId, row.id),
-									eq(errorIncidents.status, "open"),
-								),
-							)
-						yield* tx
-							.update(errorIssueStates)
-							.set({ openIncidentId: null, updatedAt: msToDate(timestamp) })
-							.where(
-								and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, row.id)),
-							)
+						yield* db.run(
+							PG.update(ErrorIncidents)
+								.set({ status: "resolved", resolvedAt: timestamp, updatedAt: timestamp })
+								.where(($) => [$.orgId.eq(orgId), $.issueId.eq(row.id), $.status.eq("open")]),
+						)
+						yield* db.run(
+							PG.update(ErrorIssueStates)
+								.set({ openIncidentId: null, updatedAt: timestamp })
+								.where(($) => [$.orgId.eq(orgId), $.issueId.eq(row.id)]),
+						)
 					}
-					yield* tx.insert(errorIssueEvents).values(eventInsert)
+					yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert))
 				}),
 			),
 		)
@@ -657,7 +637,7 @@ const make: Effect.Effect<
 			message: "Issue is held by another actor",
 			issueId,
 			currentHolderActorId: row?.leaseHolderActorId ?? null,
-			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromDate(row.leaseExpiresAt),
+			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromMs(row.leaseExpiresAt),
 		})
 
 	const heartbeatIssue: ErrorIssueWorkflowServiceApi["heartbeatIssue"] = Effect.fn(
@@ -668,27 +648,16 @@ const make: Effect.Effect<
 		if (current.leaseHolderActorId !== actorId) {
 			return yield* Effect.fail(leaseConflict(issueId, current))
 		}
-		const previous = dateToMs(current.leaseExpiresAt) ?? timestamp
-		const leaseMs = Math.max(
-			DEFAULT_LEASE_DURATION_MS,
-			previous - (dateToMs(current.claimedAt) ?? previous),
-		)
+		const previous = current.leaseExpiresAt ?? timestamp
+		const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
 		const leaseExpiresAt = timestamp + leaseMs
 		const heartbeatRows = yield* dbExecute((db) =>
-			db
-				.update(errorIssues)
-				.set({
-					leaseExpiresAt: msToDate(leaseExpiresAt),
-					updatedAt: msToDate(timestamp),
-				})
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						eq(errorIssues.id, issueId),
-						eq(errorIssues.leaseHolderActorId, actorId),
-					),
-				)
-				.returning(txidColumn),
+			db.run(
+				PG.update(ErrorIssues)
+					.set({ leaseExpiresAt, updatedAt: timestamp })
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId), $.leaseHolderActorId.eq(actorId)])
+					.returning(() => ({ txid: currentTxid })),
+			),
 		)
 		yield* actorsService.touchActor(orgId, actorId, timestamp)
 		const next = yield* requireIssue(orgId, issueId)
@@ -717,24 +686,16 @@ const make: Effect.Effect<
 		timestamp: number,
 	) {
 		if (current.leaseHolderActorId !== actorId) return
-		const previous = dateToMs(current.leaseExpiresAt) ?? timestamp
+		const previous = current.leaseExpiresAt ?? timestamp
 		// Preserve the lease LENGTH the holder originally asked for, exactly as
 		// `heartbeatIssue` does — a claim with a 2h lease should keep renewing at 2h.
-		const leaseMs = Math.max(
-			DEFAULT_LEASE_DURATION_MS,
-			previous - (dateToMs(current.claimedAt) ?? previous),
-		)
+		const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
 		yield* dbExecute((db) =>
-			db
-				.update(errorIssues)
-				.set({ leaseExpiresAt: msToDate(timestamp + leaseMs) })
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						eq(errorIssues.id, issueId),
-						eq(errorIssues.leaseHolderActorId, actorId),
-					),
-				),
+			db.run(
+				PG.update(ErrorIssues)
+					.set({ leaseExpiresAt: timestamp + leaseMs })
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId), $.leaseHolderActorId.eq(actorId)]),
+			),
 		)
 	})
 
@@ -747,15 +708,16 @@ const make: Effect.Effect<
 			return yield* Effect.fail(leaseConflict(issueId, current))
 		}
 		yield* dbExecute((db) =>
-			db
-				.update(errorIssues)
-				.set({
-					leaseHolderActorId: null,
-					leaseExpiresAt: null,
-					claimedAt: null,
-					updatedAt: msToDate(timestamp),
-				})
-				.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId))),
+			db.run(
+				PG.update(ErrorIssues)
+					.set({
+						leaseHolderActorId: null,
+						leaseExpiresAt: null,
+						claimedAt: null,
+						updatedAt: timestamp,
+					})
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)]),
+			),
 		)
 		yield* recordEvent(orgId, issueId, actorId, "release", {
 			payload: opts?.note ? { note: opts.note } : {},
@@ -787,11 +749,12 @@ const make: Effect.Effect<
 				)
 			}
 			const assignedRows = yield* dbExecute((db) =>
-				db
-					.update(errorIssues)
-					.set({ assignedActorId: toActorId, updatedAt: msToDate(timestamp) })
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-					.returning(txidColumn),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ assignedActorId: toActorId, updatedAt: timestamp })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+						.returning(() => ({ txid: currentTxid })),
+				),
 			)
 			yield* recordEvent(orgId, issueId, byActorId, "assignment", {
 				payload: { fromActorId: current.assignedActorId, toActorId },
@@ -813,7 +776,7 @@ const make: Effect.Effect<
 		to: IssueSeverity,
 		source: "ai" | "manual",
 		timestamp: number,
-	): Option.Option<typeof issueEscalations.$inferInsert> =>
+	): Option.Option<PG.InsertRowOf<typeof IssueEscalations>> =>
 		Option.map(Option.fromNullOr(escalationReasonFor(from, to)), (reason) => ({
 			id: newIssueEscalationId(),
 			orgId,
@@ -829,7 +792,7 @@ const make: Effect.Effect<
 			attempts: 0,
 			dedupeKey: escalationDedupeKey(orgId, issueId, to),
 			error: null,
-			createdAt: msToDate(timestamp),
+			createdAt: timestamp,
 			processedAt: null,
 		}))
 
@@ -871,24 +834,22 @@ const make: Effect.Effect<
 			// could never page anyone — a retry sees the severity already stored and
 			// returns before reaching the outbox insert.
 			const severityRows = yield* dbExecute((db) =>
-				db.transaction((tx) =>
+				db.transaction(
 					Effect.gen(function* () {
-						const rows = yield* tx
-							.update(errorIssues)
-							.set({
-								severity,
-								severitySource: nextSource,
-								updatedAt: msToDate(timestamp),
-							})
-							.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-							.returning(txidColumn)
+						const rows = yield* db.run(
+							PG.update(ErrorIssues)
+								.set({ severity, severitySource: nextSource, updatedAt: timestamp })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+								.returning(() => ({ txid: currentTxid })),
+						)
 						if (Option.isSome(eventInsert))
-							yield* tx.insert(errorIssueEvents).values(eventInsert.value)
+							yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
 						if (Option.isSome(escalationInsert)) {
-							yield* tx
-								.insert(issueEscalations)
-								.values(escalationInsert.value)
-								.onConflictDoNothing()
+							yield* db.run(
+								PG.insertInto(IssueEscalations)
+									.values(escalationInsert.value)
+									.onConflictDoNothing(),
+							)
 						}
 						return rows
 					}),
@@ -926,9 +887,9 @@ const make: Effect.Effect<
 			fromState: null,
 			toState: null,
 			payloadJson: payload,
-			createdAt: msToDate(timestamp),
+			createdAt: timestamp,
 		}
-		yield* dbExecute((db) => db.insert(errorIssueEvents).values(row))
+		yield* dbExecute((db) => db.run(PG.insertInto(ErrorIssueEvents).values(row)))
 		// This path writes the event row itself rather than going through
 		// `recordEvent`, so the audit mirror has to be invoked explicitly. The
 		// comment body stays out of the row — the audit records that a comment
@@ -946,12 +907,13 @@ const make: Effect.Effect<
 		yield* requireIssue(orgId, issueId)
 		const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_EVENTS_LIMIT, 1), 500)
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssueEvents)
-				.where(and(eq(errorIssueEvents.orgId, orgId), eq(errorIssueEvents.issueId, issueId)))
-				.orderBy(desc(errorIssueEvents.createdAt))
-				.limit(limit),
+			db.run(
+				PG.from(ErrorIssueEvents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+					.orderBy(["createdAt", "desc"])
+					.limit(limit),
+			),
 		)
 		const actorMap = yield* actorsService.collectActorDocs(
 			orgId,

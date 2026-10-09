@@ -320,8 +320,8 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 	const envFilterMv = (deploymentEnv: CH.Expr<string>) =>
 		opts.deploymentEnv ? deploymentEnv.eq(opts.deploymentEnv) : undefined
 
-	const startDateTime = CH.toDateTime(param.dateTime("startTime"))
-	const endDateTime = CH.toDateTime(param.dateTime("endTime"))
+	const startDateTime = CH.toDateTime(utcSecondsParam("startTime"))
+	const endDateTime = CH.toDateTime(utcSecondsParam("endTime"))
 
 	// Hourly branch — only sealed, complete buckets inside the requested window.
 	const hourlyBranch = from(ServiceMapEdgesHourly)
@@ -1127,8 +1127,8 @@ export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceExternalEdgesOutput>, QueryBuilderError> {
-	const startHour = CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))
-	const endHour = CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))
+	const startHour = CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))
+	const endHour = CH.toStartOfHour(CH.toDateTime(utcSecondsParam("endTime")))
 
 	// Hourly branch: sealed buckets from the MV-fed table. Carries `bucket*`
 	// aliases so the outer aggregate can't collide with inner ones (same
@@ -1330,7 +1330,7 @@ export function servicePlatformsSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.ServiceName.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,

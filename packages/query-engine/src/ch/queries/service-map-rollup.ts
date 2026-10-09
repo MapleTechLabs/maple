@@ -214,8 +214,8 @@ export function serviceMapEdgesRollupSQL(
 	params: ServiceMapEdgesRollupParams,
 ): Effect.Effect<CompiledQuery<ServiceMapEdgesHourlyOutput>, QueryBuilderError> {
 	const query = serviceMapEdgeJoinQuery({
-		rangeStart: CH.toDateTime(param.dateTime("hourStart")),
-		rangeEnd: CH.toDateTime(param.dateTime("hourEnd")),
+		rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+		rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 	}).format("JSON")
 
 	// Scope is derived from both join sources filtering OrgId — see

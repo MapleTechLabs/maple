@@ -352,7 +352,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 				$.Hour.gte(utcSecondsParam("startTime")),
 				// `param.dateTime("endTime")` substitutes as a quoted string literal;
 				// `toStartOfHour` only accepts Date/DateTime, so wrap with `toDateTime`.
-				$.Hour.lt(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
+				$.Hour.lt(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("endTime")))),
 				...mvFacetConditions($, opts),
 			])
 			.groupBy("bucket", "groupName")

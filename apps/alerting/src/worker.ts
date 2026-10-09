@@ -37,6 +37,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
+import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /**
  * Runtime env, imported type-only by `./scheduled.ts`. Config vars stay `unknown` since they are
@@ -222,7 +223,10 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Email.SendBinding,
 				Cloudflare.Workers.CronEventSourceLive,
-				WorkerTelemetry({ serviceName: "alerting" }),
+				WorkerTelemetry({
+					serviceName: "alerting",
+					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+				}),
 			),
 		),
 	),

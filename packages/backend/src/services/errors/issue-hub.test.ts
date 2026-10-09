@@ -3,8 +3,9 @@ import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId } from "@maple/domain/http"
 import { AlertIncidentId, AlertRuleId } from "@maple/domain/primitives"
-import { alertIncidents, errorIssues, errorIssueEvents } from "@maple/db"
-import { and, eq, sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertIncidents, ErrorIssueEvents, ErrorIssues } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -71,15 +72,14 @@ const baseInput = (overrides: Partial<Parameters<typeof upsertAlertIssue>[0]> = 
 const loadIssue = Effect.gen(function* () {
 	const database = yield* Database
 	const rows = yield* database.execute((db) =>
-		db
-			.select()
-			.from(errorIssues)
-			.where(
-				and(
-					eq(errorIssues.orgId, ORG),
-					eq(errorIssues.fingerprintHash, alertIssueFingerprint(RULE_1, "checkout")),
-				),
-			),
+		db.run(
+			PG.from(ErrorIssues)
+				.select()
+				.where(($) => [
+					$.orgId.eq(ORG),
+					$.fingerprintHash.eq(alertIssueFingerprint(RULE_1, "checkout")),
+				]),
+		),
 	)
 	return rows
 })
@@ -97,24 +97,26 @@ describe("upsertAlertIssue", () => {
 			yield* TestClock.setTime(T0)
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.insert(alertIncidents).values({
-					id: INCIDENT_1,
-					orgId: ORG,
-					ruleId: RULE_1,
-					incidentKey: INCIDENT_1,
-					ruleName: "High p95 latency",
-					groupKey: "checkout",
-					signalType: "p95_latency",
-					severity: "warning",
-					status: "open",
-					comparator: "gte",
-					threshold: 800,
-					firstTriggeredAt: new Date(T0),
-					lastTriggeredAt: new Date(T0),
-					dedupeKey: `${ORG}:${RULE_1}:checkout`,
-					createdAt: new Date(T0),
-					updatedAt: new Date(T0),
-				}),
+				db.run(
+					PG.insertInto(AlertIncidents).values({
+						id: INCIDENT_1,
+						orgId: ORG,
+						ruleId: RULE_1,
+						incidentKey: INCIDENT_1,
+						ruleName: "High p95 latency",
+						groupKey: "checkout",
+						signalType: "p95_latency",
+						severity: "warning",
+						status: "open",
+						comparator: "gte",
+						threshold: 800,
+						firstTriggeredAt: T0,
+						lastTriggeredAt: T0,
+						dedupeKey: `${ORG}:${RULE_1}:checkout`,
+						createdAt: T0,
+						updatedAt: T0,
+					}),
+				),
 			)
 
 			const result = yield* upsertAlertIssue(baseInput())
@@ -138,12 +140,20 @@ describe("upsertAlertIssue", () => {
 			})
 
 			const incidents = yield* database.execute((db) =>
-				db.select().from(alertIncidents).where(eq(alertIncidents.id, INCIDENT_1)),
+				db.run(
+					PG.from(AlertIncidents)
+						.select()
+						.where(($) => [$.id.eq(INCIDENT_1)]),
+				),
 			)
 			assert.strictEqual(incidents[0]?.errorIssueId, issue.id)
 
 			const events = yield* database.execute((db) =>
-				db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issue.id)),
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(issue.id)]),
+				),
 			)
 			assert.lengthOf(events, 1)
 			assert.strictEqual(events[0]?.type, "created")
@@ -178,10 +188,11 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ severity: "low", severitySource: "manual" })
-					.where(eq(errorIssues.id, first.issueId!)),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ severity: "low", severitySource: "manual" })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
 			)
 
 			yield* upsertAlertIssue(
@@ -201,10 +212,11 @@ describe("upsertAlertIssue", () => {
 			const first = yield* upsertAlertIssue(baseInput())
 			// Simulate a triager clearing the severity back to "untriaged".
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ severity: null, severitySource: null })
-					.where(eq(errorIssues.id, first.issueId!)),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ severity: null, severitySource: null })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
 			)
 
 			const second = yield* upsertAlertIssue(
@@ -224,10 +236,11 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ workflowState: "done", resolvedAt: new Date(T0 + 50_000) })
-					.where(eq(errorIssues.id, first.issueId!)),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ workflowState: "done", resolvedAt: T0 + 50_000 })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
 			)
 
 			const second = yield* upsertAlertIssue(
@@ -240,7 +253,11 @@ describe("upsertAlertIssue", () => {
 			assert.isNull(issues[0]?.resolvedAt)
 
 			const events = yield* database.execute((db) =>
-				db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, first.issueId!)),
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(first.issueId!)]),
+				),
 			)
 			const types = events.map((e) => e.type)
 			assert.include(types, "state_change")
@@ -254,10 +271,11 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: new Date(T0 + 999_000) })
-					.where(eq(errorIssues.id, first.issueId!)),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ workflowState: "wontfix", snoozeUntil: T0 + 999_000 })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
 			)
 
 			const second = yield* upsertAlertIssue(
@@ -277,10 +295,11 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: null })
-					.where(eq(errorIssues.id, first.issueId!)),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ workflowState: "wontfix", snoozeUntil: null })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
 			)
 
 			const second = yield* upsertAlertIssue(
@@ -303,10 +322,11 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: new Date(T0 + 50_000) })
-					.where(eq(errorIssues.id, first.issueId!)),
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
 			)
 
 			const second = yield* upsertAlertIssue(
@@ -326,7 +346,7 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			// Sabotage the schema so the very first select inside the upsert fails;
 			// the catchCause wrapper must swallow it and report `action: "error"`.
-			yield* database.execute((db) => db.execute(sql`DROP TABLE error_issues`))
+			yield* database.execute((db) => db.execute(Orm.sql`DROP TABLE error_issues`))
 
 			const result = yield* upsertAlertIssue(baseInput())
 			assert.isNull(result.issueId)

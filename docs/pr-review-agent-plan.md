@@ -134,7 +134,7 @@ in `pr_reviews.publish_error` and is not retried into the run.
 
 ### Persistence and settings
 
-`pr_reviews` (`packages/db/src/schema/vcs.ts`, migration `20260922213359_pr_reviews`, which also
+`pr_reviews` (`packages/db/src/tables/vcs.ts`, migration `20260922213359_pr_reviews`, which also
 adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id`, `number`,
 `head_sha`, `base_sha`, `url`, `title`), `status` (`queued`, `running`, `completed`, `failed`,
 `skipped`) with `skip_reason`, `session_id`, `report_json`, `score`, the three published URLs,

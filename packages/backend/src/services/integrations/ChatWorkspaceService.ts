@@ -14,21 +14,20 @@ import {
 	UserId,
 	type OAuthStatePersistenceError,
 } from "@maple/domain/http"
-import { chatWorkspaces, type ChatWorkspaceRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ChatWorkspaces, type ChatWorkspaceRow } from "@maple/db/tables"
 import {
 	isConnectorConfigured,
 	type ChatConnector,
 	type ChatDestination,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
-import { and, asc, eq } from "drizzle-orm"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import {
 	linkChatIdentity,
@@ -91,17 +90,8 @@ const newWorkspaceId = () => Schema.decodeSync(ChatWorkspaceId)(randomUUID())
 /** Same for the identity row. */
 const newChatIdentityId = () => Schema.decodeSync(ChatIdentityId)(randomUUID())
 
-/**
- * Stored settings are decoded rather than trusted: the column's type is a cast,
- * and a value that is not a string map would otherwise surface as a 500 when the
- * response is encoded instead of as this service's own persistence failure.
- */
-const decodeStoredSettings = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
-
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
 const decodeUserId = Schema.decodeUnknownEffect(UserId)
-const decodeChatWorkspaceId = Schema.decodeUnknownEffect(ChatWorkspaceId)
-const decodeConnectorId = Schema.decodeUnknownEffect(ChatConnectorId)
 
 export interface ChatWorkspaceSummary {
 	readonly id: ChatWorkspaceId
@@ -287,45 +277,33 @@ const make: Effect.Effect<
 			)
 			.pipe(Effect.mapError((error) => new IntegrationsValidationError({ message: error.message })))
 
-	const toSummary = (
-		row: ChatWorkspaceRow,
-	): Effect.Effect<ChatWorkspaceSummary, IntegrationsPersistenceError> =>
-		Effect.all({
-			id: decodeChatWorkspaceId(row.id),
-			connector: decodeConnectorId(row.connector),
-			settings: decodeStoredSettings(row.settings),
-		}).pipe(
-			Effect.mapError(
-				(error) =>
-					new IntegrationsPersistenceError({
-						message: `Stored chat workspace is unreadable: ${error.message}`,
-					}),
-			),
-			Effect.map(({ id, connector, settings }) => ({
-				id,
-				connector,
-				externalWorkspaceId: row.externalWorkspaceId,
-				name: row.name,
-				settings,
-				createdAt: dateToMs(row.createdAt),
-			})),
-		)
+	// The table codecs decode the id, connector and settings, so an unreadable row fails the
+	// read as a persistence error rather than surfacing as a 500 when the response is encoded.
+	const toSummary = (row: ChatWorkspaceRow): ChatWorkspaceSummary => ({
+		id: row.id,
+		connector: row.connector,
+		externalWorkspaceId: row.externalWorkspaceId,
+		name: row.name,
+		settings: row.settings,
+		createdAt: row.createdAt,
+	})
 
 	const rowsForOrg = (orgId: OrgId) =>
 		database
 			.execute((db) =>
-				db
-					.select()
-					.from(chatWorkspaces)
-					.where(eq(chatWorkspaces.orgId, orgId))
-					.orderBy(asc(chatWorkspaces.createdAt)),
+				db.run(
+					PG.from(ChatWorkspaces)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(["createdAt", "asc"]),
+				),
 			)
 			.pipe(Effect.mapError(toPersistenceError))
 
 	const list = Effect.fn("ChatWorkspaceService.list")(function* (orgId: OrgId, userId?: UserId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* rowsForOrg(orgId)
-		const summaries = yield* Effect.forEach(rows, toSummary)
+		const summaries = Arr.map(rows, toSummary)
 		// One query for every connector's link rather than one per connector: a
 		// person holds at most one link each, and the card reads them together.
 		const identities = userId === undefined ? [] : yield* listChatIdentities(database, orgId, userId)
@@ -364,8 +342,8 @@ const make: Effect.Effect<
 				initiatedByUserId: userId,
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: msToDate(now),
-				expiresAt: msToDate(now + STATE_TTL_MS),
+				createdAt: now,
+				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
@@ -405,7 +383,7 @@ const make: Effect.Effect<
 		const now = yield* Clock.currentTimeMillis
 		// Single-use: burn the state before doing any side effects.
 		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (dateToMs(row.expiresAt) < now) {
+		if (row.expiresAt < now) {
 			return yield* Effect.fail(
 				new IntegrationsValidationError({
 					message: "Install state expired — start the install again",
@@ -467,27 +445,28 @@ const make: Effect.Effect<
 
 		const inserted = yield* database
 			.execute((db) =>
-				db
-					.insert(chatWorkspaces)
-					.values({
-						id: newWorkspaceId(),
-						orgId,
-						connector: connectorId,
-						externalWorkspaceId: installed.externalWorkspaceId,
-						name: installed.name,
-						settings: {},
-						...credentialColumns,
-						createdAt: msToDate(now),
-					})
-					.onConflictDoUpdate({
-						target: [chatWorkspaces.connector, chatWorkspaces.externalWorkspaceId],
-						// A re-install refreshes the org's own row (the name and the credential may
-						// both have changed) and keeps its settings. Another org's row is left alone:
-						// the update is skipped, and zero returned rows is the conflict.
-						setWhere: eq(chatWorkspaces.orgId, orgId),
-						set: { name: installed.name, ...credentialColumns },
-					})
-					.returning({ id: chatWorkspaces.id }),
+				db.run(
+					PG.insertInto(ChatWorkspaces)
+						.values({
+							id: newWorkspaceId(),
+							orgId,
+							connector: connectorId,
+							externalWorkspaceId: installed.externalWorkspaceId,
+							name: installed.name,
+							settings: {},
+							...credentialColumns,
+							createdAt: now,
+						})
+						.onConflictDoUpdate({
+							target: ["connector", "externalWorkspaceId"],
+							// A re-install refreshes the org's own row (the name and the credential may
+							// both have changed) and keeps its settings. Another org's row is left alone:
+							// the update is skipped, and zero returned rows is the conflict.
+							where: ($) => $.orgId.eq(orgId),
+							set: { name: installed.name, ...credentialColumns },
+						})
+						.returning("id"),
+				),
 			)
 			.pipe(Effect.mapError(toPersistenceError))
 		if (inserted.length === 0) {
@@ -533,8 +512,8 @@ const make: Effect.Effect<
 				initiatedByUserId: userId,
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: msToDate(now),
-				expiresAt: msToDate(now + STATE_TTL_MS),
+				createdAt: now,
+				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
@@ -576,7 +555,7 @@ const make: Effect.Effect<
 		const now = yield* Clock.currentTimeMillis
 		// Single-use: burn the state before doing any side effects.
 		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (dateToMs(row.expiresAt) < now) {
+		if (row.expiresAt < now) {
 			return yield* Effect.fail(
 				new IntegrationsValidationError({ message: "Link state expired — start the link again" }),
 			)
@@ -648,11 +627,12 @@ const make: Effect.Effect<
 	const loadOwned = Effect.fnUntraced(function* (orgId: OrgId, workspaceId: ChatWorkspaceId) {
 		const rows = yield* database
 			.execute((db) =>
-				db
-					.select()
-					.from(chatWorkspaces)
-					.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-					.limit(1),
+				db.run(
+					PG.from(ChatWorkspaces)
+						.select()
+						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+						.limit(1),
+				),
 			)
 			.pipe(Effect.mapError(toPersistenceError))
 		const row = rows[0]
@@ -667,30 +647,22 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const row = yield* loadOwned(orgId, workspaceId)
-		const connector = yield* requireConnector(
-			yield* decodeConnectorId(row.connector).pipe(
-				Effect.mapError(
-					(error) =>
-						new IntegrationsPersistenceError({
-							message: `Stored chat workspace is unreadable: ${error.message}`,
-						}),
-				),
-			),
-		)
+		const connector = yield* requireConnector(row.connector)
 		const validated = yield* validateSettings(connector, settings)
 		const updated = yield* database
 			.execute((db) =>
-				db
-					.update(chatWorkspaces)
-					.set({ settings: validated })
-					.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-					.returning(),
+				db.run(
+					PG.update(ChatWorkspaces)
+						.set({ settings: validated })
+						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+						.returning(),
+				),
 			)
 			.pipe(Effect.mapError(toPersistenceError))
 		const stored = updated[0]
 		// Lost a race with an unlink: the row was there a statement ago.
 		if (stored === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
-		return yield* toSummary(stored)
+		return toSummary(stored)
 	})
 
 	const uninstall = Effect.fn("ChatWorkspaceService.uninstall")(function* (
@@ -700,10 +672,11 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const deleted = yield* database
 			.execute((db) =>
-				db
-					.delete(chatWorkspaces)
-					.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-					.returning({ connector: chatWorkspaces.connector }),
+				db.run(
+					PG.deleteFrom(ChatWorkspaces)
+						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+						.returning("connector"),
+				),
 			)
 			.pipe(Effect.mapError(toPersistenceError))
 		const row = deleted[0]
