@@ -48,7 +48,7 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 3. For an organization or folder, enter the **Host project ID**.
 4. Under **What to collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. Click **Get setup script**.
 5. Click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
-6. Click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. To change which logs are forwarded, choose a [log filter](#log-filter) before you copy.
+6. Click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. To change which logs are forwarded, click **Change** next to **Log filter** and choose a [log filter](#log-filter) before you copy.
 7. Return to Maple. **Maple confirms the connection** shows a check mark within a minute of the script ending, usually in seconds.
 
 A first run for a project prints:
