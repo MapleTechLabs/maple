@@ -10,6 +10,8 @@ describe("formatValueWithUnit", () => {
 	it("renders cores with a unit suffix (never a bare number)", () => {
 		expect(formatValueWithUnit(0.067, "cores")).toBe("0.067 cores")
 		expect(formatValueWithUnit(2, "cores")).toBe("2 cores")
+		expect(formatValueWithUnit(0.00042, "cores")).toBe("0.00042 cores")
+		expect(formatValueWithUnit(0, "cores")).toBe("0 cores")
 	})
 
 	it("renders a duration for seconds", () => {

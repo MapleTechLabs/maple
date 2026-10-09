@@ -66,7 +66,8 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 		case "percent":
 			return formatPercent(value)
 		case "cores":
-			return `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} cores`
+			// A sidecar idles at a fraction of a millicore, which three decimals round to zero.
+			return `${value.toLocaleString(undefined, Math.abs(value) < 0.01 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 3 })} cores`
 		case "seconds":
 			return formatSeconds(value)
 		case "load":

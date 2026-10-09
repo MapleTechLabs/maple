@@ -154,8 +154,8 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		<DashboardPage
 			breadcrumbs={[
 				{ label: "Infrastructure", href: "/infra" },
-				{ label: "Google Cloud", href: "/infra/gcp" },
-				{ label: title, href: `/infra/gcp?tab=${service}` },
+				// Back to the tab the workload is listed on.
+				{ label: "Google Cloud", href: `/infra/gcp?tab=${service}` },
 				{ label: name },
 			]}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
@@ -164,6 +164,7 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		>
 			<PageHero
 				title={<span className="font-mono">{name}</span>}
+				trailing={<HeroChip>{title}</HeroChip>}
 				description={DESCRIPTIONS[service]}
 				meta={identity.slice(1).map(([label], index) =>
 					keys[index + 1] ? (

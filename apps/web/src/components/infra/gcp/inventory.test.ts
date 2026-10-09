@@ -175,6 +175,12 @@ describe("gcpWorkloadTelemetry", () => {
 		})
 	})
 
+	it("narrows a subscription's logs by its full path, which is how Cloud Logging labels it", () => {
+		expect(gcpWorkloadTelemetry("pubsub", ["orders", "acme-prod"]).logAttrs).toEqual([
+			"res:gcp.resource.labels.subscription_id=projects/acme-prod/subscriptions/orders",
+		])
+	})
+
 	it("reads a load balancer's logs under the type Cloud Logging writes, its metrics under their own", () => {
 		expect(gcpWorkloadTelemetry("loadBalancing", ["web", "backend", "acme-prod"])).toEqual({
 			serviceName: "gcp/https_lb_rule",

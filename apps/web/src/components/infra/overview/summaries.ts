@@ -315,7 +315,7 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 		],
 		headline:
 			flagged.length > 0
-				? `${countLabel(flagged.length, "workload")} above 60% of a limit or erroring`
+				? `${countLabel(flagged.length, "workload")} elevated or erroring`
 				: fleet.length > 0
 					? fleet.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
 					: "no metrics in this window",

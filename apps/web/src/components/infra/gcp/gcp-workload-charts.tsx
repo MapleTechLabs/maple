@@ -12,11 +12,11 @@ import { ChartLineIcon } from "@/components/icons"
 import { appendWhereFilter } from "@/components/metrics/metric-breakdown"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
+import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
-import { formatValueWithUnit } from "../chart-utils"
 import { STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "../cloudflare/constants"
 import { StackedBreakdownChart } from "../cloudflare/cloudflare-zone-detail-charts"
-import { InfraMetricChart, type InfraSeriesInfo } from "../primitives/infra-metric-chart"
+import { InfraMetricChart } from "../primitives/infra-metric-chart"
 import {
 	gcpBuckets,
 	gcpChartMetric,
@@ -33,25 +33,6 @@ const CLASS_COLORS = {
 	ok: STATUS_CLASS_COLORS["2xx"],
 	ack: STATUS_CLASS_COLORS["2xx"],
 	error: STATUS_CLASS_COLORS["5xx"],
-}
-
-/** The latest value of each line, above the plot. */
-function SeriesSummary({ series, colors, lastValues, unit }: InfraSeriesInfo) {
-	return (
-		<SeriesLegend
-			swatch="line"
-			className="justify-start px-3 pb-1"
-			items={series.map((name) => {
-				const value = lastValues[name]
-				return {
-					key: name,
-					label: name,
-					color: colors.get(name),
-					value: value === undefined ? undefined : formatValueWithUnit(value, unit),
-				}
-			})}
-		/>
-	)
 }
 
 /**
@@ -126,15 +107,34 @@ export function GcpWorkloadCharts({
 						/>
 					)
 				}
+				// The legend sits in the card's header, as on the stacked cards, so every plot in a
+				// row starts at the same height. One line needs none: the title names it.
+				const names = [...new Set(rows[index].map((row) => row.attributeValue))]
+				const colors = resolveSeriesColors(names)
 				return (
-					<ChartCard key={chart.title} title={chart.title} scope={explore}>
+					<ChartCard
+						key={chart.title}
+						title={chart.title}
+						scope={explore}
+						legend={
+							names.length > 1 ? (
+								<SeriesLegend
+									swatch="line"
+									items={names.map((name) => ({
+										key: name,
+										label: name,
+										color: colors.get(name),
+									}))}
+								/>
+							) : undefined
+						}
+					>
 						<InfraMetricChart
 							rows={rows[index]}
 							unit={chart.unit}
 							showThreshold={chart.threshold}
 							xDomain={xDomain}
 							linkedChartId={`gcp-${chart.title}`}
-							header={SeriesSummary}
 							height={CHART_HEIGHT}
 						/>
 					</ChartCard>

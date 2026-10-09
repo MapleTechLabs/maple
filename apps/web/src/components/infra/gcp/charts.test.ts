@@ -123,7 +123,7 @@ describe("gcpLineRows", () => {
 
 	it("reads a counter per second, zero in a bucket where the workload reported but counted nothing", () => {
 		const rows = gcpLineRows(
-			lineChart("computeEngine", "Network").series,
+			lineChart("computeEngine", "Network bytes per second").series,
 			[
 				point(T1, "gcp.compute.instance.network.received_bytes_count", "vm-1", 600_000, 5),
 				point(T2, "gcp.compute.instance.cpu.utilization", "vm-1", 0.5, 5),
@@ -140,7 +140,7 @@ describe("gcpLineRows", () => {
 
 	it("divides a counter by the part of an edge bucket the window covers", () => {
 		const received = [point(T1, "gcp.compute.instance.network.received_bytes_count", "vm-1", 120_000, 2)]
-		const rows = gcpLineRows(lineChart("computeEngine", "Network").series, received, {
+		const rows = gcpLineRows(lineChart("computeEngine", "Network bytes per second").series, received, {
 			...WINDOW,
 			// The window opens three minutes into the bucket.
 			startTime: "2026-10-08 12:03:00",
@@ -148,7 +148,7 @@ describe("gcpLineRows", () => {
 		expect(rows[0]).toEqual({ bucket: T1, attributeValue: "Received", value: 1000 })
 		// A window that ends seconds into its last bucket still divides by one point's minute.
 		expect(
-			gcpLineRows(lineChart("computeEngine", "Network").series, received, {
+			gcpLineRows(lineChart("computeEngine", "Network bytes per second").series, received, {
 				...WINDOW,
 				endTime: "2026-10-08 12:00:10",
 			})[0]?.value,

@@ -150,7 +150,11 @@ export function gcpWorkloadTelemetry(
 			encodeLogAttributeFilter({
 				source: "resource",
 				key: GCP_INFRA_SERVICES[service].identity[0][1],
-				value: keys[0],
+				// Cloud Logging labels a subscription with its full path, Cloud Monitoring with its id.
+				value:
+					service === "pubsub"
+						? `projects/${gcpWorkloadProject(service, keys)}/subscriptions/${keys[0]}`
+						: keys[0],
 				negated: false,
 			}),
 		],

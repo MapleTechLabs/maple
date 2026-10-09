@@ -143,7 +143,7 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 			mean("Idle", `${FUNCTION}.instance_count`, "idle"),
 		]),
 		lines("Memory per execution", "bytes", percentiles(`${FUNCTION}.user_memory_bytes`)),
-		lines("Network egress", "bytes_per_second", [rate("Sent", `${FUNCTION}.network_egress`)]),
+		lines("Egress bytes per second", "bytes_per_second", [rate("Sent", `${FUNCTION}.network_egress`)]),
 	],
 	gke: [
 		// A point is the CPU seconds used in one minute.
@@ -170,11 +170,11 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		lines("Memory used", "bytes", [mean("Used", `${INSTANCE}.memory.balloon.ram_used`)], {
 			note: "E2 machine types only.",
 		}),
-		lines("Network", "bytes_per_second", [
+		lines("Network bytes per second", "bytes_per_second", [
 			rate("Received", `${INSTANCE}.network.received_bytes_count`),
 			rate("Sent", `${INSTANCE}.network.sent_bytes_count`),
 		]),
-		lines("Disk", "bytes_per_second", [
+		lines("Disk bytes per second", "bytes_per_second", [
 			rate("Read", `${INSTANCE}.disk.read_bytes_count`),
 			rate("Written", `${INSTANCE}.disk.write_bytes_count`),
 		]),
@@ -239,8 +239,8 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		]),
 		lines("Total latency", "milliseconds", percentiles(`${HTTPS}.total_latencies`)),
 		lines("Backend latency", "milliseconds", percentiles(`${HTTPS}.backend_latencies`)),
-		classes("Backend requests by response class", `${HTTPS}.backend_request_count`),
-		lines("Traffic", "bytes_per_second", [
+		classes("Backend requests by class", `${HTTPS}.backend_request_count`),
+		lines("Traffic bytes per second", "bytes_per_second", [
 			rate("Requests", `${HTTPS}.request_bytes_count`),
 			rate("Responses", `${HTTPS}.response_bytes_count`),
 		]),

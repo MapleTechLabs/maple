@@ -19,6 +19,7 @@ import {
 	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty, useChartPlotHeight } from "@maple/ui/components/charts"
+import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
@@ -190,8 +191,17 @@ export function InfraMetricChart({
 	const tickFormatter = useMemo(
 		() => (value: number) =>
 			unit === "cores"
-				? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-				: formatValueWithUnit(value, unit),
+				? // Two decimals, or two digits where a tick is smaller than that.
+					value.toLocaleString(
+						undefined,
+						Math.abs(value) < 0.1
+							? { maximumSignificantDigits: 2 }
+							: { maximumFractionDigits: 2 },
+					)
+				: unit === "bytes_per_second"
+					? // "391 KB/s" clips the same way: the tooltip keeps the "/s".
+						formatBytes(value)
+					: formatValueWithUnit(value, unit),
 		[unit],
 	)
 

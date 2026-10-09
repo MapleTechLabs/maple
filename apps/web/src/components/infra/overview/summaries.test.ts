@@ -193,7 +193,7 @@ describe("summarizeGcp", () => {
 			{ key: "elevated", count: 1 },
 			{ key: "saturated", count: 1 },
 		])
-		expect(summary.headline).toBe("2 workloads above 60% of a limit or erroring")
+		expect(summary.headline).toBe("2 workloads elevated or erroring")
 		expect(summary.headlineTone).toBe("crit")
 		expect(summary.findings).toEqual([
 			{
