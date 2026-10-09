@@ -202,7 +202,7 @@ describe("tinybird traces attribute filter params", () => {
 		}),
 	)
 
-	it.effect("decodes per-span rows, accepting numeric strings for durations", () =>
+	it.effect("decodes per-span rows, accepting a numeric duration string and a numeric error flag", () =>
 		Effect.gen(function* () {
 			executeQueryEngineMock.mockReturnValueOnce(
 				Effect.succeed({
@@ -220,7 +220,7 @@ describe("tinybird traces attribute filter params", () => {
 								durationMs: "12.5",
 								statusCode: "Error",
 								spanKind: "Server",
-								hasError: true,
+								hasError: 1,
 								services: ["checkout", "", "checkout"],
 								spanAttributes: { "http.method": "GET", "db.system": "postgres" },
 							},

@@ -985,8 +985,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							deviceTypes: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							// BYO-ClickHouse returns sum() as a JSON string; compileUnion has no
-							// rowSchema hook, so coerce here — same as podFacets.
+							// `count` is decoded by the union's derived row schema; `|| 0` only
+							// covers a NaN sum.
 							const entry = { name: row.name, count: row.count || 0 }
 							switch (row.facetType) {
 								case "host":

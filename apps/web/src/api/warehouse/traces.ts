@@ -261,6 +261,8 @@ const PROJECTED_ATTR_KEYS = [
 ] as const
 
 const StringRecord = Schema.Record(Schema.String, Schema.String)
+/** The engine ships a boolean; a raw `UInt8` flag still reads as one. */
+const HasError = Schema.Union([Schema.Boolean, CH.CHNumber])
 
 /** A per-span row of the traces list, as the query engine ships it. */
 const SpanListRow = Schema.Struct({
@@ -273,7 +275,7 @@ const SpanListRow = Schema.Struct({
 	durationMs: CH.CHNumber,
 	statusCode: Schema.String,
 	spanKind: Schema.String,
-	hasError: Schema.Boolean,
+	hasError: HasError,
 	services: Schema.optionalKey(Schema.Array(Schema.String)),
 	spanAttributes: Schema.optionalKey(StringRecord),
 })
@@ -290,7 +292,7 @@ const TraceListRow = Schema.Struct({
 	rootSpanKind: Schema.String,
 	rootSpanStatusCode: Schema.String,
 	rootSpanAttributes: StringRecord,
-	hasError: Schema.Boolean,
+	hasError: HasError,
 })
 
 const decodeSpanListRows = Schema.decodeUnknownEffect(Schema.Array(SpanListRow))
@@ -328,7 +330,7 @@ function transformSpanListRow(row: typeof SpanListRow.Type): Trace {
 			}),
 		},
 		rootSpanName: row.spanName,
-		hasError: row.hasError,
+		hasError: row.hasError === true || row.hasError === 1,
 	}
 }
 
@@ -359,7 +361,7 @@ function transformTraceListRow(row: typeof TraceListRow.Type): Trace {
 			}),
 		},
 		rootSpanName: row.rootSpanName,
-		hasError: row.hasError,
+		hasError: row.hasError === true || row.hasError === 1,
 	}
 }
 

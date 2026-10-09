@@ -69,7 +69,7 @@ const bucketCounts = (
 		// An ungrouped series carries exactly one key, whose name the engine
 		// picks; naming it here would couple this file to that choice.
 		const value = group === undefined ? Object.values(point.series)[0] : point.series[group]
-		return value
+		return Number(value ?? 0)
 	})
 
 export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetSummary", (handlers) =>

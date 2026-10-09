@@ -60,9 +60,8 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							profile: "list",
 							context: "replaysFacets",
 						})
-						// ClickHouse serializes integer aggregates (`uniq(...)`) as JSON strings,
-						// while the Tinybird path returns numbers; this query declares no row
-						// schema, so coerce at the edge before the Schema.Number response validates.
+						// The union derives its row schema from the first branch, so `count` is
+						// already a number here even where ClickHouse quotes a UInt64.
 						const pick = (facetType: string) =>
 							rows
 								.filter((row) => row.facetType === facetType)
@@ -118,9 +117,6 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 								...row,
 								startTime: DateTime.formatIso(row.startTime),
 								traceId: decodeTraceId(row.traceId),
-								// `count()` is UInt64 — same ClickHouse JSON-string coercion as
-								// listReplays' traceCount; coerce before Schema.Number validates.
-								spanCount: row.spanCount,
 							})),
 						})
 					}),

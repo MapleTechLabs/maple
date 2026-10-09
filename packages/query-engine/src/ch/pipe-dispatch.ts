@@ -88,6 +88,9 @@ export type PipeCompiledQuery = CompiledQuery<unknown>
 
 type PipeParams = Record<string, unknown> & { org_id: OrgId }
 
+/** Stands in for an absent required param; matches nothing. */
+const MISSING_REQUIRED_PARAM = "__maple_missing_required_param__"
+
 /**
  * Erase the specific output type for the generic pipe dispatcher.
  *
@@ -128,8 +131,11 @@ export function compilePipeQuery(
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
 	const startTime = str("start_time") ?? "2023-01-01 00:00:00"
 	const endTime = str("end_time") ?? "2099-12-31 23:59:59"
-	/** A param the pipe cannot run without; absent compiles to a filter that matches nothing. */
-	const reqStr = (key: string) => str(key) ?? ""
+	/**
+	 * A param the pipe cannot run without. Absent, it compiles to a value no row
+	 * carries: `""` would read as "no filter" and return every service.
+	 */
+	const reqStr = (key: string) => str(key) ?? MISSING_REQUIRED_PARAM
 	// Overloaded rather than `def?: number`: with an optional default every
 	// defaulted call still typed as `number | undefined` and every call site paid
 	// for it with a `!`.
