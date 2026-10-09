@@ -194,6 +194,11 @@ const LEASE_MS = 4 * 60_000
  * survives isolate recycling without a new column.
  */
 const RATE_LIMIT_BACKOFF_MS = 5 * 60_000
+/**
+ * How long an org sits out after the ingest gateway refuses its metrics on billing grounds (402).
+ * Held the same way as the rate-limit backoff, so it stays under the `2 * LEASE_MS` escape hatch.
+ */
+const PLAN_BLOCKED_BACKOFF_MS = 7 * 60_000
 const SETTINGS_TTL_MS = 24 * 60 * 60_000
 /** Zone discovery (REST pagination) runs hourly; poll ticks in between reuse the state rows. */
 const DISCOVERY_TTL_MS = 60 * 60_000
@@ -896,6 +901,7 @@ type PollOutcome =
 	| { readonly kind: "quantiles-downgraded" }
 	| { readonly kind: "disabled" }
 	| { readonly kind: "rate-limited"; readonly message: string }
+	| { readonly kind: "plan-blocked"; readonly message: string }
 	| { readonly kind: "failed"; readonly failure: DatasetPollFailure }
 
 /** Typed constructor so each failure site returns `PollOutcome` (widens the failure off `as const`). */
@@ -927,36 +933,7 @@ const allPartsFailed = (
 	}))
 
 /**
- * One failure for the whole document, rather than {@link allPartsFailed}'s one per part. For a
- * condition that is a property of the org and not of any dataset — the gateway refusing delivery
- * on billing grounds — fanning out per part multiplies a single cause into N observations, N error
- * events and N issue increments. In production one 402 became ~60 dataset failures per tick, which
- * is how a single unpaid subscription grew a 209,453-event error issue.
- */
-const documentFailed = (
-	item: WorkItem,
-	kind: DatasetPollFailure["kind"],
-	message: string,
-): Array<PartResult> => {
-	const part = item.parts[0]
-	if (!part) return []
-	return [
-		{
-			part,
-			outcome: failedOutcome({
-				scope: part.dataset.scope,
-				datasetId: part.dataset.id,
-				kind,
-				message,
-				rowIds: item.parts.flatMap((entry) => entry.rows.map((row) => row.id)),
-				orgWide: true,
-			}),
-		},
-	]
-}
-
-/**
- * The rate-limit twin of {@link documentFailed}: one quiet outcome for the whole document. A
+ * One quiet outcome for the whole document, rather than one per part. A
  * depleted GraphQL budget voids every selection at once, so fanning it out per dataset × zone-chunk
  * turned one self-inflicted pacing problem into ~1,700 `CloudflareAnalyticsPollError` events a day.
  * It is expected degradation (like `quantiles-unavailable`), not an incident: the caller logs a
@@ -966,6 +943,22 @@ const documentRateLimited = (item: WorkItem, message: string): Array<PartResult>
 	const part = item.parts[0]
 	if (!part) return []
 	return [{ part, outcome: { kind: "rate-limited", message } }]
+}
+
+/**
+ * The gateway refusing the org's metrics (402: no active plan, or its limit reached). A billing
+ * state the tenant fixes, not a Maple failure: one quiet outcome, recorded on the connection's
+ * health, never an exception event. Each tick used to raise one, which is ~1.5k errors a day.
+ */
+const documentPlanBlocked = (item: WorkItem, message: string): Array<PartResult> => {
+	const part = item.parts[0]
+	if (!part) return []
+	return [{ part, outcome: { kind: "plan-blocked", message } }]
+}
+
+/** The ingest gateway's 402: returned, not failed, so the emit span is not an error. */
+interface IngestRefused {
+	readonly refused: string
 }
 
 /**
@@ -1532,7 +1525,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 		/**
 		 * Ship a chunk's metric rows to the ingest gateway as one OTLP/JSON request. Non-2xx and
 		 * transport failures surface as {@link IntegrationsUpstreamError} so the poll loop records
-		 * them and retries next tick (the watermark only advances on success). Returns the row count.
+		 * them and retries next tick (the watermark only advances on success). Returns the row count,
+		 * or {@link IngestRefused} when the gateway refuses the org on billing grounds.
 		 */
 		const emitMetrics = Effect.fn("CloudflareAnalyticsService.emitMetrics")(
 			function* (ingestKey: string, rows: CloudflareMetricRows) {
@@ -1547,9 +1541,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 					.pipe(Effect.annotateSpans("peer.service", "ingest"))
 				if (response.status >= 300) {
 					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+					const message = `Cloudflare metrics ingest returned ${response.status}: ${body.slice(0, 300)}`
+					if (response.status === 402) {
+						yield* Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true)
+						return { refused: message } satisfies IngestRefused
+					}
 					return yield* Effect.fail(
 						new IntegrationsUpstreamError({
-							message: `Cloudflare metrics ingest returned ${response.status}: ${body.slice(0, 300)}`,
+							message,
 							status: response.status,
 						}),
 					)
@@ -1775,7 +1774,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 				}
 			}
 
-			yield* emitMetrics(context.ingestKey, combined)
+			const emitted = yield* emitMetrics(context.ingestKey, combined)
+			if (typeof emitted !== "number") return documentPlanBlocked(item, emitted.refused)
 			// Frontiers only advance after the gateway accepted the batch above.
 			for (const part of cleanParts) {
 				const rowIds = part.rows.map((row) => row.id)
@@ -1957,6 +1957,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// Set when Cloudflare's GraphQL rate limiter refuses the account. Lives outside the body
 			// below so the lease-releasing finalizer can convert it into the backoff hold.
 			const rateLimitedRef = yield* Ref.make(false)
+			// Set when the ingest gateway refuses this org's metrics (402). It ends the tick, since
+			// every remaining document would rediscover the same org-level condition, and the
+			// finalizer holds the lease so the next ticks skip the org too.
+			const deliveryBlockedRef = yield* Ref.make(false)
 
 			return yield* Effect.gen(function* () {
 				// Token failures: revocation disables the connection's rows until reconnect;
@@ -2082,10 +2086,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 				const rowsIngestedRef = yield* Ref.make(0)
 				// Set when Cloudflare rejects the token mid-loop — every further call would 401 too.
 				const revokedRef = yield* Ref.make(false)
-				// Set when the ingest gateway refuses this org's metrics (402). Like `revokedRef`,
-				// it ends the org's tick rather than letting every remaining document rediscover
-				// the same org-level condition.
-				const deliveryBlockedRef = yield* Ref.make(false)
 				// Genuine dataset failures this tick (authz/upstream/revoked/billing/other) — the seam pushes
 				// here so the org summary carries a failure count and the tick can escalate.
 				const datasetFailures: Array<DatasetPollFailure> = []
@@ -2132,16 +2132,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 										),
 									),
 								"@maple/http/errors/IntegrationsUpstreamError": (error) =>
-									// A 402 is the gateway refusing this org's metrics on billing grounds.
-									// It is org-wide and cannot clear mid-tick, so stop the loop the way a
-									// revoke does: continuing would re-fetch windows from Cloudflare that
-									// have nowhere to land, and — because the frontier only advances on
-									// acceptance — replay the same windows on every future tick forever.
-									error.status === 402
-										? Ref.set(deliveryBlockedRef, true).pipe(
-												Effect.as(documentFailed(item, "billing", error.message)),
-											)
-										: Effect.succeed(allPartsFailed(item, "upstream", error.message)),
+									Effect.succeed(allPartsFailed(item, "upstream", error.message)),
 							}),
 						)
 
@@ -2201,6 +2192,30 @@ export class CloudflareAnalyticsService extends Context.Service<
 											// account budget, and the frontier only advances on success.
 											Effect.andThen(Ref.set(rateLimitedRef, true)),
 										),
+									// Billing, not a failure: the tenant sees it on the connection's health, and
+									// the org sits out the backoff instead of re-fetching windows that have
+									// nowhere to land (the frontier only advances on acceptance).
+									"plan-blocked": ({ message }) =>
+										recordConnectionError(orgId, accountId, message, now).pipe(
+											Effect.andThen(
+												Effect.logWarning(
+													"cloudflare-analytics ingest refused on billing grounds",
+													{
+														orgId,
+														accountId,
+														backoffMs: PLAN_BLOCKED_BACKOFF_MS,
+														error: message,
+													},
+												),
+											),
+											Effect.andThen(
+												Effect.annotateCurrentSpan(
+													"cloudflare.poll.outcome",
+													"plan_blocked",
+												),
+											),
+											Effect.andThen(Ref.set(deliveryBlockedRef, true)),
+										),
 									// The one seam: record health to Postgres AND emit an observable signal.
 									failed: ({ failure }) =>
 										Effect.gen(function* () {
@@ -2247,8 +2262,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 				} satisfies PollConnectionSummary
 			}).pipe(
 				Effect.ensuring(
-					Effect.all([Clock.currentTimeMillis, Ref.get(rateLimitedRef)]).pipe(
-						Effect.flatMap(([end, rateLimited]) =>
+					Effect.all([
+						Clock.currentTimeMillis,
+						Ref.get(rateLimitedRef),
+						Ref.get(deliveryBlockedRef),
+					]).pipe(
+						Effect.flatMap(([end, rateLimited, deliveryBlocked]) =>
 							// A rate-limited tick doesn't release the lease — it holds it for the backoff
 							// window, so the next cron tick skips this connection instead of re-depleting
 							// the account's GraphQL budget.
@@ -2257,7 +2276,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 								accountId,
 								end,
 								anchor.leaseUntil,
-								rateLimited ? end + RATE_LIMIT_BACKOFF_MS : undefined,
+								deliveryBlocked
+									? end + PLAN_BLOCKED_BACKOFF_MS
+									: rateLimited
+										? end + RATE_LIMIT_BACKOFF_MS
+										: undefined,
 							).pipe(
 								// The ensuring must never fail (that would mask whatever this tick actually
 								// did), but a lease release failure is not nothing — it silently wedges the

@@ -15,6 +15,7 @@
 
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
+import { utcSecondsParam } from "../ch/tables"
 import { DateTime, Effect } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -1483,8 +1484,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTime("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTime("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 				}).format("JSON"),
 				{ orgId: ORG_ID, hourStart: START_TIME, hourEnd: END_TIME },
 			),
@@ -1498,8 +1499,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTime("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTime("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 					deploymentEnv: "production",
 					parentServiceName: "web",
 				}).format("JSON"),

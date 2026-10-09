@@ -12,7 +12,7 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { SessionReplays, SessionEvents, ProductEvents, orgIdParam } from "../tables"
+import { SessionReplays, SessionEvents, ProductEvents, orgIdParam, utcSecondsParam } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"
 import { SESSION_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
@@ -571,7 +571,7 @@ export function webAnalyticsLiveQuery(
 		.where(($) => [
 			...replaysWhere($, opts),
 			CH.coalesce($.LastActivityAt, $.StartTime).gte(
-				CH.intervalSub(CH.toDateTime(param.dateTime("endTime")), windowSeconds),
+				CH.intervalSub(CH.toDateTime(utcSecondsParam("endTime")), windowSeconds),
 			),
 		])
 		.format("JSON")
