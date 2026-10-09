@@ -203,7 +203,11 @@ const decodeConversationKey = Schema.decodeUnknownOption(ChatConversationKey)
 class SlackRateLimited extends Schema.TaggedError<SlackRateLimited>()(
 	"@maple/chat-platform/connectors/slack/RateLimited",
 	{ wait: Schema.Duration },
-) {}
+) {
+	override get message(): string {
+		return `Slack rate limited; retry after ${Duration.format(this.wait)}`
+	}
+}
 
 /** A Web API call with a JSON body — every method this connector calls except the listing. */
 const jsonRequest = (url: string, payload: SlackApiRequest) =>

@@ -209,7 +209,11 @@ const decodeHeaderRetryAfter = Schema.decodeUnknownOption(
 class DiscordRateLimited extends Schema.TaggedError<DiscordRateLimited>()(
 	"@maple/chat-platform/connectors/discord/RateLimited",
 	{ wait: Schema.Duration },
-) {}
+) {
+	override get message(): string {
+		return `Discord rate limited; retry after ${Duration.format(this.wait)}`
+	}
+}
 
 export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: DISCORD_CONNECTOR_ID,
