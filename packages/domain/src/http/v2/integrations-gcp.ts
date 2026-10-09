@@ -78,12 +78,12 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	applied_logs_enabled: Schema.NullOr(Schema.Boolean).annotate({
 		description:
-			"Whether log forwarding is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. While it differs from `logs_enabled`, the setup script has to run again.",
+			"Whether log forwarding is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. The setup script has to run while `logs_enabled` is `true` and this is not, or `logs_enabled` is `false` and this is `true`.",
 		examples: [true],
 	}),
 	applied_metrics_enabled: Schema.NullOr(Schema.Boolean).annotate({
 		description:
-			"Whether metrics and resource access is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. While it differs from `metrics_enabled`, the setup script has to run again.",
+			"Whether metrics and resource access is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. The setup script has to run while `metrics_enabled` is `true` and this is not, or `metrics_enabled` is `false` and this is `true`.",
 		examples: [true],
 	}),
 	setup_reported_at: Schema.NullOr(Timestamp).annotate({
@@ -202,11 +202,11 @@ export const V2GcpSetupScriptsRequest = Schema.Struct({
 	description: "Options for rendering a connector's scripts.",
 	examples: [wireExample({ log_filter: "exclude_gke_container_logs" })],
 })
+export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScriptsRequest>
 
 // What a script field holds: the script as a here-document for a bash process of its own.
 const SCRIPT_EXAMPLE =
 	" { …\nbash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'\n#!/usr/bin/env bash\n…\nMAPLE_SETUP_SCRIPT\n}\n"
-export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScriptsRequest>
 
 export const V2GcpSetupScripts = Schema.Struct({
 	object: Schema.Literal("gcp_connector.setup_scripts").annotate({
