@@ -98,8 +98,8 @@ export type OptionalFeatureState =
 	| { readonly available: false; readonly reason: string }
 
 /**
- * A durable step that failed surfaces as a defect (its retries are spent), so
- * the reason is read off the whole cause, not the typed error channel.
+ * A durable step that failed has spent its retries, as a typed failure or a
+ * terminal defect, so the reason is read off the whole cause.
  */
 const causeMessage = (cause: Cause.Cause<unknown>): string => {
 	const error = Cause.squash(cause)
@@ -498,14 +498,14 @@ interface SkippedFeature {
 }
 
 /**
- * Typed failures (a bad payload, a missing encryption key) propagate rather than
- * die: alchemy's bridge rejects the run with either, and steps already retry on their own.
+ * Typed failures (a bad payload, a missing encryption key, a step whose retries
+ * are spent) propagate rather than die: alchemy's bridge rejects the run with any of them.
  */
 export const runClickHouseSchemaApply = (
 	payload: SchemaApplyWorkflowPayload,
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
-	SchemaApplyPayloadError | SchemaApplyConfigError,
+	SchemaApplyPayloadError | SchemaApplyConfigError | ClickHouseExecError | DatabaseError,
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {

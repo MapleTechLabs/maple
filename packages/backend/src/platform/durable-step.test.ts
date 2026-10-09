@@ -68,7 +68,7 @@ describe("durableStep", () => {
 		}),
 	)
 
-	it.effect("a failing Effect rejects the step, so Cloudflare retries it", () =>
+	it.effect("a typed failure rejects the step in the error channel, so Cloudflare retries it", () =>
 		Effect.gen(function* () {
 			const failure = new StepFailure({ message: "ClickHouse 500" })
 			const exit = yield* durableStep("m1:create", Effect.fail(failure)).pipe(
@@ -77,7 +77,7 @@ describe("durableStep", () => {
 			)
 			assert.isTrue(Exit.isFailure(exit))
 			if (Exit.isFailure(exit)) {
-				assert.isDefined(exit.cause.reasons.find(Cause.isDieReason))
+				assert.isDefined(exit.cause.reasons.find(Cause.isFailReason))
 				assert.strictEqual(Cause.squash(exit.cause), failure)
 			}
 		}),
