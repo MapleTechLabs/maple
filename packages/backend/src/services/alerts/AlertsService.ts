@@ -1303,41 +1303,40 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (emptyTicks.length > 0) obsByGroup.set(emptyKey, new Map())
 				}
 
-				const series: AlertRulePreviewSeries[] = []
-				const wouldFire: AlertRulePreviewFiringSpan[] = []
-				for (const [groupKey, buckets] of obsByGroup) {
-					const isEmptyResultSeries = groupedAlert && groupKey === emptyKey && buckets.size === 0
-					const tickHasData = (bucketMs: number) =>
-						[...obsByGroup.values()].some((other) => other.get(bucketMs)?.hasData === true)
-					// Every window in the grid, judged by the same `applyEvaluationLogic`
-					// the scheduler runs per tick — no-data windows included, filled from
-					// `NO_DATA` so a gap is an evaluated skip rather than a missing point.
-					const evaluations = pointBuckets.map((bucketMs) => {
-						const obs = buckets.get(bucketMs) ?? NO_DATA
-						const evaluation: EvaluatedRule = isEmptyResultSeries
-							? tickHasData(bucketMs)
-								? // Groups reported this tick: the empty-result incident resolves.
-									{
-										...applyEvaluationLogic(skipGapsRule, NO_DATA),
-										status: "healthy",
-										skipReason: undefined,
-									}
-								: applyEvaluationLogic(normalized, NO_DATA)
-							: groupedAlert && !buckets.has(bucketMs)
-								? applyEvaluationLogic(skipGapsRule, NO_DATA)
-								: applyEvaluationLogic(normalized, obs)
-						return {
-							bucketMs,
-							status: evaluation.status,
-							skipReason: evaluation.skipReason,
-							value: evaluation.value,
-							sampleCount: obs.sampleCount,
-							provisional: hasPartialBucket && bucketMs === endMs,
-						}
-					})
+				const perGroup = yield* Effect.forEach(obsByGroup, ([groupKey, buckets]) =>
+					Effect.gen(function* () {
+						const isEmptyResultSeries =
+							groupedAlert && groupKey === emptyKey && buckets.size === 0
+						const tickHasData = (bucketMs: number) =>
+							[...obsByGroup.values()].some((other) => other.get(bucketMs)?.hasData === true)
+						// Every window in the grid, judged by the same `applyEvaluationLogic`
+						// the scheduler runs per tick — no-data windows included, filled from
+						// `NO_DATA` so a gap is an evaluated skip rather than a missing point.
+						const evaluations = pointBuckets.map((bucketMs) => {
+							const obs = buckets.get(bucketMs) ?? NO_DATA
+							const evaluation: EvaluatedRule = isEmptyResultSeries
+								? tickHasData(bucketMs)
+									? // Groups reported this tick: the empty-result incident resolves.
+										{
+											...applyEvaluationLogic(skipGapsRule, NO_DATA),
+											status: "healthy",
+											skipReason: undefined,
+										}
+									: applyEvaluationLogic(normalized, NO_DATA)
+								: groupedAlert && !buckets.has(bucketMs)
+									? applyEvaluationLogic(skipGapsRule, NO_DATA)
+									: applyEvaluationLogic(normalized, obs)
+							return {
+								bucketMs,
+								status: evaluation.status,
+								skipReason: evaluation.skipReason,
+								value: evaluation.value,
+								sampleCount: obs.sampleCount,
+								provisional: hasPartialBucket && bucketMs === endMs,
+							}
+						})
 
-					series.push(
-						new AlertRulePreviewSeries({
+						const groupSeries = new AlertRulePreviewSeries({
 							groupKey,
 							points: evaluations.map(
 								({ bucketMs, status, skipReason, value, sampleCount, provisional }) =>
@@ -1350,21 +1349,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										...(provisional ? { provisional } : undefined),
 									}),
 							),
-						}),
-					)
+						})
 
-					// The would-fire shading is the scheduler's own state machine replayed
-					// over the series — not a second implementation of it.
-					for (const span of yield* simulateFiringSpans(evaluations, normalized, windowMs)) {
-						wouldFire.push(
-							new AlertRulePreviewFiringSpan({
-								groupKey,
-								start: iso(span.startMs),
-								end: iso(span.endMs),
-							}),
-						)
-					}
-				}
+						// The would-fire shading is the scheduler's own state machine replayed
+						// over the series — not a second implementation of it.
+						const spans = yield* simulateFiringSpans(evaluations, normalized, windowMs)
+						return {
+							series: groupSeries,
+							wouldFire: spans.map(
+								(span) =>
+									new AlertRulePreviewFiringSpan({
+										groupKey,
+										start: iso(span.startMs),
+										end: iso(span.endMs),
+									}),
+							),
+						}
+					}),
+				)
+				const series = perGroup.map((group) => group.series)
+				const wouldFire = perGroup.flatMap((group) => group.wouldFire)
 
 				yield* Effect.annotateCurrentSpan({
 					"result.seriesCount": series.length,
@@ -1624,8 +1628,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const ruleMap = new Map(allRules.map((r) => [r.id, r]))
 				const incidentMap = new Map(allIncidents.map((r) => [r.id, r]))
 
-				let processedCount = 0
-				let failureCount = 0
+				const processedCount = yield* Ref.make(0)
+				const failureCount = yield* Ref.make(0)
 
 				const processOneDelivery = Effect.fn("AlertsService.processOneDelivery")(function* (
 					row: AlertDeliveryEventRow,
@@ -1639,7 +1643,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const claimed = yield* claimDeliveryEvent(row.id, claimTime)
 					if (claimed.length === 0) return
 
-					processedCount += 1
+					yield* Ref.update(processedCount, (count) => count + 1)
 					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, 1)
 
 					const destinationRow = destinationMap.get(row.destinationId)
@@ -1652,7 +1656,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							: undefined),
 					})
 					if (!destinationRow) {
-						failureCount += 1
+						yield* Ref.update(failureCount, (count) => count + 1)
 						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
 						yield* recordDeliveryFailure(row, claimTime, {
 							message: "Destination not found",
@@ -1663,7 +1667,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}
 
 					if (!destinationRow.enabled) {
-						failureCount += 1
+						yield* Ref.update(failureCount, (count) => count + 1)
 						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
 						yield* recordDeliveryFailure(row, claimTime, {
 							message: "Destination disabled",
@@ -1791,7 +1795,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// retry scheduling from the batch timestamp would date the backoff
 					// from before this attempt even started.
 					const failedAt = yield* now
-					failureCount += 1
+					yield* Ref.update(failureCount, (count) => count + 1)
 					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
 					yield* finalizeClaimedDelivery(row.id, failedAt, {
 						status: "failed",
@@ -1853,8 +1857,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 
 				return {
-					processedCount,
-					failureCount,
+					processedCount: yield* Ref.get(processedCount),
+					failureCount: yield* Ref.get(failureCount),
 				}
 			})
 
