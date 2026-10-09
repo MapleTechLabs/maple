@@ -897,6 +897,7 @@ struct SamplingPolicyRow {
     trace_sample_ratio: f64,
     always_keep_error_spans: bool,
     always_keep_slow_spans_ms: Option<u64>,
+    expand_json_log_attributes: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -5483,8 +5484,18 @@ async fn accept_native_decoded_payload(
                 .await
         }
         DecodedPayload::Logs(request) => {
+            let policy = state
+                .sampling_resolver
+                .resolve_policy(&resolved_key.org_id)
+                .instrument(resolve_config_internal_span())
+                .await;
             pipeline
-                .accept_logs_to(&resolved_key.org_id, request, destination)
+                .accept_logs_to(
+                    &resolved_key.org_id,
+                    request,
+                    policy.expand_json_log_attributes,
+                    destination,
+                )
                 .await
         }
         DecodedPayload::Metrics(request) => {
@@ -5689,6 +5700,7 @@ impl SamplingPolicyResolver {
                 trace_sample_ratio: row.trace_sample_ratio,
                 always_keep_error_spans: row.always_keep_error_spans,
                 always_keep_slow_spans_ms: row.always_keep_slow_spans_ms,
+                expand_json_log_attributes: row.expand_json_log_attributes,
             },
             Ok(None) => SamplingPolicy::default(),
             Err(error) => {
@@ -6113,8 +6125,12 @@ impl KeyStore for PostgresKeyStore {
         let client = self.client().await?;
         let rows = client
             .query(
-                "SELECT trace_sample_ratio, always_keep_error_spans, always_keep_slow_spans_ms \
-                 FROM org_ingest_sampling_policies WHERE org_id = $1 LIMIT 1",
+                // The flag is read through to_jsonb so this query keeps working
+                // if ingest deploys before the migration adding the column.
+                "SELECT trace_sample_ratio, always_keep_error_spans, always_keep_slow_spans_ms, \
+                        COALESCE((to_jsonb(p) ->> 'expand_json_log_attributes')::boolean, false) \
+                            AS expand_json_log_attributes \
+                 FROM org_ingest_sampling_policies p WHERE org_id = $1 LIMIT 1",
                 &[&org_id],
             )
             .instrument(postgres_client_span(
@@ -6133,6 +6149,7 @@ impl KeyStore for PostgresKeyStore {
             trace_sample_ratio: row.get("trace_sample_ratio"),
             always_keep_error_spans: row.get("always_keep_error_spans"),
             always_keep_slow_spans_ms: slow_ms.and_then(|v| u64::try_from(v).ok()),
+            expand_json_log_attributes: row.get("expand_json_log_attributes"),
         }))
     }
 

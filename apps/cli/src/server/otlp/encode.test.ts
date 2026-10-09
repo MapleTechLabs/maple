@@ -7,6 +7,7 @@ import {
 	encodeMetrics,
 	encodeTraces,
 	formatTimestampNano,
+	logAttrMap,
 	OtlpFieldError,
 	spanIdHex,
 	statusCode,
@@ -283,6 +284,62 @@ describe("value-level spot checks", () => {
 		expect(anyValueString({ arrayValue: { values: [message] } })).toBe(
 			'[{"role":"user","parts":[{"type":"text"}]}]',
 		)
+	})
+})
+
+describe("log attribute expansion (port of Rust log_attr_map)", () => {
+	const text = (key: string, value: string) => ({ key, value: { stringValue: value } })
+
+	it("copies scalars of a JSON object string to dotted keys only when opted in", () => {
+		const req = '{"route":"POST /v1/billing.attach","timestamp":1791504003609,"ok":true,"body":{"plan_id":"pro","price":2.5},"scopes":["a"],"gone":null}'
+		expect(Object.keys(logAttrMap([text("req", req)], false))).toEqual(["req"])
+		const attrs = logAttrMap([text("req", req), text("statusCode", "404")], true)
+		expect(attrs).toMatchObject({
+			req,
+			statusCode: "404",
+			"req.route": "POST /v1/billing.attach",
+			"req.timestamp": "1791504003609",
+			"req.ok": "true",
+			"req.body.plan_id": "pro",
+			"req.body.price": "2.5",
+		})
+		expect(attrs).not.toHaveProperty(["req.scopes"])
+		expect(attrs).not.toHaveProperty(["req.gone"])
+	})
+
+	it("expands maps by default, and a sent dotted key wins over the copy", () => {
+		const context = {
+			key: "context",
+			value: { kvlistValue: { values: [text("org_slug", "acme"), text("env", "live")] } },
+		}
+		const attrs = logAttrMap([context, text("context.env", "sent")], false)
+		expect(attrs["context.org_slug"]).toBe("acme")
+		expect(attrs["context.env"]).toBe("sent")
+	})
+
+	it("leaves non-objects, oversized values and deep leaves alone", () => {
+		const long = "x".repeat(1025)
+		const attrs = logAttrMap(
+			[
+				text("broken", "{not json"),
+				text("list", "[1,2]"),
+				text("msg", "{} braces in text {}"),
+				text("big", `{"value":"${long}","small":"ok"}`),
+				text("deep", '{"a":{"b":{"c":{"d":"too deep"}},"x":"1"}}'),
+			],
+			true,
+		)
+		expect(Object.keys(attrs)).toHaveLength(5 + 2)
+		expect(attrs["big.small"]).toBe("ok")
+		expect(attrs["deep.a.x"]).toBe("1")
+	})
+
+	it("caps copies per record, cutting in sorted key order like Rust", () => {
+		const fields = Array.from({ length: 200 }, (_, i) => `"k${i}":"${i}"`)
+		const attrs = logAttrMap([text("wide", `{${fields.join(",")}}`)], true)
+		expect(Object.keys(attrs)).toHaveLength(1 + 128)
+		expect(attrs["wide.k0"]).toBe("0")
+		expect(attrs["wide.k99"]).toBeUndefined()
 	})
 })
 

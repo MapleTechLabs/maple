@@ -561,6 +561,9 @@ pub struct SamplingPolicy {
     pub trace_sample_ratio: f64,
     pub always_keep_error_spans: bool,
     pub always_keep_slow_spans_ms: Option<u64>,
+    /// Opt-in: also parse string log attributes holding a JSON object into
+    /// dotted keys. The row is the org's ingest policy, not only sampling.
+    pub expand_json_log_attributes: bool,
 }
 
 impl Default for SamplingPolicy {
@@ -569,6 +572,7 @@ impl Default for SamplingPolicy {
             trace_sample_ratio: 1.0,
             always_keep_error_spans: true,
             always_keep_slow_spans_ms: None,
+            expand_json_log_attributes: false,
         }
     }
 }
@@ -957,7 +961,7 @@ impl TelemetryPipeline {
         org_id: &str,
         request: &ExportLogsServiceRequest,
     ) -> Result<AcceptStats, PipelineError> {
-        self.accept_logs_to(org_id, request, ExportDestination::Tinybird)
+        self.accept_logs_to(org_id, request, false, ExportDestination::Tinybird)
             .await
     }
 
@@ -966,12 +970,18 @@ impl TelemetryPipeline {
         &self,
         org_id: &str,
         request: &ExportLogsServiceRequest,
+        expand_json_strings: bool,
         destination: ExportDestination,
     ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = {
             let span = encode_rows_internal_span("logs");
             let _guard = span.enter();
-            let (frames, stats) = encode_logs(&self.inner.cfg.datasources, org_id, request)?;
+            let (frames, stats) = encode_logs(
+                &self.inner.cfg.datasources,
+                org_id,
+                request,
+                expand_json_strings,
+            )?;
             record_encode_stats(&span, &frames, &stats);
             (frames, stats)
         };
@@ -3502,6 +3512,7 @@ fn encode_logs(
     datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportLogsServiceRequest,
+    expand_json_strings: bool,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
     let mut rows = Vec::with_capacity(count_log_rows(request));
     let mut routing_key = hash64(org_id);
@@ -3539,6 +3550,7 @@ fn encode_logs(
                     scope_name,
                     scope_version,
                     &scope_attrs,
+                    expand_json_strings,
                 )?);
             }
         }
@@ -3572,6 +3584,7 @@ fn encode_log_row(
     scope_name: &str,
     scope_version: &str,
     scope_attrs: &Map<String, Value>,
+    expand_json_strings: bool,
 ) -> Result<Vec<u8>, PipelineError> {
     json_line(json!({
         "timestamp": format_timestamp_nano(if log.time_unix_nano != 0 { log.time_unix_nano } else { log.observed_time_unix_nano }),
@@ -3588,7 +3601,7 @@ fn encode_log_row(
         "scope_name": scope_name,
         "scope_version": scope_version,
         "scope_attributes": scope_attrs,
-        "log_attributes": attr_map(&log.attributes)
+        "log_attributes": log_attr_map(&log.attributes, expand_json_strings)
     }))
 }
 
@@ -4087,6 +4100,84 @@ fn any_value_json(value: &AnyValue) -> Value {
     }
 }
 
+const MAX_EXPANDED_LOG_ATTRIBUTES: usize = 128;
+const MAX_EXPANDED_DEPTH: usize = 3;
+const MAX_EXPANDABLE_JSON_BYTES: usize = 32 * 1024;
+const MAX_EXPANDED_VALUE_BYTES: usize = 1024;
+
+/// Log attributes plus a dotted copy of each scalar inside a map attribute, so
+/// `context.org_slug` filters without JSON parsing. Strings holding a JSON
+/// object (pino, winston) only expand when the org opts in. Sent keys win.
+fn log_attr_map(attributes: &[KeyValue], expand_json_strings: bool) -> Map<String, Value> {
+    let mut out = attr_map(attributes);
+    let mut budget = MAX_EXPANDED_LOG_ATTRIBUTES;
+    for attribute in attributes {
+        if budget == 0 {
+            break;
+        }
+        let Some(value) = attribute.value.as_ref() else {
+            continue;
+        };
+        let object = match value.value.as_ref() {
+            Some(any_value::Value::KvlistValue(_)) => any_value_json(value),
+            Some(any_value::Value::StringValue(text)) if expand_json_strings => {
+                match parse_json_object(text) {
+                    Some(object) => object,
+                    None => continue,
+                }
+            }
+            _ => continue,
+        };
+        if let Value::Object(object) = object {
+            expand_object(&attribute.key, &object, 1, &mut out, &mut budget);
+        }
+    }
+    out
+}
+
+fn parse_json_object(text: &str) -> Option<Value> {
+    let text = text.trim();
+    if text.len() > MAX_EXPANDABLE_JSON_BYTES || !text.starts_with('{') || !text.ends_with('}') {
+        return None;
+    }
+    serde_json::from_str::<Value>(text)
+        .ok()
+        .filter(Value::is_object)
+}
+
+fn expand_object(
+    prefix: &str,
+    object: &Map<String, Value>,
+    depth: usize,
+    out: &mut Map<String, Value>,
+    budget: &mut usize,
+) {
+    for (key, value) in object {
+        if *budget == 0 {
+            return;
+        }
+        let path = format!("{prefix}.{key}");
+        let text = match value {
+            Value::Object(nested) => {
+                if depth < MAX_EXPANDED_DEPTH {
+                    expand_object(&path, nested, depth + 1, out, budget);
+                }
+                continue;
+            }
+            Value::Array(_) | Value::Null => continue,
+            Value::String(text) => text.clone(),
+            Value::Bool(flag) => flag.to_string(),
+            // As f64, so the local-mode port (JS numbers) renders the same text.
+            Value::Number(number) => number.as_f64().map_or_else(String::new, |n| format!("{n}")),
+        };
+        if text.len() > MAX_EXPANDED_VALUE_BYTES || out.contains_key(&path) {
+            continue;
+        }
+        out.insert(path, Value::String(text));
+        *budget -= 1;
+    }
+}
+
 fn span_kind(kind: i32) -> &'static str {
     match kind {
         x if x == span::SpanKind::Internal as i32 => "Internal",
@@ -4569,6 +4660,7 @@ mod tests {
             trace_sample_ratio: 0.000_001,
             always_keep_error_spans: true,
             always_keep_slow_spans_ms: None,
+            expand_json_log_attributes: false,
         };
         let span = Span {
             trace_id: vec![1; 16],
@@ -4822,6 +4914,82 @@ mod tests {
     }
 
     #[test]
+    fn log_attributes_expand_json_object_strings_to_dotted_keys() {
+        let req = string_kv(
+            "req",
+            r#"{"route":"POST /v1/billing.attach","timestamp":1791504003609,"ok":true,
+                "body":{"plan_id":"pro","price":2.5},"scopes":["a"],"gone":null}"#,
+        );
+        // Off by default: the string stays one attribute.
+        assert_eq!(log_attr_map(std::slice::from_ref(&req), false).len(), 1);
+
+        let attrs = log_attr_map(&[req, string_kv("statusCode", "404")], true);
+        assert_eq!(attrs["req.route"], "POST /v1/billing.attach");
+        assert_eq!(attrs["req.timestamp"], "1791504003609");
+        assert_eq!(attrs["req.ok"], "true");
+        assert_eq!(attrs["req.body.plan_id"], "pro");
+        assert_eq!(attrs["req.body.price"], "2.5");
+        assert_eq!(attrs["statusCode"], "404");
+        // The original attribute is kept; arrays and nulls get no copy.
+        assert!(attrs["req"]
+            .as_str()
+            .is_some_and(|req| req.starts_with('{')));
+        assert!(!attrs.contains_key("req.scopes"));
+        assert!(!attrs.contains_key("req.gone"));
+    }
+
+    #[test]
+    fn log_attributes_expand_maps_by_default_and_keep_sent_keys() {
+        let map = AnyValue {
+            value: Some(any_value::Value::KvlistValue(KeyValueList {
+                values: vec![string_kv("org_slug", "acme"), string_kv("env", "live")],
+            })),
+        };
+        let attrs = log_attr_map(
+            &[
+                KeyValue {
+                    key: "context".to_owned(),
+                    key_strindex: 0,
+                    value: Some(map),
+                },
+                string_kv("context.env", "sent"),
+            ],
+            false,
+        );
+        assert_eq!(attrs["context.org_slug"], "acme");
+        assert_eq!(attrs["context.env"], "sent");
+    }
+
+    #[test]
+    fn log_attributes_leave_non_objects_and_oversized_values_alone() {
+        let long = "x".repeat(MAX_EXPANDED_VALUE_BYTES + 1);
+        let attrs = log_attr_map(
+            &[
+                string_kv("broken", "{not json"),
+                string_kv("list", "[1,2]"),
+                string_kv("msg", "{} braces in text {}"),
+                string_kv("big", &format!(r#"{{"value":"{long}","small":"ok"}}"#)),
+                string_kv("deep", r#"{"a":{"b":{"c":{"d":"too deep"}},"x":"1"}}"#),
+            ],
+            true,
+        );
+        assert_eq!(attrs.len(), 5 + 2);
+        assert_eq!(attrs["big.small"], "ok");
+        assert_eq!(attrs["deep.a.x"], "1");
+    }
+
+    #[test]
+    fn log_attribute_expansion_is_capped_per_record() {
+        let fields: Vec<String> = (0..200).map(|i| format!(r#""k{i}":"{i}""#)).collect();
+        let wide = string_kv("wide", &format!("{{{}}}", fields.join(",")));
+        let attrs = log_attr_map(&[wide], true);
+        assert_eq!(attrs.len(), 1 + MAX_EXPANDED_LOG_ATTRIBUTES);
+        // serde_json's map is sorted, so the cut is by key order, not position.
+        assert_eq!(attrs["wide.k0"], "0");
+        assert!(!attrs.contains_key("wide.k99"));
+    }
+
+    #[test]
     fn log_encoder_matches_tinybird_row_shape() {
         let log = LogRecord {
             time_unix_nano: 1_700_000_001_123_456_789,
@@ -4858,7 +5026,8 @@ mod tests {
             }],
         };
 
-        let (frames, stats) = encode_logs(&test_cfg().datasources, "org_1", &request).unwrap();
+        let (frames, stats) =
+            encode_logs(&test_cfg().datasources, "org_1", &request, false).unwrap();
         assert_eq!(stats.rows, 1);
         assert_eq!(frames[0].datasource, "logs");
 
@@ -5035,6 +5204,7 @@ mod tests {
             .accept_logs_to(
                 "org_ready",
                 &populated_log_request(),
+                false,
                 ExportDestination::ClickHouse,
             )
             .await
@@ -5160,6 +5330,7 @@ mod tests {
             .accept_logs_to(
                 "org_ready",
                 &populated_log_request(),
+                false,
                 ExportDestination::ClickHouse,
             )
             .await
@@ -5246,6 +5417,7 @@ mod tests {
             .accept_logs_to(
                 "org_ready",
                 &populated_log_request(),
+                false,
                 ExportDestination::ClickHouse,
             )
             .await
@@ -5342,6 +5514,7 @@ mod tests {
             .accept_logs_to(
                 "org_byo_ch",
                 &populated_log_request(),
+                false,
                 ExportDestination::ClickHouse,
             )
             .await
@@ -5352,6 +5525,7 @@ mod tests {
             .accept_logs_to(
                 "org_managed",
                 &populated_log_request(),
+                false,
                 ExportDestination::Tinybird,
             )
             .await
@@ -5425,6 +5599,7 @@ mod tests {
             .accept_logs_to(
                 "org_flap",
                 &populated_log_request(),
+                false,
                 ExportDestination::ClickHouse,
             )
             .await
@@ -5444,6 +5619,7 @@ mod tests {
             .accept_logs_to(
                 "org_flap",
                 &populated_log_request(),
+                false,
                 ExportDestination::ClickHouse,
             )
             .await
@@ -6369,6 +6545,7 @@ mod tests {
             &test_cfg().datasources,
             "org_contract",
             &populated_log_request(),
+            false,
         )
         .unwrap();
         let row = frame_row(&frames[0]);
@@ -6449,6 +6626,7 @@ mod tests {
             &test_cfg().datasources,
             "org_contract",
             &populated_log_request(),
+            false,
         )
         .unwrap();
         let log_row = frame_row(&log_frames[0]);
@@ -6506,7 +6684,7 @@ mod tests {
         };
 
         let (log_frames, _) =
-            encode_logs(&names, "org_contract", &populated_log_request()).unwrap();
+            encode_logs(&names, "org_contract", &populated_log_request(), false).unwrap();
         assert_eq!(log_frames[0].datasource, "tenant_logs_v2");
 
         let (trace_frames, _) = encode_traces(
@@ -6586,7 +6764,8 @@ mod tests {
             .severity_text
             .clear();
         request.resource_logs[0].scope_logs[0].log_records[0].severity_number = 9; // INFO
-        let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &request).unwrap();
+        let (frames, _) =
+            encode_logs(&test_cfg().datasources, "org_contract", &request, false).unwrap();
         let row = frame_row(&frames[0]);
         assert_eq!(row["severity_text"], "INFO");
     }
@@ -6600,7 +6779,8 @@ mod tests {
         request.resource_logs[0].scope_logs[0].log_records[0].time_unix_nano = 0;
         request.resource_logs[0].scope_logs[0].log_records[0].observed_time_unix_nano =
             1_700_000_100_000_000_000;
-        let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &request).unwrap();
+        let (frames, _) =
+            encode_logs(&test_cfg().datasources, "org_contract", &request, false).unwrap();
         let row = frame_row(&frames[0]);
         assert_eq!(row["timestamp"], "2023-11-14 22:15:00.000000000");
     }

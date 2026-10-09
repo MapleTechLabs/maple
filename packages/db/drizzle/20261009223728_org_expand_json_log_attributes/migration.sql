@@ -1,0 +1,1 @@
+ALTER TABLE "org_ingest_sampling_policies" ADD COLUMN "expand_json_log_attributes" boolean DEFAULT false NOT NULL;

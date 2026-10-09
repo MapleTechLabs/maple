@@ -19,7 +19,7 @@
  *   - attributes are arrays of `{ key, value: AnyValue }`
  */
 
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
 
 export interface EncodedBatch {
 	datasource: string
@@ -360,6 +360,86 @@ function attrMap(attributes: readonly KeyValue[] | undefined): AttrMap {
 		out[attribute.key ?? ""] = anyValueString(attribute.value)
 	}
 	return out
+}
+
+const MAX_EXPANDED_LOG_ATTRIBUTES = 128
+const MAX_EXPANDED_DEPTH = 3
+const MAX_EXPANDABLE_JSON_BYTES = 32 * 1024
+const MAX_EXPANDED_VALUE_BYTES = 1024
+const UTF8_ENCODER = new TextEncoder()
+
+const utf8Length = (text: string): number => UTF8_ENCODER.encode(text).length
+
+/**
+ * Port of Rust `log_attr_map`: log attributes plus a dotted copy of each scalar
+ * inside a map attribute, and inside JSON-object strings when opted in. Keys are
+ * walked sorted, as Rust's `serde_json::Map` iterates, so caps cut alike.
+ */
+export function logAttrMap(attributes: readonly KeyValue[] | undefined, expandJsonStrings: boolean): AttrMap {
+	const out = attrMap(attributes)
+	const budget = { remaining: MAX_EXPANDED_LOG_ATTRIBUTES }
+	for (const attribute of attributes ?? []) {
+		if (budget.remaining === 0) {
+			break
+		}
+		const value = attribute.value
+		const object =
+			value?.kvlistValue !== undefined
+				? anyValueJson(value)
+				: expandJsonStrings && value?.stringValue !== undefined
+					? parseJsonObject(value.stringValue)
+					: undefined
+		if (isJsonObject(object)) {
+			expandObject(attribute.key ?? "", object, 1, out, budget)
+		}
+	}
+	return out
+}
+
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+
+function parseJsonObject(text: string): unknown {
+	const trimmed = text.trim()
+	if (utf8Length(trimmed) > MAX_EXPANDABLE_JSON_BYTES || !trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+		return undefined
+	}
+	return Result.getOrUndefined(Result.try(() => JSON.parse(trimmed) as unknown))
+}
+
+function expandObject(
+	prefix: string,
+	object: Record<string, unknown>,
+	depth: number,
+	out: AttrMap,
+	budget: { remaining: number },
+): void {
+	for (const key of Object.keys(object).sort()) {
+		if (budget.remaining === 0) {
+			return
+		}
+		const path = `${prefix}.${key}`
+		const value = object[key]
+		if (isJsonObject(value)) {
+			if (depth < MAX_EXPANDED_DEPTH) {
+				expandObject(path, value, depth + 1, out, budget)
+			}
+			continue
+		}
+		const text =
+			typeof value === "string"
+				? value
+				: typeof value === "boolean"
+					? String(value)
+					: typeof value === "number"
+						? formatDouble(value)
+						: undefined
+		if (text === undefined || utf8Length(text) > MAX_EXPANDED_VALUE_BYTES || path in out) {
+			continue
+		}
+		out[path] = text
+		budget.remaining--
+	}
 }
 
 /** Port of Rust `span_kind`. */
@@ -736,7 +816,8 @@ export function encodeLogs(req: unknown): EncodedBatch[] {
 					scope_name: scopeName,
 					scope_version: scopeVersion,
 					scope_attributes: scopeAttrs,
-					log_attributes: attrMap(log.attributes),
+					// Local mode has no org policy, so JSON-string parsing stays at its default (off).
+					log_attributes: logAttrMap(log.attributes, false),
 				})
 			}
 		}
