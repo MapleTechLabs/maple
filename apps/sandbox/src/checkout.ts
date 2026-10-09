@@ -12,6 +12,7 @@
  */
 import {
 	SANDBOX_COMMAND_ENV,
+	SANDBOX_CHECKOUT_GRACE_MINUTES,
 	SANDBOX_MAX_CHECKOUTS,
 	SANDBOX_MIRROR_DIR,
 	SANDBOX_MIRROR_LOCK,
@@ -227,7 +228,8 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		`git -C ${mirror} -c ${shellQuote(`credential.helper=${helper}`)} fetch --quiet --no-tags ${shellQuote(checkout.remoteUrl)} '+refs/heads/*:refs/heads/*' ${shellQuote(`+${checkout.sha}:refs/maple/${checkout.sha}`)}`,
 		`unset ${CLONE_TOKEN_ENV}`,
 		`chmod -R a+rX,go-w ${mirror}`,
-		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-XXXXXX`)})`,
+		// Named after this script's PID, so eviction can tell a live clone's directory from a leftover.
+		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-`)}"$$"-XXXXXX)`,
 		`git clone --quiet --shared --no-checkout ${mirror} "$t"`,
 		"exec 9>&-",
 		`git -C "$t" remote set-url origin ${shellQuote(checkout.remoteUrl)}`,
@@ -242,10 +244,13 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// `-T` refuses to nest inside an existing directory, so a checkout another
 		// caller finished first stands and this one's copy is discarded.
 		`mv -T "$t" ${shellQuote(dir)} 2>/dev/null || rm -rf "$t"`,
-		// Keep the newest few commits and drop the rest; a container's disk is small
-		// and every distinct commit an investigation touches leaves one behind. The
-		// glob covers the `.clone-*` scratch directories a failed clone leaves too.
-		`ls -1dt ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/*/ ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/.clone-*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do chmod -R u+w "$old" && rm -rf "$old"; done`,
+		// Keep the most recently used commits and drop the rest; a container's disk is small and
+		// every distinct commit leaves one behind. Nothing used within the grace period goes, nor
+		// another clone's scratch directory: concurrent reviews each hold a commit, and evicting by
+		// count alone deleted checkouts and clones still in use.
+		`ls -1dt ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do if [ -n "$(find "$old" -maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES})" ]; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
+		// Scratch directories a failed clone left behind: only those whose clone is no longer running.
+		`for old in ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/.clone-*/; do [ -d "$old" ] || continue; pid=$(basename "$old" | cut -d- -f2); if ! kill -0 "$pid" 2>/dev/null; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
 		"true",
 	].join("\n")
 }
@@ -282,7 +287,8 @@ export const checkoutStatusScript = (sha: string): string => {
 	const state = cloneStateDir(sha)
 	const s = shellQuote(state)
 	return [
-		`if [ -d ${dir}/.git ]; then rm -rf ${s}; echo ready; exit 0; fi`,
+		// Touched on every use: eviction goes by modification time, so this keeps a commit in use.
+		`if [ -d ${dir}/.git ]; then touch -c ${dir} || true; rm -rf ${s}; echo ready; exit 0; fi`,
 		`if [ -e ${s}/exit-code ]; then`,
 		`  code=$(cat ${s}/exit-code)`,
 		`  if [ "$code" != 0 ]; then echo "failed $code"; tail -c 2000 ${s}/stderr.log 2>/dev/null; rm -rf ${s}; exit 0; fi`,

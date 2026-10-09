@@ -296,6 +296,26 @@ describe("the Cloudflare repository sandbox", () => {
 		}),
 	)
 
+	it.effect("reports a sandbox call that never answers as unavailable instead of waiting on it", () =>
+		Effect.gen(function* () {
+			const hung = makeCloudflareRepoSandbox({
+				resolveCheckout: () => Effect.succeed(checkout),
+				exec: () => Effect.never,
+			})
+			const running = yield* Effect.forkChild(Effect.exit(Stream.runCollect(hung.execute(request()))))
+			const exit = yield* settleWithClock(running)
+			assert.match(failureMessage(exit) ?? "", /did not answer within 65s/)
+			// Carried as the Worker's own "unavailable" answer, which the tools report as such.
+			const error =
+				Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail"
+					? exit.cause.reasons[0].error
+					: undefined
+			assert.isTrue(
+				error?._tag === "SandboxSpawnError" && Schema.is(SandboxRunUnavailable)(error.cause),
+			)
+		}),
+	)
+
 	it.effect("refuses rather than running with egress when the container cannot isolate the network", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
