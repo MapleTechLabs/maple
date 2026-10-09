@@ -8,6 +8,7 @@ import {
 	formatGcpValue,
 	gcpAssetTypeLabel,
 	gcpInfraNotice,
+	gcpInfraSetupPending,
 	gcpInfraTabs,
 	gcpResourceName,
 	gcpResourcesError,
@@ -170,6 +171,13 @@ describe("formatGcpValue", () => {
 		expect(formatGcpValue("bytes", 1536)).toBe("1.5 KB")
 		expect(formatGcpValue("bytes", undefined)).toBe("—")
 	})
+
+	it("writes CPU below one core in millicores", () => {
+		expect(formatGcpValue("cores", 0.012)).toBe("12m")
+		expect(formatGcpValue("cores", 0.0002)).toBe("<1m")
+		expect(formatGcpValue("cores", 0)).toBe("0m")
+		expect(formatGcpValue("cores", 1.25)).toBe("1.25")
+	})
 })
 
 describe("gcpInfraTabs", () => {
@@ -189,38 +197,57 @@ describe("gcpInfraTabs", () => {
 })
 
 describe("gcpInfraNotice", () => {
-	const connector = (last_metrics_received_at: string | null, last_metrics_error: string | null) => ({
+	const NOW = Date.parse("2026-10-08T12:00:00.000Z")
+	const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString()
+	const connector = (over: Partial<Parameters<typeof gcpInfraNotice>[0][number]> = {}) => ({
 		scope_type: "project" as const,
 		metrics_enabled: true,
-		last_metrics_received_at,
-		last_metrics_error,
+		applied_metrics_enabled: true as boolean | null,
+		setup_reported_at: ago(60) as string | null,
+		last_metrics_received_at: ago(4) as string | null,
+		last_metrics_error: null as string | null,
 		discovered_project_count: 1,
 		last_resources_error: null,
+		...over,
 	})
-	const READ_AT = "2026-10-08T09:10:00.000Z"
+	const unset = connector({
+		applied_metrics_enabled: null,
+		setup_reported_at: null,
+		last_metrics_received_at: null,
+	})
+	const waiting = connector({ last_metrics_received_at: null, setup_reported_at: ago(1) })
 
 	it("says nothing while metrics arrive for the window", () => {
-		expect(gcpInfraNotice([connector(READ_AT, null)], true)).toBeNull()
+		expect(gcpInfraNotice([connector()], true, NOW)).toBeNull()
 	})
 
-	it("waits for the first read, with the poller's reason", () => {
-		expect(gcpInfraNotice([connector(null, "No access yet.")], false)).toEqual({
-			kind: "waiting",
-			note: "No access yet.",
-		})
-		expect(gcpInfraNotice([connector(null, null)], false)).toEqual({ kind: "waiting", note: null })
+	it("is setup pending only while no connection has run its script", () => {
+		expect(gcpInfraSetupPending([unset], NOW)).toBe(true)
+		expect(gcpInfraSetupPending([unset, waiting], NOW)).toBe(false)
+	})
+
+	it("waits for the first read once the script reported", () => {
+		expect(gcpInfraNotice([unset, waiting], false, NOW)).toEqual({ kind: "waiting" })
 	})
 
 	it("tells a quiet window from a connector that never read", () => {
-		expect(gcpInfraNotice([connector(null, null), connector(READ_AT, null)], false)).toEqual({
-			kind: "quiet",
-		})
+		expect(gcpInfraNotice([waiting, connector()], false, NOW)).toEqual({ kind: "quiet" })
 	})
 
-	it("reports a failing read even while other metrics arrive", () => {
-		expect(
-			gcpInfraNotice([connector(READ_AT, null), connector(READ_AT, "2 of 46 queries failed.")], true),
-		).toEqual({ kind: "error", error: "2 of 46 queries failed." })
+	it("reports the worst connection even while other metrics arrive", () => {
+		const incomplete = connector({ last_metrics_error: "2 of 46 metric queries failed." })
+		const failing = connector({ last_metrics_received_at: ago(42), last_metrics_error: "denied" })
+		expect(gcpInfraNotice([connector(), incomplete], true, NOW)).toEqual({
+			kind: "incomplete",
+			error: "2 of 46 metric queries failed.",
+		})
+		expect(gcpInfraNotice([incomplete, failing], true, NOW)).toEqual({
+			kind: "failing",
+			error: "denied",
+		})
+		expect(gcpInfraNotice([connector({ last_metrics_received_at: ago(42) })], true, NOW)).toEqual({
+			kind: "stalled",
+		})
 	})
 })
 

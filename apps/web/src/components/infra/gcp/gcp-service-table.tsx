@@ -78,6 +78,8 @@ export function GcpServiceTable({
 }) {
 	const { title, identity } = GCP_INFRA_SERVICES[service]
 	const columns = GCP_INFRA_COLUMNS[service]
+	// The row's own noun for the count: "container", "URL map".
+	const noun = identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())
 	const [query, setQuery] = useState("")
 	const { sortKey, sortDir, handleSort } = useSortState<string>({
 		initialKey: columns[0].label,
@@ -102,8 +104,8 @@ export function GcpServiceTable({
 				placeholder={`Search ${title}…`}
 				trailing={
 					shown.length === workloads.length
-						? countLabel(workloads.length, "workload")
-						: `${shown.length} of ${countLabel(workloads.length, "workload")}`
+						? countLabel(workloads.length, noun)
+						: `${shown.length} of ${countLabel(workloads.length, noun)}`
 				}
 			/>
 			<DataTable.Root ariaLabel={title} waiting={waiting}>
@@ -117,7 +119,7 @@ export function GcpServiceTable({
 					<DataTable.Empty>
 						{workloads.length === 0
 							? `No ${title} metrics in this time range.`
-							: "No workloads match. Clear the search to see them all."}
+							: "Nothing matches. Clear the search to see them all."}
 					</DataTable.Empty>
 				) : null}
 				{shown.map((workload) => (

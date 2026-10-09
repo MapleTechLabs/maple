@@ -30,7 +30,15 @@ export interface GcpMetricReader {
 	readonly mean: (metric: string, label?: string) => number | undefined
 }
 
-export type GcpColumnFormat = "count" | "decimal" | "percent" | "errorRate" | "ms" | "seconds" | "bytes"
+export type GcpColumnFormat =
+	| "count"
+	| "decimal"
+	| "cores"
+	| "percent"
+	| "errorRate"
+	| "ms"
+	| "seconds"
+	| "bytes"
 
 export interface GcpColumn {
 	/** Unique in its tab: also the column's sort key. */
@@ -46,6 +54,10 @@ export function formatGcpValue(format: GcpColumnFormat, value: number | undefine
 			return formatNumber(value)
 		case "decimal":
 			return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+		case "cores":
+			// Most containers use a fraction of a core: millicores, as Kubernetes writes them.
+			if (value >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+			return value > 0 && value < 0.001 ? "<1m" : `${Math.round(value * 1000)}m`
 		case "percent":
 			return formatPercent(value)
 		case "errorRate":
@@ -103,7 +115,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 	],
 	gke: [
 		// A point is the CPU seconds used in one minute: the mean covers the minutes it ran.
-		column("CPU cores", "decimal", (m) => {
+		column("CPU cores", "cores", (m) => {
 			const seconds = m.mean(`${CONTAINER}.cpu.core_usage_time`)
 			return seconds === undefined ? undefined : seconds / 60
 		}),
@@ -233,30 +245,37 @@ export const gcpInfraTabs = (
 	GCP_INFRA_TABS.filter((tab) => tab === GCP_RESOURCES_TAB || tab === requested || reporting.includes(tab))
 
 export type GcpInfraNotice =
-	/** A connector's most recent metrics read failed or was incomplete. */
-	| { readonly kind: "error"; readonly error: string }
-	/** No connector has read metrics yet. `note` is the poller's reason, if it gave one. */
-	| { readonly kind: "waiting"; readonly note: string | null }
+	/** A connector's reads fail, or arrive with part of the metrics missing. */
+	| { readonly kind: "failing" | "incomplete"; readonly error: string }
+	/** No error, and no read for half an hour. */
+	| { readonly kind: "stalled" }
+	/** The setup script has run and the first read has not landed. */
+	| { readonly kind: "waiting" }
 	/** Metrics arrive, but none in the selected window. */
 	| { readonly kind: "quiet" }
 
 type MetricsFields = Parameters<typeof gcpMetricsState>[0]
 
-/** What to say above the tabs, given the connectors that collect metrics. */
+/** No connection has run its setup script with metrics on: nothing to show but the next step. */
+export const gcpInfraSetupPending = (connectors: ReadonlyArray<MetricsFields>, nowMs: number): boolean =>
+	connectors.every((connector) => gcpMetricsState(connector, nowMs).kind === "setup-pending")
+
+/** What to say above the tabs, given the connectors that collect metrics. Worst first. */
 export function gcpInfraNotice(
 	connectors: ReadonlyArray<MetricsFields>,
 	reporting: boolean,
+	nowMs: number,
 ): GcpInfraNotice | null {
-	const states = connectors.map(gcpMetricsState)
-	for (const state of states) {
-		if (state.kind === "error") return { kind: "error", error: state.error }
-	}
+	const states = connectors.map((connector) => gcpMetricsState(connector, nowMs))
+	const broken =
+		states.find((state) => state.kind === "failing") ??
+		states.find((state) => state.kind === "incomplete")
+	if (broken !== undefined) return { kind: broken.kind, error: broken.error }
+	const has = (kind: (typeof states)[number]["kind"]) => states.some((state) => state.kind === kind)
+	if (has("stalled")) return { kind: "stalled" }
 	if (reporting) return null
-	if (states.some((state) => state.kind === "receiving")) return { kind: "quiet" }
-	for (const state of states) {
-		if (state.kind === "waiting") return { kind: "waiting", note: state.note }
-	}
-	return null
+	if (has("receiving")) return { kind: "quiet" }
+	return has("waiting") ? { kind: "waiting" } : null
 }
 
 /** Why the inventory may be stale: the first failing resource sync, or null. */

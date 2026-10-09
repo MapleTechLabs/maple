@@ -815,6 +815,11 @@ function MetricsStatus({ connector, nowMs }: { connector: V2GcpConnector; nowMs:
 					at={state.lastMetricsReceivedAt}
 					atPrefix="last read"
 					suffix={state.projectCount === null ? null : countLabel(state.projectCount, "project")}
+					link={
+						<Link to="/infra/gcp" className={cn(QUIET_LINK, "ml-1.5")}>
+							Open Infrastructure
+						</Link>
+					}
 				/>
 			)
 	}

@@ -18,12 +18,15 @@ import {
 	GCP_INFRA_TABS,
 	GCP_RESOURCES_TAB,
 	gcpInfraNotice,
+	gcpInfraSetupPending,
 	gcpInfraTabs,
 	gcpResourcesError,
 	type GcpInfraNotice,
 	type GcpInfraTab,
 } from "@/components/infra/gcp/tabs"
 import { IntegrationNotConnected } from "@/components/infra/primitives/integration-not-connected"
+import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
+import { GcpMessage } from "@/components/integrations/gcp-integration-card"
 import { gcpStatusQuery } from "@/components/integrations/integration-catalog"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import {
@@ -37,6 +40,7 @@ import type { TimeRange } from "@/components/time-range-picker/types"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import {
 	gcpInfraMetricsResultAtom,
@@ -44,7 +48,8 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
 const gcpSearchSchema = Schema.Struct({
-	tab: Schema.optional(Schema.Literals(GCP_INFRA_TABS)),
+	// A plain string: a stale or mistyped link falls back to the first tab instead of the error page.
+	tab: Schema.optional(Schema.String),
 	/** Resources tab: asset type and project filters. */
 	type: Schema.optional(Schema.String),
 	project: Schema.optional(Schema.String),
@@ -68,6 +73,18 @@ function GcpPage() {
 		search.timePreset ?? DEFAULT_PRESET,
 	)
 	const statusResult = useAtomValue(gcpStatusQuery())
+	const refreshStatus = useAtomRefresh(gcpStatusQuery())
+	const nowMs = useLiveClock()
+	// While a connection waits on its script or its first read, the page follows it without a reload.
+	const settling = Result.builder(statusResult)
+		.onSuccess((status) =>
+			status.connectors.some((connector) => {
+				const kind = gcpMetricsState(connector, nowMs).kind
+				return kind === "setup-pending" || kind === "waiting"
+			}),
+		)
+		.orElse(() => false)
+	useIntervalRefresh(refreshStatus, { intervalMs: SETTLING_REFRESH_MS, enabled: settling })
 
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
@@ -101,7 +118,7 @@ function GcpPage() {
 								}
 								description={
 									connected
-										? "Your Google Cloud connections forward logs only. Switch on metrics and resources on Integrations → Google Cloud, then re-run the setup script."
+										? "Your Google Cloud connections forward logs only. Switch on Metrics and resources in the Google Cloud integration, then run the setup script again."
 										: "Connect an organization, folder or project with metrics and resources switched on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
 								}
 								integration="gcp"
@@ -112,9 +129,22 @@ function GcpPage() {
 							/>
 						)
 					}
+					if (gcpInfraSetupPending(connectors, nowMs)) {
+						return (
+							<IntegrationNotConnected
+								icon={<GoogleCloudIcon size={16} />}
+								title="Finish setting up Google Cloud"
+								description="Metrics and resources are switched on, but the setup script hasn't run yet."
+								integration="gcp"
+								actionLabel="Open setup script"
+								docsPage="gcp"
+							/>
+						)
+					}
 					return (
 						<GcpInfra
 							connectors={connectors}
+							nowMs={nowMs}
 							search={search}
 							startTime={startTime}
 							endTime={endTime}
@@ -135,11 +165,14 @@ function GcpPage() {
 	)
 }
 
+/** Fast enough to see the setup script confirmed and the first read land. */
+const SETTLING_REFRESH_MS = 10_000
 /** Re-reads while nothing has arrived, so the page fills in without a reload. */
 const WAITING_REFRESH_MS = 30_000
 
 function GcpInfra({
 	connectors,
+	nowMs,
 	search,
 	startTime,
 	endTime,
@@ -147,7 +180,8 @@ function GcpInfra({
 }: {
 	/** The connections that collect metrics; never empty. */
 	connectors: ReadonlyArray<V2GcpConnector>
-	search: TimeRangeSearch & GcpResourceFilter & { tab?: GcpInfraTab | undefined }
+	nowMs: number
+	search: TimeRangeSearch & GcpResourceFilter & { tab?: string | undefined }
 	startTime: string
 	endTime: string
 	onFilterChange: (filter: GcpResourceFilter) => void
@@ -155,21 +189,22 @@ function GcpInfra({
 	const presenceAtom = gcpInfraPresenceResultAtom({ data: { startTime, endTime } })
 	const presenceResult = useRefreshableAtomValue(presenceAtom)
 	const refreshPresence = useAtomRefresh(presenceAtom)
-	const refreshStatus = useAtomRefresh(gcpStatusQuery())
 
 	const reporting = Result.builder(presenceResult)
 		.onSuccess((presence) => presence.services)
 		.orElse((): ReadonlyArray<GcpInfraServiceId> => [])
-	const notice = Result.isSuccess(presenceResult) ? gcpInfraNotice(connectors, reporting.length > 0) : null
+	const notice = Result.isSuccess(presenceResult)
+		? gcpInfraNotice(connectors, reporting.length > 0, nowMs)
+		: null
 	const waiting = notice?.kind === "waiting"
 	// The first read flips the status before its metrics are queryable, so a quiet page keeps
 	// looking. A fixed range is left alone: it cannot gain new metrics.
 	const quiet = notice?.kind === "quiet" && search.startTime === undefined
 	useIntervalRefresh(refreshPresence, { intervalMs: WAITING_REFRESH_MS, enabled: waiting || quiet })
-	useIntervalRefresh(refreshStatus, { intervalMs: WAITING_REFRESH_MS, enabled: waiting })
 
-	const tabs = gcpInfraTabs(reporting, search.tab)
-	const tab = search.tab ?? tabs[0]
+	const requested: GcpInfraTab | undefined = GCP_INFRA_TABS.find((candidate) => candidate === search.tab)
+	const tabs = gcpInfraTabs(reporting, requested)
+	const tab = requested ?? tabs[0]
 
 	return (
 		<ResultView result={presenceResult} loading={<Skeleton className="h-64 w-full" />}>
@@ -249,31 +284,54 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 		</AlertAction>
 	)
 	switch (notice.kind) {
-		case "error":
+		case "failing":
 			return (
 				<Alert variant="warn">
 					<CircleWarningIcon size={16} />
-					<AlertTitle>The latest Google Cloud metrics read failed or was incomplete</AlertTitle>
-					<AlertDescription>{notice.error}</AlertDescription>
+					<AlertTitle>Maple can&apos;t read Google Cloud metrics</AlertTitle>
+					<AlertDescription>
+						<GcpMessage text={notice.error} />
+					</AlertDescription>
+					{settings}
+				</Alert>
+			)
+		case "incomplete":
+			return (
+				<Alert variant="warn">
+					<CircleWarningIcon size={16} />
+					<AlertTitle>Some Google Cloud metrics are missing</AlertTitle>
+					<AlertDescription>
+						<GcpMessage text={notice.error} />
+					</AlertDescription>
+					{settings}
+				</Alert>
+			)
+		case "stalled":
+			return (
+				<Alert variant="warn">
+					<CircleWarningIcon size={16} />
+					<AlertTitle>Google Cloud metrics are behind</AlertTitle>
+					<AlertDescription>
+						Maple has not read Cloud Monitoring for over 30 minutes. It retries on its own.
+					</AlertDescription>
 					{settings}
 				</Alert>
 			)
 		case "waiting":
 			return (
-				<Alert variant="info">
+				<Alert variant="info" role="status">
 					<Spinner size={16} />
-					<AlertTitle>Waiting for the first Google Cloud metrics</AlertTitle>
+					<AlertTitle>Collecting your first Google Cloud metrics</AlertTitle>
 					<AlertDescription>
-						{notice.note ??
-							"Maple reads Cloud Monitoring every 5 minutes, about 5 minutes behind."}{" "}
-						This page updates on its own.
+						Maple reads Cloud Monitoring every 5 minutes, about 5 minutes behind, so the first
+						numbers land within about 10 minutes of the setup script. This page updates on its
+						own.
 					</AlertDescription>
-					{settings}
 				</Alert>
 			)
 		case "quiet":
 			return (
-				<Alert variant="info">
+				<Alert variant="info" role="status">
 					<CircleInfoIcon size={16} />
 					<AlertTitle>No Google Cloud metrics in this time range</AlertTitle>
 					<AlertDescription>

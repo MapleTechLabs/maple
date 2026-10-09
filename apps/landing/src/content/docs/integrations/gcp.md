@@ -309,9 +309,11 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 | Load Balancing  | URL map, backend and project              | Requests, 5xx rate, latency p95 and p99, backend latency p95, response bytes                           |
 | Resources       | Resource from the [inventory](#resources) | Type, project, location, state and labels, with a filter by type and by project                        |
 
-Search a tab by name, project or location, and click a column to sort by it. A dash means the workload did not report that metric. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. GKE node and Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
+Search a tab by name, project or location, and click a column to sort by it. A dash means the workload did not report that metric. CPU below one core is written in millicores: `250m` is a quarter of a core. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. GKE node and Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
 
 The **Resources** tab shows the first 500 resources that match its filters, and how many projects Maple found. It does not depend on the time range.
+
+Until a connection's setup script has run, the page reads **Finish setting up Google Cloud**. After the run it reads **Collecting your first Google Cloud metrics** until the first read lands, within about 10 minutes.
 
 ## Google Cloud costs
 

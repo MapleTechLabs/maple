@@ -11,6 +11,7 @@ import { CircleWarningIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
+import { GcpMessage } from "@/components/integrations/gcp-integration-card"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { gcpAssetTypeLabel, gcpResourceName } from "./tabs"
@@ -23,7 +24,9 @@ export interface GcpResourceFilter {
 const ALL = "all"
 /** Re-reads while the inventory is empty, so the first sync shows up without a reload. */
 const EMPTY_REFRESH_MS = 30_000
-const MAX_LABELS = 3
+
+/** "RUNNING" and "PENDING_CREATE" as Google reports them, in the table's own case. */
+const stateLabel = (state: string) => (state.charAt(0) + state.slice(1).toLowerCase()).replaceAll("_", " ")
 
 function FilterSelect({
 	label,
@@ -51,7 +54,8 @@ function FilterSelect({
 			<SelectTrigger size="sm" className="w-auto min-w-0 text-xs" aria-label={label}>
 				<SelectValue />
 			</SelectTrigger>
-			<SelectContent>
+			{/* Opens below the trigger: aligned to its item, a long list covers the sidebar. */}
+			<SelectContent alignItemWithTrigger={false}>
 				{items.map((item) => (
 					<SelectItem key={item.value} value={item.value}>
 						{item.label}
@@ -67,10 +71,10 @@ function Columns() {
 		<>
 			<ColumnHead label="Resource" width="w-0 flex-1 min-w-[220px]" />
 			<ColumnHead label="Type" width="w-[170px]" />
-			<ColumnHead label="Project" width="w-[170px]" />
+			<ColumnHead label="Project" width="w-[220px]" />
 			<ColumnHead label="Location" width="w-[130px]" />
-			<ColumnHead label="State" width="w-[100px]" />
-			<ColumnHead label="Labels" width="w-[260px]" hidden="hidden lg:flex" />
+			<ColumnHead label="State" width="w-[120px]" />
+			<ColumnHead label="Labels" width="w-[200px]" hidden="hidden lg:flex" />
 		</>
 	)
 }
@@ -134,7 +138,9 @@ function Resources({
 					</DataTable.Empty>
 				) : null}
 				{resources.map((resource) => {
-					const labels = Object.entries(resource.labels)
+					const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
+					const type = gcpAssetTypeLabel(resource.assetType)
+					const state = resource.state === null ? null : stateLabel(resource.state)
 					return (
 						<div
 							key={`${resource.assetType}:${resource.name}`}
@@ -146,24 +152,32 @@ function Resources({
 							>
 								{gcpResourceName(resource)}
 							</div>
-							<div className="w-[170px] truncate text-xs text-foreground/80">
-								{gcpAssetTypeLabel(resource.assetType)}
+							<div className="w-[170px] truncate text-xs text-foreground/80" title={type}>
+								{type}
 							</div>
-							<div className={`w-[170px] ${CELL}`}>{resource.projectId}</div>
-							<div className={`w-[130px] ${CELL}`}>{resource.location ?? EMPTY_VALUE}</div>
-							<div className={`w-[100px] ${CELL}`}>{resource.state ?? EMPTY_VALUE}</div>
+							<div className={`w-[220px] ${CELL}`} title={resource.projectId}>
+								{resource.projectId}
+							</div>
+							<div className={`w-[130px] ${CELL}`} title={resource.location ?? undefined}>
+								{resource.location ?? EMPTY_VALUE}
+							</div>
 							<div
-								className="hidden w-[260px] items-center gap-2 overflow-hidden lg:flex"
-								title={labels.map(([key, value]) => `${key}: ${value}`).join("\n")}
+								className="w-[120px] truncate text-xs text-foreground/80"
+								title={state ?? undefined}
 							>
-								{labels.slice(0, MAX_LABELS).map(([key, value]) => (
-									<MetaChip key={key}>
-										{key}: {value}
-									</MetaChip>
-								))}
-								{labels.length > MAX_LABELS ? (
-									<MetaChip>+{labels.length - MAX_LABELS}</MetaChip>
-								) : null}
+								{state ?? EMPTY_VALUE}
+							</div>
+							{/* One line: the first label, and how many more the tooltip lists. */}
+							<div
+								className="hidden w-[200px] items-center gap-2 whitespace-nowrap lg:flex"
+								title={labels.join("\n")}
+							>
+								{labels.length === 0 ? null : (
+									<span className="min-w-0 truncate">
+										<MetaChip>{labels[0]}</MetaChip>
+									</span>
+								)}
+								{labels.length > 1 ? <MetaChip>+{labels.length - 1}</MetaChip> : null}
 							</div>
 						</div>
 					)
@@ -201,7 +215,9 @@ export function GcpResources({
 				<Alert variant="warn">
 					<CircleWarningIcon size={16} />
 					<AlertTitle>The latest resource sync was incomplete</AlertTitle>
-					<AlertDescription>{syncError}</AlertDescription>
+					<AlertDescription>
+						<GcpMessage text={syncError} />
+					</AlertDescription>
 				</Alert>
 			)}
 			<ResultView
@@ -214,10 +230,10 @@ export function GcpResources({
 						<DataTable.SkeletonRows count={5}>
 							<Skeleton className="h-4 w-0 min-w-[220px] flex-1" />
 							<Skeleton className="h-3 w-[170px]" />
-							<Skeleton className="h-3 w-[170px]" />
+							<Skeleton className="h-3 w-[220px]" />
 							<Skeleton className="h-3 w-[130px]" />
-							<Skeleton className="h-3 w-[100px]" />
-							<Skeleton className="hidden h-3 w-[260px] lg:block" />
+							<Skeleton className="h-3 w-[120px]" />
+							<Skeleton className="hidden h-3 w-[200px] lg:block" />
 						</DataTable.SkeletonRows>
 					</DataTable.Root>
 				}
