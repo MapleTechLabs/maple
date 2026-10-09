@@ -76,8 +76,12 @@ describe("gcpLogState", () => {
 		})
 	})
 
-	it("trusts a log from the last 15 minutes over a missing report", () => {
+	it("trusts a log from the last 15 minutes over a missing report, not over a report of removal", () => {
 		expect(log({ ...fresh, last_log_received_at: ago(14) })).toMatchObject({ kind: "receiving" })
+		// The cleanup script just ran: the last entries it forwarded prove nothing.
+		expect(log({ applied_logs_enabled: false, last_log_received_at: ago(1) })).toEqual({
+			kind: "setup-pending",
+		})
 	})
 
 	it("waits for the first log once a run reported, and is overdue after 20 minutes", () => {
@@ -125,8 +129,9 @@ describe("gcpMetricsState", () => {
 		})
 	})
 
-	it("trusts a read from the last 15 minutes over a missing report", () => {
+	it("trusts a read from the last 15 minutes over a missing report, not over a report of removal", () => {
 		expect(metrics({ ...fresh })).toMatchObject({ kind: "receiving" })
+		expect(metrics({ applied_metrics_enabled: false })).toEqual({ kind: "setup-pending" })
 	})
 
 	it("waits for the first read, and for 10 minutes after a run whatever the poller said before", () => {
@@ -161,15 +166,18 @@ describe("gcpMetricsState", () => {
 		})
 	})
 
-	it("is incomplete while recent reads arrive with an error or without the resource list", () => {
+	it("is incomplete while recent reads arrive with an error", () => {
 		expect(metrics({ last_metrics_error: "3 of 46 metric queries failed." })).toEqual({
 			kind: "incomplete",
 			error: "3 of 46 metric queries failed.",
 			lastMetricsReceivedAt: ago(4),
 		})
+	})
+
+	it("keeps receiving when only the resource list is incomplete", () => {
 		expect(metrics({ last_resources_error: "The resource list is incomplete." })).toMatchObject({
-			kind: "incomplete",
-			error: "The resource list is incomplete.",
+			kind: "receiving",
+			resourcesError: "The resource list is incomplete.",
 		})
 	})
 
@@ -181,7 +189,12 @@ describe("gcpMetricsState", () => {
 	})
 
 	it("is receiving otherwise, with the project count of a folder or organization", () => {
-		expect(metrics({})).toEqual({ kind: "receiving", lastMetricsReceivedAt: ago(4), projectCount: null })
+		expect(metrics({})).toEqual({
+			kind: "receiving",
+			lastMetricsReceivedAt: ago(4),
+			projectCount: null,
+			resourcesError: null,
+		})
 		expect(metrics({ scope_type: "organization", discovered_project_count: 14 })).toMatchObject({
 			projectCount: 14,
 		})
@@ -222,6 +235,7 @@ describe("gcpConnectionState", () => {
 	it("is healthy while it receives, idles, or has a capability switched off and removed", () => {
 		expect(state({})).toBe("healthy")
 		expect(state({ last_log_received_at: ago(3 * 24 * 60) })).toBe("healthy")
+		expect(state({ last_resources_error: "The resource list is incomplete." })).toBe("healthy")
 		expect(state({ metrics_enabled: false, applied_metrics_enabled: false })).toBe("healthy")
 		expect(state({ logs_enabled: false, applied_logs_enabled: null })).toBe("healthy")
 	})

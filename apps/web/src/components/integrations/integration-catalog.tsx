@@ -191,7 +191,6 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: GoogleCloudIcon,
 		monoIcon: GoogleCloudMonoIcon,
 		accent: GCP_ACCENT,
-		docsUrl: docsUrl("gcp"),
 	},
 	{
 		id: "railway",
@@ -594,18 +593,32 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					connectors.length === 1
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
-				stat: `${count("healthy")} of ${countLabel(connectors.length, "connection")} receiving data`,
-				lastSyncLabel: syncedLabel(
-					maxMs(
-						connectors
-							.flatMap((connector) => [
-								connector.logs_enabled ? connector.last_log_received_at : null,
-								connector.metrics_enabled ? connector.last_metrics_received_at : null,
-							])
-							.map((iso) => (iso ? Date.parse(iso) : null)),
-					),
-					"last data",
-				),
+				// What the connections collect: true in every state, unlike a count of healthy ones.
+				stat: [
+					connectors.some((connector) => connector.logs_enabled) ? "Logs" : null,
+					connectors.some((connector) => connector.metrics_enabled)
+						? "Metrics and resources"
+						: null,
+				]
+					.filter((part) => part !== null)
+					.join(" · "),
+				// While everything waits for first data, an older time would contradict the label.
+				lastSyncLabel:
+					worst === "waiting"
+						? null
+						: syncedLabel(
+								maxMs(
+									connectors
+										.flatMap((connector) => [
+											connector.logs_enabled ? connector.last_log_received_at : null,
+											connector.metrics_enabled
+												? connector.last_metrics_received_at
+												: null,
+										])
+										.map((iso) => (iso ? Date.parse(iso) : null)),
+								),
+								"last data",
+							),
 				issue:
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`
@@ -864,7 +877,7 @@ export function IntegrationsSummary() {
 			{attention > 0 && (
 				<Badge variant="warn" pill className="gap-1.5 px-2.5 font-normal">
 					<StatusDot tone="warn" />
-					{attention} need attention
+					{attention} {attention === 1 ? "needs" : "need"} attention
 				</Badge>
 			)}
 		</div>
@@ -908,7 +921,7 @@ function ConnectedRow({
 					<span className="truncate text-xs text-muted-foreground">{connected.context}</span>
 				)}
 			</span>
-			<span className="flex w-28 shrink-0 items-center gap-2">
+			<span className="flex w-36 shrink-0 items-center gap-2">
 				<StatusDot tone={HEALTH_TONE[connected?.health ?? "unavailable"]} />
 				<span className="truncate text-xs">{connected?.stateLabel ?? "Status unavailable"}</span>
 			</span>

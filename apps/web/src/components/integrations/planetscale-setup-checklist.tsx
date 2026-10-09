@@ -23,11 +23,14 @@ export interface ChecklistStep<Id extends string> extends Omit<SetupStep, "id" |
 export function PlanetScaleSetupChecklist<Id extends string>({
 	steps,
 	actions,
+	stacked = false,
 	className,
 }: {
 	steps: ReadonlyArray<ChecklistStep<Id>>
 	/** Per-step action UI, rendered only while that step is `current` or `blocked`. */
 	actions?: Partial<Record<Id, ReactNode>>
+	/** Puts each detail under its title: for details that are sentences, not a few words. */
+	stacked?: boolean
 	className?: string
 }) {
 	return (
@@ -42,7 +45,12 @@ export function PlanetScaleSetupChecklist<Id extends string>({
 					>
 						<StepMarker step={step} number={index + 1} />
 						<div className="min-w-0 flex-1">
-							<div className="flex flex-wrap items-baseline gap-x-2">
+							<div
+								className={cn(
+									"flex",
+									stacked ? "flex-col gap-0.5" : "flex-wrap items-baseline gap-x-2",
+								)}
+							>
 								<span
 									className={cn(
 										"text-xs font-medium",
