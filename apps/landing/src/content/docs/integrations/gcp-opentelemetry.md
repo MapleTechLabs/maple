@@ -40,100 +40,6 @@ The connection adds Cloud Run's request logs and the `gcp.run.*` metrics. Cloud 
 
 The connection adds audit logs and the `gcp.compute.*` metrics.
 
-## Instrument a Cloud Run service
-
-The [Node.js guide](/docs/guides/instrumentation-nodejs) covers the SDK basics. On Cloud Run, these settings decide whether every trace arrives and joins Google's request log:
-
-| Setting                                                                                                                   | Reason                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Set `service.name` to the Cloud Run service name, `K_SERVICE`.                                                            | Google's request logs arrive in Maple under the Cloud Run service name. With another name, your spans and logs land in a different service than the request logs.                                                                                                        |
-| Sample every trace: `AlwaysOnSampler`, or `OTEL_TRACES_SAMPLER=always_on`.                                                | Cloud Run sets the sampled flag of `traceparent` on about one request per ten seconds per instance. The SDK's default sampler follows that flag and drops the rest, while the log records of those requests still arrive. The trace ID still comes from Google's header. |
-| Flush the span and log processors when the server span ends. Call `sdk.shutdown()` on `SIGTERM` and keep `node` as PID 1. | Cloud Run throttles the container's CPU once the response is sent. With the default batch timers a warm instance exported 5 to 6 seconds after the request, and the first request after a cold start took 25 to 33 seconds.                                              |
-| Emit application logs through OpenTelemetry, not stdout.                                                                  | Each record carries the trace and span ID of its request, and nothing is stored twice.                                                                                                                                                                                   |
-
-For Node.js 22 with `@opentelemetry/sdk-node`:
-
-```js
-// tracing.mjs
-import { register } from "node:module"
-import { SpanKind } from "@opentelemetry/api"
-import { NodeSDK } from "@opentelemetry/sdk-node"
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
-import { envDetector, processDetector, resourceFromAttributes } from "@opentelemetry/resources"
-import { gcpDetector } from "@opentelemetry/resource-detector-gcp"
-import { AlwaysOnSampler, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
-import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
-import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
-
-// Lets the instrumentations patch ES modules.
-register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
-
-// The exporters read OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
-const spans = new BatchSpanProcessor(new OTLPTraceExporter())
-const logRecords = new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })
-const metrics = new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() })
-
-// Export as each request finishes, before Cloud Run throttles the CPU.
-const flushOnRequestEnd = {
-	onStart() {},
-	onEnd(span) {
-		if (span.kind !== SpanKind.SERVER) return
-		void spans.forceFlush()
-		void logRecords.forceFlush()
-	},
-	forceFlush: () => Promise.resolve(),
-	shutdown: () => Promise.resolve(),
-}
-
-const sdk = new NodeSDK({
-	// The name Google's request logs carry.
-	resource: resourceFromAttributes({ "service.name": process.env.K_SERVICE }),
-	// gcpDetector adds cloud.platform, cloud.region and the faas.* attributes.
-	resourceDetectors: [envDetector, processDetector, gcpDetector],
-	sampler: new AlwaysOnSampler(),
-	spanProcessors: [spans, flushOnRequestEnd],
-	logRecordProcessors: [logRecords],
-	metricReaders: [metrics],
-	instrumentations: [getNodeAutoInstrumentations()],
-})
-sdk.start()
-
-// Cloud Run sends SIGTERM before it stops an instance.
-process.on("SIGTERM", () => {
-	sdk.shutdown().finally(() => process.exit(0))
-})
-```
-
-Start the container with `CMD ["node", "--import", "./tracing.mjs", "server.mjs"]`, so that `node` is PID 1 and receives `SIGTERM`. Set these on the service:
-
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: `https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` for an EU organization.
-- `OTEL_EXPORTER_OTLP_HEADERS`: `Authorization=Bearer YOUR_INGEST_KEY`.
-
-Emit a log record inside a request and it carries the active trace and span ID:
-
-```js
-import { logs, SeverityNumber } from "@opentelemetry/api-logs"
-
-const logger = logs.getLogger("checkout")
-
-logger.emit({
-	severityText: "INFO",
-	severityNumber: SeverityNumber.INFO,
-	body: "checkout completed",
-	attributes: { "order.id": orderId },
-})
-```
-
-A service that has to log to stdout keeps the link by writing JSON lines with `logging.googleapis.com/trace` (`projects/PROJECT_ID/traces/TRACE_ID`) and `logging.googleapis.com/spanId`. Send each line one way only: over OpenTelemetry or through stdout.
-
-Limits of this setup:
-
-- Your service's top span is the child of a span inside Google's infrastructure that Maple does not receive, so the trace has no root span.
-- Flushing per request makes one export per request. Check the overhead before you use it on a service with a high request rate.
-
 ## GKE container logs
 
 The recommended filter leaves out `resource.type="k8s_container"`: what the containers of a GKE cluster write to stdout and stderr.
@@ -163,6 +69,106 @@ AND NOT log_id("run.googleapis.com/stdout") AND NOT log_id("run.googleapis.com/s
 ```
 
 Cloud Run's request logs are in `run.googleapis.com/requests` and still pass. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language).
+
+## Instrument a Cloud Run service
+
+These settings decide whether every trace arrives and joins Google's request log. They apply in any language. The example is Node.js, and the [Node.js guide](/docs/guides/instrumentation-nodejs) covers the SDK basics.
+
+| Setting      | On Cloud Run                                                                                                                                                                                                                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Service name | Set `service.name` to the Cloud Run service name, `K_SERVICE`. Google's request logs arrive in Maple under that name. With another one, your spans and logs land in a different service than the request logs.                                                                                                                             |
+| Sampling     | Sample every trace: `AlwaysOnSampler`, or `OTEL_TRACES_SAMPLER=always_on`. Cloud Run sets the sampled flag of `traceparent` on about one request per ten seconds per instance. The SDK's default sampler follows that flag and drops the rest, while the log records of those requests still arrive.                                       |
+| Flushing     | Flush the span and log processors when the server span ends. Call `sdk.shutdown()` on `SIGTERM` and keep `node` as PID 1. Cloud Run throttles the container's CPU once the response is sent: with the default batch timers, telemetry arrives 5 to 6 seconds after the request on a warm instance and about 30 seconds after a cold start. |
+| Logs         | Emit application logs over OpenTelemetry, not stdout. Each record carries the trace and span ID of its request, and nothing is stored twice.                                                                                                                                                                                               |
+
+For Node.js 22 with `@opentelemetry/sdk-node`:
+
+```js
+// tracing.mjs
+import { register } from "node:module"
+import { SpanKind } from "@opentelemetry/api"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
+import { envDetector, processDetector, resourceFromAttributes } from "@opentelemetry/resources"
+import { gcpDetector } from "@opentelemetry/resource-detector-gcp"
+import { AlwaysOnSampler, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
+
+// Lets the instrumentations patch ES modules.
+register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
+
+// The exporters read OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
+const spans = new BatchSpanProcessor(new OTLPTraceExporter())
+const logRecords = new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })
+const metricExporter = new OTLPMetricExporter()
+
+// Export as each request finishes, before Cloud Run throttles the CPU.
+const flushOnRequestEnd = {
+	onStart() {},
+	onEnd(span) {
+		if (span.kind !== SpanKind.SERVER) return
+		void spans.forceFlush()
+		void logRecords.forceFlush()
+	},
+	forceFlush: () => Promise.resolve(),
+	shutdown: () => Promise.resolve(),
+}
+
+const sdk = new NodeSDK({
+	// The name Google's request logs carry.
+	resource: resourceFromAttributes({ "service.name": process.env.K_SERVICE }),
+	// gcpDetector adds cloud.platform, cloud.region and the faas.* attributes.
+	resourceDetectors: [envDetector, processDetector, gcpDetector],
+	sampler: new AlwaysOnSampler(),
+	spanProcessors: [spans, flushOnRequestEnd],
+	logRecordProcessors: [logRecords],
+	metricReaders: [new PeriodicExportingMetricReader({ exporter: metricExporter })],
+	instrumentations: [getNodeAutoInstrumentations()],
+})
+sdk.start()
+
+// Cloud Run sends SIGTERM before it stops an instance.
+process.on("SIGTERM", () => {
+	sdk.shutdown().finally(() => process.exit(0))
+})
+```
+
+Start the container with `node` as PID 1, so that it receives `SIGTERM`:
+
+```dockerfile
+CMD ["node", "--import", "./tracing.mjs", "server.mjs"]
+```
+
+Set these on the service:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: `https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` for an EU organization.
+- `OTEL_EXPORTER_OTLP_HEADERS`: `Authorization=Bearer YOUR_INGEST_KEY`.
+
+Emit a log record inside a request and it carries the active trace and span ID:
+
+```js
+import { logs, SeverityNumber } from "@opentelemetry/api-logs"
+
+const logger = logs.getLogger("checkout")
+
+logger.emit({
+	severityText: "INFO",
+	severityNumber: SeverityNumber.INFO,
+	body: "checkout completed",
+	attributes: { "order.id": orderId },
+})
+```
+
+A service that has to log to stdout keeps the link by writing JSON lines with `logging.googleapis.com/trace` (`projects/PROJECT_ID/traces/TRACE_ID`) and `logging.googleapis.com/spanId`. Send each line one way only: over OpenTelemetry or through stdout.
+
+Limits of this setup:
+
+- Your service's top span is the child of a span inside Google's infrastructure that Maple does not receive, so the trace has no root span.
+- Flushing per request makes one export per request. Check the overhead before you use it on a service with a high request rate.
 
 ## Instrumentation guides
 
