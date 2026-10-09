@@ -670,7 +670,7 @@ function traceListWindowConditions(
 		CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
 		CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
 		...(rootless
-			? rootlessTraceConditions($.TraceId)
+			? rootlessTraceConditions($.TraceId, $.Timestamp)
 			: [CH.whenTrue(canUseTraceFacetsRollup(opts), () => edgeCondition("Timestamp"))]),
 	]
 }

@@ -24,6 +24,14 @@ export * as tables from "./tables"
 // Shared row-schema codecs (ClickHouse `FORMAT JSON` 64-bit-int-as-string coercion).
 export { CHNumber } from "./schema"
 
+// Queries — Traces with no root span
+export {
+	ROOTLESS_PAGE_ROOT_BUDGET,
+	rootedTraceIdsQuery,
+	rootSpansInRangeQuery,
+	rootlessOmittedQuery,
+} from "./queries/rootless-traces"
+
 // Queries — Traces
 export {
 	tracesTimeseriesQuery,
@@ -32,6 +40,8 @@ export {
 	tracesListQuery,
 	tracesRootListQuery,
 	traceListQuery,
+	traceListRootPageQuery,
+	traceListEntryPageQuery,
 	traceServicesByTraceIdsQuery,
 	traceSpanStatsByTraceIdsQuery,
 	traceSummariesQuery,
@@ -48,6 +58,7 @@ export {
 	type TracesListOutput,
 	type TracesRootListOutput,
 	type TraceListOutput,
+	type TraceListPositionOutput,
 	type TraceServicesByTraceIdsOutput,
 	type TraceSpanStatsByTraceIdsOpts,
 	type TraceSpanStatsByTraceIdsOutput,
