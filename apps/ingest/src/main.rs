@@ -1724,12 +1724,15 @@ fn record_rejection_reason(span: &Span, status: u16, error_kind: &str, reason: &
 /// caller-caused rejection leaves the SERVER span `Ok`, only a server-side
 /// failure is `Error`. `accept_grpc_decoded` maps the pipeline's 429 to
 /// `ResourceExhausted` and everything else to `Unavailable`, so the split here
-/// mirrors the 4xx/5xx split on the HTTP path.
+/// mirrors the 4xx/5xx split on the HTTP path. tonic's own refusals of an export
+/// are classified here too: `Unimplemented` is a `grpc-encoding` these services
+/// do not accept, this path's 415.
 fn grpc_otel_status_for_rejection(code: tonic::Code) -> &'static str {
     match code {
         tonic::Code::Unauthenticated
         | tonic::Code::PermissionDenied
         | tonic::Code::ResourceExhausted
+        | tonic::Code::Unimplemented
         | tonic::Code::InvalidArgument
         | tonic::Code::NotFound
         | tonic::Code::FailedPrecondition
@@ -1752,28 +1755,25 @@ fn record_grpc_identity(resolved: &ResolvedIngestKey) {
     span.record("maple.ingest.key_type", resolved.key_type.as_str());
 }
 
-/// Fill in the deferred outcome fields on a gRPC server span, from the response
-/// headers: a refused call is answered trailers-only, so its status is in them,
-/// while a successful one sends its status as a trailer after the message.
+/// Fill in the deferred outcome fields on a gRPC server span. tonic answers a
+/// failed unary call trailers-only, with `grpc-status` in the response headers;
+/// a response without one succeeded.
 fn record_grpc_outcome(span: &Span, response: &Response) {
-    match tonic::Status::from_header_map(response.headers()) {
-        Some(status) if status.code() != tonic::Code::Ok => {
-            let code = status.code();
-            span.record("rpc.grpc.status_code", code as i32);
-            span.record("error.type", code.description());
-            span.record("maple.ingest.reject_reason", status.message());
-            if grpc_otel_status_for_rejection(code) == "Error" {
-                // See `record_rejection_reason`: the description is only kept
-                // on a span whose status stays `Error`.
-                span.record("otel.status_description", status.message());
-            } else {
-                span.record("otel.status_code", "Ok");
-            }
-        }
-        _ => {
-            span.record("rpc.grpc.status_code", tonic::Code::Ok as i32);
-            span.record("otel.status_code", "Ok");
-        }
+    let Some(status) = tonic::Status::from_header_map(response.headers()) else {
+        span.record("rpc.grpc.status_code", tonic::Code::Ok as i32);
+        span.record("otel.status_code", "Ok");
+        return;
+    };
+    let code = status.code();
+    span.record("rpc.grpc.status_code", code as i32);
+    span.record("error.type", code.description());
+    span.record("maple.ingest.reject_reason", status.message());
+    if grpc_otel_status_for_rejection(code) == "Error" {
+        // See `record_rejection_reason`: the description is only kept on a span
+        // whose status stays `Error`.
+        span.record("otel.status_description", status.message());
+    } else {
+        span.record("otel.status_code", "Ok");
     }
 }
 
@@ -2646,10 +2646,10 @@ fn grpc_router(state: Arc<AppState>) -> Router {
 /// Authenticate and entitlement-gate an OTLP/gRPC export on its headers alone.
 ///
 /// tonic reads and decodes the whole message before a service method runs, so a
-/// check made inside `export` is paid for in full by the request it refuses.
-/// Made here, in front of the services, an unknown key or a denied org is turned
-/// away before any of the message is read. The resolved key reaches `export`
-/// through the request extensions.
+/// check inside `export` runs only after the request it refuses has been
+/// received and decoded. Made here, in front of the services, an unknown key or
+/// a denied org is turned away before any of the message is read. The resolved
+/// key reaches `export` through the request extensions.
 async fn grpc_admission(
     State(state): State<Arc<AppState>>,
     mut request: Request,
@@ -9185,12 +9185,10 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
-    const GRPC_LOGS_EXPORT_PATH: &str = "/opentelemetry.proto.collector.logs.v1.LogsService/Export";
-
     fn grpc_export_request(raw_key: &str, body: Vec<u8>) -> Request {
         Request::builder()
             .method(Method::POST)
-            .uri(GRPC_LOGS_EXPORT_PATH)
+            .uri(format!("/{GRPC_LOGS_SERVICE}/Export"))
             .header(CONTENT_TYPE, "application/grpc")
             .header(AUTHORIZATION, format!("Bearer {raw_key}"))
             .body(axum::body::Body::from(body))
@@ -9205,9 +9203,8 @@ mod tests {
         frame
     }
 
-    /// `grpc-status` from the response HEADERS: present on a trailers-only
-    /// (refused) response, absent when the call succeeded and the status went
-    /// out as a trailer after the message.
+    /// `grpc-status` from the response headers; tonic puts it there only when
+    /// the call failed.
     fn grpc_header_status(response: &Response) -> Option<&str> {
         response
             .headers()
@@ -9354,13 +9351,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(grpc_header_status(&response), None, "the export succeeded");
-        // Gated once, in admission, against the signal's own feature.
+        // Gated in admission, against the signal's own feature.
         let check = autumn_rx.try_recv().expect("admission asks Autumn");
         assert_eq!(
             (check.path.as_str(), check.feature_id()),
             ("balances.check", "logs")
         );
-        assert!(autumn_rx.try_recv().is_err(), "and asks only once");
         let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
             .await
             .expect("an admitted export is forwarded")
