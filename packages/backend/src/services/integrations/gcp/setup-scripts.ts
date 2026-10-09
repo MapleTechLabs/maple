@@ -9,7 +9,10 @@ import type {
 } from "@maple/domain/primitives"
 import { Effect } from "effect"
 
-/** Single-quote a value for bash. Every value that reaches a script goes through here. */
+/**
+ * Single-quote a value for bash. Every value a script uses goes through here; the scope named in
+ * its header comment is an id the API has pattern-checked.
+ */
 const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
 const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
@@ -96,7 +99,11 @@ ok() { printf '  \\342\\234\\223 %s\\n' "$1"; }
 # stop <what went wrong> <what to do> [Google's answer]
 stop() {
   printf '  \\342\\234\\227 %s\\n' "$1"
-  if [ -n "\${3-}" ]; then printf '\\n'; printf '%s\\n' "$3" | sed 's/^/      /'; fi
+  # Google can quote the push endpoint back, and this output may be sent to support.
+  if [ -n "\${3-}" ]; then
+    printf '\\n'
+    printf '%s\\n' "$3" | sed -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/^/      /'
+  fi
   printf '\\n    What to do: %s\\n' "$2"
   printf '\\n%s\\n' ${sh(unfinished)}
   exit 1
@@ -105,10 +112,15 @@ stop() {
 # fix <Google's answer> <role that allows the step>: what to do about a refused step.
 fix() {
   case "$1" in
-    *"requires billing"* | *BILLING_DISABLED*)
+    *"requires billing"* | *BILLING_DISABLED* | *"Billing must be enabled"* | *BILLING_NOT_FOUND*)
       printf '%s' "Project $PROJECT_ID has no active billing account. Link one at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID" ;;
     *allowedPolicyMember* | *"permitted customer"*)
       printf '%s' "An organization policy (domain restricted sharing) blocks this grant. Ask an Organization Policy Administrator to lift it for project $PROJECT_ID while this script runs. See ${DOCS_URL}#domain-restricted-sharing" ;;
+    # Google words these two as a denial too, so they are read before the missing role.
+    *"has not been used"* | *"is disabled"* | *SERVICE_DISABLED*)
+      printf '%s' "Google is still switching an API on, or the API is off. Wait a minute and paste the script again." ;;
+    *"ervice account"*"does not exist"*)
+      printf '%s' "Google has not published the new service account yet. Wait a minute and paste the script again." ;;
     *PERMISSION_DENIED* | *"does not have permission"* | *"denied on resource"*)
       printf '%s' "$ACCOUNT needs $2." ;;
     *) printf '%s' "Read Google's answer above. If it is unclear, send this output to support@maple.dev." ;;
@@ -152,7 +164,7 @@ notify() {
 			: `${POST_REPORT} --data "$(report "$2")" "$PUSH_ENDPOINT"`
   } >/dev/null 2>&1; then
     ok "$1"
-  else
+  elif [ "$CONFIRMED" = 1 ]; then
     printf "  \\342\\200\\242 Couldn't reach Maple to confirm. Maple shows the connection as pending until a later run reaches it.\\n"
     CONFIRMED=0
   fi
@@ -164,8 +176,9 @@ notify() {
 const REMOVAL_HELPERS = `
 # remains <what it is> <role that may look> <gcloud ... describe ...>: whether a resource is still
 # there. NOT_FOUND means it is not, and so does a disabled API for the host project's own
-# resources, which cannot exist without it (a sink can). Any other answer stops the script: the
-# resource may still be there, and nothing that it depends on is removed before it.
+# resources: setup switches their APIs on before it creates them (a sink can exist without).
+# Any other answer stops the script: the resource may still be there, and nothing that it
+# depends on is removed before it.
 remains() {
   local what="$1" role="$2" output
   shift 2
@@ -178,12 +191,14 @@ remains() {
   stop "Couldn't check whether $what still exists." "$(fix "$output" "$role")" "$output"
 }
 
-# unbind <gcloud ... remove-iam-policy-binding ...>: a binding that is already gone is fine.
+# unbind <role that allows it> <gcloud ... remove-iam-policy-binding ...>: a binding that is
+# already gone is fine.
 unbind() {
-  local output
+  local role="$1" output
+  shift
   if output="$("$@" 2>&1)"; then return 0; fi
-  case "$output" in *"not found"*) return 0 ;; esac
-  stop "Couldn't remove the read-only roles." "$(fix "$output" "$IAM_ROLE")" "$output"
+  case "$output" in *"Policy binding"*"not found"*) return 0 ;; esac
+  stop "Couldn't remove the read-only roles." "$(fix "$output" "$role")" "$output"
 }
 `
 
@@ -276,6 +291,7 @@ const permissionChecks = (
 	logs: boolean,
 	metrics: boolean,
 ): AccessChecks["permissions"] => {
+	if (!logs && !metrics) return []
 	const scope = SCOPES[scopeType]
 	const administrator = "or have an administrator run this script."
 	const host = [
@@ -359,7 +375,8 @@ fi
 
 # The sink writes as a Google-managed identity. Google requires Logs Writer for it on the project
 # that holds the destination, and it needs Pub/Sub Publisher on this one topic.
-if ! WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} --format='value(writerIdentity)' 2>&1)"; then
+if ! WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} --format='value(writerIdentity)' 2>/dev/null)"; then
+  WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} 2>&1 || true)"
   stop "Couldn't read the log sink back." "$(fix "$WRITER_IDENTITY" "$SINK_ROLE")" "$WRITER_IDENTITY"
 fi
 run "Sink allowed to write to the project" "Couldn't grant the sink Logs Writer." "$OWNER" \\
@@ -487,10 +504,10 @@ if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
   --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
-    unbind ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
+    unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
       ${serviceAccountMember} --role="$ROLE" --condition=None
   done
-  unbind gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
+  unbind "$OWNER" gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
     ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
   ok "Read-only roles removed"
   run "Read-only service account deleted" "Couldn't delete the service account." "$OWNER" \\
@@ -508,7 +525,7 @@ ${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
  * history of bash 5; its leading space does the same under `HISTCONTROL=ignorespace`. Nothing
  * outside the here-document may be a comment: an interactive zsh runs `#` as a command.
  */
-const forPaste = (marker: string, body: string) =>
+const forPaste = (marker: string, body: string): Effect.Effect<string, IntegrationsPersistenceError> =>
 	body.split("\n").includes(marker)
 		? Effect.fail(
 				new IntegrationsPersistenceError({
@@ -557,7 +574,7 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 		`#!/usr/bin/env bash
 # Maple setup for Google Cloud ${scopeType} ${input.scopeId}
 #   Log forwarding:        ${logs ? "on" : "off"}
-#   Metrics and resources: ${metrics === "lost" ? "on, unavailable" : metrics}
+#   Metrics and resources: ${metrics === "lost" ? metricsState : metrics}
 # Safe to run again: it sets up what is on and removes what is off.
 # Keep it private: PUSH_ENDPOINT contains this connection's secret.
 set -euo pipefail
