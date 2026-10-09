@@ -17,6 +17,7 @@ import type {
 	ContainerInfraTimeseriesRequest,
 	GcpInfraMetricsRequest,
 	GcpInfraPresenceRequest,
+	GcpInfraTimeseriesRequest,
 	GetLogRequest,
 	NodeInfraTimeseriesRequest,
 	PlanetScaleInfraTimeseriesRequest,
@@ -311,6 +312,20 @@ const gcpInfraMetrics = defineQuery({
 			orgId,
 			startTime: payload.startTime,
 			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraTimeseries = defineQuery({
+	id: "gcpInfraTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraTimeseriesSQL(payload.source, payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
 		}),
 })
 
@@ -742,6 +757,7 @@ export const Queries = {
 	railwayInfraServiceTimeseries,
 	gcpInfraPresence,
 	gcpInfraMetrics,
+	gcpInfraTimeseries,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,

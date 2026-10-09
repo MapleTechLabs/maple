@@ -4,6 +4,7 @@ import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 
+import { gcpFleet } from "../gcp/tabs"
 import type { HostRow } from "../host-table"
 import {
 	summarizeCloudflare,
@@ -144,14 +145,72 @@ describe("summarizeRailway", () => {
 })
 
 describe("summarizeGcp", () => {
-	it("names the services that report and raises nothing", () => {
-		expect(summarizeGcp(["cloudRun", "cloudSql"])).toMatchObject({
-			resources: "2 services",
+	const point = (keys: ReadonlyArray<string>, metric: string, label: string, total: number) => ({
+		keys,
+		metric,
+		label,
+		total,
+		samples: 1,
+	})
+	const api = ["api", "acme-prod", "europe-west1"]
+	const db = ["acme-prod:main", "acme-prod", "europe-west1"]
+	const fleet = (requests5xx: number, disk: number) =>
+		gcpFleet([
+			{
+				service: "cloudRun",
+				points: [
+					point(api, "gcp.run.request_count", "2xx", 1000 - requests5xx),
+					point(api, "gcp.run.request_count", "5xx", requests5xx),
+				],
+			},
+			{
+				service: "cloudSql",
+				points: [point(db, "gcp.cloudsql.database.disk.utilization", "", disk)],
+			},
+		])
+
+	it("names the services that report while every workload is healthy", () => {
+		expect(summarizeGcp(fleet(0, 0.4))).toMatchObject({
+			resources: "2 workloads",
+			segments: [
+				{ key: "ok", count: 2 },
+				{ key: "elevated", count: 0 },
+				{ key: "saturated", count: 0 },
+			],
 			headline: "Cloud Run, Cloud SQL",
 			headlineTone: "neutral",
 			findings: [],
 		})
 		expect(summarizeGcp([]).headline).toBe("no metrics in this window")
+	})
+
+	it("raises a failing workload and a filling disk, worst first, each opening its page", () => {
+		const summary = summarizeGcp(fleet(80, 0.72))
+		expect(summary.segments).toEqual([
+			{ key: "ok", count: 0 },
+			{ key: "elevated", count: 1 },
+			{ key: "saturated", count: 1 },
+		])
+		expect(summary.headline).toBe("2 workloads above 60% of a limit or erroring")
+		expect(summary.headlineTone).toBe("crit")
+		expect(summary.findings).toEqual([
+			{
+				key: "gcp:cloudRun:api/acme-prod/europe-west1",
+				source: "gcp",
+				tone: "crit",
+				title: "api 5xx rate at 8.0%",
+				detail: "Cloud Run / acme-prod / europe-west1",
+				target: { kind: "gcp", service: "cloudRun", keys: api },
+			},
+			{
+				key: "gcp:cloudSql:acme-prod:main/acme-prod/europe-west1",
+				source: "gcp",
+				tone: "warn",
+				title: "acme-prod:main Disk at 72%",
+				detail: "Cloud SQL / acme-prod / europe-west1",
+				target: { kind: "gcp", service: "cloudSql", keys: db },
+			},
+		])
 	})
 })
 

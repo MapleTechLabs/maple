@@ -20,6 +20,7 @@ import {
 	RailwayInfraRowsResponse,
 	GcpInfraMetricsResponse,
 	GcpInfraPresenceResponse,
+	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
 	CloudflareInfraZonesResponse,
@@ -817,6 +818,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const rows = yield* runQuery(Queries.gcpInfraMetrics, tenant, payload)
 						return new GcpInfraMetricsResponse({ data: rows })
+					}),
+				)
+				.handle("gcpInfraTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraTimeseries, tenant, payload)
+						return new GcpInfraTimeseriesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
 					}),
 				)
 				.handle("cloudflareInfraZones", ({ payload }) =>

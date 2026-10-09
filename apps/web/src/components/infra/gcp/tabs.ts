@@ -1,8 +1,15 @@
 // Infrastructure -> Google Cloud: which tabs show, what each tab's columns read, and how the
 // metric points of a tab fold into one table row per workload. Pure (no React, no atoms).
 
-import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import {
+	GCP_INFRA_ROW_LIMIT,
+	GCP_INFRA_SERVICE_IDS,
+	GCP_INFRA_SERVICES,
+	type GcpInfraServiceId,
+} from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
+import { errorRateLevel, type ErrorRateLevel } from "@maple/ui/lib/error-rate"
+import { utilizationLevel, type UtilizationLevel } from "@maple/ui/lib/utilization"
 import {
 	EMPTY_VALUE,
 	formatBytes,
@@ -13,13 +20,17 @@ import {
 } from "@maple/ui/lib/format"
 import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
 
-/** A row of the tab query: see `gcpInfraMetricsSQL`. */
-export interface GcpMetricPoint {
-	readonly keys: ReadonlyArray<string>
+/** One metric and label value of one workload: `total` over `samples` points. */
+export interface GcpMetricValue {
 	readonly metric: string
 	readonly label: string
 	readonly total: number
 	readonly samples: number
+}
+
+/** A row of the tab query: see `gcpInfraMetricsSQL`. */
+export interface GcpMetricPoint extends GcpMetricValue {
+	readonly keys: ReadonlyArray<string>
 }
 
 /** One workload's metrics over the window. Without `label`, every label value is added up. */
@@ -45,6 +56,8 @@ export interface GcpColumn {
 	readonly label: string
 	readonly format: GcpColumnFormat
 	readonly value: (read: GcpMetricReader) => number | undefined
+	/** For an `errorRate`: how many events it is the share of. */
+	readonly events?: (read: GcpMetricReader) => number
 }
 
 export function formatGcpValue(format: GcpColumnFormat, value: number | undefined): string {
@@ -77,15 +90,34 @@ const column = (label: string, format: GcpColumnFormat, value: GcpColumn["value"
 	value,
 })
 
-const share = (part: number, whole: number) => (whole > 0 ? part / whole : undefined)
+type Read = (read: GcpMetricReader) => number
+
+/** The failed share of a counter: undefined while it counted nothing. */
+export const failedShare =
+	(metric: string, failed: Read) =>
+	(read: GcpMetricReader): number | undefined => {
+		const whole = read.total(metric)
+		return whole > 0 ? failed(read) / whole : undefined
+	}
 
 // Cloud Run labels a response class "5xx", the load balancer "500".
-const serverErrorShare = (read: GcpMetricReader, metric: string) =>
-	share(read.total(metric, "5xx") + read.total(metric, "500"), read.total(metric))
+export const serverErrors =
+	(metric: string): Read =>
+	(read) =>
+		read.total(metric, "5xx") + read.total(metric, "500")
 
-/** The share of a counter outside its one healthy label value. */
-const failedShare = (read: GcpMetricReader, metric: string, healthy: string) =>
-	share(read.total(metric) - read.total(metric, healthy), read.total(metric))
+/** Everything a counter counted outside its one healthy label value. */
+export const unhealthy =
+	(metric: string, healthy: string): Read =>
+	(read) =>
+		read.total(metric) - read.total(metric, healthy)
+
+const errorRate = (label: string, metric: string, failed: Read): GcpColumn => ({
+	label,
+	format: "errorRate",
+	value: failedShare(metric, failed),
+	events: (read) => read.total(metric),
+})
 
 const RUN = "gcp.run"
 const FUNCTION = "gcp.cloudfunctions.function"
@@ -98,7 +130,7 @@ const HTTPS = "gcp.loadbalancing.https"
 export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>> = {
 	cloudRun: [
 		column("Requests", "count", (m) => m.total(`${RUN}.request_count`)),
-		column("5xx rate", "errorRate", (m) => serverErrorShare(m, `${RUN}.request_count`)),
+		errorRate("5xx rate", `${RUN}.request_count`, serverErrors(`${RUN}.request_count`)),
 		column("Latency p95", "ms", (m) => m.mean(`${RUN}.request_latencies`, "0.95")),
 		column("Latency p99", "ms", (m) => m.mean(`${RUN}.request_latencies`, "0.99")),
 		column("Instances", "decimal", (m) => m.mean(`${RUN}.container.instance_count`, "active")),
@@ -107,7 +139,11 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 	],
 	cloudFunctions: [
 		column("Executions", "count", (m) => m.total(`${FUNCTION}.execution_count`)),
-		column("Error rate", "errorRate", (m) => failedShare(m, `${FUNCTION}.execution_count`, "ok")),
+		errorRate(
+			"Error rate",
+			`${FUNCTION}.execution_count`,
+			unhealthy(`${FUNCTION}.execution_count`, "ok"),
+		),
 		column("Duration p95", "ms", (m) => m.mean(`${FUNCTION}.execution_times`, "0.95")),
 		column("Duration p99", "ms", (m) => m.mean(`${FUNCTION}.execution_times`, "0.99")),
 		column("Instances", "decimal", (m) => m.mean(`${FUNCTION}.instance_count`, "active")),
@@ -155,13 +191,15 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Acked", "count", (m) => m.total(`${SUBSCRIPTION}.ack_message_count`)),
 		column("Dead-lettered", "count", (m) => m.total(`${SUBSCRIPTION}.dead_letter_message_count`)),
 		// Push subscriptions only.
-		column("Push errors", "errorRate", (m) =>
-			failedShare(m, `${SUBSCRIPTION}.push_request_count`, "ack"),
+		errorRate(
+			"Push errors",
+			`${SUBSCRIPTION}.push_request_count`,
+			unhealthy(`${SUBSCRIPTION}.push_request_count`, "ack"),
 		),
 	],
 	loadBalancing: [
 		column("Requests", "count", (m) => m.total(`${HTTPS}.request_count`)),
-		column("5xx rate", "errorRate", (m) => serverErrorShare(m, `${HTTPS}.request_count`)),
+		errorRate("5xx rate", `${HTTPS}.request_count`, serverErrors(`${HTTPS}.request_count`)),
 		column("Latency p95", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.95")),
 		column("Latency p99", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.99")),
 		column("Backend p95", "ms", (m) => m.mean(`${HTTPS}.backend_latencies`, "0.95")),
@@ -169,7 +207,8 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 	],
 } satisfies Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>>
 
-const readerOf = (points: ReadonlyArray<GcpMetricPoint>): GcpMetricReader => {
+/** Reads values that hold each metric and label value once. */
+export const gcpMetricReader = (points: ReadonlyArray<GcpMetricValue>): GcpMetricReader => {
 	const matching = (metric: string, label?: string) =>
 		points.filter((point) => point.metric === metric && (label === undefined || point.label === label))
 	return {
@@ -183,11 +222,39 @@ const readerOf = (points: ReadonlyArray<GcpMetricPoint>): GcpMetricReader => {
 	}
 }
 
+/** An error rate over fewer events than this is no finding: one failure of two is not an outage. */
+export const GCP_MIN_EVENTS = 100
+
 export interface GcpWorkload {
 	/** Identity values, in the order of the service's `identity`. The first names the row. */
 	readonly keys: ReadonlyArray<string>
 	/** One value per column of the tab; undefined where the workload reported nothing. */
 	readonly values: ReadonlyArray<number | undefined>
+	/** Its busiest `percent` column, every one a share of a limit or of capacity. */
+	readonly saturation: UtilizationLevel
+	/** Its worst error rate over at least `GCP_MIN_EVENTS` events. */
+	readonly errors: ErrorRateLevel
+}
+
+/** A page's workload, read from the points that hold each of its metrics once. */
+export function gcpWorkload(
+	service: GcpInfraServiceId,
+	keys: ReadonlyArray<string>,
+	points: ReadonlyArray<GcpMetricValue>,
+): GcpWorkload {
+	const read = gcpMetricReader(points)
+	const columns = GCP_INFRA_COLUMNS[service]
+	const values = columns.map((spec) => spec.value(read))
+	const worst = (counts: (spec: GcpColumn) => boolean) =>
+		Math.max(0, ...columns.flatMap((spec, index) => (counts(spec) ? [values[index] ?? 0] : [])))
+	return {
+		keys,
+		values,
+		saturation: utilizationLevel(worst((spec) => spec.format === "percent")),
+		errors: errorRateLevel(
+			worst((spec) => spec.events !== undefined && spec.events(read) >= GCP_MIN_EVENTS),
+		),
+	}
 }
 
 /** One table row per workload, from the tab query's points. */
@@ -202,11 +269,101 @@ export function gcpWorkloads(
 		if (workload === undefined) byWorkload.set(id, { keys: point.keys, points: [point] })
 		else workload.points.push(point)
 	}
-	return [...byWorkload.values()].map((workload) => {
-		const read = readerOf(workload.points)
-		return { keys: workload.keys, values: GCP_INFRA_COLUMNS[service].map((spec) => spec.value(read)) }
-	})
+	return [...byWorkload.values()].map((workload) => gcpWorkload(service, workload.keys, workload.points))
 }
+
+/** One reporting service of the fleet read: see `getGcpInfraFleet`. */
+export interface GcpFleetService {
+	readonly service: GcpInfraServiceId
+	readonly workloads: ReadonlyArray<GcpWorkload>
+	/** The service's query hit its row cap. */
+	readonly truncated: boolean
+}
+
+/** Stable empty fallback so memos don't recompute on every render. */
+export const NO_GCP_FLEET: ReadonlyArray<GcpFleetService> = []
+
+export const gcpFleet = (
+	services: ReadonlyArray<{
+		readonly service: GcpInfraServiceId
+		readonly points: ReadonlyArray<GcpMetricPoint>
+	}>,
+): ReadonlyArray<GcpFleetService> =>
+	services.map(({ service, points }) => ({
+		service,
+		workloads: gcpWorkloads(service, points),
+		truncated: points.length >= GCP_INFRA_ROW_LIMIT,
+	}))
+
+/** A workload's tone on a health strip: the worse of its saturation and its error rate. */
+export const gcpWorkloadTone = (workload: GcpWorkload): ErrorRateLevel =>
+	workload.saturation === "crit" || workload.errors === "crit"
+		? "crit"
+		: workload.saturation === "warn" || workload.errors === "warn"
+			? "warn"
+			: "neutral"
+
+export const GCP_SCOPES = ["saturated", "elevated", "erroring"] as const
+export type GcpScope = (typeof GCP_SCOPES)[number]
+
+export const gcpInScope = (workload: GcpWorkload, scope: GcpScope): boolean =>
+	scope === "saturated"
+		? workload.saturation === "crit"
+		: scope === "elevated"
+			? workload.saturation === "warn"
+			: workload.errors !== "neutral"
+
+const identityValue = (
+	service: GcpInfraServiceId,
+	keys: ReadonlyArray<string>,
+	labels: ReadonlyArray<string>,
+): string | undefined =>
+	keys[GCP_INFRA_SERVICES[service].identity.findIndex(([label]) => labels.includes(label))]
+
+export const gcpWorkloadProject = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
+	identityValue(service, keys, ["Project"])
+
+/** Where a workload runs, as Google Cloud names it: a region or a zone. Undefined for a global one. */
+export const gcpWorkloadLocation = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
+	identityValue(service, keys, ["Region", "Location", "Zone"])
+
+/** The region a workload runs in: its own, or its zone's. */
+export const gcpWorkloadRegion = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
+	gcpWorkloadLocation(service, keys)?.replace(/-[a-z]$/, "")
+
+/** The search params that carry a workload's identity after its name, by lower-cased identity label. */
+export const GCP_WORKLOAD_PARAMS = [
+	"project",
+	"region",
+	"namespace",
+	"cluster",
+	"location",
+	"zone",
+	"backend",
+] as const
+export type GcpWorkloadSearch = Partial<Record<(typeof GCP_WORKLOAD_PARAMS)[number], string>>
+
+const workloadParams = (service: GcpInfraServiceId) =>
+	GCP_INFRA_SERVICES[service].identity
+		.slice(1)
+		.flatMap(([label]) => GCP_WORKLOAD_PARAMS.filter((name) => name === label.toLowerCase()))
+
+/** The search params of a workload's page. */
+export function gcpWorkloadSearch(
+	service: GcpInfraServiceId,
+	keys: ReadonlyArray<string>,
+): GcpWorkloadSearch {
+	const search: GcpWorkloadSearch = {}
+	for (const [index, name] of workloadParams(service).entries()) search[name] = keys[index + 1]
+	return search
+}
+
+/** A workload's identity values from its page's address; an absent param reads as empty. */
+export const gcpWorkloadKeys = (
+	service: GcpInfraServiceId,
+	name: string,
+	search: GcpWorkloadSearch,
+): ReadonlyArray<string> => [name, ...workloadParams(service).map((param) => search[param] ?? "")]
 
 /** Sort key of the name column; every other key is a column label. */
 export const GCP_NAME_SORT = "name"
@@ -313,6 +470,10 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
 
 /** A Cloud Asset Inventory type in words; the raw type when it is not one Maple collects. */
 export const gcpAssetTypeLabel = (assetType: string): string => ASSET_TYPE_LABELS[assetType] ?? assetType
+
+/** "RUNNING" and "PENDING_CREATE" as Google reports them, in sentence case. */
+export const gcpStateLabel = (state: string) =>
+	(state.charAt(0) + state.slice(1).toLowerCase()).replaceAll("_", " ")
 
 /** What to call a resource: its display name, else the last segment of its full name. */
 export const gcpResourceName = (resource: {

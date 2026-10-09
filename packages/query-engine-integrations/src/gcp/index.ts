@@ -1,3 +1,3 @@
-// Google Cloud integration queries: the /infra/gcp service tabs.
+// Google Cloud integration queries: the /infra/gcp service tabs and workload pages.
 
-export { gcpInfraMetricsSQL, gcpInfraPresenceSQL } from "./gcp-infra"
+export { gcpInfraMetricsSQL, gcpInfraPresenceSQL, gcpInfraTimeseriesSQL } from "./gcp-infra"

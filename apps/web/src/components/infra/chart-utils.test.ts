@@ -25,6 +25,11 @@ describe("formatValueWithUnit", () => {
 		expect(formatValueWithUnit(2048, "bytes_per_second")).toBe("2.0 KB/s")
 	})
 
+	it("renders a count at reading precision, with no unit", () => {
+		expect(formatValueWithUnit(1.5, "count")).toBe("1.5")
+		expect(formatValueWithUnit(12_340, "count")).toBe("12.3K")
+	})
+
 	it("guards against non-finite values", () => {
 		expect(formatValueWithUnit(Number.NaN, "cores")).toBe("—")
 		expect(formatValueWithUnit(Number.POSITIVE_INFINITY, "percent")).toBe("—")

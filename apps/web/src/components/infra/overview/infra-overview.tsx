@@ -29,13 +29,14 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	cloudflareZonesResultAtom,
 	containersSummaryResultAtom,
-	gcpInfraPresenceResultAtom,
+	gcpInfraFleetResultAtom,
 	getServiceMapPlanetScaleResultAtom,
 	listHostsResultAtom,
 	podsSummaryResultAtom,
 	railwayServicesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
+import { gcpFleet, gcpWorkloadSearch } from "../gcp/tabs"
 import { HOST_LIST_LIMIT } from "../host-summary-band"
 import {
 	type Finding,
@@ -158,8 +159,8 @@ function PlanetScaleData({ window, render }: { window: OverviewWindow; render: R
 }
 
 function GcpData({ window, render }: { window: OverviewWindow; render: RenderState }) {
-	const result = useAtomValue(gcpInfraPresenceResultAtom({ data: window }))
-	return render(toState(result, (response) => summarizeGcp(response.services)))
+	const result = useAtomValue(gcpInfraFleetResultAtom({ data: window }))
+	return render(toState(result, (response) => summarizeGcp(gcpFleet(response.services))))
 }
 
 /**
@@ -290,6 +291,17 @@ function FindingLink({
 					to="/infra/planetscale/$dbName"
 					params={{ dbName: target.database }}
 					search={timeSearch}
+					className={className}
+				>
+					{children}
+				</Link>
+			)
+		case "gcp":
+			return (
+				<Link
+					to="/infra/gcp/$service/$name"
+					params={{ service: target.service, name: target.keys[0] }}
+					search={{ ...timeSearch, ...gcpWorkloadSearch(target.service, target.keys) }}
 					className={className}
 				>
 					{children}

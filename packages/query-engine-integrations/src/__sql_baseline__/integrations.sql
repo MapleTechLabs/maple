@@ -2868,6 +2868,336 @@ SELECT
         GROUP BY metric
         FORMAT JSON
 
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:cloudFunctions
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['status'], metrics_sum.Attributes['state']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloudfunctions.function.execution_count', 'gcp.cloudfunctions.function.network_egress')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['service.name'] = 'function'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'region'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['status'], metrics_gauge.Attributes['state']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloudfunctions.function.execution_times', 'gcp.cloudfunctions.function.instance_count', 'gcp.cloudfunctions.function.user_memory_bytes')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['service.name'] = 'function'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'region'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:cloudRun
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_code_class'], metrics_sum.Attributes['state']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.run.request_count', 'gcp.run.container.billable_instance_time')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['service.name'] = 'service'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'region'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class'], metrics_gauge.Attributes['state']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.run.request_latencies', 'gcp.run.container.instance_count', 'gcp.run.container.cpu.utilizations', 'gcp.run.container.memory.utilizations', 'gcp.run.container.max_request_concurrencies')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['service.name'] = 'service'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'region'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:cloudSql
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloudsql.database.disk.read_ops_count', 'gcp.cloudsql.database.disk.write_ops_count')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.database_id'] = 'instance'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'region'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloudsql.database.cpu.utilization', 'gcp.cloudsql.database.memory.utilization', 'gcp.cloudsql.database.disk.utilization', 'gcp.cloudsql.database.network.connections', 'gcp.cloudsql.database.postgresql.num_backends', 'gcp.cloudsql.database.replication.replica_lag')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'] = 'instance'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'region'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:computeEngine
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['instance_name']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.compute.instance.network.received_bytes_count', 'gcp.compute.instance.network.sent_bytes_count', 'gcp.compute.instance.disk.read_bytes_count', 'gcp.compute.instance.disk.write_bytes_count')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['host.name'] = 'instance'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.availability_zone'] = 'zone'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['instance_name']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.compute.instance.cpu.utilization', 'gcp.compute.instance.memory.balloon.ram_used')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] = 'instance'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.availability_zone'] = 'zone'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:gke
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['memory_type']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.kubernetes.container.cpu.core_usage_time', 'gcp.kubernetes.container.restart_count')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['k8s.container.name'] = 'container'
+          AND metrics_sum.ResourceAttributes['k8s.namespace.name'] = 'namespace'
+          AND metrics_sum.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['memory_type']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.kubernetes.container.cpu.limit_utilization', 'gcp.kubernetes.container.memory.used_bytes', 'gcp.kubernetes.container.memory.limit_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.container.name'] = 'container'
+          AND metrics_gauge.ResourceAttributes['k8s.namespace.name'] = 'namespace'
+          AND metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:gkeNodes
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['memory_type']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['memory_type']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.kubernetes.node.cpu.allocatable_utilization', 'gcp.kubernetes.node.memory.allocatable_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:loadBalancing
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_code_class']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.loadbalancing.https.request_count', 'gcp.loadbalancing.https.backend_request_count', 'gcp.loadbalancing.https.request_bytes_count', 'gcp.loadbalancing.https.response_bytes_count')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.url_map_name'] = 'url map'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.backend_target_name'] = 'backend'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.loadbalancing.https.total_latencies', 'gcp.loadbalancing.https.backend_latencies')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.url_map_name'] = 'url map'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.backend_target_name'] = 'backend'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:pubsub
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_class']], '') AS label,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_message_count', 'gcp.pubsub.subscription.ack_message_count', 'gcp.pubsub.subscription.push_request_count', 'gcp.pubsub.subscription.dead_letter_message_count')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.subscription_id'] = 'subscription'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_class']], '') AS label,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.num_undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message_age')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.subscription_id'] = 'subscription'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
 -- builder:internal:dbStatementSamplesQuery:default
 SELECT
           coalesce(nullIf(traces.SpanAttributes['db.query.fingerprint'], ''), traces.SpanAttributes['db.statement.fingerprint']) AS fingerprint,

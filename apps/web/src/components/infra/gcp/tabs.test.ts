@@ -1,17 +1,25 @@
 import { describe, expect, it } from "vitest"
 
-import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { GCP_ASSET_TYPES } from "@maple/domain/gcp-metrics"
 import {
 	GCP_INFRA_COLUMNS,
 	GCP_NAME_SORT,
+	GCP_SCOPES,
 	formatGcpValue,
 	gcpAssetTypeLabel,
+	gcpInScope,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
 	gcpInfraTabs,
 	gcpResourceName,
 	gcpResourcesError,
+	gcpStateLabel,
+	gcpWorkloadKeys,
+	gcpWorkloadProject,
+	gcpWorkloadRegion,
+	gcpWorkloadSearch,
+	gcpWorkloadTone,
 	gcpWorkloads,
 	sortGcpWorkloads,
 	type GcpMetricPoint,
@@ -131,6 +139,86 @@ describe("gcpWorkloads", () => {
 			valuesOf("cloudSql", [point(db, `gcp.cloudsql.database.${metric}`, "", 240, 60)])[0]?.Connections
 		expect(connections("network.connections")).toBe(4)
 		expect(connections("postgresql.num_backends")).toBe(4)
+	})
+})
+
+describe("workload health", () => {
+	const DB = ["acme-prod:main", "acme-prod", "europe-west1"]
+	const database = (cpu: number, disk: number) =>
+		gcpWorkloads("cloudSql", [
+			point(DB, "gcp.cloudsql.database.cpu.utilization", "", cpu),
+			point(DB, "gcp.cloudsql.database.disk.utilization", "", disk),
+		])[0]
+	const service = (ok: number, failed: number) =>
+		gcpWorkloads("cloudRun", [
+			point(API, "gcp.run.request_count", "2xx", ok),
+			point(API, "gcp.run.request_count", "5xx", failed),
+		])[0]
+
+	it("rates saturation by the busiest share of a limit", () => {
+		expect(database(0.2, 0.5).saturation).toBe("ok")
+		expect(database(0.2, 0.65).saturation).toBe("warn")
+		expect(database(0.95, 0.65).saturation).toBe("crit")
+		// A latency or a count is no share of anything.
+		expect(
+			gcpWorkloads("cloudRun", [point(API, "gcp.run.request_latencies", "0.95", 5000)])[0],
+		).toMatchObject({
+			saturation: "ok",
+			errors: "neutral",
+		})
+	})
+
+	it("rates an error rate only over enough events", () => {
+		expect(service(990, 10).errors).toBe("warn")
+		expect(service(900, 100).errors).toBe("crit")
+		expect(service(999, 1).errors).toBe("neutral")
+		// One failure of two is shown in the table and raises nothing.
+		expect(service(1, 1)).toMatchObject({ values: expect.arrayContaining([0.5]), errors: "neutral" })
+	})
+
+	it("puts a workload in every scope it belongs to, and tones it by the worse signal", () => {
+		const scopes = (workload: ReturnType<typeof service>) =>
+			GCP_SCOPES.filter((scope) => gcpInScope(workload, scope))
+		expect(scopes(database(0.95, 0.1))).toEqual(["saturated"])
+		expect(scopes(database(0.7, 0.1))).toEqual(["elevated"])
+		expect(scopes(service(900, 100))).toEqual(["erroring"])
+		expect(scopes(service(1000, 0))).toEqual([])
+		expect(gcpWorkloadTone(database(0.7, 0.1))).toBe("warn")
+		expect(gcpWorkloadTone(service(900, 100))).toBe("crit")
+		expect(gcpWorkloadTone(service(1000, 0))).toBe("neutral")
+	})
+})
+
+describe("workload identity", () => {
+	const CONTAINER = ["api", "payments", "prod", "acme-prod", "us-central1-a"]
+
+	it("reads the project, and the region of a regional or a zonal workload", () => {
+		expect(gcpWorkloadProject("gke", CONTAINER)).toBe("acme-prod")
+		expect(gcpWorkloadRegion("gke", CONTAINER)).toBe("us-central1")
+		expect(gcpWorkloadRegion("cloudRun", API)).toBe("europe-west1")
+		expect(gcpWorkloadRegion("computeEngine", ["web-1", "acme-prod", "europe-west4-b"])).toBe(
+			"europe-west4",
+		)
+		// A subscription is global.
+		expect(gcpWorkloadRegion("pubsub", ["orders", "acme-prod"])).toBeUndefined()
+		expect(gcpWorkloadProject("pubsub", ["orders", "acme-prod"])).toBe("acme-prod")
+	})
+
+	it("carries every identity value after the name in a page's address, and reads it back", () => {
+		expect(gcpWorkloadSearch("gke", CONTAINER)).toEqual({
+			namespace: "payments",
+			cluster: "prod",
+			project: "acme-prod",
+			location: "us-central1-a",
+		})
+		for (const id of GCP_INFRA_SERVICE_IDS) {
+			const keys = GCP_INFRA_SERVICES[id].identity.map(([label]) => `a ${label}`)
+			expect(gcpWorkloadKeys(id, keys[0], gcpWorkloadSearch(id, keys)), id).toEqual(keys)
+		}
+	})
+
+	it("reads an address without its params as empty identity values", () => {
+		expect(gcpWorkloadKeys("cloudRun", "api", { project: "acme-prod" })).toEqual(["api", "acme-prod", ""])
 	})
 })
 
@@ -282,6 +370,11 @@ describe("resources", () => {
 		expect(gcpResourceName({ name, displayName: "Public API" })).toBe("Public API")
 		expect(gcpResourceName({ name, displayName: null })).toBe("api")
 		expect(gcpResourceName({ name, displayName: "" })).toBe("api")
+	})
+
+	it("writes a state in sentence case", () => {
+		expect(gcpStateLabel("RUNNING")).toBe("Running")
+		expect(gcpStateLabel("PENDING_CREATE")).toBe("Pending create")
 	})
 
 	it("surfaces the first failing inventory sync", () => {

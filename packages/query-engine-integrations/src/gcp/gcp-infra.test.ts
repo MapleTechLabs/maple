@@ -2,8 +2,8 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
-import { gcpInfraMetricsSQL, gcpInfraPresenceSQL } from "./gcp-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
+import { gcpInfraMetricsSQL, gcpInfraPresenceSQL, gcpInfraTimeseriesSQL } from "./gcp-infra"
 
 const params = {
 	orgId: OrgId.make("org_1"),
@@ -63,6 +63,84 @@ describe("gcpInfraMetricsSQL", () => {
 			]),
 		)
 		expect(rows).toEqual([{ ...point, label: "2xx", total: 12.5, samples: 60 }])
+	})
+})
+
+describe("gcpInfraTimeseriesSQL", () => {
+	const bucketed = { ...params, bucketSeconds: 300 }
+
+	it("buckets one workload's counters and gauges, bounded by its identity", () => {
+		const { sql, tenantScope } = compileUnsafe(
+			gcpInfraTimeseriesSQL("cloudRun", ["api", "acme-prod", "europe-west1"]),
+			bucketed,
+		)
+		expect(tenantScope).toBe("single-tenant")
+		for (const table of ["metrics_sum", "metrics_gauge"]) {
+			expect(sql).toContain(`${table}.OrgId = 'org_1'`)
+			expect(sql).toContain(`${table}.ResourceAttributes['service.name'] = 'api'`)
+			expect(sql).toContain(`${table}.ResourceAttributes['cloud.account.id'] = 'acme-prod'`)
+			expect(sql).toContain(`${table}.ResourceAttributes['cloud.region'] = 'europe-west1'`)
+		}
+		expect(sql).toContain(
+			"metrics_sum.MetricName IN ('gcp.run.request_count', 'gcp.run.container.billable_instance_time')",
+		)
+		expect(sql.match(/TimeUnix >= '2026-07-02 00:00:00.000'/g)).toHaveLength(2)
+		expect(sql.match(/TimeUnix <= '2026-07-03 00:00:00.000'/g)).toHaveLength(2)
+		expect(sql).toContain("toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket")
+		expect(sql).toContain("GROUP BY bucket, metric, label")
+		expect(sql).toContain("LIMIT 10000")
+	})
+
+	it("reads the nodes of a cluster, which have no tab", () => {
+		const { sql } = compileUnsafe(
+			gcpInfraTimeseriesSQL("gkeNodes", ["prod", "acme-prod", "us-central1"]),
+			bucketed,
+		)
+		expect(sql).not.toContain("IN ()")
+		expect(sql).toContain("'gcp.kubernetes.node.cpu.allocatable_utilization'")
+		expect(sql).toContain("metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'prod'")
+		expect(sql).toContain(
+			"metrics_gauge.ResourceAttributes['gcp.resource.labels.location'] = 'us-central1'",
+		)
+	})
+
+	it("compares every identity attribute of every source, a missing key as empty", () => {
+		for (const source of GCP_INFRA_SOURCE_IDS) {
+			const { sql } = compileUnsafe(gcpInfraTimeseriesSQL(source, ["only-the-name"]), bucketed)
+			expect(sql, source).toContain("= 'only-the-name'")
+			expect(sql.match(/ResourceAttributes\['[a-z_.]+'\] = ''/g)?.length ?? 0, source).toBeGreaterThan(
+				0,
+			)
+		}
+	})
+
+	it("escapes single quotes in a key", () => {
+		const { sql } = compileUnsafe(
+			gcpInfraTimeseriesSQL("pubsub", ["orders' OR 1", "acme-prod"]),
+			bucketed,
+		)
+		expect(sql).toContain("= 'orders\\' OR 1'")
+		expect(sql).not.toContain("= 'orders' OR 1'")
+	})
+
+	it("decodes a quoted point count to a number", () => {
+		const rows = Effect.runSync(
+			compileUnsafe(gcpInfraTimeseriesSQL("cloudRun", ["api"]), bucketed).decodeRows([
+				{
+					bucket: "2026-07-02 00:05:00",
+					metric: "gcp.run.request_count",
+					label: "2xx",
+					total: 12.5,
+					samples: "5",
+				},
+			]),
+		)
+		expect(rows[0]).toMatchObject({
+			metric: "gcp.run.request_count",
+			label: "2xx",
+			total: 12.5,
+			samples: 5,
+		})
 	})
 })
 

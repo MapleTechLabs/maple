@@ -5,16 +5,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 
-import { ColumnHead, DataTable, MetaChip } from "@/components/common/data-table"
+import { Link } from "@tanstack/react-router"
+
+import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS } from "@/components/common/data-table"
 import { ResultView } from "@/components/common/result-view"
 import { CircleWarningIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { GcpMessage } from "@/components/integrations/gcp-integration-card"
+import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
-import { gcpAssetTypeLabel, gcpResourceName } from "./tabs"
+import { gcpResourceWorkload } from "./inventory"
+import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel, gcpWorkloadSearch } from "./tabs"
 
 export interface GcpResourceFilter {
 	readonly type?: string | undefined
@@ -25,10 +29,7 @@ const ALL = "all"
 /** Re-reads while the inventory is empty, so the first sync shows up without a reload. */
 const EMPTY_REFRESH_MS = 30_000
 
-/** "RUNNING" and "PENDING_CREATE" as Google reports them, in the table's own case. */
-const stateLabel = (state: string) => (state.charAt(0) + state.slice(1).toLowerCase()).replaceAll("_", " ")
-
-function FilterSelect({
+export function FilterSelect({
 	label,
 	allLabel,
 	options,
@@ -82,11 +83,13 @@ function Resources({
 	inventory,
 	filter,
 	onFilterChange,
+	timeSearch,
 	waiting,
 }: {
 	inventory: GcpResourcesResponse
 	filter: GcpResourceFilter
 	onFilterChange: (filter: GcpResourceFilter) => void
+	timeSearch: TimeRangeSearch
 	waiting: boolean
 }) {
 	const { resources, total, types, projects } = inventory
@@ -137,14 +140,12 @@ function Resources({
 				{resources.map((resource) => {
 					const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
 					const type = gcpAssetTypeLabel(resource.assetType)
-					const state = resource.state === null ? null : stateLabel(resource.state)
-					return (
-						<div
-							key={`${resource.assetType}:${resource.name}`}
-							className="flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
-						>
+					const state = resource.state === null ? null : gcpStateLabel(resource.state)
+					const workload = gcpResourceWorkload(resource)
+					const cells = (
+						<>
 							<div
-								className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground"
+								className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
 								title={resource.name}
 							>
 								{gcpResourceName(resource)}
@@ -176,7 +177,27 @@ function Resources({
 								)}
 								{labels.length > 1 ? <MetaChip>+{labels.length - 1}</MetaChip> : null}
 							</div>
+						</>
+					)
+					const key = `${resource.assetType}:${resource.name}`
+					// A resource that is one workload opens its page; the rest have none.
+					return workload === undefined ? (
+						<div
+							key={key}
+							className="flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
+						>
+							{cells}
 						</div>
+					) : (
+						<Link
+							key={key}
+							to="/infra/gcp/$service/$name"
+							params={{ service: workload.service, name: workload.keys[0] }}
+							search={{ ...timeSearch, ...gcpWorkloadSearch(workload.service, workload.keys) }}
+							className={ROW_LINK_CLASS}
+						>
+							{cells}
+						</Link>
 					)
 				})}
 			</DataTable.Root>
@@ -188,10 +209,13 @@ function Resources({
 export function GcpResources({
 	filter,
 	onFilterChange,
+	timeSearch,
 	syncError,
 }: {
 	filter: GcpResourceFilter
 	onFilterChange: (filter: GcpResourceFilter) => void
+	/** Carried onto a row's workload page. */
+	timeSearch: TimeRangeSearch
 	/** Why the latest inventory sync was incomplete, if it was. */
 	syncError: string | null
 }) {
@@ -240,6 +264,7 @@ export function GcpResources({
 						inventory={inventory}
 						filter={filter}
 						onFilterChange={onFilterChange}
+						timeSearch={timeSearch}
 						waiting={waiting}
 					/>
 				)}

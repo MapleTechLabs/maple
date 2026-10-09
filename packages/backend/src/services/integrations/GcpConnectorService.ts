@@ -70,6 +70,8 @@ type GcpCapabilityError = GcpMetricsUnavailableError | IntegrationsValidationErr
 export interface GcpResourceFilter {
 	readonly assetType?: string | undefined
 	readonly projectId?: string | undefined
+	/** The last segment of the full resource name. */
+	readonly name?: string | undefined
 }
 
 export interface GcpResourceInventory {
@@ -293,6 +295,9 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								filter.projectId === undefined
 									? undefined
 									: eq(gcpResources.projectId, filter.projectId),
+								filter.name === undefined
+									? undefined
+									: sql`reverse(split_part(reverse(${gcpResources.name}), '/', 1)) = ${filter.name}`,
 							),
 						)
 						.orderBy(
@@ -315,7 +320,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				}
 				return {
 					resources: rows,
-					total,
+					// The counts are by type and project: a name narrows to the rows themselves.
+					total: filter.name === undefined ? total : rows.length,
 					types: [...byType]
 						.map(([assetType, count]) => ({ assetType, count }))
 						.sort((a, b) => a.assetType.localeCompare(b.assetType)),

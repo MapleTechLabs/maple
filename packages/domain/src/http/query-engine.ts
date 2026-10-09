@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { GCP_INFRA_SERVICE_IDS } from "../gcp-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
@@ -493,6 +493,32 @@ export class GcpInfraMetricsResponse extends Schema.Class<GcpInfraMetricsRespons
 		),
 	},
 ) {}
+
+export class GcpInfraTimeseriesRequest extends Schema.Class<GcpInfraTimeseriesRequest>(
+	"GcpInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	source: Schema.Literals(GCP_INFRA_SOURCE_IDS),
+	/** The workload's identity values, in the order of the source's `identity`. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class GcpInfraTimeseriesResponse extends Schema.Class<GcpInfraTimeseriesResponse>(
+	"GcpInfraTimeseriesResponse",
+)({
+	/** One row per bucket, metric and label value: see `gcpInfraTimeseriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			metric: Schema.String,
+			label: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
 
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
 // analytics and per-Worker invocation analytics from the direct-integration
@@ -2676,6 +2702,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("gcpInfraMetrics", "/gcp-infra-metrics", {
 			payload: GcpInfraMetricsRequest,
 			success: GcpInfraMetricsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraTimeseries", "/gcp-infra-timeseries", {
+			payload: GcpInfraTimeseriesRequest,
+			success: GcpInfraTimeseriesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

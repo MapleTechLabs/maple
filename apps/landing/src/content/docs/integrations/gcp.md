@@ -315,7 +315,17 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 
 ## Infrastructure → Google Cloud
 
-**Infrastructure → Google Cloud** is in the sidebar and on the Infrastructure overview while a connection has **Metrics and resources** switched on. The overview row names the services that reported in the time range. The page has one tab per service that reported metrics in the selected time range, with one row per workload. The tab you are on stays when you change the range. Counts and byte totals cover the time range; everything else is the average over it.
+**Infrastructure → Google Cloud** is in the sidebar and on the Infrastructure overview while a connection has **Metrics and resources** switched on.
+
+The page opens with a band that counts the workloads of every service by health, then one tab per service that reported metrics in the selected time range, with one row per workload. The tab you are on stays when you change the range. Counts and byte totals cover the time range; everything else is the average over it.
+
+| Band cell | Workloads it counts                                                                     |
+| --------- | --------------------------------------------------------------------------------------- |
+| Saturated | Using 90% or more of a CPU, memory or disk limit                                        |
+| Elevated  | Using 60% or more of one                                                                |
+| Erroring  | Failing 1% or more of at least 100 requests, executions or push deliveries in the range |
+
+Click a cell to narrow every tab to those workloads, and click it again to clear it.
 
 | Tab             | One row per                               | Columns                                                                                                |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -328,7 +338,36 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 | Load Balancing  | URL map, backend and project              | Requests, 5xx rate, latency p95 and p99, backend latency p95, response bytes                           |
 | Resources       | Resource from the [inventory](#resources) | Type, project, location, state and labels, with a filter by type and by project                        |
 
-Search a tab by name, project or location, and click a column to sort by it. A dash means the workload did not report that metric. CPU below one core is written in millicores: `250m` is a quarter of a core. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. GKE node and Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
+Search a tab by name, project or location, filter every tab by project and region, and click a column to sort by it. The search, the filters and the band cell are part of the page's address, so a link opens the same view. A dash means the workload did not report that metric. CPU below one core is written in millicores: `250m` is a quarter of a core. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
+
+### Workload pages
+
+Click a row to open that workload: its headline numbers, then its charts over the selected time range.
+
+| Service         | Charts                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloud Run       | Requests by response class, 5xx rate, request latency, active and idle instances, CPU and memory utilization, peak concurrent requests per instance, billable instances   |
+| Cloud Functions | Executions by status, error rate, execution time, active and idle instances, memory per execution, network egress                                                         |
+| GKE             | CPU cores, CPU of limit, memory, memory of limit and restarts of the container, then CPU and memory of allocatable for the nodes of its cluster                           |
+| Compute Engine  | CPU utilization, memory used (E2 machine types only), network received and sent, disk read and written                                                                    |
+| Cloud SQL       | CPU, memory and disk utilization, connections, disk read and write operations, replica lag (read replicas only)                                                           |
+| Pub/Sub         | Backlog, age of the oldest unacknowledged message, delivered and acknowledged messages, dead-lettered messages, push requests by response and push error rate (push only) |
+| Load Balancing  | Requests by response class, 5xx rate, total latency, backend latency, backend requests by response class, request and response traffic                                    |
+
+Latency, utilization and concurrency charts draw p50, p95 and p99. Traffic, messages and disk operations are per second; restarts and dead-lettered messages are counts per point. A point covers at least 5 minutes, and more on a long range. A share of a limit carries a line at 80%. Hovering one chart marks the same moment on the others.
+
+From a workload's page:
+
+- **Logs** opens the workload's logs. A Cloud SQL instance, a subscription and a URL map open the logs of their resource type, narrowed to the resource.
+- **Traces** is there when a service of the same name sent traces in the time range.
+- The icon beside a chart's title opens its metric in the metrics explorer.
+- When the workload is in the [inventory](#resources), a panel lists its project, location, state and labels, with a link to it in the Google Cloud console. A GKE container shows its cluster. The match is by type, project, name and location: a workload Maple cannot match exactly shows no panel.
+
+### Elsewhere in Maple
+
+- The **Infrastructure overview** row counts the workloads, colors them by health and lists up to three that are saturated, elevated or erroring. Each opens the workload's page. While every workload is healthy the row names the services that report.
+- On the **service map**, the panel of a traced service shows the numbers of the Cloud Run service, function, GKE container or VM of the same name, with a link to its page.
+- A row of the **Resources** tab that is one workload (a Cloud Run service, a 1st gen function, a VM, a Cloud SQL instance, a subscription) opens that workload's page.
 
 The **Resources** tab shows the first 500 resources that match its filters, and how many projects Maple found. It does not depend on the time range.
 

@@ -432,6 +432,20 @@ describe("GcpConnectorService", () => {
 				const none = yield* gcp.resources(orgId, { assetType: RUN, projectId: "acme-blog" })
 				assert.deepStrictEqual([none.total, none.resources], [0, []])
 
+				// A workload's page asks for its one resource by the last segment of the name.
+				const named = yield* gcp.resources(orgId, {
+					assetType: RUN,
+					projectId: "acme-shop",
+					name: "api",
+				})
+				assert.deepStrictEqual(
+					[named.total, named.resources.map((resource) => resource.name)],
+					[1, [api]],
+				)
+				// A segment in the middle of the name is not the resource's name.
+				assert.strictEqual((yield* gcp.resources(orgId, { name: "services" })).total, 0)
+				assert.strictEqual((yield* gcp.resources(orgId, { name: "ap" })).total, 0)
+
 				const theirs = yield* gcp.resources(otherOrgId, {})
 				assert.deepStrictEqual(
 					theirs.resources.map((resource) => resource.projectId),

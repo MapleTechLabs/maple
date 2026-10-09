@@ -79,10 +79,26 @@ export const GCP_INFRA_SERVICES: Record<GcpInfraServiceId, GcpInfraService> = {
 	},
 } satisfies Record<GcpInfraServiceId, GcpInfraService>
 
-/** The curated metrics behind a tab. */
-export const gcpInfraMetrics = (service: GcpInfraServiceId): ReadonlyArray<GcpMetric> =>
-	GCP_METRIC_GROUPS.find((group) => group.resourceType === GCP_INFRA_SERVICES[service].resourceType)
+/**
+ * What a chart can read: a tab's workloads, or the nodes of a GKE cluster, which have no tab and
+ * chart on the page of a container that runs on them.
+ */
+export const GCP_INFRA_SOURCE_IDS = [...GCP_INFRA_SERVICE_IDS, "gkeNodes"] as const
+export type GcpInfraSourceId = (typeof GCP_INFRA_SOURCE_IDS)[number]
+
+export const GCP_INFRA_SOURCES: Record<GcpInfraSourceId, GcpInfraService> = {
+	...GCP_INFRA_SERVICES,
+	gkeNodes: {
+		title: "GKE nodes",
+		resourceType: "k8s_node",
+		identity: [["Cluster", "k8s.cluster.name"], PROJECT, ["Location", resourceLabel("location")]],
+	},
+} satisfies Record<GcpInfraSourceId, GcpInfraService>
+
+/** The curated metrics behind a tab or a chart source. */
+export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> =>
+	GCP_METRIC_GROUPS.find((group) => group.resourceType === GCP_INFRA_SOURCES[source].resourceType)
 		?.metrics ?? []
 
-/** Cap on the rows of one tab's query: one row per workload, metric and label value. */
+/** Cap on the rows of one query: one row per workload or time bucket, metric and label value. */
 export const GCP_INFRA_ROW_LIMIT = 10_000

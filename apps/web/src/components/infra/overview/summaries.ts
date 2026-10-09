@@ -9,6 +9,7 @@ import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-in
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import { GCP_INFRA_COLUMNS, formatGcpValue, gcpWorkloadTone, type GcpFleetService } from "../gcp/tabs"
 import type { ContainerScopeCounts } from "../container-summary-band"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
 import type { HostRow } from "../host-table"
@@ -36,6 +37,7 @@ export type FindingTarget =
 	| { kind: "zone"; zoneName: string }
 	| { kind: "railway"; serviceId: string; environmentId: string }
 	| { kind: "planetscale"; database: string }
+	| { kind: "gcp"; service: GcpInfraServiceId; keys: ReadonlyArray<string> }
 
 export interface Finding {
 	readonly key: string
@@ -278,17 +280,47 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 	}
 }
 
-/** Google Cloud has no thresholds yet: the row names what reports and opens its tables. */
-export function summarizeGcp(services: ReadonlyArray<GcpInfraServiceId>): SourceSummary {
+/** Google Cloud workloads by their busiest share of a limit and by their error rate. */
+export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSummary {
+	const flagged = fleet
+		.flatMap(({ service, workloads }) =>
+			workloads.map((workload) => ({ service, workload, tone: gcpWorkloadTone(workload) })),
+		)
+		.filter((entry) => entry.tone !== "neutral")
+		.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "crit" ? -1 : 1))
+	const findings = flagged.slice(0, MAX_FINDINGS_PER_SOURCE).map(({ service, workload, tone }): Finding => {
+		// The column behind the tone: the error rate when it is as bad, else the busiest limit.
+		const format = workload.errors === tone ? "errorRate" : "percent"
+		const worst = GCP_INFRA_COLUMNS[service]
+			.map((spec, index) => ({ spec, value: workload.values[index] ?? 0 }))
+			.filter(({ spec }) => spec.format === format)
+			.reduce((a, b) => (b.value > a.value ? b : a))
+		return {
+			key: `gcp:${service}:${workload.keys.join("/")}`,
+			source: "gcp",
+			tone: tone === "crit" ? "crit" : "warn",
+			title: `${workload.keys[0]} ${worst.spec.label} at ${formatGcpValue(format, worst.value)}`,
+			detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
+			target: { kind: "gcp", service, keys: workload.keys },
+		}
+	})
+	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
+	const crit = flagged.filter((entry) => entry.tone === "crit").length
 	return {
-		resources: countLabel(services.length, "service"),
-		segments: [],
+		resources: countLabel(total, "workload"),
+		segments: [
+			{ key: "ok", count: okCount(total, flagged.length) },
+			{ key: "elevated", count: flagged.length - crit },
+			{ key: "saturated", count: crit },
+		],
 		headline:
-			services.length > 0
-				? services.map((service) => GCP_INFRA_SERVICES[service].title).join(", ")
-				: "no metrics in this window",
-		headlineTone: "neutral",
-		findings: [],
+			flagged.length > 0
+				? `${countLabel(flagged.length, "workload")} above 60% of a limit or erroring`
+				: fleet.length > 0
+					? fleet.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+					: "no metrics in this window",
+		headlineTone: worstTone(findings),
+		findings,
 	}
 }
 

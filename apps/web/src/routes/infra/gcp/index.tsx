@@ -1,7 +1,8 @@
+import { useMemo } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import { GCP_INFRA_SERVICES } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
@@ -12,18 +13,29 @@ import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { PageHero } from "@/components/common/page-hero"
 import { ResultView } from "@/components/common/result-view"
 import { CircleInfoIcon, CircleWarningIcon, GoogleCloudIcon } from "@/components/icons"
-import { GcpResources, type GcpResourceFilter } from "@/components/infra/gcp/gcp-resources"
-import { GcpServiceTable, GcpServiceTableLoading } from "@/components/infra/gcp/gcp-service-table"
+import { GcpResources } from "@/components/infra/gcp/gcp-resources"
+import {
+	GcpServiceTable,
+	GcpServiceTableLoading,
+	GcpSummaryBand,
+	GcpSummaryBandLoading,
+} from "@/components/infra/gcp/gcp-service-table"
 import {
 	GCP_INFRA_TABS,
 	GCP_RESOURCES_TAB,
+	GCP_SCOPES,
+	NO_GCP_FLEET,
+	gcpFleet,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
 	gcpInfraTabs,
 	gcpResourcesError,
+	gcpWorkloadProject,
+	gcpWorkloadRegion,
 	type GcpInfraNotice,
 	type GcpInfraTab,
 } from "@/components/infra/gcp/tabs"
+import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
 import { IntegrationNotConnected } from "@/components/infra/primitives/integration-not-connected"
 import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
 import { GcpMessage } from "@/components/integrations/gcp-integration-card"
@@ -33,7 +45,6 @@ import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
 	pickTimeRangeSearch,
-	type TimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import type { TimeRange } from "@/components/time-range-picker/types"
@@ -42,19 +53,22 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import {
-	gcpInfraMetricsResultAtom,
-	gcpInfraPresenceResultAtom,
-} from "@/lib/services/atoms/warehouse-query-atoms"
+import { gcpInfraFleetResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 const gcpSearchSchema = Schema.Struct({
 	// A plain string: a stale or mistyped link falls back to the first tab instead of the error page.
 	tab: Schema.optional(Schema.String),
-	/** Resources tab: asset type and project filters. */
-	type: Schema.optional(Schema.String),
+	/** Every tab: the project. Service tabs: the region, a name search and a health scope. */
 	project: Schema.optional(Schema.String),
+	region: Schema.optional(Schema.String),
+	q: Schema.optional(Schema.String),
+	scope: Schema.optional(Schema.Literals(GCP_SCOPES)),
+	/** Resources tab: the asset type. */
+	type: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
+
+type GcpSearchParams = Schema.Schema.Type<typeof gcpSearchSchema>
 
 export const Route = createFileRoute("/infra/gcp/")({
 	component: GcpPage,
@@ -138,14 +152,8 @@ function GcpPage() {
 							search={search}
 							startTime={startTime}
 							endTime={endTime}
-							onFilterChange={(filter) =>
-								navigate({
-									search: (prev) => ({
-										...prev,
-										type: filter.type,
-										project: filter.project,
-									}),
-								})
+							onSearchChange={(patch) =>
+								navigate({ search: (prev) => ({ ...prev, ...patch }) })
 							}
 						/>
 					)
@@ -166,38 +174,65 @@ function GcpInfra({
 	search,
 	startTime,
 	endTime,
-	onFilterChange,
+	onSearchChange,
 }: {
 	/** The connections that collect metrics; none when metrics are switched off on all of them. */
 	connectors: ReadonlyArray<V2GcpConnector>
 	nowMs: number
-	search: TimeRangeSearch & GcpResourceFilter & { tab?: string | undefined }
+	search: GcpSearchParams
 	startTime: string
 	endTime: string
-	onFilterChange: (filter: GcpResourceFilter) => void
+	onSearchChange: (patch: Partial<GcpSearchParams>) => void
 }) {
-	const presenceAtom = gcpInfraPresenceResultAtom({ data: { startTime, endTime } })
-	const presenceResult = useRefreshableAtomValue(presenceAtom)
-	const refreshPresence = useAtomRefresh(presenceAtom)
+	// Every reporting service at once: the band counts them all, and a tab switch reads nothing.
+	const fleetAtom = gcpInfraFleetResultAtom({ data: { startTime, endTime } })
+	const fleetResult = useRefreshableAtomValue(fleetAtom)
+	const refreshFleet = useAtomRefresh(fleetAtom)
 
-	const reporting = Result.builder(presenceResult)
-		.onSuccess((presence) => presence.services)
-		.orElse((): ReadonlyArray<GcpInfraServiceId> => [])
-	const notice = Result.isSuccess(presenceResult)
+	const fleet = useMemo(
+		() =>
+			Result.builder(fleetResult)
+				.onSuccess((response) => gcpFleet(response.services))
+				.orElse(() => NO_GCP_FLEET),
+		[fleetResult],
+	)
+	const reporting = fleet.map((entry) => entry.service)
+	const notice = Result.isSuccess(fleetResult)
 		? gcpInfraNotice(connectors, reporting.length > 0, nowMs)
 		: null
 	const waiting = notice?.kind === "waiting"
 	// The first read flips the status before its metrics are queryable, so a quiet page keeps
 	// looking. A fixed range is left alone: it cannot gain new metrics.
 	const quiet = notice?.kind === "quiet" && search.startTime === undefined
-	useIntervalRefresh(refreshPresence, { intervalMs: WAITING_REFRESH_MS, enabled: waiting || quiet })
+	useIntervalRefresh(refreshFleet, { intervalMs: WAITING_REFRESH_MS, enabled: waiting || quiet })
 
 	const requested: GcpInfraTab | undefined = GCP_INFRA_TABS.find((candidate) => candidate === search.tab)
 	const tabs = gcpInfraTabs(reporting, requested, connectors.length > 0)
 	const tab = tabs.find((candidate) => candidate === requested) ?? tabs[0]
 
+	// The project and region filters cover every service tab, and so does the band above them.
+	const places = fleet.flatMap(({ service, workloads }) =>
+		workloads.map((workload) => ({
+			project: gcpWorkloadProject(service, workload.keys),
+			region: gcpWorkloadRegion(service, workload.keys),
+		})),
+	)
+	const options = (values: ReadonlyArray<string | undefined>) =>
+		[...new Set(values.flatMap((value) => (value ? [value] : [])))].sort()
+	const inPlace = fleet.map((entry) => ({
+		...entry,
+		workloads: entry.workloads.filter(
+			(workload) =>
+				(search.project === undefined ||
+					gcpWorkloadProject(entry.service, workload.keys) === search.project) &&
+				(search.region === undefined ||
+					gcpWorkloadRegion(entry.service, workload.keys) === search.region),
+		),
+	}))
+	const timeSearch = pickTimeRangeSearch(search)
+
 	// Metrics switched off, and nothing collected before in this range.
-	if (connectors.length === 0 && Result.isSuccess(presenceResult) && reporting.length === 0) {
+	if (connectors.length === 0 && Result.isSuccess(fleetResult) && reporting.length === 0) {
 		return (
 			<IntegrationNotConnected
 				icon={<GoogleCloudIcon size={16} />}
@@ -210,10 +245,33 @@ function GcpInfra({
 		)
 	}
 	return (
-		<ResultView result={presenceResult} loading={<Skeleton className="h-64 w-full" />}>
-			{() => (
+		<ResultView
+			result={fleetResult}
+			loading={
+				<div className="space-y-6">
+					<GcpSummaryBandLoading className={FLEET_BAND_BOXED} />
+					<GcpServiceTableLoading
+						service={
+							requested === undefined || requested === GCP_RESOURCES_TAB
+								? "cloudRun"
+								: requested
+						}
+					/>
+				</div>
+			}
+		>
+			{(_, { waiting: refreshing }) => (
 				<div className="space-y-6">
 					{notice === null ? null : <GcpNotice notice={notice} />}
+					{reporting.length === 0 ? null : (
+						<GcpSummaryBand
+							workloads={inPlace.flatMap((entry) => entry.workloads)}
+							activeScope={search.scope}
+							onScopeChange={(scope) => onSearchChange({ scope })}
+							waiting={refreshing}
+							className={FLEET_BAND_BOXED}
+						/>
+					)}
 					{/* The strip scrolls sideways on a phone; the bottom pixel is the active underline. */}
 					<Tabs value={tab} className="-mx-2 overflow-x-auto pb-px">
 						<TabsList variant="underline" className="gap-x-1 py-0">
@@ -227,7 +285,14 @@ function GcpInfra({
 									render={
 										<Link
 											to="/infra/gcp"
-											search={{ ...pickTimeRangeSearch(search), tab: candidate }}
+											// The place and scope carry over; a name search and the asset type do not.
+											search={{
+												...timeSearch,
+												project: search.project,
+												region: search.region,
+												scope: search.scope,
+												tab: candidate,
+											}}
 										/>
 									}
 								>
@@ -241,34 +306,29 @@ function GcpInfra({
 					{tab === GCP_RESOURCES_TAB ? (
 						<GcpResources
 							filter={{ type: search.type, project: search.project }}
-							onFilterChange={onFilterChange}
+							onFilterChange={onSearchChange}
+							timeSearch={timeSearch}
 							syncError={gcpResourcesError(connectors)}
 						/>
 					) : (
-						<GcpServiceTab key={tab} service={tab} startTime={startTime} endTime={endTime} />
+						<GcpServiceTable
+							// A tab keeps its own sort.
+							key={tab}
+							service={tab}
+							workloads={inPlace.find((entry) => entry.service === tab)?.workloads ?? []}
+							truncated={fleet.some((entry) => entry.service === tab && entry.truncated)}
+							query={search.q ?? ""}
+							scope={search.scope}
+							place={{ project: search.project, region: search.region }}
+							projects={options(places.map((place) => place.project))}
+							regions={options(places.map((place) => place.region))}
+							onQueryChange={(q) => onSearchChange({ q: q || undefined })}
+							onPlaceChange={onSearchChange}
+							timeSearch={timeSearch}
+							waiting={refreshing}
+						/>
 					)}
 				</div>
-			)}
-		</ResultView>
-	)
-}
-
-function GcpServiceTab({
-	service,
-	startTime,
-	endTime,
-}: {
-	service: GcpInfraServiceId
-	startTime: string
-	endTime: string
-}) {
-	const result = useRefreshableAtomValue(
-		gcpInfraMetricsResultAtom({ data: { startTime, endTime, service } }),
-	)
-	return (
-		<ResultView result={result} loading={<GcpServiceTableLoading service={service} />}>
-			{(response, { waiting }) => (
-				<GcpServiceTable service={service} points={response.points} waiting={waiting} />
 			)}
 		</ResultView>
 	)

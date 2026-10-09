@@ -1267,6 +1267,8 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			query: Schema.Struct({
 				assetType: Schema.optional(GcpResourceFilterValue),
 				projectId: Schema.optional(GcpResourceFilterValue),
+				/** The last segment of the resource name: how a workload's page finds its resource. */
+				name: Schema.optional(GcpResourceFilterValue),
 			}),
 			success: GcpResourcesResponse,
 			error: IntegrationsPersistenceError,

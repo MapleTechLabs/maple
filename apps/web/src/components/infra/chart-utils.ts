@@ -11,6 +11,7 @@ import {
 	formatLatency,
 	formatLoad,
 	formatPercent,
+	formatRate,
 	formatThroughput,
 } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -39,6 +40,8 @@ export type ChartUnit =
 	// whole seconds and renders anything at or below zero as an em dash.
 	| "milliseconds"
 	| "rate"
+	// A plain quantity: instances, connections, messages.
+	| "count"
 
 /** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */
 export function formatSeconds(seconds: number): string {
@@ -76,6 +79,8 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 			return formatLatency(value)
 		case "rate":
 			return formatThroughput(value, "/s")
+		case "count":
+			return formatRate(value)
 	}
 }
 
