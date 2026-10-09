@@ -17,11 +17,15 @@ const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
 const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
 
-// Data Access audit logs record every API read, and load balancer health-check probes hit each
-// backend every few seconds: both are high volume and say little about the workload.
+// High volume that says little about a workload. Data Access audit logs record every API read.
+// Load balancer health-check probes hit each backend every few seconds. A GKE cluster renews
+// its leader-election leases all day, about 570 audit entries a minute for one idle node. A VM
+// writes its serial console at boot, thousands of lines of raw terminal output.
 const DEFAULT_LOG_FILTER = [
 	'NOT log_id("cloudaudit.googleapis.com/data_access")',
 	'NOT httpRequest.userAgent:"GoogleHC"',
+	'NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update"',
+	'NOT logName:"serialconsole.googleapis.com"',
 ]
 
 export const gcpLogFilter = (excludeGkeContainerLogs: boolean): string =>
@@ -202,7 +206,18 @@ unbind() {
 }
 `
 
+// Signed in as a person in Cloud Shell, gcloud's calls are counted against Google's own project,
+// which has the API. With it off for a service account, every describe and role grant fails.
+const RESOURCE_MANAGER = `# gcloud needs the Cloud Resource Manager API of the project its calls are counted against. For a
+# service account that is its own project, usually this one. Most people do not need this, and
+# not everyone may switch an API on, so a refusal here is not an error.
+[ -z "$(off cloudresourcemanager.googleapis.com)" ] ||
+  gcloud services enable cloudresourcemanager.googleapis.com --project="$PROJECT_ID" >/dev/null 2>&1 || true
+`
+
 interface AccessChecks {
+	/** Setup only: makes sure gcloud can read the project before the checks that read it. */
+	readonly resourceManager: boolean
 	/** The scope's name must be readable: true when a role the run needs includes reading it. */
 	readonly scopeMustOpen: boolean
 	readonly billing: boolean
@@ -251,7 +266,7 @@ allowed() {
 `
 
 const access = (scopeType: GcpScopeType, checks: AccessChecks): string => `
-# ---- Checking access: nothing is changed before all of it passes ----
+# ---- Checking access: nothing is created or removed before all of it passes ----
 section "Checking access"
 command -v gcloud >/dev/null 2>&1 ||
   stop "gcloud is not installed here." "Run this script in Cloud Shell: https://shell.cloud.google.com"
@@ -261,7 +276,7 @@ if [ -z "$ACCOUNT" ] || [ -z "$TOKEN" ]; then
   stop "You are not signed in to Google Cloud." "In Cloud Shell, click Authorize when it asks. Elsewhere, run: gcloud auth login"
 fi
 ok "Signed in as $ACCOUNT"
-${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
+${checks.resourceManager ? RESOURCE_MANAGER : ""}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
   stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
 fi
 ok "${scopeType === "project" ? "Project" : "Host project"} $PROJECT_ID found ($PROJECT_NAME)"
@@ -294,8 +309,8 @@ const permissionChecks = (
 	if (!logs && !metrics) return []
 	const scope = SCOPES[scopeType]
 	const administrator = "or have an administrator run this script."
+	// Switching an API on is not asked about: it is only needed for an API that is off.
 	const host = [
-		"serviceusage.services.enable",
 		"resourcemanager.projects.getIamPolicy",
 		"resourcemanager.projects.setIamPolicy",
 		...(logs
@@ -332,9 +347,10 @@ const logsSetup = (scopeType: GcpScopeType): string => `
 section "Log forwarding"
 DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
-# APIs in the host project: Pub/Sub carries the log entries, Cloud Logging routes them.
-run "APIs enabled (Pub/Sub, Cloud Logging)" "Couldn't enable the Pub/Sub and Cloud Logging APIs." "$OWNER" \\
-  gcloud services enable pubsub.googleapis.com logging.googleapis.com --project="$PROJECT_ID"
+# APIs in the host project: Pub/Sub carries the log entries, Cloud Logging routes them, and
+# Cloud Resource Manager is what gcloud grants the roles below through.
+apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" \\
+  pubsub.googleapis.com logging.googleapis.com cloudresourcemanager.googleapis.com
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   ok "Topic already exists"
@@ -423,9 +439,10 @@ section "Metrics and resources"
 #   cloudasset.googleapis.com      Cloud Asset Inventory, to list resources
 #   iam.googleapis.com             to create the service account below
 #   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
-run "APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials)" "Couldn't enable the Cloud Monitoring, Cloud Asset and IAM APIs." "$OWNER" \\
-  gcloud services enable monitoring.googleapis.com cloudasset.googleapis.com \\
-  iam.googleapis.com iamcredentials.googleapis.com --project="$PROJECT_ID"
+#   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
+apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager" \\
+  monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com \\
+  iamcredentials.googleapis.com cloudresourcemanager.googleapis.com
 
 # A service account that an earlier run deleted (metrics switched off) fails this describe as
 # well and is created again. Google makes that a new account under the same name, with none of
@@ -583,6 +600,12 @@ ${
 	logs
 		? `
 # ---- Which logs are forwarded ----
+# LOG_FILTER leaves out what is high volume and says little about a workload: Data Access audit
+# logs, load balancer health checks, Kubernetes lease renewals and VM serial console output${
+				input.logFilter === "exclude_gke_container_logs"
+					? ",\n# and GKE container logs, as chosen in Maple"
+					: ""
+			}.
 # keep: an existing sink keeps its filter, a new sink gets LOG_FILTER.
 # set:  LOG_FILTER replaces the sink's filter.
 # Filter syntax: https://cloud.google.com/logging/docs/view/logging-query-language
@@ -602,10 +625,35 @@ ${output("Setup did not finish. Nothing needs undoing: fix this and paste the sc
 # exists <gcloud ... describe ...>: a look that fails for any reason falls through to the create,
 # which reports for itself.
 exists() { "$@" >/dev/null 2>&1; }
+
+# off <api...>: the APIs of the list that are not switched on in the host project. All of them
+# when the list of enabled APIs cannot be read.
+off() {
+  local on api nl=$'\\n'
+  on="$(gcloud services list --enabled --project="$PROJECT_ID" --format='value(config.name)' 2>/dev/null || true)"
+  for api in "$@"; do
+    case "$nl$on$nl" in *"$nl$api$nl"*) ;; *) printf ' %s' "$api" ;; esac
+  done
+}
+
+# apis <their names> <api...>: switches on what is off. Asking first lets someone who may not
+# switch APIs on run a script whose APIs are on already.
+apis() {
+  local names="$1" missing
+  shift
+  missing="$(off "$@")"
+  if [ -n "$missing" ]; then
+    # Unquoted on purpose: one argument per API.
+    try "Couldn't switch on:$missing." "Service Usage Admin on project $PROJECT_ID" \\
+      gcloud services enable $missing --project="$PROJECT_ID"
+  fi
+  ok "APIs enabled ($names)"
+}
 ${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
 printf 'Maple setup for %s\\n' "$SCOPE"
 printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
 ${access(scopeType, {
+	resourceManager: true,
 	scopeMustOpen: metrics === "on",
 	billing: metrics === "on",
 	permissions: permissionChecks(scopeType, logs, metrics === "on"),
@@ -624,7 +672,10 @@ else
   printf '\\nDone. Google Cloud is set up for Maple.\\n'
 fi
 if [ "$CONFIRMED" = 1 ]; then printf '  Maple confirms it within a minute: %s\\n' "$MAPLE_URL"; fi
-if [ "$SINK_CREATED" = 1 ]; then printf '  Logs:    a new sink takes up to 10 minutes to forward its first entries.\\n'; fi
+if [ "$SINK_CREATED" = 1 ]; then
+  printf '  Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before\\n'
+  printf '           it does is not forwarded later.\\n'
+fi
 if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: the first read lands within about 10 minutes.\\n'; fi
 `,
 	)
@@ -650,7 +701,7 @@ ${output(
 	"Cleanup did not finish. Fix this and paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
-${access(input.scopeType, { scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
+${access(input.scopeType, { resourceManager: false, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
 			input.pushEndpoint === undefined
 				? ""
 				: `

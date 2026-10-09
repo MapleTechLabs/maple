@@ -193,7 +193,7 @@ export type V2GcpUpdateConnectorRequest = Schema.Schema.Type<typeof V2GcpUpdateC
 export const V2GcpSetupScriptsRequest = Schema.Struct({
 	log_filter: Schema.optionalKey(GcpLogFilter).annotate({
 		description:
-			"The log filter the setup script carries. `keep` (the default): a sink that already exists keeps its filter, and a new one gets Maple's default. `default`: the script sets Maple's default, which leaves out Data Access audit logs and load balancer health checks. `exclude_gke_container_logs`: the script sets the default without GKE container logs, for pods that already ship their logs to Maple through an OpenTelemetry collector.",
+			"The log filter the setup script carries. `keep` (the default): a sink that already exists keeps its filter, and a new one gets Maple's default. `default`: the script sets Maple's default, which leaves out Data Access audit logs, load balancer health checks, Kubernetes lease renewals and VM serial console output. `exclude_gke_container_logs`: the script sets the default without GKE container logs, for pods that already ship their logs to Maple through an OpenTelemetry collector.",
 		examples: ["keep"],
 	}),
 }).annotate({
