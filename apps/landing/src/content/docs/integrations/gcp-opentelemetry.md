@@ -54,7 +54,7 @@ Include GKE container logs when the workloads don't send their logs over OpenTel
 
 ## Change the filter
 
-On the connection, click **Show setup script**, choose a **Log filter**, then copy the script and run it in Cloud Shell again.
+On the connection, click **Show setup script**, click **Change** next to **Log filter** and choose one, then copy the script and run it in Cloud Shell again.
 
 | Log filter                             | The sink forwards                                                                                     |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
