@@ -167,9 +167,12 @@ fn resource_attributes(entry: &JsonObject, connector: &Connector<'_>) -> Vec<Key
     // traced service of the same name; everything else is `gcp/<resource type>`.
     let workload = match resource_type {
         "cloud_run_revision" => {
-            push(&mut attributes, "faas.name", label("service_name"));
+            // A revision's own system events carry an empty `service_name`. A service's
+            // configuration has the service's name.
+            let service = label("service_name").or_else(|| label("configuration_name"));
+            push(&mut attributes, "faas.name", service);
             push(&mut attributes, "faas.version", label("revision_name"));
-            label("service_name")
+            service
         }
         "cloud_run_job" => label("job_name"),
         "cloud_function" => {
@@ -465,6 +468,26 @@ mod tests {
             Some(any_value::Value::StringValue(value)) => value,
             _ => panic!("expected a string body"),
         }
+    }
+
+    #[test]
+    fn cloud_run_revision_event_without_a_service_name_is_named_by_its_configuration() {
+        let (resource, _) = convert(json!({
+            "logName": "projects/my-project/logs/cloudaudit.googleapis.com%2Fsystem_event",
+            "resource": {
+                "type": "cloud_run_revision",
+                "labels": {
+                    "project_id": "my-project",
+                    "service_name": "",
+                    "revision_name": "checkout-00042-abc",
+                    "location": "europe-west4",
+                    "configuration_name": "checkout"
+                }
+            }
+        }));
+
+        assert_eq!(resource["service.name"], "checkout");
+        assert_eq!(resource["faas.name"], "checkout");
     }
 
     #[test]
