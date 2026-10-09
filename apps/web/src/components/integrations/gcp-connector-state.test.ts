@@ -12,8 +12,11 @@ import {
 	gcpScopeLabel,
 	gcpScopeRoles,
 	gcpScriptNeeded,
+	gcpScriptOverdue,
+	gcpSetupRunning,
 	gcpSwitchLock,
 	gcpWorstState,
+	logRouterUrl,
 	type GcpConnectorDraft,
 } from "./gcp-connector-state"
 
@@ -77,6 +80,16 @@ describe("gcpLogState", () => {
 		})
 	})
 
+	it("is setup running for two minutes after a run reported on metrics alone", () => {
+		const midRun = { applied_logs_enabled: null, last_log_received_at: null }
+		expect(log({ ...midRun, setup_reported_at: ago(1) })).toEqual({ kind: "setup-running" })
+		expect(log({ ...midRun, setup_reported_at: ago(3) })).toEqual({ kind: "setup-pending" })
+		// A report of removal is a finished section, not one that is still to come.
+		expect(log({ applied_logs_enabled: false, setup_reported_at: ago(1) })).toEqual({
+			kind: "setup-pending",
+		})
+	})
+
 	it("trusts a log from the last 15 minutes over a missing report, not over a report of removal", () => {
 		expect(log({ ...fresh, last_log_received_at: ago(14) })).toMatchObject({ kind: "receiving" })
 		// The cleanup script just ran: the last entries it forwarded prove nothing.
@@ -130,19 +143,33 @@ describe("gcpMetricsState", () => {
 		})
 	})
 
+	it("is setup running for two minutes after a run reported on logs alone", () => {
+		const midRun = { applied_metrics_enabled: null, ...NEVER, last_metrics_error: SIGN_IN }
+		expect(metrics({ ...midRun, setup_reported_at: ago(1) })).toEqual({ kind: "setup-running" })
+		expect(metrics({ ...midRun, setup_reported_at: ago(3) })).toEqual({ kind: "setup-pending" })
+	})
+
 	it("trusts a read from the last 15 minutes over a missing report, not over a report of removal", () => {
 		expect(metrics({ ...fresh })).toMatchObject({ kind: "receiving" })
 		expect(metrics({ applied_metrics_enabled: false })).toEqual({ kind: "setup-pending" })
 	})
 
 	it("waits for the first read, and for 10 minutes after a run whatever the poller said before", () => {
+		expect(metrics({ ...NEVER, setup_reported_at: ago(14) })).toEqual({
+			kind: "waiting",
+			reportedAt: ago(14),
+			overdue: false,
+		})
+		// Past 15 minutes the row stops promising the first read.
 		expect(metrics({ ...NEVER, setup_reported_at: ago(20) })).toEqual({
 			kind: "waiting",
 			reportedAt: ago(20),
+			overdue: true,
 		})
 		expect(metrics({ ...NEVER, setup_reported_at: ago(2), last_metrics_error: SIGN_IN })).toEqual({
 			kind: "waiting",
 			reportedAt: ago(2),
+			overdue: false,
 		})
 		// Switched off, cleaned up and set up again: the old read and the error in between don't count.
 		expect(
@@ -152,26 +179,37 @@ describe("gcpMetricsState", () => {
 				setup_reported_at: ago(2),
 			}),
 		).toMatchObject({ kind: "waiting" })
+		// A run that repairs a connection whose reads fail.
+		expect(
+			metrics({
+				last_metrics_received_at: ago(12),
+				last_metrics_error: "denied",
+				setup_reported_at: ago(2),
+			}),
+		).toMatchObject({ kind: "waiting" })
 	})
 
-	it("is failing once the grace is over and nothing recent was read", () => {
+	it("is failing once the grace is over and nothing was read in the last two polls", () => {
 		expect(metrics({ ...NEVER, setup_reported_at: ago(11), last_metrics_error: SIGN_IN })).toEqual({
 			kind: "failing",
 			error: SIGN_IN,
 			lastMetricsReceivedAt: null,
 		})
-		expect(metrics({ last_metrics_received_at: ago(42), last_metrics_error: "denied" })).toEqual({
+		expect(metrics({ last_metrics_received_at: ago(11), last_metrics_error: "denied" })).toEqual({
 			kind: "failing",
 			error: "denied",
-			lastMetricsReceivedAt: ago(42),
+			lastMetricsReceivedAt: ago(11),
 		})
 	})
 
-	it("is incomplete while recent reads arrive with an error", () => {
+	it("is incomplete while a read from the last 10 minutes came with an error", () => {
 		expect(metrics({ last_metrics_error: "3 of 46 metric queries failed." })).toEqual({
 			kind: "incomplete",
 			error: "3 of 46 metric queries failed.",
 			lastMetricsReceivedAt: ago(4),
+		})
+		expect(metrics({ last_metrics_received_at: ago(9), last_metrics_error: "denied" })).toMatchObject({
+			kind: "incomplete",
 		})
 	})
 
@@ -229,10 +267,16 @@ describe("gcpConnectionState", () => {
 		)
 	})
 
-	it("stays setup pending while a capability has no report, as between the sections of a first run", () => {
+	it("waits between the sections of a first run, and is setup pending if the second never reports", () => {
 		const midRun = { applied_metrics_enabled: null, setup_reported_at: ago(0), ...NEVER }
-		expect(state(midRun)).toBe("setup-pending")
+		expect(state(midRun)).toBe("waiting")
+		expect(gcpSetupRunning(connector(midRun), NOW)).toBe(true)
+		expect(gcpScriptNeeded(connector(midRun), NOW)).toBeNull()
 		expect(gcpPendingChanges(connector(midRun), NOW)).toEqual([])
+
+		const stopped = { ...midRun, setup_reported_at: ago(3) }
+		expect(state(stopped)).toBe("setup-pending")
+		expect(gcpSetupRunning(connector(stopped), NOW)).toBe(false)
 	})
 
 	it("waits for data once the script reported", () => {
@@ -288,6 +332,22 @@ describe("gcpScriptNeeded", () => {
 	it("says so whatever else is wrong: a failing capability does not hide a pending change", () => {
 		expect(needed({ logs_enabled: false, last_metrics_error: "denied" })).toBe("changes-pending")
 		expect(needed({ ...fresh, ...NEVER, last_log_error: "wrapped" })).toBe("setup-pending")
+	})
+})
+
+describe("gcpScriptOverdue", () => {
+	const OPENED = NOW - 60_000
+
+	it("counts from the creation of a connection no run has reported on, not from the panel's opening", () => {
+		const unreported = { setup_reported_at: null }
+		expect(gcpScriptOverdue({ ...unreported, created_at: ago(4) }, OPENED, NOW)).toBe(false)
+		expect(gcpScriptOverdue({ ...unreported, created_at: ago(6) }, OPENED, NOW)).toBe(true)
+	})
+
+	it("counts from the panel's opening once a run has reported", () => {
+		const reported = { setup_reported_at: ago(30), created_at: ago(600) }
+		expect(gcpScriptOverdue(reported, OPENED, NOW)).toBe(false)
+		expect(gcpScriptOverdue(reported, NOW - 6 * 60_000, NOW)).toBe(true)
 	})
 })
 
@@ -458,6 +518,20 @@ describe("gcpCreateRequest opt-ins", () => {
 
 	it("needs at least one opt-in", () => {
 		expect(Option.isNone(gcpCreateRequest(draft(false, false)))).toBe(true)
+	})
+})
+
+describe("logRouterUrl", () => {
+	it("opens the Log Router of the scope that holds the sink", () => {
+		expect(logRouterUrl({ scope_type: "project", scope_id: "acme-prod" })).toBe(
+			"https://console.cloud.google.com/logs/router?project=acme-prod",
+		)
+		expect(logRouterUrl({ scope_type: "folder", scope_id: "123456789012" })).toBe(
+			"https://console.cloud.google.com/logs/router?folder=123456789012",
+		)
+		expect(logRouterUrl({ scope_type: "organization", scope_id: "123456789012" })).toBe(
+			"https://console.cloud.google.com/logs/router?organizationId=123456789012",
+		)
 	})
 })
 
