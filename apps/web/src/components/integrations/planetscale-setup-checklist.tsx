@@ -3,34 +3,24 @@ import type { ReactNode } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
 import { CircleCheckIcon, CircleWarningIcon } from "@/components/icons"
-import type { SetupStep } from "./planetscale-setup-steps"
-
-/** A step of any integration's checklist: PlanetScale's, with its own ids and a rendered detail. */
-export interface ChecklistStep<Id extends string> extends Omit<SetupStep, "id" | "detail"> {
-	readonly id: Id
-	readonly detail: ReactNode
-}
+import type { SetupStep, SetupStepId } from "./planetscale-setup-steps"
 
 /**
- * A progression rendered as an ordered checklist: PlanetScale's four setup steps, Google
- * Cloud's setup and disconnect steps.
+ * The four-step PlanetScale setup progression, rendered as an ordered checklist.
  *
- * Only an active step expands — a fully-connected org sees quiet confirmation lines, not a
- * form. `actions` is keyed by step id so the caller
+ * Only the active step expands — a fully-connected org sees four quiet
+ * confirmation lines, not a form. `children` is keyed by step id so the caller
  * supplies the action (the token form, a Reconnect button) without this
  * component knowing what any step needs.
  */
-export function PlanetScaleSetupChecklist<Id extends string>({
+export function PlanetScaleSetupChecklist({
 	steps,
 	actions,
-	stacked = false,
 	className,
 }: {
-	steps: ReadonlyArray<ChecklistStep<Id>>
+	steps: ReadonlyArray<SetupStep>
 	/** Per-step action UI, rendered only while that step is `current` or `blocked`. */
-	actions?: Partial<Record<Id, ReactNode>>
-	/** Puts each detail under its title: for details that are sentences, not a few words. */
-	stacked?: boolean
+	actions?: Partial<Record<SetupStepId, ReactNode>>
 	className?: string
 }) {
 	return (
@@ -45,12 +35,7 @@ export function PlanetScaleSetupChecklist<Id extends string>({
 					>
 						<StepMarker step={step} number={index + 1} />
 						<div className="min-w-0 flex-1">
-							<div
-								className={cn(
-									"flex",
-									stacked ? "flex-col gap-0.5" : "flex-wrap items-baseline gap-x-2",
-								)}
-							>
+							<div className="flex flex-wrap items-baseline gap-x-2">
 								<span
 									className={cn(
 										"text-xs font-medium",
@@ -89,7 +74,7 @@ export function PlanetScaleSetupChecklist<Id extends string>({
  * left. A spinner appears only when Maple is the one working: spinning next to a
  * step that is waiting on a paste reads as "don't touch this".
  */
-function StepMarker({ step, number }: { step: Pick<SetupStep, "state" | "waitingOnMaple">; number: number }) {
+function StepMarker({ step, number }: { step: SetupStep; number: number }) {
 	if (step.state === "done") {
 		return <CircleCheckIcon size={14} className="mt-0.5 shrink-0 text-severity-info" aria-hidden />
 	}

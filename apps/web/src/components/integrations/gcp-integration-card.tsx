@@ -11,6 +11,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	Dialog,
 	DialogClose,
@@ -23,7 +24,6 @@ import {
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Input } from "@maple/ui/components/ui/input"
-import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -43,13 +43,13 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import {
 	AlertWarningIcon,
-	ChevronDownIcon,
-	ChevronUpIcon,
+	CircleCheckIcon,
 	CircleInfoIcon,
 	ExternalLinkIcon,
 	GoogleCloudIcon,
 	GoogleCloudMonoIcon,
 } from "@/components/icons"
+import { SettingsSection } from "@/components/settings/settings-section"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useLiveClock } from "@/hooks/use-live-clock"
@@ -87,7 +87,7 @@ import {
 	type GcpFlags,
 	type GcpSwitchLock,
 } from "./gcp-connector-state"
-import { GCP_ACCENT, IntegrationIconPlate, gcpStatusQuery } from "./integration-catalog"
+import { GCP_ACCENT, gcpStatusQuery } from "./integration-catalog"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -96,7 +96,6 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
-import { PlanetScaleSetupChecklist, type ChecklistStep } from "./planetscale-setup-checklist"
 
 const REACTIVITY_KEYS = ["gcpIntegration"]
 /** Invalidated by a switch change: the script depends on what the connector has switched on. */
@@ -106,8 +105,6 @@ const SCRIPT_REACTIVITY_KEYS = ["gcpSetupScripts"]
 const SETTLING_REFRESH_MS = 10_000
 /** Keeps the "last log" and "last read" times and a new error current on a page left open. */
 const STEADY_REFRESH_MS = 60_000
-/** How much of a script shows before "Show all lines": the wrapper and the header comment. */
-const SCRIPT_PREVIEW_LINES = 10
 
 const DOCS = docsUrl("gcp")
 const OTEL_DOCS = docsUrl("gcpOpenTelemetry")
@@ -150,10 +147,24 @@ const LOCK_NOTES = {
 
 /** The card's one link style, the other integrations' (Railway's token link). */
 const LINK = "underline underline-offset-2 hover:no-underline"
+/** No line of small print runs wider than this: 72 characters of the UI's monospace. */
+const MEASURE = "max-w-[72ch]"
+/** Small print on its own. */
+const PROSE = `${MEASURE} text-xs/5 text-pretty text-muted-foreground`
+/** Small print under a field or inside a notice, which bring their own size and colour. */
+const HELP = `${MEASURE} leading-5 text-pretty`
+/** A connection's, a capability's or a step's name. On a phone it grows with the controls. */
+const TITLE = "text-base/6 font-medium sm:text-sm/5"
 
+/** A named link stays on one line. A bare address may break. */
 function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
 	return (
-		<a href={href} target="_blank" rel="noreferrer" className={LINK}>
+		<a
+			href={href}
+			target="_blank"
+			rel="noreferrer"
+			className={cn(LINK, children !== href && "whitespace-nowrap")}
+		>
 			{children}
 			{/* A word joiner in a no-wrap span: the icon never wraps away from the last word. */}
 			<span className="whitespace-nowrap">
@@ -169,23 +180,38 @@ function Mono({ children }: { children: React.ReactNode }) {
 	return <span className="font-mono whitespace-nowrap text-foreground">{children}</span>
 }
 
-/** A shell command inside a sentence, with its own copy button. */
+/**
+ * A shell command inside a sentence, with its own copy button. Too long for its line, it breaks
+ * between its words and never inside one: a flag or a name split at a hyphen reads as another.
+ */
 function Command({ children }: { children: string }) {
 	return (
-		<span className="inline-flex max-w-full items-center gap-0.5 align-middle">
-			<InlineCode className="min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none]">
-				{children}
+		<span className="inline-flex max-w-full items-start gap-0.5 align-top">
+			<InlineCode className="min-w-0">
+				{children.split(" ").map((word, index) => (
+					<Fragment key={index}>
+						{index === 0 ? null : " "}
+						<span className="whitespace-nowrap">{word}</span>
+					</Fragment>
+				))}
 			</InlineCode>
 			<CopyButton value={children} label="command" toast={false} iconSize={12} className="size-5" />
 		</span>
 	)
 }
 
-function OpenCloudShellButton({ projectId }: { projectId: string }) {
+/** Filled where opening Cloud Shell is a step of its own, outlined next to a copy button. */
+function OpenCloudShellButton({
+	projectId,
+	variant = "outline",
+}: {
+	projectId: string
+	variant?: "default" | "outline"
+}) {
 	return (
 		<Button
 			size="sm"
-			variant="outline"
+			variant={variant}
 			render={
 				<a href={cloudShellUrl(projectId)} target="_blank" rel="noreferrer">
 					Open Cloud Shell
@@ -211,62 +237,136 @@ function CopyScriptButton({ script, label }: { script: string | null; label: str
 }
 
 /**
- * A script as it will be pasted: the head of it, and all of it on request. Both scripts are a few
- * hundred lines, so the full text scrolls inside its box.
+ * A script to copy, and to read on request: both scripts are a few hundred lines, so the text
+ * stays closed until asked for and then scrolls inside its box. `children` are the buttons that
+ * go with the copy button, `caveat` what to know before pasting, `note` what to know when reading.
  */
-function ScriptBlock({ script, label }: { script: string; label: string }) {
-	const [expanded, setExpanded] = useState(false)
-	const text = script.trimEnd()
-	const lines = text.split("\n")
-	return (
-		<div className="overflow-hidden rounded-md border border-border bg-background/50">
-			{/* The dashboard records itself with rrweb, which serializes plain text verbatim. */}
-			<pre
-				tabIndex={0}
-				role="region"
-				aria-label={label}
-				className={cn(
-					"overflow-auto p-3 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-					expanded && "max-h-[28rem]",
-					REPLAY_BLOCK_CLASS,
-				)}
-			>
-				{expanded ? text : lines.slice(0, SCRIPT_PREVIEW_LINES).join("\n")}
-			</pre>
-			<button
-				type="button"
-				onClick={() => setExpanded(!expanded)}
-				aria-expanded={expanded}
-				className="flex w-full items-center gap-1.5 border-t border-border px-3 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-muted/40 hover:text-foreground"
-			>
-				{expanded ? <ChevronUpIcon size={12} /> : <ChevronDownIcon size={12} />}
-				{expanded ? "Show fewer lines" : `Show all ${lines.length} lines`}
-			</button>
-		</div>
-	)
-}
-
-/** A loaded script, a loading placeholder, or the failure with a retry. */
-function ScriptPreview({
+function Script({
 	script,
 	label,
 	failure,
+	caveat,
+	note,
+	children,
 }: {
 	script: string | null
 	label: string
 	failure: { readonly message: string; readonly retry: () => void; readonly retrying: boolean } | null
+	caveat: string
+	note?: string
+	children?: React.ReactNode
 }) {
-	if (script !== null) return <ScriptBlock script={script} label={label} />
-	if (failure === null) return <Skeleton className="h-72 w-full" />
+	const [shown, setShown] = useState(false)
+	const text = script?.trimEnd() ?? null
 	return (
-		<div className="flex flex-wrap items-center gap-2">
-			<p className="text-xs text-severity-error" role="alert">
-				{failure.message}
-			</p>
-			<Button size="sm" variant="outline" onClick={failure.retry} loading={failure.retrying}>
-				Try again
-			</Button>
+		<div className="flex flex-col gap-2">
+			<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+				<CopyScriptButton script={script} label={label} />
+				{children}
+				<button
+					type="button"
+					aria-expanded={shown}
+					onClick={() => setShown(!shown)}
+					className={cn(LINK, "text-xs text-muted-foreground hover:text-foreground")}
+				>
+					{shown ? "Hide the script" : "Read the script"}
+				</button>
+			</div>
+			{failure === null ? null : (
+				<div className="flex flex-wrap items-center gap-2">
+					<p className="text-xs text-severity-error" role="alert">
+						{failure.message}
+					</p>
+					<Button size="sm" variant="outline" onClick={failure.retry} loading={failure.retrying}>
+						Try again
+					</Button>
+				</div>
+			)}
+			<p className={PROSE}>{caveat}</p>
+			{!shown || failure !== null ? null : text === null ? (
+				<Skeleton className="mt-1 h-72 w-full" />
+			) : (
+				<>
+					{/* The frame of the app's code blocks: a label strip over the text. */}
+					<div className="mt-1 overflow-clip rounded-md border border-border bg-muted">
+						<div className="flex items-center justify-between px-3 py-1.5">
+							<Eyebrow>Bash</Eyebrow>
+							<span className="text-2xs text-muted-foreground">
+								{countLabel(text.split("\n").length, "line")}
+							</span>
+						</div>
+						{/* The dashboard records itself with rrweb, which serializes plain text verbatim. */}
+						<pre
+							tabIndex={0}
+							role="region"
+							aria-label={`The ${label}`}
+							className={cn(
+								"max-h-103 overflow-auto bg-background/50 p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+								REPLAY_BLOCK_CLASS,
+							)}
+						>
+							{text}
+						</pre>
+					</div>
+					{note === undefined ? null : <p className={cn(PROSE, "mt-2")}>{note}</p>}
+				</>
+			)}
 		</div>
+	)
+}
+
+type StepState = "current" | "pending" | "done"
+
+/**
+ * One step of a setup or cleanup: a numbered marker on a line that runs to the next step, the
+ * title with what to know under it, then the controls. Only a step to act on now is bright; a
+ * finished one is checked.
+ */
+function Step({
+	number,
+	state,
+	title,
+	detail,
+	children,
+}: {
+	number: number
+	state: StepState
+	title: string
+	detail?: React.ReactNode
+	children?: React.ReactNode
+}) {
+	return (
+		<li
+			className={cn(
+				"relative flex gap-3 before:absolute before:top-6 before:bottom-1 before:left-2.5 before:w-px before:-translate-x-1/2 before:bg-border last:pb-0 last:before:hidden",
+				state === "done" ? "pb-4" : "pb-8",
+			)}
+		>
+			{state === "done" ? (
+				<CircleCheckIcon size={20} className="shrink-0 text-severity-info" aria-hidden />
+			) : (
+				<span
+					aria-hidden
+					className={cn(
+						"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium",
+						state === "current"
+							? "border-foreground/40 text-foreground"
+							: "border-border text-muted-foreground",
+					)}
+				>
+					{number}
+				</span>
+			)}
+			<div className="flex min-w-0 flex-1 flex-col gap-3">
+				<div className="flex flex-col gap-1">
+					<h4 className={cn(TITLE, state !== "current" && "text-muted-foreground")}>{title}</h4>
+					{detail === undefined ? null : (
+						<p className={cn(PROSE, state === "current" && "text-foreground/80")}>{detail}</p>
+					)}
+				</div>
+				{children}
+			</div>
+		</li>
 	)
 }
 
@@ -370,10 +470,10 @@ function GcpConnectForm({
 	}
 
 	return (
-		<form onSubmit={handleSubmit} className="flex w-full flex-col gap-4 text-left">
+		<form onSubmit={handleSubmit} className="@container flex w-full flex-col gap-6 text-left">
 			<fieldset className="flex flex-col gap-2">
-				<legend className="mb-2 text-sm font-medium">What to connect</legend>
-				<div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+				<legend className={cn(TITLE, "mb-2")}>What to connect</legend>
+				<div className="grid grid-cols-1 gap-2 @xl:grid-cols-3">
 					{SCOPE_TYPES.map((scopeType) => (
 						<OptionCard
 							key={scopeType}
@@ -405,9 +505,11 @@ function GcpConnectForm({
 					className="font-mono"
 				/>
 				{scopeIdInvalid ? (
-					<FieldError match>{scope.idRule}</FieldError>
+					<FieldError match className={HELP}>
+						{scope.idRule}
+					</FieldError>
 				) : (
-					<FieldDescription>
+					<FieldDescription className={HELP}>
 						<span className="block">
 							{aggregated ? (
 								<>
@@ -438,9 +540,11 @@ function GcpConnectForm({
 						className="font-mono"
 					/>
 					{hostInvalid ? (
-						<FieldError match>{PROJECT_ID_RULE}</FieldError>
+						<FieldError match className={HELP}>
+							{PROJECT_ID_RULE}
+						</FieldError>
 					) : (
-						<FieldDescription>
+						<FieldDescription className={HELP}>
 							The project that holds Maple&apos;s Pub/Sub topic and read-only service account.
 							Use a shared operations project inside the {scopeName}, with billing enabled, that
 							won&apos;t be deleted.
@@ -448,9 +552,9 @@ function GcpConnectForm({
 					)}
 				</Field>
 			) : null}
-			<fieldset className="flex flex-col gap-2.5">
-				<legend className="mb-2 text-sm font-medium">What to collect</legend>
-				<Field className="grid grid-cols-[auto_1fr] items-start gap-x-2 gap-y-0.5">
+			<fieldset className="flex flex-col gap-4">
+				<legend className={cn(TITLE, "mb-3")}>What to collect</legend>
+				<Field className="grid grid-cols-[auto_1fr] items-start gap-x-2.5 gap-y-1">
 					<Checkbox
 						id="gcp-logs-enabled"
 						className="mt-px"
@@ -458,14 +562,14 @@ function GcpConnectForm({
 						onCheckedChange={(checked) => edit({ logsEnabled: checked === true })}
 					/>
 					<FieldLabel htmlFor="gcp-logs-enabled">Log forwarding</FieldLabel>
-					<FieldDescription className="col-start-2">
+					<FieldDescription className={cn(HELP, "col-start-2")}>
 						A log sink sends Cloud Logging entries to Maple through Pub/Sub.{" "}
 						<ExternalLink href={GKE_LOGS_DOCS}>GKE container logs</ExternalLink> are left out by
 						default.
 					</FieldDescription>
 				</Field>
 				<Field
-					className="grid grid-cols-[auto_1fr] items-start gap-x-2 gap-y-0.5"
+					className="grid grid-cols-[auto_1fr] items-start gap-x-2.5 gap-y-1"
 					disabled={!metricsAvailable}
 				>
 					<Checkbox
@@ -476,7 +580,7 @@ function GcpConnectForm({
 						onCheckedChange={(checked) => edit({ metricsEnabled: checked === true })}
 					/>
 					<FieldLabel htmlFor="gcp-metrics-enabled">Metrics and resources</FieldLabel>
-					<FieldDescription className="col-start-2">
+					<FieldDescription className={cn(HELP, "col-start-2")}>
 						{metricsAvailable
 							? "Maple reads Cloud Monitoring every 5 minutes and lists your resources every hour, through a read-only service account."
 							: LOCK_NOTES["metrics-unavailable"]}
@@ -487,28 +591,11 @@ function GcpConnectForm({
 						Choose at least one.
 					</p>
 				)}
-				<p className="text-xs text-muted-foreground">
-					Google bills Pub/Sub and Cloud Monitoring API usage to{" "}
-					{aggregated ? "the host project" : "your account"}.{" "}
-					<ExternalLink href={`${DOCS}#google-cloud-costs`}>Costs</ExternalLink>
-				</p>
 			</fieldset>
-			<p className="text-xs text-muted-foreground">
-				To run the script you need Owner on{" "}
-				{isGcpProjectId(ownerOn) ? (
-					<Mono>{ownerOn}</Mono>
-				) : aggregated ? (
-					"the host project"
-				) : (
-					"the project"
-				)}
-				{scopeRoles.length > 0 ? `, plus ${scopeRoles.join(" and ")} on the ${scopeName}` : ""}.{" "}
-				<ExternalLink href={`${DOCS}#roles-for-running-the-script`}>Without Owner</ExternalLink>
-			</p>
 			{overlap === null ? null : (
 				<Alert size="sm" role="note">
 					<CircleInfoIcon size={14} />
-					<AlertDescription>{overlap}</AlertDescription>
+					<AlertDescription className={HELP}>{overlap}</AlertDescription>
 				</Alert>
 			)}
 			{error !== null ? (
@@ -516,15 +603,42 @@ function GcpConnectForm({
 					{error}
 				</p>
 			) : null}
-			<div className="flex justify-end gap-2">
-				{onCancel !== undefined ? (
-					<Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
-						Cancel
+			{/* What running the script takes sits with the button that starts it. */}
+			<div className="flex flex-col gap-4 border-t border-border/60 pt-4">
+				<div className={cn(PROSE, "flex flex-col gap-1")}>
+					<p>
+						To run the script you need Owner on{" "}
+						{isGcpProjectId(ownerOn) ? (
+							<Mono>{ownerOn}</Mono>
+						) : aggregated ? (
+							"the host project"
+						) : (
+							"the project"
+						)}
+						{scopeRoles.length > 0
+							? `, plus ${scopeRoles.join(" and ")} on the ${scopeName}`
+							: ""}
+						.{" "}
+						<ExternalLink href={`${DOCS}#roles-for-running-the-script`}>
+							Without Owner
+						</ExternalLink>
+					</p>
+					<p>
+						Google bills Pub/Sub and Cloud Monitoring API usage to{" "}
+						{aggregated ? "the host project" : "your account"}.{" "}
+						<ExternalLink href={`${DOCS}#google-cloud-costs`}>Costs</ExternalLink>
+					</p>
+				</div>
+				<div className="flex gap-2 self-end">
+					{onCancel !== undefined ? (
+						<Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+							Cancel
+						</Button>
+					) : null}
+					<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
+						Get setup script
 					</Button>
-				) : null}
-				<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
-					Get setup script
-				</Button>
+				</div>
 			</div>
 		</form>
 	)
@@ -549,7 +663,7 @@ function GkeContainerLogsAcknowledgement({
 		<Alert variant="warn" size="sm">
 			<AlertWarningIcon size={14} />
 			<AlertTitle>Not recommended when your GKE workloads send traces to Maple</AlertTitle>
-			<AlertDescription>
+			<AlertDescription className={cn(HELP, "gap-3")}>
 				<p>
 					Instrumented workloads already send their logs to Maple, linked to their traces.
 					Forwarding the same container logs from Google Cloud stores each line twice, and the copy
@@ -579,8 +693,6 @@ function GkeContainerLogsAcknowledgement({
 		</Alert>
 	)
 }
-
-type SetupStepId = "shell" | "script" | "confirm"
 
 /**
  * When a connection's setup panel was opened. `rerun`: it already matched its switches then, so
@@ -628,168 +740,167 @@ function GcpSetup({
 	const host = <Mono>{connector.project_id}</Mono>
 	const filters = gcpLogFilters(sinkExists)
 	const todo = confirmed ? "done" : "current"
+	// The filter is a line of text until it is asked for: what it starts on suits most connections.
+	const [filterOpen, setFilterOpen] = useState(false)
 
-	const steps: ReadonlyArray<ChecklistStep<SetupStepId>> = [
-		{
-			id: "shell",
-			title: "Open Cloud Shell",
-			state: todo,
-			waitingOnMaple: false,
-			detail:
-				connector.scope_type === "project" ? (
-					<>Sign in as an Owner of {host}.</>
-				) : (
-					<>
-						Sign in as an Owner of the host project {host}
-						{scopeRoles.length > 0
-							? ` who also has ${scopeRoles.join(" and ")} on the ${scopeName}`
-							: ""}
-						.
-					</>
-				),
-		},
-		{
-			id: "script",
-			title: "Paste the script and press Enter",
-			state: todo,
-			waitingOnMaple: false,
-			detail:
-				!connector.logs_enabled && sinkExists
-					? "It takes one to two minutes: after deleting the sink it waits a minute for Google to stop routing to the topic."
-					: "It takes about a minute and is safe to run again.",
-		},
-		{
-			id: "confirm",
-			title: "Maple confirms the connection",
-			state: confirmed ? "done" : overdue && !opened.rerun ? "current" : "pending",
-			waitingOnMaple: false,
-			detail: confirmed ? (
-				reportedAt === null ? (
-					"Confirmed."
-				) : (
-					<>
-						<RelativeTime value={reportedAt} prefix="Confirmed" />.
-					</>
-				)
-			) : opened.rerun && reportedAt !== null ? (
-				<>
-					<RelativeTime value={reportedAt} prefix="Last confirmed" />. A new run confirms again.
-				</>
-			) : !overdue ? (
-				"Maple confirms within a minute of the script ending, usually in seconds. This page updates on its own."
-			) : (
-				<span className="text-foreground">
-					Nothing yet. If the script stopped with an error, fix what it names and paste it again: it
-					continues where it stopped. If the ID is wrong, remove this connection and connect the
-					right ID: a connection&apos;s ID can&apos;t be changed.{" "}
-					<ExternalLink href={`${DOCS}#troubleshooting`}>Troubleshooting</ExternalLink>
-				</span>
-			),
-		},
-	]
-
+	// A finished step keeps its title and drops what it asked for.
 	return (
-		<div className="border-t border-border/60 bg-muted/20 p-4">
-			<PlanetScaleSetupChecklist
-				stacked
-				steps={steps}
-				actions={{
-					shell: <OpenCloudShellButton projectId={connector.project_id} />,
-					script: (
-						<div className="flex flex-col gap-3">
-							{connector.logs_enabled ? (
-								<Field className="items-stretch gap-1.5">
-									<FieldLabel className="text-xs sm:text-xs">Log filter</FieldLabel>
-									<Select
-										items={filters}
-										value={logFilter.selected}
-										onValueChange={chooseFilter}
-									>
-										<SelectTrigger size="sm" className="w-full text-xs sm:w-96">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent alignItemWithTrigger={false}>
-											{filters.map((filter) => (
-												<SelectItem key={filter.value} value={filter.value}>
-													{filter.label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-									{acknowledging ? null : (
-										<FieldDescription>
-											{logFilter.selected === "keep" ? (
-												<>
-													Leaves the sink as it is. Maple can&apos;t see that
-													filter: read it in the Google Cloud console under{" "}
-													<ExternalLink href={logRouterUrl(connector)}>
-														Log Router
-													</ExternalLink>
-													. The recommended filter leaves out GKE container logs.
-												</>
-											) : (
-												<>
-													{sinkExists
-														? "Replaces the sink's current filter. "
-														: null}
-													{logFilter.selected === "default" ? (
-														<>
-															Forwards platform logs: request logs, audit logs
-															and managed-service logs. Leaves out{" "}
-															<ExternalLink href={GKE_LOGS_DOCS}>
-																GKE container logs
-															</ExternalLink>{" "}
-															and high-volume noise such as health checks.
-														</>
-													) : (
-														"Forwards the recommended logs and GKE container logs. Logs from workloads that also send them over OpenTelemetry are then stored twice."
-													)}
-												</>
-											)}{" "}
-											For any other filter, edit <Mono>LOG_FILTER</Mono> in the script
-											before you paste it
-											{logFilter.selected === "keep" ? (
-												<>
-													{" "}
-													and change <Mono>LOG_FILTER_MODE</Mono> to{" "}
-													<Mono>set</Mono>
-												</>
-											) : null}
-											.
-										</FieldDescription>
-									)}
-								</Field>
-							) : null}
-							{acknowledging ? (
-								<GkeContainerLogsAcknowledgement
-									backLabel={sinkExists ? "Keep current filter" : "Use recommended filter"}
-									onConfirm={() => setAcknowledged(true)}
-									onBack={() => chooseFilter(null)}
-								/>
-							) : (
-								<>
-									<div>
-										<CopyScriptButton script={script} label="script" />
-									</div>
-									<ScriptPreview script={script} label="Setup script" failure={failure} />
-									<div className="flex flex-col gap-1 text-xs text-muted-foreground">
-										<p>
-											The script contains this connection&apos;s secret. Don&apos;t
-											share or commit it. If it leaks, disconnect and connect again.
-										</p>
-										<p>
-											Its first two and last two lines run it in a bash process of its
-											own, so a failed step can&apos;t close your Cloud Shell session.
-											In Cloud Shell they also keep the paste out of shell history.
-										</p>
-									</div>
-								</>
-							)}
-						</div>
-					),
-				}}
+		<ol>
+			<Step
+				number={1}
+				state={todo}
+				title="Open Cloud Shell"
+				detail={
+					confirmed ? undefined : connector.scope_type === "project" ? (
+						<>Sign in as an Owner of {host}.</>
+					) : (
+						<>
+							Sign in as an Owner of the host project {host}
+							{scopeRoles.length > 0
+								? ` who also has ${scopeRoles.join(" and ")} on the ${scopeName}`
+								: ""}
+							.
+						</>
+					)
+				}
+			>
+				{confirmed ? null : (
+					<div>
+						<OpenCloudShellButton projectId={connector.project_id} variant="default" />
+					</div>
+				)}
+			</Step>
+			<Step
+				number={2}
+				state={todo}
+				title="Paste the script and press Enter"
+				detail={
+					confirmed
+						? undefined
+						: !connector.logs_enabled && sinkExists
+							? "It takes one to two minutes: after deleting the sink it waits a minute for Google to stop routing to the topic."
+							: "It takes about a minute and is safe to run again."
+				}
+			>
+				{confirmed ? null : (
+					<>
+						{!connector.logs_enabled ? null : filterOpen ? (
+							<Field className="items-stretch gap-1.5">
+								<FieldLabel>Log filter</FieldLabel>
+								<Select
+									items={filters}
+									value={logFilter.selected}
+									onValueChange={chooseFilter}
+								>
+									<SelectTrigger className="w-full">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent alignItemWithTrigger={false}>
+										{filters.map((filter) => (
+											<SelectItem key={filter.value} value={filter.value}>
+												{filter.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								{acknowledging ? null : (
+									<FieldDescription className={HELP}>
+										{logFilter.selected === "keep" ? (
+											<>
+												Leaves the sink as it is. Maple can&apos;t see that filter:
+												read it in the Google Cloud console under{" "}
+												<ExternalLink href={logRouterUrl(connector)}>
+													Log Router
+												</ExternalLink>
+												. The recommended filter leaves out GKE container logs.
+											</>
+										) : (
+											<>
+												{sinkExists ? "Replaces the sink's current filter. " : null}
+												{logFilter.selected === "default" ? (
+													<>
+														Forwards platform logs: request logs, audit logs and
+														managed-service logs. Leaves out{" "}
+														<ExternalLink href={GKE_LOGS_DOCS}>
+															GKE container logs
+														</ExternalLink>{" "}
+														and high-volume noise such as health checks.
+													</>
+												) : (
+													"Forwards the recommended logs and GKE container logs. Logs from workloads that also send them over OpenTelemetry are then stored twice."
+												)}
+											</>
+										)}{" "}
+										For any other filter, edit <Mono>LOG_FILTER</Mono> in the script
+										before you paste it
+										{logFilter.selected === "keep" ? (
+											<>
+												{" "}
+												and change <Mono>LOG_FILTER_MODE</Mono> to <Mono>set</Mono>
+											</>
+										) : null}
+										.
+									</FieldDescription>
+								)}
+							</Field>
+						) : (
+							<p className={PROSE}>
+								Log filter ·{" "}
+								{filters.find((filter) => filter.value === logFilter.selected)?.label} ·{" "}
+								<button type="button" className={LINK} onClick={() => setFilterOpen(true)}>
+									Change
+								</button>
+							</p>
+						)}
+						{acknowledging ? (
+							<GkeContainerLogsAcknowledgement
+								backLabel={sinkExists ? "Keep current filter" : "Use recommended filter"}
+								onConfirm={() => setAcknowledged(true)}
+								onBack={() => chooseFilter(null)}
+							/>
+						) : (
+							<Script
+								script={script}
+								label="script"
+								failure={failure}
+								caveat="The script contains this connection's secret. Don't share or commit it. If it leaks, disconnect and connect again."
+								note="Its first two and last two lines run it in a bash process of its own, so a failed step can't close your Cloud Shell session. In Cloud Shell they also keep the paste out of shell history."
+							/>
+						)}
+					</>
+				)}
+			</Step>
+			<Step
+				number={3}
+				state={confirmed ? "done" : overdue && !opened.rerun ? "current" : "pending"}
+				title="Maple confirms the connection"
+				detail={
+					confirmed ? (
+						reportedAt === null ? (
+							"Confirmed."
+						) : (
+							<>
+								<RelativeTime value={reportedAt} prefix="Confirmed" />.
+							</>
+						)
+					) : opened.rerun && reportedAt !== null ? (
+						<>
+							<RelativeTime value={reportedAt} prefix="Last confirmed" />. A new run confirms
+							again.
+						</>
+					) : !overdue ? (
+						"Maple confirms within a minute of the script ending, usually in seconds. This page updates on its own."
+					) : (
+						<span className="text-foreground">
+							Nothing yet. If the script stopped with an error, fix what it names and paste it
+							again: it continues where it stopped. If the ID is wrong, remove this connection
+							and connect the right ID: a connection&apos;s ID can&apos;t be changed.{" "}
+							<ExternalLink href={`${DOCS}#troubleshooting`}>Troubleshooting</ExternalLink>
+						</span>
+					)
+				}
 			/>
-		</div>
+		</ol>
 	)
 }
 
@@ -801,32 +912,37 @@ const LINK_PATTERN = new RegExp(`(https://[^\\s)]*[^\\s).,]|${BILLING_PAGE})`)
 /**
  * A failure in Maple's own words: prose that wraps. A Google Cloud console address in it becomes
  * a named link, so a long address never breaks a line in the middle of a word, and the billing
- * page it names is a link to it.
+ * page it names is a link to it. What Google answered closes the message in brackets: that goes
+ * on a line of its own, quieter than what to do.
  */
 export function GcpMessage({ text }: { text: string }) {
-	const parts = text.split(LINK_PATTERN)
+	const [, message = text, answer] = /^(.*?)\s*(\([^()]*\))?$/s.exec(text) ?? []
+	const parts = message.split(LINK_PATTERN)
 	return (
-		<p className="[overflow-wrap:anywhere]">
-			{parts.map((part, index) =>
-				index % 2 === 0 ? (
-					part
-				) : part === BILLING_PAGE ? (
-					<Link key={index} to="/settings" search={{ tab: "billing" }} className={LINK}>
-						{part}
-					</Link>
-				) : (
-					<Fragment key={index}>
-						<ExternalLink href={part}>
-							{part.startsWith("https://console.cloud.google.com/")
-								? "Google Cloud console"
-								: part}
-						</ExternalLink>
-						{/* The messages put the address mid-paragraph, with the next sentence right after. */}
-						{/^\s+[A-Z(]/.test(parts[index + 1] ?? "") ? "." : null}
-					</Fragment>
-				),
-			)}
-		</p>
+		<>
+			<p className="[overflow-wrap:anywhere]">
+				{parts.map((part, index) =>
+					index % 2 === 0 ? (
+						part
+					) : part === BILLING_PAGE ? (
+						<Link key={index} to="/settings" search={{ tab: "billing" }} className={LINK}>
+							{part}
+						</Link>
+					) : (
+						<Fragment key={index}>
+							<ExternalLink href={part}>
+								{part.startsWith("https://console.cloud.google.com/")
+									? "Google Cloud console"
+									: part}
+							</ExternalLink>
+							{/* The messages put the address mid-paragraph, with the next sentence right after. */}
+							{/^\s+[A-Z(]/.test(parts[index + 1] ?? "") ? "." : null}
+						</Fragment>
+					),
+				)}
+			</p>
+			{answer === undefined ? null : <p className="mt-1 text-muted-foreground">{answer}</p>}
+		</>
 	)
 }
 
@@ -850,29 +966,35 @@ function Status({
 }) {
 	return (
 		<>
-			<div className="flex flex-wrap items-center gap-x-1.5">
-				{status.tone === null ? (
-					// Off: a hollow dot, so the label lines up with the rows that have one.
-					<span aria-hidden className="size-1.5 rounded-full border border-muted-foreground/60" />
-				) : (
-					<StatusDot tone={status.tone} />
-				)}
-
-				<span className="font-medium text-foreground">{status.label}</span>
-				{at ? (
-					<span>
-						{"· "}
-						<RelativeTime value={at} prefix={atPrefix} />
+			{/* Each part carries its separator in its left padding, and the row starts that padding
+			    outside the clipped box: a part that wraps to a new line loses the separator and starts
+			    at the row's edge, under the dot. */}
+			<div className="overflow-hidden text-muted-foreground">
+				<div className="-ml-5 flex flex-wrap">
+					<span className="flex items-center gap-1.5 pl-5 font-medium text-foreground">
+						{status.tone === null ? (
+							// Off: a hollow dot, so the label lines up with the rows that have one.
+							<span
+								aria-hidden
+								className="size-1.5 rounded-full border border-muted-foreground/60"
+							/>
+						) : (
+							<StatusDot tone={status.tone} />
+						)}
+						{status.label}
 					</span>
-				) : null}
-				{suffix ? <span>· {suffix}</span> : null}
-				{link ? (
-					// On a phone the link takes its own line, without the separator.
-					<span className="max-sm:basis-full">
-						<span className="max-sm:hidden">· </span>
-						{link}
-					</span>
-				) : null}
+					{[at ? <RelativeTime key="at" value={at} prefix={atPrefix} /> : null, suffix, link].map(
+						(part, index) =>
+							part ? (
+								<span
+									key={index}
+									className="relative pl-5 whitespace-nowrap before:absolute before:left-1.5 before:content-['·']"
+								>
+									{part}
+								</span>
+							) : null,
+					)}
+				</div>
 			</div>
 			{children}
 		</>
@@ -891,11 +1013,9 @@ function OffStatus({ stillSetUp, children }: { stillSetUp: boolean; children: st
 interface StatusProps {
 	readonly connector: V2GcpConnector
 	readonly nowMs: number
-	/** What a row waiting on the setup script says: who runs it, and whether a run reported before. */
-	readonly runScript: string
 }
 
-function LogStatus({ connector, nowMs, runScript }: StatusProps) {
+function LogStatus({ connector, nowMs }: StatusProps) {
 	const state = gcpLogState(connector, nowMs)
 	if (state.kind === "off") {
 		return (
@@ -912,11 +1032,13 @@ function LogStatus({ connector, nowMs, runScript }: StatusProps) {
 					<GcpMessage text={state.error} />
 				</Status>
 			)
+		// What to do about it is said once for the connection: by its steps, its notice or its header.
 		case "setup-pending":
+			return <Status status={status} />
 		case "setup-running":
 			return (
 				<Status status={status}>
-					<p>{state.kind === "setup-running" ? "The script is still working." : runScript}</p>
+					<p>The script is still working.</p>
 				</Status>
 			)
 		case "waiting":
@@ -927,10 +1049,13 @@ function LogStatus({ connector, nowMs, runScript }: StatusProps) {
 							No entry has arrived in 20 minutes. Either nothing was logged that passes the
 							filter, or the sink can&apos;t publish. Write a test entry: if the sink works,
 							this row changes to Receiving logs within a minute. If it doesn&apos;t, run the
-							setup script again.{" "}
-							<Command>
-								{`gcloud logging write maple-test "hello from Maple" --project=${connector.project_id}`}
-							</Command>
+							setup script again.
+							{/* On a line of its own: it is what to copy, not the end of the sentence. */}
+							<span className="mt-1.5 block">
+								<Command>
+									{`gcloud logging write maple-test "hello from Maple" --project=${connector.project_id}`}
+								</Command>
+							</span>
 						</p>
 					) : (
 						<p>
@@ -963,7 +1088,7 @@ function LogStatus({ connector, nowMs, runScript }: StatusProps) {
 	}
 }
 
-function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
+function MetricsStatus({ connector, nowMs }: StatusProps) {
 	const state = gcpMetricsState(connector, nowMs)
 	if (state.kind === "off") {
 		return (
@@ -975,11 +1100,13 @@ function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
 	}
 	const status = GCP_METRICS_STATUS[state.kind]
 	switch (state.kind) {
+		// What to do about it is said once for the connection: by its steps, its notice or its header.
 		case "setup-pending":
+			return <Status status={status} />
 		case "setup-running":
 			return (
 				<Status status={status}>
-					<p>{state.kind === "setup-running" ? "The script is still working." : runScript}</p>
+					<p>The script is still working.</p>
 				</Status>
 			)
 		case "waiting":
@@ -1030,8 +1157,8 @@ function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
 }
 
 /**
- * One thing a connector collects: its name, what it is doing, its switch. On a narrow screen the
- * status drops under the name and the switch.
+ * One thing a connector collects: its name and its switch on one line, under them what it is
+ * doing. The status line runs the row's width; a paragraph under it keeps to the measure.
  */
 function Capability({
 	title,
@@ -1052,22 +1179,25 @@ function Capability({
 	const lockId = useId()
 	const locked = onCheckedChange !== null && lock !== null
 	return (
-		<section className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-2 text-xs/5">
-			<h4 className="order-1 flex-1 font-medium sm:w-40 sm:flex-none">{title}</h4>
-			<div className="order-3 flex min-w-0 basis-full flex-col text-muted-foreground sm:order-2 sm:flex-1 sm:basis-0">
-				{children}
-				{locked ? <p id={lockId}>{LOCK_NOTES[lock]}</p> : null}
+		<section className="flex flex-col gap-0.5 px-4 py-2.5 text-xs/5 text-foreground/80 [&>p]:max-w-[72ch] [&>p]:text-pretty">
+			<div className="flex items-center justify-between gap-4">
+				<h4 className={cn(TITLE, "text-foreground")}>{title}</h4>
+				{onCheckedChange === null ? null : (
+					<Switch
+						aria-label={title}
+						aria-describedby={locked ? lockId : undefined}
+						checked={checked}
+						disabled={disabled || lock !== null}
+						onCheckedChange={onCheckedChange}
+					/>
+				)}
 			</div>
-			{onCheckedChange === null ? null : (
-				<Switch
-					aria-label={title}
-					aria-describedby={locked ? lockId : undefined}
-					className="order-2 mt-0.5 sm:order-3"
-					checked={checked}
-					disabled={disabled || lock !== null}
-					onCheckedChange={onCheckedChange}
-				/>
-			)}
+			{children}
+			{locked ? (
+				<p id={lockId} className="text-muted-foreground">
+					{LOCK_NOTES[lock]}
+				</p>
+			) : null}
 		</section>
 	)
 }
@@ -1092,30 +1222,6 @@ function GcpDisconnectDialog({
 	useIntervalRefresh(useAtomRefresh(gcpStatusQuery()), { intervalMs: SETTLING_REFRESH_MS, enabled: true })
 	const cleaned = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
 
-	const steps: ReadonlyArray<ChecklistStep<"cleanup" | "disconnect">> = [
-		{
-			id: "cleanup",
-			title: "Remove Maple's resources from Google Cloud",
-			state: cleaned ? "done" : "current",
-			waitingOnMaple: false,
-			detail:
-				cleaned && connector.setup_reported_at !== null ? (
-					<>
-						<RelativeTime value={connector.setup_reported_at} prefix="Cleaned up" />.
-					</>
-				) : (
-					`Run this in Cloud Shell first. It takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"} and deletes the log sink, topic, subscription and read-only service account. The APIs it switched on stay on.`
-				),
-		},
-		{
-			id: "disconnect",
-			title: "Disconnect from Maple",
-			state: cleaned ? "current" : "pending",
-			waitingOnMaple: false,
-			detail: "Maple stops accepting this connection's logs and reading its metrics. Data already in Maple is kept.",
-		},
-	]
-
 	return (
 		<Dialog open onOpenChange={(open) => (open || disconnecting ? undefined : onClose())}>
 			<DialogContent className="sm:max-w-2xl">
@@ -1125,31 +1231,52 @@ function GcpDisconnectDialog({
 						<span className="whitespace-nowrap">{connector.scope_id}</span>
 					</DialogTitle>
 				</DialogHeader>
-				<DialogPanel className="flex flex-col gap-3">
-					<PlanetScaleSetupChecklist
-						stacked
-						steps={steps}
-						actions={{
-							cleanup: (
-								<div className="flex flex-col gap-3">
-									<div className="flex flex-wrap gap-2">
-										<CopyScriptButton script={script} label="cleanup script" />
+				<DialogPanel>
+					<ol>
+						<Step
+							number={1}
+							state={cleaned ? "done" : "current"}
+							title="Remove Maple's resources from Google Cloud"
+							detail={
+								cleaned && connector.setup_reported_at !== null ? (
+									<>
+										<RelativeTime
+											value={connector.setup_reported_at}
+											prefix="Cleaned up"
+										/>
+										.
+									</>
+								) : (
+									`Run this in Cloud Shell first. It takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"} and deletes the log sink, topic, subscription and read-only service account. The APIs it switched on stay on.`
+								)
+							}
+						>
+							{cleaned ? null : (
+								<>
+									<Script
+										script={script}
+										label="cleanup script"
+										failure={failure}
+										caveat="The script contains this connection's secret. Don't share or commit it."
+									>
 										<OpenCloudShellButton projectId={connector.project_id} />
-									</div>
-									<ScriptPreview script={script} label="Cleanup script" failure={failure} />
-									<p className="text-xs text-muted-foreground">
-										The script contains this connection&apos;s secret. Don&apos;t share or
-										commit it.
-									</p>
-									<p className="text-xs text-muted-foreground">
+									</Script>
+									<p className={cn(PROSE, "text-foreground/80")}>
 										Waiting for the cleanup script. This updates on its own.
 									</p>
-								</div>
-							),
-						}}
-					/>
+								</>
+							)}
+						</Step>
+						<Step
+							number={2}
+							state={cleaned ? "current" : "pending"}
+							title="Disconnect from Maple"
+							detail="Maple stops accepting this connection's logs and reading its metrics. Data already in Maple is kept."
+						/>
+					</ol>
+					{/* What the button under it costs, in the dialog's own voice and not a step's small print. */}
 					{cleaned ? null : (
-						<p className="text-xs text-muted-foreground">
+						<p className={cn(MEASURE, "mt-5 text-xs/5 text-pretty text-foreground/80")}>
 							If you skip the cleanup, Google Cloud keeps publishing logs to Pub/Sub, billed by
 							Google, until the script runs.
 						</p>
@@ -1204,15 +1331,14 @@ function GcpConnectorRow({
 	const neverReported =
 		connector.applied_logs_enabled === null && connector.applied_metrics_enabled === null
 	const cleanedUp = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
-	// What a row or the notice says while Google Cloud waits on the script: who runs it, and
-	// "again" once a run has reported, also when it stopped before this capability.
+	// What the notice or the header says while Google Cloud waits on the script: who runs it.
 	const who = isAdmin ? "Run the setup script" : "A Maple organization admin needs to run the setup script"
 	const reportedAt = saved.setup_reported_at
-	const runScript = `${who}${reportedAt === null ? "" : " again"}.`
 	const open = (rerun: boolean): SetupOpened => ({ at: Date.now(), rerun, seen: reportedAt })
-	// A connection whose script has not run opens on its next step.
+	// A connection that waits on the script opens on its steps. Found waiting on a change, it opens
+	// as a run to repeat: nobody has said a run is under way, so the last step does not time one.
 	const [opened, setOpened] = useState<SetupOpened | null>(() =>
-		scriptNeeded === "setup-pending" ? open(false) : null,
+		scriptNeeded === null ? null : open(scriptNeeded === "changes-pending"),
 	)
 	// A run's sections report one after the other: confirmed once the last one has.
 	const confirmed =
@@ -1268,20 +1394,40 @@ function GcpConnectorRow({
 	const logsLock = gcpSwitchLock(connector, "logs", metricsAvailable)
 	const metricsLock = gcpSwitchLock(connector, "metrics", metricsAvailable)
 
+	const state = gcpConnectionState(connector, nowMs)
+	const setup =
+		isAdmin && opened !== null ? (
+			<GcpSetup connector={connector} nowMs={nowMs} opened={opened} confirmed={confirmed} />
+		) : null
+	// A first setup leads with its steps. A later run has them under the switches that ask for it.
+	const stepsFirst = opened?.seen === null
+
 	return (
-		<div className="border-t border-border/60 pb-2">
-			<div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3 pb-1">
-				{/* The basis makes the buttons wrap under the name on a phone instead of squeezing it. */}
-				<div className="flex min-w-0 flex-1 basis-48 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-					<span className="font-medium">{label}</span>
+		<Panel className="@container">
+			{/* The card's width decides where the buttons go, so every card of a page agrees: beside the
+			    name when wide, under it when narrow. Wide, the header is as tall with buttons as without. */}
+			<div className="flex flex-col gap-2 px-4 py-3 @xl:min-h-13 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-3">
+				<div className="min-w-0">
+					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+						<h3 className={TITLE}>{label}</h3>
+						{state === "healthy" ? null : (
+							<Badge variant={state === "attention" ? "warn" : "outline"}>
+								{GCP_CONNECTION_LABEL[state]}
+							</Badge>
+						)}
+					</div>
 					{connector.scope_type !== "project" ? (
-						<span className="text-xs text-muted-foreground">
+						<p className="text-xs/5 text-muted-foreground">
 							host project <span className="font-mono">{connector.project_id}</span>
-						</span>
+						</p>
 					) : null}
-					{scriptNeeded === null ? null : (
-						<Badge variant="outline">{GCP_CONNECTION_LABEL[scriptNeeded]}</Badge>
-					)}
+					{/* With no steps open and no notice, nothing else says who has to do what. */}
+					{scriptNeeded === "setup-pending" && setup === null ? (
+						<p className="text-xs/5 text-foreground/80">
+							{who}
+							{reportedAt === null ? "" : " again"}.
+						</p>
+					) : null}
 				</div>
 				{isAdmin ? (
 					<div className="flex shrink-0 items-center gap-1.5">
@@ -1299,53 +1445,57 @@ function GcpConnectorRow({
 					</div>
 				) : null}
 			</div>
-			<Capability
-				title="Log forwarding"
-				checked={connector.logs_enabled}
-				lock={logsLock}
-				disabled={updating}
-				onCheckedChange={isAdmin ? (logs_enabled) => void save({ logs_enabled }) : null}
-			>
-				<LogStatus connector={connector} nowMs={nowMs} runScript={runScript} />
-			</Capability>
-			<Capability
-				title="Metrics and resources"
-				checked={connector.metrics_enabled}
-				lock={metricsLock}
-				disabled={updating}
-				onCheckedChange={isAdmin ? (metrics_enabled) => void save({ metrics_enabled }) : null}
-			>
-				<MetricsStatus connector={connector} nowMs={nowMs} runScript={runScript} />
-			</Capability>
-			{pendingChanges.length === 0 ? null : (
-				<div className="px-4 pt-1 pb-2">
-					<Alert size="sm" role="status">
-						<CircleInfoIcon size={14} />
-						<AlertTitle>Google Cloud doesn&apos;t match these switches yet</AlertTitle>
-						<AlertDescription className="gap-1">
-							<p>
-								{who} again. It will
-								{pendingChanges.length === 1 ? ` ${pendingChanges[0]}.` : ":"}
-							</p>
-							{pendingChanges.length === 1 ? null : (
-								<ul className="list-disc pl-4">
-									{pendingChanges.map((line) => (
-										<li key={line}>{line}</li>
-									))}
-								</ul>
-							)}
-							{isAdmin && cleanedUp ? (
-								<p>To remove the connection instead, click Disconnect.</p>
-							) : null}
-						</AlertDescription>
-					</Alert>
+			{stepsFirst && setup !== null ? (
+				<div className="border-t border-border/60 px-4 py-5">{setup}</div>
+			) : null}
+			<div className="divide-y divide-border/60 border-t border-border/60">
+				<Capability
+					title="Log forwarding"
+					checked={connector.logs_enabled}
+					lock={logsLock}
+					disabled={updating}
+					onCheckedChange={isAdmin ? (logs_enabled) => void save({ logs_enabled }) : null}
+				>
+					<LogStatus connector={connector} nowMs={nowMs} />
+				</Capability>
+				<Capability
+					title="Metrics and resources"
+					checked={connector.metrics_enabled}
+					lock={metricsLock}
+					disabled={updating}
+					onCheckedChange={isAdmin ? (metrics_enabled) => void save({ metrics_enabled }) : null}
+				>
+					<MetricsStatus connector={connector} nowMs={nowMs} />
+				</Capability>
+			</div>
+			{/* The notice and the steps that act on it share one band. */}
+			{pendingChanges.length === 0 && (stepsFirst || setup === null) ? null : (
+				<div className="flex flex-col gap-5 border-t border-border/60 px-4 py-5">
+					{pendingChanges.length === 0 ? null : (
+						<Alert variant="warn" size="sm" role="status">
+							<AlertWarningIcon size={14} />
+							<AlertTitle>Google Cloud doesn&apos;t match these switches yet</AlertTitle>
+							<AlertDescription className={cn(HELP, "gap-1")}>
+								<p>
+									{who} again. It will
+									{pendingChanges.length === 1 ? ` ${pendingChanges[0]}.` : ":"}
+								</p>
+								{pendingChanges.length === 1 ? null : (
+									<ul className="list-disc pl-4">
+										{pendingChanges.map((line) => (
+											<li key={line}>{line}</li>
+										))}
+									</ul>
+								)}
+								{isAdmin && cleanedUp ? (
+									<p>To remove the connection instead, click Disconnect.</p>
+								) : null}
+							</AlertDescription>
+						</Alert>
+					)}
+					{stepsFirst ? null : setup}
 				</div>
 			)}
-			{isAdmin && opened !== null ? (
-				<div className="mt-1 -mb-2">
-					<GcpSetup connector={connector} nowMs={nowMs} opened={opened} confirmed={confirmed} />
-				</div>
-			) : null}
 
 			{neverReported ? (
 				<ConfirmDialog
@@ -1364,7 +1514,7 @@ function GcpConnectorRow({
 					onClose={() => setDisconnectOpen(false)}
 				/>
 			) : null}
-		</div>
+		</Panel>
 	)
 }
 
@@ -1415,12 +1565,12 @@ export function GcpIntegrationCard() {
 	}
 
 	const cleanup = removed.map((entry) => (
-		<Panel key={entry.id} padded className="gap-3">
+		<Panel key={entry.id} padded tone="muted" className="gap-3">
 			<div className="flex flex-col gap-1">
-				<h3 className="text-sm font-semibold">
+				<h3 className={TITLE}>
 					{entry.label} {entry.reported ? "disconnected" : "removed"}
 				</h3>
-				<p className="text-xs text-muted-foreground">
+				<p className={PROSE}>
 					{entry.reported
 						? "If you haven't yet, run the cleanup script in Cloud Shell."
 						: "If its setup script ran part of the way, run the cleanup script in Cloud Shell."}{" "}
@@ -1440,21 +1590,45 @@ export function GcpIntegrationCard() {
 			</div>
 		</Panel>
 	))
+	const newConnection = (onCancel?: () => void) => (
+		<SettingsSection
+			title="New connection"
+			description={
+				<span className={cn(MEASURE, "block text-pretty")}>
+					Choose what to connect and Maple writes its setup script. You run it in Cloud Shell; it
+					takes about a minute.
+				</span>
+			}
+		>
+			<GcpConnectForm
+				metricsAvailable={metricsAvailable}
+				existing={connectors}
+				onCreated={() => setAdding(false)}
+				onCancel={onCancel}
+			/>
+		</SettingsSection>
+	)
 
 	if (connectors.length === 0) {
 		return (
-			<div className="flex flex-col gap-4">
+			<div className="flex w-full max-w-3xl flex-col gap-10">
 				{cleanup}
-				<IntegrationEmpty icon={GoogleCloudIcon} backerIcon={GoogleCloudMonoIcon} accent={GCP_ACCENT}>
+				<IntegrationEmpty
+					icon={GoogleCloudIcon}
+					backerIcon={GoogleCloudMonoIcon}
+					accent={GCP_ACCENT}
+					// A section follows the tiles at a section's distance, the empty card at the others'.
+					className={isAdmin ? "gap-10" : undefined}
+				>
 					<IntegrationEmptyFeatures>
 						<IntegrationEmptyFeature
 							label="Logs"
-							title="Google Cloud's own logs"
+							title="Google Cloud's logs"
 							description="Request logs, audit logs and managed services such as Cloud SQL. GKE container logs are left out by default."
 						/>
 						<IntegrationEmptyFeature
 							label="Metrics"
-							title="Workloads without agents"
+							title="Workloads, no agents"
 							description="Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub and more, read from Cloud Monitoring every 5 minutes."
 						/>
 						<IntegrationEmptyFeature
@@ -1463,61 +1637,38 @@ export function GcpIntegrationCard() {
 							description="You run it in Cloud Shell. No OAuth, no service account keys, no write access for Maple."
 						/>
 					</IntegrationEmptyFeatures>
-					<IntegrationEmptyCard>
-						<IntegrationEmptyMedia />
-						<IntegrationEmptyHint>
-							{isAdmin
-								? "Choose what to connect and Maple writes its setup script. You run it in Cloud Shell; it takes about a minute."
-								: "A Maple organization admin connects Google Cloud by running a setup script in Cloud Shell."}
-						</IntegrationEmptyHint>
-						{isAdmin ? (
-							<div className="w-full max-w-2xl">
-								<GcpConnectForm
-									metricsAvailable={metricsAvailable}
-									existing={connectors}
-									onCreated={() => setAdding(false)}
-								/>
-							</div>
-						) : null}
-					</IntegrationEmptyCard>
+					{isAdmin ? (
+						newConnection()
+					) : (
+						<IntegrationEmptyCard>
+							<IntegrationEmptyMedia />
+							<IntegrationEmptyHint>
+								A Maple organization admin connects Google Cloud by running a setup script in
+								Cloud Shell.
+							</IntegrationEmptyHint>
+						</IntegrationEmptyCard>
+					)}
 				</IntegrationEmpty>
 			</div>
 		)
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
+		<div className="flex w-full max-w-3xl flex-col gap-10">
 			{cleanup}
-			<Panel>
-				<Item className="flex-wrap items-start gap-3 rounded-none p-4">
-					<ItemMedia>
-						<IntegrationIconPlate icon={GoogleCloudIcon} accent={GCP_ACCENT} />
-					</ItemMedia>
-					<ItemContent className="min-w-48 gap-0">
-						<h3 className="text-sm font-semibold">Google Cloud</h3>
-						<p className="mt-1 text-xs text-muted-foreground">
-							Each connection covers a project, a folder or an organization. A switch change
-							takes effect in Google Cloud once its setup script is run again.
-						</p>
-					</ItemContent>
-					{isAdmin && !adding ? (
-						<ItemActions className="shrink-0">
-							<Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-								Add connection
-							</Button>
-						</ItemActions>
-					) : null}
-				</Item>
-				{adding ? (
-					<div className="border-t border-border/60 p-4">
-						<GcpConnectForm
-							metricsAvailable={metricsAvailable}
-							existing={connectors}
-							onCreated={() => setAdding(false)}
-							onCancel={() => setAdding(false)}
-						/>
-					</div>
-				) : null}
+			{adding ? newConnection(() => setAdding(false)) : null}
+			<SettingsSection
+				title="Connections"
+				actions={
+					isAdmin && !adding ? (
+						<Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+							Add connection
+						</Button>
+					) : undefined
+				}
+				framed={false}
+				className="gap-4"
+			>
 				{connectors.map((connector) => (
 					<GcpConnectorRow
 						key={connector.id}
@@ -1528,9 +1679,9 @@ export function GcpIntegrationCard() {
 						onRemoved={(entry) => setRemoved([...removed, entry])}
 					/>
 				))}
-			</Panel>
+			</SettingsSection>
 			{showNotAdmin ? (
-				<p className="text-2xs text-muted-foreground">
+				<p className="text-xs text-muted-foreground">
 					Only Maple organization admins can add, change or disconnect connections.
 				</p>
 			) : null}
