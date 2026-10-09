@@ -47,7 +47,7 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 4. Under **What to collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. Click **Get setup script**.
 5. Click **Open Cloud Shell** and sign in with the roles above.
 6. Click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute.
-7. Return to Maple. **Maple confirms the connection** shows a check mark within a minute of the script ending, usually within seconds.
+7. Return to Maple. **Maple confirms the connection** shows a check mark within a minute of the script ending, usually in seconds.
 
 A first run for a project prints:
 
@@ -86,14 +86,14 @@ Done. Google Cloud is set up for Maple.
   Metrics: the first read lands within about 10 minutes.
 ```
 
-If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. Running the script again when nothing changed is safe: it changes nothing and ends with `Done. Everything was already in place.`
+If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. Running the script again when nothing changed is safe: it changes nothing and ends with "Done. Everything was already in place."
 
 After the check mark, each switch waits for its first data:
 
-| Switch                | First data                                                                                                              |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Log forwarding        | A new sink can take about 10 minutes to start forwarding. Entries logged before that are not forwarded.                 |
-| Metrics and resources | The first read lands within about 10 minutes. Maple reads every 5 minutes, about 5 minutes behind, to get full minutes. |
+| Switch                | First data                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Log forwarding        | A new sink can take about 10 minutes to start forwarding. Entries logged before that are not forwarded.                             |
+| Metrics and resources | The first read lands within about 10 minutes. Maple reads every 5 minutes, about 5 minutes behind, so that each minute is complete. |
 
 The script contains a secret that lets anyone send logs to your Maple organization. Don't share it or commit it, and run it in Cloud Shell: there neither the paste nor the secret ends up in shell history. zsh keeps the whole paste, secret included. If you paste the script into zsh on your own machine, remove the entry from your shell history afterwards.
 
@@ -182,14 +182,12 @@ For log forwarding it creates a Pub/Sub topic and push subscription in the host 
 
 It grants these roles:
 
-| Role                                                                 | Granted                                                                  | Why                                                                                                                    |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Pub/Sub Publisher `roles/pubsub.publisher`                           | To the sink's Google-managed writer identity, on Maple's topic           | Publishing log entries to the topic.                                                                                   |
-| Logs Writer `roles/logging.logWriter`                                | To the sink's Google-managed writer identity, on the host project        | Google requires it on the project that holds a sink's destination.                                                     |
-| Monitoring Viewer `roles/monitoring.viewer`                          | To the read-only service account, on the project, folder or organization | Reading metrics (`monitoring.timeSeries.list`).                                                                        |
-| Cloud Asset Viewer `roles/cloudasset.viewer`                         | To the read-only service account, on the project, folder or organization | Listing resources (`cloudasset.assets.searchAllResources`). The role can also read resource metadata and IAM policies. |
-| Service Usage Consumer `roles/serviceusage.serviceUsageConsumer`     | To the read-only service account, on the host project                    | Calling both read APIs through the host project.                                                                       |
-| Service Account Token Creator `roles/iam.serviceAccountTokenCreator` | To Maple's service account, on the read-only service account             | Minting short-lived tokens for that one account.                                                                       |
+- **Pub/Sub Publisher** (`roles/pubsub.publisher`) to the sink's Google-managed writer identity, on Maple's topic: publishing log entries to the topic.
+- **Logs Writer** (`roles/logging.logWriter`) to the same writer identity, on the host project: Google requires it on the project that holds a sink's destination.
+- **Monitoring Viewer** (`roles/monitoring.viewer`) to the read-only service account, on the project, folder or organization: reading metrics (`monitoring.timeSeries.list`).
+- **Cloud Asset Viewer** (`roles/cloudasset.viewer`) to the read-only service account, on the project, folder or organization: listing resources (`cloudasset.assets.searchAllResources`). The role can also read resource metadata and IAM policies.
+- **Service Usage Consumer** (`roles/serviceusage.serviceUsageConsumer`) to the read-only service account, on the host project: calling both read APIs through the host project.
+- **Service Account Token Creator** (`roles/iam.serviceAccountTokenCreator`) to Maple's service account, on the read-only service account: minting short-lived tokens for that one account.
 
 `roles/monitoring.viewer` and `roles/cloudasset.viewer` are the narrowest predefined roles for these calls, and both are read-only. On a folder or organization, every project under it inherits them.
 
@@ -345,20 +343,20 @@ Cloud Asset Inventory searches are free of charge. See [Cloud Asset Inventory pr
 
 ### In Cloud Shell
 
-A step that fails stops the script. It prints what went wrong, Google's answer, and a line that starts with `What to do:`. Nothing needs undoing: fix it and paste the script again. The lines below start with the account you are signed in as where `...` stands.
+A step that fails stops the script. It prints what went wrong, Google's answer, and a line that starts with `What to do:`. Nothing needs undoing: fix it and paste the script again. In the lines below, _account_ stands for the account you are signed in as.
 
-| The script prints                                                                | Cause and fix                                                                                                                                                                                |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Can't open project acme-prod as ..."                                            | The ID is wrong, or the account has no access to the project. Check the ID with `gcloud projects list`. It is the project ID, not the name or number.                                        |
-| "... has none of the permissions this script needs on project acme-prod."        | Check the ID in Maple first. If it is right, the account has no rights there: ask for the roles under [Prerequisites](#prerequisites), or have an administrator run the script.              |
-| "... is missing permissions on project acme-prod: ..."                           | The account lacks a role. The line names the permissions and the role to ask for. Nothing was created yet.                                                                                   |
-| "... is missing permissions on project acme-prod: serviceusage.services.enable." | An API the script needs is off and the account may not switch it on. The next line names the APIs. Ask for Service Usage Admin on the host project, or have an administrator switch them on. |
-| "Project acme-prod has no billing account."                                      | Link a billing account to the host project, then paste the script again.                                                                                                                     |
-| "Google does not accept the log filter."                                         | `LOG_FILTER` was edited into something Google can't parse. Correct it near the top of the script and paste it again. Nothing was created yet.                                                |
-| "An organization policy (domain restricted sharing) blocks this grant."          | See [Domain restricted sharing](#domain-restricted-sharing).                                                                                                                                 |
-| "Google is still switching an API on, or the API is off."                        | Wait a minute and paste the script again.                                                                                                                                                    |
-| "Google has not published the new service account yet."                          | Wait a minute and paste the script again.                                                                                                                                                    |
-| "Couldn't reach Maple to confirm."                                               | Cloud Shell could not reach Maple. Google Cloud is set up, and Maple shows **Setup pending** or **Changes pending** until a later run reaches it. Paste the script again.                    |
+| The script prints                                                                      | Cause and fix                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Can't open project acme-prod as _account_."                                           | The ID is wrong, or the account has no access to the project. Check the ID with `gcloud projects list`. It is the project ID, not the name or number.                                        |
+| "_account_ has none of the permissions this script needs on project acme-prod."        | Check the ID in Maple first. If it is right, the account has no rights there: ask for the roles under [Prerequisites](#prerequisites), or have an administrator run the script.              |
+| "_account_ is missing permissions on project acme-prod:" and a list                    | The account lacks a role. The line names the permissions and the role to ask for. Nothing was created yet.                                                                                   |
+| "_account_ is missing permissions on project acme-prod: serviceusage.services.enable." | An API the script needs is off and the account may not switch it on. The next line names the APIs. Ask for Service Usage Admin on the host project, or have an administrator switch them on. |
+| "Project acme-prod has no billing account."                                            | Link a billing account to the host project, then paste the script again.                                                                                                                     |
+| "Google does not accept the log filter."                                               | `LOG_FILTER` was edited into something Google can't parse. Correct it near the top of the script and paste it again. Nothing was created yet.                                                |
+| "An organization policy (domain restricted sharing) blocks this grant."                | See [Domain restricted sharing](#domain-restricted-sharing).                                                                                                                                 |
+| "Google is still switching an API on, or the API is off."                              | Wait a minute and paste the script again.                                                                                                                                                    |
+| "Google has not published the new service account yet."                                | Wait a minute and paste the script again.                                                                                                                                                    |
+| "Couldn't reach Maple to confirm."                                                     | Cloud Shell could not reach Maple. Google Cloud is set up, and Maple shows **Setup pending** or **Changes pending** until a later run reaches it. Paste the script again.                    |
 
 When you create a connection in Maple, "The Google Cloud project acme-prod is already connected." means this Maple organization already has a connection for it. Change that connection's switches instead.
 
@@ -375,8 +373,11 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 
 ### Metrics and resources
 
+**Can't read metrics** and **Receiving metrics, incomplete** come with one of the messages below. The first means no read has succeeded in the last 30 minutes; the second means reads arrive with something missing.
+
 | The connection shows                                                                | Cause and fix                                                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Metrics stalled**                                                                 | No read for 30 minutes and no error. Maple retries on its own. If it stays for more than an hour, write to support.                                                                                                                                          |
 | "Maple can't sign in as this connection's read-only service account yet."           | Shown from 10 minutes after a setup run. The account does not exist, or the grant to Maple is missing or blocked by an organization policy. Run the setup script again and read its last lines. See [Domain restricted sharing](#domain-restricted-sharing). |
 | "The host project acme-prod has no active billing account"                          | Link a billing account to the host project. The message carries the link. Maple retries every 5 minutes.                                                                                                                                                     |
 | "The Cloud Monitoring API is switched off in the host project acme-prod."           | Run the setup script again: it switches the API on.                                                                                                                                                                                                          |
@@ -393,7 +394,7 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 
 A message that ends in parentheses, such as "(Cloud Monitoring returned 403)", quotes Google's answer. Include it when you write to support.
 
-On a self-hosted Maple, the **Metrics and resources** switch reads **Not available on this Maple deployment.** until `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` names a Google service account the deployment owns. Reading metrics also needs `MAPLE_GCP_SERVICE_ACCOUNT_KEY`, that account's key file, base64-encoded.
+On a self-hosted Maple, the **Metrics and resources** switch reads **Not available on this Maple deployment** until `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` names a Google service account the deployment owns. Reading metrics also needs `MAPLE_GCP_SERVICE_ACCOUNT_KEY`, that account's key file, base64-encoded.
 
 ### Domain restricted sharing
 
@@ -402,7 +403,7 @@ An organization policy can restrict which identities may hold IAM roles in your 
 An Organization Policy Administrator can lift the policy for the host project while the script runs:
 
 1. In the Google Cloud console, open **IAM & Admin → Organization Policies** with the host project selected.
-2. Open **Domain restricted sharing** and override the parent's policy for this project so that the grant is allowed.
+2. Open **Domain restricted sharing**, click **Manage policy**, choose **Override parent's policy** and add a rule that allows all. This applies to the host project only.
 3. Paste the setup script again. It continues where it stopped.
 
 Google checks the policy when a grant is made, so the grant stays in place if you restore the policy afterwards.
@@ -410,12 +411,12 @@ Google checks the policy when a grant is made, so the grant stays in place if yo
 ## Disconnect
 
 1. On **Integrations → Google Cloud**, click **Disconnect** on the connection.
-2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and read-only service account, and ends with `Done. Everything the setup script created is gone.`
+2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and read-only service account, and ends with "Done. Everything the setup script created is gone."
 3. Wait for the check mark in the dialog, then click **Disconnect**. Maple stops accepting the connection's logs and reading its metrics. Data already in Maple is kept.
 
 The cleanup takes about two minutes when the connection forwards logs: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error. Switching **Log forwarding** off and running the setup script takes as long, for the same reason.
 
-**Disconnect anyway** skips the wait. Google Cloud then keeps publishing logs to Pub/Sub, billed by Google, until the cleanup script runs. Maple keeps a panel with the script on the page until you click **Done**.
+**Disconnect anyway** skips the wait. Google Cloud then keeps publishing logs to Pub/Sub, billed by Google, until the cleanup script runs. Maple keeps a panel with **Copy cleanup script** on the page until you click **Done**.
 
 The cleanup script leaves the APIs it switched on enabled, and the Logs Writer role of Google's logging service account on the host project, which other sinks share.
 

@@ -496,7 +496,8 @@ function GcpConnectForm({
 				) : (
 					"the project"
 				)}
-				{scopeRoles.length > 0 ? `, plus ${scopeRoles.join(" and ")} on the ${scopeName}` : ""}.
+				{scopeRoles.length > 0 ? `, plus ${scopeRoles.join(" and ")} on the ${scopeName}` : ""}.{" "}
+				<ExternalLink href={`${DOCS}#roles-for-running-the-script`}>Without Owner</ExternalLink>
 			</p>
 			{overlap === null ? null : (
 				<Alert size="sm" role="note">
@@ -654,7 +655,7 @@ function GcpSetup({
 									</Select>
 									<FieldDescription className="max-w-prose">
 										{sinkExists
-											? "The first option leaves your sink's filter untouched. "
+											? "Keeping the current filter leaves the sink as it is. "
 											: ""}
 										Maple default leaves out Data Access audit logs, load balancer health
 										checks, Kubernetes lease renewals and VM serial console output. Leave
@@ -1161,6 +1162,7 @@ function GcpConnectorRow({
 				label,
 				hostProjectId: saved.project_id,
 				cleanupScript: result.value.cleanup_script,
+				reported: !neverReported,
 			})
 		}
 		return true
@@ -1235,9 +1237,6 @@ function GcpConnectorRow({
 							<p>
 								{who} again. It will
 								{pendingChanges.length === 1 ? ` ${pendingChanges[0]}.` : ":"}
-								{isAdmin && cleanedUp
-									? " To remove the connection instead, click Disconnect."
-									: ""}
 							</p>
 							{pendingChanges.length === 1 ? null : (
 								<ul className="list-disc pl-4">
@@ -1246,6 +1245,9 @@ function GcpConnectorRow({
 									))}
 								</ul>
 							)}
+							{isAdmin && cleanedUp ? (
+								<p>To remove the connection instead, click Disconnect.</p>
+							) : null}
 						</AlertDescription>
 					</Alert>
 				</div>
@@ -1326,10 +1328,14 @@ export function GcpIntegrationCard() {
 	const cleanup = removed.map((entry) => (
 		<Panel key={entry.id} padded className="gap-3">
 			<div className="flex flex-col gap-1">
-				<h3 className="text-sm font-semibold">{entry.label} disconnected</h3>
+				<h3 className="text-sm font-semibold">
+					{entry.label} {entry.reported ? "disconnected" : "removed"}
+				</h3>
 				<p className="text-xs text-muted-foreground">
-					If its setup script ran and you haven&apos;t cleaned up yet, run the cleanup script in
-					Cloud Shell. This stays here until you click Done.
+					{entry.reported
+						? "If you haven't yet, run the cleanup script in Cloud Shell."
+						: "If its setup script ran part of the way, run the cleanup script in Cloud Shell."}{" "}
+					This stays here until you click Done.
 				</p>
 			</div>
 			<div className="flex flex-wrap gap-2">
@@ -1360,7 +1366,7 @@ export function GcpIntegrationCard() {
 						<IntegrationEmptyFeature
 							label="Metrics"
 							title="Workloads without agents"
-							description="Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub and load balancers, read from Cloud Monitoring every 5 minutes."
+							description="Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub and more, read from Cloud Monitoring every 5 minutes."
 						/>
 						<IntegrationEmptyFeature
 							label="Access"
