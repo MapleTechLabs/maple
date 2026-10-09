@@ -28,7 +28,7 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
-import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
+import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -252,11 +252,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const [
 		{ InvestigationServicesLive },
-		{ layerPg },
-		{ mapleDbConnectionLayer },
+		{ DatabasePgLive },
+		{ layerMapleDbConnection },
 		{
 			layerDecisionModelFromConfig,
-			layerFindingEmbedderFromConfig,
+			FindingEmbedderFromConfigLive,
 			layerLlmFromConfig,
 			loadLlmSettings,
 			resolveReviewModel,
@@ -281,13 +281,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerDecisionModelFromConfig(input.workersAi)),
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
-			Layer.provideMerge(layerFindingEmbedderFromConfig),
+			Layer.provideMerge(FindingEmbedderFromConfigLive),
 			Layer.provideMerge(layerLlmFromConfig(input.workersAi)),
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(ReturnedToolFailuresOkLayer.pipe(Layer.provideMerge(telemetry.layer))),
+			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
 

@@ -36,7 +36,7 @@ const makePgDatabase = Effect.gen(function* () {
 	} satisfies DatabaseApi)
 })
 
-export const layerPg = Layer.effect(Database, makePgDatabase)
+export const DatabasePgLive = Layer.effect(Database, makePgDatabase)
 
 /** What every background event's graph starts from: the config-backed `Env` and the database. */
-export const EventBaseLive = Layer.mergeAll(Env.layer, layerPg)
+export const EventBaseLive = Layer.mergeAll(Env.layer, DatabasePgLive)

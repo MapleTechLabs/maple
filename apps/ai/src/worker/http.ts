@@ -14,7 +14,7 @@ import * as Etag from "effect/http/Etag"
 import * as HttpPlatform from "effect/http/HttpPlatform"
 import type { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import type { AiPortsLayer } from "./bindings"
 import { healthResponse } from "../routes/health"
 
@@ -48,7 +48,7 @@ export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =
 				Layer.provideMerge(McpServicesLive),
 				Layer.provideMerge(AiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
-				Layer.provideMerge(layerPg),
+				Layer.provideMerge(DatabasePgLive),
 				Layer.provide(ports),
 			),
 		)

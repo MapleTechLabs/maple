@@ -6,7 +6,7 @@ import { PrReviewConversationService } from "./PrReviewConversationService"
  * `@maple` mentions as a consumer of the VCS layer's comment port. The adapter lives on the review
  * side for the reason the review trigger's does: VCS maps events, reviews answer them.
  */
-export const prReviewCommentSinkLive = Layer.effect(
+export const PullRequestCommentSinkLive = Layer.effect(
 	PullRequestCommentSink,
 	Effect.gen(function* () {
 		const conversations = yield* PrReviewConversationService

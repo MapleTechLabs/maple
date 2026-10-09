@@ -61,7 +61,7 @@ const decodeMcpApiKeyMetadata = Schema.decodeUnknownOption(McpApiKeyMetadata)
  *
  * - `roles` pins the *minting user's* roles onto the key, so a credential that
  *   lives on a phone can never outrank the human who created it. Without it the
- *   key would resolve with the `root` default in `ApiAuthorizationV2Layer`,
+ *   key would resolve with the `root` default in `ApiAuthorizationV2Live`,
  *   fenced only by its scopes.
  * - `deviceId` is what makes the credential replaceable: minting is idempotent
  *   per device, so a reinstall or a roll retires the previous key instead of

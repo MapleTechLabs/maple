@@ -18,7 +18,7 @@ import {
 import { aiUnavailableResponse, forwardsToAi, forwardToAi } from "./ai-forward"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import { AiWorkerFetcher, type MapleDbConnection } from "@maple/backend/platform/bindings"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
@@ -79,7 +79,7 @@ export const buildApp = (
 				isolate,
 				QueryRoutes.pipe(
 					Layer.provideMerge(WorkerPlatformLive),
-					Layer.provideMerge(layerPg),
+					Layer.provideMerge(DatabasePgLive),
 					Layer.provide(ports),
 				),
 				memoMap,
@@ -95,7 +95,7 @@ export const buildApp = (
 				Layer.provideMerge(HttpServicesLive),
 				Layer.provideMerge(ApiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
-				Layer.provideMerge(layerPg),
+				Layer.provideMerge(DatabasePgLive),
 				Layer.provideMerge(FetchHttpClient.layer),
 				Layer.provide(ports),
 			),
@@ -238,9 +238,7 @@ export const makeFetch = (
 			)
 
 			return response
-		}).pipe(
-			Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)),
-		)
+		}).pipe(Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)))
 		// Outside the wrapper, so the preflight stays byte-equal to HttpRouter.cors.
 		return Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest

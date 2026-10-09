@@ -548,7 +548,7 @@ export const withReturnedToolFailuresOk = (tracer: Tracer.Tracer): Tracer.Tracer
 	})
 
 /** Wraps the current tracer; put it over the telemetry layer with `Layer.provideMerge`. */
-export const ReturnedToolFailuresOkLayer = Layer.effect(
+export const ReturnedToolFailuresOkLive = Layer.effect(
 	Tracer.Tracer,
 	Effect.map(Effect.tracer, withReturnedToolFailuresOk),
 )

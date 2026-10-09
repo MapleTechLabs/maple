@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Fiber, Latch, Layer } from "effect"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
-import { buildLayer, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
+import { layerTick, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
 	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics", "prReviewPostMerge"]],
@@ -12,7 +12,7 @@ const cronCases = [
 
 describe("alerting Effect root", () => {
 	it.effect("acquires the production layer graph", () =>
-		Effect.scoped(Layer.build(buildLayer(workerEnv))).pipe(Effect.asVoid),
+		Effect.scoped(Layer.build(layerTick(workerEnv))).pipe(Effect.asVoid),
 	)
 
 	for (const [cron, expected] of cronCases) {

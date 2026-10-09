@@ -123,7 +123,7 @@ v2 accepts API keys (`maple_ak_…`) and dashboard session tokens (Clerk or self
 - Keys with no scopes (all pre-v2 keys) have full access. `POST` and `GET /v2/agent_feedback` are scope-exempt: any key of the org can send and list feedback (`isScopeExemptRoute` in `auth.ts`). Session tokens are never scope-checked. The dashboard's authorization comes from org roles, like Stripe's own dashboard.
 - Failing the check returns `permission_error` / `insufficient_scope`.
 
-Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Layer.ts`; scopes are stored on `api_keys.scopes` (jsonb).
+Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Live.ts`; scopes are stored on `api_keys.scopes` (jsonb).
 
 ### Versioning
 
