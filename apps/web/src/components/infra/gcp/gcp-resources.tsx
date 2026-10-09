@@ -46,10 +46,7 @@ function FilterSelect({
 		<Select
 			items={items}
 			value={value ?? ALL}
-			onValueChange={(next) => {
-				const picked = items.find((item) => item.value === next)?.value
-				onChange(picked === undefined || picked === ALL ? undefined : picked)
-			}}
+			onValueChange={(next) => onChange(next === null || next === ALL ? undefined : next)}
 		>
 			<SelectTrigger size="sm" className="w-auto min-w-0 text-xs" aria-label={label}>
 				<SelectValue />
