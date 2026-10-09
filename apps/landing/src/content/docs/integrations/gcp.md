@@ -106,7 +106,7 @@ A project, folder or organization can be connected once per Maple organization. 
 ### Change what a connection collects
 
 1. Flip **Log forwarding** or **Metrics and resources** on the connection. Maple saves the switch at once.
-2. The connection reads **Changes pending** and lists what the script will create or remove in Google Cloud. A switch you turn on for the first time reads **Setup pending** instead.
+2. The connection reads **Changes pending** and lists what the script will create or remove in Google Cloud. A connection whose setup script has not run yet reads **Setup pending** instead.
 3. The setup panel opens with the updated script. Copy it and run it in Cloud Shell again. If the panel is closed, click **Show setup script**. The notice goes away when the run reports to Maple.
 
 A run that switches **Log forwarding** off takes about two minutes: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error.
