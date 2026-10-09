@@ -274,11 +274,8 @@ function StepRow({
 								items={FUNNEL_SESSION_DIMENSION_LABEL}
 								value={step.dimension}
 								onValueChange={(value) => {
-									if (
-										value &&
-										FUNNEL_SESSION_DIMENSIONS.includes(value as FunnelSessionDimension)
-									) {
-										onChange({ ...step, dimension: value as FunnelSessionDimension })
+									if (value && FUNNEL_SESSION_DIMENSIONS.includes(value)) {
+										onChange({ ...step, dimension: value })
 									}
 								}}
 							>

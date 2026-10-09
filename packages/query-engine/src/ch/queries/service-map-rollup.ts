@@ -53,7 +53,7 @@ export const serviceMapRollupCandidateHours = (
 
 /** Unix-second hour starts returned by an existing-hours probe. */
 export const serviceMapHourSet = (rows: ReadonlyArray<ServiceMapEdgesExistingHour>): ReadonlySet<number> =>
-	new Set(rows.map((row) => Number(row.hourTs)))
+	new Set(rows.map((row) => row.hourTs))
 
 const hasHour = (hours: ReadonlySet<number>, hourMs: number): boolean => hours.has(Math.floor(hourMs / 1000))
 

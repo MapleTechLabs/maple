@@ -66,7 +66,7 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 			spanId: null,
 			spanName: r.spanName,
 			serviceName: r.serviceName,
-			durationMs: Number(r.durationMs),
+			durationMs: r.durationMs,
 			statusCode: r.statusCode,
 			statusMessage: "",
 			attributes: {},
@@ -81,10 +81,10 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 		timeRange: input.timeRange,
 		stats: rawStats
 			? {
-					p50Ms: Number(rawStats.p50DurationMs ?? 0),
-					p95Ms: Number(rawStats.p95DurationMs ?? 0),
-					minMs: Number(rawStats.minDurationMs ?? 0),
-					maxMs: Number(rawStats.maxDurationMs ?? 0),
+					p50Ms: rawStats.p50DurationMs,
+					p95Ms: rawStats.p95DurationMs,
+					minMs: rawStats.minDurationMs,
+					maxMs: rawStats.maxDurationMs,
 				}
 			: null,
 		traces,

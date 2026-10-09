@@ -275,6 +275,16 @@ describe("compilePipeQuery", () => {
 		expect(result!.sql).toContain("2024-01-02 00:00:00")
 	})
 
+	// An absent required param fails the compile: any stand-in value would be an
+	// ordinary string, and `""` reads as "no filter" and returns every service.
+	it.effect("fails an absent required param before compiling", () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(lowerPipeQuery("service_releases_timeline", baseParams())!)
+			expect(failure.code).toBe("UnresolvedParam")
+			expect(failure.message).toContain("service_name")
+		}),
+	)
+
 	// `list_traces` derives its row schema from the SELECT, so `decodeRows`
 	// validates rather than casting: a row missing a selected column is a decode
 	// failure here instead of an `undefined` read three layers downstream.

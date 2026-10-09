@@ -189,7 +189,7 @@ function RailwayServicePage() {
 								unit={chart.unit}
 								xDomain={xDomain}
 								linkedChartId={LINKED_CHART_ID}
-								waiting={Boolean(timeseriesResult.waiting)}
+								waiting={timeseriesResult.waiting}
 							/>
 						</ChartCard>
 					))}

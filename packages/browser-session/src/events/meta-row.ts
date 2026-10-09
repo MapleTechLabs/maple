@@ -11,7 +11,7 @@ export function formatCHDateTime(date: Date): string {
 	return (
 		`${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
 		`${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}.` +
-		`${pad(date.getUTCMilliseconds(), 3)}`
+		pad(date.getUTCMilliseconds(), 3)
 	)
 }
 

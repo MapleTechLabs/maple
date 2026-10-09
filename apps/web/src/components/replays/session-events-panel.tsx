@@ -1157,7 +1157,7 @@ function IdentityGroup({ session }: { session: SessionRailSession }) {
 								className="min-w-0 max-w-full truncate"
 								title={`${key}: ${value}`}
 							>
-								{key}=<span className="text-foreground/80">{String(value)}</span>
+								{key}=<span className="text-foreground/80">{value}</span>
 							</span>
 						))}
 					</div>

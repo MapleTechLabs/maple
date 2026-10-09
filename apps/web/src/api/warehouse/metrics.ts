@@ -188,8 +188,8 @@ const getMetricsSummaryEffect = Effect.fn("QueryEngine.getMetricsSummary")(funct
 	return {
 		data: result.data.map((raw) => ({
 			metricType: raw.metricType,
-			metricCount: Number(raw.metricCount),
-			dataPointCount: Number(raw.dataPointCount),
+			metricCount: raw.metricCount,
+			dataPointCount: raw.dataPointCount,
 		})),
 	}
 })

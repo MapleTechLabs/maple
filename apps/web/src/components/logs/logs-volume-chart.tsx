@@ -65,7 +65,7 @@ function LogsVolumePlot({
 	onSelectCancel,
 	interactive,
 }: {
-	chartData: Array<Record<string, unknown>>
+	chartData: Array<{ bucket: string } & Record<string, unknown>>
 	seriesKeys: string[]
 	selecting: boolean
 	selection: { left: string; right: string } | null
@@ -97,7 +97,7 @@ function LogsVolumePlot({
 	const axis = useMemo(
 		() =>
 			makeBucketAxis(
-				chartData.map((row) => String(row.bucket)),
+				chartData.map((row) => row.bucket),
 				effectiveTimezone,
 			),
 		[chartData, effectiveTimezone],
@@ -116,8 +116,8 @@ function LogsVolumePlot({
 		const cells: SeverityCell[] = chartData.flatMap((row) =>
 			seriesKeys.map((severity) => ({
 				row,
-				bucket: String(row.bucket),
-				date: bucketDate(String(row.bucket)),
+				bucket: row.bucket,
+				date: bucketDate(row.bucket),
 				severity,
 				value: numberOrNull(row[severity]),
 			})),

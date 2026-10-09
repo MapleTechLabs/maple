@@ -456,7 +456,7 @@ const make: Effect.Effect<
 				(row) =>
 					new ErrorIssueTimeseriesPoint({
 						bucket: decodeIsoDateTimeStringSync(DateTime.formatIso(row.bucket)),
-						count: Number(row.count ?? 0),
+						count: row.count,
 					}),
 			)
 			const sampleTraces = sampleRows.map(
@@ -472,7 +472,7 @@ const make: Effect.Effect<
 			)
 
 			const environments = environmentRows.map(
-				(row) => new ErrorIssueEnvironment({ name: row.name, count: Number(row.count ?? 0) }),
+				(row) => new ErrorIssueEnvironment({ name: row.name, count: row.count }),
 			)
 
 			return new ErrorIssueDetailResponse({

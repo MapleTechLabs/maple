@@ -1709,7 +1709,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							publicConfig: hydrated.publicConfig,
 							secretConfig: enrichedSecret,
 							ruleId: decodeAlertRuleIdSync(row.ruleId),
-							ruleName: ruleRow?.name ?? String(payloadRule?.name ?? "Alert"),
+							ruleName: ruleRow?.name ?? payloadRule?.name ?? "Alert",
 							groupKey,
 							signalType,
 							// The rule row is the only place the measured quantity is

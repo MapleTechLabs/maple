@@ -64,7 +64,7 @@ export type RuleInitialization =
 	| { readonly status: "ready"; readonly draft: RuleDraft }
 
 export function AlertCreatePageContent() {
-	const search = useSearch({ from: "/alerts/create" }) as AlertCreateSearchValue
+	const search = useSearch({ from: "/alerts/create" })
 
 	const chartContext = useMemo(
 		() => (search.chart ? decodeAlertChartFromSearchParam(search.chart) : undefined),

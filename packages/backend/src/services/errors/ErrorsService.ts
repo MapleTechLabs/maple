@@ -1231,18 +1231,18 @@ const make: Effect.Effect<
 		// Every display string crosses from ClickHouse bytes into Postgres text
 		// here — the one place to strip what Postgres refuses (`PgText` in `pg-text.ts`).
 		const rows = issuesRaw.map((raw) => ({
-			fingerprintHash: String(raw.fingerprintHash ?? ""),
-			serviceName: toPgText(String(raw.serviceName ?? "")),
-			exceptionType: toPgText(String(raw.exceptionType ?? "")),
-			exceptionMessage: toPgText(String(raw.exceptionMessage ?? "")),
-			errorLabel: toPgText(String(raw.errorLabel ?? "")),
-			topFrame: toPgText(String(raw.topFrame ?? "")),
+			fingerprintHash: raw.fingerprintHash,
+			serviceName: toPgText(raw.serviceName),
+			exceptionType: toPgText(raw.exceptionType),
+			exceptionMessage: toPgText(raw.exceptionMessage),
+			errorLabel: toPgText(raw.errorLabel),
+			topFrame: toPgText(raw.topFrame),
 			// The warehouse returns every distinct build seen for the fingerprint in
 			// the window; an older cluster that predates the column returns nothing.
 			serviceVersions: Array.isArray(raw.serviceVersions)
 				? raw.serviceVersions.map((version) => String(version)).filter((version) => version !== "")
 				: [],
-			count: Number(raw.count ?? 0),
+			count: raw.count,
 			firstSeenMs: DateTime.toEpochMillis(raw.firstSeen),
 			lastSeenMs: DateTime.toEpochMillis(raw.lastSeen),
 		}))
