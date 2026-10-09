@@ -16,6 +16,7 @@ import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscal
 import { RailwayIntegrationCard } from "@/components/integrations/railway-integration-card"
 import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
+	HEALTH_TONE,
 	IntegrationCatalog,
 	IntegrationIconPlate,
 	IntegrationsSummary,
@@ -284,7 +285,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				</div>
 				{connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
-						<StatusDot tone={connected.health === "healthy" ? "ok" : "warn"} />
+						<StatusDot tone={HEALTH_TONE[connected.health]} />
 						<span className="truncate text-xs text-muted-foreground">{statusLine}</span>
 					</div>
 				) : null}
