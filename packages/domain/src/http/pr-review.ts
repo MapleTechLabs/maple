@@ -335,10 +335,12 @@ export type PrReviewMergeStepStatus = Schema.Schema.Type<typeof PrReviewMergeSte
 export const mergeStepKey = (step: Pick<PrReviewMergeStep, "kind" | "subject" | "title">): string => {
 	const about =
 		step.subject ??
+		// Split and join rather than trim with `^-+|-+$`, which backtracks on long runs of `-`.
 		step.title
 			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-+|-+$/g, "")
+			.split(/[^a-z0-9]+/)
+			.filter((word) => word.length > 0)
+			.join("-")
 			.slice(0, 80)
 	// It is written into an HTML comment: no whitespace, no `--`, no `>`.
 	return `${step.kind}:${about.replace(/\s+/g, "_").replace(/-{2,}/g, "-").replace(/>/g, "")}`
