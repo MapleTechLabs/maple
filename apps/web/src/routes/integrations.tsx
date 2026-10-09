@@ -266,7 +266,12 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 		: null
 
 	return (
-		<div className="flex items-center gap-3">
+		// Google Cloud's page is a settings column, so its header ends where the column does.
+		<div
+			className={
+				integration === "gcp" ? "flex max-w-3xl items-center gap-3" : "flex items-center gap-3"
+			}
+		>
 			<IconButton label="Back to integrations" onClick={() => navigate({ search: {} })}>
 				<ArrowLeftIcon size={16} />
 			</IconButton>
