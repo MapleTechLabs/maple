@@ -8,16 +8,16 @@
 		"./config": "./src/config.ts",
 		"./migrate": "./src/migrate.ts",
 		"./pglite": "./src/pglite.ts",
-		"./schema": "./src/schema/index.ts",
 		"./tables": "./src/tables/index.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run --passWithNoTests",
-		"db:generate": "drizzle-kit generate --config ./drizzle.config.ts",
-		"db:migrate": "drizzle-kit migrate --config ./drizzle.config.ts",
-		"db:push": "drizzle-kit push --config ./drizzle.config.ts",
-		"db:studio": "drizzle-kit studio --config ./drizzle.config.ts",
+		"db:generate": "effect-orm generate",
+		"db:check": "effect-orm check",
+		"db:migrate": "bun scripts/migrate.ts",
+		"db:status": "effect-orm status",
+		"db:verify": "effect-orm verify",
 		"db:audit-raw-sql": "bun scripts/audit-raw-sql.ts",
 		"db:restore-test": "bun scripts/restore-test.ts",
 		"db:backfill:dashboards-v3": "bun scripts/backfill-dashboard-datasource-v3.ts"
@@ -28,7 +28,6 @@
 		"@electric-sql/pglite": "^0.5.8",
 		"@maple/domain": "workspace:*",
 		"@maple-dev/effect-orm": "0.4.0",
-		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
 		"pg": "^8.23.1",
 		"postgres": "^3.4.9"
@@ -39,7 +38,6 @@
 		"@maple/widgets": "workspace:*",
 		"@types/node": "catalog:tooling",
 		"@types/pg": "^8.23.1",
-		"drizzle-kit": "1.0.0-rc.5-5935859",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

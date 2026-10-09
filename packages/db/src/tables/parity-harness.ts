@@ -1,23 +1,28 @@
-// SAFETY-FILE: snapshot JSON is drizzle-kit's own output, read by the lib's importer.
 // The effect-orm table definitions must describe exactly the database the
-// drizzle migrations build. Two checks: the definitions against drizzle-kit's
-// head snapshot, entity by entity, and a live comparison of the catalog
-// Postgres deparses for a database migrated by the bundled migrations and one
-// created from the definitions alone.
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
+// migrations build. Two checks: the definitions against the head snapshot
+// (what `effect-orm generate` diffs against, so a mismatch is a migration
+// nobody wrote), and a live comparison of the catalog Postgres deparses for a
+// database migrated by the bundled migrations and one created from the
+// definitions alone.
 import { PGlite } from "@electric-sql/pglite"
+import * as Kit from "@maple-dev/effect-orm/kit"
+import * as Migrate from "@maple-dev/effect-orm/migrate"
 import * as S from "@maple-dev/effect-orm/schema"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { listBundledMigrations, runMigrations } from "../migrate"
+import { bundledMigrations, runMigrations } from "../migrate"
 
-const headSnapshot = () => {
-	const head = listBundledMigrations().at(-1)
-	if (head === undefined) throw new Error("no bundled migrations")
-	return S.fromDrizzleSnapshot(JSON.parse(readFileSync(join(head.sqlPath, "..", "snapshot.json"), "utf8")))
-}
+/** The migrations folder as `effect-orm generate` reads it. */
+const folder = () => Effect.runPromise(Effect.flatMap(bundledMigrations, Kit.analyze))
+
+const isPgEntity = Schema.is(S.PgSchemaEntity)
+
+/** The schema the newest snapshot records. */
+const headEntities = async (): Promise<ReadonlyArray<S.PgSchemaEntity>> =>
+	(await folder()).base.filter(isPgEntity)
+
+const LEDGER = new Set<string>(Object.values(Migrate.LEDGER_TABLES))
 
 const tableOf = (entity: S.PgSchemaEntity): string => (entity.kind === "table" ? entity.name : entity.table)
 
@@ -42,7 +47,7 @@ const catalog = async (db: PGlite, tables: ReadonlyArray<string>) => {
 }
 
 /**
- * What the migrations build that drizzle's schema dropped without a migration
+ * What the migrations build that an old schema dropped without a migration
  * dropping it: still in every database, read by nothing. Remove an entry with
  * the migration that drops it.
  */
@@ -77,21 +82,23 @@ export const describeParity = (
 	const ormTables = new Set(list.map((table) => table.name))
 
 	describe(`effect-orm tables (${[...ormTables].sort().join(", ")})`.slice(0, 120), () => {
-		it.runIf(options.complete)("cover every table drizzle-kit knows", () => {
-			const drizzleTables = new Set(
-				headSnapshot()
-					.entities.filter((e) => e.kind === "table")
-					.map((e) => e.name),
-			)
-			expect([...drizzleTables].filter((name) => !ormTables.has(name)).sort()).toEqual([])
-			expect([...ormTables].filter((name) => !drizzleTables.has(name)).sort()).toEqual([])
+		it.runIf(options.complete)("leave the migrations folder consistent", async () => {
+			const analysis = await folder()
+			expect(analysis.problems).toEqual([])
+			expect(analysis.leaves).toHaveLength(1)
 		})
 
-		it("match drizzle-kit's head snapshot entity for entity", () => {
-			const snapshot = headSnapshot()
-			expect(snapshot.unsupported).toEqual([])
-			const drizzle = snapshot.entities.filter((entity) => ormTables.has(tableOf(entity)))
-			const diff = S.diffPgSchemas(drizzle, ormEntities)
+		it.runIf(options.complete)("cover every table the head snapshot knows", async () => {
+			const snapshotTables = new Set(
+				(await headEntities()).filter((e) => e.kind === "table").map((e) => e.name),
+			)
+			expect([...snapshotTables].filter((name) => !ormTables.has(name)).sort()).toEqual([])
+			expect([...ormTables].filter((name) => !snapshotTables.has(name)).sort()).toEqual([])
+		})
+
+		it("match the head snapshot entity for entity, so generate has nothing to write", async () => {
+			const head = (await headEntities()).filter((entity) => ormTables.has(tableOf(entity)))
+			const diff = S.diffPgSchemas(head, ormEntities)
 			expect(diff.ops).toEqual([])
 			expect(diff.missingHints).toEqual([])
 		})
@@ -113,7 +120,9 @@ export const describeParity = (
 				const { rows } = await migrated.query<{ table_name: string }>(
 					`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`,
 				)
-				const extra = rows.map((row) => row.table_name).filter((name) => !ormTables.has(name))
+				const extra = rows
+					.map((row) => row.table_name)
+					.filter((name) => !ormTables.has(name) && !LEDGER.has(name))
 				expect(extra).toEqual([...KNOWN_DRIFT.tables])
 			})
 
