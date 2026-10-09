@@ -359,7 +359,7 @@ export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)
 
 const LOG_FILTERS = [
-	{ value: "default", label: "Recommended: without GKE container logs" },
+	{ value: "default", label: "Recommended: no GKE container logs" },
 	{ value: "include_gke_container_logs", label: "Include GKE container logs" },
 	{ value: "keep", label: "Keep the sink's current filter" },
 ] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string }>
@@ -372,7 +372,7 @@ export const gcpLogFilters = (sinkExists: boolean) =>
  * What the setup panel's log filter stands on. Nothing chosen: an existing sink keeps its filter,
  * so copying the script again for a switch change never resets it, and a new sink gets the
  * recommended one. Including GKE container logs counts once it is acknowledged: until then the
- * script stays on the filter the panel started with.
+ * script stays on the filter the panel started with, which is also where backing out returns to.
  */
 export const gcpLogFilterChoice = (
 	chosen: GcpLogFilter | null,

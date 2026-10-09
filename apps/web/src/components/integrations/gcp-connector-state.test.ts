@@ -534,7 +534,7 @@ describe("gcpLogFilters", () => {
 			"include_gke_container_logs",
 			"keep",
 		])
-		expect(gcpLogFilters(false)[0].label).toBe("Recommended: without GKE container logs")
+		expect(gcpLogFilters(false)[0].label).toBe("Recommended: no GKE container logs")
 	})
 })
 

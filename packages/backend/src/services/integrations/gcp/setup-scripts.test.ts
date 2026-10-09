@@ -588,7 +588,7 @@ Done. Everything is in place.
 		)
 		// The comment above the filter says which way GKE container logs went, and where to read why.
 		expect(filtered("default")).toContain(
-			"# It also leaves out GKE container logs: workloads that send their logs through OpenTelemetry\n",
+			`# Log filter in Maple, or delete AND NOT resource.type="k8s_container" from LOG_FILTER and make\n`,
 		)
 		expect(filtered("include_gke_container_logs")).toContain(
 			"# GKE container logs are included, as chosen in Maple.",

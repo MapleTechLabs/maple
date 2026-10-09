@@ -155,6 +155,8 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
 	return (
 		<a href={href} target="_blank" rel="noreferrer" className={LINK}>
 			{children}
+			{/* A word joiner: the icon never wraps onto a line of its own. */}
+			{"\u2060"}
 			<ExternalLinkIcon size={12} className="ml-1 inline align-[-1px]" />
 		</a>
 	)
@@ -531,9 +533,11 @@ function GcpConnectForm({
  * forwarded. Not remembered: choosing the filter again asks again.
  */
 function GkeContainerLogsAcknowledgement({
+	backLabel,
 	onConfirm,
 	onBack,
 }: {
+	backLabel: string
 	onConfirm: () => void
 	onBack: () => void
 }) {
@@ -542,12 +546,12 @@ function GkeContainerLogsAcknowledgement({
 	return (
 		<Alert variant="warn" size="sm">
 			<AlertWarningIcon size={14} />
-			<AlertTitle>Not recommended when these workloads send traces to Maple</AlertTitle>
+			<AlertTitle>Not recommended when your GKE workloads send traces to Maple</AlertTitle>
 			<AlertDescription>
 				<p>
 					Instrumented workloads already send their logs to Maple, linked to their traces.
-					Forwarding the same container logs from Google Cloud stores each line twice, and that copy
-					has no trace link.{" "}
+					Forwarding the same container logs from Google Cloud stores each line twice, and the copy
+					from Google Cloud has no trace link.{" "}
 					<ExternalLink href={OTEL_DOCS}>Google Cloud with OpenTelemetry</ExternalLink>
 				</p>
 				<div className="flex items-start gap-2 text-foreground">
@@ -557,14 +561,16 @@ function GkeContainerLogsAcknowledgement({
 						checked={understood}
 						onCheckedChange={(checked) => setUnderstood(checked === true)}
 					/>
-					<label htmlFor={checkboxId}>I understand that container logs can be stored twice</label>
+					<label htmlFor={checkboxId}>
+						I understand that GKE container logs can be stored twice
+					</label>
 				</div>
 				<div className="flex flex-wrap gap-2">
 					<Button size="sm" disabled={!understood} onClick={onConfirm}>
-						Include GKE container logs
+						Confirm and show script
 					</Button>
 					<Button size="sm" variant="outline" onClick={onBack}>
-						Use the recommended filter
+						{backLabel}
 					</Button>
 				</div>
 			</AlertDescription>
@@ -717,20 +723,26 @@ function GcpSetup({
 													<ExternalLink href={logRouterUrl(connector)}>
 														Log Router
 													</ExternalLink>
-													.
-												</>
-											) : logFilter.selected === "default" ? (
-												<>
-													Forwards platform logs such as request logs, audit logs
-													and managed services. Leaves out{" "}
-													<ExternalLink href={GKE_LOGS_DOCS}>
-														GKE container logs
-													</ExternalLink>
-													, and noise such as health checks and Data Access audit
-													logs.
+													. The recommended filter leaves out GKE container logs.
 												</>
 											) : (
-												"Forwards the recommended logs and GKE container logs. Workloads that send their logs through OpenTelemetry are then stored twice."
+												<>
+													{sinkExists
+														? "Replaces the sink's current filter. "
+														: null}
+													{logFilter.selected === "default" ? (
+														<>
+															Forwards platform logs: request logs, audit logs
+															and managed-service logs. Leaves out{" "}
+															<ExternalLink href={GKE_LOGS_DOCS}>
+																GKE container logs
+															</ExternalLink>{" "}
+															and high-volume noise such as health checks.
+														</>
+													) : (
+														"Forwards the recommended logs and GKE container logs. Logs from workloads that also send them over OpenTelemetry are then stored twice."
+													)}
+												</>
 											)}{" "}
 											For any other filter, edit <Mono>LOG_FILTER</Mono> in the script
 											before you paste it
@@ -748,8 +760,9 @@ function GcpSetup({
 							) : null}
 							{acknowledging ? (
 								<GkeContainerLogsAcknowledgement
+									backLabel={sinkExists ? "Keep current filter" : "Use recommended filter"}
 									onConfirm={() => setAcknowledged(true)}
-									onBack={() => chooseFilter("default")}
+									onBack={() => chooseFilter(null)}
 								/>
 							) : (
 								<>
@@ -1434,7 +1447,7 @@ export function GcpIntegrationCard() {
 					<IntegrationEmptyFeatures>
 						<IntegrationEmptyFeature
 							label="Logs"
-							title="Platform logs, next to your traces"
+							title="Google Cloud's own logs"
 							description="Request logs, audit logs and managed services such as Cloud SQL. GKE container logs are left out by default."
 						/>
 						<IntegrationEmptyFeature
