@@ -73,9 +73,12 @@ import {
 	gcpScopeLabel,
 	gcpScopeRoles,
 	gcpScriptNeeded,
+	gcpScriptOverdue,
+	gcpSetupRunning,
 	gcpSwitchLock,
 	isGcpProjectId,
 	isGcpResourceNumber,
+	logRouterUrl,
 	type GcpConnectorDraft,
 	type GcpFlags,
 	type GcpSwitchLock,
@@ -99,8 +102,6 @@ const SCRIPT_REACTIVITY_KEYS = ["gcpSetupScripts"]
 const SETTLING_REFRESH_MS = 10_000
 /** Keeps the "last log" and "last read" times and a new error current on a page left open. */
 const STEADY_REFRESH_MS = 60_000
-/** A script run takes about a minute. Past this the panel says what to check. */
-const SCRIPT_OVERDUE_MS = 5 * 60_000
 /** How much of a script shows before "Show all lines": the wrapper and the header comment. */
 const SCRIPT_PREVIEW_LINES = 10
 
@@ -436,8 +437,8 @@ function GcpConnectForm({
 					) : (
 						<FieldDescription>
 							The project that holds Maple&apos;s Pub/Sub topic and read-only service account.
-							Use a shared operations project inside the organization, with billing enabled,
-							that won&apos;t be deleted.
+							Use a shared operations project inside the {scopeName}, with billing enabled, that
+							won&apos;t be deleted.
 						</FieldDescription>
 					)}
 				</Field>
@@ -555,7 +556,7 @@ function GcpSetup({
 	const script = scripts?.setup_script ?? null
 
 	const reportedAt = connector.setup_reported_at
-	const overdue = nowMs - opened.at > SCRIPT_OVERDUE_MS
+	const overdue = gcpScriptOverdue(connector, opened.at, nowMs)
 
 	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
 	const scopeName = GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()
@@ -589,7 +590,7 @@ function GcpSetup({
 			waitingOnMaple: false,
 			detail:
 				!connector.logs_enabled && sinkExists
-					? "It takes about two minutes: after deleting the sink it waits a minute for Google to stop routing to the topic."
+					? "It takes one to two minutes: after deleting the sink it waits a minute for Google to stop routing to the topic."
 					: "It takes about a minute and is safe to run again.",
 		},
 		{
@@ -614,7 +615,8 @@ function GcpSetup({
 			) : (
 				<span className="text-foreground">
 					Nothing yet. If the script stopped with an error, fix what it names and paste it again: it
-					continues where it stopped.
+					continues where it stopped. If it named a wrong ID, remove this connection and connect the
+					right ID: a connection&apos;s ID can&apos;t be changed.
 				</span>
 			),
 		},
@@ -649,9 +651,17 @@ function GcpSetup({
 										</SelectContent>
 									</Select>
 									<FieldDescription>
-										{sinkExists
-											? "Keeping the current filter leaves the sink as it is. "
-											: ""}
+										{sinkExists ? (
+											<>
+												Keeping the current filter leaves the sink as it is. Maple
+												can&apos;t see that filter: read it in the Google Cloud
+												console under{" "}
+												<ExternalLink href={logRouterUrl(connector)}>
+													Log Router
+												</ExternalLink>
+												.{" "}
+											</>
+										) : null}
 										Maple default leaves out Data Access audit logs, load balancer health
 										checks, Kubernetes lease renewals and VM serial console output. Leave
 										out GKE container logs too if your pods already send them through an
@@ -690,20 +700,27 @@ function GcpSetup({
 	)
 }
 
+/** How the plan-limit texts name the billing page. */
+const BILLING_PAGE = "Settings, Billing"
 // An address ends before the punctuation or the bracket that follows it.
-const URL_PATTERN = /(https:\/\/[^\s)]*[^\s).,])/
+const LINK_PATTERN = new RegExp(`(https://[^\\s)]*[^\\s).,]|${BILLING_PAGE})`)
 
 /**
  * A failure in Maple's own words: prose that wraps. A Google Cloud console address in it becomes
- * a named link, so a long address never breaks a line in the middle of a word.
+ * a named link, so a long address never breaks a line in the middle of a word, and the billing
+ * page it names is a link to it.
  */
 export function GcpMessage({ text }: { text: string }) {
-	const parts = text.split(URL_PATTERN)
+	const parts = text.split(LINK_PATTERN)
 	return (
 		<p className="[overflow-wrap:anywhere]">
 			{parts.map((part, index) =>
 				index % 2 === 0 ? (
 					part
+				) : part === BILLING_PAGE ? (
+					<Link key={index} to="/settings" search={{ tab: "billing" }} className={LINK}>
+						{part}
+					</Link>
 				) : (
 					<Fragment key={index}>
 						<ExternalLink href={part}>
@@ -803,9 +820,10 @@ function LogStatus({ connector, nowMs, runScript }: StatusProps) {
 				</Status>
 			)
 		case "setup-pending":
+		case "setup-running":
 			return (
 				<Status status={status}>
-					<p>{runScript}</p>
+					<p>{state.kind === "setup-running" ? "The script is still working." : runScript}</p>
 				</Status>
 			)
 		case "waiting":
@@ -865,9 +883,10 @@ function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
 	const status = GCP_METRICS_STATUS[state.kind]
 	switch (state.kind) {
 		case "setup-pending":
+		case "setup-running":
 			return (
 				<Status status={status}>
-					<p>{runScript}</p>
+					<p>{state.kind === "setup-running" ? "The script is still working." : runScript}</p>
 				</Status>
 			)
 		case "waiting":
@@ -879,7 +898,9 @@ function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
 								<RelativeTime value={state.reportedAt} prefix="Access confirmed" />.{" "}
 							</>
 						)}
-						The first read lands within about 10 minutes.
+						{state.overdue
+							? "No read has arrived yet. Maple retries every 5 minutes."
+							: "The first read lands within about 10 minutes."}
 					</p>
 				</Status>
 			)
@@ -990,7 +1011,7 @@ function GcpDisconnectDialog({
 						<RelativeTime value={connector.setup_reported_at} prefix="Cleaned up" />.
 					</>
 				) : (
-					`Run this in Cloud Shell first. It takes about ${connector.applied_logs_enabled === true ? "two minutes" : "a minute"} and deletes the log sink, topic, subscription and read-only service account. The APIs it switched on stay on.`
+					`Run this in Cloud Shell first. It takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"} and deletes the log sink, topic, subscription and read-only service account. The APIs it switched on stay on.`
 				),
 		},
 		{
@@ -1100,8 +1121,12 @@ function GcpConnectorRow({
 	const [opened, setOpened] = useState<SetupOpened | null>(() =>
 		scriptNeeded === "setup-pending" ? open(false) : null,
 	)
+	// A run's sections report one after the other: confirmed once the last one has.
 	const confirmed =
-		opened !== null && scriptNeeded === null && (!opened.rerun || reportedAt !== opened.seen)
+		opened !== null &&
+		scriptNeeded === null &&
+		!gcpSetupRunning(connector, nowMs) &&
+		(!opened.rerun || reportedAt !== opened.seen)
 	// Confirmed, the panel shows three check marks and no script: the button then brings it back.
 	const scriptShown = opened !== null && !confirmed
 	const showScript = () => setOpened(open(scriptNeeded === null))

@@ -14,10 +14,18 @@ const FRESH_MS = 15 * MINUTE_MS
 const IDLE_LOG_MS = 24 * 60 * MINUTE_MS
 /** A confirmed sink that stays silent this long gets a test command. */
 const OVERDUE_LOG_MS = 20 * MINUTE_MS
+/** Confirmed access that stays unread this long stops promising the first read. */
+const OVERDUE_READ_MS = 15 * MINUTE_MS
+/** Two missed reads: an error with nothing read since means the reads fail. */
+const FAILED_READ_MS = 10 * MINUTE_MS
 /** Six missed reads: the numbers on screen are no longer current. */
 const STALE_READ_MS = 30 * MINUTE_MS
 /** A new grant needs up to two minutes to work and the first read follows about five minutes later. */
 const GRANT_GRACE_MS = 10 * MINUTE_MS
+/** A run's sections report seconds apart. A report this recent is a run that may still be going. */
+const RUNNING_MS = 2 * MINUTE_MS
+/** A script run takes about a minute. Past this the setup panel says what to check. */
+const SCRIPT_OVERDUE_MS = 5 * MINUTE_MS
 
 const ageMs = (iso: string | null, nowMs: number) =>
 	iso === null ? Number.POSITIVE_INFINITY : nowMs - Date.parse(iso)
@@ -30,13 +38,24 @@ const ageMs = (iso: string | null, nowMs: number) =>
 const needsSetup = (applied: boolean | null, lastDataAgeMs: number) =>
 	applied === false || (applied === null && lastDataAgeMs > FRESH_MS)
 
+/**
+ * What a capability that needs setup says. A run's sections report one after the other, so no
+ * report on this one right after a report on the other means the script is still working.
+ */
+const setupKind = (
+	applied: boolean | null,
+	reportedAt: string | null,
+	nowMs: number,
+): "setup-pending" | "setup-running" =>
+	applied === null && ageMs(reportedAt, nowMs) < RUNNING_MS ? "setup-running" : "setup-pending"
+
 type GcpLogState =
 	/** `stillSetUp`: the sink still forwards, because the script has not run since the switch. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
 	/** Maple rejected the most recent push. Earlier pushes may have been accepted. */
 	| { readonly kind: "failing"; readonly error: string; readonly lastLogReceivedAt: string | null }
-	/** The setup script has not set log forwarding up, as far as Maple knows. */
-	| { readonly kind: "setup-pending" }
+	/** The setup script has not set log forwarding up, as far as Maple knows, or is doing so now. */
+	| { readonly kind: "setup-pending" | "setup-running" }
 	/** The script reported, and no entry has arrived yet. `overdue` after 20 minutes. */
 	| { readonly kind: "waiting"; readonly reportedAt: string | null; readonly overdue: boolean }
 	| { readonly kind: "idle"; readonly lastLogReceivedAt: string }
@@ -55,7 +74,9 @@ export function gcpLogState(connector: LogFields, nowMs: number): GcpLogState {
 		return { kind: "failing", error: connector.last_log_error, lastLogReceivedAt }
 	}
 	const age = ageMs(lastLogReceivedAt, nowMs)
-	if (needsSetup(connector.applied_logs_enabled, age)) return { kind: "setup-pending" }
+	if (needsSetup(connector.applied_logs_enabled, age)) {
+		return { kind: setupKind(connector.applied_logs_enabled, connector.setup_reported_at, nowMs) }
+	}
 	if (lastLogReceivedAt === null) {
 		const reportedAt = connector.setup_reported_at
 		return { kind: "waiting", reportedAt, overdue: ageMs(reportedAt, nowMs) > OVERDUE_LOG_MS }
@@ -66,12 +87,12 @@ export function gcpLogState(connector: LogFields, nowMs: number): GcpLogState {
 type GcpMetricsState =
 	/** `stillSetUp`: the read-only service account still exists in Google Cloud. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
-	| { readonly kind: "setup-pending" }
-	/** The script reported, and the first read after it has not landed. */
-	| { readonly kind: "waiting"; readonly reportedAt: string | null }
-	/** Reads fail, and nothing recent is on screen. */
+	| { readonly kind: "setup-pending" | "setup-running" }
+	/** The script reported, and the first read after it has not landed. `overdue` after 15 minutes. */
+	| { readonly kind: "waiting"; readonly reportedAt: string | null; readonly overdue: boolean }
+	/** Reads fail: nothing was read in the last two polls. */
 	| { readonly kind: "failing"; readonly error: string; readonly lastMetricsReceivedAt: string | null }
-	/** Recent reads arrive, but part of the metrics is missing. */
+	/** A read arrived within the last two polls, but part of the metrics is missing. */
 	| { readonly kind: "incomplete"; readonly error: string; readonly lastMetricsReceivedAt: string }
 	/** No error, and no read for half an hour. */
 	| { readonly kind: "stalled"; readonly lastMetricsReceivedAt: string }
@@ -103,15 +124,19 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	const error = connector.last_metrics_error
 	const age = ageMs(lastMetricsReceivedAt, nowMs)
 	// Before the script has run the poller says it can't sign in. That is the expected start.
-	if (needsSetup(connector.applied_metrics_enabled, age)) return { kind: "setup-pending" }
-	const waiting = { kind: "waiting", reportedAt: connector.setup_reported_at } as const
+	const reportedAt = connector.setup_reported_at
+	if (needsSetup(connector.applied_metrics_enabled, age)) {
+		return { kind: setupKind(connector.applied_metrics_enabled, reportedAt, nowMs) }
+	}
+	const reportedAge = ageMs(reportedAt, nowMs)
+	const waiting = { kind: "waiting", reportedAt, overdue: reportedAge > OVERDUE_READ_MS } as const
 	// A run just reported: what the poller said before its grant works counts for nothing yet.
-	if (age > STALE_READ_MS && ageMs(connector.setup_reported_at, nowMs) < GRANT_GRACE_MS) return waiting
+	if (age > FAILED_READ_MS && reportedAge < GRANT_GRACE_MS) return waiting
 	if (lastMetricsReceivedAt === null) {
 		return error === null ? waiting : { kind: "failing", error, lastMetricsReceivedAt }
 	}
 	if (error !== null) {
-		return { kind: age > STALE_READ_MS ? "failing" : "incomplete", error, lastMetricsReceivedAt }
+		return { kind: age > FAILED_READ_MS ? "failing" : "incomplete", error, lastMetricsReceivedAt }
 	}
 	if (age > STALE_READ_MS) return { kind: "stalled", lastMetricsReceivedAt }
 	return {
@@ -129,6 +154,7 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 export const GCP_LOG_STATUS = {
 	failing: { tone: "crit", label: "Rejecting logs" },
 	"setup-pending": { tone: "neutral", label: "Setup pending" },
+	"setup-running": { tone: "neutral", label: "Setup running" },
 	waiting: { tone: "neutral", label: "Waiting for first logs" },
 	idle: { tone: "neutral", label: "No logs in 24 hours" },
 	receiving: { tone: "ok", label: "Receiving logs" },
@@ -136,6 +162,7 @@ export const GCP_LOG_STATUS = {
 
 export const GCP_METRICS_STATUS = {
 	"setup-pending": { tone: "neutral", label: "Setup pending" },
+	"setup-running": { tone: "neutral", label: "Setup running" },
 	waiting: { tone: "neutral", label: "Waiting for first metrics" },
 	failing: { tone: "crit", label: "Can't read metrics" },
 	incomplete: { tone: "warn", label: "Receiving metrics, incomplete" },
@@ -185,6 +212,11 @@ export function gcpScriptNeeded(
 	return pending ? "setup-pending" : null
 }
 
+/** A run reported on one capability and not yet on the other: the script is still working. */
+export const gcpSetupRunning = (connector: ConnectorFields, nowMs: number): boolean =>
+	gcpLogState(connector, nowMs).kind === "setup-running" ||
+	gcpMetricsState(connector, nowMs).kind === "setup-running"
+
 export function gcpConnectionState(connector: ConnectorFields, nowMs: number): GcpConnectionState {
 	const log = gcpLogState(connector, nowMs).kind
 	const metrics = gcpMetricsState(connector, nowMs).kind
@@ -193,9 +225,24 @@ export function gcpConnectionState(connector: ConnectorFields, nowMs: number): G
 	}
 	return (
 		gcpScriptNeeded(connector, nowMs) ??
-		(log === "waiting" || metrics === "waiting" ? "waiting" : "healthy")
+		(log === "waiting" || metrics === "waiting" || gcpSetupRunning(connector, nowMs)
+			? "waiting"
+			: "healthy")
 	)
 }
+
+/**
+ * Whether the setup panel's confirm step has waited long enough to say what to check. A connection
+ * no run has reported on counts from its creation, so a reload does not start the wait over. After
+ * a report the API has no time for the switch change, and the panel's opening stands in.
+ */
+export const gcpScriptOverdue = (
+	connector: Pick<V2GcpConnector, "created_at" | "setup_reported_at">,
+	openedAtMs: number,
+	nowMs: number,
+): boolean =>
+	nowMs - (connector.setup_reported_at === null ? Date.parse(connector.created_at) : openedAtMs) >
+	SCRIPT_OVERDUE_MS
 
 /** The page header, the hub row and the row badge name a connection's state in these words. */
 export const GCP_CONNECTION_LABEL = {
@@ -305,6 +352,12 @@ export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpC
 
 export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)
+
+const LOG_ROUTER_SCOPE = { project: "project", folder: "folder", organization: "organizationId" } as const
+
+/** The console's Log Router for the scope that holds the connection's sink. */
+export const logRouterUrl = (connector: Pick<V2GcpConnector, "scope_type" | "scope_id">): string =>
+	`https://console.cloud.google.com/logs/router?${LOG_ROUTER_SCOPE[connector.scope_type]}=${encodeURIComponent(connector.scope_id)}`
 
 /**
  * Opens the Google Cloud console on the host project with a Cloud Shell terminal attached. Cloud
