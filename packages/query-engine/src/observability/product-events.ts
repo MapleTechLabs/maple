@@ -46,8 +46,8 @@ export const productEventsFunnel = Effect.fn("Observability.productEventsFunnel"
 	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan({
 		orgId: executor.orgId,
-		"funnel.steps": input.steps.length,
-		"funnel.keyBy": input.keyBy,
+		"maple.funnel.steps": input.steps.length,
+		"maple.funnel.key_by": input.keyBy,
 	})
 	const { startTime, endTime, ...opts } = input
 	const query = yield* build(() => CH.productEventsFunnelQuery(opts))
@@ -61,9 +61,9 @@ export const productEventsFunnelBreakdown = Effect.fn("Observability.productEven
 		const executor = yield* WarehouseExecutor
 		yield* Effect.annotateCurrentSpan({
 			orgId: executor.orgId,
-			"funnel.steps": input.steps.length,
-			"funnel.keyBy": input.keyBy,
-			"funnel.breakdownBy": input.breakdownBy,
+			"maple.funnel.steps": input.steps.length,
+			"maple.funnel.key_by": input.keyBy,
+			"maple.funnel.breakdown_by": input.breakdownBy,
 		})
 		const { startTime, endTime, ...opts } = input
 		const query = yield* build(() => CH.productEventsFunnelBreakdownQuery(opts))

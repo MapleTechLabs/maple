@@ -137,7 +137,7 @@ Source: `packages/query-engine/src/caching/bucket-cache.ts`, `packages/backend/s
 
 ---
 
-## `email.*` group
+## `maple.email.*` group
 
 Emitted by `EmailService` for outbound transactional email.
 
@@ -145,9 +145,9 @@ Source: `packages/backend/src/platform/EmailService.ts`
 
 | Key | Type | Meaning |
 |---|---|---|
-| `email.subject` | string | Subject line |
-| `email.provider` | string | `"cloudflare"` (Cloudflare Email Service Workers binding) |
-| `email.message_id` | string | Provider message id returned after a successful send |
+| `maple.email.subject` | string | Subject line |
+| `maple.email.provider` | string | `"cloudflare"` (Cloudflare Email Service Workers binding) |
+| `maple.email.message_id` | string | Provider message id returned after a successful send |
 
 ---
 

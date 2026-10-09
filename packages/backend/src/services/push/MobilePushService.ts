@@ -458,7 +458,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					orgId: event.orgId,
 					"maple.alert.rule_id": event.ruleId,
 					"maple.alert.incident_id": event.incidentId,
-					"event.type": event.eventType,
+					"maple.push.event_type": event.eventType,
 				})
 				const empty: MobilePushSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
 

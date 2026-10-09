@@ -281,7 +281,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// the org name goes on through `nameCustomerAfterOrg` beforehand.
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
-							"billing.plan_id": payload.planId,
+							"maple.billing.plan_id": payload.planId,
 						})
 						yield* nameCustomerAfterOrg(tenant.orgId)
 						const result = yield* autumn.attach(tenant.orgId, {
@@ -376,7 +376,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 						const stripeCustomerId = yield* readStripeCustomerId(edgeCache, autumn, tenant.orgId)
 						yield* Effect.annotateCurrentSpan({
-							"billing.stripe_linked": Option.isSome(stripeCustomerId),
+							"maple.billing.stripe_linked": Option.isSome(stripeCustomerId),
 						})
 						if (Option.isNone(stripeCustomerId)) return unlinkedProfile()
 						return yield* readBillingProfile(stripe, stripeCustomerId.value)
@@ -402,7 +402,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const stripeCustomerId = yield* stripeCustomerForWrite(tenant)
 						// The type is a catalog identifier; the value is customer data and
 						// stays off the span.
-						yield* Effect.annotateCurrentSpan({ "billing.tax_id_type": payload.type })
+						yield* Effect.annotateCurrentSpan({ "maple.billing.tax_id_type": payload.type })
 						const result = yield* stripe.createTaxId(stripeCustomerId, {
 							type: payload.type,
 							value: payload.value,

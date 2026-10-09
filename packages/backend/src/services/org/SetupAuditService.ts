@@ -506,12 +506,12 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"audit.dataStatus": report.dataStatus,
-				"audit.warehouseAvailable": report.warehouseAvailable,
-				"audit.critical": report.summary.critical,
-				"audit.warn": report.summary.warn,
-				"audit.info": report.summary.info,
-				"audit.skip": report.summary.skip,
+				"maple.audit.data_status": report.dataStatus,
+				"maple.audit.warehouse_available": report.warehouseAvailable,
+				"maple.audit.critical": report.summary.critical,
+				"maple.audit.warn": report.summary.warn,
+				"maple.audit.info": report.summary.info,
+				"maple.audit.skip": report.summary.skip,
 			})
 
 			return report

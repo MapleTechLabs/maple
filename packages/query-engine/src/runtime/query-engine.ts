@@ -912,8 +912,8 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 	effect.pipe(
 		Effect.tapError((error) =>
 			Effect.annotateCurrentSpan({
-				"error.context": context,
-				"error.tag": error._tag,
+				"maple.query_engine.error_context": context,
+				"maple.query_engine.error_tag": error._tag,
 				"error.message": error.message,
 			}),
 		),
@@ -1957,7 +1957,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 									"Trace-list service enrichment failed; using row services",
 								).pipe(
 									Effect.annotateLogs({
-										"error.tag": error._tag,
+										"maple.query_engine.error_tag": error._tag,
 										"error.message": error.message,
 									}),
 									Effect.as([] as ReadonlyArray<CH.TraceServicesByTraceIdsOutput>),

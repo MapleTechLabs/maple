@@ -59,7 +59,7 @@ interface DecodedMessage {
 const retryOrExhaust = (message: Message<unknown>, cause: unknown) => {
 	const isFinalAttempt = message.attempts > AUDIT_EVENTS_MAX_RETRIES
 	return Effect.annotateCurrentSpan({
-		"audit.queue.message.outcome": isFinalAttempt ? "exhausted_dlq" : "retry",
+		"maple.audit.queue.message_outcome": isFinalAttempt ? "exhausted_dlq" : "retry",
 	}).pipe(
 		Effect.flatMap(() =>
 			isFinalAttempt

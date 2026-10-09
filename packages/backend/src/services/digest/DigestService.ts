@@ -457,8 +457,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			scope: DigestScope = UNSCOPED,
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* Effect.annotateCurrentSpan("digest.environments", scope.environments.join(","))
-			yield* Effect.annotateCurrentSpan("digest.namespaces", scope.namespaces.join(","))
+			yield* Effect.annotateCurrentSpan("maple.digest.environments", scope.environments.join(","))
+			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
 
 			const now = new Date(yield* Clock.currentTimeMillis)
 
