@@ -2188,6 +2188,32 @@ describe("PrReviewService before-merge steps across pushes", () => {
 		)
 	})
 
+	it.effect("reminds of the steps a review stores after the pull request merged", () => {
+		const testDb = createTestDb(trackedDbs)
+		const replies: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: Schema.decodeSync(GitCommitSha)("a".repeat(40)) }),
+			)
+			// The merge lands while the review runs: nothing is stored yet, so nothing is reminded.
+			yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 }),
+			)
+			assert.deepStrictEqual(replies, [])
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			assert.strictEqual(replies.length, 1)
+			assert.include(replies[0]!, "`BILLING_TOKEN`")
+		}).pipe(Effect.provide(layerFor(testDb, { prFiles: [secretFile("BILLING_TOKEN")], replies })))
+	})
+
 	it.effect("unticks, ignores ticks on obsolete steps, and reminds once at merge", () => {
 		const testDb = createTestDb(trackedDbs)
 		const replies: Array<string> = []

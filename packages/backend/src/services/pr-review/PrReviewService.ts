@@ -2682,6 +2682,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						reconciled,
 						nowMs,
 					)
+					// The pull request merged while this review ran: the merge reminded only the steps
+					// stored then. The claim on `reminded_at` keeps a step from being reminded twice.
+					if (mergedAtMs !== null && Option.isSome(repository)) {
+						yield* remindOpenMergeSteps(orgId, repository.value, review.number, nowMs)
+					}
 				}
 
 				if (Option.isNone(repository) || Option.isNone(installation)) return
