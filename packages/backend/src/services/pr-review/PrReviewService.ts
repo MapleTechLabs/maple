@@ -2452,7 +2452,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				})
 				// Ticks from earlier comments on this pull request carry onto this review's steps.
 				const trackedSteps = yield* loadMergeSteps(orgId, review.repositoryId, review.number)
-				const reconciled = reconcileMergeSteps(checklist.steps, trackedSteps)
+				// An unread diff says nothing about what the head produces, so nothing goes obsolete.
+				const reconciledAll = reconcileMergeSteps(checklist.steps, trackedSteps)
+				const reconciled = read === undefined ? { ...reconciledAll, obsolete: [] } : reconciledAll
 				const beforeMerge = reconciled.steps
 				const checklistTrace = {
 					...checklistAttributes(read === undefined ? "unread" : "read", checklist),
@@ -2934,10 +2936,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 			/**
 			 * The pull request merged with steps still open: say so once, on the pull request, while
-			 * someone can still act. Claimed before the post, so a redelivered `closed` posts nothing.
+			 * someone can still act. Claimed before the post, so a redelivered `closed` posts nothing,
+			 * and released when the post cannot be made, so a redelivery can try again.
 			 */
 			const remindOpenMergeSteps = (orgId: OrgId, repo: VcsRepo, number: number, nowMs: number) =>
 				Effect.gen(function* () {
+					const ofPullRequest = and(
+						eq(prReviewMergeSteps.orgId, orgId),
+						eq(prReviewMergeSteps.repositoryId, repo.id),
+						eq(prReviewMergeSteps.number, number),
+					)
 					const open = yield* database
 						.execute((db) =>
 							db
@@ -2945,14 +2953,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.set({ remindedAt: msToDate(nowMs) })
 								.where(
 									and(
-										eq(prReviewMergeSteps.orgId, orgId),
-										eq(prReviewMergeSteps.repositoryId, repo.id),
-										eq(prReviewMergeSteps.number, number),
+										ofPullRequest,
 										eq(prReviewMergeSteps.status, "open"),
 										isNull(prReviewMergeSteps.remindedAt),
 									),
 								)
 								.returning({
+									key: prReviewMergeSteps.key,
 									kind: prReviewMergeSteps.kind,
 									title: prReviewMergeSteps.title,
 								}),
@@ -2962,13 +2969,32 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						"maple.pr_review.checklist.open_at_merge": open.length,
 					})
 					if (open.length === 0) return
-					const target = yield* providerFor(orgId, repo)
-					if (Option.isNone(target)) return
-					const { provider, installation, ref } = target.value
-					yield* provider.postPullRequestReply(installation, ref, {
-						number,
-						body: renderMergeReminder(open),
-					})
+					const release = database
+						.execute((db) =>
+							db
+								.update(prReviewMergeSteps)
+								.set({ remindedAt: null })
+								.where(
+									and(
+										ofPullRequest,
+										inArray(
+											prReviewMergeSteps.key,
+											open.map((step) => step.key),
+										),
+									),
+								),
+						)
+						.pipe(Effect.mapError(toPersistence))
+					yield* Effect.gen(function* () {
+						const target = yield* providerFor(orgId, repo)
+						if (Option.isNone(target))
+							return yield* Effect.fail(toPersistence({ message: "no provider" }))
+						const { provider, installation, ref } = target.value
+						yield* provider.postPullRequestReply(installation, ref, {
+							number,
+							body: renderMergeReminder(open),
+						})
+					}).pipe(Effect.tapCause(() => release))
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.logWarning("[PrReview] could not post the open before-merge steps").pipe(

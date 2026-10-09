@@ -301,6 +301,27 @@ describe("reconcileMergeSteps", () => {
 	})
 })
 
+describe("mergeStepKey", () => {
+	it("never gives two different manual titles one key", () => {
+		const long = "Run the backfill for issues_v3 in every region after the deploy is live and then"
+		const keys = [
+			`${long} verify`,
+			`${long} confirm`,
+			"Créer le drapeau",
+			"Vérifier le drapeau",
+			"中文步骤一",
+			"中文步骤二",
+		].map((title) => mergeStepKey(manual(title)))
+		assert.strictEqual(new Set(keys).size, keys.length)
+		for (const key of keys) assert.match(key, /^manual:[a-z0-9-]+$/)
+		// A short ASCII title keeps its readable slug.
+		assert.strictEqual(
+			mergeStepKey(manual("Create the `prreview` flag")),
+			"manual:create-the-prreview-flag",
+		)
+	})
+})
+
 describe("ticks on the comment", () => {
 	const report = (beforeMerge: ReadonlyArray<PrReviewMergeStep>) =>
 		renderSummaryComment("<!-- maple-pr-review r 0 -->", {

@@ -333,17 +333,38 @@ export type PrReviewMergeStepStatus = Schema.Schema.Type<typeof PrReviewMergeSte
  * step without a subject. A tick is stored against this key, so it survives a new review comment.
  */
 export const mergeStepKey = (step: Pick<PrReviewMergeStep, "kind" | "subject" | "title">): string => {
-	const about =
-		step.subject ??
-		// Split and join rather than trim with `^-+|-+$`, which backtracks on long runs of `-`.
-		step.title
-			.toLowerCase()
-			.split(/[^a-z0-9]+/)
-			.filter((word) => word.length > 0)
-			.join("-")
-			.slice(0, 80)
+	const about = step.subject ?? titleSlug(step.title)
 	// It is written into an HTML comment: no whitespace, no `--`, no `>`.
 	return `${step.kind}:${about.replace(/\s+/g, "_").replace(/-{2,}/g, "-").replace(/>/g, "")}`
+}
+
+const SLUG_MAX = 80
+
+/** FNV-1a of the text, as 8 hex digits: a stable tag for wording a slug cannot tell apart. */
+const fnv1a = (text: string): string => {
+	let hash = 0x811c9dc5
+	for (const char of text) {
+		hash ^= char.codePointAt(0) ?? 0
+		hash = Math.imul(hash, 0x01000193) >>> 0
+	}
+	return hash.toString(16).padStart(8, "0")
+}
+
+/**
+ * A reviewer step's title as a key. Split and joined rather than trimmed with `^-+|-+$`, which
+ * backtracks on long runs of `-`. A slug cut for length, or one with no ASCII word left, carries a
+ * hash of the whole title, so two titles that differ only past the cut or only in non-ASCII words
+ * never share a key.
+ */
+const titleSlug = (title: string): string => {
+	const slug = title
+		.toLowerCase()
+		.split(/[^a-z0-9]+/)
+		.filter((word) => word.length > 0)
+		.join("-")
+	if (slug.length === 0) return fnv1a(title.trim())
+	if (slug.length <= SLUG_MAX && !/[^\x00-\x7f]/.test(title)) return slug
+	return `${slug.slice(0, SLUG_MAX - 9)}-${fnv1a(title.trim())}`
 }
 
 /** How every review comment starts: `<!-- maple-pr-review <reviewId> <attempt> -->`. */

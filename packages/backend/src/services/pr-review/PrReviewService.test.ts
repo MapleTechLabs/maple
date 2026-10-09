@@ -127,6 +127,10 @@ const layerFor = (
 		readonly prFiles?: ReadonlyArray<PullRequestFile>
 		/** Present: replies posted to the pull request's conversation are recorded here. */
 		readonly replies?: Array<string>
+		/** How many replies fail before one is accepted. */
+		readonly replyFailures?: { remaining: number }
+		/** Present and true: reading the pull request's files fails. */
+		readonly filesUnreadable?: { value: boolean }
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -143,7 +147,10 @@ const layerFor = (
 		fetchCommit: unused,
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
-		fetchPullRequestFiles: () => Effect.succeed(options.prFiles ?? []),
+		fetchPullRequestFiles: () =>
+			options.filesUnreadable?.value === true
+				? Effect.die("GitHub is down")
+				: Effect.succeed(options.prFiles ?? []),
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
 		resolveReviewThread: (_installation, _repo, input) =>
@@ -155,10 +162,15 @@ const layerFor = (
 		postPullRequestReply: (_installation, _repo, input) =>
 			options.replies === undefined
 				? Effect.die("not used by the review service")
-				: Effect.sync(() => {
-						options.replies?.push(input.body)
-						return { url: "https://github.com/acme/shop/pull/1#reply" }
-					}),
+				: options.replyFailures !== undefined && options.replyFailures.remaining > 0
+					? Effect.suspend(() => {
+							options.replyFailures!.remaining--
+							return Effect.die("GitHub refused the reply")
+						})
+					: Effect.sync(() => {
+							options.replies?.push(input.body)
+							return { url: "https://github.com/acme/shop/pull/1#reply" }
+						}),
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
 		commitFiles: unused,
@@ -2130,6 +2142,49 @@ describe("PrReviewService before-merge steps across pushes", () => {
 				{ key: "secret:BILLING_TOKEN", status: "done" },
 			])
 		}).pipe(Effect.provide(layerFor(testDb, { published, prFiles: files })))
+	})
+
+	it.effect("obsoletes nothing when the diff could not be read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const unreadable = { value: false }
+		return Effect.gen(function* () {
+			yield* seed(true)
+			yield* submitWith("a".repeat(40))
+			unreadable.value = true
+			yield* submitWith("b".repeat(40))
+			const db = yield* Database
+			const rows = yield* db.execute((client) =>
+				client.select({ status: prReviewMergeSteps.status }).from(prReviewMergeSteps),
+			)
+			assert.deepStrictEqual(rows, [{ status: "open" }])
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, { prFiles: [secretFile("BILLING_TOKEN")], filesUnreadable: unreadable }),
+			),
+		)
+	})
+
+	it.effect("releases the reminder when the post fails, so a redelivered close posts it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const replies: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			yield* submitWith("a".repeat(40))
+			const reviews = yield* PrReviewService
+			const merged = job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 })
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			assert.deepStrictEqual(replies, [])
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			assert.strictEqual(replies.length, 1)
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					prFiles: [secretFile("BILLING_TOKEN")],
+					replies,
+					replyFailures: { remaining: 1 },
+				}),
+			),
+		)
 	})
 
 	it.effect("unticks, ignores ticks on obsolete steps, and reminds once at merge", () => {
