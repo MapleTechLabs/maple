@@ -78,11 +78,14 @@ export const gcpResourceAttributes = (
 
 /**
  * Bounds of bucket `index`. Bucket 0 is the underflow bucket and the last one the overflow
- * bucket; both are open-ended, so they collapse to their one finite bound.
+ * bucket. The overflow bucket is open-ended and collapses to its one finite bound. The
+ * underflow bucket starts at zero when its bound is positive, which is how Cloud Monitoring's
+ * percentile reducers read it: a Cloud Run service answering in 3 ms has every request below
+ * the first bound of 10 ms, and Google reports p50 5 ms for it, not 10.
  */
 const bucketBounds = (options: GcpBucketOptions, index: number): readonly [number, number] => {
 	const between = (bound: (edge: number) => number, lastEdge: number): readonly [number, number] => [
-		bound(Math.max(index - 1, 0)),
+		index === 0 ? Math.min(0, bound(0)) : bound(index - 1),
 		bound(Math.min(index, lastEdge)),
 	]
 	if (options.linearBuckets) {
@@ -159,6 +162,9 @@ export const mapGcpTimeSeries = (
 	const { group, metric } = query
 	const rows: GcpMetricRows = { sumRows: [], gaugeRows: [] }
 	for (const item of series) {
+		// Cloud Run traffic on Google's default domain is counted under a load balancer rule with
+		// no URL map: a load balancer the customer does not have.
+		if (group.resourceType === "https_lb_rule" && !item.resource.labels?.url_map_name) continue
 		const metricLabels = item.metric.labels ?? {}
 		const resourceAttributes = gcpResourceAttributes(
 			group.resourceType,
