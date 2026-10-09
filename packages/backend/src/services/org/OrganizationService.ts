@@ -358,7 +358,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				name: string,
 				region: MapleRegion,
 			) {
-				yield* Effect.annotateCurrentSpan({ userId, "maple.org_region": region })
+				yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "maple.org_region": region })
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({
