@@ -13,11 +13,11 @@
 	"scripts": {
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run --passWithNoTests",
-		"db:generate": "effect-orm generate",
-		"db:check": "effect-orm check",
+		"db:generate": "bun --bun effect-orm generate",
+		"db:check": "bun --bun effect-orm check",
 		"db:migrate": "bun scripts/migrate.ts",
-		"db:status": "effect-orm status",
-		"db:verify": "effect-orm verify",
+		"db:status": "bun --bun effect-orm status",
+		"db:verify": "bun --bun effect-orm verify",
 		"db:audit-raw-sql": "bun scripts/audit-raw-sql.ts",
 		"db:restore-test": "bun scripts/restore-test.ts",
 		"db:backfill:dashboards-v3": "bun scripts/backfill-dashboard-datasource-v3.ts"
