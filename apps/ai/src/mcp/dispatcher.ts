@@ -320,6 +320,8 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 	{
 		make: Effect.gen(function* () {
 			const runtimeServices = yield* Effect.context<McpToolRuntimeRequirements>()
+			const sandbox = yield* RepoSandboxService
+			const source = yield* VcsSourceService
 
 			const execute = Effect.fn("McpToolExecutor.execute")(function* (
 				tenant: TenantContext,
@@ -352,13 +354,11 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				target: RepositoryTarget,
 			) {
 				yield* Effect.annotateCurrentSpan({ "vcs.repository.full_name": target.repository })
-				const sandbox = yield* RepoSandboxService
 				yield* sandbox.prepare(tenant.orgId, target)
-			}, Effect.provide(runtimeServices))
+			})
 
 			const prepareConnectedRepositories = Effect.fn("McpToolExecutor.prepareConnectedRepositories")(
 				function* (tenant: TenantContext) {
-					const source = yield* VcsSourceService
 					const repositories = (yield* source.listRepositories(tenant.orgId)).filter(
 						(repository) => !repository.isArchived,
 					)
@@ -385,7 +385,6 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 						Effect.annotateLogs({ error: error.message }),
 					),
 				),
-				Effect.provide(runtimeServices),
 			)
 
 			return { execute, prepareRepository, prepareConnectedRepositories }
