@@ -122,6 +122,13 @@ export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
 export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
 export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>
 
+/**
+ * The log filter a rendered setup script carries. `keep` leaves an existing sink's filter alone,
+ * the others replace it.
+ */
+export const GcpLogFilter = Schema.Literals(["keep", "default", "exclude_gke_container_logs"])
+export type GcpLogFilter = Schema.Schema.Type<typeof GcpLogFilter>
+
 export const AlertDestinationId = MapleUuidId("@maple/AlertDestinationId", "Alert Destination ID")
 export type AlertDestinationId = Schema.Schema.Type<typeof AlertDestinationId>
 

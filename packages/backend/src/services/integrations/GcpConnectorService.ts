@@ -16,6 +16,7 @@ import {
 } from "@maple/domain/http"
 import {
 	GcpConnectorId,
+	type GcpLogFilter,
 	type GcpProjectId,
 	type GcpResourceNumber,
 	type GcpScopeType,
@@ -45,6 +46,10 @@ export interface GcpConnector {
 	/** Last log push the ingest gateway accepted from this connector. Null until the first one. */
 	readonly lastLogReceivedAt: number | null
 	readonly lastLogError: string | null
+	/** What the latest setup script run reported it set up in Google Cloud. Null until one reports. */
+	readonly appliedLogsEnabled: boolean | null
+	readonly appliedMetricsEnabled: boolean | null
+	readonly setupReportedAt: number | null
 	/** Last poll that read the scope's metrics. Null until the first one. */
 	readonly lastMetricsReceivedAt: number | null
 	readonly lastMetricsError: string | null
@@ -89,7 +94,7 @@ export interface GcpConnectorServiceApi {
 	readonly scripts: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
-		options: { readonly excludeGkeContainerLogs: boolean },
+		options: { readonly logFilter: GcpLogFilter },
 	) => Effect.Effect<
 		{ readonly setupScript: string; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
@@ -122,6 +127,9 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 	createdAt: dateToMs(row.createdAt),
 	lastLogReceivedAt: dateToMs(row.lastReceivedAt),
 	lastLogError: row.lastError,
+	appliedLogsEnabled: row.appliedLogsEnabled,
+	appliedMetricsEnabled: row.appliedMetricsEnabled,
+	setupReportedAt: dateToMs(row.setupReportedAt),
 	lastMetricsReceivedAt: dateToMs(row.lastMetricsReceivedAt),
 	lastMetricsError: row.lastMetricsError,
 	discoveredProjectCount,
@@ -150,6 +158,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			})
 			const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
+			const mapleUrl = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/integrations?integration=gcp`
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
 			const capabilityError = (
@@ -326,7 +335,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const scripts = Effect.fn("GcpConnectorService.scripts")(function* (
 				orgId: OrgId,
 				connectorId: GcpConnectorId,
-				options: { readonly excludeGkeContainerLogs: boolean },
+				options: { readonly logFilter: GcpLogFilter },
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const row = yield* selectRow(orgId, connectorId)
@@ -344,17 +353,18 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					scopeType: row.scopeType,
 					scopeId: row.scopeId,
 					projectId: row.projectId,
+					mapleUrl,
+					pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
 				}
 				return {
-					setupScript: renderGcpSetupScript({
+					setupScript: yield* renderGcpSetupScript({
 						...target,
-						pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
 						mapleServiceAccountEmail,
 						logsEnabled: row.logsEnabled,
 						metricsEnabled: row.metricsEnabled,
-						excludeGkeContainerLogs: options.excludeGkeContainerLogs,
+						logFilter: options.logFilter,
 					}),
-					cleanupScript: renderGcpCleanupScript(target),
+					cleanupScript: yield* renderGcpCleanupScript(target),
 				}
 			})
 
@@ -372,11 +382,14 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				if (row === undefined) return yield* notFound()
 				return {
 					connector: toConnector(row),
-					cleanupScript: renderGcpCleanupScript({
+					// The connector is gone: its script has nothing to report to and carries no secret.
+					cleanupScript: yield* renderGcpCleanupScript({
 						connectorId,
 						scopeType: row.scopeType,
 						scopeId: row.scopeId,
 						projectId: row.projectId,
+						mapleUrl,
+						pushEndpoint: undefined,
 					}),
 				}
 			})
