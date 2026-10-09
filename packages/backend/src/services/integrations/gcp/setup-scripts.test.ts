@@ -110,6 +110,7 @@ case "$*" in
   "projects describe"*) echo "Acme Production" ;;
   "organizations describe"* | "resource-manager folders describe"*) echo "acme.com" ;;
   "billing projects describe"*) echo "$GCLOUD_BILLING" ;;
+  "services list"*) echo "$GCLOUD_APIS" ;;
   *"sinks describe"*"--format"*) echo "WARNING: gcloud says something on stderr." >&2; echo "${WRITER}" ;;
   *"service-accounts list"*)
     case "$GCLOUD_DESCRIBE" in
@@ -188,6 +189,8 @@ interface RunOptions {
 	answer?: string
 	account?: string
 	billing?: "True" | "False"
+	/** The APIs that are on in the host project. None unless the test says so. */
+	apis?: ReadonlyArray<string>
 	/** A permission the account does not hold, or `unanswered` when Google cannot be asked. */
 	lacking?: string
 	report?: "ok" | "unreachable"
@@ -221,6 +224,7 @@ const run = (script: string, options: RunOptions = {}) => {
 			GCLOUD_ANSWER: options.answer ?? "",
 			GCLOUD_ACCOUNT: options.account ?? "jane@acme.com",
 			GCLOUD_BILLING: options.billing ?? "True",
+			GCLOUD_APIS: (options.apis ?? []).join("\n"),
 			CURL_LOG: join(dir, "curl.log"),
 			CURL_IAM: options.lacking === "unanswered" ? "unanswered" : "ok",
 			CURL_LACKING: options.lacking ?? "",
@@ -240,7 +244,13 @@ const run = (script: string, options: RunOptions = {}) => {
 	}
 }
 
+const API_LOOKUP = "services list --enabled --project=acme-host --format=value(config.name)"
+// Tried before anything is read, for a caller whose gcloud calls are counted against this project.
+const RESOURCE_MANAGER_ON = "services enable cloudresourcemanager.googleapis.com --project=acme-host"
+
 const isAccessCheck = (command: string) =>
+	command === API_LOOKUP ||
+	command === RESOURCE_MANAGER_ON ||
 	/^(config get-value|auth print-access-token|projects describe|organizations describe|resource-manager folders describe|billing projects describe)/.test(
 		command,
 	)
@@ -258,7 +268,7 @@ const publish = (members: string) =>
 	)
 
 const logsSetupCommands = (scope: Scope) => [
-	"services enable pubsub.googleapis.com logging.googleapis.com --project=acme-host",
+	"services enable pubsub.googleapis.com logging.googleapis.com cloudresourcemanager.googleapis.com --project=acme-host",
 	`pubsub topics describe ${NAME} --project=acme-host`,
 	`pubsub topics create ${NAME} --project=acme-host`,
 	`pubsub subscriptions describe ${NAME} --project=acme-host`,
@@ -272,7 +282,7 @@ const logsSetupCommands = (scope: Scope) => [
 ]
 
 const metricsSetupCommands = (scope: Scope) => [
-	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
+	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com cloudresourcemanager.googleapis.com --project=acme-host",
 	`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
 	`iam service-accounts create ${NAME} --project=acme-host --display-name=Maple metrics and resource reader`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
@@ -323,9 +333,14 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 		expect(access).toEqual([
 			"config get-value account",
 			"auth print-access-token",
+			API_LOOKUP,
+			RESOURCE_MANAGER_ON,
 			...scope.open,
 			"projects describe acme-host --format=value(name)",
 			"billing projects describe acme-host --format=value(billingEnabled)",
+			// Each section asks which of its APIs are off.
+			API_LOOKUP,
+			API_LOOKUP,
 		])
 		expect(stdout).toBe(`Maple setup for ${scopeType} ${scope.id}
   Log forwarding          on
@@ -338,7 +353,7 @@ ${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")
   ✓ jane@acme.com has the permissions this script needs
 
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
   ✓ Topic created
   ✓ Push subscription created
   ✓ Log sink created
@@ -347,7 +362,7 @@ Log forwarding
   ✓ Check message sent to Maple through the topic
 
 Metrics and resources
-  ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials)
+  ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
   ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
@@ -355,7 +370,8 @@ Metrics and resources
 
 Done. Google Cloud is set up for Maple.
   Maple confirms it within a minute: ${MAPLE_URL}
-  Logs:    a new sink takes up to 10 minutes to forward its first entries.
+  Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before
+           it does is not forwarded later.
   Metrics: the first read lands within about 10 minutes.
 `)
 	})
@@ -483,10 +499,11 @@ describe("the text that is copied", () => {
 		const { stdout } = run(script, {
 			fail: "sinks create",
 			shell: ["--norc", "--noprofile", "-i"],
-			then: "echo STATUS=$? ALIVE; set -o | grep -E 'errexit|nounset'; history | grep -c 'MAPLE_SETUP_SCRIP[T]'\n",
+			// The next command to fail must not close the shell either.
+			then: "echo STATUS=$? ALIVE; false; echo AFTER=$?; set -o | grep -E 'errexit|nounset'; history | grep -c 'MAPLE_SETUP_SCRIP[T]'\n",
 		})
 		expect(stdout).toContain(UNFINISHED)
-		expect(stdout).toContain("STATUS=1 ALIVE")
+		expect(stdout).toContain("STATUS=1 ALIVE\nAFTER=1\n")
 		expect(stdout).toMatch(/errexit\s+off\nnounset\s+off/)
 		// bash 5 can name the running command's history entry; older ones keep the paste.
 		const bashMajor = Number(
@@ -522,7 +539,7 @@ describe("renderGcpSetupScript", () => {
 		expect(commands).not.toContainEqual(expect.stringContaining("--log-filter"))
 		expect(stdout).toContain(`
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
   ✓ Topic already exists
   ✓ Push subscription up to date
   ✓ Log sink up to date (filter kept)
@@ -531,7 +548,7 @@ Log forwarding
   ✓ Check message sent to Maple through the topic
 
 Metrics and resources
-  ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials)
+  ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account already exists
   ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
@@ -571,7 +588,7 @@ Done. Everything was already in place.
 		expect(
 			stdout.endsWith(`
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
   ✓ Topic created
   ✓ Push subscription created
   ✗ Couldn't create the log sink.
@@ -648,6 +665,39 @@ ${UNFINISHED}`)
 		const logsOnly = run(setup(setupInput("organization", { logs: true, metrics: false })), options)
 		expect(logsOnly.status).toBe(0)
 		expect(logsOnly.stdout).not.toContain("Organization 123456789012 found")
+	})
+
+	it("switches on only the APIs that are off, so a caller who may not switch any on can still run it", () => {
+		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const all = [
+			"pubsub.googleapis.com",
+			"logging.googleapis.com",
+			"monitoring.googleapis.com",
+			"cloudasset.googleapis.com",
+			"iam.googleapis.com",
+			"iamcredentials.googleapis.com",
+			"cloudresourcemanager.googleapis.com",
+		]
+		const allOn = run(script, { apis: all, fail: "services enable" })
+		expect(allOn.status).toBe(0)
+		expect(allOn.commands).not.toContainEqual(expect.stringContaining("services enable"))
+		expect(allOn.access).not.toContain(RESOURCE_MANAGER_ON)
+		expect(allOn.stdout).toContain("  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)\n")
+
+		// One is off: only that one is switched on, and a refusal names it and the role.
+		const oneOff = run(script, { apis: all.filter((api) => api !== "iam.googleapis.com") })
+		expect(oneOff.commands.filter((command) => command.startsWith("services enable"))).toEqual([
+			"services enable iam.googleapis.com --project=acme-host",
+		])
+		const refused = run(script, {
+			apis: all.filter((api) => api !== "pubsub.googleapis.com"),
+			fail: "services enable",
+		})
+		expect(refused.status).toBe(1)
+		expect(refused.stdout).toContain(`  ✗ Couldn't switch on: pubsub.googleapis.com.`)
+		expect(refused.stdout).toContain(
+			"What to do: jane@acme.com needs Service Usage Admin on project acme-host.",
+		)
 	})
 
 	it("stops before the first change without billing, a sign-in, or gcloud", () => {
@@ -899,9 +949,9 @@ esac
 		)
 	})
 
-	it("excludes data-access audit logs and health-check probes by default, GKE containers on request", () => {
+	it("leaves out high-volume noise by default, and GKE containers on request", () => {
 		expect(gcpLogFilter(false)).toBe(
-			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC"',
+			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update" AND NOT logName:"serialconsole.googleapis.com"',
 		)
 		expect(gcpLogFilter(true)).toBe(`${gcpLogFilter(false)} AND NOT resource.type="k8s_container"`)
 	})

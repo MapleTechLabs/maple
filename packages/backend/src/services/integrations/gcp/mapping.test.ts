@@ -124,6 +124,21 @@ describe("mapGcpTimeSeries", () => {
 			service_name: "resize",
 		})
 	})
+
+	it("drops a load balancer series that names no URL map", () => {
+		const series = (url_map_name: string) => ({
+			metric: { labels: { response_code_class: "200" } },
+			resource: { labels: { project_id: "acme-prod", url_map_name, backend_target_name: "" } },
+			points: [{ interval: { endTime: at(2) }, value: { int64Value: "3" } }],
+		})
+		const { sumRows } = map("loadbalancing.googleapis.com/https/request_count", [
+			series(""),
+			series("checkout-lb"),
+		])
+		expect(sumRows.map((row) => row.resource_attributes["gcp.resource.labels.url_map_name"])).toEqual([
+			"checkout-lb",
+		])
+	})
 })
 
 describe("distributionQuantile", () => {
@@ -145,6 +160,18 @@ describe("distributionQuantile", () => {
 		expect(distributionQuantile(explicit, 0.5)).toBe(10)
 		expect(distributionQuantile(explicit, 0.75)).toBe(15)
 		expect(distributionQuantile({}, 0.5)).toBeUndefined()
+	})
+
+	it("reads the underflow bucket from zero, as Cloud Monitoring does", () => {
+		// A real `run.googleapis.com/request_latencies` point: 25 requests of about 3 ms, all below
+		// the first bound of 10 ms. Google's REDUCE_PERCENTILE_50/95/99 answered 5, 9.5 and 9.9.
+		const fast = {
+			bucketOptions: { exponentialBuckets: { numFiniteBuckets: 135, growthFactor: 1.1, scale: 10 } },
+			bucketCounts: ["25"],
+		}
+		expect(distributionQuantile(fast, 0.5)).toBe(5)
+		expect(distributionQuantile(fast, 0.95)).toBe(9.5)
+		expect(distributionQuantile(fast, 0.99)).toBeCloseTo(9.9, 10)
 	})
 })
 
