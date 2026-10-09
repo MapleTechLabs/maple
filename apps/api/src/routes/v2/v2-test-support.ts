@@ -27,6 +27,7 @@ import { OnboardingChecklistService } from "@maple/backend/services/org/Onboardi
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
@@ -162,13 +163,16 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 				),
 			),
 		),
-		HttpV2TracesLive,
-		HttpV2LogsLive,
-		HttpV2MetricsLive,
-		HttpV2ServicesLive,
-		HttpV2ServiceMapLive,
-		HttpV2EnvironmentsLive,
-		HttpV2WidgetSummaryLive,
+		// Real reads over whichever warehouse and query-engine stubs the test provides.
+		Layer.mergeAll(
+			HttpV2TracesLive,
+			HttpV2LogsLive,
+			HttpV2MetricsLive,
+			HttpV2ServicesLive,
+			HttpV2ServiceMapLive,
+			HttpV2EnvironmentsLive,
+			HttpV2WidgetSummaryLive,
+		).pipe(Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make))),
 		HttpV2WidgetCredentialsLive,
 		// Talks to Slack; only its own service test exercises it.
 		HttpV2SupportChannelLive.pipe(
