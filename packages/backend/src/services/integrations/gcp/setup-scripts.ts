@@ -16,6 +16,7 @@ import { Effect } from "effect"
 const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
 const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
+const OTEL_DOCS_URL = "https://maple.dev/docs/integrations/gcp-opentelemetry"
 
 // A connection's IDs are fixed once it exists, so a wrong one is fixed by connecting again.
 const WRONG_ID =
@@ -25,17 +26,19 @@ const WRONG_ID =
 // Load balancer health-check probes hit each backend every few seconds. A GKE cluster renews
 // its leader-election leases all day, about 570 audit entries a minute for one idle node. A VM
 // writes its serial console at boot, thousands of lines of raw terminal output.
-const DEFAULT_LOG_FILTER = [
+const NOISE = [
 	'NOT log_id("cloudaudit.googleapis.com/data_access")',
 	'NOT httpRequest.userAgent:"GoogleHC"',
 	'NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update"',
 	'NOT logName:"serialconsole.googleapis.com"',
 ]
 
-export const gcpLogFilter = (excludeGkeContainerLogs: boolean): string =>
-	[...DEFAULT_LOG_FILTER, ...(excludeGkeContainerLogs ? ['NOT resource.type="k8s_container"'] : [])].join(
-		" AND ",
-	)
+// Left out unless asked for: a workload that sends its logs to Maple through OpenTelemetry would
+// have every container line stored twice, and Google's copy carries no trace link.
+const GKE_CONTAINER_LOGS = 'NOT resource.type="k8s_container"'
+
+export const gcpLogFilter = (includeGkeContainerLogs: boolean): string =>
+	[...NOISE, ...(includeGkeContainerLogs ? [] : [GKE_CONTAINER_LOGS])].join(" AND ")
 
 /** What a connector covers and where Maple's own resources live. */
 export interface GcpScriptTarget {
@@ -660,16 +663,21 @@ ${
 		? `
 # ---- Which logs are forwarded ----
 # LOG_FILTER leaves out what is high volume and says little about a workload: Data Access audit
-# logs, load balancer health checks, Kubernetes lease renewals and VM serial console output${
-				input.logFilter === "exclude_gke_container_logs"
-					? ",\n# and GKE container logs, as chosen in Maple"
-					: ""
-			}.
+# logs, load balancer health checks, Kubernetes lease renewals and VM serial console output.
+${
+	input.logFilter === "include_gke_container_logs"
+		? `# GKE container logs are included, as chosen in Maple. Workloads that send their logs through
+# OpenTelemetry are then stored twice: ${OTEL_DOCS_URL}`
+		: `# It also leaves out GKE container logs: workloads that send their logs through OpenTelemetry
+# would be stored twice. To include them, choose "Include GKE container logs" under Log filter
+# in Maple, or delete the last clause of LOG_FILTER and set LOG_FILTER_MODE to set.
+# Details: ${OTEL_DOCS_URL}`
+}
 # keep: an existing sink keeps its filter, a new sink gets LOG_FILTER.
 # set:  LOG_FILTER replaces the sink's filter.
 # Filter syntax: https://cloud.google.com/logging/docs/view/logging-query-language
 LOG_FILTER_MODE=${sh(input.logFilter === "keep" ? "keep" : "set")}
-LOG_FILTER=${sh(gcpLogFilter(input.logFilter === "exclude_gke_container_logs"))}
+LOG_FILTER=${sh(gcpLogFilter(input.logFilter === "include_gke_container_logs"))}
 `
 		: ""
 }${variables(input, [
