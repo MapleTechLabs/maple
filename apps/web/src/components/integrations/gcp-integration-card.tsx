@@ -45,6 +45,7 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { docsUrl } from "@/lib/docs"
 import { Result, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, showErrorToast } from "@/lib/error-toast"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -95,7 +96,7 @@ const SCRIPT_OVERDUE_MS = 5 * 60_000
 /** How much of a script shows before "Show all lines": the wrapper and the header comment. */
 const SCRIPT_PREVIEW_LINES = 10
 
-const DOCS = "https://maple.dev/docs/integrations/gcp"
+const DOCS = docsUrl("gcp")
 const MANAGE_RESOURCES_URL = "https://console.cloud.google.com/cloud-resource-manager"
 
 const PROJECT_ID_RULE =
