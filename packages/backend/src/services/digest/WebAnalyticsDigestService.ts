@@ -278,13 +278,12 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const cur = summaryOf(curSummary)
 				const prev = summaryOf(prevSummary)
 
-				let curPageViews = 0
-				let prevPageViews = 0
-				for (const row of pageviewSeries) {
-					const views = row.pageViews || 0
-					if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
-					else prevPageViews += views
-				}
+				const inCurrentWeek = (row: (typeof pageviewSeries)[number]) =>
+					DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate
+				const sumViews = (rows: ReadonlyArray<(typeof pageviewSeries)[number]>) =>
+					rows.reduce((sum, row) => sum + (row.pageViews || 0), 0)
+				const curPageViews = sumViews(pageviewSeries.filter(inCurrentWeek))
+				const prevPageViews = sumViews(pageviewSeries.filter((row) => !inCurrentWeek(row)))
 
 				// Pages
 				const prevViewsByPage = new Map(

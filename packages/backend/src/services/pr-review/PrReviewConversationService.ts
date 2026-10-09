@@ -643,26 +643,40 @@ export class PrReviewConversationService extends Context.Service<
 				}
 			const byPath = new Map<string, Array<{ oldText: string; newText: string }>>()
 			for (const edit of edits) byPath.set(edit.path, [...(byPath.get(edit.path) ?? []), edit])
-			const files: Array<{ path: string; content: string }> = []
-			for (const [path, pathEdits] of byPath) {
-				// Only a 404 (`Option.none`) is a missing file; a failed read must never look like one.
-				const current = yield* provider
-					.fetchSourceFile(installation, ref, path, row.headSha)
-					.pipe(Effect.result)
-				if (Result.isFailure(current))
-					return {
-						note: `I did not push the fix: I could not read \`${path}\` at the head. Mention me with \`fix\` again to retry.`,
-						commitSha: null,
-					}
-				const original = Option.isSome(current.success) ? current.success.value.content : undefined
-				const applied = applyEdits(original, pathEdits)
-				if ("error" in applied)
-					return {
-						note: `I did not push the fix: an edit to \`${path}\` does not apply (${applied.error}).`,
-						commitSha: null,
-					}
-				files.push({ path, content: applied.content })
-			}
+			// Stops at the first path that fails: later files are not read.
+			const headSha = row.headSha
+			const collected = yield* Effect.reduce(
+				byPath,
+				(): Result.Result<ReadonlyArray<{ path: string; content: string }>, string> =>
+					Result.succeed([]),
+				(acc, [path, pathEdits]) =>
+					Result.isFailure(acc)
+						? Effect.succeed(acc)
+						: provider.fetchSourceFile(installation, ref, path, headSha).pipe(
+								// Only a 404 (`Option.none`) is a missing file; a failed read must never look like one.
+								Effect.result,
+								Effect.map((current) => {
+									if (Result.isFailure(current))
+										return Result.fail(
+											`I did not push the fix: I could not read \`${path}\` at the head. Mention me with \`fix\` again to retry.`,
+										)
+									const original = Option.isSome(current.success)
+										? current.success.value.content
+										: undefined
+									const applied = applyEdits(original, pathEdits)
+									if ("error" in applied)
+										return Result.fail(
+											`I did not push the fix: an edit to \`${path}\` does not apply (${applied.error}).`,
+										)
+									return Result.succeed([
+										...acc.success,
+										{ path, content: applied.content },
+									])
+								}),
+							),
+			)
+			if (Result.isFailure(collected)) return { note: collected.failure, commitSha: null }
+			const files = collected.success
 			const commit = yield* provider
 				.commitFiles(installation, ref, {
 					branch: head.value.headRef,
