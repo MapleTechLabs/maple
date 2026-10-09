@@ -648,7 +648,7 @@ function GcpSetup({
 											))}
 										</SelectContent>
 									</Select>
-									<FieldDescription className="max-w-prose">
+									<FieldDescription>
 										{sinkExists
 											? "Keeping the current filter leaves the sink as it is. "
 											: ""}
@@ -1242,7 +1242,7 @@ function GcpConnectorRow({
 					open={disconnectOpen}
 					onOpenChange={setDisconnectOpen}
 					title={`Remove ${label}?`}
-					description="Maple hasn't seen the setup script run, so there should be nothing in Google Cloud. If it ran part of the way, use the cleanup script shown after you remove the connection."
+					description="Maple hasn't seen the setup script run, so there should be nothing in Google Cloud. If it ran part of the way, use the cleanup script offered after you remove the connection."
 					confirmLabel="Remove"
 					onConfirm={disconnect}
 				/>
