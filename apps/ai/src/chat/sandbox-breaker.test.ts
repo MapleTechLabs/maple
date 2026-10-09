@@ -28,11 +28,16 @@ const ok: McpToolResult = { content: [{ type: "text", text: "ok" }] }
 const scripted = (answers: ReadonlyArray<McpToolResult>, calls: string[], prepareError?: unknown) => {
 	const queue = [...answers]
 	const executor: McpToolExecutorApi = {
+		// Yields first, so concurrent calls all pass the breaker before any answers.
 		execute: (_tenant, name) =>
-			Effect.sync(() => {
-				calls.push(name)
-				return queue.shift() ?? ok
-			}),
+			Effect.yieldNow.pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						calls.push(name)
+						return queue.shift() ?? ok
+					}),
+				),
+			),
 		prepareRepository: () =>
 			prepareError === undefined
 				? Effect.void
@@ -83,6 +88,18 @@ describe("withSandboxBreaker", () => {
 			}),
 		)
 		assert.strictEqual(calls.length, 2 + MAX_CHECKOUT_WAITS)
+	})
+
+	it("stays down when a call that started before the trip succeeds after it", async () => {
+		const calls: string[] = []
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const executor = yield* withSandboxBreaker(scripted([failed("unavailable"), ok], calls))
+				yield* Effect.all([grep(executor), grep(executor)], { concurrency: "unbounded" })
+				yield* grep(executor)
+			}),
+		)
+		assert.strictEqual(calls.length, 2)
 	})
 
 	it("leaves other tools alone", async () => {

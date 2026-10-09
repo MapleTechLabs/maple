@@ -269,7 +269,8 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		`git -C ${mirror} -c ${shellQuote(`credential.helper=${helper}`)} fetch --quiet --no-tags ${shellQuote(checkout.remoteUrl)} '+refs/heads/*:refs/heads/*' ${shellQuote(`+${checkout.sha}:refs/maple/${checkout.sha}`)}`,
 		`rm -f ${credential}`,
 		`chmod -R a+rX,go-w ${mirror}`,
-		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-XXXXXX`)})`,
+		// Named after this script's PID, so eviction can tell a live clone's directory from a leftover.
+		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-`)}"$$"-XXXXXX)`,
 		`git clone --quiet --shared --no-checkout ${mirror} "$t"`,
 		"exec 9>&-",
 		`git -C "$t" remote set-url origin ${shellQuote(checkout.remoteUrl)}`,
@@ -289,8 +290,8 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// another clone's scratch directory: concurrent reviews each hold a commit, and evicting by
 		// count alone deleted checkouts and clones still in use.
 		`ls -1dt ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do if [ -n "$(find "$old" -maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES})" ]; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
-		// Scratch directories a failed clone left behind.
-		`find ${shellQuote(SANDBOX_WORKSPACE_ROOT)} -mindepth 1 -maxdepth 1 -name '.clone-*' -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES} -exec sh -c 'chmod -R u+w "$1" && rm -rf "$1"' _ {} \\;`,
+		// Scratch directories a failed clone left behind: only those whose clone is no longer running.
+		`for old in ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/.clone-*/; do [ -d "$old" ] || continue; pid=$(basename "$old" | cut -d- -f2); if ! kill -0 "$pid" 2>/dev/null; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
 		"true",
 	].join("\n")
 }

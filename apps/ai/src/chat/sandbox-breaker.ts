@@ -45,6 +45,8 @@ const refused = (repository: string): McpToolResult => ({
 })
 
 const next = (state: RepositoryState, result: McpToolResult): RepositoryState => {
+	// Down is final for the turn: a call that started before the trip may still succeed after it.
+	if (state.down) return state
 	if (result.isError !== true) return UP
 	if (result.failureCategory === "unavailable") return { ...state, down: true }
 	if (result.failureCategory === "not_ready") {
@@ -72,18 +74,16 @@ export const withSandboxBreaker = (executor: McpToolExecutorApi): Effect.Effect<
 
 		// The kickoff's own clone: a sandbox that could not even start it is down for the turn.
 		const prepareRepository: McpToolExecutorApi["prepareRepository"] = (tenant, target) =>
-			executor
-				.prepareRepository(tenant, target)
-				.pipe(
-					Effect.tapError((error: SandboxError) =>
-						fromSandboxError("prepare")(error)._tag === "@maple/mcp/errors/McpUnavailableError"
-							? update(target.repository.trim().toLowerCase(), (state) => ({
-									...state,
-									down: true,
-								}))
-							: Effect.void,
-					),
-				)
+			executor.prepareRepository(tenant, target).pipe(
+				Effect.tapError((error: SandboxError) =>
+					fromSandboxError("prepare")(error)._tag === "@maple/mcp/errors/McpUnavailableError"
+						? update(target.repository.trim().toLowerCase(), (state) => ({
+								...state,
+								down: true,
+							}))
+						: Effect.void,
+				),
+			)
 
 		return { ...executor, execute, prepareRepository }
 	})

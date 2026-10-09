@@ -195,8 +195,9 @@ describe("cloneScript", () => {
 		// Six reviews of one repository at once each held a commit; evicting by count alone deleted
 		// checkouts and in-flight clones out from under them.
 		assert.include(script, `-maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES}`)
-		assert.include(script, `-name '.clone-*' -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES}`)
-		assert.notInclude(script, ".clone-*/")
+		// A scratch directory goes only once the clone that made it is no longer running.
+		assert.include(script, `/.clone-'"$$"-XXXXXX`)
+		assert.include(script, `if ! kill -0 "$pid"`)
 	})
 })
 
