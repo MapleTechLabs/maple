@@ -469,7 +469,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				window: { readonly startMs: number; readonly endMs: number },
 			) {
 				yield* Effect.annotateCurrentSpan({
-					"railway.environment.id": row.environmentId,
+					"maple.railway.environment_id": row.environmentId,
 					"maple.railway.window_start": new Date(window.startMs).toISOString(),
 				})
 				const results = yield* fetchEnvironmentMetrics(httpClient, token, {

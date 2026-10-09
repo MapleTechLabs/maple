@@ -53,7 +53,7 @@ import { durableStep, type DurableStepConfig } from "@maple/backend/platform/dur
  * request will ever read — but the shared edge-cache entry is the one that
  * matters: it is what every API isolate reads on a memo miss, and at a 6h TTL
  * it would otherwise hand back the pre-apply `schema_version` (and so a wrong
- * `clickhouse.schemaDrift`) for the rest of the day.
+ * `maple.clickhouse.schema_drift`) for the rest of the day.
  *
  * Best-effort by design: `invalidate` already swallows backend failures, and
  * `Effect.ignore` covers the case where this isolate has no Cache API at all.

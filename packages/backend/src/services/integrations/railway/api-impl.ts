@@ -241,6 +241,6 @@ export const fetchEnvironmentMetrics = (
 ): Effect.Effect<ReadonlyArray<RailwayMetricsResult>, RailwayApiError> =>
 	run(httpClient, token, environmentMetrics(window)).pipe(
 		Effect.withSpan("RailwayApi.fetchEnvironmentMetrics", {
-			attributes: { "railway.environment.id": window.environmentId },
+			attributes: { "maple.railway.environment_id": window.environmentId },
 		}),
 	)

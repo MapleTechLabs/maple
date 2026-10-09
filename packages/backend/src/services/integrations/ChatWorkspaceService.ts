@@ -324,7 +324,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		callbackUrl: string,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
 		const state = randomBytes(24).toString("base64url")
 		// The URL first: an unconfigured connector fails here, before a state row
@@ -363,7 +363,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
 	) {
-		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
 		const state = params.get("state")
 		if (state === null) {
@@ -493,7 +493,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		callbackUrl: string,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
 		const state = randomBytes(24).toString("base64url")
 		// The URL first, as the install does: an unconfigured connector fails here,
@@ -533,7 +533,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
 	) {
-		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
 		const state = params.get("state")
 		if (state === null) {
@@ -615,7 +615,7 @@ const make: Effect.Effect<
 		userId: UserId,
 		connectorId: ChatConnectorId,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		yield* requireConnector(connectorId)
 		const unlinked = yield* unlinkChatIdentity(database, orgId, connectorId, userId)
 		if (unlinked) {
@@ -746,7 +746,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		externalWorkspaceId: string,
 	) {
-		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		// A deployment with no usable key resolves the workspace without its credential rather than
 		// failing the lookup: everything that does not need one keeps working, and the connector
 		// that does reports it cannot post.

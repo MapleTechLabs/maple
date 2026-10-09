@@ -450,8 +450,8 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				}
 				// A cursor still in hand after the last page is a workspace listed only in part.
 				yield* Effect.annotateCurrentSpan({
-					"chat.destinations.pages": Math.min(pages + 1, MAX_CHANNEL_PAGES),
-					"chat.destinations.truncated": cursor !== undefined && cursor !== "",
+					"maple.chat.destinations.pages": Math.min(pages + 1, MAX_CHANNEL_PAGES),
+					"maple.chat.destinations.truncated": cursor !== undefined && cursor !== "",
 				})
 				return Arr.sort(channels, byName)
 			}),

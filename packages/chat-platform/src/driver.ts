@@ -49,9 +49,9 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 ) {
 	const { context, messageId, outbound, target } = options
 	yield* Effect.annotateCurrentSpan({
-		"chat.connector": outbound.connectorId,
-		"chat.session_id": context.sessionId,
-		"chat.message_id": messageId,
+		"maple.chat.connector": outbound.connectorId,
+		"maple.chat.session_id": context.sessionId,
+		"maple.chat.message_id": messageId,
 	})
 
 	const transport = yield* outbound.transport
@@ -182,7 +182,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// settles the same way.
 	running = false
 	yield* flush
-	yield* Effect.annotateCurrentSpan({ "chat.turn.end_reason": endReason, "chat.messages": posted.length })
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.turn.end_reason": endReason,
+		"maple.chat.messages": posted.length,
+	})
 	return yield* outcome
 })
 

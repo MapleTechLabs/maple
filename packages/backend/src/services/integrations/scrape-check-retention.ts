@@ -104,8 +104,8 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 		}),
 	)
 	yield* Effect.annotateCurrentSpan({
-		"scrape.retention.targets": targets.length,
-		"scrape.retention.cap_probed": capCandidates.length,
+		"maple.scrape.retention.targets": targets.length,
+		"maple.scrape.retention.cap_probed": capCandidates.length,
 	})
 })
 
@@ -117,8 +117,8 @@ export const runScrapeCheckRetention = Effect.gen(function* () {
 	)
 	yield* pruneChecksForTargets(rows)
 	yield* Effect.annotateCurrentSpan({
-		"scrape.retention.targets": rows.length,
-		"scrape.retention.outcome": "completed",
+		"maple.scrape.retention.targets": rows.length,
+		"maple.scrape.retention.outcome": "completed",
 	})
 	yield* Effect.logInfo("[scrape] check retention tick complete").pipe(
 		Effect.annotateLogs({ targets: rows.length }),
@@ -126,7 +126,7 @@ export const runScrapeCheckRetention = Effect.gen(function* () {
 }).pipe(
 	// tapCause lets the cause propagate so `withSpan` marks the tick as Error.
 	Effect.tapCause((cause) =>
-		Effect.annotateCurrentSpan({ "scrape.retention.outcome": "failed" }).pipe(
+		Effect.annotateCurrentSpan({ "maple.scrape.retention.outcome": "failed" }).pipe(
 			Effect.flatMap(() =>
 				Effect.logError("[scrape] check retention tick failed").pipe(
 					Effect.annotateLogs({ error: String(cause) }),
