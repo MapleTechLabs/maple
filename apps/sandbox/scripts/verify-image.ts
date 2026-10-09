@@ -9,7 +9,7 @@
  *
  *   bun run --cwd apps/sandbox verify:image
  *
- * Needs Docker and roughly a gigabyte for the image. `--cap-add SYS_ADMIN` is
+ * Needs Docker; builds `image/Dockerfile`, the image `alchemy.run.ts` deploys. `--cap-add SYS_ADMIN` is
  * passed because Cloudflare's runtime is expected to allow a network namespace;
  * run with `MAPLE_SANDBOX_NO_CAPS=1` to prove the opposite case, where the
  * wrapper must refuse to run the command at all rather than run it with egress.
@@ -27,8 +27,16 @@ import {
 	shellQuote,
 } from "@maple/domain/sandbox"
 import { checkoutDir, cloneScript, parseTrailer, snapshotScript, wrapCommand } from "../src/checkout.ts"
+import {
+	claimProcessArgv,
+	commandArgv,
+	parseProcessStatus,
+	processLogArgv,
+	processStatusArgv,
+	startProcessArgv,
+} from "../src/processes.ts"
 
-const IMAGE = "docker.io/cloudflare/sandbox:0.12.10"
+const IMAGE = "maple-sandbox:verify"
 const TOKEN = "ghs_a_secret_that_must_never_land_on_disk"
 const ISOLATION_EXPECTED = process.env.MAPLE_SANDBOX_NO_CAPS ? "unavailable" : "isolated"
 
@@ -131,13 +139,12 @@ const withCheckout = (commands: ReadonlyArray<string>) =>
 
 console.log(`image ${IMAGE}, isolation expected: ${ISOLATION_EXPECTED}\n`)
 
-// Docker stores the pinned image under its short name, so that is what the
-// presence check has to ask for; `docker.io/…` finds nothing and re-pulls every run.
-const LOCAL_TAG = IMAGE.replace(/^docker\.io\//, "")
-if (execFileSync("docker", ["image", "ls", "-q", LOCAL_TAG], { encoding: "utf8" }).trim() === "") {
-	console.log(`pulling ${IMAGE} (about a gigabyte, once)`)
-	execFileSync("docker", ["pull", IMAGE], { stdio: "inherit" })
-}
+// Rebuilt every run; Docker's layer cache makes an unchanged Dockerfile a no-op.
+execFileSync(
+	"docker",
+	["build", "--quiet", "--platform", "linux/amd64", "--tag", IMAGE, `${import.meta.dirname}/../image`],
+	{ stdio: ["ignore", "ignore", "inherit"] },
+)
 
 // The clone script is generated here but the commit exists only in the container,
 // so one throwaway container builds the fixture and reports its hash. The build is
@@ -300,7 +307,7 @@ console.log("\na restored backup")
 
 	check("a clone after a restore succeeds", field("RESTORED_EXIT") === "0", logs)
 	check("the mirror is built from the seed rather than from scratch", field("FROM_SEED") === "yes")
-	check("the seed is gone once copied, so the disk holds one mirror", field("SEED_LEFT") === "no")
+	check("the seed is moved into place, so the disk holds one mirror", field("SEED_LEFT") === "no")
 	check("no temporary mirror is left behind", field("TEMP_MIRRORS") === "0")
 	check(
 		"the new commit is fetched on top of it",
@@ -395,6 +402,59 @@ console.log("\nthe command wrapper")
 			grep,
 		)
 	}
+}
+
+console.log("\nthe process runner")
+{
+	// The argument vectors the Durable Object hands `container.exec()`, quoted back into one program.
+	const sh = (argv: ReadonlyArray<string>) => argv.map(shellQuote).join(" ")
+	const status = (id: string) => `$(${sh(processStatusArgv(id))})`
+	const poll = (id: string) =>
+		`for i in $(seq 1 50); do case "${status(id)}" in exited*) break;; esac; sleep 0.1; done`
+	const run = inImage(
+		[
+			`${sh(claimProcessArgv("ok"))} && echo CLAIMED=yes`,
+			`${sh(claimProcessArgv("ok"))} 2>/dev/null && echo RECLAIMED=yes || echo RECLAIMED=no`,
+			// `exec()` with ignored output returns at once; `&` is the same here.
+			`${sh(startProcessArgv("ok", "echo out; echo err >&2; sleep 0.3"))} &`,
+			`echo "EARLY=${status("ok")}"`,
+			poll("ok"),
+			`echo "OK_STATUS=${status("ok")}"`,
+			`echo "OK_OUT=$(${sh(processLogArgv("ok", "stdout"))})"`,
+			`echo "OK_ERR=$(${sh(processLogArgv("ok", "stderr"))})"`,
+			sh(claimProcessArgv("bad")),
+			`${sh(startProcessArgv("bad", "exit 7"))} &`,
+			poll("bad"),
+			`echo "BAD_STATUS=${status("bad")}"`,
+			`echo "NONE_STATUS=${status("none")}"`,
+			// A child that would outlive its parent: `timeout` has to take the whole group down.
+			`start=$(date +%s)`,
+			`${sh(commandArgv("(sleep 3; touch /tmp/survived) & sleep 30", 1_000))}; echo "TIMEOUT_EXIT=$?"`,
+			`echo "TIMEOUT_SECONDS=$(( $(date +%s) - start ))"`,
+			"sleep 4",
+			`echo "SURVIVED=$(test -e /tmp/survived && echo yes || echo no)"`,
+		].join("\n"),
+	)
+	const field = (name: string) => new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1] ?? ""
+	const logs = `${run.stdout}\n${run.stderr}`
+	check("an id is claimed once", field("CLAIMED") === "yes" && field("RECLAIMED") === "no", logs)
+	check(
+		"a started process reads as starting or running",
+		["starting", "running"].includes(parseProcessStatus("ok", field("EARLY"))?.status ?? ""),
+		field("EARLY"),
+	)
+	check(
+		"a process that exits 0 reads as completed",
+		parseProcessStatus("ok", field("OK_STATUS"))?.status === "completed",
+		field("OK_STATUS"),
+	)
+	check("its logs are kept apart", field("OK_OUT") === "out" && field("OK_ERR") === "err", logs)
+	const bad = parseProcessStatus("bad", field("BAD_STATUS"))
+	check("a failing process keeps its exit code", bad?.status === "failed" && bad.exitCode === 7, logs)
+	check("an unused id reads as no process", parseProcessStatus("none", field("NONE_STATUS")) === null)
+	check("a command past its timeout exits 124", field("TIMEOUT_EXIT") === "124", logs)
+	check("it is stopped at the deadline", Number(field("TIMEOUT_SECONDS")) <= 2, field("TIMEOUT_SECONDS"))
+	check("nothing the command started survives it", field("SURVIVED") === "no", logs)
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`)

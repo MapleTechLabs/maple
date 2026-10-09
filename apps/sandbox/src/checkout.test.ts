@@ -50,7 +50,12 @@ const trailer = (
 ) => `\n${SANDBOX_TRAILER} ${exitCode} ${outBytes} ${errBytes} ${isolation}\n`
 
 interface FakeOptions {
-	readonly execs?: ReadonlyArray<{ exitCode?: number; stdout?: string; stderr?: string }>
+	readonly execs?: ReadonlyArray<{
+		exitCode?: number
+		stdout?: string
+		stderr?: string
+		timedOut?: boolean
+	}>
 	readonly process?: SandboxProcess | null
 	readonly logs?: { stdout: string; stderr: string }
 	readonly rejectExec?: Error
@@ -69,6 +74,7 @@ const fakeSandbox = (options: FakeOptions, seen: string[] = []): SandboxLike => 
 				stdout: answer.stdout ?? "",
 				stderr: answer.stderr ?? "",
 				duration: 7,
+				timedOut: answer.timedOut ?? false,
 			}
 		},
 		startProcess: async (command, processOptions) => {
@@ -220,15 +226,10 @@ describe("cloneScript's mirror", () => {
 		assert.include(script, "chmod 600 '/workspace/maple-mirror.lock'")
 	})
 
-	it("drops the seed and its archive once the mirror is copied from it", () => {
+	it("starts the mirror from a restored seed by moving it, not copying it", () => {
 		const script = cloneScript(checkout)
-		assert.isTrue(script.indexOf('mv -T "$m"') < script.indexOf("fusermount3 -uz"))
-		assert.include(script, "/var/backups/*.sqsh")
-	})
-
-	it("starts the mirror from a restored seed when one is there", () => {
-		const script = cloneScript(checkout)
-		assert.include(script, "maple-seed")
+		assert.include(script, `mv -T '/workspace/maple-seed' "$m"`)
+		assert.notInclude(script, "cp -a")
 		assert.include(script, "gc.auto 0")
 	})
 
@@ -404,10 +405,7 @@ describe("runExec", () => {
 	it.effect("reports a timeout as its own outcome", () =>
 		Effect.gen(function* () {
 			const response = yield* runExec(
-				fakeSandbox({
-					execs: [{ exitCode: 0 }],
-					rejectExec: new Error("Command timeout after 30000ms"),
-				}),
+				fakeSandbox({ execs: [{ exitCode: 0 }, { exitCode: 124, timedOut: true }] }),
 				request(),
 			)
 			assert.strictEqual(response._tag, "SandboxRunTimedOut")

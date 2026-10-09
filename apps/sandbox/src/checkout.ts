@@ -42,6 +42,8 @@ export interface SandboxExecResult {
 	readonly stdout: string
 	readonly stderr: string
 	readonly duration: number
+	/** The command outran its timeout and was killed, with everything it started. */
+	readonly timedOut: boolean
 }
 
 /** What the container reports after a write. Only the outcome matters here. */
@@ -55,7 +57,7 @@ export interface SandboxProcess {
 	readonly exitCode?: number | undefined
 }
 
-/** The slice of Cloudflare's `Sandbox` this Worker uses. */
+/** What the sandbox Durable Object (`worker.ts`) offers over its container. */
 export interface SandboxLike {
 	readonly exec: (
 		command: string,
@@ -86,8 +88,6 @@ export class SandboxCallError extends Schema.TaggedError<SandboxCallError>()(
 	"@maple/sandbox/SandboxCallError",
 	{ message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
-
-const TIMED_OUT = /timed?\s?out/i
 
 const call = (sandbox: SandboxLike, command: string, options?: { cwd?: string; timeout?: number }) =>
 	Effect.tryPromise({
@@ -251,15 +251,12 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		"flock 9",
 		`if [ ! -d ${mirror}/objects ]; then`,
 		`  m=$(mktemp -d ${shellQuote(`${SANDBOX_MIRROR_DIR}.XXXXXX`)})`,
-		`  if [ -d ${shellQuote(SANDBOX_SEED_DIR)}/objects ]; then cp -a ${shellQuote(SANDBOX_SEED_DIR)}/. "$m"/; else git init --quiet --bare "$m"; fi`,
+		// A restored seed is ordinary files on the same disk, so it moves into place rather than copies.
+		`  if [ -d ${shellQuote(SANDBOX_SEED_DIR)}/objects ]; then rmdir "$m" && mv -T ${shellQuote(SANDBOX_SEED_DIR)} "$m"; else git init --quiet --bare "$m"; fi`,
 		// Checkouts borrow the mirror's objects, so nothing may ever prune them.
 		`  git -C "$m" config gc.auto 0`,
 		`  mv -T "$m" ${mirror}`,
 		"  m=",
-		// The seed is a mount over a downloaded archive; once copied it only costs disk.
-		`  fusermount3 -uz ${shellQuote(SANDBOX_SEED_DIR)} 2>/dev/null || true`,
-		`  for d in /var/backups/mounts/*/lower; do fusermount3 -uz "$d" 2>/dev/null || true; done`,
-		`  rm -rf ${shellQuote(SANDBOX_SEED_DIR)} /var/backups/mounts /var/backups/*.sqsh 2>/dev/null || true`,
 		"fi",
 		// Every branch keeps `origin/*` in the checkout what a full clone gave, and the
 		// commit is pinned under its own ref so a force-pushed branch cannot orphan it.
@@ -387,26 +384,17 @@ export const runExec = (
 		if (Option.isSome(notReady)) return notReady.value
 		const dir = checkoutDir(request.checkout.sha)
 		const cwd = request.cwd === "." || request.cwd === "" ? dir : `${dir}/${request.cwd}`
-		const result = yield* call(sandbox, wrapCommand(request), { cwd, timeout: request.timeoutMs }).pipe(
-			Effect.asSome,
-			// Cloudflare's client rejects a command that outran its timeout. Matching
-			// the message is a heuristic: a transport timeout would read the same way,
-			// and would be reported to the caller as its own command timing out.
-			Effect.catchIf(
-				(error) => TIMED_OUT.test(error.message),
-				() => Effect.succeedNone,
-			),
-		)
-		if (Option.isNone(result)) return new SandboxRunTimedOut({ wallTimeMs: request.timeoutMs })
+		const result = yield* call(sandbox, wrapCommand(request), { cwd, timeout: request.timeoutMs })
+		if (result.timedOut) return new SandboxRunTimedOut({ wallTimeMs: request.timeoutMs })
 
-		const parsed = parseTrailer(result.value.stdout)
+		const parsed = parseTrailer(result.stdout)
 		if (Option.isNone(parsed)) {
 			// No trailer means the wrapper itself never finished — the shell died, or
 			// the container answered something else entirely.
 			return new SandboxRunCheckoutFailed({
 				message: boundMessage(
 					redactSecret(
-						`The sandbox did not run the command: ${result.value.stderr.trim().slice(0, 500) || "no output"}`,
+						`The sandbox did not run the command: ${result.stderr.trim().slice(0, 500) || "no output"}`,
 						request.checkout.token,
 					),
 				),
@@ -418,7 +406,7 @@ export const runExec = (
 				message:
 					"this container cannot open a network namespace, so a command requiring no egress was refused",
 			})
-		const stderr = result.value.stderr
+		const stderr = result.stderr
 		return new SandboxRunExited({
 			exitCode: trailer.exitCode,
 			stdout: body,
@@ -427,6 +415,6 @@ export const runExec = (
 			stderrBytes: trailer.stderrBytes,
 			stdoutTruncated: trailer.stdoutBytes > utf8.encode(body).length,
 			stderrTruncated: trailer.stderrBytes > utf8.encode(stderr).length,
-			wallTimeMs: result.value.duration,
+			wallTimeMs: result.duration,
 		})
 	})

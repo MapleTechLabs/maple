@@ -74,6 +74,7 @@ describe("handle", () => {
 					stdout: "apps\n__maple_sandbox_trailer__ 0 5 0 isolated\n",
 					stderr: "",
 					duration: 12,
+					timedOut: false,
 				}),
 				startProcess: async () => ({ id: "p", status: "running" as const }),
 				getProcess: async () => ({ id: "p", status: "running" as const }),
