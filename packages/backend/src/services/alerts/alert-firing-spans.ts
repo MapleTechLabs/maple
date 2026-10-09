@@ -52,41 +52,67 @@ export const simulateFiringSpans = (
 			healthyToResolve: thresholds.consecutiveHealthyRequired,
 			cooldownMs: 0,
 		}
-		const spans: SimulatedFiringSpan[] = []
-		let row: HysteresisRow = {
-			consecutiveBreaches: 0,
-			consecutiveHealthy: 0,
-			incidentOpen: false,
-			lastResolvedAtMs: null,
-		}
-		let openStartMs: number | null = null
-		let lastCompleteBucketMs: number | null = null
-
-		for (const evaluation of evaluations) {
-			if (evaluation.provisional === true) continue
-			lastCompleteBucketMs = evaluation.bucketMs
-			const outcome = yield* foldObservation(row, evaluation.status, config, evaluation.bucketMs)
-			row = {
-				consecutiveBreaches: outcome.consecutiveBreaches,
-				consecutiveHealthy: outcome.consecutiveHealthy,
-				incidentOpen:
-					outcome.transition === "open"
-						? true
-						: outcome.transition === "resolve"
-							? false
-							: row.incidentOpen,
-				lastResolvedAtMs: row.lastResolvedAtMs,
-			}
-			if (outcome.transition === "open") {
-				openStartMs = evaluation.bucketMs - (thresholds.consecutiveBreachesRequired - 1) * windowMs
-			} else if (outcome.transition === "resolve" && openStartMs != null) {
-				spans.push({ startMs: openStartMs, endMs: evaluation.bucketMs + windowMs })
-				openStartMs = null
-			}
+		const initial: ReplayState = {
+			row: {
+				consecutiveBreaches: 0,
+				consecutiveHealthy: 0,
+				incidentOpen: false,
+				lastResolvedAtMs: null,
+			},
+			openStartMs: null,
+			lastCompleteBucketMs: null,
+			spans: [],
 		}
 
-		if (openStartMs != null && lastCompleteBucketMs != null) {
-			spans.push({ startMs: openStartMs, endMs: lastCompleteBucketMs + windowMs })
-		}
-		return spans
+		const final = yield* Effect.reduce(
+			evaluations.filter((evaluation) => evaluation.provisional !== true),
+			() => initial,
+			(state, evaluation) =>
+				foldObservation(state.row, evaluation.status, config, evaluation.bucketMs).pipe(
+					Effect.map((outcome): ReplayState => {
+						const row: HysteresisRow = {
+							consecutiveBreaches: outcome.consecutiveBreaches,
+							consecutiveHealthy: outcome.consecutiveHealthy,
+							incidentOpen:
+								outcome.transition === "open"
+									? true
+									: outcome.transition === "resolve"
+										? false
+										: state.row.incidentOpen,
+							lastResolvedAtMs: state.row.lastResolvedAtMs,
+						}
+						const base = { ...state, row, lastCompleteBucketMs: evaluation.bucketMs }
+						if (outcome.transition === "open") {
+							return {
+								...base,
+								openStartMs:
+									evaluation.bucketMs -
+									(thresholds.consecutiveBreachesRequired - 1) * windowMs,
+							}
+						}
+						if (outcome.transition === "resolve" && state.openStartMs != null) {
+							return {
+								...base,
+								openStartMs: null,
+								spans: [
+									...state.spans,
+									{ startMs: state.openStartMs, endMs: evaluation.bucketMs + windowMs },
+								],
+							}
+						}
+						return base
+					}),
+				),
+		)
+
+		return final.openStartMs != null && final.lastCompleteBucketMs != null
+			? [...final.spans, { startMs: final.openStartMs, endMs: final.lastCompleteBucketMs + windowMs }]
+			: final.spans
 	})
+
+interface ReplayState {
+	readonly row: HysteresisRow
+	readonly openStartMs: number | null
+	readonly lastCompleteBucketMs: number | null
+	readonly spans: ReadonlyArray<SimulatedFiringSpan>
+}
