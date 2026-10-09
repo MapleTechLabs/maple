@@ -22,7 +22,9 @@ import {
 	GCP_INFRA_COLUMNS,
 	GCP_NAME_SORT,
 	formatGcpValue,
+	gcpHasRegion,
 	gcpInScope,
+	gcpWorkloadName,
 	gcpWorkloadNoun,
 	gcpWorkloadSearch,
 	gcpWorkloadTone,
@@ -57,7 +59,7 @@ export function GcpSummaryBand({
 		<FleetBand<GcpScope>
 			total={workloads.length}
 			noun="workload"
-			caption="share of workloads by use of their CPU, memory or disk limit, and by error rate"
+			caption="share of workloads by average use of a CPU, memory or disk limit, and by error rate"
 			segments={[
 				{
 					key: "healthy",
@@ -235,7 +237,8 @@ export function GcpServiceTable({
 						onChange={(project) => onPlaceChange({ ...place, project })}
 					/>
 				) : null}
-				{regions.length > 1 || place.region !== undefined ? (
+				{/* A subscription and a URL map are global: no region to filter them by. */}
+				{(gcpHasRegion(service) && regions.length > 1) || place.region !== undefined ? (
 					<FilterSelect
 						label="Region"
 						allLabel="All regions"
@@ -273,7 +276,7 @@ export function GcpServiceTable({
 					>
 						<div className={NAME_WIDTH}>
 							<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-								{workload.keys[0]}
+								{gcpWorkloadName(service, workload.keys)}
 							</div>
 							<MetaLine
 								items={workload.keys.slice(1)}

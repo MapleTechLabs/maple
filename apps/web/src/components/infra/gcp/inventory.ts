@@ -4,12 +4,15 @@
 
 import {
 	GCP_INFRA_SERVICES,
+	GCP_INFRA_SOURCES,
 	gcpInfraNamesService,
 	gcpInfraServiceName,
 	type GcpInfraServiceId,
+	type GcpInfraSourceId,
 } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 
+import { appendWhereFilter } from "@/components/metrics/metric-breakdown"
 import { encodeLogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 
 import { gcpWorkloadLocation, gcpWorkloadProject } from "./tabs"
@@ -99,8 +102,8 @@ export function gcpResourceWorkload(
  */
 const CONSOLE_PAGES: Record<string, readonly [label: string, path: string]> = {
 	[RUN_SERVICE]: ["Cloud Run services", "run/services"],
-	// The 1st gen documentation sends a function's owner to the Cloud Run page too.
-	[FUNCTION]: ["Cloud Run services", "run/services"],
+	// The 1st gen documentation sends a function's owner to the Cloud Run page, which lists both.
+	[FUNCTION]: ["Cloud Run functions", "run/services"],
 	[CLUSTER]: ["Kubernetes clusters", "kubernetes/list"],
 	[INSTANCE]: ["VM instances", "compute/instances"],
 	[SQL_INSTANCE]: ["Cloud SQL instances", "sql"],
@@ -160,3 +163,12 @@ export function gcpWorkloadTelemetry(
 		],
 	}
 }
+
+/**
+ * The metrics explorer filter for one workload's series: its service name where that is the
+ * workload's own, else the resource attribute that names it under `gcp/<resource type>`.
+ */
+export const gcpExplorerWhere = (source: GcpInfraSourceId, keys: ReadonlyArray<string>): string =>
+	gcpInfraNamesService(source)
+		? appendWhereFilter("", "service.name", keys[0])
+		: appendWhereFilter("", `resource.${GCP_INFRA_SOURCES[source].identity[0][1]}`, keys[0])

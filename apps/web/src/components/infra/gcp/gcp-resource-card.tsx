@@ -1,6 +1,7 @@
 import type { GcpResource } from "@maple/domain/http"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 import { ExternalLinkIcon, GoogleCloudIcon } from "@/components/icons"
 
@@ -26,6 +27,11 @@ export function GcpResourceCard({ resource }: { resource: GcpResource }) {
 					label="State"
 					value={resource.state === null ? null : gcpStateLabel(resource.state)}
 				/>
+				{Object.keys(resource.labels).length === 0 ? null : (
+					<Eyebrow as="h4" className="pt-3">
+						Labels
+					</Eyebrow>
+				)}
 				{Object.entries(resource.labels).map(([key, value]) => (
 					<DetailRail.MetaRow key={key} label={key} value={value} />
 				))}

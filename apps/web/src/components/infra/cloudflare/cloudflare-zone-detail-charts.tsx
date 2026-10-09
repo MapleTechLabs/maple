@@ -19,7 +19,7 @@ import {
 	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { OTHER_COLOR } from "@maple/ui/components/charts"
-import { LinkedCursorOverlay, linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 import type {
@@ -257,11 +257,10 @@ export function StackedBreakdownChart({
 				<ChartCardMessage>{CHART_EMPTY_MESSAGE}</ChartCardMessage>
 			) : (
 				<div
-					className="relative w-full"
+					className="w-full"
 					style={{ height: CHART_HEIGHT }}
 					{...linkedCursorChartProps(syncId != null ? `cf-breakdown-${title}` : undefined)}
 				>
-					{syncId != null && <LinkedCursorOverlay chartId={`cf-breakdown-${title}`} />}
 					<CursorPlot
 						plot={plot}
 						definition={definition}

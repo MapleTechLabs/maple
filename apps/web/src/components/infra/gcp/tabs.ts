@@ -58,6 +58,8 @@ export interface GcpColumn {
 	readonly value: (read: GcpMetricReader) => number | undefined
 	/** For an `errorRate`: how many events it is the share of. */
 	readonly events?: (read: GcpMetricReader) => number
+	/** A counter summed over the range; every other column is an average over it. */
+	readonly total?: boolean
 }
 
 export function formatGcpValue(format: GcpColumnFormat, value: number | undefined): string {
@@ -88,6 +90,13 @@ const column = (label: string, format: GcpColumnFormat, value: GcpColumn["value"
 	label,
 	format,
 	value,
+})
+
+const total = (label: string, format: GcpColumnFormat, metric: string): GcpColumn => ({
+	label,
+	format,
+	value: (read) => read.total(metric),
+	total: true,
 })
 
 type Read = (read: GcpMetricReader) => number
@@ -129,7 +138,7 @@ const HTTPS = "gcp.loadbalancing.https"
 
 export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>> = {
 	cloudRun: [
-		column("Requests", "count", (m) => m.total(`${RUN}.request_count`)),
+		total("Requests", "count", `${RUN}.request_count`),
 		errorRate("5xx rate", `${RUN}.request_count`, serverErrors(`${RUN}.request_count`)),
 		column("Latency p95", "ms", (m) => m.mean(`${RUN}.request_latencies`, "0.95")),
 		column("Latency p99", "ms", (m) => m.mean(`${RUN}.request_latencies`, "0.99")),
@@ -138,7 +147,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Memory p95", "percent", (m) => m.mean(`${RUN}.container.memory.utilizations`, "0.95")),
 	],
 	cloudFunctions: [
-		column("Executions", "count", (m) => m.total(`${FUNCTION}.execution_count`)),
+		total("Executions", "count", `${FUNCTION}.execution_count`),
 		errorRate(
 			"Error rate",
 			`${FUNCTION}.execution_count`,
@@ -161,16 +170,16 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Mem of limit", "percent", (m) =>
 			m.mean(`${CONTAINER}.memory.limit_utilization`, "non-evictable"),
 		),
-		column("Restarts", "count", (m) => m.total(`${CONTAINER}.restart_count`)),
+		total("Restarts", "count", `${CONTAINER}.restart_count`),
 	],
 	computeEngine: [
 		column("CPU", "percent", (m) => m.mean(`${INSTANCE}.cpu.utilization`)),
 		// E2 machine types only.
 		column("Memory", "bytes", (m) => m.mean(`${INSTANCE}.memory.balloon.ram_used`)),
-		column("Network in", "bytes", (m) => m.total(`${INSTANCE}.network.received_bytes_count`)),
-		column("Network out", "bytes", (m) => m.total(`${INSTANCE}.network.sent_bytes_count`)),
-		column("Disk read", "bytes", (m) => m.total(`${INSTANCE}.disk.read_bytes_count`)),
-		column("Disk write", "bytes", (m) => m.total(`${INSTANCE}.disk.write_bytes_count`)),
+		total("Network in", "bytes", `${INSTANCE}.network.received_bytes_count`),
+		total("Network out", "bytes", `${INSTANCE}.network.sent_bytes_count`),
+		total("Disk read", "bytes", `${INSTANCE}.disk.read_bytes_count`),
+		total("Disk write", "bytes", `${INSTANCE}.disk.write_bytes_count`),
 	],
 	cloudSql: [
 		column("CPU", "percent", (m) => m.mean(`${DATABASE}.cpu.utilization`)),
@@ -187,9 +196,9 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 	pubsub: [
 		column("Backlog", "decimal", (m) => m.mean(`${SUBSCRIPTION}.num_undelivered_messages`)),
 		column("Unacked age", "seconds", (m) => m.mean(`${SUBSCRIPTION}.oldest_unacked_message_age`)),
-		column("Delivered", "count", (m) => m.total(`${SUBSCRIPTION}.sent_message_count`)),
-		column("Acked", "count", (m) => m.total(`${SUBSCRIPTION}.ack_message_count`)),
-		column("Dead-lettered", "count", (m) => m.total(`${SUBSCRIPTION}.dead_letter_message_count`)),
+		total("Delivered", "count", `${SUBSCRIPTION}.sent_message_count`),
+		total("Acked", "count", `${SUBSCRIPTION}.ack_message_count`),
+		total("Dead-lettered", "count", `${SUBSCRIPTION}.dead_letter_message_count`),
 		// Push subscriptions only.
 		errorRate(
 			"Push errors",
@@ -198,12 +207,12 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		),
 	],
 	loadBalancing: [
-		column("Requests", "count", (m) => m.total(`${HTTPS}.request_count`)),
+		total("Requests", "count", `${HTTPS}.request_count`),
 		errorRate("5xx rate", `${HTTPS}.request_count`, serverErrors(`${HTTPS}.request_count`)),
 		column("Latency p95", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.95")),
 		column("Latency p99", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.99")),
 		column("Backend p95", "ms", (m) => m.mean(`${HTTPS}.backend_latencies`, "0.95")),
-		column("Response size", "bytes", (m) => m.total(`${HTTPS}.response_bytes_count`)),
+		total("Response size", "bytes", `${HTTPS}.response_bytes_count`),
 	],
 } satisfies Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>>
 
@@ -324,12 +333,14 @@ const identityValue = (
 ): string | undefined =>
 	keys[GCP_INFRA_SERVICES[service].identity.findIndex(([label]) => labels.includes(label))]
 
+const REGION_LABELS = ["Region", "Location", "Zone"]
+
 export const gcpWorkloadProject = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
 	identityValue(service, keys, ["Project"])
 
 /** Where a workload runs, as Google Cloud names it: a region or a zone. Undefined for a global one. */
 export const gcpWorkloadLocation = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
-	identityValue(service, keys, ["Region", "Location", "Zone"])
+	identityValue(service, keys, REGION_LABELS)
 
 /** The region a workload runs in: its own, or its zone's. */
 export const gcpWorkloadRegion = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) =>
@@ -368,6 +379,14 @@ export const gcpWorkloadKeys = (
 	name: string,
 	search: GcpWorkloadSearch,
 ): ReadonlyArray<string> => [name, ...workloadParams(service).map((param) => search[param] ?? "")]
+
+/** What to call a workload: its name, without the project Cloud Monitoring puts before a Cloud SQL instance. */
+export const gcpWorkloadName = (service: GcpInfraServiceId, keys: ReadonlyArray<string>): string =>
+	service === "cloudSql" ? keys[0].slice(keys[0].indexOf(":") + 1) : keys[0]
+
+/** Whether a service's workloads run in a region or zone; a subscription and a URL map are global. */
+export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
+	GCP_INFRA_SERVICES[service].identity.some(([label]) => REGION_LABELS.includes(label))
 
 /** What one row of a tab is, in running text: "container", "URL map". */
 export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>

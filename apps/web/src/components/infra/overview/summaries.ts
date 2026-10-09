@@ -9,7 +9,13 @@ import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-in
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { GCP_INFRA_COLUMNS, formatGcpValue, gcpWorkloadTone, type GcpFleetService } from "../gcp/tabs"
+import {
+	GCP_INFRA_COLUMNS,
+	formatGcpValue,
+	gcpWorkloadName,
+	gcpWorkloadTone,
+	type GcpFleetService,
+} from "../gcp/tabs"
 import type { ContainerScopeCounts } from "../container-summary-band"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
 import type { HostRow } from "../host-table"
@@ -284,26 +290,35 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSummary {
 	const flagged = fleet
 		.flatMap(({ service, workloads }) =>
-			workloads.map((workload) => ({ service, workload, tone: gcpWorkloadTone(workload) })),
+			workloads.map((workload) => {
+				const tone = gcpWorkloadTone(workload)
+				// The column behind the tone: the error rate when it is as bad, else the busiest limit.
+				const format = workload.errors === tone ? "errorRate" : "percent"
+				const worst = GCP_INFRA_COLUMNS[service]
+					.map((spec, index) => ({
+						label: spec.label,
+						format: spec.format,
+						value: workload.values[index] ?? 0,
+					}))
+					.filter((column) => column.format === format)
+					.reduce((a, b) => (b.value > a.value ? b : a), { label: "", format, value: 0 })
+				return { service, workload, tone, worst }
+			}),
 		)
 		.filter((entry) => entry.tone !== "neutral")
-		.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "crit" ? -1 : 1))
-	const findings = flagged.slice(0, MAX_FINDINGS_PER_SOURCE).map(({ service, workload, tone }): Finding => {
-		// The column behind the tone: the error rate when it is as bad, else the busiest limit.
-		const format = workload.errors === tone ? "errorRate" : "percent"
-		const worst = GCP_INFRA_COLUMNS[service]
-			.map((spec, index) => ({ spec, value: workload.values[index] ?? 0 }))
-			.filter(({ spec }) => spec.format === format)
-			.reduce((a, b) => (b.value > a.value ? b : a))
-		return {
+		// Critical before elevated, then the larger share first.
+		.sort((a, b) => (a.tone === b.tone ? b.worst.value - a.worst.value : a.tone === "crit" ? -1 : 1))
+	const findings = flagged
+		.slice(0, MAX_FINDINGS_PER_SOURCE)
+		.map(({ service, workload, tone, worst }): Finding => ({
 			key: `gcp:${service}:${workload.keys.join("/")}`,
 			source: "gcp",
 			tone: tone === "crit" ? "crit" : "warn",
-			title: `${workload.keys[0]} ${worst.spec.label} at ${formatGcpValue(format, worst.value)}`,
+			// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
+			title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
 			detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
 			target: { kind: "gcp", service, keys: workload.keys },
-		}
-	})
+		}))
 	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
 	const crit = flagged.filter((entry) => entry.tone === "crit").length
 	return {

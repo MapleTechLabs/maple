@@ -26,6 +26,7 @@ import {
 	GCP_SCOPES,
 	NO_GCP_FLEET,
 	gcpFleet,
+	gcpInScope,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
 	gcpInfraTabs,
@@ -230,6 +231,7 @@ function GcpInfra({
 		),
 	}))
 	const timeSearch = pickTimeRangeSearch(search)
+	const activeScope = search.scope
 
 	// Metrics switched off, and nothing collected before in this range.
 	if (connectors.length === 0 && Result.isSuccess(fleetResult) && reporting.length === 0) {
@@ -299,6 +301,18 @@ function GcpInfra({
 									{candidate === GCP_RESOURCES_TAB
 										? "Resources"
 										: GCP_INFRA_SERVICES[candidate].title}
+									{/* With a band cell active: how many of its workloads each tab holds. */}
+									{activeScope === undefined || candidate === GCP_RESOURCES_TAB ? null : (
+										<span className="ml-1.5 font-mono text-2xs tabular-nums text-muted-foreground">
+											{
+												(
+													inPlace.find((entry) => entry.service === candidate)
+														?.workloads ?? []
+												).filter((workload) => gcpInScope(workload, activeScope))
+													.length
+											}
+										</span>
+									)}
 								</TabsTrigger>
 							))}
 						</TabsList>

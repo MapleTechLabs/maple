@@ -321,11 +321,11 @@ The page opens with a band that counts the workloads of every service by health,
 
 | Band cell | Workloads it counts                                                                     |
 | --------- | --------------------------------------------------------------------------------------- |
-| Saturated | Using 90% or more of a CPU, memory or disk limit                                        |
+| Saturated | Using 90% or more of a CPU, memory or disk limit, on average over the time range        |
 | Elevated  | Using 60% or more of one                                                                |
 | Erroring  | Failing 1% or more of at least 100 requests, executions or push deliveries in the range |
 
-Click a cell to narrow every service tab to those workloads, and click it again to clear it.
+Click a cell to narrow every service tab to those workloads, and click it again to clear it. While a cell is active each tab shows how many of its workloads it holds.
 
 | Tab             | One row per                               | Columns                                                                                                |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -342,7 +342,7 @@ Search a tab by name, project or location, filter every service tab by project a
 
 ### Workload pages
 
-Click a row to open that workload: its headline numbers, then its charts over the selected time range.
+Click a row to open that workload: its headline numbers, each marked as a total or an average over the time range, then its charts.
 
 | Service         | Charts                                                                                                                                                                    |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -354,7 +354,7 @@ Click a row to open that workload: its headline numbers, then its charts over th
 | Pub/Sub         | Backlog, age of the oldest unacknowledged message, delivered and acknowledged messages, dead-lettered messages, push requests by response and push error rate (push only) |
 | Load Balancing  | Requests by response class, 5xx rate, total latency, backend latency, backend requests by response class, request and response traffic                                    |
 
-Latency charts draw p50, p95 and p99, and so do Cloud Run's CPU, memory and concurrency and a function's memory; every other line is the average. Traffic, messages and disk operations are per second; the charts by response class or status, restarts and dead-lettered messages are counts per point. A point covers at least 5 minutes, and more on a long range. A share of a limit carries a line at 80%. Hovering one chart marks the same moment on the others.
+Latency charts draw p50, p95 and p99, and so do Cloud Run's CPU, memory and concurrency and a function's memory; every other line is the average. Requests and executions by class, traffic, messages and disk operations are per second; restarts and dead-lettered messages are counts per point. A point covers at least 5 minutes, and more on a long range. While a workload reports nothing, as a Cloud Run service scaled to zero does, its counters read zero and its other lines have a gap. A share of a limit carries a line at 80%. Hovering one chart marks the same moment on the others.
 
 From a workload's page:
 

@@ -83,14 +83,18 @@ describe("GCP_INFRA_CHARTS", () => {
 	})
 
 	it("opens a counter as a sum and a gauge or percentile as a gauge", () => {
+		// The explorer keeps apart what the chart draws apart: the classes, the percentiles.
 		expect(gcpChartMetric(GCP_INFRA_CHARTS.cloudRun[0], [])).toEqual({
 			name: "gcp.run.request_count",
 			type: "sum",
+			groupBy: "attr.response_code_class",
 		})
 		expect(gcpChartMetric(lineChart("cloudRun", "Request latency"), [])).toEqual({
 			name: "gcp.run.request_latencies",
 			type: "gauge",
+			groupBy: "attr.quantile",
 		})
+		expect(gcpChartMetric(lineChart("cloudSql", "CPU utilization"), []).groupBy).toBeUndefined()
 	})
 
 	it("opens the metric that reported when two engines name a reading apart", () => {
@@ -201,17 +205,21 @@ describe("gcpLineRows", () => {
 })
 
 describe("gcpClassRows", () => {
-	it("stacks a counter by class, zero-filled over the buckets the workload reported in", () => {
-		const rows = gcpClassRows("gcp.loadbalancing.https.request_count", [
-			point(T1, "gcp.loadbalancing.https.request_count", "200", 90),
-			point(T1, "gcp.loadbalancing.https.request_count", "500", 10),
-			point(T1, "gcp.loadbalancing.https.request_count", "0", 1),
-			point(T2, "gcp.loadbalancing.https.total_latencies", "0.5", 10),
-		])
+	it("draws a counter per second by class, zero where a class counted nothing", () => {
+		const rows = gcpClassRows(
+			"gcp.loadbalancing.https.request_count",
+			[
+				point(T1, "gcp.loadbalancing.https.request_count", "200", 900),
+				point(T1, "gcp.loadbalancing.https.request_count", "500", 30),
+				point(T1, "gcp.loadbalancing.https.request_count", "0", 3),
+				point(T2, "gcp.loadbalancing.https.total_latencies", "0.5", 10),
+			],
+			WINDOW,
+		)
 		expect(rows).toEqual([
-			{ bucket: T1, attributeValue: "2xx", value: 90 },
-			{ bucket: T1, attributeValue: "5xx", value: 10 },
-			{ bucket: T1, attributeValue: "unknown", value: 1 },
+			{ bucket: T1, attributeValue: "2xx", value: 3 },
+			{ bucket: T1, attributeValue: "5xx", value: 0.1 },
+			{ bucket: T1, attributeValue: "unknown", value: 0.01 },
 			{ bucket: T2, attributeValue: "2xx", value: 0 },
 			{ bucket: T2, attributeValue: "5xx", value: 0 },
 			{ bucket: T2, attributeValue: "unknown", value: 0 },
@@ -220,10 +228,44 @@ describe("gcpClassRows", () => {
 
 	it("is empty for a counter that never counted", () => {
 		expect(
-			gcpClassRows("gcp.pubsub.subscription.push_request_count", [
-				point(T1, "gcp.pubsub.subscription.num_undelivered_messages", "", 4),
-			]),
+			gcpClassRows(
+				"gcp.pubsub.subscription.push_request_count",
+				[point(T1, "gcp.pubsub.subscription.num_undelivered_messages", "", 4)],
+				WINDOW,
+			),
 		).toEqual([])
+	})
+})
+
+describe("gcpBuckets", () => {
+	const T4 = "2026-10-08T12:15:00.000Z"
+	const idle = [
+		point(T1, "gcp.run.request_count", "2xx", 300),
+		point(T1, "gcp.run.request_latencies", "0.5", 50, 5),
+		// The service scaled to zero and reported nothing for two buckets.
+		point(T4, "gcp.run.request_count", "2xx", 600),
+		point(T4, "gcp.run.request_latencies", "0.5", 100, 5),
+	]
+	const window = { ...WINDOW, endTime: "2026-10-08 12:20:00" }
+
+	it("keeps the silent buckets between the first and the last that reported", () => {
+		expect(gcpBuckets(idle, 300).map(({ bucket, points }) => [bucket, points.length])).toEqual([
+			[T1, 2],
+			[T2, 0],
+			["2026-10-08T12:10:00.000Z", 0],
+			[T4, 2],
+		])
+		expect(gcpBuckets([], 300)).toEqual([])
+	})
+
+	it("reads a counter as zero through the silence and leaves a gauge out of it", () => {
+		const requests = gcpClassRows("gcp.run.request_count", idle, window)
+		expect(requests.map((row) => row.value)).toEqual([1, 0, 0, 2])
+		const latency = gcpLineRows(lineChart("cloudRun", "Request latency").series, idle, window)
+		expect(latency.map((row) => [row.bucket, row.value])).toEqual([
+			[T1, 10],
+			[T4, 20],
+		])
 	})
 })
 
@@ -237,7 +279,7 @@ describe("gcpWindowPoints", () => {
 	]
 
 	it("orders buckets oldest first", () => {
-		expect(gcpBuckets(points).map(({ bucket }) => bucket)).toEqual([T1, T2])
+		expect(gcpBuckets(points, 300).map(({ bucket }) => bucket)).toEqual([T1, T2])
 	})
 
 	it("folds the buckets into the numbers of the workload's table row", () => {

@@ -4,6 +4,7 @@ import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import {
 	gcpConsolePage,
+	gcpExplorerWhere,
 	gcpMatchResource,
 	gcpResourceQuery,
 	gcpResourceWorkload,
@@ -147,6 +148,18 @@ describe("gcpConsolePage", () => {
 			expect(gcpConsolePage(resource(assetType, "//x/y")), service).toBeDefined()
 		}
 		expect(gcpConsolePage(resource("pubsub.googleapis.com/Topic", "//x/y"))).toBeUndefined()
+	})
+})
+
+describe("gcpExplorerWhere", () => {
+	it("selects a compute workload by its service name and a managed one by its resource attribute", () => {
+		expect(gcpExplorerWhere("cloudRun", API)).toBe('service.name = "api"')
+		expect(gcpExplorerWhere("loadBalancing", ["web", "backend", "acme-prod"])).toBe(
+			'resource.gcp.resource.labels.url_map_name = "web"',
+		)
+		expect(gcpExplorerWhere("gkeNodes", ["prod", "acme-prod", "us-central1"])).toBe(
+			'resource.k8s.cluster.name = "prod"',
+		)
 	})
 })
 

@@ -8,6 +8,7 @@ import {
 	GCP_SCOPES,
 	formatGcpValue,
 	gcpAssetTypeLabel,
+	gcpHasRegion,
 	gcpInScope,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
@@ -16,6 +17,7 @@ import {
 	gcpResourcesError,
 	gcpStateLabel,
 	gcpWorkloadKeys,
+	gcpWorkloadName,
 	gcpWorkloadNoun,
 	gcpWorkloadProject,
 	gcpWorkloadRegion,
@@ -216,6 +218,21 @@ describe("workload identity", () => {
 			const keys = GCP_INFRA_SERVICES[id].identity.map(([label]) => `a ${label}`)
 			expect(gcpWorkloadKeys(id, keys[0], gcpWorkloadSearch(id, keys)), id).toEqual(keys)
 		}
+	})
+
+	it("names a Cloud SQL instance without the project Cloud Monitoring puts before it", () => {
+		expect(gcpWorkloadName("cloudSql", ["acme-prod:main", "acme-prod", "europe-west1"])).toBe("main")
+		expect(gcpWorkloadName("cloudRun", API)).toBe("api")
+	})
+
+	it("knows which services have a region to filter by", () => {
+		expect(GCP_INFRA_SERVICE_IDS.filter((id) => !gcpHasRegion(id))).toEqual(["pubsub", "loadBalancing"])
+	})
+
+	it("marks the columns that are totals over the range", () => {
+		expect(
+			GCP_INFRA_COLUMNS.computeEngine.filter((spec) => spec.total).map((spec) => spec.label),
+		).toEqual(["Network in", "Network out", "Disk read", "Disk write"])
 	})
 
 	it("names a row in running text, keeping an acronym", () => {

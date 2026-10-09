@@ -1,6 +1,8 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
+
 import {
 	CHART_EMPTY_MESSAGE,
 	CHART_HEIGHT,
@@ -9,13 +11,9 @@ import {
 } from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
 import { ChartLineIcon } from "@/components/icons"
-import { appendWhereFilter } from "@/components/metrics/metric-breakdown"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
-import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
-import { STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "../cloudflare/constants"
-import { StackedBreakdownChart } from "../cloudflare/cloudflare-zone-detail-charts"
 import { InfraMetricChart } from "../primitives/infra-metric-chart"
 import {
 	gcpBuckets,
@@ -27,45 +25,39 @@ import {
 	type GcpChartWindow,
 } from "./charts"
 
-/** Response classes, and the outcomes of an execution and of a push, in the same severity colors. */
-const CLASS_COLORS = {
-	...STATUS_CLASS_COLORS,
-	ok: STATUS_CLASS_COLORS["2xx"],
-	ack: STATUS_CLASS_COLORS["2xx"],
-	error: STATUS_CLASS_COLORS["5xx"],
-}
-
 /**
  * The charts of one timeseries read on a shared time axis and hover cursor. Each card links its
- * metric into the metrics explorer, narrowed to `serviceName`.
+ * metric into the metrics explorer, narrowed by `where` to the workload.
  */
 export function GcpWorkloadCharts({
 	charts,
 	points,
 	range,
-	serviceName,
+	where,
 	timeSearch,
 }: {
 	charts: ReadonlyArray<GcpChart>
 	points: ReadonlyArray<GcpBucketPoint>
 	range: GcpChartWindow
-	/** The `service.name` the workload's metrics are stored under. */
-	serviceName: string
+	/** The metrics explorer filter that selects this workload's series. */
+	where: string
 	timeSearch: TimeRangeSearch
 }) {
 	const { containerProps } = useLinkedCursor(true)
 	const { startTime, endTime, bucketSeconds } = range
-	const rows = useMemo(
-		() =>
-			charts.map((chart) =>
-				chart.kind === "classes"
-					? gcpClassRows(chart.metric, points)
-					: gcpLineRows(chart.series, points, { startTime, endTime, bucketSeconds }),
-			),
-		[charts, points, startTime, endTime, bucketSeconds],
+	const rows = useMemo(() => {
+		const window = { startTime, endTime, bucketSeconds }
+		return charts.map((chart) =>
+			chart.kind === "classes"
+				? gcpClassRows(chart.metric, points, window)
+				: gcpLineRows(chart.series, points, window),
+		)
+	}, [charts, points, startTime, endTime, bucketSeconds])
+	// Every bucket of the read, also the ones the workload was silent in: see `gcpBuckets`.
+	const xDomain = useMemo(
+		() => gcpBuckets(points, bucketSeconds).map(({ bucket }) => bucket),
+		[points, bucketSeconds],
 	)
-	// Every bucket of the read, so a chart whose metric started late still spans the same axis.
-	const xDomain = useMemo(() => gcpBuckets(points).map(({ bucket }) => bucket), [points])
 
 	return (
 		<div className="grid grid-cols-1 gap-4 lg:grid-cols-2" {...containerProps}>
@@ -75,11 +67,7 @@ export function GcpWorkloadCharts({
 					<Link
 						to="/metrics/$metricName"
 						params={{ metricName: metric.name }}
-						search={{
-							...timeSearch,
-							type: metric.type,
-							where: appendWhereFilter("", "service.name", serviceName),
-						}}
+						search={{ ...timeSearch, type: metric.type, where, groupBy: metric.groupBy }}
 						title={`Open ${metric.name} in the metrics explorer`}
 						aria-label={`Open ${metric.name} in the metrics explorer`}
 						className="text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -94,21 +82,8 @@ export function GcpWorkloadCharts({
 						</ChartCard>
 					)
 				}
-				if (chart.kind === "classes") {
-					return (
-						<StackedBreakdownChart
-							key={chart.title}
-							title={chart.title}
-							rows={rows[index]}
-							colors={CLASS_COLORS}
-							order={STATUS_CLASS_ORDER}
-							syncId="gcp-workload"
-							scope={explore}
-						/>
-					)
-				}
-				// The legend sits in the card's header, as on the stacked cards, so every plot in a
-				// row starts at the same height. One line needs none: the title names it.
+				// The legend sits in the card's header, so every plot in a row starts at the same
+				// height. One line needs none, the title names it, unless it is one class of several.
 				const names = [...new Set(rows[index].map((row) => row.attributeValue))]
 				const colors = resolveSeriesColors(names)
 				return (
@@ -117,7 +92,7 @@ export function GcpWorkloadCharts({
 						title={chart.title}
 						scope={explore}
 						legend={
-							names.length > 1 ? (
+							names.length > 1 || chart.kind === "classes" ? (
 								<SeriesLegend
 									swatch="line"
 									items={names.map((name) => ({
@@ -131,9 +106,10 @@ export function GcpWorkloadCharts({
 					>
 						<InfraMetricChart
 							rows={rows[index]}
-							unit={chart.unit}
-							showThreshold={chart.threshold}
+							unit={chart.kind === "classes" ? "rate" : chart.unit}
+							showThreshold={chart.kind === "lines" && chart.threshold}
 							xDomain={xDomain}
+							gaps
 							linkedChartId={`gcp-${chart.title}`}
 							height={CHART_HEIGHT}
 						/>

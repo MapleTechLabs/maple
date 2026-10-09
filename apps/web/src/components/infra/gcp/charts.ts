@@ -41,7 +41,7 @@ export type GcpChart =
 			/** Draws the 80% rule: for a share of a limit or of capacity. */
 			readonly threshold?: boolean
 	  })
-	/** A counter stacked by its label value, as counts per bucket. */
+	/** A counter per second, one line per value of its label. */
 	| (GcpChartBase & { readonly kind: "classes"; readonly metric: string })
 
 const scaled = (value: number | undefined, scale: number) => (value === undefined ? undefined : value * scale)
@@ -112,13 +112,13 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		]),
 		lines("Request latency", "milliseconds", percentiles(`${RUN}.request_latencies`)),
 		lines("Instances", "count", [
-			mean("Active", `${RUN}.container.instance_count`, "active"),
-			mean("Idle", `${RUN}.container.instance_count`, "idle"),
+			mean("Active instances", `${RUN}.container.instance_count`, "active"),
+			mean("Idle instances", `${RUN}.container.instance_count`, "idle"),
 		]),
 		lines("CPU utilization", "percent", percentiles(`${RUN}.container.cpu.utilizations`), OF_LIMIT),
 		lines("Memory utilization", "percent", percentiles(`${RUN}.container.memory.utilizations`), OF_LIMIT),
 		lines(
-			"Peak concurrent requests per instance",
+			"Peak concurrency per instance",
 			"count",
 			percentiles(`${RUN}.container.max_request_concurrencies`),
 		),
@@ -139,8 +139,8 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		]),
 		lines("Execution time", "milliseconds", percentiles(`${FUNCTION}.execution_times`)),
 		lines("Instances", "count", [
-			mean("Active", `${FUNCTION}.instance_count`, "active"),
-			mean("Idle", `${FUNCTION}.instance_count`, "idle"),
+			mean("Active instances", `${FUNCTION}.instance_count`, "active"),
+			mean("Idle instances", `${FUNCTION}.instance_count`, "idle"),
 		]),
 		lines("Memory per execution", "bytes", percentiles(`${FUNCTION}.user_memory_bytes`)),
 		lines("Egress bytes per second", "bytes_per_second", [rate("Sent", `${FUNCTION}.network_egress`)]),
@@ -154,7 +154,7 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		}),
 		lines("Memory", "bytes", [
 			mean("Non-evictable", `${CONTAINER}.memory.used_bytes`, "non-evictable"),
-			mean("Evictable", `${CONTAINER}.memory.used_bytes`, "evictable"),
+			mean("Evictable cache", `${CONTAINER}.memory.used_bytes`, "evictable"),
 		]),
 		// Non-evictable memory is what counts against the limit.
 		lines(
@@ -201,7 +201,7 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 	],
 	pubsub: [
 		lines("Backlog", "count", [mean("Unacked messages", `${SUBSCRIPTION}.num_undelivered_messages`)]),
-		lines("Oldest unacked message", "milliseconds", [
+		lines("Unacked message age", "milliseconds", [
 			mean("Age", `${SUBSCRIPTION}.oldest_unacked_message_age`, undefined, 1000),
 		]),
 		lines("Messages", "rate", [
@@ -241,60 +241,77 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		lines("Backend latency", "milliseconds", percentiles(`${HTTPS}.backend_latencies`)),
 		classes("Backend requests by class", `${HTTPS}.backend_request_count`),
 		lines("Traffic bytes per second", "bytes_per_second", [
-			rate("Requests", `${HTTPS}.request_bytes_count`),
-			rate("Responses", `${HTTPS}.response_bytes_count`),
+			rate("Received", `${HTTPS}.request_bytes_count`),
+			rate("Sent", `${HTTPS}.response_bytes_count`),
 		]),
 	],
 } satisfies Record<GcpInfraServiceId, ReadonlyArray<GcpChart>>
 
 /** The nodes of a GKE container's cluster, averaged over the nodes: read from the `gkeNodes` source. */
 export const GCP_GKE_NODE_CHARTS: ReadonlyArray<GcpChart> = [
+	lines("Node CPU", "percent", [mean("Usage", `${NODE}.cpu.allocatable_utilization`)], OF_LIMIT),
 	lines(
-		"Node CPU of allocatable",
-		"percent",
-		[mean("Usage", `${NODE}.cpu.allocatable_utilization`)],
-		OF_LIMIT,
-	),
-	lines(
-		"Node memory of allocatable",
+		"Node memory",
 		"percent",
 		[
 			mean("Non-evictable", `${NODE}.memory.allocatable_utilization`, "non-evictable"),
-			mean("Evictable", `${NODE}.memory.allocatable_utilization`, "evictable"),
+			mean("Evictable cache", `${NODE}.memory.allocatable_utilization`, "evictable"),
 		],
 		OF_LIMIT,
 	),
 ]
 
 /**
- * The metric a chart opens in the metrics explorer, and the table it is stored in: the first of
- * its metrics that reported, since two engines of one service can name the same reading apart.
+ * The metric a chart opens in the metrics explorer: the first of its metrics that reported, since
+ * two engines of one service can name the same reading apart. `groupBy` keeps what the chart
+ * draws apart there too: the percentiles, or the values of the metric's label.
  */
 export function gcpChartMetric(
 	chart: GcpChart,
 	points: ReadonlyArray<GcpBucketPoint>,
-): { readonly name: string; readonly type: "sum" | "gauge" } {
+): { readonly name: string; readonly type: "sum" | "gauge"; readonly groupBy: string | undefined } {
 	const candidates = chart.kind === "classes" ? [chart.metric] : chart.series.map((series) => series.metric)
 	const name = candidates.find((metric) => points.some((point) => point.metric === metric)) ?? candidates[0]
-	const kind = GCP_METRIC_GROUPS.flatMap((group) => group.metrics).find(
-		(metric) => metric.name === name,
-	)?.kind
-	return { name, type: kind === "sum" ? "sum" : "gauge" }
+	const stored = GCP_METRIC_GROUPS.flatMap((group) => group.metrics).find((metric) => metric.name === name)
+	const label = stored?.kind === "quantiles" ? "quantile" : stored?.labels[0]
+	return {
+		name,
+		type: stored?.kind === "sum" ? "sum" : "gauge",
+		groupBy: label === undefined ? undefined : `attr.${label}`,
+	}
 }
 
-/** The points of each bucket, oldest first. */
+/** The window a page reads, as its query got it. */
+export interface GcpChartWindow {
+	readonly startTime: string
+	readonly endTime: string
+	readonly bucketSeconds: number
+}
+
+/**
+ * Every bucket from the first the workload reported in to the last, oldest first, each with its
+ * points. A workload that scales to zero reports nothing while idle: those buckets are kept,
+ * empty, so a counter reads zero there and a gauge has a gap instead of a line drawn across.
+ */
 export function gcpBuckets(
 	points: ReadonlyArray<GcpBucketPoint>,
+	bucketSeconds: number,
 ): ReadonlyArray<{ readonly bucket: string; readonly points: ReadonlyArray<GcpBucketPoint> }> {
-	const byBucket = new Map<string, Array<GcpBucketPoint>>()
+	const byTime = new Map<number, Array<GcpBucketPoint>>()
 	for (const point of points) {
-		const bucket = byBucket.get(point.bucket)
-		if (bucket === undefined) byBucket.set(point.bucket, [point])
+		const at = toEpochMs(point.bucket)
+		const bucket = byTime.get(at)
+		if (bucket === undefined) byTime.set(at, [point])
 		else bucket.push(point)
 	}
-	return [...byBucket]
-		.map(([bucket, bucketPoints]) => ({ bucket, points: bucketPoints }))
-		.sort((a, b) => a.bucket.localeCompare(b.bucket))
+	if (byTime.size === 0) return []
+	const times = [...byTime.keys()]
+	const last = Math.max(...times)
+	const buckets = []
+	for (let at = Math.min(...times); at <= last; at += bucketSeconds * 1000) {
+		buckets.push({ bucket: new Date(at).toISOString(), points: byTime.get(at) ?? [] })
+	}
+	return buckets
 }
 
 /** The whole window, each metric and label value once: what the workload's table row reads. */
@@ -319,13 +336,6 @@ interface GcpChartRow {
 	readonly value: number
 }
 
-/** The window a page reads, as its query got it. */
-export interface GcpChartWindow {
-	readonly startTime: string
-	readonly endTime: string
-	readonly bucketSeconds: number
-}
-
 /**
  * The seconds of a bucket that lie in the window. The window cuts its first and last bucket
  * short, and a rate over the whole bucket would dip there. Never under one point's minute.
@@ -342,7 +352,7 @@ export function gcpLineRows(
 	points: ReadonlyArray<GcpBucketPoint>,
 	window: GcpChartWindow,
 ): ReadonlyArray<GcpChartRow> {
-	return gcpBuckets(points).flatMap(({ bucket, points: bucketPoints }) => {
+	return gcpBuckets(points, window.bucketSeconds).flatMap(({ bucket, points: bucketPoints }) => {
 		const read = gcpMetricReader(bucketPoints)
 		const seconds = coveredSeconds(bucket, window)
 		return series.flatMap((entry) => {
@@ -357,23 +367,24 @@ const className = (label: string) =>
 	label === "" || label === "0" ? "unknown" : label.replace(/^(\d)00$/, "$1xx")
 
 /**
- * A stacked chart's rows: the counter by label value. Every class the window saw has a row in
- * every bucket the workload reported in, zero where it counted nothing, so a quiet stretch reads
- * as quiet instead of being drawn over.
+ * A counter's rows by label value, per second. Every class the window saw has a row in every
+ * bucket, zero where it counted nothing.
  */
 export function gcpClassRows(
 	metric: string,
 	points: ReadonlyArray<GcpBucketPoint>,
+	window: GcpChartWindow,
 ): ReadonlyArray<GcpChartRow> {
 	const counted = points.filter((point) => point.metric === metric)
-	const names = [...new Set(counted.map((point) => className(point.label)))]
-	return gcpBuckets(points).flatMap(({ bucket, points: bucketPoints }) =>
+	const names = [...new Set(counted.map((point) => className(point.label)))].sort()
+	return gcpBuckets(points, window.bucketSeconds).flatMap(({ bucket, points: bucketPoints }) =>
 		names.map((name) => ({
 			bucket,
 			attributeValue: name,
-			value: bucketPoints
-				.filter((point) => point.metric === metric && className(point.label) === name)
-				.reduce((sum, point) => sum + point.total, 0),
+			value:
+				bucketPoints
+					.filter((point) => point.metric === metric && className(point.label) === name)
+					.reduce((sum, point) => sum + point.total, 0) / coveredSeconds(bucket, window),
 		})),
 	)
 }

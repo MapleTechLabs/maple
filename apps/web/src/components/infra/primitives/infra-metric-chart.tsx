@@ -7,6 +7,7 @@ import { useMemo, type ReactNode } from "react"
 import {
 	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -26,6 +27,7 @@ import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { CHART_EMPTY_MESSAGE } from "@/components/common/chart-card"
 import {
 	formatValueWithUnit,
+	isoToLabel,
 	transformRows,
 	UNNAMED_SERIES_KEY,
 	type ChartUnit,
@@ -65,6 +67,12 @@ export interface InfraMetricChartProps {
 	 * apparent.
 	 */
 	xDomain?: ReadonlyArray<string>
+	/**
+	 * With `xDomain`: a bucket of the domain that has no row ends the lines there, instead of
+	 * joining its neighbours. For a source that reports nothing while idle, where a line drawn
+	 * across the silence would read as a value it never had.
+	 */
+	gaps?: boolean
 	/**
 	 * The last-value summary above the plot.
 	 *
@@ -142,6 +150,7 @@ export function InfraMetricChart({
 	showThreshold = false,
 	linkedChartId,
 	xDomain,
+	gaps = false,
 	header,
 	waiting = false,
 	height,
@@ -157,7 +166,22 @@ export function InfraMetricChart({
 
 	const gradientPrefix = useChartId("infra")
 
-	const { data, series } = useMemo(() => transformRows(rows), [rows])
+	const { data, series } = useMemo(() => {
+		const transformed = transformRows(rows)
+		if (!gaps || xDomain === undefined) return transformed
+		const reported = new Set(transformed.data.map((point) => point.bucket))
+		const silent = xDomain
+			.filter((bucket) => !reported.has(bucket))
+			.map((bucket): TransformedPoint => ({
+				bucket,
+				time: isoToLabel(bucket),
+				date: bucketDate(bucket),
+			}))
+		return {
+			series: transformed.series,
+			data: [...transformed.data, ...silent].toSorted((a, b) => a.bucket.localeCompare(b.bucket)),
+		}
+	}, [rows, gaps, xDomain])
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.

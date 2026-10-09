@@ -2,12 +2,7 @@ import { useMemo } from "react"
 import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import {
-	GCP_INFRA_SERVICE_IDS,
-	GCP_INFRA_SERVICES,
-	gcpInfraServiceName,
-	type GcpInfraServiceId,
-} from "@maple/domain/gcp-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { ChartLoading } from "@maple/ui/components/charts"
 import { Button } from "@maple/ui/components/ui/button"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
@@ -30,12 +25,18 @@ import {
 } from "@/components/infra/gcp/charts"
 import { GcpResourceCard } from "@/components/infra/gcp/gcp-resource-card"
 import { GcpWorkloadCharts } from "@/components/infra/gcp/gcp-workload-charts"
-import { gcpMatchResource, gcpResourceQuery, gcpWorkloadTelemetry } from "@/components/infra/gcp/inventory"
+import {
+	gcpExplorerWhere,
+	gcpMatchResource,
+	gcpResourceQuery,
+	gcpWorkloadTelemetry,
+} from "@/components/infra/gcp/inventory"
 import {
 	GCP_INFRA_COLUMNS,
 	formatGcpValue,
 	gcpWorkload,
 	gcpWorkloadKeys,
+	gcpWorkloadName,
 	gcpWorkloadNoun,
 	type GcpColumn,
 } from "@/components/infra/gcp/tabs"
@@ -156,14 +157,14 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 				{ label: "Infrastructure", href: "/infra" },
 				// Back to the tab the workload is listed on.
 				{ label: "Google Cloud", href: `/infra/gcp?tab=${service}` },
-				{ label: name },
+				{ label: gcpWorkloadName(service, keys) },
 			]}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
 			rightPanel={resource === undefined ? undefined : <GcpResourceCard resource={resource} />}
 			gap="lg"
 		>
 			<PageHero
-				title={<span className="font-mono">{name}</span>}
+				title={<span className="font-mono">{gcpWorkloadName(service, keys)}</span>}
 				trailing={<HeroChip>{title}</HeroChip>}
 				description={DESCRIPTIONS[service]}
 				meta={identity.slice(1).map(([label], index) =>
@@ -231,6 +232,13 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 								eyebrow={spec.label}
 								value={formatGcpValue(spec.format, workload.values[index])}
 								tone={columnTone(spec, workload.values[index])}
+								subline={
+									spec.total
+										? "total over the range"
+										: spec.format === "errorRate"
+											? "share over the range"
+											: "average over the range"
+								}
 							/>
 						))}
 					</StatRail>
@@ -238,7 +246,7 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 						charts={GCP_INFRA_CHARTS[service]}
 						points={points}
 						range={range}
-						serviceName={telemetry.serviceName}
+						where={gcpExplorerWhere(service, keys)}
 						timeSearch={timeSearch}
 					/>
 				</div>
@@ -313,12 +321,15 @@ function GkeClusterNodes({
 			className={cn("space-y-3", refreshingClass(Boolean(result.waiting)))}
 			aria-busy={result.waiting || undefined}
 		>
-			<SectionHeading title={`Nodes of ${keys[0]}`} hint="averaged over the cluster's nodes" />
+			<SectionHeading
+				title={`Nodes of ${keys[0]}`}
+				hint="share of allocatable, averaged over the cluster's nodes"
+			/>
 			<GcpWorkloadCharts
 				charts={GCP_GKE_NODE_CHARTS}
 				points={points}
 				range={range}
-				serviceName={gcpInfraServiceName("gkeNodes", keys)}
+				where={gcpExplorerWhere("gkeNodes", keys)}
 				timeSearch={timeSearch}
 			/>
 		</section>
