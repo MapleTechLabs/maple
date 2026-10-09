@@ -5,6 +5,7 @@
 import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
 import { GcpProjectId, GcpResourceNumber, type GcpScopeType } from "@maple/domain/primitives"
+import type { Tone } from "@maple/ui/lib/tone"
 
 const MINUTE_MS = 60_000
 /** A log or read this recent proves the setup is in place, whatever the script reported. */
@@ -29,7 +30,7 @@ const ageMs = (iso: string | null, nowMs: number) =>
 const needsSetup = (applied: boolean | null, lastDataAgeMs: number) =>
 	applied === false || (applied === null && lastDataAgeMs > FRESH_MS)
 
-export type GcpLogState =
+type GcpLogState =
 	/** `stillSetUp`: the sink still forwards, because the script has not run since the switch. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
 	/** Maple rejected the most recent push. Earlier pushes may have been accepted. */
@@ -62,7 +63,7 @@ export function gcpLogState(connector: LogFields, nowMs: number): GcpLogState {
 	return { kind: age > IDLE_LOG_MS ? "idle" : "receiving", lastLogReceivedAt }
 }
 
-export type GcpMetricsState =
+type GcpMetricsState =
 	/** `stillSetUp`: the read-only service account still exists in Google Cloud. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
 	| { readonly kind: "setup-pending" }
@@ -124,56 +125,65 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	}
 }
 
-type Tone = "ok" | "warn" | "crit" | "neutral"
-
-/** Each state's dot and label, the same on the card, the hub and the Infrastructure page. */
+/** The card's dot and label for each state a switched-on capability can be in. */
 export const GCP_LOG_STATUS = {
-	off: { tone: null, label: "Off" },
 	failing: { tone: "crit", label: "Rejecting logs" },
 	"setup-pending": { tone: "neutral", label: "Setup pending" },
 	waiting: { tone: "neutral", label: "Waiting for first logs" },
 	idle: { tone: "neutral", label: "No logs in 24 hours" },
 	receiving: { tone: "ok", label: "Receiving logs" },
-} as const satisfies Record<GcpLogState["kind"], { tone: Tone | null; label: string }>
+} as const satisfies Record<Exclude<GcpLogState["kind"], "off">, { tone: Tone; label: string }>
 
 export const GCP_METRICS_STATUS = {
-	off: { tone: null, label: "Off" },
 	"setup-pending": { tone: "neutral", label: "Setup pending" },
 	waiting: { tone: "neutral", label: "Waiting for first metrics" },
 	failing: { tone: "crit", label: "Can't read metrics" },
 	incomplete: { tone: "warn", label: "Receiving metrics, incomplete" },
 	stalled: { tone: "warn", label: "Metrics stalled" },
 	receiving: { tone: "ok", label: "Receiving metrics" },
-} as const satisfies Record<GcpMetricsState["kind"], { tone: Tone | null; label: string }>
+} as const satisfies Record<Exclude<GcpMetricsState["kind"], "off">, { tone: Tone; label: string }>
 
 type ConnectorFields = LogFields & MetricsFields
 
-/** What the setup script would change in Google Cloud if it ran now, as the notice lists it. */
-const unappliedChanges = (connector: ConnectorFields, nowMs: number): ReadonlyArray<string> => {
+/**
+ * What a re-run of the setup script would change, for a connection whose switches disagree with
+ * what a run reported. A capability no run has reported on is not in the list: that is setup,
+ * and while a first run is under way its sections report one after the other.
+ */
+export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): ReadonlyArray<string> => {
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
 	return [
-		log.kind === "setup-pending" ? "create the log sink, topic and subscription" : null,
+		log.kind === "setup-pending" && connector.applied_logs_enabled === false
+			? "create the log sink, topic and subscription"
+			: null,
 		log.kind === "off" && log.stillSetUp ? "remove the log sink, topic and subscription" : null,
-		metrics.kind === "setup-pending" ? "create the read-only service account and grant its roles" : null,
+		metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
+			? "create the read-only service account and grant its roles"
+			: null,
 		metrics.kind === "off" && metrics.stillSetUp
 			? "remove the read-only service account and its roles"
 			: null,
 	].filter((line) => line !== null)
 }
 
-const neverReported = (connector: ConnectorFields) =>
-	connector.applied_logs_enabled === null && connector.applied_metrics_enabled === null
+/** A connection's worst capability, worst first. */
+type GcpConnectionState = "attention" | "changes-pending" | "setup-pending" | "waiting" | "healthy"
 
 /**
- * What a re-run of the setup script would do, for a connection whose switches no longer match
- * what a run reported. Empty when they match, and before the first run: that is setup, not a change.
+ * Whether Google Cloud waits on the setup script, and for what: a change to what a run set up, or
+ * the setup itself. Null when the switches match what the runs reported.
  */
-export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): ReadonlyArray<string> =>
-	neverReported(connector) ? [] : unappliedChanges(connector, nowMs)
-
-/** A connection's worst capability, worst first. */
-export type GcpConnectionState = "attention" | "setup-pending" | "changes-pending" | "waiting" | "healthy"
+export function gcpScriptNeeded(
+	connector: ConnectorFields,
+	nowMs: number,
+): "changes-pending" | "setup-pending" | null {
+	if (gcpPendingChanges(connector, nowMs).length > 0) return "changes-pending"
+	const pending =
+		gcpLogState(connector, nowMs).kind === "setup-pending" ||
+		gcpMetricsState(connector, nowMs).kind === "setup-pending"
+	return pending ? "setup-pending" : null
+}
 
 export function gcpConnectionState(connector: ConnectorFields, nowMs: number): GcpConnectionState {
 	const log = gcpLogState(connector, nowMs).kind
@@ -181,20 +191,20 @@ export function gcpConnectionState(connector: ConnectorFields, nowMs: number): G
 	if (log === "failing" || metrics === "failing" || metrics === "incomplete" || metrics === "stalled") {
 		return "attention"
 	}
-	if (unappliedChanges(connector, nowMs).length > 0) {
-		return neverReported(connector) ? "setup-pending" : "changes-pending"
-	}
-	return log === "waiting" || metrics === "waiting" ? "waiting" : "healthy"
+	return (
+		gcpScriptNeeded(connector, nowMs) ??
+		(log === "waiting" || metrics === "waiting" ? "waiting" : "healthy")
+	)
 }
 
-/** The page header and the hub row read a connection, or the worst of several, in these words. */
-export const GCP_CONNECTION_STATUS = {
-	attention: { tone: "warn", label: "Needs attention" },
-	"setup-pending": { tone: "neutral", label: "Setup pending" },
-	"changes-pending": { tone: "neutral", label: "Changes pending" },
-	waiting: { tone: "neutral", label: "Waiting for data" },
-	healthy: { tone: "ok", label: "Healthy" },
-} as const satisfies Record<GcpConnectionState, { tone: Tone; label: string }>
+/** The page header, the hub row and the row badge name a connection's state in these words. */
+export const GCP_CONNECTION_LABEL = {
+	attention: "Needs attention",
+	"changes-pending": "Changes pending",
+	"setup-pending": "Setup pending",
+	waiting: "Waiting for data",
+	healthy: "Healthy",
+} as const satisfies Record<GcpConnectionState, string>
 
 /** The worst state among several connections; healthy when there are none. */
 export const gcpWorstState = (states: ReadonlyArray<GcpConnectionState>): GcpConnectionState =>
