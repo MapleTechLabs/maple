@@ -340,18 +340,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				operation: string,
 				effect: Effect.Effect<A, E, PlanetScale.PlanetScaleOpContext>,
 			) =>
-				Schema.decodeEffect(OrgId)(connection.orgId).pipe(
-					Effect.orDie,
-					Effect.flatMap((orgId) =>
-						psOAuth.withAccessToken(orgId, (accessToken) =>
-							runPlanetScale(
-								httpClient,
-								{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
-								operation,
-								effect,
-								{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
-							),
-						),
+				psOAuth.withAccessToken(connection.orgId, (accessToken) =>
+					runPlanetScale(
+						httpClient,
+						{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
+						operation,
+						effect,
+						{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
 					),
 				)
 
@@ -701,7 +696,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
 						return 0
 					}
-					const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
 
 					const state = yield* readPollState(
 						connection.orgId,
@@ -743,7 +737,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						for (const row of deployRequestTimelineRows(request)) {
 							if (row.occurredAtMs < now - DEPLOY_REQUESTS_FLOOR_MS) continue
 							const result = yield* appendTimelineEvent({
-								orgId,
+								orgId: connection.orgId,
 								databaseName: database_.name,
 								// A deploy request spans two branches; pinning the marker to
 								// one of them would be a guess the payload doesn't support.
@@ -862,8 +856,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
 				// A revoked grant fails every call until someone reconnects, so polling it only
 				// repeats the 401. Reconnecting clears the stamp and polling resumes.
-				const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
-				const grant = yield* psOAuth.grantStatus(orgId)
+				const grant = yield* psOAuth.grantStatus(connection.orgId)
 				if (grant.revokedAt !== null) {
 					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
 					return { outcome: "skipped" as const, deployEvents: 0 }
