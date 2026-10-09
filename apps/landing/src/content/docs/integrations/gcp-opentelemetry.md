@@ -74,6 +74,7 @@ register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
 // The exporters read OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
 const spans = new BatchSpanProcessor(new OTLPTraceExporter())
 const logRecords = new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })
+const metrics = new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() })
 
 // Export as each request finishes, before Cloud Run throttles the CPU.
 const flushOnRequestEnd = {
@@ -95,7 +96,7 @@ const sdk = new NodeSDK({
 	sampler: new AlwaysOnSampler(),
 	spanProcessors: [spans, flushOnRequestEnd],
 	logRecordProcessors: [logRecords],
-	metricReaders: [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() })],
+	metricReaders: [metrics],
 	instrumentations: [getNodeAutoInstrumentations()],
 })
 sdk.start()
