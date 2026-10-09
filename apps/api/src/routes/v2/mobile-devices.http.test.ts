@@ -35,6 +35,7 @@ const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_mobile_e2e")
+const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_mobile_other")
 const USER = Schema.decodeUnknownSync(UserId)("user_mobile_e2e")
 const TOKEN = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 /** ActivityKit's two extra tokens: one starts an activity, one updates it. */
@@ -288,7 +289,11 @@ describe("v2 mobile devices", () => {
 				Effect.gen(function* () {
 					const devices = yield* MobileDevicesService
 					const [device] = yield* devices.listForOrg(ORG)
-					yield* devices.disable(device!.id, "Unregistered")
+					// Writes are org-scoped: another org naming this device id touches nothing.
+					yield* devices.disable(OTHER_ORG, device!.id, "Unregistered")
+					yield* devices.markPushed(OTHER_ORG, [device!.id])
+					expect((yield* devices.listForOrg(ORG)).map((listed) => listed.id)).toEqual([device!.id])
+					yield* devices.disable(ORG, device!.id, "Unregistered")
 					expect(yield* devices.listForOrg(ORG)).toEqual([])
 				}),
 			)
