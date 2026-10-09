@@ -24,7 +24,7 @@ import { inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_LIVE_WINDOW_SECONDS, type SessionTag } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans, orgIdParam } from "../tables"
+import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans, orgIdParam, utcSecondsParam } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
 import { sessionQualityExpr, sessionTagFacet, taggedSessionIds } from "./session-tags"
 import type { FacetOutput } from "./query-helpers"
@@ -730,7 +730,7 @@ export function sessionReplaysFacetsQuery(
 				$.SessionId,
 				$.Status.eq("active").and(
 					CH.coalesce($.LastActivityAt, $.StartTime).gte(
-						CH.intervalSub(CH.toDateTime(param.dateTime("endTime")), SESSION_LIVE_WINDOW_SECONDS),
+						CH.intervalSub(CH.toDateTime(utcSecondsParam("endTime")), SESSION_LIVE_WINDOW_SECONDS),
 					),
 				),
 			),
