@@ -157,7 +157,7 @@ const READ_DENIED =
 const CANNOT_SIGN_IN =
 	"Maple can't sign in as this connection's read-only service account yet. After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script and read its last lines. (IAM Credentials returned 403 PERMISSION_DENIED)"
 const NO_BILLING =
-	"The host project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED, BILLING_DISABLED)"
+	"The project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED, BILLING_DISABLED)"
 const queriesFailed = (failed: number, type: string, answer: string) =>
 	`${failed} of ${METRIC_COUNT} metric queries failed, first ${type}. The rest were stored. Maple retries in 5 minutes. (Cloud Monitoring returned ${answer})`
 
@@ -683,6 +683,67 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
+	it.effect("says a connection that was read before can no longer sign in", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		let impersonate: () => Response | undefined = () => undefined
+		const stub = stubFetch(calls, { impersonate: () => impersonate(), monitoring: onlyRequestCount })
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0 })
+				impersonate = () => googleError(403, "PERMISSION_DENIED")
+				yield* TestClock.setTime(now + 5 * minute)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 1 })
+				const state = yield* pollState(testDb, CONNECTOR_A)
+				assert.strictEqual(
+					state.last_metrics_error,
+					"Maple can no longer sign in as this connection's read-only service account. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it. (IAM Credentials returned 403 PERMISSION_DENIED)",
+				)
+				assert.strictEqual(state.last_metrics_received_at?.getTime(), now)
+			}),
+		)
+	})
+
+	it.effect("names an organization's host project, and its parts when it is too large", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		// The first query is answered, the second is rate limited.
+		let monitoring = (_call: MonitoringCall): Response | undefined =>
+			calls.monitoring.length === 1
+				? json(requestCountSeries())
+				: googleError(429, "RESOURCE_EXHAUSTED")
+		const stub = stubFetch(calls, { monitoring: (call) => monitoring(call) })
+		const metricsError = pollState(testDb, CONNECTOR_A).pipe(
+			Effect.map((state) => state.last_metrics_error),
+		)
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A, { scope: ["organization", "123456789012"] })
+				yield* pollAll
+				assert.strictEqual(
+					yield* metricsError,
+					"Google rate-limited the Cloud Monitoring API for the host project acme-prod. Maple retries in 5 minutes. If this repeats, raise that API's quota on the project. (Cloud Monitoring returned 429 RESOURCE_EXHAUSTED)",
+				)
+
+				monitoring = (call) =>
+					call.metricType === REQUEST_COUNT
+						? json({ ...requestCountSeries(), nextPageToken: `page-${calls.monitoring.length}` })
+						: undefined
+				yield* TestClock.setTime(now + 5 * minute)
+				yield* pollAll
+				assert.strictEqual(
+					yield* metricsError,
+					`1 of ${METRIC_COUNT} metric queries were not read in full: the organization holds more series than one read takes. To collect all of it, connect its folders or projects separately.`,
+				)
+			}),
+		)
+	})
+
 	it.effect("stops paging a metric at the cap and reports it", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
@@ -709,7 +770,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.strictEqual(
 					state.last_metrics_error,
-					`1 of ${METRIC_COUNT} metric queries were not read in full: the scope holds more series than one read takes. Connect the folders or projects separately to collect all of it.`,
+					`1 of ${METRIC_COUNT} metric queries were not read in full: the project holds more series than one read takes. To collect all of it, write to support@maple.dev.`,
 				)
 			}),
 		)
@@ -845,7 +906,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(yield* metricsError, NO_BILLING)
 				assert.strictEqual(
 					(yield* pollState(testDb, CONNECTOR_A)).last_resources_error,
-					"The Cloud Asset Inventory API is switched off in the host project acme-prod. Run the setup script again: it switches the API on. (Cloud Asset Inventory returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
+					"The Cloud Asset Inventory API is switched off in the project acme-prod. Run the setup script again: it switches the API on. (Cloud Asset Inventory returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
 				)
 
 				monitoring = () => googleError(403, "PERMISSION_DENIED", [errorInfo("BILLING_DISABLED")])
@@ -939,7 +1000,7 @@ describe("GcpMetricsService", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_metrics_error,
-					"Google rate-limited the Cloud Monitoring API for the host project acme-prod. Maple retries in 5 minutes. If this repeats, raise that API's quota on the project. (Cloud Monitoring returned 429 RESOURCE_EXHAUSTED)",
+					"Google rate-limited the Cloud Monitoring API for the project acme-prod. Maple retries in 5 minutes. If this repeats, raise that API's quota on the project. (Cloud Monitoring returned 429 RESOURCE_EXHAUSTED)",
 				)
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 			}),
@@ -1203,7 +1264,7 @@ describe("GcpMetricsService resource inventory", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_resources_error,
-					"The scope holds more than 10,000 resources, so the resource list is incomplete. Metrics are unaffected. Connect folders or projects separately for a full list.",
+					"The project holds more than 10,000 resources, so the resource list is incomplete. Metrics are unaffected. For a full list, write to support@maple.dev.",
 				)
 				// Counted as synced, so the next attempt is in an hour, and nothing was removed.
 				assert.strictEqual(state.resources_synced_at?.getTime(), now + 60 * minute)

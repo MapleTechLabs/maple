@@ -598,17 +598,23 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				]
 					.filter((part) => part !== null)
 					.join(" · "),
-				lastSyncLabel: syncedLabel(
-					maxMs(
-						connectors
-							.flatMap((connector) => [
-								connector.logs_enabled ? connector.last_log_received_at : null,
-								connector.metrics_enabled ? connector.last_metrics_received_at : null,
-							])
-							.map((iso) => (iso ? Date.parse(iso) : null)),
-					),
-					"last data",
-				),
+				// Not next to "Waiting for data": the two would contradict each other.
+				lastSyncLabel:
+					worst === "waiting"
+						? null
+						: syncedLabel(
+								maxMs(
+									connectors
+										.flatMap((connector) => [
+											connector.logs_enabled ? connector.last_log_received_at : null,
+											connector.metrics_enabled
+												? connector.last_metrics_received_at
+												: null,
+										])
+										.map((iso) => (iso ? Date.parse(iso) : null)),
+								),
+								"last data",
+							),
 				issue:
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`
