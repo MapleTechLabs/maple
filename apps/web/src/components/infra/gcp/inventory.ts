@@ -93,28 +93,31 @@ export function gcpResourceWorkload(
 	}
 }
 
-const CONSOLE = "https://console.cloud.google.com"
+/**
+ * The Google Cloud console page that lists a resource type, as Google's documentation links it.
+ * The console's per-resource addresses are not documented, so none is built.
+ */
+const CONSOLE_PAGES: Record<string, readonly [label: string, path: string]> = {
+	[RUN_SERVICE]: ["Cloud Run services", "run/services"],
+	// The 1st gen documentation sends a function's owner to the Cloud Run page too.
+	[FUNCTION]: ["Cloud Run services", "run/services"],
+	[CLUSTER]: ["Kubernetes clusters", "kubernetes/list"],
+	[INSTANCE]: ["VM instances", "compute/instances"],
+	[SQL_INSTANCE]: ["Cloud SQL instances", "sql"],
+	[SUBSCRIPTION]: ["Pub/Sub subscriptions", "cloudpubsub/subscription"],
+	[URL_MAP]: ["Load balancing", "net-services/loadbalancing/list"],
+} satisfies Record<string, readonly [label: string, path: string]>
 
-/** The resource's page in the Google Cloud console, for the types whose address Maple can build. */
-export function gcpConsoleUrl(resource: GcpResource): string | undefined {
-	const name = encodeURIComponent(lastSegment(resource.name))
-	const location = encodeURIComponent(resource.location ?? "")
-	const project = `project=${encodeURIComponent(resource.projectId)}`
-	switch (resource.assetType) {
-		case RUN_SERVICE:
-			return `${CONSOLE}/run/detail/${location}/${name}/metrics?${project}`
-		case FUNCTION:
-			return `${CONSOLE}/functions/details/${location}/${name}?${project}`
-		case CLUSTER:
-			return `${CONSOLE}/kubernetes/clusters/details/${location}/${name}/details?${project}`
-		case INSTANCE:
-			return `${CONSOLE}/compute/instancesDetail/zones/${location}/instances/${name}?${project}`
-		case SQL_INSTANCE:
-			return `${CONSOLE}/sql/instances/${name}/overview?${project}`
-		case SUBSCRIPTION:
-			return `${CONSOLE}/cloudpubsub/subscription/detail/${name}?${project}`
-		default:
-			return undefined
+/** The console page that lists a resource's type, opened on the resource's project. */
+export function gcpConsolePage(
+	resource: GcpResource,
+): { readonly label: string; readonly href: string } | undefined {
+	const page = CONSOLE_PAGES[resource.assetType]
+	if (page === undefined) return undefined
+	const [label, path] = page
+	return {
+		label,
+		href: `https://console.cloud.google.com/${path}?project=${encodeURIComponent(resource.projectId)}`,
 	}
 }
 

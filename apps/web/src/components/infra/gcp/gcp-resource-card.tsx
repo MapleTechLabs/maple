@@ -4,12 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/u
 
 import { ExternalLinkIcon, GoogleCloudIcon } from "@/components/icons"
 
-import { gcpConsoleUrl } from "./inventory"
+import { gcpConsolePage } from "./inventory"
 import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "./tabs"
 
 /** What the inventory knows about a workload's resource, in the detail page's rail. */
 export function GcpResourceCard({ resource }: { resource: GcpResource }) {
-	const consoleUrl = gcpConsoleUrl(resource)
+	const consolePage = gcpConsolePage(resource)
 	return (
 		<Card>
 			<CardHeader className="pb-3">
@@ -29,14 +29,14 @@ export function GcpResourceCard({ resource }: { resource: GcpResource }) {
 				{Object.entries(resource.labels).map(([key, value]) => (
 					<DetailRail.MetaRow key={key} label={key} value={value} />
 				))}
-				{consoleUrl === undefined ? null : (
+				{consolePage === undefined ? null : (
 					<a
-						href={consoleUrl}
+						href={consolePage.href}
 						target="_blank"
 						rel="noreferrer"
 						className="flex items-center gap-1.5 pt-2 text-xs text-primary hover:underline"
 					>
-						Open in Google Cloud console
+						{consolePage.label} in Google Cloud
 						<ExternalLinkIcon size={12} />
 					</a>
 				)}

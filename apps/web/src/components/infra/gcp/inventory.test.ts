@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import {
-	gcpConsoleUrl,
+	gcpConsolePage,
 	gcpMatchResource,
 	gcpResourceQuery,
 	gcpResourceWorkload,
@@ -127,26 +127,26 @@ describe("gcpResourceWorkload", () => {
 	})
 })
 
-describe("gcpConsoleUrl", () => {
-	it("builds the console address of a resource, escaped", () => {
-		expect(gcpConsoleUrl(api)).toBe(
-			"https://console.cloud.google.com/run/detail/europe-west1/api/metrics?project=acme-prod",
-		)
+describe("gcpConsolePage", () => {
+	it("opens the documented list page of the resource's type on its project", () => {
+		expect(gcpConsolePage(api)).toEqual({
+			label: "Cloud Run services",
+			href: "https://console.cloud.google.com/run/services?project=acme-prod",
+		})
 		expect(
-			gcpConsoleUrl(
-				resource(
-					"pubsub.googleapis.com/Subscription",
-					"//pubsub.googleapis.com/projects/p/subscriptions/a b",
-					null,
-				),
-			),
-		).toBe("https://console.cloud.google.com/cloudpubsub/subscription/detail/a%20b?project=acme-prod")
+			gcpConsolePage({
+				...resource("compute.googleapis.com/UrlMap", "//compute.googleapis.com/x/y"),
+				projectId: "acme prod",
+			})?.href,
+		).toBe("https://console.cloud.google.com/net-services/loadbalancing/list?project=acme%20prod")
 	})
 
-	it("has none for a type whose address it cannot build", () => {
-		expect(
-			gcpConsoleUrl(resource("compute.googleapis.com/UrlMap", "//compute.googleapis.com/x/y")),
-		).toBeUndefined()
+	it("has a page for the resource of every service's workloads, and none for other types", () => {
+		for (const service of GCP_INFRA_SERVICE_IDS) {
+			const { assetType } = gcpResourceQuery(service, ["a", "b", "c", "d", "e"])
+			expect(gcpConsolePage(resource(assetType, "//x/y")), service).toBeDefined()
+		}
+		expect(gcpConsolePage(resource("pubsub.googleapis.com/Topic", "//x/y"))).toBeUndefined()
 	})
 })
 

@@ -361,7 +361,7 @@ From a workload's page:
 - **Logs** opens the workload's logs. A Cloud SQL instance, a subscription and a URL map open the logs of their resource type, narrowed to the resource.
 - **Traces** is there when a service of the same name sent traces in the time range.
 - The icon beside a chart's title opens its metric in the metrics explorer.
-- When the workload is in the [inventory](#resources), a panel lists its project, location, state and labels, with a link to it in the Google Cloud console. A GKE container shows its cluster. The match is by type, project, name and location: a workload Maple cannot match exactly shows no panel.
+- When the workload is in the [inventory](#resources), a panel lists its project, location, state and labels, with a link to its product's list in the Google Cloud console, opened on the resource's project. A GKE container shows its cluster. The match is by type, project, name and location: a workload Maple cannot match exactly shows no panel.
 
 ### Elsewhere in Maple
 
