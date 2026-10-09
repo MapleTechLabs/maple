@@ -56,10 +56,11 @@ import {
 	type AlertRuleDocument,
 } from "@maple/domain/http"
 import { useAlertDestinationsList, useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon } from "@/components/icons"
+import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon, XmarkIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Meter } from "@maple/ui/components/ui/meter"
@@ -1329,14 +1330,15 @@ function ChecksPanel({
 							{bucket != null && (
 								<Badge variant="secondary" className="gap-1.5 font-mono text-xs">
 									{formatBucketRange(bucket, effectiveTimezone)}
-									<button
-										type="button"
+									<IconButton
+										size="icon-2xs"
+										label="Clear bucket filter"
+										tooltip={false}
 										onClick={onClearBucket}
-										aria-label="Clear bucket filter"
 										className="text-muted-foreground hover:text-foreground"
 									>
-										×
-									</button>
+										<XmarkIcon />
+									</IconButton>
 								</Badge>
 							)}
 						</div>

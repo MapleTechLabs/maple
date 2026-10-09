@@ -64,12 +64,14 @@ export function ToolbarSearch({
 	onSearch,
 	placeholder,
 	debounceMs = 300,
+	size = "default",
 	className,
 }: {
 	query: string
 	onSearch: (value: string | undefined) => void
 	placeholder: string
 	debounceMs?: number
+	size?: "sm" | "default"
 	className?: string
 }) {
 	const [value, setValue] = useState(query)
@@ -105,7 +107,7 @@ export function ToolbarSearch({
 
 	return (
 		<SearchInput
-			size="default"
+			size={size}
 			value={value}
 			onValueChange={handleChange}
 			placeholder={placeholder}

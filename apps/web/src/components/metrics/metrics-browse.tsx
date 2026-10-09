@@ -1,13 +1,13 @@
 import * as React from "react"
 
-import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { ToolbarSearch } from "@maple/ui/components/toolbar"
 import { GridIcon, MenuIcon } from "@/components/icons"
 import { MetricsTypeFilter, type MetricType } from "./metrics-type-filter"
 import { MetricsTable } from "./metrics-table"
 import { MetricPreviewGrid } from "./metric-preview-grid"
 import type { Metric } from "@/api/warehouse/metrics"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 
 export type MetricsBrowseView = "grid" | "table"
 
@@ -39,32 +39,14 @@ export function MetricsBrowseFilters({
 }) {
 	const { startTime, endTime } = useBrowseTimeRange(time)
 
-	// Search input stays local while typing and commits to the URL after a
-	// pause, so the atom query (and history) aren't churned per keystroke.
-	const [localSearch, setLocalSearch] = React.useState(q)
-	const commitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-	React.useEffect(() => {
-		setLocalSearch(q)
-	}, [q])
-	React.useEffect(
-		() => () => {
-			if (commitTimer.current) clearTimeout(commitTimer.current)
-		},
-		[],
-	)
-	const handleSearchChange = (next: string) => {
-		setLocalSearch(next)
-		if (commitTimer.current) clearTimeout(commitTimer.current)
-		commitTimer.current = setTimeout(() => onPatch({ q: next }), 300)
-	}
-
 	return (
 		<div className="flex min-w-0 flex-wrap items-center gap-2">
-			<SearchInput
+			<ToolbarSearch
+				size="sm"
 				className="w-64"
 				placeholder="Search metrics..."
-				value={localSearch}
-				onValueChange={handleSearchChange}
+				query={q}
+				onSearch={(next) => onPatch({ q: next })}
 			/>
 			<MetricsTypeFilter
 				value={type}
@@ -84,25 +66,20 @@ export function MetricsViewToggle({
 	onPatch: (patch: MetricsBrowsePatch) => void
 }) {
 	return (
-		<ToggleGroup
-			variant="outline"
+		<SegmentedSelect
 			size="sm"
 			aria-label="View"
-			value={[view]}
-			onValueChange={(values) => {
-				const next = values[0]
-				if (next === "grid" || next === "table") onPatch({ view: next })
-			}}
-		>
-			<ToggleGroupItem value="grid" aria-label="Grid view">
-				<GridIcon size={14} />
-			</ToggleGroupItem>
-			<ToggleGroupItem value="table" aria-label="Table view">
-				<MenuIcon size={14} />
-			</ToggleGroupItem>
-		</ToggleGroup>
+			options={VIEW_OPTIONS}
+			value={view}
+			onChange={(next) => onPatch({ view: next })}
+		/>
 	)
 }
+
+const VIEW_OPTIONS: ReadonlyArray<SegmentedOption<MetricsBrowseView>> = [
+	{ value: "grid", label: null, icon: <GridIcon size={14} />, ariaLabel: "Grid view" },
+	{ value: "table", label: null, icon: <MenuIcon size={14} />, ariaLabel: "Table view" },
+]
 
 interface MetricsBrowseProps extends TimeWindowProps {
 	q: string

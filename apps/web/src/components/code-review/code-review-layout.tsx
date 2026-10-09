@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { underlineTabClass } from "@/components/common/underline-link-tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { BranchForkIcon, ChartBarIcon, CircleWarningIcon, GearIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -42,7 +42,13 @@ const TABS = [
 function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: CodeReviewSearch }) {
 	const carried = { ...pickTimeRangeSearch(search), repo: search.repo, author: search.author }
 	return (
-		<nav className="flex items-center self-end" aria-label="Code review views">
+		<UnderlineTabStrip
+			navigation
+			label="Code review views"
+			bleed={false}
+			divided={false}
+			className="gap-0 self-end overflow-visible"
+		>
 			{TABS.map(({ tab, to, label, Icon }) => (
 				<Link
 					key={tab}
@@ -59,7 +65,7 @@ function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: Cod
 					{label}
 				</Link>
 			))}
-		</nav>
+		</UnderlineTabStrip>
 	)
 }
 

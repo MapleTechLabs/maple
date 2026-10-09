@@ -32,6 +32,7 @@ import {
 	type ReleaseServiceImpact,
 } from "./release-model"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
@@ -309,19 +310,20 @@ function ReleasesTableRows({
 								<TableRow className="group/row">
 									<TableCell className="max-w-0 py-2">
 										<div className="flex items-start gap-1">
-											<button
-												type="button"
+											<IconButton
+												size="icon-2xs"
 												aria-expanded={isOpen}
-												aria-label={isOpen ? "Hide services" : "Show services"}
+												label={isOpen ? "Hide services" : "Show services"}
+												tooltip={false}
 												onClick={() => toggle(group.commitSha)}
 												className={cn(
-													"mt-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-transform hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+													"mt-1 text-muted-foreground/60 transition-transform hover:text-foreground",
 													isOpen && "rotate-90",
 													group.services.length <= 1 && "invisible",
 												)}
 											>
-												<ChevronRightIcon size={12} />
-											</button>
+												<ChevronRightIcon />
+											</IconButton>
 											<Link
 												to="/releases/$commitSha"
 												params={{ commitSha: group.commitSha }}

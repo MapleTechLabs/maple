@@ -208,15 +208,8 @@ export function ServiceMapLoading() {
 							/>
 							{/* Left accent stripe (3px), clipped to the card's left edge */}
 							<rect x={n.x} y={n.y + 0.5} width={3} height={NODE_H - 1} fill={n.color} />
-							{/* Health dot — green, breathing ("coming online") */}
-							<circle
-								className="sm-load-dot"
-								cx={n.x + 13}
-								cy={dotY}
-								r={2.4}
-								fill="var(--severity-info)"
-								style={{ animationDelay: `${0.4 + i * 0.12}s` } as CSSProperties}
-							/>
+							{/* Health dot, static green */}
+							<circle cx={n.x + 13} cy={dotY} r={2.4} fill="var(--severity-info)" />
 							{/* Service-name skeleton bar */}
 							<rect
 								x={n.x + 22}

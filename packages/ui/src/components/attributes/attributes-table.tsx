@@ -304,7 +304,7 @@ function partitionInternalAttributes(attrs: Record<string, string>) {
 /**
  * An `AttributesTable` with the two namespaces that read better on their own
  * lifted out: `gen_ai.*` into a labelled AI block above it, and `maple_` into a
- * collapsed "Maple Internal" table beneath it. Use this anywhere a raw
+ * collapsed "Maple internal" table beneath it. Use this anywhere a raw
  * attribute map from the pipeline is shown — span, resource, or log — since any
  * of them can carry either.
  */
@@ -342,7 +342,7 @@ export function AttributesSection({
 							size={10}
 							className="transition-transform group-data-[panel-open]:rotate-90"
 						/>
-						Maple Internal ({internalCount})
+						Maple internal ({internalCount})
 					</CollapsibleTrigger>
 					<CollapsibleContent>
 						<div className="mt-1">
