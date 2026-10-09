@@ -740,7 +740,7 @@ const make: Effect.Effect<
 			})
 			const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 				profile: "list",
-				context: "anomalyIncidentTimeseries",
+				context: "anomalyErrorSpikeTimeseries",
 			})
 			buckets = rollingCountBuckets(
 				rows.map((r) => ({
@@ -771,7 +771,7 @@ const make: Effect.Effect<
 			})
 			const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 				profile: "list",
-				context: "anomalyIncidentTimeseries",
+				context: "anomalyLogVolumeTimeseries",
 			})
 			buckets = rows.map((r) => {
 				const hourMs = DateTime.toEpochMillis(r.hour)
@@ -791,7 +791,7 @@ const make: Effect.Effect<
 			})
 			const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 				profile: "list",
-				context: "anomalyIncidentTimeseries",
+				context: "anomalyTraceSignalTimeseries",
 			})
 			const signalType = row.signalType
 			unit =
