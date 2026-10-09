@@ -107,7 +107,7 @@ interface ResolvedSession {
  * Resolve the session, authorising the caller against the org encoded in its id.
  * Returns an error response instead of the stub when anything does not line up.
  */
-const resolveSession = Effect.fn("chat.resolveSession")(function* (
+const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* (
 	request: HttpServerRequest.HttpServerRequest,
 ) {
 	const url = new URL(request.url, "http://internal")

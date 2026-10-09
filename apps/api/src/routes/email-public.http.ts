@@ -12,7 +12,7 @@ export const HttpEmailPublicLive = HttpApiBuilder.group(MapleApi, "emailPublic",
 		// Server-kind with the HTTP identity stamped by hand: the auto server span is
 		// suppressed for this path (it would record the token in `url.query`, see
 		// ApiObservabilityLive), so this span is the request's trace root.
-		const unsubscribe = Effect.fn("email.unsubscribe", {
+		const unsubscribe = Effect.fn("HttpEmailPublic.unsubscribe", {
 			kind: "server",
 			attributes: { "http.route": "/api/email/unsubscribe", "http.request.method": "POST" },
 		})(function* (token: string) {

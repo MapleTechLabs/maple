@@ -526,7 +526,7 @@ export interface InsertPlanetScaleEventInput {
 export const insertPlanetScaleEvent: (
 	input: InsertPlanetScaleEventInput,
 ) => Effect.Effect<{ readonly inserted: boolean }, DatabaseError, Database> = Effect.fn(
-	"planetscaleWebhook.insertEvent",
+	"PlanetScaleWebhookEvents.insertEvent",
 )(function* (input: InsertPlanetScaleEventInput) {
 	const database = yield* Database
 	return yield* database.execute((db) =>
@@ -607,7 +607,7 @@ export interface UpsertPlanetScaleIssueResult {
 export const upsertPlanetScaleIssue: (
 	input: UpsertPlanetScaleIssueInput,
 ) => Effect.Effect<UpsertPlanetScaleIssueResult, DatabaseError, Database> = Effect.fn(
-	"planetscaleWebhook.upsertIssue",
+	"PlanetScaleWebhookEvents.upsertIssue",
 )(function* (input: UpsertPlanetScaleIssueInput) {
 	const database = yield* Database
 	const databaseName = input.payload.database ?? "unknown"
