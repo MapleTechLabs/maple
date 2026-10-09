@@ -4167,7 +4167,8 @@ fn expand_object(
             Value::Array(_) | Value::Null => continue,
             Value::String(text) => text.clone(),
             Value::Bool(flag) => flag.to_string(),
-            // As f64, so the local-mode port (JS numbers) renders the same text.
+            // Integers keep their exact digits (ids past 2^53); others print as f64.
+            Value::Number(number) if number.is_i64() || number.is_u64() => number.to_string(),
             Value::Number(number) => number.as_f64().map_or_else(String::new, |n| format!("{n}")),
         };
         if text.len() > MAX_EXPANDED_VALUE_BYTES || out.contains_key(&path) {
@@ -4917,7 +4918,7 @@ mod tests {
     fn log_attributes_expand_json_object_strings_to_dotted_keys() {
         let req = string_kv(
             "req",
-            r#"{"route":"POST /v1/billing.attach","timestamp":1791504003609,"ok":true,
+            r#"{"route":"POST /v1/billing.attach","timestamp":1791504003609,"ok":true,"id":1234567890123456789,
                 "body":{"plan_id":"pro","price":2.5},"scopes":["a"],"gone":null}"#,
         );
         // Off by default: the string stays one attribute.
@@ -4926,6 +4927,7 @@ mod tests {
         let attrs = log_attr_map(&[req, string_kv("statusCode", "404")], true);
         assert_eq!(attrs["req.route"], "POST /v1/billing.attach");
         assert_eq!(attrs["req.timestamp"], "1791504003609");
+        assert_eq!(attrs["req.id"], "1234567890123456789");
         assert_eq!(attrs["req.ok"], "true");
         assert_eq!(attrs["req.body.plan_id"], "pro");
         assert_eq!(attrs["req.body.price"], "2.5");
