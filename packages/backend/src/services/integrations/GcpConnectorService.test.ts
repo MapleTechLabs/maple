@@ -161,10 +161,10 @@ describe("GcpConnectorService", () => {
 			assert.isTrue((yield* gcp.status(orgId)).metricsAvailable)
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
 			const both = yield* gcp.scripts(orgId, connector.id, {
-				logFilter: "exclude_gke_container_logs",
+				logFilter: "include_gke_container_logs",
 			})
 			assert.include(both.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
-			assert.include(both.setupScript, 'NOT resource.type="k8s_container"')
+			assert.notInclude(both.setupScript, "k8s_container")
 			assert.include(both.setupScript, '--organization="$SCOPE_ID" --include-children')
 			assert.include(both.setupScript, "PROJECT_ID='acme-host'")
 			assert.include(both.setupScript, "MAPLE_URL='http://127.0.0.1:3471/integrations?integration=gcp'")
