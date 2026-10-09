@@ -1326,7 +1326,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						db.run(
 							PG.from(ScrapeTargets)
 								.select()
-								.where(($) => [$.id.eq(targetId)])
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
 								.limit(1),
 						),
 					)

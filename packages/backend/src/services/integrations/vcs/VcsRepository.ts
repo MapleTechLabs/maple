@@ -62,10 +62,10 @@ const newCommitRowId = () => Schema.decodeUnknownSync(VcsCommitRowId)(randomUUID
 const newBranchId = () => Schema.decodeUnknownSync(VcsBranchId)(randomUUID())
 
 // Share-lock a repository row for the child upserts' purge gate (see upsertRepositories).
-const lockRepositoryRow = (repositoryId: VcsRepositoryId) =>
+const lockRepositoryRow = (orgId: OrgId, repositoryId: VcsRepositoryId) =>
 	PG.from(VcsRepositories)
 		.select("id")
-		.where(($) => [$.id.eq(repositoryId)])
+		.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
 		.forShare()
 
 // Every commit column, joined to its owning repo (existence only) so a commit
@@ -493,7 +493,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							const parent = yield* db.run(
 								PG.from(VcsInstallations)
 									.select("id")
-									.where(($) => [$.id.eq(installation.id)])
+									.where(($) => [$.orgId.eq(installation.orgId), $.id.eq(installation.id)])
 									.forShare(),
 							)
 							if (parent.length === 0) return
@@ -573,7 +573,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			yield* database.execute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* db.run(PG.deleteFrom(VcsRepositories).where(($) => [$.id.eq(repositoryId)]))
+						yield* db.run(
+							PG.deleteFrom(VcsRepositories).where(($) => [
+								$.orgId.eq(orgId),
+								$.id.eq(repositoryId),
+							]),
+						)
 						yield* db.run(
 							PG.deleteFrom(VcsRepositoryBranches).where(($) => [
 								$.repositoryId.eq(repositoryId),
@@ -682,7 +687,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const parent = yield* db.run(lockRepositoryRow(repository.id))
+							const parent = yield* db.run(lockRepositoryRow(repository.orgId, repository.id))
 							if (parent.length === 0) return 0
 							yield* Effect.forEach(
 								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
@@ -816,7 +821,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const parent = yield* db.run(lockRepositoryRow(repository.id))
+							const parent = yield* db.run(lockRepositoryRow(repository.orgId, repository.id))
 							if (parent.length === 0) return
 							yield* Effect.forEach(
 								Arr.chunksOf(values, INSERT_CHUNK_SIZE),

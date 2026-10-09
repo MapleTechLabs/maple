@@ -1854,7 +1854,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										merge.mergedAtMs + Duration.toMillis(POST_MERGE_FIRST_LOOK),
 									updatedAt: nowMs,
 								})
-								.where(($) => [$.id.eq(row.id), $.postMergeStatus.isNull()]),
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(row.id),
+									$.postMergeStatus.isNull(),
+								]),
 						),
 					)
 					yield* Effect.annotateCurrentSpan("maple.pr_review.post_merge_scheduled", row.id)
