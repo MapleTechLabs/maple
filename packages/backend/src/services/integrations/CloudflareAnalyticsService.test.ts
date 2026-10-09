@@ -1617,6 +1617,44 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 500 })))
 	})
 
+	// Production: an org with no active plan raised a poll error and an upstream error span on
+	// every tick. A 402 is billing state the tenant fixes, so it is health, not an exception.
+	it.effect("a 402 from the gateway is plan-blocked: health recorded, no failure, lease held", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: new Date(T0 - 30 * MIN),
+					settingsFetchedAt: new Date(T0 - 5 * MIN),
+				})
+			}
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: new Date(T0 - 30 * MIN),
+				settingsFetchedAt: new Date(T0 - 5 * MIN),
+			})
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.failures.length, 0)
+			assert.strictEqual(summary.rowsIngested, 0)
+			// The first refusal ends the tick: one gateway call, not one per document.
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const httpRow = rows.find((row) => row.dataset === "http_requests")
+			assert.include(httpRow!.lastError ?? "", "ingest returned 402")
+			assert.strictEqual(httpRow!.watermarkAt?.getTime(), T0 - 30 * MIN)
+			const anchor = rows.find((row) => row.dataset === "workers_invocations" && row.zoneId === "")
+			assert.isAbove(anchor!.leaseUntil!.getTime(), T0)
+		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 402 })))
+	})
+
 	it.effect("getStatus reflects zone and workers state rows", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
