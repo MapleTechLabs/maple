@@ -124,6 +124,13 @@ export interface PlanetScaleConnectionServiceApi {
 	readonly loadConnection: (
 		orgId: OrgId,
 	) => Effect.Effect<PlanetScaleConnectionRow | null, IntegrationsPersistenceError>
+	/**
+	 * Load a connection by its own id, unscoped: the public webhook receiver only has the id
+	 * from its path, and the org is derived from the row it finds.
+	 */
+	readonly loadConnectionById: (
+		connectionId: string,
+	) => Effect.Effect<PlanetScaleConnectionRow | null, IntegrationsPersistenceError>
 	/** Webhook endpoint path + decrypted HMAC secret for manual setup (admin-gated at the route). */
 	readonly webhookConfig: (
 		orgId: OrgId,
@@ -787,6 +794,22 @@ export class PlanetScaleConnectionService extends Context.Service<
 			return yield* selectConnection(orgId)
 		})
 
+		const loadConnectionById = Effect.fn("PlanetScaleConnectionService.loadConnectionById")(function* (
+			connectionId: string,
+		) {
+			const rows = yield* database
+				.execute((db) =>
+					db.run(
+						PG.from(PlanetscaleConnections)
+							.select()
+							.where(($) => [$.id.eq(connectionId)])
+							.limit(1),
+					),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return rows[0] ?? null
+		})
+
 		const webhookConfig = Effect.fn("PlanetScaleConnectionService.webhookConfig")(function* (
 			orgId: OrgId,
 		) {
@@ -822,6 +845,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 			setMetricsToken,
 			disconnect,
 			loadConnection,
+			loadConnectionById,
 			webhookConfig,
 		} satisfies PlanetScaleConnectionServiceApi
 	}),

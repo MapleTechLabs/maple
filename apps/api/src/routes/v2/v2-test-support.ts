@@ -370,6 +370,7 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 		setMetricsToken: die,
 		disconnect: die,
 		loadConnection: die,
+		loadConnectionById: die,
 		webhookConfig: die,
 	}),
 	Layer.succeed(PlanetScaleOAuthService, {
