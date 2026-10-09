@@ -103,10 +103,11 @@ ok() { printf '  \\342\\234\\223 %s\\n' "$1"; }
 # stop <what went wrong> <what to do> [Google's answer]
 stop() {
   printf '  \\342\\234\\227 %s\\n' "$1"
-  # Google can quote the push endpoint back, and this output may be sent to support.
+  # Google can quote the push endpoint back, and this output may be sent to support. The error
+  # line says what was refused; the machine-readable details that follow it are left out.
   if [ -n "\${3-}" ]; then
     printf '\\n'
-    printf '%s\\n' "$3" | sed -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/^/      /'
+    printf '%s\\n' "$3" | sed -e "/^- '@type':/,\\$d" -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/^/      /'
   fi
   printf '\\n    What to do: %s\\n' "$2"
   printf '\\n%s\\n' ${sh(unfinished)}
@@ -123,10 +124,13 @@ fix() {
     # Google words these two as a denial too, so they are read before the missing role.
     *"has not been used"* | *"is disabled"* | *SERVICE_DISABLED*)
       printf '%s' "Google is still switching an API on, or the API is off. Wait a minute and paste the script again." ;;
-    *"ervice account"*"does not exist"*)
+    *"ervice account"*"does not exist"* | *"Unknown service account"*)
       printf '%s' "Google has not published the new service account yet. Wait a minute and paste the script again." ;;
-    *PERMISSION_DENIED* | *"does not have permission"* | *"denied on resource"*)
+    # Pub/Sub words a refusal as "User not authorized to perform this action".
+    *PERMISSION_DENIED* | *"does not have permission"* | *"denied on resource"* | *"not authorized"*)
       printf '%s' "$ACCOUNT needs $2." ;;
+    *"Unparseable filter"*)
+      printf '%s' "Google does not accept the log filter. Correct the filter near the top of the script and paste it again. Filter syntax: https://cloud.google.com/logging/docs/view/logging-query-language" ;;
     *) printf '%s' "Read Google's answer above. If it is unclear, send this output to support@maple.dev." ;;
   esac
 }
@@ -206,18 +210,55 @@ unbind() {
 }
 `
 
+// APIs in the host project. Cloud Resource Manager is what gcloud reads projects and grants
+// roles through.
+const LOG_APIS = ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"]
+const METRIC_APIS = [
+	"monitoring.googleapis.com",
+	"cloudasset.googleapis.com",
+	"iam.googleapis.com",
+	"iamcredentials.googleapis.com",
+	"cloudresourcemanager.googleapis.com",
+]
+
 // Signed in as a person in Cloud Shell, gcloud's calls are counted against Google's own project,
-// which has the API. With it off for a service account, every describe and role grant fails.
-const RESOURCE_MANAGER = `# gcloud needs the Cloud Resource Manager API of the project its calls are counted against. For a
-# service account that is its own project, usually this one. Most people do not need this, and
-# not everyone may switch an API on, so a refusal here is not an error.
-[ -z "$(off cloudresourcemanager.googleapis.com)" ] ||
-  gcloud services enable cloudresourcemanager.googleapis.com --project="$PROJECT_ID" >/dev/null 2>&1 || true
+// which has the Cloud Resource Manager API. With it off for a service account, every describe
+// and role grant fails.
+const apisOff = (
+	apis: ReadonlyArray<string>,
+) => `# Which of the APIs this script needs are off in the host project, asked once.
+APIS_OFF="$(off ${apis.join(" ")})"
+# gcloud needs the Cloud Resource Manager API of the project its calls are counted against. For a
+# service account that is its own project, usually this one, so it is switched on before the
+# first read. Not everyone may switch an API on: a refusal here is reported further down.
+case "$APIS_OFF" in *cloudresourcemanager*)
+  if gcloud services enable cloudresourcemanager.googleapis.com --project="$PROJECT_ID" >/dev/null 2>&1; then
+    APIS_OFF="\${APIS_OFF/ cloudresourcemanager.googleapis.com/}"
+  fi ;;
+esac
+`
+
+const sinkAndFilter = (sink: string) => `
+# A filter Google would refuse is found here, before the topic and subscription exist: reading
+# one entry makes Google parse it. Not being allowed to read logs is not an error.
+SINK_EXISTS=0
+if exists gcloud logging sinks describe "$SINK" ${sink}; then SINK_EXISTS=1; fi
+if [ "$SINK_EXISTS" = 0 ] || [ "$LOG_FILTER_MODE" = set ]; then
+  if FILTER_ANSWER="$(gcloud logging read "$LOG_FILTER" --limit=1 --freshness=1h ${sink} 2>&1 >/dev/null)"; then
+    ok "Log filter accepted"
+  else
+    case "$FILTER_ANSWER" in *"Unparseable filter"*)
+      stop "Google does not accept the log filter." "$(fix "$FILTER_ANSWER" "")" "$FILTER_ANSWER" ;;
+    esac
+  fi
+fi
 `
 
 interface AccessChecks {
-	/** Setup only: makes sure gcloud can read the project before the checks that read it. */
-	readonly resourceManager: boolean
+	/** Setup only: the APIs the enabled sections need in the host project. */
+	readonly apis: ReadonlyArray<string>
+	/** Setup with log forwarding on: the flag that places the sink. */
+	readonly sink: string | undefined
 	/** The scope's name must be readable: true when a role the run needs includes reading it. */
 	readonly scopeMustOpen: boolean
 	readonly billing: boolean
@@ -249,7 +290,7 @@ const PERMISSION_CHECK = `
 # is not a refusal: the steps below then report for themselves.
 CHECKED=1
 allowed() {
-  local resource="$1" where="$2" ask="$3" answer permission lacking=""
+  local resource="$1" where="$2" ask="$3" answer permission lacking="" held=0
   shift 3
   if ! answer="$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \\
     -H @<(printf 'Authorization: Bearer %s\\n' "$TOKEN") \\
@@ -259,9 +300,14 @@ allowed() {
     return 0
   fi
   for permission in "$@"; do
-    case "$answer" in *"\\"$permission\\""*) ;; *) lacking="$lacking, $permission" ;; esac
+    case "$answer" in *"\\"$permission\\""*) held=1 ;; *) lacking="$lacking, $permission" ;; esac
   done
-  [ -z "$lacking" ] || stop "$ACCOUNT is missing permissions on $where: \${lacking#, }." "$ask"
+  if [ -z "$lacking" ]; then return 0; fi
+  # None of several held: a wrong ID is likelier than a list of missing rights.
+  if [ "$held" = 0 ] && [ "$#" -gt 1 ]; then
+    stop "$ACCOUNT has none of the permissions this script needs on $where." "Check the ID in Maple. If it is right, this account has no rights there. $ask"
+  fi
+  stop "$ACCOUNT is missing permissions on $where: \${lacking#, }." "$ask"
 }
 `
 
@@ -276,7 +322,7 @@ if [ -z "$ACCOUNT" ] || [ -z "$TOKEN" ]; then
   stop "You are not signed in to Google Cloud." "In Cloud Shell, click Authorize when it asks. Elsewhere, run: gcloud auth login"
 fi
 ok "Signed in as $ACCOUNT"
-${checks.resourceManager ? RESOURCE_MANAGER : ""}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
+${checks.apis.length === 0 ? "" : apisOff(checks.apis)}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
   stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
 fi
 ok "${scopeType === "project" ? "Project" : "Host project"} $PROJECT_ID found ($PROJECT_NAME)"
@@ -296,9 +342,12 @@ esac
 					([resource, where, ask, permissions]) =>
 						`allowed "${resource}" "${where}" "${ask}" \\\n  ${permissions.join(" ")}\n`,
 				)
-				.join("")}[ "$CHECKED" = 0 ] || ok "$ACCOUNT has the permissions this script needs"
+				.join("")}# Switching an API on takes a right of its own, asked about only when one is off.
+[ -z "$APIS_OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$APIS_OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
+  serviceusage.services.enable
+[ "$CHECKED" = 0 ] || ok "$ACCOUNT has the permissions this script needs"
 `
-}`
+}${checks.sink === undefined ? "" : sinkAndFilter(checks.sink)}`
 
 /** What the enabled sections need, asked of Google before the first change. */
 const permissionChecks = (
@@ -309,7 +358,6 @@ const permissionChecks = (
 	if (!logs && !metrics) return []
 	const scope = SCOPES[scopeType]
 	const administrator = "or have an administrator run this script."
-	// Switching an API on is not asked about: it is only needed for an API that is off.
 	const host = [
 		"resourcemanager.projects.getIamPolicy",
 		"resourcemanager.projects.setIamPolicy",
@@ -349,8 +397,7 @@ DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
 # APIs in the host project: Pub/Sub carries the log entries, Cloud Logging routes them, and
 # Cloud Resource Manager is what gcloud grants the roles below through.
-apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" \\
-  pubsub.googleapis.com logging.googleapis.com cloudresourcemanager.googleapis.com
+apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${LOG_APIS.join(" ")}
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   ok "Topic already exists"
@@ -375,10 +422,11 @@ else
     gcloud pubsub subscriptions create "$SUBSCRIPTION" --topic="$TOPIC" "\${SUBSCRIPTION_FLAGS[@]}"
 fi
 
-if exists gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink}; then
+if [ "$SINK_EXISTS" = 1 ]; then
   if [ "$LOG_FILTER_MODE" = set ]; then
     run "Log sink up to date (filter replaced)" "Couldn't update the log sink." "$SINK_ROLE" \\
       gcloud logging sinks update "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
+    FILTER_REPLACED=1
   else
     run "Log sink up to date (filter kept)" "Couldn't update the log sink." "$SINK_ROLE" \\
       gcloud logging sinks update "$SINK" "$DESTINATION" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
@@ -406,14 +454,18 @@ notify "Check message sent to Maple through the topic" '"logs":true'
 
 const logsRemoval = (scopeType: GcpScopeType, notifies: boolean): string => `
 # ---- Log forwarding: off. Remove what an earlier run created. ----
-# The sink goes first, so nothing routes into a topic that is gone. The Logs Writer grant on the
-# host project stays: the sink wrote as the logging service agent of the ${scopeType}, an identity
+# The sink goes first, so nothing routes into a topic that is gone. Google keeps routing for a
+# while after a sink is deleted, and with the topic gone by then it logs an error in this project
+# and may notify its contacts, so the topic waits a minute. The Logs Writer grant on the host
+# project stays: the sink wrote as the logging service agent of the ${scopeType}, an identity
 # every other sink there shares.
 section "Log forwarding"
 if remains "the log sink" "$SINK_ROLE" gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink}; then
   run "Log sink deleted" "Couldn't delete the log sink." "$SINK_ROLE" \\
     gcloud logging sinks delete "$SINK" ${SCOPES[scopeType].sink} --quiet
   REMOVED=1
+  printf '  \\342\\200\\246 waiting a minute for Google to stop routing to the topic\\n'
+  sleep 60
 fi
 if remains "the push subscription" "$OWNER" gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID"; then
   run "Push subscription deleted" "Couldn't delete the push subscription." "$OWNER" \\
@@ -441,8 +493,7 @@ section "Metrics and resources"
 #   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
 #   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
 apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager" \\
-  monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com \\
-  iamcredentials.googleapis.com cloudresourcemanager.googleapis.com
+  ${METRIC_APIS.join(" ")}
 
 # A service account that an earlier run deleted (metrics switched off) fails this describe as
 # well and is created again. Google makes that a new account under the same name, with none of
@@ -458,22 +509,21 @@ fi
 
 # grant <line when it failed> <role that allows it> <gcloud ... add-iam-policy-binding ...>
 # Google can take a minute to publish a new service account, and until then answers that it does
-# not exist. Only that answer is waited out.
+# not exist. Only that answer is waited out, for a minute at most.
 WAITED=0
 grant() {
-  local failed="$1" role="$2" output attempt
+  local failed="$1" role="$2" output tries=0
   shift 2
-  for attempt in 1 2 3 4 5 6 7; do
-    if output="$("$@" 2>&1)"; then return 0; fi
-    case "$output" in *"does not exist"* | *NOT_FOUND*) ;; *) break ;; esac
-    if [ "$attempt" = 7 ]; then break; fi
+  while ! output="$("$@" 2>&1)"; do
+    tries=$((tries + 1))
+    case "$output" in *"does not exist"* | *NOT_FOUND*) ;; *) tries=20 ;; esac
+    if [ "$tries" -ge 20 ]; then stop "$failed" "$(fix "$output" "$role")" "$output"; fi
     if [ "$WAITED" = 0 ]; then
       printf '  \\342\\200\\246 waiting for Google to publish the new service account\\n'
       WAITED=1
     fi
-    sleep 10
+    sleep 3
   done
-  stop "$failed" "$(fix "$output" "$role")" "$output"
 }
 
 # Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
@@ -619,6 +669,7 @@ LOG_FILTER=${sh(gcpLogFilter(input.logFilter === "exclude_gke_container_logs"))}
 				? []
 				: [`MAPLE_SERVICE_ACCOUNT=${sh(input.mapleServiceAccountEmail)}`]),
 		])}SINK_CREATED=0
+FILTER_REPLACED=0
 ACCOUNT_CREATED=0
 REMOVED=0
 ${output("Setup did not finish. Nothing needs undoing: fix this and paste the script again.")}${notify(logs)}
@@ -627,7 +678,8 @@ ${output("Setup did not finish. Nothing needs undoing: fix this and paste the sc
 exists() { "$@" >/dev/null 2>&1; }
 
 # off <api...>: the APIs of the list that are not switched on in the host project. All of them
-# when the list of enabled APIs cannot be read.
+# when the list of enabled APIs cannot be read. Asking first lets someone who may not switch APIs
+# on run a script whose APIs are on already.
 off() {
   local on api nl=$'\\n'
   on="$(gcloud services list --enabled --project="$PROJECT_ID" --format='value(config.name)' 2>/dev/null || true)"
@@ -636,12 +688,13 @@ off() {
   done
 }
 
-# apis <their names> <api...>: switches on what is off. Asking first lets someone who may not
-# switch APIs on run a script whose APIs are on already.
+# apis <their names> <api...>: switches on the ones the access check found off.
 apis() {
-  local names="$1" missing
+  local names="$1" api missing=""
   shift
-  missing="$(off "$@")"
+  for api in "$@"; do
+    case " $APIS_OFF " in *" $api "*) missing="$missing $api" ;; esac
+  done
   if [ -n "$missing" ]; then
     # Unquoted on purpose: one argument per API.
     try "Couldn't switch on:$missing." "Service Usage Admin on project $PROJECT_ID" \\
@@ -653,7 +706,8 @@ ${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
 printf 'Maple setup for %s\\n' "$SCOPE"
 printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
 ${access(scopeType, {
-	resourceManager: true,
+	apis: [...new Set([...(logs ? LOG_APIS : []), ...(metrics === "on" ? METRIC_APIS : [])])],
+	sink: logs ? SCOPES[scopeType].sink : undefined,
 	scopeMustOpen: metrics === "on",
 	billing: metrics === "on",
 	permissions: permissionChecks(scopeType, logs, metrics === "on"),
@@ -664,8 +718,10 @@ ${access(scopeType, {
 					? metricsRemoval(scopeType, true)
 					: ""
 		}
-if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
+if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
   printf '\\nDone. Everything was already in place.\\n'
+elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
+  printf '\\nDone. The log sink has the filter of this script. Everything else was already in place.\\n'
 elif [ "$REMOVED" = 1 ]; then
   printf '\\nDone. Google Cloud matches your Maple switches.\\n'
 else
@@ -701,7 +757,7 @@ ${output(
 	"Cleanup did not finish. Fix this and paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
-${access(input.scopeType, { resourceManager: false, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
+${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
 			input.pushEndpoint === undefined
 				? ""
 				: `
