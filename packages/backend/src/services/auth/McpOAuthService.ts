@@ -289,7 +289,7 @@ export class McpOAuthService extends Context.Service<
 		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			(message) => new McpOAuthPersistenceError({ message }),
-		).pipe(Effect.orDie)
+		)
 
 		const checkRateLimit = Effect.fn("McpOAuthService.checkRateLimit")(function* (key: string) {
 			if (Option.isNone(rateLimit)) return

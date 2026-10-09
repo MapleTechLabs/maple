@@ -122,11 +122,11 @@ export class CliDeviceAuthService extends Context.Service<
 		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			(message) => new CliDevicePersistenceError({ message }),
-		).pipe(Effect.orDie)
+		)
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			(message) => new CliDevicePersistenceError({ message }),
-		).pipe(Effect.orDie)
+		)
 
 		const purgeExpired = Effect.fn("CliDeviceAuthService.purgeExpired")(function* (now: number) {
 			yield* dbExecute((db) =>
