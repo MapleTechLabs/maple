@@ -4791,7 +4791,7 @@ async fn handle_gcp_logpush(
                         &span_handle,
                         200,
                         "decode",
-                        gcp_logging::NOT_A_LOG_ENTRY,
+                        "Push payload is not a LogEntry",
                     );
                     metrics::request_completed("logs", "error", "decode", duration);
                     metrics::gcp_parse_failure();
@@ -6074,6 +6074,10 @@ impl GcpConnectorResolver {
     /// Writes `last_received_at` (`error == None`) or `last_error`, at most
     /// once per connector and outcome per interval. Best-effort: the request's
     /// outcome is already decided, so a failed write is only logged.
+    ///
+    /// A written failure lets the next success through, so the error does not
+    /// outlive the entry Pub/Sub delivers again: at most one failure and two
+    /// successes are written per interval.
     async fn record_health(&self, connector_id: &str, error: Option<&str>) {
         let throttle_key = (connector_id.to_owned(), error.is_none());
         let throttle = self.recent_health_writes.entry(throttle_key).or_insert(());
@@ -6089,6 +6093,9 @@ impl GcpConnectorResolver {
                     .await
             }
             Some(error) => {
+                self.recent_health_writes
+                    .invalidate(&(connector_id.to_owned(), true))
+                    .await;
                 self.store
                     .record_connector_failure(GCP_CONNECTORS_TABLE, connector_id, error, now_ms)
                     .await
@@ -9548,6 +9555,12 @@ mod tests {
                 .is_err(),
             "a poison payload must not be stored"
         );
+
+        // The next accepted entry is recorded at once and clears the error,
+        // although a success was already written within the interval.
+        let again = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(again.status(), StatusCode::OK);
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 2);
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
