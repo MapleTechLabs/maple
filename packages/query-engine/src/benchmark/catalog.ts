@@ -1188,7 +1188,7 @@ export function undecodedColumns(
  */
 const ROLLUP_TABLE_RE = /\w_(?:hourly|minutely|daily)\b|\w_aggregates_\w/
 const RAW_TABLE_RE =
-	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans|trace_list_mv)\b/
+	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans|trace_list_mv|trace_list_entry_spans)\b/
 
 /**
  * The `firstFullBucket` fragment `makeGrain` emits. Structural rather than a

@@ -60,6 +60,8 @@ export const FindSlowTracesOutput = Schema.Struct({
 	traces: Schema.Array(TraceSummaryRow),
 	service: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
+	/** The window holds too many rows to rank traces that have no root span; only rooted traces are ranked. */
+	rootlessTracesOmitted: Schema.optionalKey(Schema.Boolean),
 })
 
 export interface SpanNodeOutput {

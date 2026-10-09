@@ -22,6 +22,8 @@ export interface UseInfiniteTracesReturn {
 	isCapped: boolean
 	/** Noise traces the server dropped across every loaded page (see `hideNoise`). */
 	hiddenCount: number
+	/** Across the loaded pages: one left rootless traces out, or else one lists some. */
+	rootlessTraces: "listed" | "omitted" | undefined
 	fetchNextPage: () => void
 }
 
@@ -115,6 +117,14 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 		return first + additionalPages.reduce((sum, page) => sum + page.meta.hiddenCount, 0)
 	}, [firstPageResult, additionalPages])
 
+	const rootlessTraces = React.useMemo(() => {
+		const seen = [
+			Result.isSuccess(firstPageResult) ? firstPageResult.value.meta.rootlessTraces : undefined,
+			...additionalPages.map((page) => page.meta.rootlessTraces),
+		]
+		return seen.includes("omitted") ? "omitted" : seen.includes("listed") ? "listed" : undefined
+	}, [firstPageResult, additionalPages])
+
 	// "More pages exist" means the warehouse page came back full BEFORE the
 	// server-side noise filter ran. `data.length === PAGE_SIZE` would end
 	// pagination on the first page with any hidden rows.
@@ -169,6 +179,7 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 		hasNextPage,
 		isCapped,
 		hiddenCount,
+		rootlessTraces,
 		fetchNextPage,
 	}
 }

@@ -53,6 +53,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 				})),
 				...(params.service === undefined ? undefined : { service: params.service }),
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
+				...(result.rootlessTracesOmitted ? { rootlessTracesOmitted: true } : undefined),
 			}
 		}),
 		render: (output) => {
@@ -61,11 +62,18 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 				["Service", output.service],
 				["Environment", output.environment],
 			]
+			const rootlessNote = output.rootlessTracesOmitted
+				? [
+						doc.text(
+							"Traces without a root span are not ranked here: this window holds too many spans to tell them apart. Use a shorter window to include them.",
+						),
+					]
+				: []
 			if (output.traces.length === 0) {
 				return {
 					title: "Slowest Traces",
 					scope,
-					blocks: [],
+					blocks: rootlessNote,
 					empty: {
 						message: "No traces found in this window.",
 						hints: ["Widen start_time/end_time, or drop the service and environment filters."],
@@ -77,6 +85,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 				title: "Slowest Traces",
 				scope,
 				blocks: [
+					...rootlessNote,
 					...(stats === undefined
 						? []
 						: [

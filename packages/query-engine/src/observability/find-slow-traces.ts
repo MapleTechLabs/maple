@@ -2,8 +2,9 @@ import { Array as Arr, Effect, pipe } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
+import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
-import { withRootSpansOnlyFallback } from "../runtime/trace-list-tiers"
+import { withTraceListTierFallback } from "../runtime/trace-list-tiers"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
 import { safeUInt } from "./sql-utils"
 
@@ -38,13 +39,13 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 		readonly timestamp: string
 	}
 
-	const [slowResult, statsResult] = yield* withRootSpansOnlyFallback(executor.orgId, (rootsOnly) => {
+	const [slowResult, statsResult, omitted] = yield* withTraceListTierFallback(executor.orgId, (tiers) => {
 		const params = {
 			start_time: input.timeRange.startTime,
 			end_time: input.timeRange.endTime,
 			...(input.service && { service: input.service }),
 			...(input.environment && { deployment_env: input.environment }),
-			roots_only: rootsOnly,
+			roots_only: !tiers.rootless,
 		}
 		return Effect.all(
 			[
@@ -52,6 +53,17 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 				executor.query<TracesDurationStatsOutput>("traces_duration_stats", params, {
 					profile: "aggregation",
 				}),
+				// Whether the two reads above left traces with no root span out.
+				tiers.rootless
+					? executor.compiledQuery(
+							CH.compile(CH.rootlessOmittedQuery(), {
+								orgId: executor.orgId,
+								startTime: input.timeRange.startTime,
+								endTime: input.timeRange.endTime,
+							}),
+							{ profile: "list" },
+						)
+					: Effect.succeed([]),
 			],
 			{ concurrency: "unbounded" },
 		)
@@ -88,5 +100,6 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 				}
 			: null,
 		traces,
+		...(omitted.length > 0 ? { rootlessTracesOmitted: true } : undefined),
 	} satisfies FindSlowTracesOutput
 })

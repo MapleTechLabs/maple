@@ -54,7 +54,7 @@ import {
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
-	withRootSpansOnlyFallback,
+	withTraceListTierFallback,
 } from "@maple/query-engine/runtime"
 import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
@@ -478,7 +478,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "trc", 2)
 					const filters = payload.filters
 					const internalFilters = traceFilters(filters)
-					const rows = yield* withRootSpansOnlyFallback(tenant.orgId, (rootsOnly) =>
+					const rows = yield* withTraceListTierFallback(tenant.orgId, (tiers) =>
 						warehouse.compiledQuery(
 							tenant,
 							CH.compile(
@@ -506,7 +506,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 												})),
 											)
 										: undefined,
-									rootsOnly,
+									rootsOnly: !tiers.rootless,
 								}),
 								{ orgId: tenant.orgId, ...window },
 							),

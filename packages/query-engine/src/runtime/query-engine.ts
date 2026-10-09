@@ -50,7 +50,15 @@ import {
 	formatRangeSeconds,
 } from "../limits"
 import { attributeIndexMode, logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
-import { withRootSpansOnlyFallback } from "./trace-list-tiers"
+import { isMissingTraceListEntrySpans, withTraceListTierFallback } from "./trace-list-tiers"
+import {
+	ENTRY_ROW_LIMIT,
+	ENTRY_ROWS_PER_SLOT,
+	mergedPage,
+	pageIsExact,
+	rootlessCandidates,
+	type TraceListSort,
+} from "./trace-list-page"
 import { makeExecuteRawSql } from "./raw-sql"
 import {
 	logsCount,
@@ -1383,6 +1391,128 @@ const isMissingServiceOverviewMinutely = (error: unknown): boolean => {
 	return candidate.clickhouseType === "UNKNOWN_TABLE"
 }
 
+/**
+ * One page of the grouped trace list, with the traces that have no root span
+ * merged in at the positions their entry spans give them.
+ *
+ * The page of rooted traces is the one statement it always was, and runs
+ * alongside a read of the entry spans near the top of the list. Only when that
+ * read finds candidates is anything else asked: which of them have a root span
+ * (one `trace_list_mv` read as wide as those candidates, not the window), and,
+ * when some have none, the root positions to merge them with and the rows of
+ * the traces the first statement did not return.
+ */
+const executeTraceList = Effect.fnUntraced(function* <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	tenant: T,
+	listOpts: (capabilities: WarehouseCapabilities) => CH.TraceListOpts,
+	sort: TraceListSort,
+	page: { readonly limit: number; readonly offset: number },
+	window: { readonly orgId: OrgId; readonly startTime: string; readonly endTime: string },
+) {
+	const pageEnd = page.offset + page.limit
+
+	const rowLimit = Math.min(pageEnd * ENTRY_ROWS_PER_SLOT, ENTRY_ROW_LIMIT)
+	const [rooted, entryRows] = yield* Effect.all(
+		[
+			executeCHQuery(
+				warehouse,
+				tenant,
+				(c) => CH.traceListQuery({ ...listOpts(c), ...sort, ...page }),
+				window,
+				"traceList",
+				"list",
+			),
+			// A cluster without the table lists rooted traces only.
+			executeCHQuery(
+				warehouse,
+				tenant,
+				(c) => CH.traceListEntryPageQuery({ ...listOpts(c), ...sort, limit: rowLimit }),
+				window,
+				"traceListEntries",
+				"list",
+			).pipe(Effect.catchIf(isMissingTraceListEntrySpans, () => Effect.succeed([]))),
+		],
+		{ concurrency: "unbounded" },
+	)
+	if (entryRows.length === 0) return { rows: rooted, rootlessTraces: undefined }
+
+	const roots = yield* executeCHQuery(
+		warehouse,
+		tenant,
+		(c) => CH.traceListRootPageQuery({ ...listOpts(c), ...sort, limit: pageEnd }),
+		window,
+		"traceListRoots",
+		"list",
+	)
+	const { candidates, completeThrough } = rootlessCandidates(sort, entryRows, rowLimit, roots, pageEnd)
+	const rootedOnly = (positions: ReadonlyArray<CH.TraceListPositionOutput>) => ({
+		rows: rooted,
+		rootlessTraces: pageIsExact(sort, positions, page.limit, completeThrough)
+			? undefined
+			: ("omitted" as const),
+	})
+	if (candidates.length === 0) return rootedOnly(mergedPage(sort, roots, [], page.offset, page.limit))
+
+	// The candidates' own bounds, plus five minutes for a root stamped after its
+	// entry span by a skewed clock (the query reads from an hour before).
+	const starts = candidates.map((candidate) => DateTime.toEpochMillis(candidate.ts))
+	const range = {
+		orgId: window.orgId,
+		startTime: DateTime.makeUnsafe(Math.min(...starts)),
+		endTime: DateTime.makeUnsafe(Math.max(...starts) + 5 * 60_000),
+	}
+	const [rootedIds, [inRange]] = yield* Effect.all(
+		[
+			executeCHQuery(
+				warehouse,
+				tenant,
+				CH.rootedTraceIdsQuery(candidates.map((candidate) => candidate.traceId)),
+				range,
+				"traceListRootedCandidates",
+				"list",
+			),
+			executeCHQuery(
+				warehouse,
+				tenant,
+				CH.rootSpansInRangeQuery(),
+				range,
+				"traceListRootsInRange",
+				"list",
+			),
+		],
+		{ concurrency: "unbounded" },
+	)
+	// Too many roots around the page to rule its candidates out: none are listed.
+	if ((inRange?.roots ?? 0) > CH.ROOTLESS_PAGE_ROOT_BUDGET)
+		return { rows: rooted, rootlessTraces: "omitted" as const }
+
+	const hasRoot = new Set(rootedIds.map((row) => row.traceId))
+	const rootless = candidates.filter((candidate) => !hasRoot.has(candidate.traceId))
+	const positions = mergedPage(sort, roots, rootless, page.offset, page.limit)
+	const rowsById = new Map(rooted.map((row) => [row.traceId, row]))
+	const missing = positions.map((position) => position.traceId).filter((traceId) => !rowsById.has(traceId))
+	// No rootless trace reaches this page: it is the rooted page.
+	if (missing.length === 0) return rootedOnly(positions)
+
+	// The merged page: the rooted rows already in hand, and the rest by id.
+	const fetched = yield* executeCHQuery(
+		warehouse,
+		tenant,
+		(c) => CH.traceListQuery({ ...listOpts(c), ...sort, traceIds: missing }),
+		window,
+		"traceListByIds",
+		"list",
+	)
+	for (const row of fetched) rowsById.set(row.traceId, row)
+	return {
+		rows: positions.flatMap((position) => rowsById.get(position.traceId) ?? []),
+		rootlessTraces: pageIsExact(sort, positions, page.limit, completeThrough)
+			? ("listed" as const)
+			: ("omitted" as const),
+	}
+})
+
 export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
 	Effect.fn("QueryEngineService.execute")(function* (
 		tenant: T,
@@ -1811,30 +1941,25 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const requestedColumns = (tracesQuery as { columns?: readonly string[] }).columns
 
 			if (tracesQuery.groupByTrace) {
-				const rows = yield* withRootSpansOnlyFallback(tenant.orgId, (rootsOnly) =>
-					executeCHQuery(
-						warehouse,
-						tenant,
-						(capabilities) =>
-							CH.traceListQuery({
-								...opts,
-								// Stage 1 picks each trace's row itself; the broader
-								// entry-point predicate would only widen the OR for nothing.
-								// (`rootOnly` compiles via `whenTrue`, so `false` = no clause.)
-								rootOnly: false,
-								rootsOnly,
-								attributeIndexMode: attributeIndexMode(capabilities, "traces"),
-								// The root-only predicate is as selective as the clamp's
-								// "indexed filter" tier, so grouped pages keep the 200 cap.
-								limit: Math.min(tracesQuery.limit ?? 25, 200),
-								offset: tracesQuery.offset,
-								sortBy: tracesQuery.sortBy,
-								sortDir: tracesQuery.sortDir,
-							}),
-						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-						"traceList",
-						"list",
-					),
+				const { rows, rootlessTraces } = yield* executeTraceList(
+					warehouse,
+					tenant,
+					(capabilities) => ({
+						...opts,
+						// Stage 1 pins `ParentSpanId = ''` itself; the broader
+						// entry-point predicate would only widen the OR for nothing.
+						// (`rootOnly` compiles via `whenTrue`, so `false` = no clause.)
+						rootOnly: false,
+						attributeIndexMode: attributeIndexMode(capabilities, "traces"),
+					}),
+					{ sortBy: tracesQuery.sortBy ?? "timestamp", sortDir: tracesQuery.sortDir ?? "desc" },
+					{
+						// The root-only predicate is as selective as the clamp's
+						// "indexed filter" tier, so grouped pages keep the 200 cap.
+						limit: Math.min(tracesQuery.limit ?? 25, 200),
+						offset: tracesQuery.offset ?? 0,
+					},
+					{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 				)
 
 				return new QueryEngineExecuteResponse({
@@ -1854,6 +1979,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							rootSpanAttributes: parseProjectedAttributes(row.rootSpanAttributes),
 							hasError: row.hasError === 1,
 						})),
+						...(rootlessTraces ? { rootlessTraces } : undefined),
 					},
 				})
 			}
@@ -2084,14 +2210,35 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					request.query.filters as Record<string, unknown> | undefined,
 				)
 				const facet = request.query.facet
-				const rows = yield* withRootSpansOnlyFallback(tenant.orgId, (rawOnly) =>
-					executeCHUnionQuery(
-						warehouse,
-						tenant,
-						CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
-						baseParams,
-						facet ? `tracesFacets:${facet}` : "tracesFacets",
-						"discovery",
+				// The marker read answers whether the facets below left rootless traces out.
+				const [rows, omitted] = yield* withTraceListTierFallback(tenant.orgId, (tiers) =>
+					Effect.all(
+						[
+							executeCHUnionQuery(
+								warehouse,
+								tenant,
+								CH.tracesFacetsQuery({
+									...opts,
+									facet,
+									rawOnly: !tiers.rollup,
+									rootsOnly: !tiers.rootless,
+								}),
+								baseParams,
+								facet ? `tracesFacets:${facet}` : "tracesFacets",
+								"discovery",
+							),
+							tiers.rootless
+								? executeCHQuery(
+										warehouse,
+										tenant,
+										CH.rootlessOmittedQuery(),
+										baseParams,
+										"tracesFacetsRootlessOmitted",
+										"discovery",
+									)
+								: Effect.succeed([]),
+						],
+						{ concurrency: "unbounded" },
 					),
 				)
 				return new QueryEngineExecuteResponse({
@@ -2103,6 +2250,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							name: row.name,
 							count: row.count,
 						})),
+						...(omitted.length > 0 ? { rootlessTracesOmitted: true } : undefined),
 					},
 				})
 			}
@@ -2214,11 +2362,15 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const opts = extractTracesDurationStatsOpts(
 				request.query.filters as Record<string, unknown> | undefined,
 			)
-			const rows = yield* withRootSpansOnlyFallback(tenant.orgId, (rawOnly) =>
+			const rows = yield* withTraceListTierFallback(tenant.orgId, (tiers) =>
 				executeCHQuery(
 					warehouse,
 					tenant,
-					CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
+					CH.tracesDurationStatsQuery({
+						...opts,
+						rawOnly: !tiers.rollup,
+						rootsOnly: !tiers.rootless,
+					}),
 					{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 					"tracesDurationStats",
 				),

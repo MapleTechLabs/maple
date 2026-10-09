@@ -1496,9 +1496,9 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 			// Drops a trace whose root started in the hour before the window.
 			$.startTime.gte(utcSecondsParam("startTime")),
 			cursor
-				? $.startTime.lt(cursor.timestamp).or(
-						$.startTime.eq(cursor.timestamp).and($.traceId.lt(cursor.traceId)),
-					)
+				? $.startTime
+						.lt(cursor.timestamp)
+						.or($.startTime.eq(cursor.timestamp).and($.traceId.lt(cursor.traceId)))
 				: undefined,
 		])
 		.orderBy(["startTime", "desc"], ["traceId", "desc"])

@@ -14,8 +14,7 @@ export interface TraceListSort {
 
 /**
  * Entry spans read per page slot: a trace can have several, and most belong to
- * traces that do have a root. A page whose candidates outrun this is reported
- * as having left rootless traces out.
+ * traces that do have a root.
  */
 export const ENTRY_ROWS_PER_SLOT = 4
 /** Most entry spans one page reads, and most candidate traces it checks for a root. */
@@ -36,8 +35,11 @@ export const byPosition =
 export interface RootlessCandidates {
 	/** One per trace, where it would be listed, among the positions the page can reach. */
 	readonly candidates: ReadonlyArray<TraceListPositionOutput>
-	/** Entry spans the page could reach were not all read or checked. */
-	readonly truncated: boolean
+	/**
+	 * Set when the entry spans the page could reach were not all read or kept:
+	 * the last position down to which the candidates are complete.
+	 */
+	readonly completeThrough: TraceListPositionOutput | undefined
 }
 
 /**
@@ -61,16 +63,17 @@ export const rootlessCandidates = (
 		seen.add(row.traceId)
 		return lastRoot === undefined || before(row, lastRoot) < 0
 	})
-	const lastRead = entryRows.at(-1)
+	if (reachable.length > CANDIDATE_LIMIT) {
+		const candidates = reachable.slice(0, CANDIDATE_LIMIT)
+		return { candidates, completeThrough: candidates.at(-1) }
+	}
 	// A full read that stops before the page's last root may have missed entry spans.
+	const lastRead = entryRows.at(-1)
 	const readShort =
 		entryRows.length >= rowLimit &&
 		lastRead !== undefined &&
 		(lastRoot === undefined || before(lastRead, lastRoot) < 0)
-	return {
-		candidates: reachable.slice(0, CANDIDATE_LIMIT),
-		truncated: readShort || reachable.length > CANDIDATE_LIMIT,
-	}
+	return { candidates: reachable, completeThrough: readShort ? lastRead : undefined }
 }
 
 /** Both inputs in page order; the page is positions `[offset, offset + limit)` of their merge. */
@@ -82,3 +85,18 @@ export const mergedPage = (
 	limit: number,
 ): ReadonlyArray<TraceListPositionOutput> =>
 	[...roots, ...rootless].sort(byPosition(sort)).slice(offset, offset + limit)
+
+/**
+ * Whether a page cut from incomplete candidates is still exact: it is when it
+ * is full and ends no later than the candidates are complete through.
+ */
+export const pageIsExact = (
+	sort: TraceListSort,
+	page: ReadonlyArray<TraceListPositionOutput>,
+	limit: number,
+	completeThrough: TraceListPositionOutput | undefined,
+): boolean => {
+	if (completeThrough === undefined) return true
+	const last = page.at(-1)
+	return page.length === limit && last !== undefined && byPosition(sort)(last, completeThrough) <= 0
+}

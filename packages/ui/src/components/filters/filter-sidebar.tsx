@@ -151,8 +151,8 @@ export function FilterSidebarEmpty({
 			<div className="space-y-1 py-2 pr-4">
 				<p className="text-xs font-medium text-foreground">{title}</p>
 				<p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+				{children}
 			</div>
-			{children}
 		</FilterSidebarFrame>
 	)
 }

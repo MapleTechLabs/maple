@@ -139,7 +139,7 @@ async function spanScopedPage(
 		),
 		signal,
 	)
-	// The summaries read the roots-only MV, so span counts and services come from one page-sized follow-up.
+	// The summaries read one span per trace, so span counts and services come from one page-sized follow-up.
 	const traceIds = summaries.map((row) => row.traceId)
 	const stats =
 		traceIds.length === 0

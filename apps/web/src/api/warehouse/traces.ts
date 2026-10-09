@@ -172,6 +172,11 @@ export interface TracesResponse {
 		scannedCount: number
 		/** Noise traces dropped from this page (`scannedCount - data.length`). */
 		hiddenCount: number
+		/**
+		 * Traces with no root span on this page: `listed` when it holds one,
+		 * `omitted` when they could not all be looked for and some may be missing.
+		 */
+		rootlessTraces?: "listed" | "omitted"
 	}
 }
 
@@ -480,6 +485,7 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 			offset,
 			scannedCount: scanned.length,
 			hiddenCount: scanned.length - traces.length,
+			rootlessTraces: response.result.rootlessTraces,
 		},
 	}
 })
@@ -637,6 +643,8 @@ interface TracesFacets {
 
 export interface TracesFacetsResponse {
 	data: TracesFacets
+	/** The counts cover rooted traces only: the range holds too many spans to count the rest. */
+	rootlessTracesOmitted: boolean
 }
 
 const GetTracesFacetsInputSchema = Schema.Struct({
@@ -753,6 +761,8 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 			errorCount: errorRow ? Number(errorRow.count) : 0,
 			durationStats: statsData,
 		} satisfies TracesFacets,
+		rootlessTracesOmitted:
+			facetsResponse.result.kind === "facets" && facetsResponse.result.rootlessTracesOmitted === true,
 	}
 })
 

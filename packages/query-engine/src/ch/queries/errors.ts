@@ -558,7 +558,7 @@ export function recentTraceTimeProbeQuery(opts: { traceId: string }) {
 // the whole window through the same union. Traces with no root span are a third
 // tier, read from `trace_list_entry_spans` for the whole window: the rollup
 // cannot hold them, because which entry spans stand in for a trace is only
-// known at read time (`rootless-traces`).
+// known at read time. That read is budgeted (`rootless-traces`).
 
 export interface TracesDurationStatsOpts {
 	serviceName?: string
@@ -586,8 +586,10 @@ export interface TracesDurationStatsOpts {
 		deploymentEnv?: "contains"
 		serviceNamespace?: "contains"
 	}
-	/** Read only `trace_list_mv`: for clusters that have not applied migration 0034 or 0038. */
+	/** Read only `trace_list_mv`: for clusters that have not applied migration 0034. */
 	rawOnly?: boolean
+	/** Leave out traces with no root span: for clusters that have not applied migration 0038. */
+	rootsOnly?: boolean
 }
 
 /** The facet dimensions, spelled the same on `trace_list_mv` and `trace_facets_hourly`. */
@@ -651,6 +653,9 @@ export function canUseTraceFacetsRollup(
 		!opts.resourceFilterKey
 	)
 }
+
+/** Whether the entry-span tier is read: not on a cluster that lacks either newer table. */
+const withRootless = (opts: TracesDurationStatsOpts): boolean => !opts.rawOnly && !opts.rootsOnly
 
 /**
  * Trace-list rows in the window. Root rows are narrowed to the partial end
@@ -725,11 +730,13 @@ export function tracesDurationStatsQuery(
 
 	const quantiles = "quantilesTDigestMerge(0.5, 0.95)(durationQuantiles)"
 	return fromUnion(
-		opts.rawOnly
-			? unionAll(raw)
-			: canUseTraceFacetsRollup(opts)
+		canUseTraceFacetsRollup(opts)
+			? withRootless(opts)
 				? unionAll(raw, hourly(), rootless())
-				: unionAll(raw, rootless()),
+				: unionAll(raw, hourly())
+			: withRootless(opts)
+				? unionAll(raw, rootless())
+				: unionAll(raw),
 		"duration_tiers",
 	)
 		.select(() => ({
@@ -863,11 +870,13 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 				])
 				.groupBy("name")
 		return fromUnion(
-			opts.rawOnly
-				? unionAll(raw)
-				: canUseTraceFacetsRollup(opts)
+			canUseTraceFacetsRollup(opts)
+				? withRootless(opts)
 					? unionAll(raw, hourly(), rootless())
-					: unionAll(raw, rootless()),
+					: unionAll(raw, hourly())
+				: withRootless(opts)
+					? unionAll(raw, rootless())
+					: unionAll(raw),
 			`${facetType}_tiers`,
 		)
 			.select(($) => ({
@@ -893,11 +902,13 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 				.select(($) => ({ count: CH.sum($.TraceCount) }))
 				.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
 		return fromUnion(
-			opts.rawOnly
-				? unionAll(raw)
-				: canUseTraceFacetsRollup(opts)
+			canUseTraceFacetsRollup(opts)
+				? withRootless(opts)
 					? unionAll(raw, hourly(), rootless())
-					: unionAll(raw, rootless()),
+					: unionAll(raw, hourly())
+				: withRootless(opts)
+					? unionAll(raw, rootless())
+					: unionAll(raw),
 			"errorCount_tiers",
 		).select(($) => ({
 			name: CH.lit("error"),

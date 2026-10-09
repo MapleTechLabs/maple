@@ -156,7 +156,8 @@ export function compilePipeQuery(
 	// the pipe flag only ever asks for errors, so absent or falsy means no filter.
 	const hasError = errorsOnlyParam(str("has_error"))
 	// The pipe surface has no missing-table retry of its own, so it reads
-	// `trace_list_mv` alone unless the caller says it retries (`roots_only: false`).
+	// `trace_list_mv` alone (no rollup, no rootless traces) unless the caller
+	// says it retries (`roots_only: false`).
 	const rootsOnly = str("roots_only") !== "false"
 
 	/** A single-valued param as the one-element list the query filters take. */

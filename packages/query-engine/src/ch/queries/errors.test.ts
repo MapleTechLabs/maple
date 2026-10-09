@@ -625,12 +625,25 @@ describe("trace facets rollup routing", () => {
 			expect(sql).not.toContain("INTERVAL 1 HOUR")
 		}
 	})
+
+	it("keeps the rollup on a cluster that lacks only the entry-span table", () => {
+		const facets = compileUnionUnsafe(tracesFacetsQuery({ rootsOnly: true }), baseParams).sql
+		const stats = compileUnsafe(tracesDurationStatsQuery({ rootsOnly: true }), baseParams).sql
+		expect(facets.match(/UNION ALL/g)).toHaveLength(6 + 7)
+		for (const sql of [facets, stats]) {
+			expect(sql).toContain("FROM trace_facets_hourly")
+			expect(sql).not.toContain("trace_list_entry_spans")
+		}
+	})
 })
 
 describe("trace facets for traces with no root span", () => {
 	/** The last tier reading `trace_list_entry_spans`: the error count's, in the full facet union. */
 	const rootlessTier = (sql: string): string => {
-		const tier = sql.split("UNION ALL").findLast((part) => part.includes("FROM trace_list_entry_spans"))
+		const tier = sql
+			.split("UNION ALL")
+			.filter((part) => part.includes("FROM trace_list_entry_spans\n"))
+			.at(-1)
 		expect(tier).toBeDefined()
 		return tier!
 	}
@@ -648,7 +661,10 @@ describe("trace facets for traces with no root span", () => {
 		// The rollup cannot hold these, so this tier is not narrowed to the end hours.
 		expect(tier).not.toContain("toStartOfHour")
 		expect(tier).toContain("cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT")
+		// Both tables are budgeted, and an entry span stands in only once its root had time to arrive.
 		expect(tier).toContain("LIMIT 250001)) <= 250000")
+		expect(tier).toContain("LIMIT 1000001)) <= 1000000")
+		expect(tier).toContain("trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND")
 	})
 
 	it("adds them to the error count and the duration stats", () => {

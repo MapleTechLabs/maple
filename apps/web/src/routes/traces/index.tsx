@@ -14,7 +14,7 @@ import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { resolveEffectiveTimeRange, useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomValue } from "@/lib/effect-atom"
 import { applyWhereClause } from "@/lib/traces/advanced-filter-sync"
 import { getTracesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -215,7 +215,12 @@ function TracesPage() {
 					</Panel>
 				)}
 				<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFacetFilters} />
-				<TracesTable filters={search} />
+				<TracesTable
+					filters={search}
+					facetsOmitRootless={
+						Result.isSuccess(facetsResult) && facetsResult.value.rootlessTracesOmitted
+					}
+				/>
 			</DashboardPage>
 		</AutocompleteValuesProvider>
 	)

@@ -1646,16 +1646,67 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "span-filter",
 		compile: () => CH.compileUnsafe(CH.traceSummariesQuery({ serviceName: "api", limit: 21 }), window),
 	},
+	// The grouped trace list's follow-up reads (runtime `executeTraceList`); the
+	// querySpec fixtures cover its first two statements.
 	{
-		// The querySpec fixtures cover the default sort on both page tables.
 		module: "traces",
 		name: "traceListQuery",
+		label: "by-ids",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceListQuery({ traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"] }),
+				window,
+			),
+	},
+	{
+		module: "traces",
+		name: "traceListRootPageQuery",
 		label: "duration-sort",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.traceListQuery({ limit: 50, offset: 50, sortBy: "durationMs", sortDir: "desc" }),
+				CH.traceListRootPageQuery({ limit: 100, sortBy: "durationMs", sortDir: "desc" }),
 				window,
 			),
+	},
+	{
+		module: "traces",
+		name: "traceListEntryPageQuery",
+		label: "list-tables",
+		compile: () =>
+			CH.compileUnsafe(CH.traceListEntryPageQuery({ limit: 400, serviceNames: ["api"] }), window),
+	},
+	{
+		module: "traces",
+		name: "traceListEntryPageQuery",
+		label: "raw-traces",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceListEntryPageQuery({
+					limit: 400,
+					sortBy: "durationMs",
+					attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }],
+				}),
+				window,
+			),
+	},
+	{
+		module: "rootless-traces",
+		name: "rootedTraceIdsQuery",
+		label: "page-candidates",
+		compile: () =>
+			CH.compileUnsafe(CH.rootedTraceIdsQuery([TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"]), window),
+	},
+	{
+		module: "rootless-traces",
+		name: "rootSpansInRangeQuery",
+		label: "page-candidates",
+		compile: () => CH.compileUnsafe(CH.rootSpansInRangeQuery(), window),
+	},
+	{
+		module: "rootless-traces",
+		name: "rootlessOmittedQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.rootlessOmittedQuery(), window),
 	},
 	{
 		module: "traces",

@@ -151,6 +151,28 @@ describe("findSlowTraces", () => {
 		}),
 	)
 
+	it.effect("says when the window was too large to rank traces with no root span", () =>
+		Effect.gen(function* () {
+			const executor: WarehouseExecutorApi = {
+				...makeMockExecutor({ pipeCalls: [] }),
+				compiledQuery: (compiled) =>
+					compiledQueryOf(compiled)
+						.decodeRows([{ omitted: 1 }])
+						.pipe(Effect.orDie),
+			}
+			const range = { startTime: "2026-04-01 00:00:00", endTime: "2026-04-02 00:00:00" }
+
+			const flagged = yield* findSlowTraces({ timeRange: range }).pipe(
+				Effect.provide(makeLayer(executor)),
+			)
+			assert.strictEqual(flagged.rootlessTracesOmitted, true)
+			const plain = yield* findSlowTraces({ timeRange: range }).pipe(
+				Effect.provide(makeLayer(makeMockExecutor({ pipeCalls: [] }))),
+			)
+			assert.strictEqual(plain.rootlessTracesOmitted, undefined)
+		}),
+	)
+
 	it.effect("asks both pipes for rootless traces, and for root spans only on a cluster without them", () =>
 		Effect.gen(function* () {
 			const captured: CapturedCalls = { pipeCalls: [] }

@@ -233,6 +233,8 @@ export interface FindSlowTracesOutput {
 		readonly maxMs: number
 	} | null
 	readonly traces: ReadonlyArray<SpanResult>
+	/** The range holds too many rows to rank traces that have no root span; only rooted traces are ranked. */
+	readonly rootlessTracesOmitted?: boolean
 }
 
 export interface ExploreAttributesInput {

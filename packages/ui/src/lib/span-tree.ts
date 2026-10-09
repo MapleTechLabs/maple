@@ -102,10 +102,9 @@ export function buildSpanTree(spans: Span[]): SpanNode[] {
 		}
 	}
 
-	// A trace with no root span at all (its entry sits behind a proxy that injects
-	// trace context without exporting) has nothing missing in the middle: its
-	// parentless-in-practice spans are the top level. A placeholder is for a gap
-	// inside a rooted trace, where it shows where the subtree hung.
+	// With no root span at all (the trace entered through a proxy that never
+	// exports its own span), the spans whose parent is absent are the top level.
+	// A placeholder is for a rooted trace, where it shows where a subtree hung.
 	const rootless = rootSpans.length === 0
 
 	for (const [missingParentId, children] of missingParentGroups) {
