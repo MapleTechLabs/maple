@@ -72,9 +72,9 @@ function Columns() {
 			<ColumnHead label="Resource" width="w-0 flex-1 min-w-[220px]" />
 			<ColumnHead label="Type" width="w-[170px]" />
 			<ColumnHead label="Project" width="w-[220px]" />
-			<ColumnHead label="Location" width="w-[130px]" />
+			<ColumnHead label="Location" width="w-[120px]" />
 			<ColumnHead label="State" width="w-[120px]" />
-			<ColumnHead label="Labels" width="w-[200px]" hidden="hidden lg:flex" />
+			<ColumnHead label="Labels" width="w-[170px]" hidden="hidden lg:flex" />
 		</>
 	)
 }
@@ -158,7 +158,7 @@ function Resources({
 							<div className={`w-[220px] ${CELL}`} title={resource.projectId}>
 								{resource.projectId}
 							</div>
-							<div className={`w-[130px] ${CELL}`} title={resource.location ?? undefined}>
+							<div className={`w-[120px] ${CELL}`} title={resource.location ?? undefined}>
 								{resource.location ?? EMPTY_VALUE}
 							</div>
 							<div
@@ -169,7 +169,7 @@ function Resources({
 							</div>
 							{/* One line: the first label, and how many more the tooltip lists. */}
 							<div
-								className="hidden w-[200px] items-center gap-2 whitespace-nowrap lg:flex"
+								className="hidden w-[170px] items-center gap-2 whitespace-nowrap lg:flex"
 								title={labels.join("\n")}
 							>
 								{labels.length === 0 ? null : (
@@ -214,7 +214,7 @@ export function GcpResources({
 			{syncError === null ? null : (
 				<Alert variant="warn">
 					<CircleWarningIcon size={16} />
-					<AlertTitle>The latest resource sync was incomplete</AlertTitle>
+					<AlertTitle>The resource list is incomplete</AlertTitle>
 					<AlertDescription>
 						<GcpMessage text={syncError} />
 					</AlertDescription>
@@ -231,9 +231,9 @@ export function GcpResources({
 							<Skeleton className="h-4 w-0 min-w-[220px] flex-1" />
 							<Skeleton className="h-3 w-[170px]" />
 							<Skeleton className="h-3 w-[220px]" />
-							<Skeleton className="h-3 w-[130px]" />
 							<Skeleton className="h-3 w-[120px]" />
-							<Skeleton className="hidden h-3 w-[200px] lg:block" />
+							<Skeleton className="h-3 w-[120px]" />
+							<Skeleton className="hidden h-3 w-[170px] lg:block" />
 						</DataTable.SkeletonRows>
 					</DataTable.Root>
 				}

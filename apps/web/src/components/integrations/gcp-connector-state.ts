@@ -21,6 +21,14 @@ const GRANT_GRACE_MS = 10 * MINUTE_MS
 const ageMs = (iso: string | null, nowMs: number) =>
 	iso === null ? Number.POSITIVE_INFINITY : nowMs - Date.parse(iso)
 
+/**
+ * Whether the script still has to set a switched-on capability up: a run reported it removed, or
+ * no run reported and nothing recent arrived. Recent data stands in for a report that never
+ * reached Maple, but not against one that did.
+ */
+const needsSetup = (applied: boolean | null, lastDataAgeMs: number) =>
+	applied === false || (applied === null && lastDataAgeMs > FRESH_MS)
+
 export type GcpLogState =
 	/** `stillSetUp`: the sink still forwards, because the script has not run since the switch. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
@@ -46,7 +54,7 @@ export function gcpLogState(connector: LogFields, nowMs: number): GcpLogState {
 		return { kind: "failing", error: connector.last_log_error, lastLogReceivedAt }
 	}
 	const age = ageMs(lastLogReceivedAt, nowMs)
-	if (!applied && age > FRESH_MS) return { kind: "setup-pending" }
+	if (needsSetup(connector.applied_logs_enabled, age)) return { kind: "setup-pending" }
 	if (lastLogReceivedAt === null) {
 		const reportedAt = connector.setup_reported_at
 		return { kind: "waiting", reportedAt, overdue: ageMs(reportedAt, nowMs) > OVERDUE_LOG_MS }
@@ -62,7 +70,7 @@ export type GcpMetricsState =
 	| { readonly kind: "waiting"; readonly reportedAt: string | null }
 	/** Reads fail, and nothing recent is on screen. */
 	| { readonly kind: "failing"; readonly error: string; readonly lastMetricsReceivedAt: string | null }
-	/** Recent reads arrive, but part of the metrics or the resource list is missing. */
+	/** Recent reads arrive, but part of the metrics is missing. */
 	| { readonly kind: "incomplete"; readonly error: string; readonly lastMetricsReceivedAt: string }
 	/** No error, and no read for half an hour. */
 	| { readonly kind: "stalled"; readonly lastMetricsReceivedAt: string }
@@ -71,6 +79,8 @@ export type GcpMetricsState =
 			readonly lastMetricsReceivedAt: string
 			/** Projects found under a folder or organization; null for a project or before the first sync. */
 			readonly projectCount: number | null
+			/** Why the resource list is incomplete. Metrics are unaffected, so this is not a failure. */
+			readonly resourcesError: string | null
 	  }
 
 type MetricsFields = Pick<
@@ -92,7 +102,7 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	const error = connector.last_metrics_error
 	const age = ageMs(lastMetricsReceivedAt, nowMs)
 	// Before the script has run the poller says it can't sign in. That is the expected start.
-	if (!applied && age > FRESH_MS) return { kind: "setup-pending" }
+	if (needsSetup(connector.applied_metrics_enabled, age)) return { kind: "setup-pending" }
 	const waiting = { kind: "waiting", reportedAt: connector.setup_reported_at } as const
 	// A run just reported: what the poller said before its grant works counts for nothing yet.
 	if (age > STALE_READ_MS && ageMs(connector.setup_reported_at, nowMs) < GRANT_GRACE_MS) return waiting
@@ -103,9 +113,6 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 		return { kind: age > STALE_READ_MS ? "failing" : "incomplete", error, lastMetricsReceivedAt }
 	}
 	if (age > STALE_READ_MS) return { kind: "stalled", lastMetricsReceivedAt }
-	if (connector.last_resources_error !== null) {
-		return { kind: "incomplete", error: connector.last_resources_error, lastMetricsReceivedAt }
-	}
 	return {
 		kind: "receiving",
 		lastMetricsReceivedAt,
@@ -113,6 +120,7 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 			connector.scope_type !== "project" && connector.discovered_project_count > 0
 				? connector.discovered_project_count
 				: null,
+		resourcesError: connector.last_resources_error,
 	}
 }
 

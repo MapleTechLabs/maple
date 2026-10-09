@@ -140,15 +140,15 @@ Each connection shows a status per switch. The page updates on its own.
 | **Rejecting logs**         | Maple refused the last push. The row says why and what to do.                                                                      |
 | **Off**                    | Switched off. A second line appears while Google Cloud still forwards logs.                                                        |
 
-| Metrics and resources             | Meaning                                                                                                   |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Setup pending**                 | The setup script has not granted Maple read access yet. Run it.                                           |
-| **Waiting for first metrics**     | The script ran and the first read has not landed.                                                         |
-| **Receiving metrics**             | Reads succeed. A folder or organization also shows how many projects Maple found.                         |
-| **Receiving metrics, incomplete** | Recent reads arrive, but part of the metrics or of the resource list is missing. The row says which part. |
-| **Metrics stalled**               | No read for 30 minutes and no error. Maple retries on its own.                                            |
-| **Can't read metrics**            | Reads fail. The row says why and what to do.                                                              |
-| **Off**                           | Switched off. A second line appears while the read-only service account still exists.                     |
+| Metrics and resources             | Meaning                                                                                                                                       |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Setup pending**                 | The setup script has not granted Maple read access yet. Run it.                                                                               |
+| **Waiting for first metrics**     | The script ran and the first read has not landed.                                                                                             |
+| **Receiving metrics**             | Reads succeed. A folder or organization also shows how many projects Maple found. A second line appears when the resource list is incomplete. |
+| **Receiving metrics, incomplete** | Recent reads arrive, but some metric queries failed or were cut short. The row says which.                                                    |
+| **Metrics stalled**               | No read for 30 minutes and no error. Maple retries on its own.                                                                                |
+| **Can't read metrics**            | Reads fail. The row says why and what to do.                                                                                                  |
+| **Off**                           | Switched off. A second line appears while the read-only service account still exists.                                                         |
 
 The page header and the Integrations list show the connection's worst status: **Needs attention**, **Setup pending**, **Changes pending**, **Waiting for data** or **Healthy**.
 

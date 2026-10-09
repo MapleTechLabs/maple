@@ -123,7 +123,7 @@ function GcpPage() {
 								}
 								integration="gcp"
 								actionLabel={
-									connected ? "Open Google Cloud settings" : "Connect Google Cloud"
+									connected ? "Open the Google Cloud integration" : "Connect Google Cloud"
 								}
 								docsPage="gcp"
 							/>

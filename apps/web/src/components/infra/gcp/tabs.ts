@@ -122,7 +122,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("CPU of limit", "percent", (m) => m.mean(`${CONTAINER}.cpu.limit_utilization`)),
 		// Non-evictable memory is what counts against the limit.
 		column("Memory", "bytes", (m) => m.mean(`${CONTAINER}.memory.used_bytes`, "non-evictable")),
-		column("Memory of limit", "percent", (m) =>
+		column("Mem of limit", "percent", (m) =>
 			m.mean(`${CONTAINER}.memory.limit_utilization`, "non-evictable"),
 		),
 		column("Restarts", "count", (m) => m.total(`${CONTAINER}.restart_count`)),
@@ -150,7 +150,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 	],
 	pubsub: [
 		column("Backlog", "decimal", (m) => m.mean(`${SUBSCRIPTION}.num_undelivered_messages`)),
-		column("Oldest unacked", "seconds", (m) => m.mean(`${SUBSCRIPTION}.oldest_unacked_message_age`)),
+		column("Unacked age", "seconds", (m) => m.mean(`${SUBSCRIPTION}.oldest_unacked_message_age`)),
 		column("Delivered", "count", (m) => m.total(`${SUBSCRIPTION}.sent_message_count`)),
 		column("Acked", "count", (m) => m.total(`${SUBSCRIPTION}.ack_message_count`)),
 		column("Dead-lettered", "count", (m) => m.total(`${SUBSCRIPTION}.dead_letter_message_count`)),
@@ -165,7 +165,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Latency p95", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.95")),
 		column("Latency p99", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.99")),
 		column("Backend p95", "ms", (m) => m.mean(`${HTTPS}.backend_latencies`, "0.95")),
-		column("Response bytes", "bytes", (m) => m.total(`${HTTPS}.response_bytes_count`)),
+		column("Response size", "bytes", (m) => m.total(`${HTTPS}.response_bytes_count`)),
 	],
 } satisfies Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>>
 
