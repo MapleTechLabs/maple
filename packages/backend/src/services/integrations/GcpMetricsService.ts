@@ -97,10 +97,11 @@ const explainApiError = (
 			? `Google denied Maple's read of ${scope}: the read-only roles are missing. Run the setup script again: it grants them. A new grant can take a few minutes.`
 			: `Google denied the resource listing for ${scope}. Run the setup script again: it grants Cloud Asset Viewer.`
 	}
-	if (error.kind === "rate_limited") {
-		return `Google rate-limited the ${error.api} API for the host project ${host}. Maple kept what it read and retries in 5 minutes. If this repeats, raise that API's quota on the project.`
+	// Signing in is counted against Maple's own project, not the host project.
+	if (error.kind === "rate_limited" && error.api !== "IAM Credentials") {
+		return `Google rate-limited the ${error.api} API for the host project ${host}. ${RETRIES} If this repeats, raise that API's quota on the project.`
 	}
-	return `Google's ${error.api} API did not answer Maple's request. ${RETRIES} If this repeats, write to support@maple.dev.`
+	return `Maple's request to Google's ${error.api} API failed. ${RETRIES} If this repeats, write to support@maple.dev.`
 }
 
 /**
@@ -458,16 +459,19 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 
 					const incomplete = partial + skipped
 					const failed = METRICS.length - complete - incomplete
+					// The note that ends in Google's status goes last.
 					const notes = [
-						...(firstFailure === undefined
-							? []
-							: [
-									`${failed} of ${METRICS.length} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
-								]),
 						...(incomplete === 0
 							? []
 							: [
-									`${incomplete} of ${METRICS.length} metric queries hold more series than one read takes. Connect the folders or projects separately to collect all of it.`,
+									`${incomplete} of ${METRICS.length} metric queries were not read in full: the scope holds more series than one read takes. Connect the folders or projects separately to collect all of it.`,
+								]),
+						...(firstFailure === undefined
+							? []
+							: [
+									firstFailure.error.kind === "rate_limited"
+										? describeApiError(firstFailure.error, connector, "metrics")
+										: `${failed} of ${METRICS.length} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
 								]),
 					]
 					yield* updateConnector(connector.id, {
@@ -510,7 +514,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 										)
 									: recordFailure(
 											connector,
-											`Maple could not store the metrics it read just now. ${NOT_STORED}`,
+											`Maple could not store the metrics it read just now. ${NOT_STORED} (${error.message})`,
 										),
 						}),
 					),

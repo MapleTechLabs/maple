@@ -85,12 +85,13 @@ const cleanup = (scope: Scope, pushEndpoint?: string) =>
 // A `gcloud` that records its commands, and each argument on its own line so a value split by
 // bad quoting shows. It talks on stderr like the real one, which a script must not pass on.
 // `describe` answers as the test says: found, missing, or denied, and so does the service account
-// list (a missing account is an empty list). `GCLOUD_FAIL` refuses the commands that contain it.
+// list (a missing account is an empty list). `GCLOUD_FAIL` refuses the commands that contain it,
+// in the words of `GCLOUD_ANSWER` when the test gives some.
 const FAKE_GCLOUD = `#!/usr/bin/env bash
 echo "$*" >> "$GCLOUD_LOG"
 printf "%s\\n" "$@" >> "$GCLOUD_LOG.args"
 denied() {
-  echo "ERROR: (gcloud) PERMISSION_DENIED: Permission denied on resource (or it may not exist)." >&2
+  echo "\${GCLOUD_ANSWER:-ERROR: (gcloud) PERMISSION_DENIED: Permission denied on resource (or it may not exist).}" >&2
   exit 1
 }
 # For a disabled API gcloud asks whether to enable it, unless prompts are off.
@@ -109,7 +110,7 @@ case "$*" in
   "projects describe"*) echo "Acme Production" ;;
   "organizations describe"* | "resource-manager folders describe"*) echo "acme.com" ;;
   "billing projects describe"*) echo "$GCLOUD_BILLING" ;;
-  *"sinks describe"*"--format"*) echo "${WRITER}" ;;
+  *"sinks describe"*"--format"*) echo "WARNING: gcloud says something on stderr." >&2; echo "${WRITER}" ;;
   *"service-accounts list"*)
     case "$GCLOUD_DESCRIBE" in
       found) echo "${ACCOUNT}" ;;
@@ -182,8 +183,9 @@ interface RunOptions {
 	describe?: "found" | "missing" | "denied" | "api_off"
 	unbind?: "ok" | "absent" | "denied"
 	gcloud?: string
-	/** A substring of the gcloud commands to refuse. */
+	/** A substring of the gcloud commands to refuse, and Google's words for it. */
 	fail?: string
+	answer?: string
 	account?: string
 	billing?: "True" | "False"
 	/** A permission the account does not hold, or `unanswered` when Google cannot be asked. */
@@ -216,6 +218,7 @@ const run = (script: string, options: RunOptions = {}) => {
 			GCLOUD_DESCRIBE: options.describe ?? "missing",
 			GCLOUD_UNBIND: options.unbind ?? "ok",
 			GCLOUD_FAIL: options.fail ?? "",
+			GCLOUD_ANSWER: options.answer ?? "",
 			GCLOUD_ACCOUNT: options.account ?? "jane@acme.com",
 			GCLOUD_BILLING: options.billing ?? "True",
 			CURL_LOG: join(dir, "curl.log"),
@@ -580,6 +583,27 @@ ${UNFINISHED}`),
 		).toBe(true)
 	})
 
+	it("reads Google's other refusals for what they are, and never prints the secret back", () => {
+		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const propagating = run(script, {
+			fail: "topics create",
+			answer: "ERROR: (gcloud) PERMISSION_DENIED: Cloud Pub/Sub API has not been used in project 1 before or it is disabled.",
+		})
+		expect(propagating.stdout).toContain(
+			"What to do: Google is still switching an API on, or the API is off. Wait a minute and paste the script again.",
+		)
+
+		const quoted = run(script, {
+			fail: "subscriptions create",
+			answer: `ERROR: (gcloud) INVALID_ARGUMENT: Invalid push endpoint given (endpoint=${PUSH_ENDPOINT}).`,
+		})
+		expect(quoted.stdout).toContain("?secret=HIDDEN).")
+		expect(quoted.stdout).not.toContain(SECRET)
+		expect(quoted.stdout).toContain(
+			"What to do: Read Google's answer above. If it is unclear, send this output to support@maple.dev.",
+		)
+	})
+
 	it("names the role of the scope for a refused grant there", () => {
 		const { stdout } = run(setup(setupInput("organization", { logs: false, metrics: true })), {
 			fail: "organizations add-iam-policy-binding",
@@ -733,7 +757,9 @@ esac
 			...setupInput("organization", { logs: true, metrics: true }),
 			mapleServiceAccountEmail: undefined,
 		})
-		expect(script).toContain("Metrics and resources: on, unavailable")
+		expect(script).toContain(
+			"#   Metrics and resources: not available on this Maple deployment, left as is\n",
+		)
 		const { status, stdout, commands } = run(script, { describe: "found" })
 		expect(status).toBe(0)
 		expect(stdout).toContain(
@@ -763,6 +789,18 @@ esac
 		expect(denied.stdout).toContain(
 			"\nCleanup did not finish. Fix this and paste the script again: it continues where it stopped.\n",
 		)
+
+		// The host project's binding is the Owner's to remove, and only gcloud's own "not found"
+		// means a binding is gone.
+		const hostDenied = run(script, { describe: "found", fail: "projects remove-iam-policy-binding" })
+		expect(hostDenied.stdout).toContain("What to do: jane@acme.com needs Owner on project acme-host.")
+		const unknown = run(script, {
+			describe: "found",
+			fail: "remove-iam-policy-binding",
+			answer: "ERROR: (gcloud) NOT_FOUND: Requested entity was not found.",
+		})
+		expect(unknown.commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(unknown.status).toBe(1)
 	})
 
 	it("keeps the topic when it cannot tell whether the sink is gone", () => {
@@ -839,8 +877,8 @@ esac
 
 	it("carries no secret and reports nothing once the connector is gone", () => {
 		const script = cleanup(SCOPES.project)
-		expect(script).not.toContain("secret")
-		expect(script).not.toContain("PUSH_ENDPOINT")
+		expect(script).not.toContain("maple_gcp_")
+		expect(script).not.toContain("PUSH_ENDPOINT=")
 		const { status, stdout, curl } = run(script, { describe: "found" })
 		expect(status).toBe(0)
 		expect(curl).toEqual([])

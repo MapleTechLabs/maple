@@ -104,7 +104,7 @@ const decodeErrorMessage = Schema.decodeUnknownOption(
 const reasonFromMessage = (body: unknown): string | undefined => {
 	const message = Option.getOrUndefined(decodeErrorMessage(body))?.error.message
 	if (message === undefined) return undefined
-	if (message.includes("billing")) return "BILLING_DISABLED"
+	if (message.includes("requires billing")) return "BILLING_DISABLED"
 	return message.includes("has not been used") || message.includes("is disabled")
 		? "SERVICE_DISABLED"
 		: undefined
@@ -132,7 +132,7 @@ const call = <A>(
 			const kind = errorKind(response.status)
 			const reason = errorReason(body, kind)
 			return yield* new GcpApiError({
-				message: `${api} returned ${response.status}${errorCode(body)}`,
+				message: `${api} returned ${response.status}${errorCode(body)}${reason === undefined ? "" : `, ${reason}`}`,
 				api,
 				kind,
 				...(reason === undefined ? undefined : { reason }),

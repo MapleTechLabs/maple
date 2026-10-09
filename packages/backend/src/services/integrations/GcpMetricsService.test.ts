@@ -157,7 +157,7 @@ const READ_DENIED =
 const CANNOT_SIGN_IN =
 	"Maple can't sign in as this connection's read-only service account. It was deleted, or the grant to Maple was removed or blocked by an organization policy. Run the setup script again and read its last lines. (IAM Credentials returned 403 PERMISSION_DENIED)"
 const NO_BILLING =
-	"The host project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
+	"The host project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED, BILLING_DISABLED)"
 const queriesFailed = (failed: number, type: string, answer: string) =>
 	`${failed} of ${METRIC_COUNT} metric queries failed, first ${type}. The rest were stored. Maple retries in 5 minutes. (Cloud Monitoring returned ${answer})`
 
@@ -709,7 +709,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.strictEqual(
 					state.last_metrics_error,
-					`1 of ${METRIC_COUNT} metric queries hold more series than one read takes. Connect the folders or projects separately to collect all of it.`,
+					`1 of ${METRIC_COUNT} metric queries were not read in full: the scope holds more series than one read takes. Connect the folders or projects separately to collect all of it.`,
 				)
 			}),
 		)
@@ -845,7 +845,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(yield* metricsError, NO_BILLING)
 				assert.strictEqual(
 					(yield* pollState(testDb, CONNECTOR_A)).last_resources_error,
-					"The Cloud Asset Inventory API is switched off in the host project acme-prod. Run the setup script again: it switches the API on. (Cloud Asset Inventory returned 403 PERMISSION_DENIED)",
+					"The Cloud Asset Inventory API is switched off in the host project acme-prod. Run the setup script again: it switches the API on. (Cloud Asset Inventory returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
 				)
 
 				monitoring = () => googleError(403, "PERMISSION_DENIED", [errorInfo("BILLING_DISABLED")])
@@ -864,7 +864,10 @@ describe("GcpMetricsService", () => {
 				impersonate = () => googleError(403, "PERMISSION_DENIED", [errorInfo("SERVICE_DISABLED")])
 				yield* TestClock.setTime(now + 15 * minute)
 				yield* pollAll
-				assert.strictEqual(yield* metricsError, CANNOT_SIGN_IN)
+				assert.strictEqual(
+					yield* metricsError,
+					CANNOT_SIGN_IN.replace("DENIED)", "DENIED, SERVICE_DISABLED)"),
+				)
 
 				// Details of another form cost neither the status code nor the poll.
 				impersonate = () => undefined
@@ -934,11 +937,9 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0 })
 				assert.lengthOf(calls.monitoring, 2)
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.match(
-					state.last_metrics_error ?? "",
-					new RegExp(
-						`^${METRIC_COUNT - 1} of ${METRIC_COUNT} metric queries failed, first .+\\. The rest were stored\\. Maple retries in 5 minutes\\. \\(Cloud Monitoring returned 429 RESOURCE_EXHAUSTED\\)$`,
-					),
+				assert.strictEqual(
+					state.last_metrics_error,
+					"Google rate-limited the Cloud Monitoring API for the host project acme-prod. Maple retries in 5 minutes. If this repeats, raise that API's quota on the project. (Cloud Monitoring returned 429 RESOURCE_EXHAUSTED)",
 				)
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 			}),
@@ -972,7 +973,7 @@ describe("GcpMetricsService", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_metrics_error,
-					"Google's Cloud Monitoring API did not answer Maple's request. Maple retries in 5 minutes. If this repeats, write to support@maple.dev. (Cloud Monitoring request timed out)",
+					"Maple's request to Google's Cloud Monitoring API failed. Maple retries in 5 minutes. If this repeats, write to support@maple.dev. (Cloud Monitoring request timed out)",
 				)
 				assert.isNull(state.metrics_watermark_at)
 			}),
