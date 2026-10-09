@@ -166,6 +166,15 @@ export function paddedWindowArgs(window: { readonly startTime: string; readonly 
 /** The sentinel a caught 413 hands back: retry this page smaller. */
 const HALVE: "halve" = "halve"
 
+type ReadSpansPage = ReturnType<typeof readAiSessionSpans>
+
+interface SpanLoadState {
+	readonly spans: ReadonlyArray<AiSessionSpan>
+	readonly after: GetAiSessionSpansRequest["after"]
+	readonly limit: number
+	readonly truncated: "cap" | "too_large" | false
+}
+
 /**
  * Every span of a session the derivations run on, up to
  * {@link MCP_AGENT_SESSION_MAX_SPANS} and clipped page by page; `truncated`
@@ -184,46 +193,59 @@ export const loadAgentSessionSpans = Effect.fn("McpAgentSessions.loadAgentSessio
 		return { spans: [], truncated: false as const, window: undefined }
 	}
 
-	const spans: AiSessionSpan[] = []
-	let after = undefined as GetAiSessionSpansRequest["after"]
-	let limit = AI_SESSION_SPANS_MAX_SPANS
-	let truncated: "cap" | "too_large" | false = false
-	while (spans.length < MCP_AGENT_SESSION_MAX_SPANS) {
-		const page = yield* readAiSessionSpans(
-			tenant,
-			new GetAiSessionSpansRequest({
-				sessionId: opts.sessionId,
-				limit: Math.min(limit, MCP_AGENT_SESSION_MAX_SPANS - spans.length),
-				...window,
-				...(after !== undefined && { after }),
-			}),
-		).pipe(
-			// A 413 is the BYTE cap, and the sessions this tool exists for are
-			// exactly the ones whose heavy spans trip it on page one — so the same
-			// page is retried at half the rows, down to the floor. Past that the
-			// pages in hand are the session's beginning, and a first page that
-			// cannot be read even at the floor fails the call.
-			Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
-				limit > MIN_PAGE_SPANS
-					? Effect.succeed(HALVE)
-					: spans.length === 0
-						? Effect.fail(error)
-						: Effect.succeed(undefined),
-			),
-		)
-		if (page === HALVE) {
-			limit = Math.max(MIN_PAGE_SPANS, Math.floor(limit / 2))
-			continue
-		}
-		if (page === undefined) {
-			truncated = "too_large"
-			break
-		}
-		for (const row of page.data) spans.push(clipSpanContent(row))
-		after = page.nextCursor
-		if (after === undefined) break
-		truncated = spans.length >= MCP_AGENT_SESSION_MAX_SPANS ? "cap" : false
-	}
+	const readPage = (
+		state: SpanLoadState,
+	): Effect.Effect<SpanLoadState, Effect.Error<ReadSpansPage>, Effect.Services<ReadSpansPage>> =>
+		state.spans.length >= MCP_AGENT_SESSION_MAX_SPANS
+			? Effect.succeed(state)
+			: readAiSessionSpans(
+					tenant,
+					new GetAiSessionSpansRequest({
+						sessionId: opts.sessionId,
+						limit: Math.min(state.limit, MCP_AGENT_SESSION_MAX_SPANS - state.spans.length),
+						...window,
+						...(state.after !== undefined && { after: state.after }),
+					}),
+				).pipe(
+					// A 413 is the BYTE cap, and the sessions this tool exists for are
+					// exactly the ones whose heavy spans trip it on page one — so the same
+					// page is retried at half the rows, down to the floor. Past that the
+					// pages in hand are the session's beginning, and a first page that
+					// cannot be read even at the floor fails the call.
+					Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
+						state.limit > MIN_PAGE_SPANS
+							? Effect.succeed(HALVE)
+							: state.spans.length === 0
+								? Effect.fail(error)
+								: Effect.succeed(undefined),
+					),
+					Effect.flatMap((page) => {
+						if (page === HALVE) {
+							return readPage({
+								...state,
+								limit: Math.max(MIN_PAGE_SPANS, Math.floor(state.limit / 2)),
+							})
+						}
+						if (page === undefined)
+							return Effect.succeed({ ...state, truncated: "too_large" as const })
+						const spans = [...state.spans, ...page.data.map(clipSpanContent)]
+						if (page.nextCursor === undefined)
+							return Effect.succeed({ ...state, spans, after: undefined })
+						return readPage({
+							spans,
+							after: page.nextCursor,
+							limit: state.limit,
+							truncated: spans.length >= MCP_AGENT_SESSION_MAX_SPANS ? "cap" : false,
+						})
+					}),
+				)
+
+	const { spans, limit, truncated } = yield* readPage({
+		spans: [],
+		after: undefined,
+		limit: AI_SESSION_SPANS_MAX_SPANS,
+		truncated: false,
+	})
 	yield* Effect.annotateCurrentSpan({
 		"maple.ai.span_count": spans.length,
 		"maple.ai.page_limit": limit,

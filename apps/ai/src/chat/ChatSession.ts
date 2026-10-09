@@ -430,16 +430,14 @@ export class ChatSession {
 		const since = (position: number) => this.since(position)
 		const appends = () => this.appends
 		const waitForAppend = (seen: number, timeoutMs: number) => this.waitForAppend(seen, timeoutMs)
-		const stream = Effect.gen(function* () {
-			let position = cursor
-			yield* write(RETRY_HINT)
-			for (;;) {
+		type PumpError =
+			| Effect.Error<ReturnType<typeof write>>
+			| Effect.Error<ReturnType<typeof waitForAppend>>
+		const pumpFrom = (position: number): Effect.Effect<void, PumpError> =>
+			Effect.gen(function* () {
 				const seen = appends()
 				const events = since(position)
-				for (const event of events) {
-					yield* write(frameChatEvent(event))
-					position = event.seq
-				}
+				yield* Effect.forEach(events, (event) => write(frameChatEvent(event)), { discard: true })
 				// Only the *conversation's* turn ending closes the stream. A sub-agent's `turn-end`
 				// is tagged with `task` and merely closes its card — treating it as terminal would
 				// cut the connection the moment the first delegated search finished, and the rest of
@@ -448,8 +446,9 @@ export class ChatSession {
 				// The idle budget is spent on silence only: a batch that went out resets it, so a
 				// long turn streams over one connection instead of being recycled mid-answer.
 				if (!(yield* waitForAppend(seen, SUBSCRIBE_IDLE_MS))) return
-			}
-		})
+				return yield* pumpFrom(events.at(-1)?.seq ?? position)
+			})
+		const stream = write(RETRY_HINT).pipe(Effect.andThen(pumpFrom(cursor)))
 		return Effect.runPromise(
 			stream.pipe(
 				Effect.ensuring(
