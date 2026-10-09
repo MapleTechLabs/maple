@@ -1,4 +1,5 @@
-import { digestSubscriptions } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { DigestSubscriptions, type DigestSubscriptionRow } from "@maple/db/tables"
 import {
 	DigestNotConfiguredError,
 	DigestNotFoundError,
@@ -16,7 +17,6 @@ import {
 } from "@maple/domain/http"
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
 import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import {
 	computeDelta,
@@ -29,7 +29,6 @@ import {
 } from "@maple/email/weekly-digest-core"
 import { renderWeeklyDigest } from "@maple/email/weekly-digest"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -303,13 +302,12 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(digestSubscriptions)
-						.where(
-							and(eq(digestSubscriptions.orgId, orgId), eq(digestSubscriptions.userId, userId)),
-						)
-						.limit(1),
+					db.run(
+						PG.from(DigestSubscriptions)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -344,54 +342,54 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			yield* database
 				.execute((db) =>
-					db
-						.insert(digestSubscriptions)
-						.values({
-							id,
-							orgId,
-							userId,
-							email: input.email,
-							enabled: input.enabled !== false,
-							optedOutAt: input.enabled === false ? msToDate(now) : null,
-							dayOfWeek: input.dayOfWeek ?? 1,
-							timezone: input.timezone ?? "UTC",
-							namespacesJson: JSON.stringify(input.namespaces ?? []),
-							environmentsJson: JSON.stringify(input.environments ?? []),
-							webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
-							webAnalyticsOptedOutAt:
-								input.webAnalyticsEnabled === false ? msToDate(now) : null,
-							createdAt: msToDate(now),
-							updatedAt: msToDate(now),
-						})
-						.onConflictDoUpdate({
-							target: [digestSubscriptions.orgId, digestSubscriptions.userId],
-							set: {
+					db.run(
+						PG.insertInto(DigestSubscriptions)
+							.values({
+								id,
+								orgId,
+								userId,
 								email: input.email,
 								enabled: input.enabled !== false,
-								// The subscriber turning the digest off is the one signal the
-								// Clerk reconciliation must not overwrite; stamp it here so it
-								// can tell an opt-out from a member it disabled itself.
-								optedOutAt: input.enabled === false ? msToDate(now) : null,
-								...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : undefined),
-								...(input.timezone != null ? { timezone: input.timezone } : undefined),
-								...(input.namespaces != null
-									? { namespacesJson: JSON.stringify(input.namespaces) }
-									: undefined),
-								...(input.environments != null
-									? { environmentsJson: JSON.stringify(input.environments) }
-									: undefined),
-								// Only touched when sent, so saving the ops digest never flips it.
-								...(input.webAnalyticsEnabled != null
-									? {
-											webAnalyticsEnabled: input.webAnalyticsEnabled,
-											webAnalyticsOptedOutAt: input.webAnalyticsEnabled
-												? null
-												: msToDate(now),
-										}
-									: undefined),
-								updatedAt: msToDate(now),
-							},
-						}),
+								optedOutAt: input.enabled === false ? now : null,
+								dayOfWeek: input.dayOfWeek ?? 1,
+								timezone: input.timezone ?? "UTC",
+								namespacesJson: JSON.stringify(input.namespaces ?? []),
+								environmentsJson: JSON.stringify(input.environments ?? []),
+								webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
+								webAnalyticsOptedOutAt: input.webAnalyticsEnabled === false ? now : null,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.onConflictDoUpdate({
+								target: ["orgId", "userId"],
+								set: {
+									email: input.email,
+									enabled: input.enabled !== false,
+									// The subscriber turning the digest off is the one signal the
+									// Clerk reconciliation must not overwrite; stamp it here so it
+									// can tell an opt-out from a member it disabled itself.
+									optedOutAt: input.enabled === false ? now : null,
+									...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : undefined),
+									...(input.timezone != null ? { timezone: input.timezone } : undefined),
+									...(input.namespaces != null
+										? { namespacesJson: JSON.stringify(input.namespaces) }
+										: undefined),
+									...(input.environments != null
+										? { environmentsJson: JSON.stringify(input.environments) }
+										: undefined),
+									// Only touched when sent, so saving the ops digest never flips it.
+									...(input.webAnalyticsEnabled != null
+										? {
+												webAnalyticsEnabled: input.webAnalyticsEnabled,
+												webAnalyticsOptedOutAt: input.webAnalyticsEnabled
+													? null
+													: now,
+											}
+										: undefined),
+									updatedAt: now,
+								},
+							}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -415,12 +413,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			yield* database
 				.execute((db) =>
-					db
-						.update(digestSubscriptions)
-						.set({ enabled: false, optedOutAt: msToDate(now), updatedAt: msToDate(now) })
-						.where(
-							and(eq(digestSubscriptions.orgId, orgId), eq(digestSubscriptions.userId, userId)),
-						),
+					db.run(
+						PG.update(DigestSubscriptions)
+							.set({ enabled: false, optedOutAt: now, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -441,18 +438,23 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			}
 			yield* Effect.annotateCurrentSpan("maple.email.unsubscribe_kind", verified.kind)
 
-			const now = msToDate(yield* Clock.currentTimeMillis)
+			const now = yield* Clock.currentTimeMillis
 			// Idempotent: a repeat click (or a deleted row) changes nothing and still succeeds.
 			yield* database
 				.execute((db) =>
-					db
-						.update(digestSubscriptions)
-						.set(
-							verified.kind === "digest"
-								? { enabled: false, optedOutAt: now, updatedAt: now }
-								: { webAnalyticsEnabled: false, webAnalyticsOptedOutAt: now, updatedAt: now },
-						)
-						.where(eq(digestSubscriptions.id, verified.subscriptionId)),
+					db.run(
+						PG.update(DigestSubscriptions)
+							.set(
+								verified.kind === "digest"
+									? { enabled: false, optedOutAt: now, updatedAt: now }
+									: {
+											webAnalyticsEnabled: false,
+											webAnalyticsOptedOutAt: now,
+											updatedAt: now,
+										},
+							)
+							.where(($) => [$.id.eq(verified.subscriptionId)]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -981,28 +983,31 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				(m) =>
 					database
 						.execute((db) =>
-							db
-								.insert(digestSubscriptions)
-								.values({
-									id: crypto.randomUUID(),
-									orgId: m.orgId,
-									userId: m.userId,
-									email: m.email,
-									enabled: true,
-									dayOfWeek: 1,
-									timezone: "UTC",
-									createdAt: msToDate(now),
-									updatedAt: msToDate(now),
-								})
-								.onConflictDoUpdate({
-									target: [digestSubscriptions.orgId, digestSubscriptions.userId],
-									set: {
+							db.run(
+								PG.insertInto(DigestSubscriptions)
+									.values({
+										id: crypto.randomUUID(),
+										orgId: m.orgId,
+										userId: m.userId,
 										email: m.email,
-										enabled: sql`${digestSubscriptions.optedOutAt} is null`,
-										webAnalyticsEnabled: sql`${digestSubscriptions.webAnalyticsOptedOutAt} is null`,
-										updatedAt: msToDate(now),
-									},
-								}),
+										enabled: true,
+										dayOfWeek: 1,
+										timezone: "UTC",
+										createdAt: now,
+										updatedAt: now,
+									})
+									.onConflictDoUpdate({
+										target: ["orgId", "userId"],
+										set: ($) => ({
+											email: m.email,
+											enabled: PG.asBoolean($.optedOutAt.isNull()),
+											webAnalyticsEnabled: PG.asBoolean(
+												$.webAnalyticsOptedOutAt.isNull(),
+											),
+											updatedAt: now,
+										}),
+									}),
+							),
 						)
 						.pipe(Effect.mapError(toPersistenceError)),
 				{ discard: true },
@@ -1014,14 +1019,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const existingSubs = yield* database
 				.execute((db) =>
-					db
-						.select({
-							id: digestSubscriptions.id,
-							orgId: digestSubscriptions.orgId,
-							userId: digestSubscriptions.userId,
-						})
-						.from(digestSubscriptions)
-						.where(inArray(digestSubscriptions.orgId, activeOrgIds)),
+					db.run(
+						PG.from(DigestSubscriptions)
+							.select("id", "orgId", "userId")
+							.where(($) => [PG.inList($.orgId, activeOrgIds)]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -1033,10 +1035,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			if (staleIds.length > 0) {
 				yield* database
 					.execute((db) =>
-						db
-							.update(digestSubscriptions)
-							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: msToDate(now) })
-							.where(inArray(digestSubscriptions.id, staleIds)),
+						db.run(
+							PG.update(DigestSubscriptions)
+								.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
+								.where(($) => [PG.inList($.id, staleIds)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -1087,14 +1090,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const subs = yield* database
 				.execute((db) =>
-					db.select().from(digestSubscriptions).where(eq(digestSubscriptions.enabled, true)),
+					db.run(
+						PG.from(DigestSubscriptions)
+							.select()
+							.where(($) => [$.enabled.eq(true)]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
 			const dueSubs = subs.filter(
 				(s) =>
-					s.dayOfWeek === currentDayOfWeek &&
-					(s.lastSentAt == null || s.lastSentAt.getTime() < sevenDaysAgo),
+					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
 			)
 
 			if (dueSubs.length === 0) {
@@ -1139,22 +1145,18 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						const claim = yield* database
 							.execute((db) =>
-								db
-									.update(digestSubscriptions)
-									.set({ lastAttemptedAt: new Date(now) })
-									.where(
-										and(
-											inArray(digestSubscriptions.id, orgSubIds),
-											or(
-												isNull(digestSubscriptions.lastAttemptedAt),
-												lt(
-													digestSubscriptions.lastAttemptedAt,
-													new Date(todayStartMs),
-												),
+								db.run(
+									PG.update(DigestSubscriptions)
+										.set({ lastAttemptedAt: now })
+										.where(($) => [
+											PG.inList($.id, orgSubIds),
+											PG.or(
+												$.lastAttemptedAt.isNull(),
+												$.lastAttemptedAt.lt(todayStartMs),
 											),
-										),
-									)
-									.returning({ id: digestSubscriptions.id }),
+										])
+										.returning("id"),
+								),
 							)
 							.pipe(Effect.mapError(toPersistenceError))
 
@@ -1211,10 +1213,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 										Effect.gen(function* () {
 											const lastSentAt = yield* Clock.currentTimeMillis
 											yield* database.execute((db) =>
-												db
-													.update(digestSubscriptions)
-													.set({ lastSentAt: new Date(lastSentAt) })
-													.where(eq(digestSubscriptions.id, sub.id)),
+												db.run(
+													PG.update(DigestSubscriptions)
+														.set({ lastSentAt })
+														.where(($) => [$.id.eq(sub.id)]),
+												),
 											)
 										}).pipe(
 											// The email is already sent — a failed bookkeeping write must
@@ -1312,7 +1315,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 	)
 }
 
-function rowToResponse(row: typeof digestSubscriptions.$inferSelect): DigestSubscriptionResponse {
+function rowToResponse(row: DigestSubscriptionRow): DigestSubscriptionResponse {
 	return new DigestSubscriptionResponse({
 		id: DigestSubscriptionId.make(row.id),
 		email: row.email,
@@ -1321,10 +1324,10 @@ function rowToResponse(row: typeof digestSubscriptions.$inferSelect): DigestSubs
 		timezone: row.timezone,
 		namespaces: parseScopeColumn(row.namespacesJson),
 		environments: parseScopeColumn(row.environmentsJson),
-		lastSentAt: dateToMs(row.lastSentAt),
+		lastSentAt: row.lastSentAt,
 		webAnalyticsEnabled: row.webAnalyticsEnabled,
-		createdAt: row.createdAt.getTime(),
-		updatedAt: row.updatedAt.getTime(),
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
 	})
 }
 

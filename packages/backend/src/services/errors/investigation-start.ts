@@ -8,14 +8,14 @@
  * missing binding or a turn that could not be claimed marks the row `failed`
  * with a retryable reason and says so on the span.
  */
-import { investigations } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Investigations } from "@maple/db/tables"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant } from "@maple/domain/chat-session"
 import type { InvestigationSubject, InvestigationSubjectSnapshot, OrgId } from "@maple/domain/http"
 import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/incident-context"
 import type { InvestigationId } from "@maple/domain/primitives"
 import { UserId } from "@maple/domain/primitives"
-import { eq } from "drizzle-orm"
 import { Effect, Exit, Schema } from "effect"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -66,10 +66,11 @@ export const startInvestigationTurn: (
 	const markFailed = (error: string) =>
 		database
 			.execute((db) =>
-				db
-					.update(investigations)
-					.set({ status: "failed", error, updatedAt: new Date(nowMs) })
-					.where(eq(investigations.id, investigationId)),
+				db.run(
+					PG.update(Investigations)
+						.set({ status: "failed", error, updatedAt: nowMs })
+						.where(($) => [$.id.eq(investigationId)]),
+				),
 			)
 			.pipe(Effect.asVoid)
 

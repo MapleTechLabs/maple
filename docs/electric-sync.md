@@ -112,8 +112,8 @@ no upstream `ELECTRIC_URL`. Two causes:
 **Shapes 404 / `Database table public.<t> is missing from the publication`** (or
 `does not have its replica identity set to FULL`). The early publication migrations
 (`0009`, `0011`, `0014`, `0037`) wrap their DDL in `DO $$ … EXCEPTION WHEN OTHERS THEN
-RAISE NOTICE … END $$`. On real Postgres a failure inside one is swallowed, and drizzle
-or alchemy still records it as applied. The case that actually happened: on the fresh
+RAISE NOTICE … END $$`. On real Postgres a failure inside one is swallowed, and the
+migrator still records it as applied. The case that actually happened: on the fresh
 EU database the publication existed, empty, before the first migration ran. `0009`'s
 `CREATE PUBLICATION` raised `duplicate_object`, and that handler rolls back the entire
 block, `REPLICA IDENTITY FULL` included. The later migrations then `ADD`ed their own
@@ -317,7 +317,7 @@ whether or not the table is published). Move the table from `SYNCED_TABLES` to
 **Done and verified**
 
 - Infra: docker `electric` + `wal_level=logical`; `0009_electric_publication`
-  (applies via both `drizzle-kit migrate` and the PGlite test path; see
+  (applies via both `db:migrate` and the PGlite test path; see
   `packages/db/src/migrations.test.ts`), with later publication migrations for
   wave-1 control-plane tables, `api_keys` and `investigations`.
 - Shape proxy with org-scoping + client-param pinning, extracted into the

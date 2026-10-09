@@ -1,73 +1,70 @@
 import * as PgClient from "@effect/sql-pg/PgClient"
-import { EffectCache } from "drizzle-orm/cache/core/cache-effect"
-import { EffectDrizzleQueryError, EffectLogger } from "drizzle-orm/effect-core"
-import * as PgDrizzle from "drizzle-orm/effect-postgres"
-import type { EffectPgQueryEffectHKT, EffectPgQueryResultHKT } from "drizzle-orm/effect-postgres"
-import type { PgEffectDatabase } from "drizzle-orm/pg-core/effect"
+import * as Orm from "@maple-dev/effect-orm/database"
+import { CompiledQueryDecodeError, postgresDialect, QueryBuilderError } from "@maple-dev/effect-orm/postgres"
 import { Context, Duration, Effect, Layer, Redacted, type Scope } from "effect"
 import type * as Reactivity from "effect/reactivity/Reactivity"
+import * as SqlClient from "effect/sql/SqlClient"
 import { SqlError } from "effect/sql/SqlError"
 
 /**
- * The drizzle database every Maple service codes against: Effect-native, over
- * `@effect/sql-pg` on Workers and `@effect/sql-pglite` in tests. Queries are
- * Effects (`yield* db.select()…`), transactions take an Effect callback, and
- * every failure lands in the typed channel as a `MapleDbError`.
- *
- * The driver-neutral base class rather than `effect-postgres`'s
- * `EffectPgDatabase`: the two drivers' classes differ only in `$client`, which
- * nothing above the platform layer reads, so both are one type without a cast.
- * It is also what a `tx` is, so helpers take it inside or outside a transaction.
- *
- * No `relations` are registered: Maple uses the SQL-like query builder only,
- * never `db.query.*`.
+ * The database every Maple service codes against: effect-orm over
+ * `@effect/sql-pg` on Workers and `@effect/sql-pglite` in tests. Statements are
+ * Effects (`yield* db.run(PG.from(T)...)`) over the typed tables in
+ * `@maple/db/tables`; `db.transaction(effect)` pins every statement in `effect`
+ * to one connection through fiber context, so helpers take a `MapleDb` and run
+ * inside whatever transaction their caller opened.
  */
-export type MapleDb = PgEffectDatabase<EffectPgQueryEffectHKT, EffectPgQueryResultHKT>
-
-/** The `tx` handed to a `db.transaction` callback. */
-export type MapleTx = Parameters<Parameters<MapleDb["transaction"]>[0]>[0]
-
-/** Either a database or a transaction — for helpers that run inside or outside one. */
-export type MapleDbLike = MapleDb
+export type MapleDb = Orm.DatabaseApi
 
 /**
- * What a query or transaction fails with below the `Database` service.
- * `EffectDrizzleQueryError` wraps a statement failure (its `cause` is the
- * `SqlError`, whose `reason` is `@effect/sql`'s classification of the pg error);
- * `SqlError` on its own comes from transaction control (`BEGIN`, `COMMIT`).
+ * What a statement or transaction fails with below the `Database` service.
+ * effect-orm's own errors keep the driver's `SqlError` as their `cause`;
+ * `SqlError` on its own comes from opening the client.
  */
-export type MapleDbError = EffectDrizzleQueryError | SqlError
+export type MapleDbError =
+	| SqlError
+	| Orm.DatabaseError
+	| Orm.TransactionCommitFailed
+	| Orm.TransactionRollbackFailed
+	| Orm.TransactionOptionsRejected
+	| Orm.TransactionUnsupported
+	| Orm.TransactionClosed
+	| QueryBuilderError
+	| CompiledQueryDecodeError
 
 export const isMapleDbError = (value: unknown): value is MapleDbError =>
-	value instanceof EffectDrizzleQueryError || value instanceof SqlError
+	value instanceof SqlError ||
+	value instanceof Orm.DatabaseError ||
+	value instanceof Orm.TransactionCommitFailed ||
+	value instanceof Orm.TransactionRollbackFailed ||
+	value instanceof Orm.TransactionOptionsRejected ||
+	value instanceof Orm.TransactionUnsupported ||
+	value instanceof Orm.TransactionClosed ||
+	value instanceof QueryBuilderError ||
+	value instanceof CompiledQueryDecodeError
 
 /**
  * The per-call statement collector. `Database.execute` provides one around
- * each call; the drizzle logger below reads it when a statement runs, so every
- * parameterized statement (including inside a transaction) lands on that
- * call's span as `db.query.text`. A reference rather than a per-call drizzle
- * wrapper: the logger is fixed when the database is built, but `logQuery`
- * returns an Effect and therefore sees the calling fiber's context.
+ * each call; `observe` below reads it when a statement runs, so every
+ * statement (including inside a transaction) lands on that call's span as
+ * `db.query.text`. A fiber reference rather than a per-call database: the
+ * database is built once per client, but `observe` sees the calling fiber.
  */
 export class MapleStatementCollector extends Context.Reference<((query: string) => void) | undefined>(
 	"@maple/db/MapleStatementCollector",
 	{ defaultValue: () => undefined },
 ) {}
 
-const mapleDrizzleLogger = Layer.succeed(EffectLogger, {
-	logQuery: (query) =>
-		Effect.gen(function* () {
-			const collect = yield* MapleStatementCollector
-			collect?.(query)
-		}),
-})
-
-/**
- * Drizzle's default no-op cache plus Maple's collecting logger. Not
- * `PgDrizzle.DefaultServices`, which bundles a no-op logger that would shadow
- * this one.
- */
-export const mapleDrizzleServices = Layer.merge(mapleDrizzleLogger, EffectCache.Default)
+/** The database over `sql`, reporting each statement to the call's collector. */
+export const makeMapleDb = (sql: SqlClient.SqlClient): MapleDb =>
+	Orm.fromSqlClient(sql, {
+		dialect: postgresDialect,
+		observe: (statement) =>
+			Effect.gen(function* () {
+				const collect = yield* MapleStatementCollector
+				collect?.(statement.sql)
+			}),
+	})
 
 /**
  * The scope's Postgres handle: `@effect/sql-pg`'s own pooled client, scoped —
@@ -126,7 +123,7 @@ export const makeMaplePgClient = (
 	})
 
 /**
- * Build the drizzle database over a client the caller acquires.
+ * Build the database over a client the caller acquires.
  *
  * `acquire` runs inside the given Scope, and the client's pool is closed when
  * that Scope closes — the invocation-scope machinery in `pg-connection-scope.ts`
@@ -138,6 +135,6 @@ export const makeMapleEffectDb = (
 	acquire: Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity>,
 ): Effect.Effect<MapleDb, SqlError, Scope.Scope> =>
 	Effect.gen(function* () {
-		const services = yield* Layer.build(Layer.merge(mapleDrizzleServices, PgClient.layerFrom(acquire)))
-		return yield* PgDrizzle.make().pipe(Effect.provideContext(services))
+		const services = yield* Layer.build(PgClient.layerFrom(acquire))
+		return makeMapleDb(Context.get(services, SqlClient.SqlClient))
 	})

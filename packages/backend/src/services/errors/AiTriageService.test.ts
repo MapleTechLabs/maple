@@ -1,7 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { InvestigationId, OrgId } from "@maple/domain/http"
-import { aiTriageSettings, investigations } from "@maple/db"
+import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AiTriageSettings, Investigations } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -38,19 +39,27 @@ const makeLayer = () => {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
+const SEED_SUBJECT = new InvestigationFreeformSubject({
+	type: "freeform",
+	title: "seed",
+	prompt: "seed",
+	contextRefs: [],
+})
 const ORG = asOrgId("org_triage_settings_test")
 
 const seedSettings = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.insert(aiTriageSettings).values({
-				orgId: ORG,
-				enabled: true,
-				maxRunsPerDay,
-				maxPassesPerDay,
-				updatedAt: new Date(),
-			}),
+			db.run(
+				PG.insertInto(AiTriageSettings).values({
+					orgId: ORG,
+					enabled: true,
+					maxRunsPerDay,
+					maxPassesPerDay,
+					updatedAt: Date.now(),
+				}),
+			),
 		)
 	})
 
@@ -61,23 +70,27 @@ const seedSettings = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 const seedStartedRuns = (count: number, idOffset = 0) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		const now = new Date()
-		for (let index = 0; index < count; index++) {
-			yield* database.execute((db) =>
-				db.insert(investigations).values({
-					id: asInvestigationId(
-						`00000000-0000-4000-8000-${String(idOffset + index).padStart(12, "0")}`,
+		const now = Date.now()
+		yield* Effect.forEach(
+			Array.from({ length: count }, (_, index) => index),
+			(index) =>
+				database.execute((db) =>
+					db.run(
+						PG.insertInto(Investigations).values({
+							id: asInvestigationId(
+								`00000000-0000-4000-8000-${String(idOffset + index).padStart(12, "0")}`,
+							),
+							orgId: ORG,
+							status: "investigating",
+							seededBy: "system",
+							subjectJson: SEED_SUBJECT,
+							startedAt: now,
+							createdAt: now,
+							updatedAt: now,
+						}),
 					),
-					orgId: ORG,
-					status: "investigating",
-					seededBy: "system",
-					subjectJson: { type: "question", question: "seed" },
-					startedAt: now,
-					createdAt: now,
-					updatedAt: now,
-				}),
-			)
-		}
+				),
+		)
 	})
 
 describe("AiTriageService.getSettings pause state", () => {

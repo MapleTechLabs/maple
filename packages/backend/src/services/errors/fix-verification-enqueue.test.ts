@@ -1,21 +1,21 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
-import { OrgId } from "@maple/domain/http"
+import { InvestigationFreeformSubject, OrgId } from "@maple/domain/http"
 import {
 	ErrorIssueId,
 	ErrorIssuePullRequestId,
 	ErrorIssueVerificationId,
 	InvestigationId,
 } from "@maple/domain/primitives"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	aiTriageSettings,
-	errorIssues,
-	errorIssueVerifications,
-	investigations,
+	AiTriageSettings,
+	ErrorIssues,
+	ErrorIssueVerifications,
 	type ErrorIssueVerificationRow,
-} from "@maple/db"
-import { eq } from "drizzle-orm"
+	Investigations,
+} from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
@@ -70,13 +70,15 @@ const enableAutomation = (maxRunsPerDay = 20, maxPassesPerDay = 200) =>
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(aiTriageSettings).values({
-				orgId: ORG,
-				enabled: true,
-				maxRunsPerDay,
-				maxPassesPerDay,
-				updatedAt: new Date(nowMs),
-			}),
+			db.run(
+				PG.insertInto(AiTriageSettings).values({
+					orgId: ORG,
+					enabled: true,
+					maxRunsPerDay,
+					maxPassesPerDay,
+					updatedAt: nowMs,
+				}),
+			),
 		)
 	})
 
@@ -86,28 +88,29 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 		const issueId = Schema.decodeSync(ErrorIssueId)(randomUUID())
-		const now = new Date(nowMs)
 		if (options.withIssue !== false) {
 			yield* database.execute((db) =>
-				db.insert(errorIssues).values({
-					id: issueId,
-					orgId: ORG,
-					kind: "error",
-					fingerprintHash: `fp-${issueId.slice(0, 8)}`,
-					serviceName: "checkout",
-					exceptionType: "TypeError",
-					exceptionMessage: "undefined is not a function",
-					errorLabel: "",
-					topFrame: "src/checkout.ts:42",
-					workflowState: "verifying",
-					severity: "low",
-					firstSeenAt: new Date(nowMs - 10 * HOUR),
-					lastSeenAt: now,
-					occurrenceCount: 200,
-					seenVersionsJson: ["v1", "v2"],
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.run(
+					PG.insertInto(ErrorIssues).values({
+						id: issueId,
+						orgId: ORG,
+						kind: "error",
+						fingerprintHash: `fp-${issueId.slice(0, 8)}`,
+						serviceName: "checkout",
+						exceptionType: "TypeError",
+						exceptionMessage: "undefined is not a function",
+						errorLabel: "",
+						topFrame: "src/checkout.ts:42",
+						workflowState: "verifying",
+						severity: "low",
+						firstSeenAt: nowMs - 10 * HOUR,
+						lastSeenAt: nowMs,
+						occurrenceCount: 200,
+						seenVersionsJson: ["v1", "v2"],
+						createdAt: nowMs,
+						updatedAt: nowMs,
+					}),
+				),
 			)
 		}
 		// Branded through the domain schemas rather than cast: a cast here would
@@ -118,8 +121,8 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 			issueId,
 			pullRequestId: Schema.decodeSync(ErrorIssuePullRequestId)(randomUUID()),
 			status: "waiting",
-			mergedAt: new Date(nowMs - HOUR),
-			verifyAfter: now,
+			mergedAt: nowMs - HOUR,
+			verifyAfter: nowMs,
 			baselineVersionsJson: ["v1", "v2"],
 			baselineOccurrenceCount: 200,
 			baselineRatePerHour: 20,
@@ -128,10 +131,10 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 			verdictNote: null,
 			postMergeOccurrenceCount: 0,
 			attempt: 0,
-			createdAt: now,
-			updatedAt: now,
+			createdAt: nowMs,
+			updatedAt: nowMs,
 		}
-		yield* database.execute((db) => db.insert(errorIssueVerifications).values(verification))
+		yield* database.execute((db) => db.run(PG.insertInto(ErrorIssueVerifications).values(verification)))
 		return { issueId, verification }
 	})
 
@@ -165,7 +168,11 @@ describe("enqueueFixVerification", () => {
 			assert.include(chat.turns[0]?.text ?? "", PR_URL)
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.id, result.investigationId)),
+				db.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.id.eq(result.investigationId)]),
+				),
 			)
 			assert.strictEqual(rows.length, 1)
 			assert.strictEqual(rows[0]?.status, "investigating")
@@ -187,11 +194,13 @@ describe("enqueueFixVerification", () => {
 			assert.strictEqual(result.reason, "no_binding")
 			assert.notStrictEqual(result.investigationId, undefined)
 			const database = yield* Database
+			const investigationIds = result.investigationId === undefined ? [] : [result.investigationId]
 			const rows = yield* database.execute((db) =>
-				db
-					.select()
-					.from(investigations)
-					.where(eq(investigations.id, result.investigationId ?? "")),
+				db.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.id.in_(...investigationIds)]),
+				),
 			)
 			assert.strictEqual(rows[0]?.status, "failed")
 		}).pipe(Effect.provide(makeLayer())),
@@ -204,19 +213,26 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification()
 			const chat = fakeChatSession()
 			const database = yield* Database
-			const now = new Date()
+			const now = Date.now()
 			yield* database.execute((db) =>
-				db.insert(investigations).values({
-					id: Schema.decodeSync(InvestigationId)(randomUUID()),
-					orgId: ORG,
-					status: "investigating",
-					seededBy: "system",
-					subjectJson: { type: "freeform", title: "spent", prompt: "spent", contextRefs: [] },
-					startedAt: now,
-					autonomousTurns: 1,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.run(
+					PG.insertInto(Investigations).values({
+						id: Schema.decodeSync(InvestigationId)(randomUUID()),
+						orgId: ORG,
+						status: "investigating",
+						seededBy: "system",
+						subjectJson: new InvestigationFreeformSubject({
+							type: "freeform",
+							title: "spent",
+							prompt: "spent",
+							contextRefs: [],
+						}),
+						startedAt: now,
+						autonomousTurns: 1,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 
 			const result = yield* enqueueFixVerification(input(verification, chat.chatSessions))

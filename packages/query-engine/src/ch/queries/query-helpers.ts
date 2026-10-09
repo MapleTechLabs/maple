@@ -154,7 +154,7 @@ export function inclusionValues(
  * `Hour` column or the join silently misses.
  */
 export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
-	return CH.toStartOfHour(CH.toDateTime(param.dateTime(name)))
+	return CH.toStartOfHour(CH.toDateTime(utcSecondsParam(name)))
 }
 
 /**

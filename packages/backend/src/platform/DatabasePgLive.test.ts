@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
 import { type DatabaseConnection, MapleDbConnection } from "./bindings"
 import { Database, executeWithSpan } from "./DatabaseLive"
@@ -63,7 +63,7 @@ describe("layerPg", () => {
 			// The callback must issue a statement: the pool is lazy, so a callback
 			// that never queries would never reach the closed port and would succeed.
 			const exit = yield* Effect.exit(
-				database.execute((db) => db.execute(sql`select 1`)).pipe(Effect.withTracer(tracer)),
+				database.execute((db) => db.execute(Orm.sql`select 1`)).pipe(Effect.withTracer(tracer)),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))

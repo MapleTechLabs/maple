@@ -17,7 +17,7 @@ Tested on ClickHouse 24.8+. Earlier versions may work but aren't validated. The 
 
 ## How runtime config works
 
-Self-managed Maple is a **per-org BYO** feature. Each org configures its own ClickHouse under Settings → "Bring your own ClickHouse". The credentials live in the `org_clickhouse_settings` Postgres table (`packages/db/src/schema/org-clickhouse-settings.ts`), with the password encrypted at rest with `MAPLE_INGEST_KEY_ENCRYPTION_KEY`. There is no sync workflow: the schema lives in the org's ClickHouse instance and is applied from the settings page or the CLI below.
+Self-managed Maple is a **per-org BYO** feature. Each org configures its own ClickHouse under Settings → "Bring your own ClickHouse". The credentials live in the `org_clickhouse_settings` Postgres table (`packages/db/src/tables/org-clickhouse-settings.ts`), with the password encrypted at rest with `MAPLE_INGEST_KEY_ENCRYPTION_KEY`. There is no sync workflow: the schema lives in the org's ClickHouse instance and is applied from the settings page or the CLI below.
 
 Orgs without a BYO row use the deployment's managed warehouse. API query routing needs no new env vars for BYO ClickHouse. Postgres-backed direct ingest does need `MAPLE_INGEST_KEY_ENCRYPTION_KEY` so the ingest gateway can decrypt stored ClickHouse passwords.
 

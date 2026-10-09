@@ -17,8 +17,13 @@ import {
 	type PlanetScaleMetricsTokenRequest,
 	type PlanetScaleSelectOrganizationRequest,
 } from "@maple/domain/http"
-import { planetscaleConnections, scrapeTargets, type PlanetScaleConnectionRow } from "@maple/db"
-import { and, eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	PlanetscaleConnections,
+	ScrapeTargets,
+	type PlanetScaleConnectionRow,
+	type ScrapeTargetRow,
+} from "@maple/db/tables"
 import { Clock, Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -135,7 +140,7 @@ const toPersistenceError = (error: unknown) =>
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 
-const decodeStoredDiscoveryConfig = (row: typeof scrapeTargets.$inferSelect) =>
+const decodeStoredDiscoveryConfig = (row: ScrapeTargetRow) =>
 	Schema.decodeUnknownEffect(DiscoveryConfigSchema)(row.discoveryConfigJson).pipe(
 		Effect.mapError(
 			(cause) =>
@@ -304,11 +309,12 @@ export class PlanetScaleConnectionService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(planetscaleConnections)
-						.where(eq(planetscaleConnections.orgId, orgId))
-						.limit(1),
+					db.run(
+						PG.from(PlanetscaleConnections)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			return rows[0] ?? null
@@ -317,19 +323,16 @@ export class PlanetScaleConnectionService extends Context.Service<
 		const selectManagedTarget = Effect.fn("PlanetScaleConnectionService.selectManagedTarget")(function* (
 			connection: PlanetScaleConnectionRow,
 		) {
-			if (connection.scrapeTargetId === null) return null
+			const scrapeTargetId = connection.scrapeTargetId
+			if (scrapeTargetId === null) return null
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(scrapeTargets)
-						.where(
-							and(
-								eq(scrapeTargets.orgId, connection.orgId),
-								eq(scrapeTargets.id, connection.scrapeTargetId!),
-							),
-						)
-						.limit(1),
+					db.run(
+						PG.from(ScrapeTargets)
+							.select()
+							.where(($) => [$.orgId.eq(connection.orgId), $.id.eq(scrapeTargetId)])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			return rows[0] ?? null
@@ -386,11 +389,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 							scrapeIntervalSeconds: target.scrapeIntervalSeconds,
 							includeBranches: discoveryConfig?.includeBranches ?? [],
 							excludeBranches: discoveryConfig?.excludeBranches ?? [],
-							lastScrapeAt: target.lastScrapeAt?.getTime() ?? null,
+							lastScrapeAt: target.lastScrapeAt,
 							lastScrapeError: target.lastScrapeError,
 						})
 					: null,
-				lastInventoryAt: connection.lastInventoryAt?.getTime() ?? null,
+				lastInventoryAt: connection.lastInventoryAt,
 				lastInventoryError: connection.lastInventoryError,
 				revokedAt: grant.revokedAt,
 				expiresAt: grant.expiresAt,
@@ -415,12 +418,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(scrapeTargets)
-						.where(
-							and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.targetType, "planetscale")),
-						),
+					db.run(
+						PG.from(ScrapeTargets)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.targetType.eq("planetscale")]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			const targetsWithConfig = yield* Effect.forEach(rows, (row) =>
@@ -548,18 +550,14 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 				const retiredTargets = yield* database
 					.execute((db) =>
-						db.transaction((tx) =>
+						db.transaction(
 							Effect.gen(function* () {
-								const claimed = yield* tx
-									.update(scrapeTargets)
-									.set({ managedBy })
-									.where(
-										and(
-											eq(scrapeTargets.orgId, orgId),
-											eq(scrapeTargets.id, scrapeTargetId),
-										),
-									)
-									.returning({ id: scrapeTargets.id })
+								const claimed = yield* db.run(
+									PG.update(ScrapeTargets)
+										.set({ managedBy })
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(scrapeTargetId)])
+										.returning("id"),
+								)
 								if (claimed.length !== 1) {
 									return yield* Effect.fail(
 										new IntegrationsPersistenceError({
@@ -570,17 +568,18 @@ export class PlanetScaleConnectionService extends Context.Service<
 								}
 
 								if (existing !== null) {
-									const rebound = yield* tx
-										.update(planetscaleConnections)
-										.set({
-											psOrganization: organization,
-											connectedByUserId,
-											scrapeTargetId,
-											detectedPermissionsJson: { ...permissions },
-											updatedAt: new Date(now),
-										})
-										.where(eq(planetscaleConnections.id, existing.id))
-										.returning({ id: planetscaleConnections.id })
+									const rebound = yield* db.run(
+										PG.update(PlanetscaleConnections)
+											.set({
+												psOrganization: organization,
+												connectedByUserId,
+												scrapeTargetId,
+												detectedPermissionsJson: { ...permissions },
+												updatedAt: now,
+											})
+											.where(($) => [$.id.eq(existing.id)])
+											.returning("id"),
+									)
 									if (rebound.length !== 1) {
 										return yield* Effect.fail(
 											new IntegrationsPersistenceError({
@@ -590,25 +589,22 @@ export class PlanetScaleConnectionService extends Context.Service<
 										)
 									}
 
-									if (
-										existing.scrapeTargetId === null ||
-										existing.scrapeTargetId === scrapeTargetId
-									) {
+									const previousTargetId = existing.scrapeTargetId
+									if (previousTargetId === null || previousTargetId === scrapeTargetId) {
 										return []
 									}
 
 									// Ownership is part of the predicate: a target transferred by a
 									// concurrent operation is never removed by this connection.
-									return yield* tx
-										.delete(scrapeTargets)
-										.where(
-											and(
-												eq(scrapeTargets.orgId, orgId),
-												eq(scrapeTargets.id, existing.scrapeTargetId),
-												eq(scrapeTargets.managedBy, managedBy),
-											),
-										)
-										.returning({ id: scrapeTargets.id })
+									return yield* db.run(
+										PG.deleteFrom(ScrapeTargets)
+											.where(($) => [
+												$.orgId.eq(orgId),
+												$.id.eq(previousTargetId),
+												$.managedBy.eq(managedBy),
+											])
+											.returning("id"),
+									)
 								}
 
 								if (encryptedWebhookSecret === null) {
@@ -618,22 +614,23 @@ export class PlanetScaleConnectionService extends Context.Service<
 										}),
 									)
 								}
-								const inserted = yield* tx
-									.insert(planetscaleConnections)
-									.values({
-										id: connectionId,
-										orgId,
-										psOrganization: organization,
-										connectedByUserId,
-										scrapeTargetId,
-										webhookSecretCiphertext: encryptedWebhookSecret.ciphertext,
-										webhookSecretIv: encryptedWebhookSecret.iv,
-										webhookSecretTag: encryptedWebhookSecret.tag,
-										detectedPermissionsJson: { ...permissions },
-										createdAt: new Date(now),
-										updatedAt: new Date(now),
-									})
-									.returning({ id: planetscaleConnections.id })
+								const inserted = yield* db.run(
+									PG.insertInto(PlanetscaleConnections)
+										.values({
+											id: connectionId,
+											orgId,
+											psOrganization: organization,
+											connectedByUserId,
+											scrapeTargetId,
+											webhookSecretCiphertext: encryptedWebhookSecret.ciphertext,
+											webhookSecretIv: encryptedWebhookSecret.iv,
+											webhookSecretTag: encryptedWebhookSecret.tag,
+											detectedPermissionsJson: { ...permissions },
+											createdAt: now,
+											updatedAt: now,
+										})
+										.returning("id"),
+								)
 								if (inserted.length !== 1) {
 									return yield* Effect.fail(
 										new IntegrationsPersistenceError({
@@ -771,7 +768,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 				yield* database
 					.execute((db) =>
-						db.delete(planetscaleConnections).where(eq(planetscaleConnections.id, connection.id)),
+						db.run(PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)])),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			}

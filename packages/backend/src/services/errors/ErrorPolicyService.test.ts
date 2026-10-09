@@ -10,10 +10,10 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/domain/primitives"
-import { alertDestinations, issueEscalations } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations, IssueEscalations } from "@maple/db/tables"
 import { Clock, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 
@@ -51,21 +51,23 @@ const insertDestination = (
 		const database = yield* Database
 		const timestamp = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(alertDestinations).values({
-				id,
-				orgId,
-				name: `Destination ${id}`,
-				type: "webhook",
-				enabled,
-				configJson: {},
-				secretCiphertext: "ciphertext",
-				secretIv: "iv",
-				secretTag: "tag",
-				createdAt: msToDate(timestamp),
-				updatedAt: msToDate(timestamp),
-				createdBy: USER,
-				updatedBy: USER,
-			}),
+			db.run(
+				PG.insertInto(AlertDestinations).values({
+					id,
+					orgId,
+					name: `Destination ${id}`,
+					type: "webhook",
+					enabled,
+					configJson: {},
+					secretCiphertext: "ciphertext",
+					secretIv: "iv",
+					secretTag: "tag",
+					createdAt: timestamp,
+					updatedAt: timestamp,
+					createdBy: USER,
+					updatedBy: USER,
+				}),
+			),
 		)
 	})
 
@@ -224,21 +226,23 @@ describe("ErrorPolicyService", () => {
 				},
 			]
 			yield* database.execute((db) =>
-				db.insert(issueEscalations).values(
-					rows.map((row) => ({
-						id: row.id,
-						orgId: row.orgId,
-						issueId: row.issueId,
-						severity: "high" as const,
-						source: "manual" as const,
-						reason: "severity_set" as const,
-						payloadJson: {},
-						deliveryResultsJson: [],
-						status: "queued" as const,
-						attempts: 0,
-						dedupeKey: `test:${row.id}`,
-						createdAt: msToDate(row.createdAt),
-					})),
+				db.run(
+					PG.insertInto(IssueEscalations).values(
+						rows.map((row) => ({
+							id: row.id,
+							orgId: row.orgId,
+							issueId: row.issueId,
+							severity: "high" as const,
+							source: "manual" as const,
+							reason: "severity_set" as const,
+							payloadJson: {},
+							deliveryResultsJson: [],
+							status: "queued" as const,
+							attempts: 0,
+							dedupeKey: `test:${row.id}`,
+							createdAt: row.createdAt,
+						})),
+					),
 				),
 			)
 
