@@ -603,8 +603,8 @@ export function createDotm3x3Component(
 			onMouseEnter,
 			onMouseLeave,
 		} = useDotMatrixPhases({
-			animated: Boolean(animated && !reducedMotion),
-			hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
+			animated: animated && !reducedMotion,
+			hoverAnimated: hoverAnimated && !reducedMotion,
 			speed,
 		})
 

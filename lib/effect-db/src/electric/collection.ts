@@ -142,7 +142,7 @@ function createBackoffOnError(
 		}
 
 		// A schema mismatch usually means the client retained a pre-deploy shape.
-		const errorName = (error as Error)?.name || (error as { _tag?: string })?._tag
+		const errorName = error?.name || (error as { _tag?: string })?._tag
 		if (errorName === "SchemaValidationError") {
 			logVia(runtime, Effect.logWarning("Schema validation error, dispatching recovery event"), {
 				collectionId,

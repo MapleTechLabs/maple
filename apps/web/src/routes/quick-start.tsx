@@ -17,7 +17,7 @@ import { useOrganizationRegion } from "@/hooks/use-organization-region"
 import { hasMultipleRegions } from "@/lib/region"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
-import { useQuickStart, type StepId } from "@/hooks/use-quick-start"
+import { useQuickStart } from "@/hooks/use-quick-start"
 import { hasSelectedPlan, resolvePlanAccess } from "@/lib/billing/plan-gating"
 import { STEP_IDS } from "@/atoms/quick-start-atoms"
 
@@ -80,7 +80,7 @@ function QuickStartPage() {
 	const regionOffset = regionStepShown ? 1 : 0
 	const totalSteps = STEP_IDS.length + regionOffset
 
-	const currentStepNumber = needsRegion ? 1 : STEP_IDS.indexOf(activeStep as StepId) + 1 + regionOffset
+	const currentStepNumber = needsRegion ? 1 : STEP_IDS.indexOf(activeStep) + 1 + regionOffset
 	const stepLabel = `Step ${currentStepNumber} of ${totalSteps}`
 
 	// Track the previous step index for slide direction by adjusting state

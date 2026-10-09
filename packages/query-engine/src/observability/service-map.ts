@@ -33,8 +33,8 @@ export const serviceMap = Effect.fn("Observability.serviceMap")(function* (input
 		Arr.map((e): ServiceEdge => ({
 			sourceService: e.sourceService,
 			targetService: e.targetService,
-			callCount: Number(e.callCount),
-			errorCount: Number(e.errorCount),
+			callCount: e.callCount,
+			errorCount: e.errorCount,
 			avgDurationMs: e.avgDurationMs,
 			maxDurationMs: e.maxDurationMs,
 		})),

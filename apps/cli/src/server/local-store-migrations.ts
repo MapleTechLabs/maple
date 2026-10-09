@@ -649,7 +649,7 @@ const ensureMigrationCapacity = async (dataDir: string, session: MigrationDbSess
 	if (!Number.isFinite(sourceBytes) || sourceBytes < 0)
 		throw new Error("could not estimate source store size")
 	const filesystem = statfsSync(dirname(resolve(dataDir)))
-	const freeBytes = Number(filesystem.bavail) * Number(filesystem.bsize)
+	const freeBytes = filesystem.bavail * filesystem.bsize
 	const checkpointBytes = await treeBytes(join(resolve(dataDir), "backups"))
 	const requiredBytes = Math.max(MIN_MIGRATION_FREE_BYTES, sourceBytes * 2 + checkpointBytes)
 	if (!Number.isFinite(freeBytes) || freeBytes < requiredBytes) {

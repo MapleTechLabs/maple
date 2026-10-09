@@ -140,7 +140,7 @@ export async function getOffer(): Promise<Offer> {
 				allotments: product.items
 					.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
 					.map((item) => {
-						const featureId = item.featureId as string
+						const featureId = item.featureId
 						return {
 							featureId,
 							label: labels[featureId] ?? item.feature?.name ?? featureId,

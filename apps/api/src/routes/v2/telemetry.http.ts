@@ -239,7 +239,7 @@ const toLog = (row: {
 	object: "log",
 	timestamp: timestamp(DateTime.formatIso(row.timestamp)),
 	severity_text: row.severityText,
-	severity_number: Number(row.severityNumber),
+	severity_number: row.severityNumber,
 	service_name: decodeServiceName(row.serviceName),
 	body: row.body,
 	trace_id: row.traceId ? decodeTraceId(row.traceId) : null,
@@ -266,12 +266,12 @@ const toTraceSummary = (row: {
 	id: decodeTraceId(row.traceId),
 	object: "trace",
 	start_time: timestamp(DateTime.formatIso(row.startTime)),
-	duration_ms: Number(row.durationMs),
+	duration_ms: row.durationMs,
 	root_span_name: row.rootSpanName,
 	root_span_kind: row.rootSpanKind,
 	root_service_name: row.rootServiceName,
 	root_status_code: row.statusCode,
-	root_has_error: Number(row.hasError) !== 0,
+	root_has_error: row.hasError !== 0,
 	deployment_environment: row.deploymentEnvironment || null,
 	service_namespace: row.serviceNamespace || null,
 	http_method: row.httpMethod || null,
@@ -301,7 +301,7 @@ const toSpan = (row: {
 	service_name: row.serviceName,
 	kind: row.spanKind,
 	start_time: timestamp(DateTime.formatIso(row.startTime)),
-	duration_ms: Number(row.durationMs),
+	duration_ms: row.durationMs,
 	status_code: row.statusCode,
 	status_message: row.statusMessage || null,
 	attributes: parseStringRecord(row.spanAttributes),
@@ -883,8 +883,8 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 											service_name: row.serviceName,
 											description: row.metricDescription,
 											unit: row.metricUnit,
-											is_monotonic: Number(row.isMonotonic) !== 0,
-											data_point_count: Number(row.dataPointCount),
+											is_monotonic: row.isMonotonic !== 0,
+											data_point_count: row.dataPointCount,
 											first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
 											last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
 										})),
@@ -1019,10 +1019,10 @@ const collapseBaselines = (
 ): ServiceBaselines => {
 	const map = new Map<string, { p95LatencyMs: number; spanCount: number }>()
 	for (const row of rows) {
-		const spanCount = Number(row.baselineSpanCount)
+		const spanCount = row.baselineSpanCount
 		const current = map.get(row.serviceName)
 		if (current !== undefined && current.spanCount >= spanCount) continue
-		map.set(row.serviceName, { p95LatencyMs: Number(row.baselineP95LatencyMs), spanCount })
+		map.set(row.serviceName, { p95LatencyMs: row.baselineP95LatencyMs, spanCount })
 	}
 	return map
 }
@@ -1043,9 +1043,9 @@ export const toService = (
 	rangeSeconds: number,
 	baselines: ServiceBaselines,
 ): V2Service => {
-	const spanCount = Number(row.spanCount)
-	const estimatedSpanCount = Number(row.estimatedSpanCount)
-	const estimatedErrorCount = Number(row.estimatedErrorCount)
+	const spanCount = row.spanCount
+	const estimatedSpanCount = row.estimatedSpanCount
+	const estimatedErrorCount = row.estimatedErrorCount
 	const baseline = baselines.get(row.serviceName)
 	const service: V2Service = {
 		object: "service",
@@ -1055,11 +1055,11 @@ export const toService = (
 		throughput: estimatedSpanCount / rangeSeconds,
 		traced_throughput: spanCount / rangeSeconds,
 		span_count: spanCount,
-		error_count: Number(row.errorCount),
+		error_count: row.errorCount,
 		error_rate: estimatedSpanCount > 0 ? estimatedErrorCount / estimatedSpanCount : 0,
-		p50_latency_ms: Number(row.p50LatencyMs),
-		p95_latency_ms: Number(row.p95LatencyMs),
-		p99_latency_ms: Number(row.p99LatencyMs),
+		p50_latency_ms: row.p50LatencyMs,
+		p95_latency_ms: row.p95LatencyMs,
+		p99_latency_ms: row.p99LatencyMs,
 		has_sampling: estimatedSpanCount > spanCount + 0.001,
 		sampling_weight: spanCount > 0 ? estimatedSpanCount / spanCount : 1,
 	}
@@ -1093,13 +1093,13 @@ const toOverviewPoints = (
 
 const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
 	name: row.spanName,
-	span_count: Number(row.spanCount),
-	estimated_span_count: Number(row.estimatedSpanCount),
-	error_count: Number(row.errorCount),
-	error_rate: Number(row.errorRate),
-	p50_latency_ms: Number(row.p50DurationMs),
-	p95_latency_ms: Number(row.p95DurationMs),
-	p99_latency_ms: Number(row.p99DurationMs),
+	span_count: row.spanCount,
+	estimated_span_count: row.estimatedSpanCount,
+	error_count: row.errorCount,
+	error_rate: row.errorRate,
+	p50_latency_ms: row.p50DurationMs,
+	p95_latency_ms: row.p95DurationMs,
+	p99_latency_ms: row.p99DurationMs,
 })
 
 export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (handlers) =>
@@ -1403,9 +1403,9 @@ const toMapEdge = (row: {
 	maxDurationMs: number
 	estimatedSpanCount: number
 }): V2ServiceMapEdge => {
-	const calls = Number(row.callCount)
-	const estimated = Number(row.estimatedSpanCount)
-	const errors = Number(row.errorCount)
+	const calls = row.callCount
+	const estimated = row.estimatedSpanCount
+	const errors = row.errorCount
 	return {
 		object: "service_map.edge",
 		source_service: row.sourceService,
@@ -1414,8 +1414,8 @@ const toMapEdge = (row: {
 		estimated_call_count: estimated,
 		error_count: errors,
 		error_rate: calls > 0 ? errors / calls : 0,
-		avg_duration_ms: Number(row.avgDurationMs),
-		max_duration_ms: Number(row.maxDurationMs),
+		avg_duration_ms: row.avgDurationMs,
+		max_duration_ms: row.maxDurationMs,
 		has_sampling: estimated > calls + 0.001,
 		sampling_weight: calls > 0 ? estimated / calls : 1,
 	}

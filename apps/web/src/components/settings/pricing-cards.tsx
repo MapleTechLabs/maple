@@ -118,11 +118,11 @@ function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
 	// A dollar allowance of model usage, priced per model, not a volume.
 	if (item.featureId === "ai_credits" && item.included != null) {
-		return `${formatCurrency(Number(item.included), "usd")} included`
+		return `${formatCurrency(item.included, "usd")} included`
 	}
 	if (item.included != null) {
 		const unit = (item.featureId ? COUNT_UNITS[item.featureId] : undefined) ?? "GB"
-		return `${formatCount(Number(item.included))} ${unit}`
+		return `${formatCount(item.included)} ${unit}`
 	}
 	return ""
 }

@@ -152,8 +152,8 @@ const containerFilterConditions = (
 	),
 	...CONTAINER_FACETS.flatMap(({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
-		const included = opts[include] as ReadonlyArray<string> | undefined
-		const excluded = opts[exclude] as ReadonlyArray<string> | undefined
+		const included = opts[include]
+		const excluded = opts[exclude]
 		return [
 			included?.length ? CH.inList(expr, included) : undefined,
 			excluded?.length ? CH.notInList(expr, excluded) : undefined,
