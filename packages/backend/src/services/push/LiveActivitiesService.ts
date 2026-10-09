@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto"
-import { liveActivities, type LiveActivityRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { LiveActivities, type LiveActivityRow } from "@maple/db/tables"
 import { MobileDevicePersistenceError } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
-import { and, eq, isNull } from "drizzle-orm"
 import { Clock, Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 
 /**
  * The Lock Screen Live Activities Maple has running for open incidents.
@@ -70,8 +69,8 @@ const toLiveActivity = (row: LiveActivityRow): LiveActivity => ({
 	incidentId: row.incidentId,
 	activityId: row.activityId,
 	pushToken: row.pushToken,
-	endedAtMs: row.endedAt === null ? null : dateToMs(row.endedAt),
-	createdAtMs: dateToMs(row.createdAt),
+	endedAtMs: row.endedAt,
+	createdAtMs: row.createdAt,
 })
 
 export class LiveActivitiesService extends Context.Service<LiveActivitiesService, LiveActivitiesServiceApi>()(
@@ -92,36 +91,37 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 					orgId: input.orgId,
 					"maple.alert.incident_id": input.incidentId,
 				})
-				const now = msToDate(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db
-						.insert(liveActivities)
-						.values({
-							id: randomUUID(),
-							orgId: input.orgId,
-							deviceId: input.deviceId,
-							incidentId: input.incidentId,
-							activityId: input.activityId,
-							pushToken: input.pushToken,
-							endedAt: null,
-							endedReason: null,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.onConflictDoUpdate({
-							target: [liveActivities.deviceId, liveActivities.incidentId],
-							set: {
+					db.run(
+						PG.insertInto(LiveActivities)
+							.values({
+								id: randomUUID(),
+								orgId: input.orgId,
+								deviceId: input.deviceId,
+								incidentId: input.incidentId,
 								activityId: input.activityId,
 								pushToken: input.pushToken,
-								// A re-registration is the app telling us an activity is
-								// running again — a previously ended row comes back to life
-								// rather than leaving the phone stuck on stale content.
 								endedAt: null,
 								endedReason: null,
+								createdAt: now,
 								updatedAt: now,
-							},
-						})
-						.returning(),
+							})
+							.onConflictDoUpdate({
+								target: ["deviceId", "incidentId"],
+								set: {
+									activityId: input.activityId,
+									pushToken: input.pushToken,
+									// A re-registration is the app telling us an activity is
+									// running again — a previously ended row comes back to life
+									// rather than leaving the phone stuck on stale content.
+									endedAt: null,
+									endedReason: null,
+									updatedAt: now,
+								},
+							})
+							.returning(),
+					),
 				)
 				return toLiveActivity(rows[0]!)
 			})
@@ -131,27 +131,27 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 				incidentId: string,
 			) {
 				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(liveActivities)
-						.where(
-							and(
-								eq(liveActivities.orgId, orgId),
-								eq(liveActivities.incidentId, incidentId),
-								isNull(liveActivities.endedAt),
-							),
-						),
+					db.run(
+						PG.from(LiveActivities)
+							.select()
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.incidentId.eq(incidentId),
+								$.endedAt.isNull(),
+							]),
+					),
 				)
 				return rows.map(toLiveActivity)
 			})
 
 			const end = Effect.fn("LiveActivitiesService.end")(function* (id: string, reason: string) {
-				const now = msToDate(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
-					db
-						.update(liveActivities)
-						.set({ endedAt: now, endedReason: reason, updatedAt: now })
-						.where(and(eq(liveActivities.id, id), isNull(liveActivities.endedAt))),
+					db.run(
+						PG.update(LiveActivities)
+							.set({ endedAt: now, endedReason: reason, updatedAt: now })
+							.where(($) => [$.id.eq(id), $.endedAt.isNull()]),
+					),
 				)
 			})
 
@@ -161,19 +161,18 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 				incidentId: string,
 				reason: string,
 			) {
-				const now = msToDate(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db
-						.update(liveActivities)
-						.set({ endedAt: now, endedReason: reason, updatedAt: now })
-						.where(
-							and(
-								eq(liveActivities.orgId, orgId),
-								eq(liveActivities.deviceId, deviceId),
-								eq(liveActivities.incidentId, incidentId),
-							),
-						)
-						.returning(),
+					db.run(
+						PG.update(LiveActivities)
+							.set({ endedAt: now, endedReason: reason, updatedAt: now })
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.deviceId.eq(deviceId),
+								$.incidentId.eq(incidentId),
+							])
+							.returning(),
+					),
 				)
 				const row = rows[0]
 				return row === undefined ? null : toLiveActivity(row)

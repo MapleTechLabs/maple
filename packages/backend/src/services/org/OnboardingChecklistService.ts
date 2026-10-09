@@ -131,8 +131,8 @@ const make = Effect.gen(function* () {
 		const existing = yield* unavailable("findState", onboarding.findState(tenant.orgId))
 		if (Option.isSome(existing)) {
 			return {
-				orgCreatedAtMs: existing.value.createdAt.getTime(),
-				rewardClaimedAtMs: existing.value.rewardClaimedAt?.getTime() ?? null,
+				orgCreatedAtMs: existing.value.createdAt,
+				rewardClaimedAtMs: existing.value.rewardClaimedAt,
 			}
 		}
 
@@ -152,8 +152,8 @@ const make = Effect.gen(function* () {
 			onboarding.ensureRow(tenant.orgId, tenant.userId, undefined, { createdAt }),
 		)
 		return {
-			orgCreatedAtMs: row.createdAt.getTime(),
-			rewardClaimedAtMs: row.rewardClaimedAt?.getTime() ?? null,
+			orgCreatedAtMs: row.createdAt,
+			rewardClaimedAtMs: row.rewardClaimedAt,
 		}
 	})
 

@@ -8,7 +8,7 @@ import {
 	OrgId,
 	ScrapeTargetId,
 } from "@maple/domain/http"
-import type { scrapeTargets } from "@maple/db"
+import type { ScrapeTargetRow } from "@maple/db/tables"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
@@ -21,7 +21,7 @@ const asTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeTargets = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(InternalScrapeTarget)))
 
-const makeRow = (index: number): typeof scrapeTargets.$inferSelect => ({
+const makeRow = (index: number): ScrapeTargetRow => ({
 	id: asTargetId(`00000000-0000-4000-8000-00000000000${index}`),
 	orgId: asOrgId(`org_${index % 2}`),
 	name: `PlanetScale ${index}`,
@@ -39,8 +39,8 @@ const makeRow = (index: number): typeof scrapeTargets.$inferSelect => ({
 	enabled: true,
 	lastScrapeAt: null,
 	lastScrapeError: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	createdAt: 0,
+	updatedAt: 0,
 })
 
 const makeHarness = Effect.fnUntraced(function* (rowCount: number) {

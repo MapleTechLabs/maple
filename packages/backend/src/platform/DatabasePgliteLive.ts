@@ -13,7 +13,7 @@ export const PGLITE_DB_NAMESPACE = "pglite"
  * migration). The test harness pre-migrates via a cached snapshot and uses
  * this directly.
  *
- * One drizzle database per instance: statement capture is a fiber reference
+ * One database per instance: statement capture is a fiber reference
  * provided per `execute`, so concurrent calls over the shared database never
  * cross-attribute. This layer is vitest/local-only.
  */

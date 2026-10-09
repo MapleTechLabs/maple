@@ -5,7 +5,7 @@ import {
 	type MaplePgClientOptions,
 	makeMaplePgClient,
 } from "@maple/db/client"
-import { sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { Effect, Exit, Fiber, Option, References, Schema, Scope, Tracer } from "effect"
 import type * as Reactivity from "effect/reactivity/Reactivity"
 import type { SqlError } from "effect/sql/SqlError"
@@ -27,7 +27,7 @@ type OpenClient = Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivit
 /**
  * A client that never touches the network.
  *
- * A real `@effect/sql-pg` client, because the drizzle database is built over it
+ * A real `@effect/sql-pg` client, because the database is built over it
  * — opening one connects to nothing (the pool dials on the first statement),
  * and these tests never issue one, so the port below is never reached. The
  * finalizer counts the close the owning scope performs.
@@ -417,7 +417,7 @@ const failedDbSpan = (behaviour: "stall" | "hangup") =>
 		const exit = yield* Effect.exit(
 			withPgConnectionScopeOf(
 				scope,
-				scope.run((db) => db.execute(sql`select 1`)).pipe(Effect.withTracer(tracer)),
+				scope.run((db) => db.execute(Orm.sql`select 1`)).pipe(Effect.withTracer(tracer)),
 			),
 		)
 		assert.isTrue(Exit.isFailure(exit))

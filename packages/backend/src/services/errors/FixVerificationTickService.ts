@@ -1,14 +1,13 @@
 import { MAX_VERIFICATION_ATTEMPTS, type VerificationVerdict, type OrgId } from "@maple/domain/http"
 import { RoleName, UserId } from "@maple/domain/primitives"
-import { errorIssuePullRequests, errorIssues, type ErrorIssueVerificationRow } from "@maple/db"
-import { and, eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { dateToMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verification-enqueue"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
@@ -152,11 +151,10 @@ const make: Effect.Effect<
 		fingerprintHash: string,
 		nowMs: number,
 	) {
-		const mergedAtMs = dateToMs(row.mergedAt) ?? nowMs
 		const compiled = CH.compile(CH.errorIssueVersionsSinceQuery({ limit: VERSION_SCAN_LIMIT }), {
 			orgId: row.orgId,
 			fingerprintHash,
-			startTime: DateTime.makeUnsafe(mergedAtMs),
+			startTime: DateTime.makeUnsafe(row.mergedAt),
 			endTime: DateTime.makeUnsafe(nowMs),
 		})
 		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
@@ -223,16 +221,17 @@ const make: Effect.Effect<
 
 		for (const row of due) {
 			const context = yield* dbExecute((db) =>
-				db
-					.select({
-						fingerprintHash: errorIssues.fingerprintHash,
-						workflowState: errorIssues.workflowState,
-						url: errorIssuePullRequests.url,
-					})
-					.from(errorIssues)
-					.innerJoin(errorIssuePullRequests, eq(errorIssuePullRequests.id, row.pullRequestId))
-					.where(and(eq(errorIssues.orgId, row.orgId), eq(errorIssues.id, row.issueId)))
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssues)
+						.innerJoin(ErrorIssuePullRequests, "pr", (_issue, pr) => pr.id.eq(row.pullRequestId))
+						.select(($) => ({
+							fingerprintHash: $.fingerprintHash,
+							workflowState: $.workflowState,
+							url: $.pr.url,
+						}))
+						.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
+						.limit(1),
+				),
 			)
 			const subject = context[0]
 			if (subject === undefined) {
