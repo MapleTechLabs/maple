@@ -3,6 +3,7 @@
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import type { ChartUnit } from "../chart-utils"
 import {
@@ -19,11 +20,11 @@ export interface GcpBucketPoint extends GcpMetricValue {
 	readonly bucket: string
 }
 
-export interface GcpSeries {
+interface GcpSeries {
 	readonly name: string
 	/** The metric it reads, which is where the chart's link into the metrics explorer opens. */
 	readonly metric: string
-	readonly value: (read: GcpMetricReader, bucketSeconds: number) => number | undefined
+	readonly value: (read: GcpMetricReader, seconds: number) => number | undefined
 }
 
 interface GcpChartBase {
@@ -56,7 +57,7 @@ const mean = (name: string, metric: string, label?: string, scale = 1): GcpSerie
 const rate = (name: string, metric: string): GcpSeries => ({
 	name,
 	metric,
-	value: (read, bucketSeconds) => read.total(metric) / bucketSeconds,
+	value: (read, seconds) => read.total(metric) / seconds,
 })
 
 /** A counter's sum over the bucket. */
@@ -182,15 +183,10 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		lines("CPU utilization", "percent", [mean("Usage", `${DATABASE}.cpu.utilization`)], OF_LIMIT),
 		lines("Memory utilization", "percent", [mean("Usage", `${DATABASE}.memory.utilization`)], OF_LIMIT),
 		lines("Disk utilization", "percent", [mean("Usage", `${DATABASE}.disk.utilization`)], OF_LIMIT),
+		// MySQL and SQL Server report the first, PostgreSQL the second: one line either way.
 		lines("Connections", "count", [
-			// MySQL and SQL Server report the first, PostgreSQL the second.
-			{
-				name: "Connections",
-				metric: `${DATABASE}.network.connections`,
-				value: (read) =>
-					read.mean(`${DATABASE}.network.connections`) ??
-					read.mean(`${DATABASE}.postgresql.num_backends`),
-			},
+			mean("Connections", `${DATABASE}.network.connections`),
+			mean("Connections", `${DATABASE}.postgresql.num_backends`),
 		]),
 		lines("Disk operations", "rate", [
 			rate("Read", `${DATABASE}.disk.read_ops_count`),
@@ -270,9 +266,16 @@ export const GCP_GKE_NODE_CHARTS: ReadonlyArray<GcpChart> = [
 	),
 ]
 
-/** The metric a chart opens in the metrics explorer, and the table it is stored in. */
-export function gcpChartMetric(chart: GcpChart): { readonly name: string; readonly type: "sum" | "gauge" } {
-	const name = chart.kind === "classes" ? chart.metric : chart.series[0].metric
+/**
+ * The metric a chart opens in the metrics explorer, and the table it is stored in: the first of
+ * its metrics that reported, since two engines of one service can name the same reading apart.
+ */
+export function gcpChartMetric(
+	chart: GcpChart,
+	points: ReadonlyArray<GcpBucketPoint>,
+): { readonly name: string; readonly type: "sum" | "gauge" } {
+	const candidates = chart.kind === "classes" ? [chart.metric] : chart.series.map((series) => series.metric)
+	const name = candidates.find((metric) => points.some((point) => point.metric === metric)) ?? candidates[0]
 	const kind = GCP_METRIC_GROUPS.flatMap((group) => group.metrics).find(
 		(metric) => metric.name === name,
 	)?.kind
@@ -310,22 +313,40 @@ export function gcpWindowPoints(points: ReadonlyArray<GcpBucketPoint>): Readonly
 	return [...folded.values()]
 }
 
-export interface GcpChartRow {
+interface GcpChartRow {
 	readonly bucket: string
 	readonly attributeValue: string
 	readonly value: number
+}
+
+/** The window a page reads, as its query got it. */
+export interface GcpChartWindow {
+	readonly startTime: string
+	readonly endTime: string
+	readonly bucketSeconds: number
+}
+
+/**
+ * The seconds of a bucket that lie in the window. The window cuts its first and last bucket
+ * short, and a rate over the whole bucket would dip there. Never under one point's minute.
+ */
+const coveredSeconds = (bucket: string, window: GcpChartWindow) => {
+	const from = toEpochMs(bucket)
+	const until = Math.min(from + window.bucketSeconds * 1000, toEpochMs(window.endTime))
+	return Math.max(60, (until - Math.max(from, toEpochMs(window.startTime))) / 1000)
 }
 
 /** A line chart's rows: one per bucket and series that has a value there. */
 export function gcpLineRows(
 	series: ReadonlyArray<GcpSeries>,
 	points: ReadonlyArray<GcpBucketPoint>,
-	bucketSeconds: number,
+	window: GcpChartWindow,
 ): ReadonlyArray<GcpChartRow> {
 	return gcpBuckets(points).flatMap(({ bucket, points: bucketPoints }) => {
 		const read = gcpMetricReader(bucketPoints)
+		const seconds = coveredSeconds(bucket, window)
 		return series.flatMap((entry) => {
-			const value = entry.value(read, bucketSeconds)
+			const value = entry.value(read, seconds)
 			return value === undefined ? [] : [{ bucket, attributeValue: entry.name, value }]
 		})
 	})

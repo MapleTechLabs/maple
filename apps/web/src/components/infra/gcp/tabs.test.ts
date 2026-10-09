@@ -16,6 +16,7 @@ import {
 	gcpResourcesError,
 	gcpStateLabel,
 	gcpWorkloadKeys,
+	gcpWorkloadNoun,
 	gcpWorkloadProject,
 	gcpWorkloadRegion,
 	gcpWorkloadSearch,
@@ -215,6 +216,11 @@ describe("workload identity", () => {
 			const keys = GCP_INFRA_SERVICES[id].identity.map(([label]) => `a ${label}`)
 			expect(gcpWorkloadKeys(id, keys[0], gcpWorkloadSearch(id, keys)), id).toEqual(keys)
 		}
+	})
+
+	it("names a row in running text, keeping an acronym", () => {
+		expect(gcpWorkloadNoun("gke")).toBe("container")
+		expect(gcpWorkloadNoun("loadBalancing")).toBe("URL map")
 	})
 
 	it("reads an address without its params as empty identity values", () => {

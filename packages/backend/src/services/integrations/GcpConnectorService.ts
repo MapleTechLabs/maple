@@ -297,7 +297,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 									: eq(gcpResources.projectId, filter.projectId),
 								filter.name === undefined
 									? undefined
-									: sql`reverse(split_part(reverse(${gcpResources.name}), '/', 1)) = ${filter.name}`,
+									: sql`split_part(${gcpResources.name}, '/', -1) = ${filter.name}`,
 							),
 						)
 						.orderBy(

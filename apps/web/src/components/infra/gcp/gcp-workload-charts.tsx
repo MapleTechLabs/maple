@@ -1,9 +1,12 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { ChartEmpty } from "@maple/ui/components/charts"
-
-import { CHART_EMPTY_MESSAGE, CHART_HEIGHT, ChartCard } from "@/components/common/chart-card"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_HEIGHT,
+	ChartCard,
+	ChartCardMessage,
+} from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
 import { ChartLineIcon } from "@/components/icons"
 import { appendWhereFilter } from "@/components/metrics/metric-breakdown"
@@ -14,7 +17,15 @@ import { formatValueWithUnit } from "../chart-utils"
 import { STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "../cloudflare/constants"
 import { StackedBreakdownChart } from "../cloudflare/cloudflare-zone-detail-charts"
 import { InfraMetricChart, type InfraSeriesInfo } from "../primitives/infra-metric-chart"
-import { gcpChartMetric, gcpClassRows, gcpLineRows, type GcpBucketPoint, type GcpChart } from "./charts"
+import {
+	gcpBuckets,
+	gcpChartMetric,
+	gcpClassRows,
+	gcpLineRows,
+	type GcpBucketPoint,
+	type GcpChart,
+	type GcpChartWindow,
+} from "./charts"
 
 /** Response classes, and the outcomes of an execution and of a push, in the same severity colors. */
 const CLASS_COLORS = {
@@ -24,9 +35,8 @@ const CLASS_COLORS = {
 	error: STATUS_CLASS_COLORS["5xx"],
 }
 
-/** The latest value of each line, above a plot with more than one. */
+/** The latest value of each line, above the plot. */
 function SeriesSummary({ series, colors, lastValues, unit }: InfraSeriesInfo) {
-	if (series.length < 2) return null
 	return (
 		<SeriesLegend
 			swatch="line"
@@ -45,42 +55,41 @@ function SeriesSummary({ series, colors, lastValues, unit }: InfraSeriesInfo) {
 }
 
 /**
- * One workload's charts on a shared time axis and hover cursor. Each card links its metric into
- * the metrics explorer, narrowed to `serviceName`.
+ * The charts of one timeseries read on a shared time axis and hover cursor. Each card links its
+ * metric into the metrics explorer, narrowed to `serviceName`.
  */
 export function GcpWorkloadCharts({
 	charts,
 	points,
-	bucketSeconds,
-	xDomain,
+	range,
 	serviceName,
 	timeSearch,
-	waiting,
 }: {
 	charts: ReadonlyArray<GcpChart>
 	points: ReadonlyArray<GcpBucketPoint>
-	bucketSeconds: number
-	/** Every bucket on the page, so charts read from different queries share one axis. */
-	xDomain: ReadonlyArray<string>
+	range: GcpChartWindow
+	/** The `service.name` the workload's metrics are stored under. */
 	serviceName: string
 	timeSearch: TimeRangeSearch
-	waiting: boolean
 }) {
 	const { containerProps } = useLinkedCursor(true)
+	const { startTime, endTime, bucketSeconds } = range
 	const rows = useMemo(
 		() =>
 			charts.map((chart) =>
 				chart.kind === "classes"
 					? gcpClassRows(chart.metric, points)
-					: gcpLineRows(chart.series, points, bucketSeconds),
+					: gcpLineRows(chart.series, points, { startTime, endTime, bucketSeconds }),
 			),
-		[charts, points, bucketSeconds],
+		[charts, points, startTime, endTime, bucketSeconds],
 	)
+	// Every bucket of the read, so a chart whose metric started late still spans the same axis.
+	const xDomain = useMemo(() => gcpBuckets(points).map(({ bucket }) => bucket), [points])
 
 	return (
 		<div className="grid grid-cols-1 gap-4 lg:grid-cols-2" {...containerProps}>
 			{charts.map((chart, index) => {
-				const metric = gcpChartMetric(chart)
+				const metric = gcpChartMetric(chart, points)
 				const explore = (
 					<Link
 						to="/metrics/$metricName"
@@ -100,7 +109,7 @@ export function GcpWorkloadCharts({
 				if (rows[index].length === 0) {
 					return (
 						<ChartCard key={chart.title} title={chart.title} scope={explore}>
-							<ChartEmpty height={CHART_HEIGHT}>{chart.note ?? CHART_EMPTY_MESSAGE}</ChartEmpty>
+							<ChartCardMessage>{chart.note ?? CHART_EMPTY_MESSAGE}</ChartCardMessage>
 						</ChartCard>
 					)
 				}
@@ -127,7 +136,6 @@ export function GcpWorkloadCharts({
 							linkedChartId={`gcp-${chart.title}`}
 							header={SeriesSummary}
 							height={CHART_HEIGHT}
-							waiting={waiting}
 						/>
 					</ChartCard>
 				)

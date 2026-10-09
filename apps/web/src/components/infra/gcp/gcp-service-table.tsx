@@ -23,6 +23,7 @@ import {
 	GCP_NAME_SORT,
 	formatGcpValue,
 	gcpInScope,
+	gcpWorkloadNoun,
 	gcpWorkloadSearch,
 	gcpWorkloadTone,
 	sortGcpWorkloads,
@@ -153,7 +154,7 @@ function valueClass(spec: GcpColumn, value: number | undefined): string {
 	return "text-foreground/80"
 }
 
-export interface GcpPlaceFilter {
+interface GcpPlaceFilter {
 	readonly project?: string | undefined
 	readonly region?: string | undefined
 }
@@ -166,6 +167,7 @@ export function GcpServiceTable({
 	service,
 	workloads,
 	truncated,
+	failed,
 	query,
 	scope,
 	place,
@@ -181,6 +183,8 @@ export function GcpServiceTable({
 	workloads: ReadonlyArray<GcpWorkload>
 	/** The tab's query hit its row cap. */
 	truncated: boolean
+	/** The tab's query failed. */
+	failed: boolean
 	query: string
 	scope: GcpScope | undefined
 	place: GcpPlaceFilter
@@ -194,8 +198,7 @@ export function GcpServiceTable({
 }) {
 	const { title, identity } = GCP_INFRA_SERVICES[service]
 	const columns = GCP_INFRA_COLUMNS[service]
-	// The row's own noun for the count: "container", "URL map".
-	const noun = identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())
+	const noun = gcpWorkloadNoun(service)
 	const { sortKey, sortDir, handleSort } = useSortState<string>({
 		initialKey: columns[0].label,
 		stringKeys: [GCP_NAME_SORT],
@@ -251,9 +254,13 @@ export function GcpServiceTable({
 				</DataTable.Head>
 				{shown.length === 0 ? (
 					<DataTable.Empty>
-						{workloads.length === 0 && place.project === undefined && place.region === undefined
-							? `No ${title} metrics in this time range.`
-							: "Nothing matches. Clear the search, filters or scope to see them all."}
+						{failed
+							? `Maple could not read the ${title} metrics. Reload to try again.`
+							: workloads.length === 0 &&
+								  place.project === undefined &&
+								  place.region === undefined
+								? `No ${title} metrics in this time range.`
+								: "Nothing matches. Clear the search, filters or scope to see them all."}
 					</DataTable.Empty>
 				) : null}
 				{shown.map((workload) => (

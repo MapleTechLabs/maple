@@ -11,6 +11,7 @@ import {
 	GCP_INFRA_SERVICE_IDS,
 	GCP_INFRA_SOURCES,
 	gcpInfraMetrics,
+	gcpInfraServiceName,
 	type GcpInfraServiceId,
 	type GcpInfraSourceId,
 } from "@maple/domain/gcp-infra"
@@ -107,12 +108,15 @@ export function gcpInfraTimeseriesSQL(source: GcpInfraSourceId, keys: ReadonlyAr
 		label: label($),
 		value: $.Value,
 	})
-	const ofWorkload = ($: MetricsAccessor, sums: boolean) => [
-		...inWindow($, sums),
-		...GCP_INFRA_SOURCES[source].identity.map(([, attribute], index) =>
-			$.ResourceAttributes.get(attribute).eq(keys[index] ?? ""),
-		),
-	]
+	const ofWorkload = ($: MetricsAccessor, sums: boolean) =>
+		[
+			...inWindow($, sums),
+			// The table's second sort key column: narrows the read to the workload's service.
+			$.ServiceName.eq(gcpInfraServiceName(source, keys)),
+			...GCP_INFRA_SOURCES[source].identity.map(([, attribute], index) =>
+				$.ResourceAttributes.get(attribute).eq(keys[index] ?? ""),
+			),
+		] as const
 	return fromUnion(
 		unionAll(
 			from(MetricsSum)

@@ -325,7 +325,7 @@ The page opens with a band that counts the workloads of every service by health,
 | Elevated  | Using 60% or more of one                                                                |
 | Erroring  | Failing 1% or more of at least 100 requests, executions or push deliveries in the range |
 
-Click a cell to narrow every tab to those workloads, and click it again to clear it.
+Click a cell to narrow every service tab to those workloads, and click it again to clear it.
 
 | Tab             | One row per                               | Columns                                                                                                |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -338,7 +338,7 @@ Click a cell to narrow every tab to those workloads, and click it again to clear
 | Load Balancing  | URL map, backend and project              | Requests, 5xx rate, latency p95 and p99, backend latency p95, response bytes                           |
 | Resources       | Resource from the [inventory](#resources) | Type, project, location, state and labels, with a filter by type and by project                        |
 
-Search a tab by name, project or location, filter every tab by project and region, and click a column to sort by it. The search, the filters and the band cell are part of the page's address, so a link opens the same view. A dash means the workload did not report that metric. CPU below one core is written in millicores: `250m` is a quarter of a core. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
+Search a tab by name, project or location, filter every service tab by project and region, and click a column to sort by it. The search, the filters and the band cell are part of the page's address, so a link opens the same view. A dash means the workload did not report that metric. CPU below one core is written in millicores: `250m` is a quarter of a core. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
 
 ### Workload pages
 
@@ -354,7 +354,7 @@ Click a row to open that workload: its headline numbers, then its charts over th
 | Pub/Sub         | Backlog, age of the oldest unacknowledged message, delivered and acknowledged messages, dead-lettered messages, push requests by response and push error rate (push only) |
 | Load Balancing  | Requests by response class, 5xx rate, total latency, backend latency, backend requests by response class, request and response traffic                                    |
 
-Latency, utilization and concurrency charts draw p50, p95 and p99. Traffic, messages and disk operations are per second; restarts and dead-lettered messages are counts per point. A point covers at least 5 minutes, and more on a long range. A share of a limit carries a line at 80%. Hovering one chart marks the same moment on the others.
+Latency charts draw p50, p95 and p99, and so do Cloud Run's CPU, memory and concurrency and a function's memory; every other line is the average. Traffic, messages and disk operations are per second; the charts by response class or status, restarts and dead-lettered messages are counts per point. A point covers at least 5 minutes, and more on a long range. A share of a limit carries a line at 80%. Hovering one chart marks the same moment on the others.
 
 From a workload's page:
 

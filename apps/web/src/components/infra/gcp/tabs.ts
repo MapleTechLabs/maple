@@ -223,7 +223,7 @@ export const gcpMetricReader = (points: ReadonlyArray<GcpMetricValue>): GcpMetri
 }
 
 /** An error rate over fewer events than this is no finding: one failure of two is not an outage. */
-export const GCP_MIN_EVENTS = 100
+const GCP_MIN_EVENTS = 100
 
 export interface GcpWorkload {
 	/** Identity values, in the order of the service's `identity`. The first names the row. */
@@ -278,6 +278,8 @@ export interface GcpFleetService {
 	readonly workloads: ReadonlyArray<GcpWorkload>
 	/** The service's query hit its row cap. */
 	readonly truncated: boolean
+	/** The service's query failed: its workloads are unknown, not absent. */
+	readonly failed: boolean
 }
 
 /** Stable empty fallback so memos don't recompute on every render. */
@@ -287,12 +289,14 @@ export const gcpFleet = (
 	services: ReadonlyArray<{
 		readonly service: GcpInfraServiceId
 		readonly points: ReadonlyArray<GcpMetricPoint>
+		readonly failed: boolean
 	}>,
 ): ReadonlyArray<GcpFleetService> =>
-	services.map(({ service, points }) => ({
+	services.map(({ service, points, failed }) => ({
 		service,
 		workloads: gcpWorkloads(service, points),
 		truncated: points.length >= GCP_INFRA_ROW_LIMIT,
+		failed,
 	}))
 
 /** A workload's tone on a health strip: the worse of its saturation and its error rate. */
@@ -332,7 +336,7 @@ export const gcpWorkloadRegion = (service: GcpInfraServiceId, keys: ReadonlyArra
 	gcpWorkloadLocation(service, keys)?.replace(/-[a-z]$/, "")
 
 /** The search params that carry a workload's identity after its name, by lower-cased identity label. */
-export const GCP_WORKLOAD_PARAMS = [
+const GCP_WORKLOAD_PARAMS = [
 	"project",
 	"region",
 	"namespace",
@@ -341,7 +345,7 @@ export const GCP_WORKLOAD_PARAMS = [
 	"zone",
 	"backend",
 ] as const
-export type GcpWorkloadSearch = Partial<Record<(typeof GCP_WORKLOAD_PARAMS)[number], string>>
+type GcpWorkloadSearch = Partial<Record<(typeof GCP_WORKLOAD_PARAMS)[number], string>>
 
 const workloadParams = (service: GcpInfraServiceId) =>
 	GCP_INFRA_SERVICES[service].identity
@@ -364,6 +368,10 @@ export const gcpWorkloadKeys = (
 	name: string,
 	search: GcpWorkloadSearch,
 ): ReadonlyArray<string> => [name, ...workloadParams(service).map((param) => search[param] ?? "")]
+
+/** What one row of a tab is, in running text: "container", "URL map". */
+export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>
+	GCP_INFRA_SERVICES[service].identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())
 
 /** Sort key of the name column; every other key is a column label. */
 export const GCP_NAME_SORT = "name"

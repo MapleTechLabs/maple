@@ -158,6 +158,7 @@ describe("summarizeGcp", () => {
 		gcpFleet([
 			{
 				service: "cloudRun",
+				failed: false,
 				points: [
 					point(api, "gcp.run.request_count", "2xx", 1000 - requests5xx),
 					point(api, "gcp.run.request_count", "5xx", requests5xx),
@@ -165,6 +166,7 @@ describe("summarizeGcp", () => {
 			},
 			{
 				service: "cloudSql",
+				failed: false,
 				points: [point(db, "gcp.cloudsql.database.disk.utilization", "", disk)],
 			},
 		])

@@ -77,6 +77,7 @@ describe("gcpInfraTimeseriesSQL", () => {
 		expect(tenantScope).toBe("single-tenant")
 		for (const table of ["metrics_sum", "metrics_gauge"]) {
 			expect(sql).toContain(`${table}.OrgId = 'org_1'`)
+			expect(sql).toContain(`${table}.ServiceName = 'api'`)
 			expect(sql).toContain(`${table}.ResourceAttributes['service.name'] = 'api'`)
 			expect(sql).toContain(`${table}.ResourceAttributes['cloud.account.id'] = 'acme-prod'`)
 			expect(sql).toContain(`${table}.ResourceAttributes['cloud.region'] = 'europe-west1'`)
@@ -98,6 +99,8 @@ describe("gcpInfraTimeseriesSQL", () => {
 		)
 		expect(sql).not.toContain("IN ()")
 		expect(sql).toContain("'gcp.kubernetes.node.cpu.allocatable_utilization'")
+		// A managed resource's series are stored under its resource type.
+		expect(sql).toContain("metrics_gauge.ServiceName = 'gcp/k8s_node'")
 		expect(sql).toContain("metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'prod'")
 		expect(sql).toContain(
 			"metrics_gauge.ResourceAttributes['gcp.resource.labels.location'] = 'us-central1'",

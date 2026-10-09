@@ -95,6 +95,17 @@ export const GCP_INFRA_SOURCES: Record<GcpInfraSourceId, GcpInfraService> = {
 	},
 } satisfies Record<GcpInfraSourceId, GcpInfraService>
 
+/** Identity attributes that name a compute workload, which is also its `service.name`. */
+const WORKLOAD_NAME_ATTRIBUTES = ["service.name", "k8s.container.name", "host.name"]
+
+/** Whether a source's rows are named after the workload; the rest are `gcp/<resource type>`. */
+export const gcpInfraNamesService = (source: GcpInfraSourceId): boolean =>
+	WORKLOAD_NAME_ATTRIBUTES.includes(GCP_INFRA_SOURCES[source].identity[0][1])
+
+/** The `service.name` the series of one workload carry: see `gcpResourceAttributes`. */
+export const gcpInfraServiceName = (source: GcpInfraSourceId, keys: ReadonlyArray<string>): string =>
+	gcpInfraNamesService(source) ? (keys[0] ?? "") : `gcp/${GCP_INFRA_SOURCES[source].resourceType}`
+
 /** The curated metrics behind a tab or a chart source. */
 export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> =>
 	GCP_METRIC_GROUPS.find((group) => group.resourceType === GCP_INFRA_SOURCES[source].resourceType)

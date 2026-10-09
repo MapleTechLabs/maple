@@ -65,7 +65,8 @@ const getGcpInfraMetrics = Effect.fn("QueryEngine.getGcpInfraMetrics")(function*
 
 /**
  * Every reporting service's metrics at once: what the summary band, the tabs and the
- * Infrastructure overview read. One presence probe, then one query per reporting service.
+ * Infrastructure overview read. One presence probe, then one query per reporting service; a
+ * service whose query fails is returned empty and `failed`, so the others still show.
  */
 export const getGcpInfraFleet = Effect.fn("QueryEngine.getGcpInfraFleet")(function* ({
 	data,
@@ -78,7 +79,8 @@ export const getGcpInfraFleet = Effect.fn("QueryEngine.getGcpInfraFleet")(functi
 			services,
 			(service) =>
 				getGcpInfraMetrics({ data: { ...data, service } }).pipe(
-					Effect.map(({ points }) => ({ service, points })),
+					Effect.map(({ points }) => ({ service, points, failed: false })),
+					Effect.orElseSucceed(() => ({ service, points: [], failed: true })),
 				),
 			{ concurrency: "unbounded" },
 		),

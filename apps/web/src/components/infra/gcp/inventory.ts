@@ -2,7 +2,12 @@
 // a workload links to. A match is by identity only: asset type, project, name and, where the
 // workload has one, location. Pure (no React, no atoms).
 
-import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import {
+	GCP_INFRA_SERVICES,
+	gcpInfraNamesService,
+	gcpInfraServiceName,
+	type GcpInfraServiceId,
+} from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 
 import { encodeLogAttributeFilter } from "@/lib/logs/log-attribute-filters"
@@ -114,29 +119,37 @@ export function gcpConsoleUrl(resource: GcpResource): string | undefined {
 }
 
 /**
- * The service name a workload's logs and traces carry: the workload's own for compute, and
- * `gcp/<resource type>` for a managed service, whose logs the identifying attribute narrows.
+ * Where a workload's other telemetry is. Its metrics, and its traces when it is instrumented, are
+ * under `serviceName`: the workload's own for compute, `gcp/<resource type>` for a managed
+ * service. Its logs are under the same name, narrowed for a managed service by the identifying
+ * resource attribute.
  */
 export function gcpWorkloadTelemetry(
 	service: GcpInfraServiceId,
 	keys: ReadonlyArray<string>,
-): { readonly serviceName: string; readonly traced: boolean; readonly logAttrs: ReadonlyArray<string> } {
-	const { resourceType, identity } = GCP_INFRA_SERVICES[service]
-	if (identity[0][1].startsWith("gcp.resource.labels.")) {
-		return {
-			// Cloud Logging writes a load balancer's logs under another resource type than
-			// Cloud Monitoring writes its metrics, with the same `url_map_name` label.
-			serviceName: `gcp/${service === "loadBalancing" ? "http_load_balancer" : resourceType}`,
-			traced: false,
-			logAttrs: [
-				encodeLogAttributeFilter({
-					source: "resource",
-					key: identity[0][1],
-					value: keys[0],
-					negated: false,
-				}),
-			],
-		}
+): {
+	readonly serviceName: string
+	readonly traced: boolean
+	readonly logsService: string
+	readonly logAttrs: ReadonlyArray<string>
+} {
+	const serviceName = gcpInfraServiceName(service, keys)
+	if (gcpInfraNamesService(service)) {
+		return { serviceName, traced: true, logsService: serviceName, logAttrs: [] }
 	}
-	return { serviceName: keys[0], traced: true, logAttrs: [] }
+	return {
+		serviceName,
+		traced: false,
+		// Cloud Logging writes a load balancer's logs under another resource type than Cloud
+		// Monitoring writes its metrics, with the same `url_map_name` label.
+		logsService: service === "loadBalancing" ? "gcp/http_load_balancer" : serviceName,
+		logAttrs: [
+			encodeLogAttributeFilter({
+				source: "resource",
+				key: GCP_INFRA_SERVICES[service].identity[0][1],
+				value: keys[0],
+				negated: false,
+			}),
+		],
+	}
 }

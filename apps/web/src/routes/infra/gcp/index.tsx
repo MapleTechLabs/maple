@@ -317,6 +317,7 @@ function GcpInfra({
 							service={tab}
 							workloads={inPlace.find((entry) => entry.service === tab)?.workloads ?? []}
 							truncated={fleet.some((entry) => entry.service === tab && entry.truncated)}
+							failed={fleet.some((entry) => entry.service === tab && entry.failed)}
 							query={search.q ?? ""}
 							scope={search.scope}
 							place={{ project: search.project, region: search.region }}

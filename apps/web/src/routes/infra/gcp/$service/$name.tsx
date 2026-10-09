@@ -2,11 +2,18 @@ import { useMemo } from "react"
 import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import {
+	GCP_INFRA_SERVICE_IDS,
+	GCP_INFRA_SERVICES,
+	gcpInfraServiceName,
+	type GcpInfraServiceId,
+} from "@maple/domain/gcp-infra"
 import { ChartLoading } from "@maple/ui/components/charts"
 import { Button } from "@maple/ui/components/ui/button"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
+import { cn } from "@maple/ui/lib/utils"
 
 import { CHART_HEIGHT } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
@@ -17,9 +24,9 @@ import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	GCP_GKE_NODE_CHARTS,
 	GCP_INFRA_CHARTS,
-	gcpBuckets,
 	gcpWindowPoints,
 	type GcpBucketPoint,
+	type GcpChartWindow,
 } from "@/components/infra/gcp/charts"
 import { GcpResourceCard } from "@/components/infra/gcp/gcp-resource-card"
 import { GcpWorkloadCharts } from "@/components/infra/gcp/gcp-workload-charts"
@@ -29,6 +36,7 @@ import {
 	formatGcpValue,
 	gcpWorkload,
 	gcpWorkloadKeys,
+	gcpWorkloadNoun,
 	type GcpColumn,
 } from "@/components/infra/gcp/tabs"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
@@ -52,7 +60,7 @@ import {
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 const gcpWorkloadSearchSchema = Schema.Struct({
-	// The workload's identity after its name: see `GCP_WORKLOAD_PARAMS`.
+	// The workload's identity after its name: see `gcpWorkloadSearch`.
 	project: Schema.optional(Schema.String),
 	region: Schema.optional(Schema.String),
 	namespace: Schema.optional(Schema.String),
@@ -105,7 +113,7 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		search.endTime,
 		search.timePreset ?? DEFAULT_PRESET,
 	)
-	const bucketSeconds = chartBucketSeconds(startTime, endTime)
+	const range = { startTime, endTime, bucketSeconds: chartBucketSeconds(startTime, endTime) }
 	const timeSearch = pickTimeRangeSearch(search)
 	const { title, identity } = GCP_INFRA_SERVICES[service]
 	const keys = gcpWorkloadKeys(service, name, search)
@@ -119,13 +127,12 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 
 	const result = useRefreshableAtomValue(
 		gcpInfraTimeseriesResultAtom({
-			data: { startTime, endTime, bucketSeconds, source: service, keys },
+			data: { ...range, source: service, keys },
 		}),
 	)
 	const points = Result.builder(result)
 		.onSuccess((response) => response.points)
 		.orElse(() => NO_POINTS)
-	const xDomain = useMemo(() => gcpBuckets(points).map(({ bucket }) => bucket), [points])
 	const windowPoints = useMemo(() => gcpWindowPoints(points), [points])
 	const workload = gcpWorkload(service, keys, windowPoints)
 
@@ -175,7 +182,7 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 									to="/logs"
 									search={{
 										...timeSearch,
-										services: [telemetry.serviceName],
+										services: [telemetry.logsService],
 										attrs:
 											telemetry.logAttrs.length > 0
 												? [...telemetry.logAttrs]
@@ -209,9 +216,12 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 			) : Result.isFailure(result) && points.length === 0 ? (
 				<ErrorState error={result.cause} />
 			) : points.length === 0 ? (
-				<NoMetricsMessage noun={identity[0][0].toLowerCase()} />
+				<NoMetricsMessage noun={gcpWorkloadNoun(service)} />
 			) : (
-				<>
+				<div
+					className={cn("space-y-6", refreshingClass(Boolean(result.waiting)))}
+					aria-busy={result.waiting || undefined}
+				>
 					<StatRail>
 						{columns.map((spec, index) => (
 							<StatRailItem
@@ -226,21 +236,17 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 					<GcpWorkloadCharts
 						charts={GCP_INFRA_CHARTS[service]}
 						points={points}
-						bucketSeconds={bucketSeconds}
-						xDomain={xDomain}
+						range={range}
 						serviceName={telemetry.serviceName}
 						timeSearch={timeSearch}
-						waiting={Boolean(result.waiting)}
 					/>
-				</>
+				</div>
 			)}
 			{service === "gke" ? (
 				<GkeClusterNodes
 					// Cluster, project and location: the identity of the `gkeNodes` source.
 					keys={keys.slice(2)}
-					startTime={startTime}
-					endTime={endTime}
-					bucketSeconds={bucketSeconds}
+					range={range}
 					timeSearch={timeSearch}
 				/>
 			) : null}
@@ -287,38 +293,32 @@ function TracesLink({
 /** The cluster's nodes, averaged over them: Cloud Monitoring keeps no node names in these series. */
 function GkeClusterNodes({
 	keys,
-	startTime,
-	endTime,
-	bucketSeconds,
+	range,
 	timeSearch,
 }: {
 	keys: ReadonlyArray<string>
-	startTime: string
-	endTime: string
-	bucketSeconds: number
+	range: GcpChartWindow
 	timeSearch: TimeRangeSearch
 }) {
 	const result = useRefreshableAtomValue(
-		gcpInfraTimeseriesResultAtom({
-			data: { startTime, endTime, bucketSeconds, source: "gkeNodes", keys },
-		}),
+		gcpInfraTimeseriesResultAtom({ data: { ...range, source: "gkeNodes", keys } }),
 	)
 	const points = Result.builder(result)
 		.onSuccess((response) => response.points)
 		.orElse(() => NO_POINTS)
-	const xDomain = useMemo(() => gcpBuckets(points).map(({ bucket }) => bucket), [points])
 	if (points.length === 0) return null
 	return (
-		<section className="space-y-3">
+		<section
+			className={cn("space-y-3", refreshingClass(Boolean(result.waiting)))}
+			aria-busy={result.waiting || undefined}
+		>
 			<SectionHeading title={`Nodes of ${keys[0]}`} hint="averaged over the cluster's nodes" />
 			<GcpWorkloadCharts
 				charts={GCP_GKE_NODE_CHARTS}
 				points={points}
-				bucketSeconds={bucketSeconds}
-				xDomain={xDomain}
-				serviceName="gcp/k8s_node"
+				range={range}
+				serviceName={gcpInfraServiceName("gkeNodes", keys)}
 				timeSearch={timeSearch}
-				waiting={Boolean(result.waiting)}
 			/>
 		</section>
 	)

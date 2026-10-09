@@ -151,36 +151,44 @@ describe("gcpConsoleUrl", () => {
 })
 
 describe("gcpWorkloadTelemetry", () => {
-	it("names a compute workload's logs and traces after the workload", () => {
+	it("names a compute workload's metrics, logs and traces after the workload", () => {
 		expect(gcpWorkloadTelemetry("cloudRun", API)).toEqual({
 			serviceName: "api",
 			traced: true,
+			logsService: "api",
 			logAttrs: [],
 		})
 		expect(
 			gcpWorkloadTelemetry("gke", ["api", "payments", "prod", "acme-prod", "us-central1"]).serviceName,
 		).toBe("api")
+		expect(gcpWorkloadTelemetry("computeEngine", ["web-1", "acme-prod", "europe-west1-b"]).traced).toBe(
+			true,
+		)
 	})
 
 	it("narrows a managed service's logs to the resource, with no traces", () => {
 		expect(gcpWorkloadTelemetry("cloudSql", ["acme-prod:main", "acme-prod", "europe-west1"])).toEqual({
 			serviceName: "gcp/cloudsql_database",
 			traced: false,
+			logsService: "gcp/cloudsql_database",
 			logAttrs: ["res:gcp.resource.labels.database_id=acme-prod:main"],
 		})
-		// Load balancer logs are written under another resource type than its metrics.
+	})
+
+	it("reads a load balancer's logs under the type Cloud Logging writes, its metrics under their own", () => {
 		expect(gcpWorkloadTelemetry("loadBalancing", ["web", "backend", "acme-prod"])).toEqual({
-			serviceName: "gcp/http_load_balancer",
+			serviceName: "gcp/https_lb_rule",
 			traced: false,
+			logsService: "gcp/http_load_balancer",
 			logAttrs: ["res:gcp.resource.labels.url_map_name=web"],
 		})
 	})
 
 	it("covers every service", () => {
 		for (const service of GCP_INFRA_SERVICE_IDS) {
-			expect(gcpWorkloadTelemetry(service, ["name", "a", "b", "c", "d"]).serviceName, service).not.toBe(
-				"",
-			)
+			const telemetry = gcpWorkloadTelemetry(service, ["name", "a", "b", "c", "d"])
+			expect(telemetry.serviceName, service).not.toBe("")
+			expect(telemetry.logsService, service).not.toBe("")
 		}
 	})
 })

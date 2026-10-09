@@ -16,6 +16,8 @@ import { gcpWorkload, type GcpMetricReader } from "./tabs"
 
 const T1 = "2026-10-08T12:00:00.000Z"
 const T2 = "2026-10-08T12:05:00.000Z"
+/** A window that holds both buckets whole. */
+const WINDOW = { startTime: "2026-10-08 12:00:00", endTime: "2026-10-08 12:10:00", bucketSeconds: 300 }
 
 const point = (
 	bucket: string,
@@ -81,14 +83,23 @@ describe("GCP_INFRA_CHARTS", () => {
 	})
 
 	it("opens a counter as a sum and a gauge or percentile as a gauge", () => {
-		expect(gcpChartMetric(GCP_INFRA_CHARTS.cloudRun[0])).toEqual({
+		expect(gcpChartMetric(GCP_INFRA_CHARTS.cloudRun[0], [])).toEqual({
 			name: "gcp.run.request_count",
 			type: "sum",
 		})
-		expect(gcpChartMetric(lineChart("cloudRun", "Request latency"))).toEqual({
+		expect(gcpChartMetric(lineChart("cloudRun", "Request latency"), [])).toEqual({
 			name: "gcp.run.request_latencies",
 			type: "gauge",
 		})
+	})
+
+	it("opens the metric that reported when two engines name a reading apart", () => {
+		const connections = lineChart("cloudSql", "Connections")
+		expect(gcpChartMetric(connections, []).name).toBe("gcp.cloudsql.database.network.connections")
+		expect(
+			gcpChartMetric(connections, [point(T1, "gcp.cloudsql.database.postgresql.num_backends", "", 12)])
+				.name,
+		).toBe("gcp.cloudsql.database.postgresql.num_backends")
 	})
 })
 
@@ -101,7 +112,7 @@ describe("gcpLineRows", () => {
 				point(T1, "gcp.run.request_latencies", "0.99", 900, 5),
 				point(T2, "gcp.run.request_latencies", "0.5", 20, 2),
 			],
-			300,
+			WINDOW,
 		)
 		expect(rows).toEqual([
 			{ bucket: T1, attributeValue: "p50", value: 12 },
@@ -117,7 +128,7 @@ describe("gcpLineRows", () => {
 				point(T1, "gcp.compute.instance.network.received_bytes_count", "vm-1", 600_000, 5),
 				point(T2, "gcp.compute.instance.cpu.utilization", "vm-1", 0.5, 5),
 			],
-			300,
+			WINDOW,
 		)
 		expect(rows).toEqual([
 			{ bucket: T1, attributeValue: "Received", value: 2000 },
@@ -127,19 +138,50 @@ describe("gcpLineRows", () => {
 		])
 	})
 
+	it("divides a counter by the part of an edge bucket the window covers", () => {
+		const received = [point(T1, "gcp.compute.instance.network.received_bytes_count", "vm-1", 120_000, 2)]
+		const rows = gcpLineRows(lineChart("computeEngine", "Network").series, received, {
+			...WINDOW,
+			// The window opens three minutes into the bucket.
+			startTime: "2026-10-08 12:03:00",
+		})
+		expect(rows[0]).toEqual({ bucket: T1, attributeValue: "Received", value: 1000 })
+		// A window that ends seconds into its last bucket still divides by one point's minute.
+		expect(
+			gcpLineRows(lineChart("computeEngine", "Network").series, received, {
+				...WINDOW,
+				endTime: "2026-10-08 12:00:10",
+			})[0]?.value,
+		).toBe(2000)
+	})
+
+	it("draws one connections line whichever engine reports", () => {
+		const series = lineChart("cloudSql", "Connections").series
+		expect(
+			gcpLineRows(
+				series,
+				[point(T1, "gcp.cloudsql.database.postgresql.num_backends", "", 60, 5)],
+				WINDOW,
+			),
+		).toEqual([{ bucket: T1, attributeValue: "Connections", value: 12 }])
+		expect(
+			gcpLineRows(series, [point(T1, "gcp.cloudsql.database.network.connections", "", 40, 5)], WINDOW),
+		).toEqual([{ bucket: T1, attributeValue: "Connections", value: 8 }])
+	})
+
 	it("turns CPU seconds per minute into cores and a lag in seconds into milliseconds", () => {
 		expect(
 			gcpLineRows(
 				lineChart("gke", "CPU").series,
 				[point(T1, "gcp.kubernetes.container.cpu.core_usage_time", "", 150, 5)],
-				300,
+				WINDOW,
 			),
 		).toEqual([{ bucket: T1, attributeValue: "Usage", value: 0.5 }])
 		expect(
 			gcpLineRows(
 				lineChart("cloudSql", "Replica lag").series,
 				[point(T1, "gcp.cloudsql.database.replication.replica_lag", "", 2.5, 5)],
-				300,
+				WINDOW,
 			),
 		).toEqual([{ bucket: T1, attributeValue: "Lag", value: 500 }])
 	})
@@ -152,7 +194,7 @@ describe("gcpLineRows", () => {
 				point(T1, "gcp.loadbalancing.https.request_count", "500", 10),
 				point(T2, "gcp.loadbalancing.https.total_latencies", "0.5", 10),
 			],
-			300,
+			WINDOW,
 		)
 		expect(rows).toEqual([{ bucket: T1, attributeValue: "5xx rate", value: 0.1 }])
 	})
