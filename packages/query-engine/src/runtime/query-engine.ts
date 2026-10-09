@@ -2563,6 +2563,69 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 })
 
 /**
+ * Validate raw-SQL alert rows into bucket observations. Pure: the first invalid
+ * row (or the group cap) fails the whole set.
+ */
+const rawSqlRowsToObs = (
+	rows: ReadonlyArray<typeof RawSqlAlertRowSchema.Type>,
+	windowStart: string,
+): Result.Result<ReadonlyArray<BucketGroupObs>, QueryEngineValidationError> => {
+	const obs: BucketGroupObs[] = []
+	const seenGroups = new Set<string>()
+	for (const row of rows) {
+		const rawGroup = row.group
+		const groupKey =
+			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
+		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
+			return Result.fail(
+				new QueryEngineValidationError({
+					message: "Invalid raw SQL alert query",
+					details: [
+						`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
+					],
+				}),
+			)
+		}
+		const numValue = row.value == null ? null : Number(row.value)
+		const value = numValue != null && Number.isFinite(numValue) ? numValue : null
+		const rawSamples = row.samples == null ? 1 : Number(row.samples)
+		if (!Number.isFinite(rawSamples) || rawSamples < 0) {
+			return Result.fail(
+				new QueryEngineValidationError({
+					message: "Invalid raw SQL alert query",
+					details: ["Raw SQL alert samples must be finite and nonnegative."],
+				}),
+			)
+		}
+		if (!seenGroups.has(groupKey)) {
+			if (seenGroups.size >= MAX_RAW_SQL_ALERT_GROUPS) {
+				return Result.fail(
+					new QueryEngineValidationError({
+						message: "Invalid raw SQL alert query",
+						details: [`Raw SQL alerts may return at most ${MAX_RAW_SQL_ALERT_GROUPS} groups.`],
+					}),
+				)
+			}
+			seenGroups.add(groupKey)
+		}
+		obs.push({
+			// A query without `$__timeGroup` has no bucket column: the whole window
+			// collapses into one synthetic bucket at its start. Normalize either way
+			// — `windowStart` is a Tinybird datetime, and consumers key buckets
+			// by `Date.parse`, which would read that space-separated form as local
+			// time rather than UTC.
+			bucket: normalizeBucket(
+				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : windowStart,
+			),
+			groupKey,
+			value,
+			sampleCount: value == null ? 0 : rawSamples,
+		})
+	}
+	return Result.succeed(obs)
+}
+
+/**
  * The `raw_sql` arm of {@link computeAlertBuckets}, split out only because it
  * needs its own `makeExecuteRawSql` closure.
  *
@@ -2619,54 +2682,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		),
 	)
 
-	const obs: BucketGroupObs[] = []
-	const seenGroups = new Set<string>()
-	for (const row of rows) {
-		const rawGroup = row.group
-		const groupKey =
-			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
-		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: [
-					`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
-				],
-			})
-		}
-		const numValue = row.value == null ? null : Number(row.value)
-		const value = numValue != null && Number.isFinite(numValue) ? numValue : null
-		const rawSamples = row.samples == null ? 1 : Number(row.samples)
-		if (!Number.isFinite(rawSamples) || rawSamples < 0) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: ["Raw SQL alert samples must be finite and nonnegative."],
-			})
-		}
-		if (!seenGroups.has(groupKey)) {
-			if (seenGroups.size >= MAX_RAW_SQL_ALERT_GROUPS) {
-				return yield* new QueryEngineValidationError({
-					message: "Invalid raw SQL alert query",
-					details: [`Raw SQL alerts may return at most ${MAX_RAW_SQL_ALERT_GROUPS} groups.`],
-				})
-			}
-			seenGroups.add(groupKey)
-		}
-		obs.push({
-			// A query without `$__timeGroup` has no bucket column: the whole window
-			// collapses into one synthetic bucket at its start. Normalize either way
-			// — `range.startTime` is a Tinybird datetime, and consumers key buckets
-			// by `Date.parse`, which would read that space-separated form as local
-			// time rather than UTC.
-			bucket: normalizeBucket(
-				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : range.startTime,
-			),
-			groupKey,
-			value,
-			sampleCount: value == null ? 0 : rawSamples,
-		})
-	}
-
-	return obs as ReadonlyArray<BucketGroupObs>
+	return yield* Effect.fromResult(rawSqlRowsToObs(rows, range.startTime))
 })
 
 /**
