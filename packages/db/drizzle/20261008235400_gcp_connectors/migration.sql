@@ -12,6 +12,9 @@ CREATE TABLE "gcp_connectors" (
 	"secret_hash" text NOT NULL,
 	"last_received_at" timestamp with time zone,
 	"last_error" text,
+	"applied_logs_enabled" boolean,
+	"applied_metrics_enabled" boolean,
+	"setup_reported_at" timestamp with time zone,
 	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL

@@ -363,7 +363,7 @@ function GcpSetup({
 	// the connector's secret: it should live only while the panel is open.
 	const scriptsQuery = MapleApiV2AtomClient.query("gcpIntegration", "setupScripts", {
 		params: { id: connector.id },
-		payload: { exclude_gke_container_logs: excludeGke },
+		payload: { log_filter: excludeGke ? "exclude_gke_container_logs" : "default" },
 		reactivityKeys: SCRIPT_REACTIVITY_KEYS,
 	})
 	const scriptsResult = useAtomValue(scriptsQuery)

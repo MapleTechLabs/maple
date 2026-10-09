@@ -151,6 +151,16 @@ const NO_BILLING_ANSWER = {
 	},
 }
 
+// What a connection shows, for the project connector `acme-prod`.
+const READ_DENIED =
+	"Google denied Maple's read of project acme-prod: the read-only roles are missing. Run the setup script again: it grants them. A new grant can take a few minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
+const CANNOT_SIGN_IN =
+	"Maple can't sign in as this connection's read-only service account. It was deleted, or the grant to Maple was removed or blocked by an organization policy. Run the setup script again and read its last lines. (IAM Credentials returned 403 PERMISSION_DENIED)"
+const NO_BILLING =
+	"The host project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
+const queriesFailed = (failed: number, type: string, answer: string) =>
+	`${failed} of ${METRIC_COUNT} metric queries failed, first ${type}. The rest were stored. Maple retries in 5 minutes. (Cloud Monitoring returned ${answer})`
+
 /** One Cloud Run series with two points inside the first poll's window. */
 const requestCountSeries = (projectId = "acme-prod") => ({
 	timeSeries: [
@@ -655,10 +665,7 @@ describe("GcpMetricsService", () => {
 				assert.isTrue(calls.monitoring.every((call) => call.scope === "projects/other-prod"))
 
 				const denied = yield* pollState(testDb, CONNECTOR_A)
-				assert.strictEqual(
-					denied.last_metrics_error,
-					"Google IAM returned 403 PERMISSION_DENIED. Run the setup script in Cloud Shell to grant Maple read access; if it already ran, wait a few minutes for the grant to apply.",
-				)
+				assert.strictEqual(denied.last_metrics_error, CANNOT_SIGN_IN)
 				assert.isNull(denied.metrics_watermark_at)
 				assert.isNull(denied.last_metrics_received_at)
 
@@ -702,7 +709,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.strictEqual(
 					state.last_metrics_error,
-					`1 of ${METRIC_COUNT} metric queries held more than one poll reads; connect folders or projects separately to collect all of it.`,
+					`1 of ${METRIC_COUNT} metric queries hold more series than one read takes. Connect the folders or projects separately to collect all of it.`,
 				)
 			}),
 		)
@@ -784,7 +791,7 @@ describe("GcpMetricsService", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_metrics_error,
-					`1 of ${METRIC_COUNT} metric queries failed. First: ${rejected}: Cloud Monitoring returned 400 INVALID_ARGUMENT.`,
+					queriesFailed(1, rejected, "400 INVALID_ARGUMENT"),
 				)
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 			}),
@@ -804,16 +811,13 @@ describe("GcpMetricsService", () => {
 				assert.lengthOf(calls.monitoring, 1)
 				assert.lengthOf(calls.ingest, 0)
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.match(
-					state.last_metrics_error ?? "",
-					/^Cloud Monitoring returned 403 PERMISSION_DENIED\. Run the setup script/,
-				)
+				assert.strictEqual(state.last_metrics_error, READ_DENIED)
 				assert.isNull(state.metrics_watermark_at)
 			}),
 		)
 	})
 
-	it.effect("names missing billing or a disabled API only where Google gives the reason as a code", () => {
+	it.effect("names missing billing or a disabled API, and stores nothing of what Google wrote", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		const recorder = makeRecorder()
@@ -831,44 +835,36 @@ describe("GcpMetricsService", () => {
 		const metricsError = pollState(testDb, CONNECTOR_A).pipe(
 			Effect.map((state) => state.last_metrics_error),
 		)
-		const hint =
-			"Run the setup script in Cloud Shell to grant Maple read access; if it already ran, wait a few minutes for the grant to apply."
-		const generic = `Cloud Monitoring returned 403 PERMISSION_DENIED. ${hint}`
 		return run(
 			testDb,
 			stub,
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				yield* pollAll
-				assert.strictEqual(yield* metricsError, generic)
+				// Google's no-billing answer has no code for its cause: its sentence is recognised.
+				assert.strictEqual(yield* metricsError, NO_BILLING)
 				assert.strictEqual(
 					(yield* pollState(testDb, CONNECTOR_A)).last_resources_error,
-					"Cloud Asset Inventory returned 403 PERMISSION_DENIED (SERVICE_DISABLED). This API is not enabled in the host project acme-prod; run the setup script again.",
+					"The Cloud Asset Inventory API is switched off in the host project acme-prod. Run the setup script again: it switches the API on. (Cloud Asset Inventory returned 403 PERMISSION_DENIED)",
 				)
 
 				monitoring = () => googleError(403, "PERMISSION_DENIED", [errorInfo("BILLING_DISABLED")])
 				yield* TestClock.setTime(now + 5 * minute)
 				yield* pollAll
-				assert.strictEqual(
-					yield* metricsError,
-					"Cloud Monitoring returned 403 PERMISSION_DENIED (BILLING_DISABLED). This API requires billing to be enabled on the host project acme-prod.",
-				)
+				assert.strictEqual(yield* metricsError, NO_BILLING)
 
 				// A reason that does not read like one of Google's codes is dropped.
 				monitoring = () =>
 					googleError(403, "PERMISSION_DENIED", [errorInfo("billing: see example.com")])
 				yield* TestClock.setTime(now + 10 * minute)
 				yield* pollAll
-				assert.strictEqual(yield* metricsError, generic)
+				assert.strictEqual(yield* metricsError, READ_DENIED)
 
 				// Signing in as the reader does not go through the host project.
 				impersonate = () => googleError(403, "PERMISSION_DENIED", [errorInfo("SERVICE_DISABLED")])
 				yield* TestClock.setTime(now + 15 * minute)
 				yield* pollAll
-				assert.strictEqual(
-					yield* metricsError,
-					`Google IAM returned 403 PERMISSION_DENIED (SERVICE_DISABLED). ${hint}`,
-				)
+				assert.strictEqual(yield* metricsError, CANNOT_SIGN_IN)
 
 				// Details of another form cost neither the status code nor the poll.
 				impersonate = () => undefined
@@ -876,10 +872,10 @@ describe("GcpMetricsService", () => {
 					json({ error: { status: "PERMISSION_DENIED", details: "BILLING_DISABLED" } }, 403)
 				yield* TestClock.setTime(now + 20 * minute)
 				yield* pollAll
-				assert.strictEqual(yield* metricsError, generic)
+				assert.strictEqual(yield* metricsError, READ_DENIED)
 
 				const recorded = recorder.text()
-				assert.include(recorded, "BILLING_DISABLED")
+				assert.include(recorded, "has no active billing account")
 				for (const text of [
 					"Please enable billing",
 					"must not be stored",
@@ -914,10 +910,7 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
 				assert.lengthOf(calls.monitoring, METRIC_COUNT + 2)
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.strictEqual(
-					state.last_metrics_error,
-					`1 of ${METRIC_COUNT} metric queries failed. First: ${broken}: Cloud Monitoring returned 503 UNAVAILABLE.`,
-				)
+				assert.strictEqual(state.last_metrics_error, queriesFailed(1, broken, "503 UNAVAILABLE"))
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 			}),
 		)
@@ -944,7 +937,7 @@ describe("GcpMetricsService", () => {
 				assert.match(
 					state.last_metrics_error ?? "",
 					new RegExp(
-						`^${METRIC_COUNT - 1} of ${METRIC_COUNT} metric queries failed\\. First: .+: Cloud Monitoring returned 429 RESOURCE_EXHAUSTED\\.$`,
+						`^${METRIC_COUNT - 1} of ${METRIC_COUNT} metric queries failed, first .+\\. The rest were stored\\. Maple retries in 5 minutes\\. \\(Cloud Monitoring returned 429 RESOURCE_EXHAUSTED\\)$`,
 					),
 				)
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
@@ -977,7 +970,10 @@ describe("GcpMetricsService", () => {
 				// A few queries time out and pass the poll's minute; the rest are never sent.
 				assert.isBelow(calls.monitoring.length, METRIC_COUNT)
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.strictEqual(state.last_metrics_error, "Cloud Monitoring request timed out")
+				assert.strictEqual(
+					state.last_metrics_error,
+					"Google's Cloud Monitoring API did not answer Maple's request. Maple retries in 5 minutes. If this repeats, write to support@maple.dev. (Cloud Monitoring request timed out)",
+				)
 				assert.isNull(state.metrics_watermark_at)
 			}),
 		)
@@ -986,7 +982,8 @@ describe("GcpMetricsService", () => {
 	it.effect("holds every connector of an organization that is over its plan limit for an hour", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
-		const paused = "Metrics are paused: this organization is over its plan limit."
+		const paused =
+			"Metrics are paused: this Maple organization is over its plan limit. Maple tries again in an hour. See Settings, Billing."
 		return run(
 			testDb,
 			stubFetch(calls, { monitoring: onlyRequestCount, ingestStatus: 402 }),
@@ -1167,9 +1164,9 @@ describe("GcpMetricsService resource inventory", () => {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
 				const state = yield* pollState(testDb, CONNECTOR_A)
-				assert.match(
-					state.last_resources_error ?? "",
-					/^Cloud Asset Inventory returned 403 PERMISSION_DENIED\. Run the setup script/,
+				assert.strictEqual(
+					state.last_resources_error,
+					"Google denied the resource listing for project acme-prod. Run the setup script again: it grants Cloud Asset Viewer. (Cloud Asset Inventory returned 403 PERMISSION_DENIED)",
 				)
 				assert.isNull(state.resources_synced_at)
 				assert.isNull(state.last_metrics_error)
@@ -1205,7 +1202,7 @@ describe("GcpMetricsService resource inventory", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_resources_error,
-					"The scope holds more than 10000 resources; the inventory is incomplete.",
+					"The scope holds more than 10,000 resources, so the resource list is incomplete. Metrics are unaffected. Connect folders or projects separately for a full list.",
 				)
 				// Counted as synced, so the next attempt is in an hour, and nothing was removed.
 				assert.strictEqual(state.resources_synced_at?.getTime(), now + 60 * minute)
