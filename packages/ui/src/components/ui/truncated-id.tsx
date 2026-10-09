@@ -34,7 +34,7 @@ export function TruncatedId({
 	return (
 		<span className={cn("inline-flex min-w-0 items-center gap-1", className)}>
 			{text}
-			<CopyButton value={value} label={`${kind === "sha" ? "commit SHA" : `${kind} id`}`} size="icon-xs" />
+			<CopyButton value={value} label={kind === "sha" ? "commit SHA" : `${kind} id`} size="icon-xs" />
 		</span>
 	)
 }

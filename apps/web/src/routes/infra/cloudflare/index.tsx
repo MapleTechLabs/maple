@@ -137,7 +137,7 @@ function CloudflareData({
 		.onSuccess((r) => r)
 		.orElse(() => null)
 	const timeseriesWaiting = Result.builder(timeseriesResult)
-		.onSuccess((_, holder) => Boolean(holder.waiting))
+		.onSuccess((_, holder) => holder.waiting)
 		.orElse(() => false)
 
 	// Stable zone→color assignment shared by all four charts and the legend:

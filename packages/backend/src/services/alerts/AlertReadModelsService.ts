@@ -329,29 +329,29 @@ export class AlertReadModelsService extends Context.Service<
 								: r.incidentTransition
 						return new AlertCheckDocument({
 							timestamp: isoOf(r.timestamp),
-							groupKey: String(r.groupKey ?? ""),
+							groupKey: r.groupKey,
 							status: decodeAlertCheckStatusSync(r.status),
 							skipReason: Option.getOrNull(decodeAlertSkipReason(r.skipReason)),
 							signalType: decodeAlertSignalTypeSync(r.signalType),
 							comparator: decodeAlertComparatorSync(r.comparator),
-							threshold: Number(r.threshold),
+							threshold: r.threshold,
 							// thresholdUpper not yet recorded in the Tinybird alert_checks
 							// datasource — schema column will be backfilled with the
 							// datasource update; for now always null in the audit log.
 							thresholdUpper: null,
-							observedValue: r.observedValue == null ? null : Number(r.observedValue),
-							sampleCount: Number(r.sampleCount ?? 0),
-							windowMinutes: Number(r.windowMinutes ?? 0),
+							observedValue: r.observedValue == null ? null : r.observedValue,
+							sampleCount: r.sampleCount,
+							windowMinutes: r.windowMinutes,
 							windowStart: isoOf(r.windowStart),
 							windowEnd: isoOf(r.windowEnd),
-							consecutiveBreaches: Number(r.consecutiveBreaches ?? 0),
-							consecutiveHealthy: Number(r.consecutiveHealthy ?? 0),
+							consecutiveBreaches: r.consecutiveBreaches,
+							consecutiveHealthy: r.consecutiveHealthy,
 							incidentId:
 								r.incidentId == null || r.incidentId === ""
 									? null
 									: decodeAlertIncidentIdSync(r.incidentId),
 							incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
-							evaluationDurationMs: Number(r.evaluationDurationMs ?? 0),
+							evaluationDurationMs: r.evaluationDurationMs,
 							errorMessage:
 								r.errorMessage == null || r.errorMessage === "" ? null : r.errorMessage,
 							errorCategory:
@@ -414,7 +414,7 @@ export class AlertReadModelsService extends Context.Service<
 				}),
 				{ profile: "aggregation", context: "alertCheckSummaryGroups" },
 			)
-			const topGroupKeys = groupRows.map((row) => String(row.groupKey ?? ""))
+			const topGroupKeys = groupRows.map((row) => row.groupKey)
 			const rows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.compile(CH.alertChecksSummaryQuery({ topGroupKeys }), {
@@ -429,15 +429,15 @@ export class AlertReadModelsService extends Context.Service<
 
 			const points: AlertChecksSummaryPoint[] = rows.map((row) => ({
 				bucket: row.bucket,
-				groupKey: String(row.groupKey ?? ""),
-				totalCount: Number(row.totalCount ?? 0),
-				breachedCount: Number(row.breachedCount ?? 0),
-				healthyCount: Number(row.healthyCount ?? 0),
-				skippedCount: Number(row.skippedCount ?? 0),
-				errorCount: Number(row.errorCount ?? 0),
-				transitionCount: Number(row.transitionCount ?? 0),
-				observedValue: row.observedValue == null ? null : Number(row.observedValue),
-				threshold: Number(row.threshold ?? 0),
+				groupKey: row.groupKey,
+				totalCount: row.totalCount,
+				breachedCount: row.breachedCount,
+				healthyCount: row.healthyCount,
+				skippedCount: row.skippedCount,
+				errorCount: row.errorCount,
+				transitionCount: row.transitionCount,
+				observedValue: row.observedValue == null ? null : row.observedValue,
+				threshold: row.threshold ?? 0,
 			}))
 			const totals = points.reduce(
 				(acc, point) => ({

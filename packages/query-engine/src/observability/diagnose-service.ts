@@ -80,7 +80,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 
 	const avgApdex = pipe(
 		apdexResult.data,
-		Arr.filter((a) => Number(a.totalCount) > 0),
+		Arr.filter((a) => a.totalCount > 0),
 		(vals) => (vals.length > 0 ? Arr.reduce(vals, 0, (sum, a) => sum + a.apdexScore) / vals.length : 0),
 	)
 
@@ -101,7 +101,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 			Arr.map((e) => ({
 				fingerprintHash: e.fingerprintHash,
 				label: e.errorLabel,
-				count: Number(e.count),
+				count: e.count,
 			})),
 		),
 		recentTraces: pipe(
@@ -109,8 +109,8 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 			Arr.map((t) => ({
 				traceId: t.traceId,
 				rootSpanName: t.rootSpanName,
-				durationMs: Number(t.durationMicros) / 1000,
-				hasError: Boolean(Number(t.hasError)),
+				durationMs: t.durationMicros / 1000,
+				hasError: Boolean(t.hasError),
 			})),
 		),
 		recentLogs: pipe(logsResult.data, Arr.map(toLogEntry)),

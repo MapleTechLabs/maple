@@ -1108,7 +1108,7 @@ function DatabaseDetailPanel({
 	const metricHasSampling = summary
 		? summary.estimatedQueryCount > summary.queryCount + 1
 		: callers.some((caller) => caller.hasSampling)
-	const summaryWaiting = Boolean(summaryResult.waiting)
+	const summaryWaiting = summaryResult.waiting
 
 	const {
 		title: dbTitle,

@@ -292,7 +292,7 @@ function PlanetScaleData({
 							<PlanetScaleDatabaseTable
 								databases={inventory.databases}
 								statsByName={statsByName}
-								waiting={Boolean(statsResult.waiting)}
+								waiting={statsResult.waiting}
 								metricsPaused={neverCollected}
 								emptyMessage={
 									metricsPaused ? METRICS_PAUSED_MESSAGE : "No databases in the inventory."

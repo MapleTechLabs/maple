@@ -150,21 +150,29 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 	}
 }
 
+/** The pull request number, whether the model sent `42` or `"42"`. */
+const pullRequestNumber = (raw: number | string): number | undefined => {
+	const text = `${raw}`.trim()
+	const value = Number(text)
+	return /^[1-9]\d*$/.test(text) && Number.isSafeInteger(value) ? value : undefined
+}
+
 /** A group's kickoff, or why the call has to be made again. */
-const groupInput = (parameters: typeof ReviewFilesParameters.Type) =>
-	!/^[1-9]\d*$/.test(String(parameters.number).trim()) ||
-	!Number.isSafeInteger(Number(String(parameters.number).trim()))
-		? Effect.fail(`number must be the pull request number; got ${String(parameters.number)}.`)
+const groupInput = (parameters: typeof ReviewFilesParameters.Type) => {
+	const number = pullRequestNumber(parameters.number)
+	return number === undefined
+		? Effect.fail(`number must be the pull request number; got ${parameters.number}.`)
 		: parameters.paths.length === 0 || parameters.paths.length > MAX_GROUP_FILES
 			? Effect.fail(
 					`review_files takes 1 to ${MAX_GROUP_FILES} paths per group; got ${parameters.paths.length}. Split the group and call it again.`,
 				)
 			: Effect.succeed(
 					[
-						`Pull request #${Number(String(parameters.number).trim())} of ${parameters.repository}, head ${parameters.headSha}.`,
+						`Pull request #${number} of ${parameters.repository}, head ${parameters.headSha}.`,
 						`Review these files: ${parameters.paths.join(", ")}.`,
 						...(parameters.focus === undefined
 							? []
 							: [`Look in particular for: ${parameters.focus}`]),
 					].join("\n"),
 				)
+}

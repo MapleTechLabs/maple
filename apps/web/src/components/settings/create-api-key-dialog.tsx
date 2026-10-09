@@ -92,7 +92,7 @@ const allScopeLevels = (level: ScopeLevel): Record<string, ScopeLevel> =>
 const scopesFromLevels = (levels: Record<string, ScopeLevel>): Array<V2Scope> =>
 	SCOPE_FAMILIES.flatMap((f) => {
 		const level = levels[f.id]
-		return level === "read" || level === "write" ? [`${f.id}:${level}` as V2Scope] : []
+		return level === "read" || level === "write" ? [`${f.id}:${level}`] : []
 	})
 
 export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: CreateApiKeyDialogProps) {
