@@ -158,6 +158,7 @@ const make: Effect.Effect<
 			endTime: DateTime.makeUnsafe(nowMs),
 		})
 		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
+			profile: "aggregation",
 			context: "errorIssueVersionsSince",
 		})
 		return splitVersionRows(rows, row.baselineVersionsJson, VERSION_SCAN_LIMIT)

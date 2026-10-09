@@ -516,8 +516,14 @@ export const readAiSessionSummary = Effect.fn("AiSessionReads.summary")(function
 	const kind = traceId === undefined ? "aiSession" : "aiTrace"
 	const [rows, totals] = yield* Effect.all(
 		[
-			warehouse.compiledQuery(tenant, compiled.turns, { context: `${kind}Summary` }),
-			warehouse.compiledQuery(tenant, compiled.totals, { context: `${kind}Totals` }),
+			warehouse.compiledQuery(tenant, compiled.turns, {
+				profile: "aggregation",
+				context: `${kind}Summary`,
+			}),
+			warehouse.compiledQuery(tenant, compiled.totals, {
+				profile: "aggregation",
+				context: `${kind}Totals`,
+			}),
 		],
 		{ concurrency: 2 },
 	)
@@ -551,7 +557,7 @@ export const readAiToolsSeries = Effect.fn("AiSessionReads.toolsSeries")(functio
 			endTime: payload.endTime,
 			bucketSeconds: payload.bucketSeconds,
 		}),
-		{ context: "aiToolsSeries" },
+		{ profile: "aggregation", context: "aiToolsSeries" },
 	)
 	return new AiToolsSeriesResponse({ data: rows, seriesKind })
 })
@@ -583,7 +589,7 @@ export const readAiToolsTotals = Effect.fn("AiSessionReads.toolsTotals")(functio
 					},
 					{ rowSchema: Integrations.aiToolsTotalsRowSchema },
 				),
-				{ context: "aiToolsTotals" },
+				{ profile: "aggregation", context: "aiToolsTotals" },
 			),
 			// The detail page's header names the tool, so only a selected
 			// tool has a description to look up.
@@ -642,7 +648,7 @@ export const readAiToolsBreakdowns = Effect.fn("AiSessionReads.toolsBreakdowns")
 			},
 			{ rowSchema: Integrations.aiToolsBreakdownsRowSchema },
 		),
-		{ context: "aiToolsBreakdowns" },
+		{ profile: "aggregation", context: "aiToolsBreakdowns" },
 	)
 	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
 })
@@ -671,7 +677,7 @@ export const readAiToolErrors = Effect.fn("AiSessionReads.toolErrors")(function*
 			},
 			{ rowSchema: Integrations.aiToolErrorsRowSchema },
 		),
-		{ context: "aiToolsErrors" },
+		{ profile: "aggregation", context: "aiToolsErrors" },
 	)
 	return new AiToolErrorsResponse({
 		data: rows.map((row) => ({
