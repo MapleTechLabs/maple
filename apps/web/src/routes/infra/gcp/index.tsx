@@ -305,7 +305,8 @@ function GcpInfra({
 					</Tabs>
 					{tab === GCP_RESOURCES_TAB ? (
 						<GcpResources
-							filter={{ type: search.type, project: search.project }}
+							// An empty param in a hand-edited address is no filter.
+							filter={{ type: search.type || undefined, project: search.project || undefined }}
 							onFilterChange={onSearchChange}
 							timeSearch={timeSearch}
 							syncError={gcpResourcesError(connectors)}
