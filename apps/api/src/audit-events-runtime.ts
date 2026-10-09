@@ -134,7 +134,7 @@ export const processAuditEventsBatch = (batch: QueueBatch) =>
 							}),
 						),
 						Effect.withSpan("AuditEvents.writeOrgBatch", {
-							attributes: { orgId, rows: group.length },
+							attributes: { orgId, "maple.audit.batch_rows": group.length },
 						}),
 						// A failure or a defect is a failed attempt and retries. Interruption
 						// is not: an interrupted batch (a deploy, an isolate torn down)

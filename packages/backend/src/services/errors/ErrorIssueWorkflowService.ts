@@ -803,9 +803,9 @@ const make: Effect.Effect<
 		const source = opts?.source ?? "manual"
 		yield* Effect.annotateCurrentSpan({
 			orgId,
-			issueId,
-			severity: severity ?? "null",
-			source,
+			"maple.issue.id": issueId,
+			"maple.errors.severity": severity ?? "null",
+			"maple.errors.source": source,
 		})
 		const current = yield* requireIssue(orgId, issueId)
 		if (source === "ai" && current.severitySource === "manual") {
@@ -903,7 +903,7 @@ const make: Effect.Effect<
 	const listIssueEvents: ErrorIssueWorkflowServiceApi["listIssueEvents"] = Effect.fn(
 		"ErrorIssueWorkflowService.listIssueEvents",
 	)(function* (orgId, issueId, opts) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		yield* requireIssue(orgId, issueId)
 		const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_EVENTS_LIMIT, 1), 500)
 		const rows = yield* dbExecute((db) =>

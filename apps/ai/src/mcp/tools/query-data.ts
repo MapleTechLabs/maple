@@ -543,8 +543,8 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			const queryEngine = yield* QueryEngineService
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				source: params.source,
-				kind: params.kind,
+				"maple.ai.source": params.source,
+				"maple.ai.kind": params.kind,
 			})
 
 			const run = Effect.fn("McpQueryData.run")(function* (resolved: ResolvedQuery) {

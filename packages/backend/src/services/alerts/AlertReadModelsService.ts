@@ -230,7 +230,7 @@ export class AlertReadModelsService extends Context.Service<
 			orgId: OrgId,
 			incidentId: AlertIncidentId,
 		) {
-			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.incident_id": incidentId })
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertIncidents)

@@ -93,7 +93,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				tool === undefined ? undefined : { tool, bucketSeconds: trendBucketSeconds(startMs, endMs) }
 			const selection = agentToolSelection(params, tool)
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, tool: tool ?? "all" })
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.tools.tool": tool ?? "all" })
 
 			const scope = { startTime: st, endTime: et, ...selectionRequest(selection) }
 			const [totals, breakdowns, errorGroups] = yield* Effect.all(

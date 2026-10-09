@@ -277,14 +277,14 @@ const make: Effect.Effect<
 		const sort = opts.sort ?? "last_seen"
 		yield* Effect.annotateCurrentSpan({
 			orgId,
-			workflowState: opts.workflowState ?? "all",
-			limit: opts.limit ?? 100,
-			sort,
-			...(opts.deploymentEnv ? { deploymentEnv: opts.deploymentEnv } : undefined),
+			"maple.errors.workflow_state": opts.workflowState ?? "all",
+			"maple.errors.limit": opts.limit ?? 100,
+			"maple.errors.sort": sort,
+			...(opts.deploymentEnv ? { "maple.errors.deployment_env": opts.deploymentEnv } : undefined),
 		})
 		const base = yield* issueListConditions(orgId, opts)
 		if (base === undefined) {
-			yield* Effect.annotateCurrentSpan({ issueCount: 0, hasMore: false })
+			yield* Effect.annotateCurrentSpan({ "result.issueCount": 0, "result.hasMore": false })
 			return new ErrorIssuesListResponse({ issues: [] })
 		}
 		const cursor = opts.cursor
@@ -327,7 +327,7 @@ const make: Effect.Effect<
 		const rows = hasMore ? fetched.slice(0, limit) : fetched
 		const issues = yield* workflow.hydrateIssueRows(orgId, rows)
 
-		yield* Effect.annotateCurrentSpan({ issueCount: issues.length, hasMore })
+		yield* Effect.annotateCurrentSpan({ "result.issueCount": issues.length, "result.hasMore": hasMore })
 		const lastRow = rows.at(-1)
 		const nextCursor =
 			hasMore && lastRow
@@ -358,7 +358,7 @@ const make: Effect.Effect<
 			),
 		)
 		const total = rows[0]?.total ?? 0
-		yield* Effect.annotateCurrentSpan({ orgId, issueTotal: total })
+		yield* Effect.annotateCurrentSpan({ orgId, "result.issueTotal": total })
 		return total
 	})
 
@@ -380,14 +380,14 @@ const make: Effect.Effect<
 			),
 		)
 		const counts = rows.filter((row) => row.serviceName !== "")
-		yield* Effect.annotateCurrentSpan({ serviceCount: counts.length })
+		yield* Effect.annotateCurrentSpan({ "result.serviceCount": counts.length })
 		return counts
 	})
 
 	const getIssue: ErrorIssueReadModelsServiceApi["getIssue"] = Effect.fn(
 		"ErrorIssueReadModelsService.getIssue",
 	)(function* (orgId, issueId, opts) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		const issueRow = yield* workflow.requireIssue(orgId, issueId)
 		const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : yield* Clock.currentTimeMillis
 		const startMs = opts.startTime
@@ -488,7 +488,7 @@ const make: Effect.Effect<
 	const listIssueIncidents: ErrorIssueReadModelsServiceApi["listIssueIncidents"] = Effect.fn(
 		"ErrorIssueReadModelsService.listIssueIncidents",
 	)(function* (orgId, issueId) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -499,7 +499,7 @@ const make: Effect.Effect<
 					.limit(200),
 			),
 		)
-		yield* Effect.annotateCurrentSpan("incidentCount", rows.length)
+		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
 			incidents: rows.map(rowToIncident),
 		})
@@ -518,7 +518,7 @@ const make: Effect.Effect<
 					.limit(500),
 			),
 		)
-		yield* Effect.annotateCurrentSpan("incidentCount", rows.length)
+		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
 			incidents: rows.map(rowToIncident),
 		})

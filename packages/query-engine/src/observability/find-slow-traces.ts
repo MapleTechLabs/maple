@@ -25,7 +25,7 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 	const executor = yield* WarehouseExecutor
 	const limit = safeUInt(input.limit, 10, MAX_LIMIT)
 
-	yield* Effect.annotateCurrentSpan("service", input.service ?? "all")
+	yield* Effect.annotateCurrentSpan("maple.query.service", input.service ?? "all")
 
 	interface SlowTraceRow {
 		readonly traceId: string

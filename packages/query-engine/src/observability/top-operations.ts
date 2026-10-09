@@ -18,8 +18,8 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 	const executor = yield* WarehouseExecutor
 
 	yield* Effect.annotateCurrentSpan({
-		service: input.serviceName,
-		metric: input.metric,
+		"maple.query.service": input.serviceName,
+		"query.metric": input.metric,
 	})
 
 	const result = yield* executor.query<TopOperationsOutput>(
@@ -33,7 +33,7 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 		},
 		{ profile: "aggregation" },
 	)
-	yield* Effect.annotateCurrentSpan("operationCount", result.data.length)
+	yield* Effect.annotateCurrentSpan("result.operationCount", result.data.length)
 	return pipe(
 		result.data,
 		Arr.map((r): TopOperation => ({ name: r.name, value: r.value })),

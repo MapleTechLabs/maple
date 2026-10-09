@@ -590,7 +590,10 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const all = results.flat()
 				const sentCount = all.filter((r) => r.sent).length
 				const errorCount = all.length - sentCount
-				yield* Effect.annotateCurrentSpan({ sentCount, errorCount })
+				yield* Effect.annotateCurrentSpan({
+					"maple.web_analytics_digest.sent_count": sentCount,
+					"maple.web_analytics_digest.error_count": errorCount,
+				})
 				return { sentCount, errorCount, skipped: false }
 			})
 

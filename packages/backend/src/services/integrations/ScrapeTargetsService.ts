@@ -650,7 +650,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const row = yield* requireTarget(orgId, targetId)
 				return yield* rowToResponse(row)
 			})
@@ -854,7 +854,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				request: UpdateScrapeTargetRequest,
 				options?: ScrapeTargetMutationOptions,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const existing = yield* requireTarget(orgId, targetId)
 				yield* rejectManaged(existing, options, "edit")
 				const isPlanetScale = existing.targetType === "planetscale"
@@ -1086,7 +1086,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				targetId: ScrapeTargetId,
 				options?: ScrapeTargetMutationOptions,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				yield* rejectManaged(yield* requireTarget(orgId, targetId), options, "remove")
 				return yield* removeRow(orgId, targetId)
 			})
@@ -1095,7 +1095,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				return yield* removeRow(orgId, targetId)
 			})
 
@@ -1243,7 +1243,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const row = yield* requireTarget(orgId, targetId)
 				const headers = yield* authHeadersForRow(row)
 

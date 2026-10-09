@@ -276,14 +276,17 @@ const make: Effect.Effect<
 		knownOrgs: ReadonlyArray<OrgId>,
 		nowMs: number,
 	) {
-		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
+		yield* Effect.annotateCurrentSpan("maple.anomaly.known_orgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 		).pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []))
 		const byo = new Set<string>(byoRows.map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
-			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
+			yield* Effect.annotateCurrentSpan({
+				"maple.anomaly.active_orgs": byo.size,
+				"maple.anomaly.failed_closed": false,
+			})
 			return byo as ReadonlySet<string>
 		}
 
@@ -324,7 +327,10 @@ const make: Effect.Effect<
 				return active as ReadonlySet<string>
 			}),
 			Effect.tap((active) =>
-				Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
+				Effect.annotateCurrentSpan({
+					"maple.anomaly.active_orgs": active.size,
+					"maple.anomaly.failed_closed": false,
+				}),
 			),
 			// Cache the freshly-discovered set for reuse on a later discovery failure.
 			Effect.tap((active) =>
@@ -357,7 +363,10 @@ const make: Effect.Effect<
 							for (const orgId of Option.getOrElse(cached, () => [] as ReadonlyArray<string>)) {
 								active.add(orgId)
 							}
-							yield* Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: true })
+							yield* Effect.annotateCurrentSpan({
+								"maple.anomaly.active_orgs": active.size,
+								"maple.anomaly.failed_closed": true,
+							})
 							return active as ReadonlySet<string>
 						}),
 			),
@@ -553,7 +562,7 @@ const make: Effect.Effect<
 					.groupBy("serviceName", "deploymentEnv", "signalType"),
 			),
 		)
-		yield* Effect.annotateCurrentSpan({ groupCount: rows.length })
+		yield* Effect.annotateCurrentSpan({ "result.groupCount": rows.length })
 		return rows.map((row) => ({
 			serviceName: row.serviceName,
 			deploymentEnv: row.deploymentEnv,
@@ -592,7 +601,7 @@ const make: Effect.Effect<
 	const getIncident: AnomalyDetectionServiceApi["getIncident"] = Effect.fn(
 		"AnomalyDetectionService.getIncident",
 	)(function* (orgId, incidentId) {
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.incident_id": incidentId })
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		return incidentToDocument(row)
 	})
@@ -600,7 +609,7 @@ const make: Effect.Effect<
 	const resolveIncidentManually: AnomalyDetectionServiceApi["resolveIncidentManually"] = Effect.fn(
 		"AnomalyDetectionService.resolveIncidentManually",
 	)(function* (orgId, incidentId) {
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.incident_id": incidentId })
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		if (row.status === "resolved") return incidentToDocument(row)
 		const nowMs = yield* Clock.currentTimeMillis
@@ -647,7 +656,11 @@ const make: Effect.Effect<
 	const setIncidentIssue: AnomalyDetectionServiceApi["setIncidentIssue"] = Effect.fn(
 		"AnomalyDetectionService.setIncidentIssue",
 	)(function* (orgId, incidentId, issueId) {
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId, issueId: issueId ?? "(none)" })
+		yield* Effect.annotateCurrentSpan({
+			orgId,
+			"maple.anomaly.incident_id": incidentId,
+			"maple.issue.id": issueId ?? "(none)",
+		})
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		if (issueId !== null) {
 			const issueRows = yield* dbExecute((db) =>
@@ -691,7 +704,7 @@ const make: Effect.Effect<
 		"AnomalyDetectionService.getIncidentTimeseries",
 	)(function* (tenant, incidentId, opts) {
 		const orgId = tenant.orgId
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.incident_id": incidentId })
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		const nowMs = yield* Clock.currentTimeMillis
 
@@ -1166,7 +1179,7 @@ const make: Effect.Effect<
 		nowMs: number,
 		runRetention: boolean,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.run_retention": runRetention })
 		const stats: OrgTickStats = {
 			seriesEvaluated: 0,
 			incidentsOpened: 0,
@@ -2157,9 +2170,9 @@ const make: Effect.Effect<
 
 			const failureCount = yield* Ref.get(orgFailures)
 			yield* Effect.annotateCurrentSpan({
-				orgsKnown: knownOrgs.size,
-				orgsProcessed: orgsToProcess.length,
-				orgFailures: failureCount,
+				"maple.anomaly.known_orgs": knownOrgs.size,
+				"maple.anomaly.orgs_processed": orgsToProcess.length,
+				"maple.anomaly.org_failures": failureCount,
 				...totals,
 			})
 

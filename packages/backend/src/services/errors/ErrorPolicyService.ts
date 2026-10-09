@@ -413,7 +413,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	const listIssueEscalations: ErrorPolicyServiceApi["listIssueEscalations"] = Effect.fn(
 		"ErrorPolicyService.listIssueEscalations",
 	)(function* (orgId, issueId) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(IssueEscalations)

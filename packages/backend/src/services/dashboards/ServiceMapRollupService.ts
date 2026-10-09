@@ -271,9 +271,9 @@ export class ServiceMapRollupService extends Context.Service<
 			const targetOrgs =
 				active === undefined ? knownOrgs : knownOrgs.filter((orgId) => active.has(orgId))
 			yield* Effect.annotateCurrentSpan({
-				knownOrgs: knownOrgs.length,
-				targetOrgs: targetOrgs.length,
-				activeOrgDiscovery: active === undefined ? "failed" : "ok",
+				"maple.service_map.known_orgs": knownOrgs.length,
+				"maple.service_map.target_orgs": targetOrgs.length,
+				"maple.service_map.active_org_discovery": active === undefined ? "failed" : "ok",
 			})
 
 			const results = yield* Effect.forEach(

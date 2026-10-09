@@ -810,9 +810,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
 			}
 
-			yield* Effect.annotateCurrentSpan("totalRequests", totalRequests)
-			yield* Effect.annotateCurrentSpan("totalErrors", totalErrors)
-			yield* Effect.annotateCurrentSpan("serviceCount", services.length)
+			yield* Effect.annotateCurrentSpan("maple.digest.total_requests", totalRequests)
+			yield* Effect.annotateCurrentSpan("maple.digest.total_errors", totalErrors)
+			yield* Effect.annotateCurrentSpan("maple.digest.service_count", services.length)
 			yield* Effect.logInfo("Digest data generated").pipe(
 				Effect.annotateLogs({
 					orgId,
@@ -1262,9 +1262,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const sentCount = allResults.filter((r) => r.sent).length
 			const errorCount = allResults.filter((r) => !r.sent).length
 
-			yield* Effect.annotateCurrentSpan("sentCount", sentCount)
-			yield* Effect.annotateCurrentSpan("errorCount", errorCount)
-			yield* Effect.annotateCurrentSpan("scopeCount", Object.keys(byScope).length)
+			yield* Effect.annotateCurrentSpan("maple.digest.sent_count", sentCount)
+			yield* Effect.annotateCurrentSpan("maple.digest.error_count", errorCount)
+			yield* Effect.annotateCurrentSpan("maple.digest.scope_count", Object.keys(byScope).length)
 
 			return { sentCount, errorCount, skipped: false }
 		})
