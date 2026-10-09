@@ -998,7 +998,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				function* (orgId, reviewId) {
 					const rows = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(PrReviews)
 									.select()
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
@@ -1018,7 +1018,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) =>
 				database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PrReviews)
 								.set(values)
 								.where(($) => [
@@ -1053,7 +1053,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const loadTracked = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
 				database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviewFindings)
 								.select()
 								.where(($) => [
@@ -1076,7 +1076,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					? Effect.void
 					: database
 							.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(PrReviewFindings)
 										.set(values)
 										.where(($) => [$.id.in_(...ids)]),
@@ -1095,7 +1095,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) =>
 				database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviewFindingEmbeddings)
 								.innerJoin(PrReviewFindings, "finding", (embedding, finding) =>
 									finding.id.eq(embedding.findingId),
@@ -1345,7 +1345,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const commentAttemptOf = (orgId: OrgId, reviewId: PrReviewId) =>
 				database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select("commentAttempt")
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
@@ -1473,7 +1473,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						down += first.thumbsDown
 						return database
 							.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(PrReviewFindings)
 										.set({ reactionsUp: first.thumbsUp, reactionsDown: first.thumbsDown })
 										.where(($) => [$.id.eq(finding.id)]),
@@ -1512,7 +1512,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const previous = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select("headSha")
 								.where(($) => [
@@ -1566,7 +1566,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select("id", "sessionId", "headSha")
 								.where(($) => [
@@ -1630,7 +1630,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PrReviews)
 								.set(($) => ({
 									status: "queued",
@@ -1828,7 +1828,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const config = yield* repositories.getEffectivePrReviewConfig(orgId, repositoryId)
 					if (config.postMergeCheck === false) return
 					const latest = yield* database.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select("id", "postMergeStatus")
 								.where(($) => [
@@ -1845,7 +1845,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const row = latest[0]
 					if (row === undefined || row.postMergeStatus !== null) return
 					yield* database.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PrReviews)
 								.set({
 									mergeCommitSha: merge.mergeCommitSha,
@@ -1893,7 +1893,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							const repositoryId = closedRepo.value.id
 							yield* database
 								.execute((db) =>
-									db.orm.run(
+									db.run(
 										PG.update(PrReviews)
 											.set({
 												mergedAt: job.mergedAtMs ?? nowMs,
@@ -1967,7 +1967,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (job.deferredReview === true) {
 					const queued = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(PrReviews)
 									.select("id")
 									.where(($) => [
@@ -2003,7 +2003,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					// it would overwrite that review's own check.
 					const existingHead = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(PrReviews)
 									.select("id")
 									.where(($) => [
@@ -2018,7 +2018,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.pipe(Effect.mapError(toPersistence))
 					const earlier = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(PrReviews)
 									.select(() => ({ total: PG.count() }))
 									.where(($) => [
@@ -2043,7 +2043,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (config.dailyLimit !== undefined) {
 					const repoToday = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(PrReviews)
 									.select(() => ({ total: PG.count() }))
 									.where(($) => [
@@ -2069,7 +2069,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// head is a duplicate, and so is a `synchronize` that carries the head we already have.
 				const inserted = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.insertInto(PrReviews)
 								.values({
 									id: reviewId,
@@ -2126,7 +2126,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					if (requested) {
 						const active = yield* database
 							.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.from(PrReviews)
 										.select("id")
 										.where(($) => [
@@ -2205,7 +2205,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								// As stored, so a document from an older shape reads as none below.
 								.select(($) => ({
@@ -2442,7 +2442,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The pull request merged while this review ran: the merge found nothing to schedule.
 				const merged = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select("mergedAt", "mergeCommitSha")
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
@@ -2471,7 +2471,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (tracksFindings) {
 					yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(PrReviewFindings).values(
 									findings.map((finding) => ({
 										id: keys.get(finding.handle ?? "") ?? randomUUID(),
@@ -2500,7 +2500,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (embedder !== undefined && vectors !== undefined && tracksFindings) {
 					yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(PrReviewFindingEmbeddings)
 									.values(
 										findings.map((finding, i) => ({
@@ -2594,7 +2594,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							({ key, commentId }) =>
 								database
 									.execute((db) =>
-										db.orm.run(
+										db.run(
 											PG.update(PrReviewFindings)
 												.set({ commentId })
 												.where(($) => [$.id.eq(key)]),

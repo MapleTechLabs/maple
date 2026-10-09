@@ -30,21 +30,21 @@ export class OAuthStateRepository extends Context.Service<OAuthStateRepository, 
 			const purgeExpired = Effect.fn("OAuthStateRepository.purgeExpired")(function* (now: number) {
 				yield* database
 					.execute((db) =>
-						db.orm.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(now)])),
+						db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(now)])),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
 			const insert = Effect.fn("OAuthStateRepository.insert")(function* (row: OAuthAuthStateInsert) {
 				yield* database
-					.execute((db) => db.orm.run(PG.insertInto(OAuthAuthStates).values(row)))
+					.execute((db) => db.run(PG.insertInto(OAuthAuthStates).values(row)))
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
 			const findByState = Effect.fn("OAuthStateRepository.findByState")(function* (state: string) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(OAuthAuthStates)
 								.select()
 								.where(($) => [$.state.eq(state)])
@@ -57,9 +57,7 @@ export class OAuthStateRepository extends Context.Service<OAuthStateRepository, 
 
 			const deleteByState = Effect.fn("OAuthStateRepository.deleteByState")(function* (state: string) {
 				yield* database
-					.execute((db) =>
-						db.orm.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])),
-					)
+					.execute((db) => db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])))
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 

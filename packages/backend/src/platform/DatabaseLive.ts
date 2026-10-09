@@ -1,7 +1,6 @@
 import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollector } from "@maple/db/client"
 import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
 import * as Orm from "@maple-dev/effect-orm/database"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Cause, Clock, Context, Effect, Result, Schema } from "effect"
 import { SqlError } from "effect/sql/SqlError"
 import {
@@ -75,20 +74,10 @@ const capQueryMessage = (message: string): string =>
  * on the span as `db.query.text`.
  */
 export const toDatabaseError = (cause: unknown): DatabaseError => {
-	if (cause instanceof EffectDrizzleQueryError) {
-		const statement = capQueryMessage(cause.query)
-		const root = driverRootError(cause)?.message
-		return new DatabaseError({
-			message: root ? `${root} [while: ${statement}]` : statement,
-			// Never the drizzle error itself: its `message` getter interpolates the
-			// bound params, and `Schema.Defect` encodes `message`.
-			cause: driverSqlError(cause) ?? new Error(`Failed query: ${statement}`),
-		})
-	}
 	if (cause instanceof SqlError) {
 		return new DatabaseError({ message: driverRootError(cause)?.message ?? cause.message, cause })
 	}
-	// effect-orm keeps the driver's `SqlError` as `cause`, so classification reads it as for drizzle.
+	// effect-orm keeps the driver's `SqlError` as `cause`, which classification reads.
 	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed) {
 		const root = driverRootError(cause.cause)?.message ?? cause.message
 		const statement = cause instanceof Orm.DatabaseError ? capQueryMessage(cause.sql) : undefined

@@ -170,7 +170,7 @@ const seedSub = (
 		const database = yield* Database
 		const id = overrides.id ?? randomUUID()
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(DigestSubscriptions).values({
 					id,
 					orgId: OrgId.make("org_digest_test"),
@@ -191,7 +191,7 @@ const getSub = (id: string) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(DigestSubscriptions)
 					.select()
 					.where(($) => [$.id.eq(id)]),
@@ -809,7 +809,7 @@ describe("DigestService — subscriber opt-out", () => {
 			})
 			// What the sweep itself does to a member it no longer sees in the org.
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(DigestSubscriptions)
 						.set({ enabled: false })
 						.where(($) => [$.id.eq(departed)]),

@@ -48,7 +48,7 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 
 			const loadSettingsRow = Effect.fn("AiTriageService.loadSettingsRow")(function* (orgId: OrgId) {
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AiTriageSettings)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -59,7 +59,7 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 			})
 
 			const loadUsage = Effect.fn("AiTriageService.loadUsage")(function* (orgId: OrgId, nowMs: number) {
-				return yield* dbExecute((db) => selectInvestigationUsage(db.orm, orgId, nowMs))
+				return yield* dbExecute((db) => selectInvestigationUsage(db, orgId, nowMs))
 			})
 
 			/** What a start spends: one agent, one pass. */
@@ -101,7 +101,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					pausedDimension: paused?.dimension ?? null,
 					resumesAt:
 						paused === null ? null : decodeIsoSync(new Date(paused.retryableAtMs).toISOString()),
-					updatedAt: row === undefined ? null : decodeIsoSync(new Date(row.updatedAt).toISOString()),
+					updatedAt:
+						row === undefined ? null : decodeIsoSync(new Date(row.updatedAt).toISOString()),
 					updatedBy: row?.updatedBy ?? null,
 				})
 			}
@@ -131,7 +132,7 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					updatedBy: userId,
 				}
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(AiTriageSettings)
 							.values({ orgId, ...next })
 							.onConflictDoUpdate({ target: ["orgId"], set: next }),

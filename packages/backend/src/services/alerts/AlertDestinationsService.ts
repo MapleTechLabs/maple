@@ -365,7 +365,7 @@ export class AlertDestinationsService extends Context.Service<
 			destinationId: AlertDestinationDocument["id"],
 		) {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertDestinations)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
@@ -399,7 +399,7 @@ export class AlertDestinationsService extends Context.Service<
 		) {
 			const timestamp = yield* runtime.now
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(AlertDestinations)
 						.set({
 							lastTestedAt: timestamp,
@@ -420,7 +420,7 @@ export class AlertDestinationsService extends Context.Service<
 
 		const listDestinations = Effect.fn("AlertsService.listDestinations")(function* (orgId: OrgId) {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertDestinations)
 						.select()
 						.where(($) => [$.orgId.eq(orgId)])
@@ -572,7 +572,7 @@ export class AlertDestinationsService extends Context.Service<
 				updatedBy: userId,
 			}
 			const writeRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(AlertDestinations)
 						.values(row)
 						.returning(() => ({ txid: currentTxid })),
@@ -824,7 +824,7 @@ export class AlertDestinationsService extends Context.Service<
 				disabledReason: null,
 			} as const
 			const writeRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(AlertDestinations)
 						.set({
 							name: nextName,
@@ -866,7 +866,7 @@ export class AlertDestinationsService extends Context.Service<
 			yield* requireAdmin(roles)
 			yield* requireDestinationRow(orgId, destinationId)
 			const dependentRules = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertRules)
 						.select(($) => ({
 							id: $.id,
@@ -903,21 +903,22 @@ export class AlertDestinationsService extends Context.Service<
 			// per-org advisory lock, so re-checking references inside it closes the
 			// race where a rule commits a reference between our scan and the delete.
 			const deleteResult = yield* dbExecute((db) =>
-				db.orm.transaction(
+				db.transaction(
 					Effect.gen(function* () {
-						yield* db.orm.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
-						const stillReferenced = yield* db.orm.run(
+						yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+						const stillReferenced = yield* db.run(
 							PG.from(AlertRules)
 								.select("id", "name")
 								.where(($) => [
 									$.orgId.eq(orgId),
-									PG.sql.cond`${$.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
+									PG.sql
+										.cond`${$.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
 								]),
 						)
 						if (stillReferenced.length > 0) {
 							return { referencedBy: stillReferenced, deleted: [] }
 						}
-						const deleted = yield* db.orm.run(
+						const deleted = yield* db.run(
 							PG.deleteFrom(AlertDestinations)
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
 								.returning(() => ({ txid: currentTxid })),

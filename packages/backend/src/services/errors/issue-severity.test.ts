@@ -35,7 +35,7 @@ const setup = Effect.gen(function* () {
 	const issueId = asIssueId(randomUUID())
 	const now = Date.now()
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(ErrorIssues).values({
 				id: issueId,
 				orgId: ORG,
@@ -63,14 +63,14 @@ const setup = Effect.gen(function* () {
 	})
 
 	const apply = (overrides: Partial<ApplyTriageSeverityInput> = {}) =>
-		database.execute((db) => applyTriageSeverity(db.orm, baseInput(overrides)))
+		database.execute((db) => applyTriageSeverity(db, baseInput(overrides)))
 
 	const setIssueSeverity = (
 		severity: "critical" | "high" | "medium" | "low",
 		severitySource: "manual" | "detector",
 	) =>
 		database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({ severity, severitySource })
 					.where(($) => [$.id.eq(issueId)]),
@@ -79,7 +79,7 @@ const setup = Effect.gen(function* () {
 
 	const loadIssue = Effect.map(
 		database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.id.eq(issueId)]),
@@ -88,21 +88,21 @@ const setup = Effect.gen(function* () {
 		(rows) => rows[0],
 	)
 	const loadEvents = database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(ErrorIssueEvents)
 				.select()
 				.where(($) => [$.issueId.eq(issueId)]),
 		),
 	)
 	const loadEscalations = database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(IssueEscalations)
 				.select()
 				.where(($) => [$.issueId.eq(issueId)]),
 		),
 	)
 	const loadAgents = database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(Actors)
 				.select()
 				.where(($) => [$.orgId.eq(ORG)]),

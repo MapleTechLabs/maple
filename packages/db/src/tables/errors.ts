@@ -87,14 +87,21 @@ export const ErrorIssues = PG.table("error_issues", {
 		exceptionMessage: PG.column(PG.text, { name: "exception_message" }),
 		errorLabel: PG.column(PG.text, { name: "error_label", default: "" }),
 		topFrame: PG.column(PG.text, { name: "top_frame" }),
-		workflowState: PG.column(PG.brand(PG.text, WorkflowState), { name: "workflow_state", default: "triage" }),
+		workflowState: PG.column(PG.brand(PG.text, WorkflowState), {
+			name: "workflow_state",
+			default: "triage",
+		}),
 		priority: PG.column(PG.int4, { default: 3 }),
 		// null = untriaged. Write precedence: manual > ai > detector; see
 		// IssueSeveritySource in @maple/domain/http.
 		severity: PG.nullable(PG.brand(PG.text, IssueSeverity)),
-		severitySource: PG.column(PG.nullable(PG.brand(PG.text, IssueSeveritySource)), { name: "severity_source" }),
+		severitySource: PG.column(PG.nullable(PG.brand(PG.text, IssueSeveritySource)), {
+			name: "severity_source",
+		}),
 		assignedActorId: PG.column(PG.nullable(PG.brand(PG.text, ActorId)), { name: "assigned_actor_id" }),
-		leaseHolderActorId: PG.column(PG.nullable(PG.brand(PG.text, ActorId)), { name: "lease_holder_actor_id" }),
+		leaseHolderActorId: PG.column(PG.nullable(PG.brand(PG.text, ActorId)), {
+			name: "lease_holder_actor_id",
+		}),
 		leaseExpiresAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_expires_at" }),
 		claimedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "claimed_at" }),
 		notes: PG.nullable(PG.text),
@@ -102,7 +109,9 @@ export const ErrorIssues = PG.table("error_issues", {
 		lastSeenAt: PG.column(PG.timestamptzMillis, { name: "last_seen_at" }),
 		occurrenceCount: PG.column(PG.int4, { name: "occurrence_count", default: 0 }),
 		resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
-		resolvedByActorId: PG.column(PG.nullable(PG.brand(PG.text, ActorId)), { name: "resolved_by_actor_id" }),
+		resolvedByActorId: PG.column(PG.nullable(PG.brand(PG.text, ActorId)), {
+			name: "resolved_by_actor_id",
+		}),
 		// Survives a reopen, unlike `resolvedAt` which the regression path nulls.
 		// Without it an issue that was fixed and regressed looked identical to one
 		// nobody had ever touched; the reason agents kept re-fixing the same bug.
@@ -119,7 +128,10 @@ export const ErrorIssues = PG.table("error_issues", {
 		// where clients run many versions at once. Capped, least-recently-seen
 		// evicted first; see MAX_TRACKED_VERSIONS.
 		seenVersionsJson: PG.column(PG.jsonb(StringList), { name: "seen_versions_json", default: [] }),
-		resolvedVersionsJson: PG.column(PG.jsonb(StringList), { name: "resolved_versions_json", default: [] }),
+		resolvedVersionsJson: PG.column(PG.jsonb(StringList), {
+			name: "resolved_versions_json",
+			default: [],
+		}),
 		snoozeUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "snooze_until" }),
 		archivedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "archived_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
@@ -233,9 +245,13 @@ export const ErrorIssueStates = PG.table("error_issue_states", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		issueId: PG.column(PG.brand(PG.text, ErrorIssueId), { name: "issue_id" }),
-		lastObservedOccurrenceAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_observed_occurrence_at" }),
+		lastObservedOccurrenceAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "last_observed_occurrence_at",
+		}),
 		lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
-		openIncidentId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIncidentId)), { name: "open_incident_id" }),
+		openIncidentId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIncidentId)), {
+			name: "open_incident_id",
+		}),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	// No standalone org_id index: the primary key already leads with org_id, so
@@ -284,7 +300,10 @@ export const ErrorNotificationPolicies = PG.table("error_notification_policies",
 		notifyOnFirstSeen: PG.column(PG.bool, { name: "notify_on_first_seen", default: true }),
 		notifyOnRegression: PG.column(PG.bool, { name: "notify_on_regression", default: true }),
 		notifyOnResolve: PG.column(PG.bool, { name: "notify_on_resolve", default: false }),
-		notifyOnTransitionInReview: PG.column(PG.bool, { name: "notify_on_transition_in_review", default: false }),
+		notifyOnTransitionInReview: PG.column(PG.bool, {
+			name: "notify_on_transition_in_review",
+			default: false,
+		}),
 		notifyOnTransitionDone: PG.column(PG.bool, { name: "notify_on_transition_done", default: false }),
 		notifyOnClaim: PG.column(PG.bool, { name: "notify_on_claim", default: false }),
 		minOccurrenceCount: PG.column(PG.int4, { name: "min_occurrence_count", default: 1 }),
@@ -403,7 +422,12 @@ export const ErrorIssuePullRequests = PG.table("error_issue_pull_requests", {
 		// The merge webhook's lookup: "which issues point at this PR?". Keyed on
 		// repo_full_name because that is the column always populated; the webhook
 		// knows the full name from its own payload.
-		PG.index("error_issue_pull_requests_repo_number_idx", ["orgId", "provider", "repoFullName", "number"]),
+		PG.index("error_issue_pull_requests_repo_number_idx", [
+			"orgId",
+			"provider",
+			"repoFullName",
+			"number",
+		]),
 		PG.index("error_issue_pull_requests_issue_idx", ["orgId", "issueId"]),
 	],
 	tenantColumn: "orgId",
@@ -432,7 +456,10 @@ export const ErrorIssueVerifications = PG.table("error_issue_verifications", {
 		/** When the window closes and the verification tick may act. */
 		verifyAfter: PG.column(PG.timestamptzMillis, { name: "verify_after" }),
 		/** Builds the issue had been seen from at merge time. See the note above. */
-		baselineVersionsJson: PG.column(PG.jsonb(StringList), { name: "baseline_versions_json", default: [] }),
+		baselineVersionsJson: PG.column(PG.jsonb(StringList), {
+			name: "baseline_versions_json",
+			default: [],
+		}),
 		baselineOccurrenceCount: PG.column(PG.int4, { name: "baseline_occurrence_count", default: 0 }),
 		/**
 		 * Pre-merge occurrences per hour. Stored, not re-derived, because it is the
@@ -441,7 +468,9 @@ export const ErrorIssueVerifications = PG.table("error_issue_verifications", {
 		 * ~3x/hour" line has nothing to say.
 		 */
 		baselineRatePerHour: PG.column(PG.float8, { name: "baseline_rate_per_hour", default: 0 }),
-		investigationId: PG.column(PG.nullable(PG.brand(PG.text, InvestigationId)), { name: "investigation_id" }),
+		investigationId: PG.column(PG.nullable(PG.brand(PG.text, InvestigationId)), {
+			name: "investigation_id",
+		}),
 		verdict: PG.nullable(PG.brand(PG.text, VerificationVerdict)),
 		verdictNote: PG.column(PG.nullable(PG.text), { name: "verdict_note" }),
 		/** Occurrences since the merge from builds NOT in the baseline. Zero is the good case. */

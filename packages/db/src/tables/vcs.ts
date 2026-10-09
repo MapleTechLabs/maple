@@ -97,14 +97,19 @@ export const VcsRepositories = PG.table("vcs_repositories", {
 		// installation) or "removed" (provider revoked access → soft-deleted; row +
 		// commits kept, events ignored until re-granted). Hard delete is user-only.
 		status: PG.column(PG.brand(PG.text, VcsRepoStatus), { default: "active" }),
-		syncStatus: PG.column(PG.brand(PG.text, VcsRepoSyncStatus), { name: "sync_status", default: "pending" }),
+		syncStatus: PG.column(PG.brand(PG.text, VcsRepoSyncStatus), {
+			name: "sync_status",
+			default: "pending",
+		}),
 		lastSyncedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_synced_at" }),
 		lastSyncError: PG.column(PG.nullable(PG.text), { name: "last_sync_error" }),
 		// Opt-in: Maple reviews this repository's pull requests for observability
 		// gaps. User-owned, like `tracked_branch`; a reconcile never touches it.
 		prReviewEnabled: PG.column(PG.bool, { name: "pr_review_enabled", default: false }),
 		/** Review settings for this repository; null reviews with the defaults. */
-		prReviewConfig: PG.column(PG.nullable(PG.jsonb(PrReviewRepositoryConfig)), { name: "pr_review_config" }),
+		prReviewConfig: PG.column(PG.nullable(PG.jsonb(PrReviewRepositoryConfig)), {
+			name: "pr_review_config",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
@@ -253,7 +258,9 @@ export const PrReviews = PG.table("pr_reviews", {
 		// The daily quota count.
 		PG.index("pr_reviews_org_created_idx", ["orgId", "createdAt"]),
 		// The post-merge tick's due rows.
-		PG.index("pr_reviews_post_merge_due_idx", ["postMergeAfter"], { where: `"post_merge_status" = 'waiting'` }),
+		PG.index("pr_reviews_post_merge_due_idx", ["postMergeAfter"], {
+			where: `"post_merge_status" = 'waiting'`,
+		}),
 	],
 	tenantColumn: "orgId",
 })

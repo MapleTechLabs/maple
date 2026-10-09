@@ -51,7 +51,7 @@ const insertDestination = (
 		const database = yield* Database
 		const timestamp = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AlertDestinations).values({
 					id,
 					orgId,
@@ -226,7 +226,7 @@ describe("ErrorPolicyService", () => {
 				},
 			]
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(IssueEscalations).values(
 						rows.map((row) => ({
 							id: row.id,

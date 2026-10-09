@@ -70,7 +70,7 @@ const enableAutomation = (maxRunsPerDay = 20, maxPassesPerDay = 200) =>
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AiTriageSettings).values({
 					orgId: ORG,
 					enabled: true,
@@ -90,7 +90,7 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 		const issueId = Schema.decodeSync(ErrorIssueId)(randomUUID())
 		if (options.withIssue !== false) {
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIssues).values({
 						id: issueId,
 						orgId: ORG,
@@ -134,9 +134,7 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 			createdAt: nowMs,
 			updatedAt: nowMs,
 		}
-		yield* database.execute((db) =>
-			db.orm.run(PG.insertInto(ErrorIssueVerifications).values(verification)),
-		)
+		yield* database.execute((db) => db.run(PG.insertInto(ErrorIssueVerifications).values(verification)))
 		return { issueId, verification }
 	})
 
@@ -170,7 +168,7 @@ describe("enqueueFixVerification", () => {
 			assert.include(chat.turns[0]?.text ?? "", PR_URL)
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.id.eq(result.investigationId)]),
@@ -198,7 +196,7 @@ describe("enqueueFixVerification", () => {
 			const database = yield* Database
 			const investigationIds = result.investigationId === undefined ? [] : [result.investigationId]
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.id.in_(...investigationIds)]),
@@ -217,7 +215,7 @@ describe("enqueueFixVerification", () => {
 			const database = yield* Database
 			const now = Date.now()
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(Investigations).values({
 						id: Schema.decodeSync(InvestigationId)(randomUUID()),
 						orgId: ORG,

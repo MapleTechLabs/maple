@@ -13,7 +13,7 @@ import {
 	type ErrorIssueRow,
 	type ErrorNotificationPolicyRow,
 } from "@maple/db/tables"
-import type { MapleDb, MapleDbError, MapleOrm } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import type {
 	ActorId,
@@ -119,7 +119,7 @@ const REGRESSION_GRACE_MS = 60 * 60 * 1000
 const MAX_TRACKED_VERSIONS = 50
 
 /** The handle `persistErrorTickWindow` runs its statements on, inside its transaction. */
-type ErrorTickTransaction = MapleOrm
+type ErrorTickTransaction = MapleDb
 
 /** A jsonb build set, as the `least`/`greatest`-style SET expressions below return it. */
 const VersionListJson = PG.jsonb(Schema.Array(Schema.String))
@@ -416,9 +416,9 @@ export const persistErrorTickWindow = (
 	PersistErrorTickWindowResult,
 	MapleDbError | ErrorTickClaimLost | ErrorTickUpsertMissingRow
 > =>
-	db.orm.transaction(
+	db.transaction(
 		Effect.gen(function* () {
-			const tx = db.orm
+			const tx = db
 			const windowEnd = input.windowEndMs
 			// The raw `sql` bulk updates below bind this with no column type behind it,
 			// so it has to reach the driver as a string — see `msToSqlTimestamp`.

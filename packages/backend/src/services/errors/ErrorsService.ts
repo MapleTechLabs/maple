@@ -299,7 +299,7 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
-			db.orm.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
+			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 		).pipe(Effect.option)
 		// Without the BYO set an org on its own warehouse reads as idle, and
 		// managed discovery says nothing about its data: not a discovered result.
@@ -488,7 +488,7 @@ const make: Effect.Effect<
 	) {
 		const leaseExpiresAt = timestamp + leaseMs
 		const claimed = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({
 						leaseHolderActorId: actorId,
@@ -511,7 +511,7 @@ const make: Effect.Effect<
 
 		if (claimed.length === 0) {
 			const latestRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
@@ -820,7 +820,7 @@ const make: Effect.Effect<
 	const processNotificationOutbox = Effect.fn("ErrorsService.processNotificationOutbox")(function* () {
 		const currentTime = yield* Clock.currentTimeMillis
 		const due = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorNotificationDeliveries)
 					.select()
 					.where(($) => [claimableNotificationWhere($, currentTime)])
@@ -834,7 +834,7 @@ const make: Effect.Effect<
 			(row) =>
 				Effect.gen(function* () {
 					const claimedRows = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(ErrorNotificationDeliveries)
 								.set(($) => ({
 									status: "processing",
@@ -854,7 +854,7 @@ const make: Effect.Effect<
 					const payloadOption = decodeErrorNotificationOutboxPayload(claimed.payloadJson)
 					if (Option.isNone(payloadOption)) {
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(ErrorNotificationDeliveries)
 									.set({
 										status: "failed",
@@ -886,7 +886,7 @@ const make: Effect.Effect<
 					const retryDelayMs = Math.min(30_000 * 2 ** (claimed.attemptCount - 1), 15 * 60_000)
 
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(ErrorNotificationDeliveries)
 								.set(
 									delivered
@@ -950,7 +950,7 @@ const make: Effect.Effect<
 	) {
 		return yield* dbExecute((db) =>
 			Effect.gen(function* () {
-				const actorRows = yield* db.orm.run(
+				const actorRows = yield* db.run(
 					PG.from(Actors)
 						.select()
 						.where(($) => [
@@ -960,13 +960,13 @@ const make: Effect.Effect<
 						])
 						.limit(1),
 				)
-				const policyRows = yield* db.orm.run(
+				const policyRows = yield* db.run(
 					PG.from(ErrorNotificationPolicies)
 						.select()
 						.where(($) => [$.orgId.eq(orgId)])
 						.limit(1),
 				)
-				const expiredLeases = yield* db.orm.run(
+				const expiredLeases = yield* db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [
@@ -977,7 +977,7 @@ const make: Effect.Effect<
 				)
 				// Wake up wontfix issues whose snooze has elapsed, so that new events
 				// observed in this tick are treated as regressions rather than skipped.
-				const wakeCandidates = yield* db.orm.run(
+				const wakeCandidates = yield* db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [
@@ -1009,7 +1009,7 @@ const make: Effect.Effect<
 			Effect.gen(function* () {
 				const prevActorId = row.leaseHolderActorId
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(ErrorIssues)
 							.set({
 								leaseHolderActorId: null,
@@ -1045,7 +1045,7 @@ const make: Effect.Effect<
 		const initialProcessedThrough = cutoffMs - TICK_BOOTSTRAP_WINDOW_MS
 		const claim = yield* dbExecute((db) =>
 			Effect.gen(function* () {
-				yield* db.orm.run(
+				yield* db.run(
 					PG.insertInto(ErrorTickStates)
 						.values({
 							orgId,
@@ -1073,7 +1073,7 @@ const make: Effect.Effect<
 					])
 					.forUpdate({ skipLocked: true })
 
-				const claimed = yield* db.orm.run(
+				const claimed = yield* db.run(
 					PG.update(ErrorTickStates)
 						.set({ claimToken, claimExpiresAt: nowMs + TICK_CLAIM_TTL_MS, updatedAt: nowMs })
 						.where(($) => [PG.inSubquery($.orgId, claimable)])
@@ -1095,7 +1095,7 @@ const make: Effect.Effect<
 
 	const releaseTickClaim = (orgId: OrgId, claimToken: string, nowMs: number) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorTickStates)
 					.set({ claimToken: null, claimExpiresAt: null, updatedAt: nowMs })
 					.where(($) => [$.orgId.eq(orgId), $.claimToken.eq(claimToken)]),
@@ -1293,7 +1293,7 @@ const make: Effect.Effect<
 		// committed window, and it touches only the handful of issues in `verifying`.
 		if (Option.isSome(fixVerification) && rows.length > 0) {
 			const verifyingIssues = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("id", "fingerprintHash")
 						.where(($) => [$.orgId.eq(orgId), $.workflowState.eq("verifying")]),
@@ -1371,7 +1371,7 @@ const make: Effect.Effect<
 			// error-kind — alert and integration issues key off their own
 			// identifiers, not the ClickHouse fingerprint.
 			const staleFingerprintRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssues)
 						.set({ archivedAt: nowMs, updatedAt: nowMs })
 						.where(($) => [
@@ -1386,7 +1386,7 @@ const make: Effect.Effect<
 
 			const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
 			const archivedRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssues)
 						.set({ archivedAt: nowMs, updatedAt: nowMs })
 						.where(($) => [
@@ -1404,7 +1404,7 @@ const make: Effect.Effect<
 			// Candidates that never reached the promotion threshold. Without this the
 			// holding table would accumulate every one-off fingerprint forever.
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
 						$.orgId.eq(orgId),
 						$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
@@ -1414,7 +1414,7 @@ const make: Effect.Effect<
 
 			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
 			const toDelete = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("id")
 						.where(($) => [
@@ -1428,7 +1428,7 @@ const make: Effect.Effect<
 			if (toDelete.length > 0) {
 				const ids = toDelete.map((r) => r.id)
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(ErrorIncidents).where(($) => [
 							$.orgId.eq(orgId),
 							$.issueId.in_(...ids),
@@ -1436,7 +1436,7 @@ const make: Effect.Effect<
 					),
 				)
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(ErrorIssueStates).where(($) => [
 							$.orgId.eq(orgId),
 							$.issueId.in_(...ids),
@@ -1444,7 +1444,7 @@ const make: Effect.Effect<
 					),
 				)
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(ErrorIssueEvents).where(($) => [
 							$.orgId.eq(orgId),
 							$.issueId.in_(...ids),
@@ -1452,9 +1452,7 @@ const make: Effect.Effect<
 					),
 				)
 				yield* dbExecute((db) =>
-					db.orm.run(
-						PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)]),
-					),
+					db.run(PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])),
 				)
 				issuesDeleted = ids.length
 			}
@@ -1506,7 +1504,7 @@ const make: Effect.Effect<
 		const unclaimed = ($: PG.ColumnAccessor<typeof ErrorTickStates.columns>) =>
 			PG.or($.claimExpiresAt.isNull(), $.claimExpiresAt.lte(nowMs))
 		const trailing = (yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorTickStates)
 					.select("orgId", "processedThrough")
 					.where(($) => [$.processedThrough.lte(parkedAtMs - TICK_MAX_WINDOW_MS), unclaimed($)]),
@@ -1521,7 +1519,7 @@ const make: Effect.Effect<
 				Arr.chunksOf(orgIds, TICK_CURSOR_UPDATE_CHUNK),
 				(chunk) =>
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(ErrorTickStates)
 								.set({
 									processedThrough: toMs,
@@ -1654,11 +1652,9 @@ const make: Effect.Effect<
 		// rows a call — together ~36% of all database CPU. Walk the btree instead.
 		// `org_ingest_keys` stays a plain DISTINCT on purpose: it is ~1 row per org,
 		// where a loose index scan costs an index descent per row and wins nothing.
-		const stateOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db.orm, ErrorIssueStates))
-		const issueOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db.orm, ErrorIssues))
-		const ingestOrgs = yield* dbExecute((db) =>
-			db.orm.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
-		)
+		const stateOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, ErrorIssueStates))
+		const issueOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, ErrorIssues))
+		const ingestOrgs = yield* dbExecute((db) => db.run(PG.from(OrgIngestKeys).select("orgId").distinct()))
 		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...ingestOrgs.map((r) => r.orgId)])
 
 		const { active: activeOrgs, discovered } = yield* resolveActiveOrgs([...knownOrgs], nowMs)
@@ -1778,7 +1774,7 @@ const make: Effect.Effect<
 		// One statement for every org, outside the per-org loop: an abandoned run is
 		// rare and the matching set is almost always empty, so paying a round-trip per
 		// org to discover that would cost more than the sweep saves.
-		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db.orm, nowMs))
+		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db, nowMs))
 		if (investigationsAbandoned > 0) {
 			yield* Effect.logWarning("Failed investigations whose agent pass never returned").pipe(
 				Effect.annotateLogs({ count: investigationsAbandoned, budgetMs: STALE_MS }),

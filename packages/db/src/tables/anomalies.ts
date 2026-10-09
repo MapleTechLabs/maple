@@ -20,7 +20,10 @@ export const AnomalyDetectorSettings = PG.table("anomaly_detector_settings", {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		enabled: PG.column(PG.bool, { default: true }),
 		sensitivity: PG.column(PG.brand(PG.text, AnomalySensitivity), { default: "normal" }),
-		mutedSignalsJson: PG.column(PG.jsonb(Schema.Array(Schema.String)), { name: "muted_signals_json", default: [] }),
+		mutedSignalsJson: PG.column(PG.jsonb(Schema.Array(Schema.String)), {
+			name: "muted_signals_json",
+			default: [],
+		}),
 		lastTickAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_tick_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -51,10 +54,14 @@ export const AnomalyDetectorStates = PG.table("anomaly_detector_states", {
 		baselineMedian: PG.column(PG.nullable(PG.float8), { name: "baseline_median" }),
 		lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
 		lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
-		openIncidentId: PG.column(PG.nullable(PG.brand(PG.text, AnomalyIncidentId)), { name: "open_incident_id" }),
+		openIncidentId: PG.column(PG.nullable(PG.brand(PG.text, AnomalyIncidentId)), {
+			name: "open_incident_id",
+		}),
 		lastResolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_resolved_at" }),
 		/** Most recent incident this series opened or fed; reopen target after a resolve. */
-		lastIncidentId: PG.column(PG.nullable(PG.brand(PG.text, AnomalyIncidentId)), { name: "last_incident_id" }),
+		lastIncidentId: PG.column(PG.nullable(PG.brand(PG.text, AnomalyIncidentId)), {
+			name: "last_incident_id",
+		}),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: {
@@ -100,14 +107,22 @@ export const AnomalyIncidents = PG.table("anomaly_incidents", {
 		firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
 		lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
 		resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
-		resolveReason: PG.column(PG.nullable(PG.brand(PG.text, AnomalyResolveReason)), { name: "resolve_reason" }),
-		triageStatus: PG.column(PG.brand(PG.text, AnomalyTriageStatus), { name: "triage_status", default: "none" }),
+		resolveReason: PG.column(PG.nullable(PG.brand(PG.text, AnomalyResolveReason)), {
+			name: "resolve_reason",
+		}),
+		triageStatus: PG.column(PG.brand(PG.text, AnomalyTriageStatus), {
+			name: "triage_status",
+			default: "none",
+		}),
 		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
 		/**
 		 * Error-spike consolidation: all fingerprints sharing this incident
 		 * (JSON array of IncidentFingerprintEntry; empty for golden signals).
 		 */
-		fingerprintsJson: PG.column(PG.jsonb(Schema.Array(Schema.Unknown)), { name: "fingerprints_json", default: [] }),
+		fingerprintsJson: PG.column(PG.jsonb(Schema.Array(Schema.Unknown)), {
+			name: "fingerprints_json",
+			default: [],
+		}),
 		/** Times this incident re-breached and reopened within the reopen window. */
 		reopenCount: PG.column(PG.int4, { name: "reopen_count", default: 0 }),
 		lastReopenedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_reopened_at" }),

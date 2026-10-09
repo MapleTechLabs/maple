@@ -2,13 +2,13 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ApiKeys } from "@maple/db/tables"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Exit, Schema, Tracer } from "effect"
+import { Effect, Schema, Tracer } from "effect"
 import { Database, DatabaseError } from "./DatabaseLive"
 import { postgresErrorType, postgresSqlState } from "./postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
 
-// effect-orm through Maple's `Database.execute`: the same span, statement
-// capture and error absorption the drizzle path has.
+// effect-orm through Maple's `Database.execute`: one span per call, statement
+// capture, transactions and error absorption.
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -42,10 +42,10 @@ describe("effect-orm through Database.execute", () => {
 				},
 			})
 			const database = yield* Database
-			yield* database.execute((db) => db.orm.run(key(1)))
+			yield* database.execute((db) => db.run(key(1)))
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ApiKeys)
 							.select()
 							.where(($) => [$.orgId.eq(PG.param.of(ApiKeys.columns.orgId, "orgId"))]),
@@ -67,22 +67,27 @@ describe("effect-orm through Database.execute", () => {
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
 	)
 
-	it.effect("joins an open drizzle transaction and rolls back with it", () =>
+	it.effect("rolls a failed nested transaction back to its savepoint and keeps the outer one", () =>
 		Effect.gen(function* () {
 			const database = yield* Database
-			const exit = yield* database
-				.execute((db) =>
-					db.transaction(() =>
-						Effect.gen(function* () {
-							yield* db.orm.run(key(2))
-							return yield* new Abort({ message: "roll back" })
-						}),
-					),
-				)
-				.pipe(Effect.exit)
-			assert.isTrue(Exit.isFailure(exit))
-			const left = yield* database.execute((db) => db.orm.run(PG.from(ApiKeys).select("id")))
-			assert.deepStrictEqual(left, [])
+			yield* database.execute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(key(1))
+						const inner = yield* db
+							.transaction(
+								Effect.andThen(db.run(key(2)), Effect.fail(new Abort({ message: "inner" }))),
+							)
+							.pipe(Effect.flip)
+						assert.instanceOf(inner, Abort)
+					}),
+				),
+			)
+			const left = yield* database.execute((db) => db.run(PG.from(ApiKeys).select("id")))
+			assert.deepStrictEqual(
+				left.map((row) => row.id),
+				[keyId(1)],
+			)
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
 	)
 
@@ -91,16 +96,16 @@ describe("effect-orm through Database.execute", () => {
 			const database = yield* Database
 			const error = yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							yield* db.orm.run(key(3))
+							yield* db.run(key(3))
 							return yield* new Abort({ message: "roll back" })
 						}),
 					),
 				)
 				.pipe(Effect.flip)
 			assert.instanceOf(error, Abort)
-			const left = yield* database.execute((db) => db.orm.run(PG.from(ApiKeys).select("id")))
+			const left = yield* database.execute((db) => db.run(PG.from(ApiKeys).select("id")))
 			assert.deepStrictEqual(left, [])
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
 	)
@@ -108,8 +113,8 @@ describe("effect-orm through Database.execute", () => {
 	it.effect("absorbs a constraint violation into DatabaseError with its SQLSTATE", () =>
 		Effect.gen(function* () {
 			const database = yield* Database
-			yield* database.execute((db) => db.orm.run(key(4)))
-			const error = yield* database.execute((db) => db.orm.run(key(4))).pipe(Effect.flip)
+			yield* database.execute((db) => db.run(key(4)))
+			const error = yield* database.execute((db) => db.run(key(4))).pipe(Effect.flip)
 			assert.instanceOf(error, DatabaseError)
 			assert.include(error.message, "duplicate key")
 			assert.include(error.message, `INSERT INTO "api_keys"`)

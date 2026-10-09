@@ -17,7 +17,7 @@
  */
 
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Investigations } from "@maple/db/tables"
 import { Effect } from "effect"
 import type { IssueSeverity, OrgId } from "@maple/domain/http"
@@ -77,10 +77,10 @@ export interface InvestigationUsage {
  * the other's.
  */
 export const selectInvestigationUsage = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	orgId: OrgId,
 	nowMs: number,
-): Effect.Effect<InvestigationUsage, MapleOrmError> =>
+): Effect.Effect<InvestigationUsage, MapleDbError> =>
 	Effect.map(
 		orm.run(
 			PG.from(Investigations)

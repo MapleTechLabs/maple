@@ -141,7 +141,7 @@ import {
 import * as Integrations from "@maple/query-engine-integrations"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import type { MapleOrmError } from "@maple/db/client"
+import type { MapleDbError } from "@maple/db/client"
 
 /** The poller mirrors its writes onto the rows it loaded, so it holds them mutable. */
 type CloudflareAnalyticsStateRow = { -readonly [K in keyof StoredStateRow]: StoredStateRow[K] }
@@ -1117,8 +1117,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 		})
 
 		const loadStateRows = (orgId: OrgId, accountId?: string) =>
-			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleOrmError> =>
-				db.orm.run(
+			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleDbError> =>
+				db.run(
 					PG.from(CloudflareAnalyticsState)
 						.select()
 						.where(($) => [
@@ -1134,7 +1134,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			return first === undefined
 				? Effect.void
 				: dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(CloudflareAnalyticsState)
 								.set(set)
 								.where(($) => [$.id.in_(first, ...rest)]),
@@ -1164,7 +1164,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			options?: { disable?: boolean },
 		) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(CloudflareAnalyticsState)
 						.set({
 							lastError: message.slice(0, 500),
@@ -1198,7 +1198,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					rowIds.length === 0
 						? Effect.void
 						: dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(CloudflareAnalyticsState)
 										.set({ backfillAt: headStartMs, updatedAt: now })
 										.where(($) => [PG.inList($.id, rowIds), $.backfillAt.isNull()]),
@@ -1224,7 +1224,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 */
 		const ensureAccountRows = (orgId: OrgId, accountId: string, now: number) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(CloudflareAnalyticsState)
 						.values(
 							ACCOUNT_DATASETS.map((dataset) => ({
@@ -1246,8 +1246,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * (it carries the zone-discovery timestamp) or null — no anchor yet, or another tick owns it.
 		 */
 		const claimLease = (orgId: OrgId, accountId: string, now: number) =>
-			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleOrmError> =>
-				db.orm.run(
+			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleDbError> =>
+				db.run(
 					PG.update(CloudflareAnalyticsState)
 						.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
 						.where(($) => [
@@ -1286,7 +1286,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			holdUntilMs?: number,
 		) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(CloudflareAnalyticsState)
 						.set({ leaseUntil: holdUntilMs ?? null, updatedAt: now })
 						.where(($) => [
@@ -1338,8 +1338,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 				missing.length === 0
 					? []
 					: yield* dbExecute(
-							(db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleOrmError> =>
-								db.orm.run(
+							(db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleDbError> =>
+								db.run(
 									PG.insertInto(CloudflareAnalyticsState)
 										.values(missing)
 										.onConflictDoNothing()
@@ -1810,7 +1810,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					"maple.cloudflare.hyperdrive_config_count": configs.length,
 				})
 				const existingRows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(CloudflareHyperdriveConfigs)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)]),
@@ -1836,14 +1836,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 						const existing = existingByConfigId.get(config.id)
 						return existing !== undefined
 							? dbExecute((db) =>
-									db.orm.run(
+									db.run(
 										PG.update(CloudflareHyperdriveConfigs)
 											.set(values)
 											.where(($) => [$.id.eq(existing.id)]),
 									),
 								)
 							: dbExecute((db) =>
-									db.orm.run(
+									db.run(
 										PG.insertInto(CloudflareHyperdriveConfigs).values({
 											id: randomUUID(),
 											orgId,
@@ -1871,7 +1871,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					),
 					(row) =>
 						dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(CloudflareHyperdriveConfigs)
 									.set({ deletedAt: now, updatedAt: now })
 									.where(($) => [$.id.eq(row.id)]),
@@ -1886,7 +1886,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				return yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(CloudflareHyperdriveConfigs)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
@@ -2337,7 +2337,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		const pollAllOrgs = Effect.fn("CloudflareAnalyticsService.pollAllOrgs")(function* () {
 			const connectionRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(OAuthConnections)
 						.select("orgId", "scope")
 						.distinct()
@@ -2730,7 +2730,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(CloudflareAnalyticsState)
 						.set({
 							enabled: true,
@@ -2753,7 +2753,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// whose externalUserId only ever holds the grant's FIRST account — filtering by it
 			// would match nothing for every other account and leave the org stuck revoked.
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(OAuthConnections)
 						.set({ revokedAt: null })
 						.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")]),

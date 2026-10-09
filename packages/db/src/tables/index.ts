@@ -1,7 +1,14 @@
-import type { PgSchemaTable } from "@maple-dev/effect-orm/postgres"
+import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { AgentFeedback } from "./agent-feedback"
 import { AiTriageSettings } from "./ai-triage"
-import { AlertDestinations, AlertRules, AlertRuleClaims, AlertRuleStates, AlertIncidents, AlertDeliveryEvents } from "./alerts"
+import {
+	AlertDestinations,
+	AlertRules,
+	AlertRuleClaims,
+	AlertRuleStates,
+	AlertIncidents,
+	AlertDeliveryEvents,
+} from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
 import { CancellationReviews } from "./cancellation-reviews"
@@ -14,7 +21,19 @@ import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
 import { DigestSubscriptions } from "./digest"
-import { Actors, ErrorIssues, ErrorFingerprintCandidates, ErrorIssueEvents, ErrorIssueStates, ErrorIncidents, ErrorNotificationPolicies, ErrorTickStates, ErrorNotificationDeliveries, ErrorIssuePullRequests, ErrorIssueVerifications } from "./errors"
+import {
+	Actors,
+	ErrorIssues,
+	ErrorFingerprintCandidates,
+	ErrorIssueEvents,
+	ErrorIssueStates,
+	ErrorIncidents,
+	ErrorNotificationPolicies,
+	ErrorTickStates,
+	ErrorNotificationDeliveries,
+	ErrorIssuePullRequests,
+	ErrorIssueVerifications,
+} from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
 import { Investigations } from "./investigations"
 import { LiveActivities } from "./live-activities"
@@ -29,11 +48,27 @@ import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
 import { OrgRecommendationIssues } from "./org-recommendation-issues"
 import { PlanetscaleConnections } from "./planetscale-connections"
-import { PlanetscalePollState, PlanetscaleDatabases, PlanetscaleEvents, PlanetscaleIssueReceipts } from "./planetscale-inventory"
+import {
+	PlanetscalePollState,
+	PlanetscaleDatabases,
+	PlanetscaleEvents,
+	PlanetscaleIssueReceipts,
+} from "./planetscale-inventory"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { OrgSupportChannels } from "./support-channels"
-import { VcsInstallations, VcsRepositories, VcsCommits, VcsRepositoryBranches, PrReviews, PrReviewFindings, PrReviewFindingEmbeddings, PrReviewReplies, PrReviewEdits, PrReviewSettings } from "./vcs"
+import {
+	VcsInstallations,
+	VcsRepositories,
+	VcsCommits,
+	VcsRepositoryBranches,
+	PrReviews,
+	PrReviewFindings,
+	PrReviewFindingEmbeddings,
+	PrReviewReplies,
+	PrReviewEdits,
+	PrReviewSettings,
+} from "./vcs"
 
 export * from "./agent-feedback"
 export * from "./ai-triage"
@@ -72,7 +107,7 @@ export * from "./support-channels"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
-export const allTables: ReadonlyArray<PgSchemaTable<string, any, any>> = [
+export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> = [
 	AgentFeedback,
 	AiTriageSettings,
 	AlertDestinations,

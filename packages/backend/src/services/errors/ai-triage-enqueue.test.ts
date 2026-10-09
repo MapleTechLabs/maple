@@ -55,7 +55,7 @@ const enableSettings = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(AiTriageSettings).values({
 				orgId: ORG,
 				enabled: true,
@@ -80,7 +80,7 @@ const enableAutomation = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(AiTriageSettings).values({
 				orgId: ORG,
 				enabled: true,
@@ -101,7 +101,7 @@ const enableWithLimits = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AiTriageSettings).values({
 					orgId: ORG,
 					enabled: true,
@@ -146,7 +146,7 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<PG.InsertRowOf<type
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssues).values({
 					id: issueId,
 					orgId: ORG,
@@ -226,7 +226,7 @@ describe("maybeEnqueueTriage", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -246,7 +246,7 @@ describe("maybeEnqueueTriage", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -321,7 +321,7 @@ describe("maybeEnqueueTriage", () => {
 			assert.strictEqual(result.reason, "no_binding")
 
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -345,7 +345,7 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(Investigations)
 						.set({
 							status: "investigating",
@@ -361,7 +361,7 @@ describe("maybeEnqueueTriage", () => {
 			assert.strictEqual(second.reason, "duplicate")
 
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -383,7 +383,7 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(Investigations)
 						.set({ status: "investigating" })
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -471,7 +471,7 @@ describe("maybeEnqueueTriage", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -493,7 +493,7 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(Investigations)
 						.set({ status: "diagnosed", diagnosedAt: nowMs, updatedAt: nowMs })
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -546,7 +546,7 @@ describe("maybeEnqueueTriage", () => {
 			})
 
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -557,7 +557,7 @@ describe("maybeEnqueueTriage", () => {
 			// The one write a skip makes: the untriaged issue takes the model's severity,
 			// on the timeline, without an escalation.
 			const issue = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -566,7 +566,7 @@ describe("maybeEnqueueTriage", () => {
 			assert.strictEqual(issue[0]?.severity, "low")
 			assert.strictEqual(issue[0]?.severitySource, "ai")
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select()
 						.where(($) => [$.issueId.eq(issueId), $.type.eq("severity_change")]),
@@ -590,7 +590,7 @@ describe("maybeEnqueueTriage", () => {
 			).pipe(Effect.provide(classifier.layer))
 			assert.strictEqual(result.reason, "noise")
 			const issue = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -616,7 +616,7 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(issueInput("incident-1", known, chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(Investigations)
 						.set({
 							status: "diagnosed",
@@ -687,7 +687,7 @@ describe("maybeEnqueueTriage", () => {
 			const raised = yield* ordinary("incident-4").pipe(Effect.provide(classifier.layer))
 			assert.isTrue(raised.enqueued)
 			const row = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select()
 						.where(($) => [$.incidentId.eq("incident-4")]),

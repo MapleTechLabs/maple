@@ -229,7 +229,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			const [rules, boards] = yield* Effect.all(
 				[
 					database.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(AlertRules)
 								.select(
 									"id",
@@ -244,7 +244,7 @@ export class PrReviewTelemetryService extends Context.Service<
 						),
 					),
 					database.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(Dashboards)
 								.select("id", "name", "payloadJson")
 								.where(($) => [$.orgId.eq(orgId)])
@@ -281,7 +281,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			now: DateTime.Utc,
 		) {
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select(...CATALOG_ISSUE_COLUMNS)
 						.where(($) => [
@@ -437,7 +437,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				? Effect.succeed([])
 				: database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(ErrorIssues)
 									.select(...CATALOG_ISSUE_COLUMNS)
 									.where(($) => [
@@ -478,7 +478,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				? Effect.succeed(new Map())
 				: database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(VcsCommits)
 									.select("sha", "committedAt")
 									.where(($) => [

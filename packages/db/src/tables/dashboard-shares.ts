@@ -71,9 +71,13 @@ export const DashboardShares = PG.table("dashboard_shares", {
 		// dashboard accumulate unlimited whole-board shares while still constraining
 		// the per-widget ones. Folding null to '' makes "the whole board" a single
 		// value that collides with itself.
-		PG.uniqueIndex("dashboard_shares_live_unq", ($) => [$.orgId, $.dashboardId, "coalesce(widget_id, '')"], {
-			where: "revoked_at is null",
-		}),
+		PG.uniqueIndex(
+			"dashboard_shares_live_unq",
+			($) => [$.orgId, $.dashboardId, "coalesce(widget_id, '')"],
+			{
+				where: "revoked_at is null",
+			},
+		),
 		PG.index("dashboard_shares_org_dashboard_idx", ["orgId", "dashboardId"]),
 		// The OG-card path resolves a signed share id with no org in hand: the
 		// image URL is fetched by a crawler that has no session and, by design,

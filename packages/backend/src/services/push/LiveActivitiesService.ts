@@ -93,34 +93,34 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 				})
 				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(LiveActivities)
-						.values({
-							id: randomUUID(),
-							orgId: input.orgId,
-							deviceId: input.deviceId,
-							incidentId: input.incidentId,
-							activityId: input.activityId,
-							pushToken: input.pushToken,
-							endedAt: null,
-							endedReason: null,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.onConflictDoUpdate({
-							target: ["deviceId", "incidentId"],
-							set: {
+							.values({
+								id: randomUUID(),
+								orgId: input.orgId,
+								deviceId: input.deviceId,
+								incidentId: input.incidentId,
 								activityId: input.activityId,
 								pushToken: input.pushToken,
-								// A re-registration is the app telling us an activity is
-								// running again — a previously ended row comes back to life
-								// rather than leaving the phone stuck on stale content.
 								endedAt: null,
 								endedReason: null,
+								createdAt: now,
 								updatedAt: now,
-							},
-						})
-						.returning(),
+							})
+							.onConflictDoUpdate({
+								target: ["deviceId", "incidentId"],
+								set: {
+									activityId: input.activityId,
+									pushToken: input.pushToken,
+									// A re-registration is the app telling us an activity is
+									// running again — a previously ended row comes back to life
+									// rather than leaving the phone stuck on stale content.
+									endedAt: null,
+									endedReason: null,
+									updatedAt: now,
+								},
+							})
+							.returning(),
 					),
 				)
 				return toLiveActivity(rows[0]!)
@@ -131,10 +131,14 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 				incidentId: string,
 			) {
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(LiveActivities)
 							.select()
-							.where(($) => [$.orgId.eq(orgId), $.incidentId.eq(incidentId), $.endedAt.isNull()]),
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.incidentId.eq(incidentId),
+								$.endedAt.isNull(),
+							]),
 					),
 				)
 				return rows.map(toLiveActivity)
@@ -143,7 +147,7 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 			const end = Effect.fn("LiveActivitiesService.end")(function* (id: string, reason: string) {
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(LiveActivities)
 							.set({ endedAt: now, endedReason: reason, updatedAt: now })
 							.where(($) => [$.id.eq(id), $.endedAt.isNull()]),
@@ -159,10 +163,14 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 			) {
 				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(LiveActivities)
 							.set({ endedAt: now, endedReason: reason, updatedAt: now })
-							.where(($) => [$.orgId.eq(orgId), $.deviceId.eq(deviceId), $.incidentId.eq(incidentId)])
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.deviceId.eq(deviceId),
+								$.incidentId.eq(incidentId),
+							])
 							.returning(),
 					),
 				)

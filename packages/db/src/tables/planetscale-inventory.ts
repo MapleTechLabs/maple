@@ -76,7 +76,9 @@ export const PlanetscaleDatabases = PG.table("planetscale_databases", {
 		state: PG.nullable(PG.text),
 		region: PG.nullable(PG.text),
 		plan: PG.nullable(PG.text),
-		branchesJson: PG.column(PG.nullable(PG.jsonb(Schema.Array(PlanetScaleBranchInfo))), { name: "branches_json" }),
+		branchesJson: PG.column(PG.nullable(PG.jsonb(Schema.Array(PlanetScaleBranchInfo))), {
+			name: "branches_json",
+		}),
 		deletedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "deleted_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -149,7 +151,13 @@ export const PlanetscaleEvents = PG.table("planetscale_events", {
 	},
 	primaryKey: ["id"],
 	indexes: [
-		PG.uniqueIndex("planetscale_events_dedupe_idx", ["orgId", "databaseName", "eventType", "externalId", "occurredAt"]),
+		PG.uniqueIndex("planetscale_events_dedupe_idx", [
+			"orgId",
+			"databaseName",
+			"eventType",
+			"externalId",
+			"occurredAt",
+		]),
 		PG.index("planetscale_events_org_db_time_idx", ["orgId", "databaseName", "occurredAt"]),
 		PG.index("planetscale_events_org_time_idx", ["orgId", "occurredAt"]),
 	],

@@ -948,7 +948,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgClickHouseSettings)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -968,7 +968,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgClickHouseSettings)
 							.select(
 								"schemaVersion",
@@ -1141,7 +1141,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(OrgClickHouseSettings)
 							.values({
 								orgId,
@@ -1197,7 +1197,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			yield* requireAdmin(roles)
 			yield* database
 				.execute((db) =>
-					db.orm.run(PG.deleteFrom(OrgClickHouseSettings).where(($) => [$.orgId.eq(orgId)])),
+					db.run(PG.deleteFrom(OrgClickHouseSettings).where(($) => [$.orgId.eq(orgId)])),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			yield* invalidateRuntimeConfigCache(orgId)
@@ -1241,7 +1241,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgClickHouseSettings)
 								.set({
 									schemaVersion: clickHouseSchemaVersion,
@@ -1307,7 +1307,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const claimed = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(OrgClickHouseSchemaApplyRuns)
 							.values({
 								orgId,
@@ -1367,7 +1367,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				Effect.tapError((error) =>
 					database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(OrgClickHouseSchemaApplyRuns)
 									.set({
 										status: "failed",
@@ -1393,7 +1393,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			yield* requireAdmin(roles)
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgClickHouseSchemaApplyRuns)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -1464,7 +1464,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			function* (orgIds: ReadonlyArray<OrgId>) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(OrgClickHouseSettings)
 								.select(
 									"orgId",

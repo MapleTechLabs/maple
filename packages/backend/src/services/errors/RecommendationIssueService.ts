@@ -97,7 +97,7 @@ export class RecommendationIssueService extends Context.Service<
 			runDb(
 				"list",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgRecommendationIssues)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -162,7 +162,7 @@ export class RecommendationIssueService extends Context.Service<
 			const mappingRows = yield* runDb(
 				"listMappings",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgIngestAttributeMappings)
 							.select("sourceKey")
 							.where(($) => [$.orgId.eq(orgId), $.sourceContext.eq("span")]),
@@ -201,7 +201,7 @@ export class RecommendationIssueService extends Context.Service<
 				}))
 				yield* runDb(
 					"insert",
-					database.execute((db) => db.orm.run(PG.insertInto(OrgRecommendationIssues).values(rows))),
+					database.execute((db) => db.run(PG.insertInto(OrgRecommendationIssues).values(rows))),
 				)
 			}
 
@@ -221,7 +221,7 @@ export class RecommendationIssueService extends Context.Service<
 					return runDb(
 						"update",
 						database.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(OrgRecommendationIssues)
 									.set(fields)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(update.id)]),
@@ -245,7 +245,7 @@ export class RecommendationIssueService extends Context.Service<
 			const existing = yield* runDb(
 				"selectById",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgRecommendationIssues)
 							.select("id")
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
@@ -267,7 +267,7 @@ export class RecommendationIssueService extends Context.Service<
 			yield* runDb(
 				"setStatus",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(OrgRecommendationIssues)
 							.set({ ...fields, updatedAt: now })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),

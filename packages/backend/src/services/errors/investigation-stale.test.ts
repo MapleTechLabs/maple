@@ -104,7 +104,7 @@ describe("sweepAbandonedInvestigations", () => {
 			const database = yield* Database
 			yield* database.execute((db) =>
 				Effect.gen(function* () {
-					yield* db.orm.run(
+					yield* db.run(
 						PG.insertInto(Investigations).values({
 							id: idOf(id),
 							orgId: ORG,
@@ -122,7 +122,7 @@ describe("sweepAbandonedInvestigations", () => {
 					)
 					// A legacy progress shape the typed codec would reject goes in as raw jsonb.
 					if (input.progress !== undefined) {
-						yield* db.orm.execute(
+						yield* db.execute(
 							Orm.sql`UPDATE investigations SET progress_json = ${JSON.stringify(input.progress)}::jsonb WHERE id = ${idOf(id)}`,
 						)
 					}
@@ -134,7 +134,7 @@ describe("sweepAbandonedInvestigations", () => {
 		Effect.gen(function* () {
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select("status")
 						.where(($) => [$.id.eq(idOf(id))]),
@@ -154,7 +154,7 @@ describe("sweepAbandonedInvestigations", () => {
 			yield* seed("4", { startedMsAgo: 60_000 })
 
 			const database = yield* Database
-			const moved = yield* database.execute((db) => sweepAbandonedInvestigations(db.orm, NOW))
+			const moved = yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW))
 
 			assert.strictEqual(moved, 2)
 			assert.strictEqual(yield* statusOf("1"), "failed")
@@ -172,7 +172,7 @@ describe("sweepAbandonedInvestigations", () => {
 				progress: { stepCount: 1, steps: [] },
 			})
 			const database = yield* Database
-			assert.strictEqual(yield* database.execute((db) => sweepAbandonedInvestigations(db.orm, NOW)), 1)
+			assert.strictEqual(yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW)), 1)
 			assert.strictEqual(yield* statusOf("5"), "failed")
 		}).pipe(Effect.provide(makeLayer())),
 	)

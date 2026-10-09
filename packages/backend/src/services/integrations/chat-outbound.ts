@@ -70,7 +70,7 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 	encryptionKey: Buffer,
 ) {
 	const rows = yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(ChatWorkspaces)
 				.select()
 				.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])

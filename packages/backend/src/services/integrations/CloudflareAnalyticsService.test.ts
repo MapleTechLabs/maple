@@ -461,7 +461,7 @@ const seedConnection = (
 			(message) => new IntegrationsValidationError({ message }),
 		)
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(OAuthConnections).values({
 					id: randomUUID(),
 					orgId: ORG,
@@ -497,7 +497,7 @@ const seedByoClickHouse = (overrides: { syncStatus?: string; schemaVersion?: str
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(OrgClickHouseSettings).values({
 					orgId: ORG,
 					chUrl: "https://ch.example.com",
@@ -521,7 +521,7 @@ const seedStateRow = (values: Partial<CloudflareAnalyticsStateInsert> & { datase
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(CloudflareAnalyticsState).values({
 					id: randomUUID(),
 					orgId: ORG,
@@ -537,7 +537,7 @@ const seedStateRow = (values: Partial<CloudflareAnalyticsStateInsert> & { datase
 
 const loadStateRows = Effect.gen(function* () {
 	const database = yield* Database
-	return yield* database.execute((db) => db.orm.run(PG.from(CloudflareAnalyticsState).select()))
+	return yield* database.execute((db) => db.run(PG.from(CloudflareAnalyticsState).select()))
 })
 
 interface FlatMetric {
@@ -790,7 +790,7 @@ describe("CloudflareAnalyticsService", () => {
 
 				const database = yield* Database
 				const allRows = yield* database.execute((db) =>
-					db.orm.run(PG.from(CloudflareHyperdriveConfigs).select()),
+					db.run(PG.from(CloudflareHyperdriveConfigs).select()),
 				)
 				const deleted = allRows.find((row) => row.configId === hyperdriveVpcFixture.id)
 				assert.isNotNull(deleted?.deletedAt)
@@ -1071,7 +1071,7 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedConnection()
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(OAuthConnections)
 						.set({ revokedAt: T0 - MIN })
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -1084,7 +1084,7 @@ describe("CloudflareAnalyticsService", () => {
 
 			yield* service.resetOrgState(ORG)
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(OAuthConnections)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),

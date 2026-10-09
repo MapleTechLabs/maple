@@ -460,7 +460,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 				const subs = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(DigestSubscriptions)
 								.select()
 								.where(($) => [$.webAnalyticsEnabled.eq(true)]),
@@ -486,7 +486,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 							const claim = yield* database
 								.execute((db) =>
-									db.orm.run(
+									db.run(
 										PG.update(DigestSubscriptions)
 											.set({ webAnalyticsLastAttemptedAt: now })
 											.where(($) => [
@@ -530,7 +530,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 											Clock.currentTimeMillis.pipe(
 												Effect.flatMap((sentAt) =>
 													database.execute((db) =>
-														db.orm.run(
+														db.run(
 															PG.update(DigestSubscriptions)
 																.set({ webAnalyticsLastSentAt: sentAt })
 																.where(($) => [$.id.eq(sub.id)]),

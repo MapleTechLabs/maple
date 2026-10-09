@@ -90,7 +90,7 @@ const seedIssue = (
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssues).values({
 					id: issueId,
 					orgId,
@@ -125,7 +125,7 @@ describe("ErrorIssueReadModelsService", () => {
 				fingerprintHash: "fp-hidden",
 			})
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIncidents).values({
 						id: incidentId,
 						orgId: ORG,

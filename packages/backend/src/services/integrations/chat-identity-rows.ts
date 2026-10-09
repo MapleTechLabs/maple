@@ -57,7 +57,7 @@ export const resolveChatIdentity = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ChatIdentities)
 						.select()
 						.where(($) => [
@@ -85,7 +85,7 @@ export const listChatIdentities = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ChatIdentities)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
@@ -124,18 +124,18 @@ export const linkChatIdentity = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db.orm.transaction(
+				db.transaction(
 					Effect.gen(function* () {
 						// Their previous account on this connector, if any. Deleted rather than left
 						// beside the new one (see above).
-						yield* db.orm.run(
+						yield* db.run(
 							PG.deleteFrom(ChatIdentities).where(($) => [
 								$.orgId.eq(input.orgId),
 								$.connector.eq(input.connectorId),
 								$.userId.eq(input.userId),
 							]),
 						)
-						return yield* db.orm.run(
+						return yield* db.run(
 							PG.insertInto(ChatIdentities)
 								.values({
 									id: input.id,
@@ -176,7 +176,7 @@ export const unlinkChatIdentity = (
 	Effect.gen(function* () {
 		const deleted = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.deleteFrom(ChatIdentities)
 						.where(($) => [$.orgId.eq(orgId), $.connector.eq(connectorId), $.userId.eq(userId)])
 						.returning("id"),

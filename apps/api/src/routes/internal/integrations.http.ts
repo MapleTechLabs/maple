@@ -274,7 +274,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							// is minted for the right connection when several accounts are connected.
 							const zoneRows = yield* database
 								.execute((db) =>
-									db.orm.run(
+									db.run(
 										PG.from(CloudflareAnalyticsState)
 											.select("zoneId", "accountId")
 											.where(($) => [

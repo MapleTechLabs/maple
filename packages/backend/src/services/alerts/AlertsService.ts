@@ -16,8 +16,6 @@ import {
 } from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
-	type AlertComparator,
-	AlertDeliveryError,
 	type AlertDeliveryFailure,
 	AlertDestinationDecryptionError,
 	AlertDeliveryEventDocument,
@@ -44,7 +42,6 @@ import {
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
 	AlertNotificationTemplate,
-	type AlertDestinationType,
 	type AlertEventType as AlertEventTypeValue,
 	type AlertRuleUpsertRequest,
 	type AlertGroupBy,
@@ -72,7 +69,7 @@ import {
 	AlertRuleStates,
 	type AlertRuleStateRow,
 } from "@maple/db/tables"
-import type { MapleOrm } from "@maple/db/client"
+import type { MapleDb } from "@maple/db/client"
 import {
 	Array as Arr,
 	Chunk,
@@ -306,13 +303,6 @@ export const interleaveAlertRulesByOrg = <T extends { readonly orgId: string }>(
 ): ReadonlyArray<T> => interleaveAlertRulesByTenant(rows, (row) => row.orgId)
 
 const toIngestDateTime64 = warehouseDateTime64
-
-const makeDeliveryError = (message: string, destinationType?: AlertDestinationType, cause?: unknown) =>
-	new AlertDeliveryError({
-		message,
-		destinationType,
-		...(!(cause === undefined) ? { cause } : undefined),
-	})
 
 type StoredDeliveryPayloadType = Schema.Schema.Type<typeof StoredDeliveryPayloadSchema>
 
@@ -599,7 +589,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				if (incident.holdReason === decision.reason) return
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(AlertIncidents)
 							.set({
 								holdReason: decision.reason,
@@ -687,7 +677,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) => makeAlertDeliveryKey(incidentId, destinationId, eventType, scheduledAt)
 
 			const insertDeliveryEventRecord = (
-				orm: MapleOrm,
+				orm: MapleDb,
 				orgId: OrgId,
 				incidentId: AlertIncidentId | null,
 				ruleId: AlertRuleId,
@@ -744,7 +734,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				yield* dbExecute((db) =>
 					insertDeliveryEventRecord(
-						db.orm,
+						db,
 						orgId,
 						incidentId,
 						ruleId,
@@ -839,10 +829,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								previousNotifiedOpenForMs:
 									incident.lastNotifiedAt === null
 										? null
-										: Math.max(
-												0,
-												incident.lastNotifiedAt - incident.firstTriggeredAt,
-											),
+										: Math.max(0, incident.lastNotifiedAt - incident.firstTriggeredAt),
 								resolvedAfterHold,
 								linkUrl,
 								// Unevaluated: the Lock Screen sparkline is the only
@@ -876,7 +863,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (rule.destinationIds.length === 0) return
 
 					const rows = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(AlertDestinations)
 								.select("id", "enabled")
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...rule.destinationIds)]),
@@ -963,7 +950,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							if (!destination || !destination.enabled) return Effect.void
 							return dbExecute((db) =>
 								insertDeliveryEventRecord(
-									db.orm,
+									db,
 									orgId,
 									incident.id,
 									rule.id,
@@ -1080,7 +1067,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				if (sendNotification) {
 					const rows = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(AlertDestinations)
 								.select()
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
@@ -1411,7 +1398,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			const claimDeliveryEvent = (deliveryEventId: AlertDeliveryEventRow["id"], currentTime: number) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(AlertDeliveryEvents)
 							.set({
 								status: "processing",
@@ -1433,7 +1420,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				},
 			) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(AlertDeliveryEvents)
 							.set({
 								...fields,
@@ -1480,7 +1467,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const clearDestinationFailureStreak = Effect.fn("AlertsService.clearDestinationFailureStreak")(
 				function* (destinationId: AlertDestinationRow["id"], currentTime: number) {
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(AlertDestinations)
 								.set({
 									consecutiveFailures: 0,
@@ -1513,7 +1500,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				) {
 					const reason = failure.message.slice(0, DISABLED_REASON_MAX_LENGTH)
 					const counted = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(AlertDestinations)
 								.set(($) => {
 									const crossesThreshold = $.consecutiveFailures
@@ -1529,11 +1516,21 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											$.enabled,
 										),
 										disabledAt: PG.caseWhen(
-											[[crossesThreshold, PG.typedValue(columns.disabledAt, currentTime)]],
+											[
+												[
+													crossesThreshold,
+													PG.typedValue(columns.disabledAt, currentTime),
+												],
+											],
 											$.disabledAt,
 										),
 										disabledReason: PG.caseWhen(
-											[[crossesThreshold, PG.typedValue(columns.disabledReason, reason)]],
+											[
+												[
+													crossesThreshold,
+													PG.typedValue(columns.disabledReason, reason),
+												],
+											],
 											$.disabledReason,
 										),
 									}
@@ -1575,7 +1572,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
 				const currentTime = yield* now
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AlertDeliveryEvents)
 							.select()
 							.where(($) => [claimableDeliveryWhere($, currentTime)])
@@ -1601,21 +1598,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const [allDestinations, allRules, allIncidents] = yield* Effect.all(
 					[
 						dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(AlertDestinations)
 									.select()
 									.where(($) => [$.id.in_(...uniqueDestinationIds)]),
 							),
 						),
 						dbExecute((db) =>
-							db.orm.run(
-								selectStoredAlertRules()
-									.where(($) => [$.id.in_(...uniqueRuleIds)]),
-							),
+							db.run(selectStoredAlertRules().where(($) => [$.id.in_(...uniqueRuleIds)])),
 						),
 						uniqueIncidentIds.length > 0
 							? dbExecute((db) =>
-									db.orm.run(
+									db.run(
 										PG.from(AlertIncidents)
 											.select()
 											.where(($) => [$.id.in_(...uniqueIncidentIds)]),
@@ -1760,7 +1754,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (row.incidentId) {
 						const incidentId = row.incidentId
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(AlertIncidents)
 									.set({
 										lastDeliveredEventType: row.eventType,
@@ -1920,7 +1914,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							timestamp - state.lastEvaluatedAt < STATE_HEARTBEAT_MS
 						if (unchanged) return Effect.void
 						return dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(AlertRuleStates)
 									.values({
 										orgId: row.orgId,
@@ -1991,7 +1985,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (lifecycle.transition === "opened") {
 						const priorNotified =
 							(yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.from(AlertIncidents)
 										.select("lastNotifiedAt")
 										.where(($) => [
@@ -2018,8 +2012,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// or a synthesized healthy value. The host owns the durable hold
 					// clock and reason-specific ceilings.
 					let resolveEvaluation = evaluation
-					let heldForMs =
-						openIncident?.heldSince == null ? 0 : timestamp - openIncident.heldSince
+					let heldForMs = openIncident?.heldSince == null ? 0 : timestamp - openIncident.heldSince
 					if (lifecycle.hold === "missing_telemetry" && openIncident != null) {
 						const liveness = yield* telemetryStillFlowing(
 							row.orgId,
@@ -2057,8 +2050,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 					if (lifecycle.transition === "opened") {
 						const incidentId = decodeAlertIncidentIdSync(makeUuid())
-						const inheritedNotificationAt =
-							lifecycle.inheritedNotificationAtMs ?? null
+						const inheritedNotificationAt = lifecycle.inheritedNotificationAtMs ?? null
 						const incident: AlertIncidentRow = {
 							id: incidentId,
 							orgId: row.orgId,
@@ -2095,8 +2087,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// next tick, both working from tick-head prefetch that saw no open
 						// incident. The loser lands here and must not notify.
 						const inserted = yield* dbExecute((db) =>
-							db.orm.run(
-								PG.insertInto(AlertIncidents).values(incident).onConflictDoNothing().returning("id"),
+							db.run(
+								PG.insertInto(AlertIncidents)
+									.values(incident)
+									.onConflictDoNothing()
+									.returning("id"),
 							),
 						)
 						if (inserted.length === 0) {
@@ -2155,7 +2150,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							updatedAt: timestamp,
 						}
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(AlertIncidents)
 									.set({
 										lastTriggeredAt: timestamp,
@@ -2205,7 +2200,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							updatedAt: timestamp,
 						}
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(AlertIncidents)
 									.set({
 										status: "resolved",
@@ -2430,7 +2425,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 				const openIncidents = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AlertIncidents)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId), $.status.eq("open")]),
@@ -2461,8 +2456,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Effect.gen(function* () {
 						// A held incident resolved by a rule edit still tells the phone it
 						// was waiting on data, not that a value recovered.
-						const heldForMs =
-							incident.heldSince === null ? 0 : timestamp - incident.heldSince
+						const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
 						if (incident.holdReason !== null) {
 							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 						}
@@ -2477,7 +2471,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 						// A hold is a sub-state of open; a config-driven resolve ends it too.
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(AlertIncidents)
 									.set({
 										status: "resolved",
@@ -2505,13 +2499,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				if (opts.resolveAll) {
 					yield* dbExecute((db) =>
-						db.orm.run(
-							PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+						db.run(
+							PG.deleteFrom(AlertRuleStates).where(($) => [
+								$.orgId.eq(orgId),
+								$.ruleId.eq(ruleId),
+							]),
 						),
 					)
 				} else if (staleGroupKeys.length > 0) {
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.deleteFrom(AlertRuleStates).where(($) => [
 								$.orgId.eq(orgId),
 								$.ruleId.eq(ruleId),
@@ -2612,7 +2609,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							// re-read had the same race between its own select and update; this
 							// closes it rather than just narrowing it.)
 							const resolved = yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(AlertIncidents)
 										.set({
 											status: "resolved",
@@ -2660,7 +2657,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							}
 
 							yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.deleteFrom(AlertRuleStates).where(($) => [
 										$.orgId.eq(orgId),
 										$.ruleId.eq(ruleId),
@@ -2740,7 +2737,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const claimRuleChunk = (chunk: ReadonlyArray<StoredAlertRuleRow>, timestamp: number) =>
 				dbExecute((db) =>
 					Effect.gen(function* () {
-						const claimed = yield* db.orm.run(
+						const claimed = yield* db.run(
 							PG.insertInto(AlertRuleClaims)
 								.values(
 									chunk.map((row) => ({
@@ -2762,7 +2759,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 						// Matches the `Effect.ignore` this call carried when it was a
 						// separate execute.
-						yield* db.orm
+						yield* db
 							.run(
 								PG.update(AlertRules)
 									.set({ lastScheduledAt: timestamp })
@@ -2845,15 +2842,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const { stateRows, incidentRows } = yield* dbExecute((db) =>
 					Effect.all(
 						{
-							stateRows: db.orm.run(
+							stateRows: db.run(
 								PG.from(AlertRuleStates)
 									.select()
 									.where(($) => [$.orgId.in_(...orgIds), $.ruleId.in_(...ruleIds)]),
 							),
-							incidentRows: db.orm.run(
+							incidentRows: db.run(
 								PG.from(AlertIncidents)
 									.select()
-									.where(($) => [$.orgId.in_(...orgIds), $.ruleId.in_(...ruleIds), $.status.eq("open")]),
+									.where(($) => [
+										$.orgId.in_(...orgIds),
+										$.ruleId.in_(...ruleIds),
+										$.status.eq("open"),
+									]),
 							),
 						},
 						{ concurrency: "unbounded" },
@@ -2956,7 +2957,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// the two shapes need opposite `group_key` predicates.
 				if (groupedRuleIds.length > 0) {
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.deleteFrom(AlertRuleStates).where(($) => [
 								$.orgId.in_(...selfHealOrgIds),
 								$.ruleId.in_(...groupedRuleIds),
@@ -2968,7 +2969,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				if (ungroupedRuleIds.length > 0) {
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.deleteFrom(AlertRuleStates).where(($) => [
 								$.orgId.in_(...selfHealOrgIds),
 								$.ruleId.in_(...ungroupedRuleIds),
@@ -2982,7 +2983,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// this tick keeps the `lastError` `recordEvaluationFailure` wrote for it.
 				if (clearError.length > 0) {
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(AlertRuleStates)
 								.set({ lastError: null, updatedAt: timestamp })
 								.where(($) => [
@@ -3006,7 +3007,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const runSchedulerTick = Effect.fn("AlertsService.runSchedulerTick")(function* () {
 				const tickStart = yield* now
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						selectStoredAlertRules()
 							.where(($) => [$.enabled.eq(true)])
 							.orderBy(["updatedAt", "asc"]),
@@ -3139,7 +3140,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* Effect.gen(function* () {
 						const state =
 							(yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.from(AlertRuleStates)
 										.select("lastError", "lastEvaluatedAt")
 										.where(($) => [
@@ -3157,7 +3158,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							failedAt - state.lastEvaluatedAt < STATE_HEARTBEAT_MS
 						if (unchanged) return
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(AlertRuleStates)
 									.values({
 										orgId: row.orgId,
@@ -3403,7 +3404,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				// Resolve stale incidents for disabled rules
 				const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AlertIncidents, "i")
 							.innerJoin(AlertRules, "r", (incident, rule) => incident.ruleId.eq(rule.id))
 							.select(($) => ({ ruleId: $.ruleId, orgId: $.orgId }))
@@ -3414,7 +3415,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* Effect.forEach(disabledRulesWithOpenIncidents, ({ ruleId, orgId }) =>
 					Effect.gen(function* () {
 						const ruleRow = (yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								selectStoredAlertRules()
 									.where(($) => [$.id.eq(ruleId)])
 									.limit(1),

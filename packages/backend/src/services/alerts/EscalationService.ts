@@ -73,7 +73,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 
 		const loadPolicy = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(IssueEscalationPolicies)
 						.select()
 						.where(($) => [$.orgId.eq(orgId)])
@@ -89,7 +89,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			deliveryResults?: unknown,
 		) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(IssueEscalations)
 						.set({
 							status,
@@ -112,7 +112,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			// Optimistic claim: bump attempts iff nobody else already has. A
 			// concurrent tick loses the CAS and skips the row.
 			const claimed = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(IssueEscalations)
 						.set({ attempts: row.attempts + 1 })
 						.where(($) => [$.id.eq(row.id), $.status.eq("queued"), $.attempts.eq(row.attempts)])
@@ -140,7 +140,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				configuredDestinationIds.length === 0
 					? []
 					: yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(AlertDestinations)
 									.select("id")
 									.where(($) => [
@@ -172,7 +172,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			}
 
 			const issueRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
@@ -272,7 +272,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			"EscalationService.runEscalationTick",
 		)(function* () {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(IssueEscalations)
 						.select()
 						.where(($) => [$.status.eq("queued")])

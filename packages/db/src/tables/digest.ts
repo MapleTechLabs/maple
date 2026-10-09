@@ -33,8 +33,12 @@ export const DigestSubscriptions = PG.table("digest_subscriptions", {
 		 * same way. Sent on the same `day_of_week`, and only to orgs with browser data.
 		 */
 		webAnalyticsEnabled: PG.column(PG.bool, { name: "web_analytics_enabled", default: true }),
-		webAnalyticsOptedOutAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "web_analytics_opted_out_at" }),
-		webAnalyticsLastSentAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "web_analytics_last_sent_at" }),
+		webAnalyticsOptedOutAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "web_analytics_opted_out_at",
+		}),
+		webAnalyticsLastSentAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "web_analytics_last_sent_at",
+		}),
 		webAnalyticsLastAttemptedAt: PG.column(PG.nullable(PG.timestamptzMillis), {
 			name: "web_analytics_last_attempted_at",
 		}),

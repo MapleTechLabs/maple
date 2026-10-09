@@ -13,7 +13,7 @@
  * a summed fan-out).
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm } from "@maple/db/client"
+import type { MapleDb } from "@maple/db/client"
 import { ErrorIssueEvents, Investigations } from "@maple/db/tables"
 import {
 	InvestigationSubjectDiscriminator,
@@ -104,7 +104,7 @@ export interface ApplyDiagnosisInput {
  * transaction matters: a crash between them would leave an issue escalated with
  * no audit event explaining why.
  */
-const writeDiagnosis = (orm: MapleOrm, input: ApplyDiagnosisInput) =>
+const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
 	Effect.gen(function* () {
 		const confidence: InvestigationConfidence = input.report.confidence
 		const now = input.nowMs
@@ -191,7 +191,7 @@ export const applyDiagnosisWrites: (
 	"applyDiagnosisWrites",
 )(function* (input) {
 	const database = yield* Database
-	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db.orm, input))
+	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db, input))
 })
 
 export interface ApplyInconclusiveInput {
@@ -227,7 +227,7 @@ export interface ApplyInconclusiveInput {
  * - `error: null` — the raw error string in that column is what the UI used to
  *   render in a destructive box. The report replaces it.
  */
-const writeInconclusive = (orm: MapleOrm, input: ApplyInconclusiveInput) =>
+const writeInconclusive = (orm: MapleDb, input: ApplyInconclusiveInput) =>
 	orm.run(
 		PG.update(Investigations)
 			.set({
@@ -257,9 +257,5 @@ export const applyInconclusiveWrites: (
 	input: ApplyInconclusiveInput,
 ) => Effect.Effect<void, DatabaseError, Database> = Effect.fn("applyInconclusiveWrites")(function* (input) {
 	const database = yield* Database
-	yield* makeDbExecute(
-		database,
-		"applyInconclusiveWrites",
-		identity,
-	)((db) => writeInconclusive(db.orm, input))
+	yield* makeDbExecute(database, "applyInconclusiveWrites", identity)((db) => writeInconclusive(db, input))
 })

@@ -37,7 +37,9 @@ interface TableReport {
 const primaryKeys = (table: AnyTable): ReadonlyArray<string> => {
 	const sqlNames = table.ddl.table.primaryKey?.columns ?? []
 	const keys = Object.keys(table.columns)
-	return sqlNames.map((sqlName) => keys.find((key) => (table.columns[key]?.sqlName ?? key) === sqlName) ?? sqlName)
+	return sqlNames.map(
+		(sqlName) => keys.find((key) => (table.columns[key]?.sqlName ?? key) === sqlName) ?? sqlName,
+	)
 }
 
 interface Failure {
@@ -54,7 +56,9 @@ const pageFailures = (
 	Effect.forEach(rows, (row) =>
 		Effect.exit(decode([row])).pipe(
 			Effect.map((exit): ReadonlyArray<Failure> =>
-				Exit.isSuccess(exit) ? [] : [{ key: keys.map((k) => String(row[k])).join("/"), error: String(exit.cause) }],
+				Exit.isSuccess(exit)
+					? []
+					: [{ key: keys.map((k) => String(row[k])).join("/"), error: String(exit.cause) }],
 			),
 		),
 	).pipe(Effect.map((failures) => failures.flat()))
@@ -67,7 +71,13 @@ const checkTable = (orm: Orm.DatabaseApi, table: AnyTable) =>
 		([found]) =>
 			found?.exists === true
 				? decodeTable(orm, table)
-				: Effect.succeed<TableReport>({ table: table.name, exists: false, rows: 0, failures: 0, samples: [] }),
+				: Effect.succeed<TableReport>({
+						table: table.name,
+						exists: false,
+						rows: 0,
+						failures: 0,
+						samples: [],
+					}),
 	)
 
 const decodeTable = (orm: Orm.DatabaseApi, table: AnyTable) => {
@@ -92,25 +102,28 @@ const decodeTable = (orm: Orm.DatabaseApi, table: AnyTable) => {
 				: yield* walk(offset + PAGE, rows + raw.length, found)
 		})
 	return walk(0, 0, []).pipe(
-		Effect.map(
-			({ rows, failures }): TableReport => ({
-				table: table.name,
-				exists: true,
-				rows,
-				failures: failures.length,
-				samples: failures.slice(0, SAMPLES),
-			}),
-		),
+		Effect.map(({ rows, failures }): TableReport => ({
+			table: table.name,
+			exists: true,
+			rows,
+			failures: failures.length,
+			samples: failures.slice(0, SAMPLES),
+		})),
 	)
 }
 
 const printReport = (report: TableReport) =>
 	Effect.gen(function* () {
-		if (!report.exists) return yield* Effect.sync(() => console.log(`skip ${report.table}: not in this database`))
+		if (!report.exists)
+			return yield* Effect.sync(() => console.log(`skip ${report.table}: not in this database`))
 		const status = report.failures === 0 ? "ok  " : "FAIL"
-		yield* Effect.sync(() => console.log(`${status} ${report.table}: ${report.rows} rows, ${report.failures} undecodable`))
+		yield* Effect.sync(() =>
+			console.log(`${status} ${report.table}: ${report.rows} rows, ${report.failures} undecodable`),
+		)
 		yield* Effect.forEach(report.samples, (sample) =>
-			Effect.sync(() => console.log(`       ${sample.key}: ${sample.error.split("\n").slice(0, 6).join(" | ")}`)),
+			Effect.sync(() =>
+				console.log(`       ${sample.key}: ${sample.error.split("\n").slice(0, 6).join(" | ")}`),
+			),
 		)
 	})
 
@@ -121,7 +134,9 @@ const check = (url: string) =>
 		yield* Effect.forEach(reports, printReport)
 		return reports.reduce((sum, report) => sum + report.failures, 0)
 	}).pipe(
-		Effect.provide(PgClient.layer({ url: Redacted.make(url), maxConnections: 1, prepare: false }).pipe(Layer.orDie)),
+		Effect.provide(
+			PgClient.layer({ url: Redacted.make(url), maxConnections: 1, prepare: false }).pipe(Layer.orDie),
+		),
 	)
 
 const main = async (): Promise<void> => {

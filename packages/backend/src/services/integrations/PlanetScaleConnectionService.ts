@@ -309,7 +309,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PlanetscaleConnections)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -327,7 +327,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 			if (scrapeTargetId === null) return null
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ScrapeTargets)
 							.select()
 							.where(($) => [$.orgId.eq(connection.orgId), $.id.eq(scrapeTargetId)])
@@ -418,7 +418,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ScrapeTargets)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.targetType.eq("planetscale")]),
@@ -550,9 +550,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 				const retiredTargets = yield* database
 					.execute((db) =>
-						db.orm.transaction(
+						db.transaction(
 							Effect.gen(function* () {
-								const claimed = yield* db.orm.run(
+								const claimed = yield* db.run(
 									PG.update(ScrapeTargets)
 										.set({ managedBy })
 										.where(($) => [$.orgId.eq(orgId), $.id.eq(scrapeTargetId)])
@@ -568,7 +568,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 								}
 
 								if (existing !== null) {
-									const rebound = yield* db.orm.run(
+									const rebound = yield* db.run(
 										PG.update(PlanetscaleConnections)
 											.set({
 												psOrganization: organization,
@@ -596,7 +596,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 									// Ownership is part of the predicate: a target transferred by a
 									// concurrent operation is never removed by this connection.
-									return yield* db.orm.run(
+									return yield* db.run(
 										PG.deleteFrom(ScrapeTargets)
 											.where(($) => [
 												$.orgId.eq(orgId),
@@ -614,7 +614,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 										}),
 									)
 								}
-								const inserted = yield* db.orm.run(
+								const inserted = yield* db.run(
 									PG.insertInto(PlanetscaleConnections)
 										.values({
 											id: connectionId,
@@ -768,9 +768,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 				yield* database
 					.execute((db) =>
-						db.orm.run(
-							PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)]),
-						),
+						db.run(PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)])),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			}

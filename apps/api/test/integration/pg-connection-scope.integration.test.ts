@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { makeMaplePgClient } from "@maple/db/client"
-import { sql } from "drizzle-orm"
-import { Effect, Tracer } from "effect"
+import * as Orm from "@maple-dev/effect-orm/database"
+import { Effect, Schema, Tracer } from "effect"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import {
@@ -11,7 +11,8 @@ import {
 	withPgConnectionScopeOf,
 } from "@maple/backend/platform/pg-connection-scope"
 import { isPostgresConnectionError, postgresErrorType } from "@maple/backend/platform/postgres-errors"
-import { rawRows } from "@maple/backend/platform/raw-rows"
+
+const Count = Schema.Struct({ n: Schema.Number })
 
 /**
  * These assertions are the reason this suite exists. The unit tests replace the
@@ -116,7 +117,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		const observed: Array<number> = []
 		try {
 			for (let i = 0; i < 5; i++) {
-				await Effect.runPromise(scope.run((db) => db.execute(sql`select 1 as one`)))
+				await Effect.runPromise(scope.run((db) => db.execute(Orm.sql`select 1 as one`)))
 				observed.push((await backends()) - baseline)
 			}
 		} finally {
@@ -139,8 +140,8 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		await Effect.runPromise(
 			Effect.all(
 				[
-					scope.run((db) => db.execute(sql`select 'alpha_marker' as tag`)),
-					scope.run((db) => db.execute(sql`select 'beta_marker' as tag`)),
+					scope.run((db) => db.query(Orm.sql`select 'alpha_marker' as tag`)),
+					scope.run((db) => db.query(Orm.sql`select 'beta_marker' as tag`)),
 				],
 				{ concurrency: 2 },
 			).pipe(Effect.withTracer(tracer)),
@@ -188,15 +189,16 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 			Effect.all(
 				Array.from({ length: concurrency }, () =>
 					scope.run((db) =>
-						db.execute<{ started_ms: number; ended_ms: number }>(
-							sql`select (extract(epoch from statement_timestamp()) * 1000)::float8 as started_ms, pg_sleep(1), (extract(epoch from clock_timestamp()) * 1000)::float8 as ended_ms`,
+						db.query(
+							Orm.sql`select (extract(epoch from statement_timestamp()) * 1000)::float8 as started_ms, pg_sleep(1), (extract(epoch from clock_timestamp()) * 1000)::float8 as ended_ms`,
+							Schema.Struct({ started_ms: Schema.Number, ended_ms: Schema.Number }),
 						),
 					),
 				),
 				{ concurrency },
 			),
 		)
-		const windows = results.map((result) => rawRows(result)[0]!)
+		const windows = results.map((rows) => rows[0]!)
 
 		// Serialized, each statement starts after the previous one ended. Overlapped,
 		// every statement is running at once: the last start precedes the first end.
@@ -215,7 +217,9 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		const table = `scope_txn_${Date.now()}`
 
 		await Effect.runPromise(
-			scope.run((db) => db.execute(sql.raw(`create table ${table} (id int primary key)`))),
+			scope.run((db) =>
+				db.execute(Orm.sql`create table ${Orm.sql.identifier(table)} (id int primary key)`),
+			),
 		)
 
 		// A transaction pins whichever connection it runs on for its whole duration.
@@ -226,31 +230,35 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 			Effect.all(
 				[
 					scope.run((db) =>
-						db.transaction((tx) =>
+						db.transaction(
 							Effect.gen(function* () {
-								yield* tx.execute(sql.raw(`insert into ${table} (id) values (1)`))
-								yield* tx.execute(sql.raw(`insert into ${table} (id) values (2)`))
+								yield* db.execute(
+									Orm.sql`insert into ${Orm.sql.identifier(table)} (id) values (1)`,
+								)
+								yield* db.execute(
+									Orm.sql`insert into ${Orm.sql.identifier(table)} (id) values (2)`,
+								)
 							}),
 						),
 					),
-					scope.run((db) => db.execute(sql`select 'queued' as tag`)),
+					scope.run((db) => db.query(Orm.sql`select 'queued' as tag`)),
 				],
 				{ concurrency: 2 },
 			),
 		)
 
 		assert.isDefined(queued)
-		const rows = rawRows(
-			await Effect.runPromise(
-				scope.run((db) =>
-					db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table}`), "objects"),
-				),
+		const rows = await Effect.runPromise(
+			scope.run((db) =>
+				db.query(Orm.sql`select count(*)::int as n from ${Orm.sql.identifier(table)}`, Count),
 			),
 		)
 		assert.strictEqual(rows[0]?.n, 2)
 		assert.isAtMost((await backends()) - baseline, MAX_CONNECTIONS)
 
-		await Effect.runPromise(scope.run((db) => db.execute(sql.raw(`drop table ${table}`))))
+		await Effect.runPromise(
+			scope.run((db) => db.execute(Orm.sql`drop table ${Orm.sql.identifier(table)}`)),
+		)
 		await Effect.runPromise(scope.close)
 		assert.strictEqual(await waitForDelta(baseline, 0), 0)
 	})
@@ -272,8 +280,8 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		const results = await Effect.runPromise(
 			Effect.all(
 				[
-					scope.run((db) => db.execute(sql`select pg_sleep(0.8)`)),
-					scope.run((db) => db.execute(sql`select 'waited' as tag`)),
+					scope.run((db) => db.execute(Orm.sql`select pg_sleep(0.8)`)),
+					scope.run((db) => db.query(Orm.sql`select 'waited' as tag`)),
 				],
 				{ concurrency: 2 },
 			).pipe(Effect.exit),
@@ -284,7 +292,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 	})
 
 	it("reports a COMMIT the server rejects as a DatabaseError, not a defect", async () => {
-		// `@effect/sql` runs COMMIT under `orDie`. A deferred foreign key is checked
+		// A deferred foreign key is checked
 		// only there, so every statement succeeds and the commit fails.
 		const scope = makePgConnectionScope(url)
 		const parent = `scope_commit_parent_${Date.now()}`
@@ -292,14 +300,14 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		const { spans, tracer } = makeRecordingTracer()
 		try {
 			await Effect.runPromise(
-				scope.run((db) => db.execute(sql.raw(`create table ${parent} (id int primary key)`))),
+				scope.run((db) =>
+					db.execute(Orm.sql`create table ${Orm.sql.identifier(parent)} (id int primary key)`),
+				),
 			)
 			await Effect.runPromise(
 				scope.run((db) =>
 					db.execute(
-						sql.raw(
-							`create table ${child} (parent_id int references ${parent} (id) deferrable initially deferred)`,
-						),
+						Orm.sql`create table ${Orm.sql.identifier(child)} (parent_id int references ${Orm.sql.identifier(parent)} (id) deferrable initially deferred)`,
 					),
 				),
 			)
@@ -307,8 +315,10 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 			const error = await Effect.runPromise(
 				scope
 					.run((db) =>
-						db.transaction((tx) =>
-							tx.execute(sql.raw(`insert into ${child} (parent_id) values (1)`)),
+						db.transaction(
+							db.execute(
+								Orm.sql`insert into ${Orm.sql.identifier(child)} (parent_id) values (1)`,
+							),
 						),
 					)
 					.pipe(Effect.flip, Effect.withTracer(tracer)),
@@ -320,10 +330,14 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 			assert.strictEqual(dbSpans(spans).at(-1)?.attributes.get("error.type"), "23503")
 		} finally {
 			await Effect.runPromise(
-				scope.run((db) => db.execute(sql.raw(`drop table if exists ${child}; `))).pipe(Effect.ignore),
+				scope
+					.run((db) => db.execute(Orm.sql`drop table if exists ${Orm.sql.identifier(child)}`))
+					.pipe(Effect.ignore),
 			)
 			await Effect.runPromise(
-				scope.run((db) => db.execute(sql.raw(`drop table if exists ${parent}`))).pipe(Effect.ignore),
+				scope
+					.run((db) => db.execute(Orm.sql`drop table if exists ${Orm.sql.identifier(parent)}`))
+					.pipe(Effect.ignore),
 			)
 			await Effect.runPromise(scope.close)
 		}
@@ -336,14 +350,18 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		// interrupted it and never ran — with or without a warm connection.
 		const setup = makePgConnectionScope(url)
 		const table = `scope_fork_${Date.now()}`
-		await Effect.runPromise(setup.run((db) => db.execute(sql.raw(`create table ${table} (tag text)`))))
+		await Effect.runPromise(
+			setup.run((db) => db.execute(Orm.sql`create table ${Orm.sql.identifier(table)} (tag text)`)),
+		)
 		try {
 			for (const warm of [false, true]) {
 				const tag = warm ? "warm" : "cold"
 				const scope = makePgConnectionScope(url)
 				const write = Effect.gen(function* () {
 					const current = yield* PgConnectionScope
-					yield* current!.run((db) => db.execute(sql.raw(`insert into ${table} values ('${tag}')`)))
+					yield* current!.run((db) =>
+						db.execute(Orm.sql`insert into ${Orm.sql.identifier(table)} values (${tag})`),
+					)
 				})
 				await Effect.runPromise(
 					withPgConnectionScopeOf(
@@ -352,7 +370,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 							Effect.gen(function* () {
 								if (warm) {
 									const current = yield* PgConnectionScope
-									yield* current!.run((db) => db.execute(sql`select 1`))
+									yield* current!.run((db) => db.execute(Orm.sql`select 1`))
 								}
 								yield* forkRequestScoped(write)
 								return "response"
@@ -360,20 +378,20 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 						),
 					),
 				)
-				const rows = rawRows(
-					await Effect.runPromise(
-						setup.run((db) =>
-							db.execute<{ n: number }>(
-								sql.raw(`select count(*)::int as n from ${table} where tag = '${tag}'`),
-								"objects",
-							),
+				const rows = await Effect.runPromise(
+					setup.run((db) =>
+						db.query(
+							Orm.sql`select count(*)::int as n from ${Orm.sql.identifier(table)} where tag = ${tag}`,
+							Count,
 						),
 					),
 				)
 				assert.strictEqual(rows[0]?.n, 1, `${tag} fork did not land`)
 			}
 		} finally {
-			await Effect.runPromise(setup.run((db) => db.execute(sql.raw(`drop table ${table}`))))
+			await Effect.runPromise(
+				setup.run((db) => db.execute(Orm.sql`drop table ${Orm.sql.identifier(table)}`)),
+			)
 			await Effect.runPromise(setup.close)
 		}
 	})
@@ -388,7 +406,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		// `flip` makes the expected failure the success channel, typed as the
 		// `DatabaseError` the scope absorbs the driver's refusal into.
 		const error = await Effect.runPromise(
-			scope.run((db) => db.execute(sql`select 1`)).pipe(Effect.flip, Effect.withTracer(tracer)),
+			scope.run((db) => db.execute(Orm.sql`select 1`)).pipe(Effect.flip, Effect.withTracer(tracer)),
 		)
 
 		assert.isDefined(postgresErrorType(error))
@@ -426,7 +444,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		const results: Array<"ok" | "rejected"> = []
 		for (let i = 0; i < 10; i++) {
 			results.push(
-				await Effect.runPromise(scope.run((db) => db.execute(sql`select 1`)))
+				await Effect.runPromise(scope.run((db) => db.execute(Orm.sql`select 1`)))
 					.then(() => "ok" as const)
 					.catch(() => "rejected" as const),
 			)

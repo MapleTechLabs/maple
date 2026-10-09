@@ -16,7 +16,7 @@ import {
 	ErrorIssuePullRequests,
 	ErrorIssueStates,
 } from "@maple/db/tables"
-import type { MapleDb, MapleOrm } from "@maple/db/client"
+import type { MapleDb } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
@@ -70,8 +70,8 @@ const isInsertInto = (query: unknown, table: string): boolean =>
  * driver error, so `Database.execute` absorbs it exactly as it would a real one.
  */
 const failInsertOf = (db: MapleDb, failTable: string): MapleDb => {
-	const orm: MapleOrm = {
-		...db.orm,
+	const orm: MapleDb = {
+		...db,
 		run: (query, params) =>
 			isInsertInto(query, failTable)
 				? Effect.fail(
@@ -82,17 +82,9 @@ const failInsertOf = (db: MapleDb, failTable: string): MapleDb => {
 							cause: new Error("injected insert failure"),
 						}),
 					)
-				: db.orm.run(query, params),
+				: db.run(query, params),
 	}
-	return new Proxy(db, {
-		get(target, property) {
-			if (property === "orm") return orm
-			// SAFETY: a Proxy get trap receives a key for its target; indexed access keeps
-			// the target's own property type while the runtime branch checks callability.
-			const value = target[property as keyof MapleDb]
-			return typeof value === "function" ? value.bind(target) : value
-		},
-	})
+	return orm
 }
 
 const makeFaultyLayer = (failTable: string) => {
@@ -118,7 +110,7 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<PG.InsertRowOf<type
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssues).values({
 					id: issueId,
 					orgId: ORG,
@@ -172,7 +164,7 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.isNull(released.leaseExpiresAt)
 
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select("type", "toState")
 						.where(($) => [$.orgId.eq(ORG), $.issueId.eq(issueId)]),
@@ -198,7 +190,7 @@ describe("ErrorIssueWorkflowService", () => {
 			const now = yield* Clock.currentTimeMillis
 			yield* seedIssue(issueId, { workflowState: "in_review" })
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIncidents).values({
 						id: incidentId,
 						orgId: ORG,
@@ -213,7 +205,7 @@ describe("ErrorIssueWorkflowService", () => {
 				),
 			)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIssueStates).values({
 						orgId: ORG,
 						issueId,
@@ -230,14 +222,14 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.strictEqual(transitioned.workflowState, "done")
 
 			const [incident] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIncidents)
 						.select()
 						.where(($) => [$.id.eq(incidentId)]),
 				),
 			)
 			const [state] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueStates)
 						.select()
 						.where(($) => [$.orgId.eq(ORG), $.issueId.eq(issueId)]),
@@ -266,7 +258,7 @@ describe("ErrorIssueWorkflowService", () => {
 			const now = yield* Clock.currentTimeMillis
 			yield* seedIssue(issueId, { workflowState: "in_review" })
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIncidents).values({
 						id: incidentId,
 						orgId: ORG,
@@ -292,7 +284,7 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.strictEqual(after.workflowState, "in_review")
 			assert.isNull(after.resolvedAt)
 			const [incident] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIncidents)
 						.select()
 						.where(($) => [$.id.eq(incidentId)]),
@@ -320,7 +312,7 @@ describe("ErrorIssueWorkflowService", () => {
 			// retried setSeverity observes "nothing changed" and returns before
 			// enqueueing, so the page for this severity is permanently lost.
 			const [issue] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -328,7 +320,7 @@ describe("ErrorIssueWorkflowService", () => {
 			)
 			assert.isNull(issue?.severity)
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select()
 						.where(($) => [$.orgId.eq(ORG), $.issueId.eq(issueId)]),
@@ -356,7 +348,7 @@ describe("ErrorIssueWorkflowService", () => {
 			})
 			const seedPullRequest = (number: number, state: "open" | "merged" | "closed") =>
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(ErrorIssuePullRequests).values({
 							id: asPullRequestId(randomUUID()),
 							orgId: ORG,
@@ -401,14 +393,14 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorIssueTransitionError")
 
 			const [after] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
 				),
 			)
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select()
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -436,7 +428,7 @@ describe("ErrorIssueWorkflowService", () => {
 			Effect.gen(function* () {
 				const database = yield* Database
 				const [row] = yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorIssues)
 							.select("leaseExpiresAt")
 							.where(($) => [$.orgId.eq(ORG), $.id.eq(issueId)]),

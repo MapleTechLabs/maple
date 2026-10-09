@@ -149,7 +149,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const loadConnection = (orgId: OrgId) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(RailwayConnections)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -159,7 +159,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const loadEnvironments = (orgId: OrgId) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(RailwayEnvironments)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)]),
@@ -168,7 +168,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const updateConnection = (connectionId: string, set: PG.UpdateSetOf<typeof RailwayConnections>) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(RailwayConnections)
 							.set(set)
 							.where(($) => [$.id.eq(connectionId)]),
@@ -177,7 +177,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const updateEnvironment = (rowId: string, set: PG.UpdateSetOf<typeof RailwayEnvironments>) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(RailwayEnvironments)
 							.set(set)
 							.where(($) => [$.id.eq(rowId)]),
@@ -211,7 +211,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					discovery.environments,
 					(environment) =>
 						dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(RailwayEnvironments)
 									.values({
 										id: randomUUID(),
@@ -341,7 +341,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 				const now = yield* Clock.currentTimeMillis
 				const [connection] = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(RailwayConnections)
 							.values({
 								id: randomUUID(),
@@ -382,10 +382,10 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const disconnect = Effect.fn("RailwayMetricsService.disconnect")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				yield* dbExecute((db) =>
-					db.orm.run(PG.deleteFrom(RailwayEnvironments).where(($) => [$.orgId.eq(orgId)])),
+					db.run(PG.deleteFrom(RailwayEnvironments).where(($) => [$.orgId.eq(orgId)])),
 				)
 				const deleted = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(RailwayConnections)
 							.where(($) => [$.orgId.eq(orgId)])
 							.returning("id"),
@@ -396,7 +396,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const claimLease = (connectionId: string, now: number) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(RailwayConnections)
 							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
 							.where(($) => [
@@ -420,7 +420,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				now: number,
 			) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(RailwayConnections)
 							.set({ leaseUntil: holdUntilMs, updatedAt: now })
 							.where(($) => [
@@ -662,7 +662,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const pollAllOrgs = Effect.fn("RailwayMetricsService.pollAllOrgs")(function* () {
 				const connections = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(RailwayConnections)
 							.select("orgId")
 							.where(($) => [$.authFailedAt.isNull()]),

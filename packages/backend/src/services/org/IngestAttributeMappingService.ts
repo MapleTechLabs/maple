@@ -125,7 +125,7 @@ export class IngestAttributeMappingService extends Context.Service<
 			const rows = yield* runDb(
 				"selectById",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgIngestAttributeMappings)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
@@ -162,7 +162,7 @@ export class IngestAttributeMappingService extends Context.Service<
 			const rows = yield* runDb(
 				"list",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(OrgIngestAttributeMappings)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])
@@ -193,7 +193,7 @@ export class IngestAttributeMappingService extends Context.Service<
 			yield* runDb(
 				"create",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(OrgIngestAttributeMappings).values({
 							id,
 							orgId,
@@ -244,18 +244,18 @@ export class IngestAttributeMappingService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const updates = {
 				updatedAt: now,
-				...(request.name !== undefined ? { name: request.name.trim() } : {}),
-				...(request.sourceContext !== undefined ? { sourceContext: request.sourceContext } : {}),
-				...(request.sourceKey !== undefined ? { sourceKey: request.sourceKey.trim() } : {}),
-				...(request.targetKey !== undefined ? { targetKey: request.targetKey.trim() } : {}),
-				...(request.operation !== undefined ? { operation: request.operation } : {}),
-				...(request.enabled !== undefined ? { enabled: request.enabled } : {}),
+				name: request.name?.trim(),
+				sourceContext: request.sourceContext,
+				sourceKey: request.sourceKey?.trim(),
+				targetKey: request.targetKey?.trim(),
+				operation: request.operation,
+				enabled: request.enabled,
 			}
 
 			yield* runDb(
 				"update",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(OrgIngestAttributeMappings)
 							.set(updates)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)]),
@@ -287,7 +287,7 @@ export class IngestAttributeMappingService extends Context.Service<
 			const rows = yield* runDb(
 				"delete",
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(OrgIngestAttributeMappings)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
 							.returning("id"),

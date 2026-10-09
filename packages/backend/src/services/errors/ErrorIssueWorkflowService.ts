@@ -274,7 +274,7 @@ const make: Effect.Effect<
 		"ErrorsService.requireIssue",
 	)(function* (orgId, issueId) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
@@ -300,14 +300,14 @@ const make: Effect.Effect<
 		if (issueIds.length === 0) return Effect.succeed(new Set<ErrorIssueId>())
 		return Effect.all([
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIncidents)
 						.select("issueId")
 						.where(($) => [$.orgId.eq(orgId), $.status.eq("open"), $.issueId.in_(...issueIds)]),
 				),
 			),
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertIncidents)
 						.select(($) => ({ issueId: $.errorIssueId }))
 						.where(($) => [
@@ -345,7 +345,7 @@ const make: Effect.Effect<
 				rollups.set(issueId, { ...(rollups.get(issueId) ?? EMPTY_ACTIVITY), ...patch })
 			const [commentRows, prRows] = yield* Effect.all([
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorIssueEvents)
 							.select(($) => ({ issueId: $.issueId, count: PG.count() }))
 							.where(($) => [
@@ -357,7 +357,7 @@ const make: Effect.Effect<
 					),
 				),
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorIssuePullRequests)
 							.select(($) => ({ issueId: $.issueId, state: $.state, count: PG.count() }))
 							.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...issueIds)])
@@ -432,7 +432,7 @@ const make: Effect.Effect<
 	) =>
 		Effect.gen(function* () {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Actors)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(actorId)])
@@ -500,9 +500,7 @@ const make: Effect.Effect<
 		function* (orgId, issueId, actorId, type, opts = {}) {
 			const timestamp = opts.timestamp ?? (yield* Clock.currentTimeMillis)
 			const insert = buildEventInsert(orgId, issueId, actorId ?? null, type, timestamp, opts)
-			const inserted = yield* dbExecute((db) =>
-				db.orm.run(PG.insertInto(ErrorIssueEvents).values(insert)),
-			)
+			const inserted = yield* dbExecute((db) => db.run(PG.insertInto(ErrorIssueEvents).values(insert)))
 			// System/sweep events carry no actor and stay out of the audit log.
 			if (actorId !== null) {
 				yield* recordEventAudit(orgId, issueId, actorId, type, opts)
@@ -604,26 +602,26 @@ const make: Effect.Effect<
 		// incident resolution or its timeline event could never be repaired: a
 		// retry sees `fromState === toState` and returns before reaching them.
 		yield* dbExecute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
-					yield* db.orm.run(
+					yield* db.run(
 						PG.update(ErrorIssues)
 							.set(update)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
 					)
 					if (toState === "done") {
-						yield* db.orm.run(
+						yield* db.run(
 							PG.update(ErrorIncidents)
 								.set({ status: "resolved", resolvedAt: timestamp, updatedAt: timestamp })
 								.where(($) => [$.orgId.eq(orgId), $.issueId.eq(row.id), $.status.eq("open")]),
 						)
-						yield* db.orm.run(
+						yield* db.run(
 							PG.update(ErrorIssueStates)
 								.set({ openIncidentId: null, updatedAt: timestamp })
 								.where(($) => [$.orgId.eq(orgId), $.issueId.eq(row.id)]),
 						)
 					}
-					yield* db.orm.run(PG.insertInto(ErrorIssueEvents).values(eventInsert))
+					yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert))
 				}),
 			),
 		)
@@ -654,7 +652,7 @@ const make: Effect.Effect<
 		const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
 		const leaseExpiresAt = timestamp + leaseMs
 		const heartbeatRows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({ leaseExpiresAt, updatedAt: timestamp })
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId), $.leaseHolderActorId.eq(actorId)])
@@ -693,7 +691,7 @@ const make: Effect.Effect<
 		// `heartbeatIssue` does — a claim with a 2h lease should keep renewing at 2h.
 		const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({ leaseExpiresAt: timestamp + leaseMs })
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId), $.leaseHolderActorId.eq(actorId)]),
@@ -710,7 +708,7 @@ const make: Effect.Effect<
 			return yield* Effect.fail(leaseConflict(issueId, current))
 		}
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({
 						leaseHolderActorId: null,
@@ -751,7 +749,7 @@ const make: Effect.Effect<
 				)
 			}
 			const assignedRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssues)
 						.set({ assignedActorId: toActorId, updatedAt: timestamp })
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
@@ -836,18 +834,18 @@ const make: Effect.Effect<
 			// could never page anyone — a retry sees the severity already stored and
 			// returns before reaching the outbox insert.
 			const severityRows = yield* dbExecute((db) =>
-				db.orm.transaction(
+				db.transaction(
 					Effect.gen(function* () {
-						const rows = yield* db.orm.run(
+						const rows = yield* db.run(
 							PG.update(ErrorIssues)
 								.set({ severity, severitySource: nextSource, updatedAt: timestamp })
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
 								.returning(() => ({ txid: currentTxid })),
 						)
 						if (Option.isSome(eventInsert))
-							yield* db.orm.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
+							yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
 						if (Option.isSome(escalationInsert)) {
-							yield* db.orm.run(
+							yield* db.run(
 								PG.insertInto(IssueEscalations)
 									.values(escalationInsert.value)
 									.onConflictDoNothing(),
@@ -891,7 +889,7 @@ const make: Effect.Effect<
 			payloadJson: payload,
 			createdAt: timestamp,
 		}
-		yield* dbExecute((db) => db.orm.run(PG.insertInto(ErrorIssueEvents).values(row)))
+		yield* dbExecute((db) => db.run(PG.insertInto(ErrorIssueEvents).values(row)))
 		// This path writes the event row itself rather than going through
 		// `recordEvent`, so the audit mirror has to be invoked explicitly. The
 		// comment body stays out of the row — the audit records that a comment
@@ -909,7 +907,7 @@ const make: Effect.Effect<
 		yield* requireIssue(orgId, issueId)
 		const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_EVENTS_LIMIT, 1), 500)
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueEvents)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])

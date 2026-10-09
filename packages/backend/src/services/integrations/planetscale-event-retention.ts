@@ -40,12 +40,12 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 				.where(($) => [$.processedAt.lt(cutoff)])
 				.orderBy(($) => [[$.processedAt, "asc"]])
 				.limit(5000)
-			const receipts = yield* db.orm.run(
+			const receipts = yield* db.run(
 				PG.deleteFrom(PlanetscaleIssueReceipts)
 					.where(($) => [PG.sql.cond`(${$.orgId}, ${$.eventId}) IN (${expiredReceipts})`])
 					.returning("eventId"),
 			)
-			const aged = yield* db.orm.run(
+			const aged = yield* db.run(
 				PG.deleteFrom(PlanetscaleEvents)
 					.where(($) => [$.occurredAt.lt(cutoff)])
 					.returning("id"),
@@ -54,7 +54,7 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 			// Only orgs that could still be over the cap after the age delete are
 			// probed: the OFFSET probe walks up to EVENT_MAX_ROWS_PER_ORG index
 			// entries, so running it for every org would cost far more than it saves.
-			const overCap = yield* db.orm.run(
+			const overCap = yield* db.run(
 				PG.from(PlanetscaleEvents)
 					.select(($) => ({ orgId: $.orgId, total: PG.count() }))
 					.groupBy("orgId")
@@ -67,7 +67,7 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 					Effect.gen(function* () {
 						// Drop everything older than the Nth-newest row. The probe rides the
 						// (org_id, occurred_at) index.
-						const [boundary] = yield* db.orm.run(
+						const [boundary] = yield* db.run(
 							PG.from(PlanetscaleEvents)
 								.select("occurredAt")
 								.where(($) => [$.orgId.eq(org.orgId)])
@@ -76,7 +76,7 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 								.offset(EVENT_MAX_ROWS_PER_ORG - 1),
 						)
 						if (boundary === undefined) return
-						yield* db.orm.run(
+						yield* db.run(
 							PG.deleteFrom(PlanetscaleEvents).where(($) => [
 								$.orgId.eq(org.orgId),
 								$.occurredAt.lt(boundary.occurredAt),

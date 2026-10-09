@@ -209,7 +209,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const [reviewRows, findingRows, mergeRows] = yield* Effect.all(
 				[
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select(($) => {
 									const completed = $.status.eq("completed")
@@ -240,7 +240,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviewFindings)
 								.leftJoin(PrReviews, "r", (finding, review) => review.id.eq(finding.reviewId))
 								.select(($) => ({
@@ -255,7 +255,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 					),
 					// Per pull request: its first review in the window to its merge.
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.fromQuery(
 								PG.from(PrReviews)
 									.select(($) => ({
@@ -349,7 +349,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 					totals(orgId, window, query),
 					totals(orgId, previous, query),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select(($) => ({
 									bucket: bucketOf($.createdAt),
@@ -361,7 +361,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							findingsWithReviews()
 								.select(($) => ({
 									bucket: bucketOf($.createdAt),
@@ -373,7 +373,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							findingsWithReviews()
 								.select(($) => ({ category: $.category, findings: PG.count() }))
 								.where(($) => findingWhere($, $.r.authorLogin))
@@ -382,7 +382,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select(($) => ({ verdict: verdictOf($), reviews: PG.count() }))
 								.where(($) => [...reviewWhere($), $.status.eq("completed")])
@@ -390,7 +390,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.innerJoin(VcsRepositories, "repo", (review, repo) =>
 									repo.id.eq(review.repositoryId),
@@ -407,7 +407,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							findingsWithReviews()
 								.innerJoin(VcsRepositories, "repo", (finding, repo) =>
 									repo.id.eq(finding.repositoryId),
@@ -424,7 +424,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviews)
 								.select(($) => ({
 									author: $.authorLogin,
@@ -437,7 +437,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PrReviewFindings)
 								.innerJoin(PrReviews, "r", (finding, review) =>
 									review.id.eq(finding.reviewId),
@@ -528,7 +528,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const window: Window = { start: query.startTime, end: query.endTime }
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					reviewsWithRepositories()
 						.select(($) => listColumns($, $.repo.fullName))
 						.where(($) => [
@@ -565,7 +565,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": reviewId })
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					reviewsWithRepositories()
 						.select(($) => ({
 							...listColumns($, $.repo.fullName),
@@ -602,7 +602,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const [historyRows, findingRows] = yield* Effect.all(
 				[
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							reviewsWithRepositories()
 								.select(($) => listColumns($, $.repo.fullName))
 								.where(($) => [
@@ -615,7 +615,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						),
 					),
 					dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							findingsWithRepositories()
 								.select(($) => findingColumns($, $.r, $.repo.fullName))
 								.where(($) => [
@@ -661,7 +661,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const window: Window = { start: query.startTime, end: query.endTime }
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					findingsWithRepositories()
 						.select(($) => findingColumns($, $.r, $.repo.fullName))
 						.where(($) => [

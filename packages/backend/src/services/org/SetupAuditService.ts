@@ -50,7 +50,6 @@ export interface SetupAuditServiceApi {
 	readonly run: (tenant: TenantContext) => Effect.Effect<SetupAuditReport, SetupAuditUnavailableError>
 }
 
-
 const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQueryService> = Effect.gen(
 	function* () {
 		const database = yield* Database
@@ -104,13 +103,13 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 							openRecommendations,
 						] = yield* Effect.all(
 							[
-								db.orm.run(
+								db.run(
 									PG.from(OrgOnboardingState)
 										.select("firstDataReceivedAt")
 										.where(($) => [$.orgId.eq(orgId)])
 										.limit(1),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(AlertRules)
 										.select(
 											"id",
@@ -123,71 +122,85 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 										)
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(AlertRuleStates)
 										.select("ruleId", "lastEvaluatedAt", "lastError")
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(AlertDestinations)
 										.select("id", "name", "enabled", "lastTestError")
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(ErrorNotificationPolicies)
 										.select("enabled", "destinationIdsJson")
 										.where(($) => [$.orgId.eq(orgId)])
 										.limit(1),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(AnomalyDetectorSettings)
 										.select("enabled")
 										.where(($) => [$.orgId.eq(orgId)])
 										.limit(1),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(Dashboards)
 										.select(() => ({ count: PG.count() }))
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(OrgIngestSamplingPolicies)
 										.select("traceSampleRatio", "alwaysKeepErrorSpans")
 										.where(($) => [$.orgId.eq(orgId)])
 										.limit(1),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(OrgIngestAttributeMappings)
-										.select("id", "name", "enabled", "sourceContext", "sourceKey", "targetKey")
+										.select(
+											"id",
+											"name",
+											"enabled",
+											"sourceContext",
+											"sourceKey",
+											"targetKey",
+										)
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(OrgClickHouseSettings)
 										.select("syncStatus", "lastSyncError", "schemaVersion")
 										.where(($) => [$.orgId.eq(orgId)])
 										.limit(1),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(OAuthConnections)
 										.select("provider", "revokedAt")
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(CloudflareAnalyticsState)
-										.select("dataset", "zoneName", "enabled", "lastSuccessAt", "lastErrorAt", "lastError")
+										.select(
+											"dataset",
+											"zoneName",
+											"enabled",
+											"lastSuccessAt",
+											"lastErrorAt",
+											"lastError",
+										)
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(VcsRepositories)
 										.select("id", "fullName", "syncStatus", "lastSyncError")
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(ScrapeTargets)
 										.select("id", "name", "enabled", "lastScrapeError")
 										.where(($) => [$.orgId.eq(orgId)]),
 								),
-								db.orm.run(
+								db.run(
 									PG.from(OrgRecommendationIssues)
 										.select(() => ({ count: PG.count() }))
 										.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),

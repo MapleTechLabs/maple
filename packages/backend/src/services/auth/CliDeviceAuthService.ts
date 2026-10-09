@@ -132,7 +132,7 @@ export class CliDeviceAuthService extends Context.Service<
 		const purgeExpired = Effect.fn("CliDeviceAuthService.purgeExpired")(function* (now: number) {
 			yield* database
 				.execute((db) =>
-					db.orm.run(PG.deleteFrom(CliDeviceAuthorizations).where(($) => [$.expiresAt.lt(now)])),
+					db.run(PG.deleteFrom(CliDeviceAuthorizations).where(($) => [$.expiresAt.lt(now)])),
 				)
 				.pipe(Effect.mapError(persistenceError))
 		})
@@ -157,7 +157,7 @@ export class CliDeviceAuthService extends Context.Service<
 			}
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(CliDeviceAuthorizations)
 							.select()
 							.where(($) => [$.userCodeHash.eq(hashCode(normalized))])
@@ -193,7 +193,7 @@ export class CliDeviceAuthService extends Context.Service<
 			const verificationUri = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/cli-login`
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(CliDeviceAuthorizations).values({
 							deviceCodeHash: hashCode(deviceCode),
 							userCodeHash: hashCode(userCode),
@@ -244,7 +244,7 @@ export class CliDeviceAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const updated = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(CliDeviceAuthorizations)
 							.set({
 								approvedOrgId: identity.orgId,
@@ -276,7 +276,7 @@ export class CliDeviceAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const updated = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(CliDeviceAuthorizations)
 							.set({ deniedAt: now })
 							.where(($) => [
@@ -305,7 +305,7 @@ export class CliDeviceAuthService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(CliDeviceAuthorizations)
 							.select()
 							.where(($) => [$.deviceCodeHash.eq(deviceCodeHash)])
@@ -349,9 +349,9 @@ export class CliDeviceAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const won = yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							const claimed = yield* db.orm.run(
+							const claimed = yield* db.run(
 								PG.update(CliDeviceAuthorizations)
 									.set({
 										apiKeyId,
@@ -366,7 +366,7 @@ export class CliDeviceAuthService extends Context.Service<
 									.returning("deviceCodeHash"),
 							)
 							if (claimed.length === 0) return false
-							yield* db.orm.run(
+							yield* db.run(
 								PG.insertInto(ApiKeys).values({
 									id: apiKeyId,
 									orgId: approvedOrgId,

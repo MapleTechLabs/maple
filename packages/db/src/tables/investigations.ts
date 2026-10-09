@@ -32,9 +32,13 @@ export const Investigations = PG.table("investigations", {
 		/** Full discriminated subject (incident ref or free-form question + context). */
 		subjectJson: PG.column(PG.jsonb(InvestigationSubject), { name: "subject_json" }),
 		/** Display-ready context preserved independently of the source incident. */
-		snapshotJson: PG.column(PG.nullable(PG.jsonb(InvestigationSubjectSnapshot)), { name: "snapshot_json" }),
+		snapshotJson: PG.column(PG.nullable(PG.jsonb(InvestigationSubjectSnapshot)), {
+			name: "snapshot_json",
+		}),
 		/** Mirrored out of the subject ONLY to back the incident-dedup partial index. */
-		incidentKind: PG.column(PG.nullable(PG.brand(PG.text, AiTriageIncidentKind)), { name: "incident_kind" }),
+		incidentKind: PG.column(PG.nullable(PG.brand(PG.text, AiTriageIncidentKind)), {
+			name: "incident_kind",
+		}),
 		incidentId: PG.column(PG.nullable(PG.text), { name: "incident_id" }),
 		issueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "issue_id" }),
 		/** Structured diagnosis; null until the first `submit_diagnosis` lands. */

@@ -59,7 +59,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 			const findRow = (orgId: OrgId) =>
 				database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(OrgOnboardingState)
 								.select()
 								.where(($) => [$.orgId.eq(orgId)])
@@ -83,7 +83,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.insertInto(OrgOnboardingState)
 								.values({
 									orgId,
@@ -134,7 +134,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgOnboardingState)
 								.set({
 									...(input.role != null ? { role: input.role } : undefined),
@@ -143,8 +143,12 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 												demoDataRequested: input.demoDataRequested,
 											}
 										: undefined),
-									...(input.markOnboardingComplete ? { onboardingCompletedAt: now } : undefined),
-									...(input.markChecklistDismissed ? { checklistDismissedAt: now } : undefined),
+									...(input.markOnboardingComplete
+										? { onboardingCompletedAt: now }
+										: undefined),
+									...(input.markChecklistDismissed
+										? { checklistDismissedAt: now }
+										: undefined),
 									...(userId != null ? { userId } : undefined),
 									...(email != null ? { email } : undefined),
 									updatedAt: now,
@@ -170,7 +174,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				const result = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgOnboardingState)
 								.set({ firstDataReceivedAt: now, updatedAt: now })
 								.where(($) => [$.orgId.eq(orgId), $.firstDataReceivedAt.isNull()])
@@ -193,7 +197,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				const result = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgOnboardingState)
 								.set({ rewardReservedAt: now, updatedAt: now })
 								.where(($) => [
@@ -215,7 +219,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgOnboardingState)
 								.set({
 									rewardClaimedAt: now,
@@ -235,7 +239,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgOnboardingState)
 								.set({ rewardReservedAt: null, updatedAt: now })
 								.where(($) => [$.orgId.eq(orgId)]),
@@ -251,7 +255,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgOnboardingState)
 								.set({ ...emailSentStamp(field, now), updatedAt: now })
 								.where(($) => [$.orgId.eq(orgId)]),
@@ -262,7 +266,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 
 			const listAll = Effect.fn("OnboardingService.listAll")(function* () {
 				return yield* database
-					.execute((db) => db.orm.run(PG.from(OrgOnboardingState).select()))
+					.execute((db) => db.run(PG.from(OrgOnboardingState).select()))
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
@@ -277,7 +281,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 					const now = yield* Clock.currentTimeMillis
 					yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(OrgOnboardingState)
 									.set({
 										welcomeEmailSentAt: now,

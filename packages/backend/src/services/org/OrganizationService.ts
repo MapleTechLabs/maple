@@ -288,7 +288,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					ORG_SCOPED_TABLES,
 					(table) =>
 						database
-							.execute((db) => db.orm.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)])))
+							.execute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)])))
 							.pipe(Effect.mapError(toPersistenceError)),
 					{ discard: true },
 				)
@@ -297,7 +297,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					(table) =>
 						database
 							.execute((db) =>
-								db.orm.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
+								db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
 							)
 							.pipe(Effect.mapError(toPersistenceError)),
 					{ discard: true },

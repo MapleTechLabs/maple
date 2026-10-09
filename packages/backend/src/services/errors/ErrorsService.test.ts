@@ -425,7 +425,7 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<PG.InsertRowOf<type
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssues).values({
 					id: issueId,
 					orgId: ORG,
@@ -450,7 +450,7 @@ const seedIngestKeys = (orgIds: ReadonlyArray<string>) =>
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(OrgIngestKeys).values(
 					orgIds.map((orgId) => ({
 						orgId: asOrgId(orgId),
@@ -536,7 +536,7 @@ describe("Error issue severity, policies, and read models", () => {
 			assert.strictEqual(updated.severitySource, "manual")
 
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select()
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -551,7 +551,7 @@ describe("Error issue severity, policies, and read models", () => {
 			})
 
 			const escalations = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(IssueEscalations)
 						.select()
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -595,7 +595,7 @@ describe("Error issue severity, policies, and read models", () => {
 			assert.isNull(cleared.severitySource)
 
 			const escalations = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(IssueEscalations)
 						.select()
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -614,7 +614,7 @@ describe("Error issue severity, policies, and read models", () => {
 			const ownedId = asDestinationId(randomUUID())
 			const foreignId = asDestinationId(randomUUID())
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(AlertDestinations).values({
 						id: ownedId,
 						orgId: ORG,
@@ -685,7 +685,7 @@ describe("Error issue severity, policies, and read models", () => {
 			const alertIssueId = asIssueId(randomUUID())
 			const now = yield* Clock.currentTimeMillis
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIssues).values({
 						id: alertIssueId,
 						orgId: ORG,
@@ -938,7 +938,7 @@ const loadIssuesByFingerprint = (fingerprintHash: string) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.fingerprintHash.eq(fingerprintHash)]),
@@ -956,7 +956,7 @@ const backdateResolution = (issueId: ErrorIssueId, resolvedAtMs: number) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({ resolvedAt: resolvedAtMs })
 					.where(($) => [$.id.eq(issueId)]),
@@ -969,7 +969,7 @@ const setResolvedVersions = (issueId: ErrorIssueId, versions: ReadonlyArray<stri
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssues)
 					.set({ resolvedVersionsJson: versions })
 					.where(($) => [$.id.eq(issueId)]),
@@ -981,7 +981,7 @@ const loadIncidentsForIssue = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIncidents)
 					.select()
 					.where(($) => [$.issueId.eq(issueId)]),
@@ -993,7 +993,7 @@ const loadEventsForIssue = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueEvents)
 					.select()
 					.where(($) => [$.issueId.eq(issueId)]),
@@ -1020,7 +1020,7 @@ const runTicksUntilCaughtUp = Effect.fn("test.runTicksUntilCaughtUp")(function* 
 	for (let i = 0; i < maxTicks; i++) {
 		const nowMs = yield* Clock.currentTimeMillis
 		const cutoffMs = Math.floor(nowMs / 60_000) * 60_000 - 60_000
-		const cursor = yield* database.execute((db) => db.orm.run(PG.from(ErrorTickStates).select()))
+		const cursor = yield* database.execute((db) => db.run(PG.from(ErrorTickStates).select()))
 		const behind = cursor.length === 0 || cursor.some((row) => row.processedThrough < cutoffMs)
 		if (!behind) break
 		const result = yield* errors.runTick()
@@ -1111,7 +1111,7 @@ describe("ErrorsService.runTick", () => {
 		Effect.gen(function* () {
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorTickStates).values({
 						orgId: ORG,
 						processedThrough: processedThroughMs,
@@ -1127,7 +1127,7 @@ describe("ErrorsService.runTick", () => {
 	const cursor = Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorTickStates)
 					.select()
 					.where(($) => [$.orgId.eq(ORG)]),
@@ -1360,7 +1360,7 @@ describe("ErrorsService.runTick", () => {
 				assert.strictEqual(incidents[0]?.occurrenceCount, 3)
 
 				const states = yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorIssueStates)
 							.select()
 							.where(($) => [$.issueId.eq(issue.id)]),
@@ -1425,7 +1425,7 @@ describe("ErrorsService.runTick", () => {
 
 			const database = yield* Database
 			const cursors = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorTickStates)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -1484,7 +1484,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorNotificationPolicies).values({
 						orgId: ORG,
 						enabled: true,
@@ -1497,7 +1497,7 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 			let deliveries = yield* database.execute((db) =>
-				db.orm.run(PG.from(ErrorNotificationDeliveries).select()),
+				db.run(PG.from(ErrorNotificationDeliveries).select()),
 			)
 			assert.lengthOf(deliveries, 1)
 			assert.strictEqual(deliveries[0]?.status, "queued")
@@ -1507,7 +1507,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS + 60_000)
 			yield* errors.runTick()
 			deliveries = yield* database.execute((db) =>
-				db.orm.run(PG.from(ErrorNotificationDeliveries).select()),
+				db.run(PG.from(ErrorNotificationDeliveries).select()),
 			)
 			assert.strictEqual(deliveries[0]?.status, "success")
 			assert.strictEqual(deliveries[0]?.attemptCount, 2)
@@ -1535,7 +1535,7 @@ describe("ErrorsService.runTick", () => {
 			// Enabled policy with a destination so incident open/resolve actually
 			// dispatches (the dispatcher itself is stubbed — no destination row needed).
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorNotificationPolicies).values({
 						orgId: ORG,
 						enabled: true,
@@ -1597,7 +1597,7 @@ describe("ErrorsService.runTick", () => {
 			const incidents = yield* loadIncidentsForIssue(issue.id)
 			assert.lengthOf(incidents, 2)
 			const states = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueStates)
 						.select()
 						.where(($) => [$.issueId.eq(issue.id)]),
@@ -1714,7 +1714,7 @@ describe("ErrorsService.runTick", () => {
 			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssues)
 						.set({ workflowState: "wontfix", snoozeUntil: null })
 						.where(($) => [$.id.eq(issue.id)]),
@@ -1749,7 +1749,7 @@ describe("ErrorsService.runTick", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -1776,7 +1776,7 @@ describe("ErrorsService.runTick", () => {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
 			const before = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -1798,7 +1798,7 @@ describe("ErrorsService.runTick", () => {
 			})
 
 			const after = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -1843,7 +1843,7 @@ describe("ErrorsService.runTick", () => {
 			assert.isAtMost(resolvedAtMs, lastTriggeredMs + 35 * 60_000)
 
 			const states = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueStates)
 						.select()
 						.where(($) => [$.issueId.eq(issue.id)]),
@@ -1886,7 +1886,7 @@ describe("ErrorsService.runTick", () => {
 			// 5 minutes halved is 3, so the cursor advances 3 of the 5 available
 			// minutes and the next cron picks up the remainder.
 			const cursor = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorTickStates)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -1918,7 +1918,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(result.incidentsOpened, 3_100)
 
 			const cursor = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorTickStates)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -1928,7 +1928,7 @@ describe("ErrorsService.runTick", () => {
 			// Every chunk landed, not just the ones a counter reports: one `created`
 			// event per issue, and no promoted candidate left behind.
 			const created = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select()
 						.where(($) => [$.type.eq("created")]),
@@ -1936,7 +1936,7 @@ describe("ErrorsService.runTick", () => {
 			)
 			assert.lengthOf(created, 3_100)
 			assert.lengthOf(
-				yield* database.execute((db) => db.orm.run(PG.from(ErrorFingerprintCandidates).select())),
+				yield* database.execute((db) => db.run(PG.from(ErrorFingerprintCandidates).select())),
 				0,
 			)
 
@@ -1965,7 +1965,7 @@ describe("ErrorsService.runTick", () => {
 			yield* errors.runTick()
 
 			const before = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorTickStates)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -2025,7 +2025,7 @@ describe("ErrorsService.runTick", () => {
 			const issuesAfter = yield* loadIssuesByFingerprint("77777777777777777777")
 			assert.deepStrictEqual(issuesAfter, issuesBefore)
 			const after = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorTickStates)
 						.select()
 						.where(($) => [$.orgId.eq(ORG)]),
@@ -2046,7 +2046,7 @@ describe("ErrorsService.runTick", () => {
 			const database = yield* Database
 			const candidates = () =>
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorFingerprintCandidates)
 							.select()
 							.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
@@ -2258,7 +2258,7 @@ describe("ErrorsService.runTick", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(issueId)]),
@@ -2319,7 +2319,7 @@ describe("ErrorsService.runTick", () => {
 			})
 			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIssueEvents).values({
 						id: asEventId(randomUUID()),
 						orgId: ORG,
@@ -2332,7 +2332,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIncidents).values({
 						id: asIncidentId(randomUUID()),
 						orgId: ORG,
@@ -2349,7 +2349,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIssueStates).values({
 						orgId: ORG,
 						issueId: purgeCandidate,
@@ -2367,7 +2367,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(result.issuesDeleted, 1)
 
 			const archivedRows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(archiveCandidate)]),
@@ -2377,7 +2377,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(archivedRows[0]?.archivedAt, RETENTION_TICK_MS)
 
 			const purgedIssues = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.id.eq(purgeCandidate)]),
@@ -2387,7 +2387,7 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(yield* loadIncidentsForIssue(purgeCandidate), 0)
 			assert.lengthOf(yield* loadEventsForIssue(purgeCandidate), 0)
 			const purgedStates = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueStates)
 						.select()
 						.where(($) => [$.issueId.eq(purgeCandidate)]),
@@ -2578,7 +2578,7 @@ const seedIdleOrgs = (seeds: ReadonlyArray<TickStateSeed>) =>
 		const database = yield* Database
 		yield* seedIngestKeys(seeds.map((seed) => seed.orgId))
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorTickStates).values(
 					seeds.map(({ cursorMs, ...row }) => ({
 						processedThrough: cursorMs,
@@ -2593,7 +2593,7 @@ const seedIdleOrgs = (seeds: ReadonlyArray<TickStateSeed>) =>
 
 const tickStates = Effect.gen(function* () {
 	const database = yield* Database
-	const rows = yield* database.execute((db) => db.orm.run(PG.from(ErrorTickStates).select()))
+	const rows = yield* database.execute((db) => db.run(PG.from(ErrorTickStates).select()))
 	return new Map(rows.map((row) => [row.orgId, row]))
 })
 
@@ -2610,7 +2610,7 @@ const issuesOf = (orgId: OrgId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)]),
@@ -2622,7 +2622,7 @@ const candidatesOf = (orgId: OrgId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorFingerprintCandidates)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)]),
@@ -3086,7 +3086,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* TestClock.setTime(T)
 			yield* seedIdleOrgs([{ orgId: IDLE, cursorMs: T - 3 * HOUR_MS }])
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(OrgClickHouseSettings).values({
 						orgId: IDLE,
 						chUrl: "https://clickhouse.example.test",
@@ -3548,7 +3548,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 						{ orgId: OTHER, cursorMs: T - 4 * HOUR_MS },
 					])
 					yield* database.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.insertInto(ErrorNotificationPolicies).values({
 								orgId: ACTIVE,
 								enabled: true,
@@ -3650,7 +3650,7 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			// The lease is the whole point: an agent that only ever calls
 			// `propose_fix` must still end up holding it.
 			const [row] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("leaseHolderActorId", "leaseExpiresAt")
 						.where(($) => [$.id.eq(issueId)]),
@@ -3660,7 +3660,7 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			assert.isNotNull(row?.leaseExpiresAt)
 
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select("type", "toState")
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -3710,7 +3710,7 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			// The regression that made the old ordering dangerous: no half-written
 			// proposal left behind by a rejected call.
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select("type")
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -3742,7 +3742,7 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			// no verification would ever run.
 			assert.isTrue(exit._tag === "Failure")
 			const events = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueEvents)
 						.select("type")
 						.where(($) => [$.issueId.eq(issueId)]),
@@ -3792,7 +3792,7 @@ describe("ErrorsService.transitionIssue claims on in_progress", () => {
 			yield* errors.transitionIssue(ORG, actor.id, issueId, "in_progress")
 
 			const [row] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("leaseHolderActorId")
 						.where(($) => [$.id.eq(issueId)]),
@@ -3822,7 +3822,7 @@ describe("ErrorsService.transitionIssue claims on in_progress", () => {
 
 			assert.strictEqual(issue.workflowState, "in_progress")
 			const [row] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("leaseHolderActorId")
 						.where(($) => [$.id.eq(issueId)]),
@@ -3856,7 +3856,7 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 			yield* errors.transitionIssue(ORG, actor.id, issueId, "in_review")
 
 			const [row] = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("leaseExpiresAt")
 						.where(($) => [$.id.eq(issueId)]),

@@ -241,7 +241,7 @@ export class PrReviewConversationService extends Context.Service<
 		) =>
 			database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(PrReviewReplies)
 							.set(values)
 							.where(($) => [
@@ -260,7 +260,7 @@ export class PrReviewConversationService extends Context.Service<
 		const getReply = (orgId: OrgId, replyId: PrReviewReplyId) =>
 			database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewReplies)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(replyId)])
@@ -341,7 +341,7 @@ export class PrReviewConversationService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			const today = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewReplies)
 							.select(() => ({ total: PG.count() }))
 							.where(($) => [$.orgId.eq(orgId), $.createdAt.gte(nowMs - (nowMs % DAY_MS))]),
@@ -361,7 +361,7 @@ export class PrReviewConversationService extends Context.Service<
 			const replyId = newReplyId()
 			const inserted = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(PrReviewReplies)
 							.values({
 								id: replyId,
@@ -483,7 +483,7 @@ export class PrReviewConversationService extends Context.Service<
 					? undefined
 					: (yield* database
 							.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.from(PrReviewFindings)
 										.select()
 										.where(($) => [
@@ -497,7 +497,7 @@ export class PrReviewConversationService extends Context.Service<
 							.pipe(Effect.mapError(toPersistence)))[0]
 			const open = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewFindings)
 							.select()
 							.where(($) => [
@@ -510,7 +510,7 @@ export class PrReviewConversationService extends Context.Service<
 				.pipe(Effect.mapError(toPersistence))
 			const lastReview = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviews)
 							.select(($) => ({ report: $.reportJson }))
 							.where(($) => [
@@ -598,7 +598,7 @@ export class PrReviewConversationService extends Context.Service<
 				return "Not staged: the edit is too large. Make smaller, exact edits."
 			const staged = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewEdits)
 							.select(() => ({ total: PG.count() }))
 							.where(($) => [$.replyId.eq(replyId)]),
@@ -610,7 +610,7 @@ export class PrReviewConversationService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(PrReviewEdits).values({
 							id: randomUUID(),
 							orgId,
@@ -638,7 +638,7 @@ export class PrReviewConversationService extends Context.Service<
 		) {
 			const edits = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewEdits)
 							.select()
 							.where(($) => [$.replyId.eq(row.id)])
@@ -737,7 +737,7 @@ export class PrReviewConversationService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewReplies)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(replyId)])

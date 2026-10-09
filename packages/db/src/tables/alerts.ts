@@ -60,7 +60,9 @@ export const AlertRules = PG.table("alert_rules", {
 		enabled: PG.column(PG.bool, { default: true }),
 		severity: PG.text,
 		serviceNamesJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "service_names_json" }),
-		excludeServiceNamesJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "exclude_service_names_json" }),
+		excludeServiceNamesJson: PG.column(PG.nullable(PG.jsonb(StringArray)), {
+			name: "exclude_service_names_json",
+		}),
 		/**
 		 * Deployment environments the rule is scoped to. Null/empty means every
 		 * environment. Applies to the built-in trace signals;
@@ -76,7 +78,10 @@ export const AlertRules = PG.table("alert_rules", {
 		thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
 		windowMinutes: PG.column(PG.int4, { name: "window_minutes" }),
 		minimumSampleCount: PG.column(PG.int4, { name: "minimum_sample_count", default: 0 }),
-		consecutiveBreachesRequired: PG.column(PG.int4, { name: "consecutive_breaches_required", default: 2 }),
+		consecutiveBreachesRequired: PG.column(PG.int4, {
+			name: "consecutive_breaches_required",
+			default: 2,
+		}),
 		consecutiveHealthyRequired: PG.column(PG.int4, { name: "consecutive_healthy_required", default: 2 }),
 		renotifyIntervalMinutes: PG.column(PG.int4, { name: "renotify_interval_minutes", default: 30 }),
 		apdexThresholdMs: PG.column(PG.nullable(PG.float8), { name: "apdex_threshold_ms" }),
@@ -144,7 +149,10 @@ export const AlertRuleStates = PG.table("alert_rule_states", {
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
-	primaryKey: { columns: ["orgId", "ruleId", "groupKey"], name: "alert_rule_states_org_id_rule_id_group_key_pk" },
+	primaryKey: {
+		columns: ["orgId", "ruleId", "groupKey"],
+		name: "alert_rule_states_org_id_rule_id_group_key_pk",
+	},
 	indexes: [PG.index("alert_rule_states_org_idx", ["orgId"])],
 	tenantColumn: "orgId",
 })

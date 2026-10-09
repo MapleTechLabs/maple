@@ -97,7 +97,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 
 	const selectActorRow = (orgId: OrgId, actorId: ActorId) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(Actors)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(actorId)])
@@ -107,7 +107,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 
 	const selectUserActor = (orgId: OrgId, userId: UserId) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(Actors)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.type.eq("user"), $.userId.eq(userId)])
@@ -117,7 +117,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 
 	const selectAgentByName = (orgId: OrgId, agentName: string) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(Actors)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.type.eq("agent"), $.agentName.eq(agentName)])
@@ -126,7 +126,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		)
 
 	const insertActorIfAbsent = (insert: ActorInsert) =>
-		dbExecute((db) => db.orm.run(PG.insertInto(Actors).values(insert).onConflictDoNothing()))
+		dbExecute((db) => db.run(PG.insertInto(Actors).values(insert).onConflictDoNothing()))
 
 	const lookupActor: ErrorActorsServiceApi["lookupActor"] = Effect.fn("ErrorsService.lookupActor")(
 		function* (orgId, actorId) {
@@ -150,7 +150,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	// mutation, but persistent failures should still be diagnosable.
 	const touchActor: ErrorActorsServiceApi["touchActor"] = (orgId, actorId, timestamp) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(Actors)
 					.set({ lastActiveAt: timestamp })
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(actorId)]),
@@ -287,7 +287,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const listAgents: ErrorActorsServiceApi["listAgents"] = Effect.fn("ErrorsService.listAgents")(
 		function* (orgId) {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Actors)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.type.eq("agent")])
@@ -304,7 +304,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		)
 		if (first === undefined) return Effect.succeed(new Map<ActorId, ActorDocument>())
 		return dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(Actors)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),

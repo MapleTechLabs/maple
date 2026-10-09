@@ -42,7 +42,6 @@
 		"@maple/safe-fetch": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"alchemy": "catalog:alchemy",
-		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
 		"@yielded/agent": "0.1.0-beta.166"
 	},

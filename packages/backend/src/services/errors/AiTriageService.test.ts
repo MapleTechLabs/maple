@@ -51,7 +51,7 @@ const seedSettings = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AiTriageSettings).values({
 					orgId: ORG,
 					enabled: true,
@@ -75,7 +75,7 @@ const seedStartedRuns = (count: number, idOffset = 0) =>
 			Array.from({ length: count }, (_, index) => index),
 			(index) =>
 				database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(Investigations).values({
 							id: asInvestigationId(
 								`00000000-0000-4000-8000-${String(idOffset + index).padStart(12, "0")}`,

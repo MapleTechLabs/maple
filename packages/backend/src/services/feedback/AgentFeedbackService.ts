@@ -122,26 +122,26 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 				})
 				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(AgentFeedbackTable)
-						.values({
-							id: randomUUID(),
-							orgId,
-							userId,
-							kind: input.kind,
-							impact: input.impact ?? null,
-							summary: input.summary.trim(),
-							reason: input.reason.trim(),
-							details: nonBlank(input.details),
-							relatedTo: nonBlank(input.relatedTo),
-							agentType: input.agent.type,
-							agentName,
-							agentModel: nonBlank(input.agent.model),
-							agentVersion: nonBlank(input.agent.version),
-							source: input.source,
-							createdAt: now,
-						})
-						.returning(),
+							.values({
+								id: randomUUID(),
+								orgId,
+								userId,
+								kind: input.kind,
+								impact: input.impact ?? null,
+								summary: input.summary.trim(),
+								reason: input.reason.trim(),
+								details: nonBlank(input.details),
+								relatedTo: nonBlank(input.relatedTo),
+								agentType: input.agent.type,
+								agentName,
+								agentModel: nonBlank(input.agent.model),
+								agentVersion: nonBlank(input.agent.version),
+								source: input.source,
+								createdAt: now,
+							})
+							.returning(),
 					),
 				)
 				const row = rows[0]
@@ -157,7 +157,7 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AgentFeedbackTable)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)])

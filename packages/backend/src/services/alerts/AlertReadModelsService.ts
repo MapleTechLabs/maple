@@ -207,7 +207,7 @@ export class AlertReadModelsService extends Context.Service<
 			})
 			const { status, ruleId } = options
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertIncidents)
 						.select()
 						.where(($) => [
@@ -232,7 +232,7 @@ export class AlertReadModelsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertIncidents)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)])
@@ -265,7 +265,7 @@ export class AlertReadModelsService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 			// Verify the rule exists and belongs to this org before querying Tinybird.
 			const ruleRow = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertRules)
 						.select("id")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
@@ -377,7 +377,7 @@ export class AlertReadModelsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 			const ruleRow = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertRules)
 						.select("id")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
@@ -464,7 +464,7 @@ export class AlertReadModelsService extends Context.Service<
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const { incidentId, ruleId } = options
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertDeliveryEvents)
 						.select()
 						.where(($) => [
@@ -479,7 +479,7 @@ export class AlertReadModelsService extends Context.Service<
 			)
 
 			const destinationRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertDestinations)
 						.select("id", "name", "type")
 						.where(($) => [$.orgId.eq(orgId)]),

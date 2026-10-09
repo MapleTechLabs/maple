@@ -51,7 +51,7 @@ const report = (verdict: "clean" | "issues", confidence: number, severities: Rea
 const seed = Effect.gen(function* () {
 	const database = yield* Database
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(VcsRepositories).values(
 				[
 					{ id: REPO, orgId: ORG, fullName: "acme/web" },
@@ -101,7 +101,7 @@ const seed = Effect.gen(function* () {
 		updatedAt: input.created,
 	})
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(PrReviews).values([
 				review({
 					n: 1,
@@ -163,7 +163,7 @@ const seed = Effect.gen(function* () {
 		updatedAt: at(2, n),
 	})
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(PrReviewFindings).values([
 				finding(1, "critical", "resolved"),
 				finding(2, "warn", "open"),

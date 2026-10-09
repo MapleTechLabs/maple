@@ -49,7 +49,7 @@ const seedDestination = (options: {
 		)
 		const now = 0
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AlertDestinations).values({
 					id: options.id,
 					orgId: ORG,
@@ -74,7 +74,7 @@ const loadDestination = (id: AlertDestinationId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AlertDestinations)
 					.select()
 					.where(($) => [$.id.eq(id)]),

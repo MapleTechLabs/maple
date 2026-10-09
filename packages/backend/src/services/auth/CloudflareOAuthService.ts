@@ -226,7 +226,7 @@ export class CloudflareOAuthService extends Context.Service<
 
 			yield* oauth.purgeExpiredStates(currentTime)
 			yield* oauth.dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(OAuthAuthStates).values({
 						state,
 						orgId,

@@ -291,7 +291,7 @@ const make: Effect.Effect<
 	const rowsForOrg = (orgId: OrgId) =>
 		database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ChatWorkspaces)
 						.select()
 						.where(($) => [$.orgId.eq(orgId)])
@@ -445,7 +445,7 @@ const make: Effect.Effect<
 
 		const inserted = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ChatWorkspaces)
 						.values({
 							id: newWorkspaceId(),
@@ -627,7 +627,7 @@ const make: Effect.Effect<
 	const loadOwned = Effect.fnUntraced(function* (orgId: OrgId, workspaceId: ChatWorkspaceId) {
 		const rows = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ChatWorkspaces)
 						.select()
 						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
@@ -651,7 +651,7 @@ const make: Effect.Effect<
 		const validated = yield* validateSettings(connector, settings)
 		const updated = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ChatWorkspaces)
 						.set({ settings: validated })
 						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
@@ -672,7 +672,7 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const deleted = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.deleteFrom(ChatWorkspaces)
 						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
 						.returning("connector"),

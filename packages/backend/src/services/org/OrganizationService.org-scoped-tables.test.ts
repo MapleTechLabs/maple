@@ -16,7 +16,9 @@ const isTable = (value: unknown): value is (typeof tables.allTables)[number] =>
 	tables.allTables.some((table) => table === value)
 
 const exportedTables = () =>
-	Object.entries(tables).flatMap(([exportName, value]) => (isTable(value) ? [[exportName, value] as const] : []))
+	Object.entries(tables).flatMap(([exportName, value]) =>
+		isTable(value) ? [[exportName, value] as const] : [],
+	)
 
 const orgScopedTables = () => {
 	const found = new Map<string, string>()
@@ -28,7 +30,9 @@ const orgScopedTables = () => {
 }
 
 const registeredNames = (registered: ReadonlyArray<unknown>) => {
-	const byTable = new Map<unknown, string>(exportedTables().map(([exportName, table]) => [table, exportName]))
+	const byTable = new Map<unknown, string>(
+		exportedTables().map(([exportName, table]) => [table, exportName]),
+	)
 	return registered.map((table) => byTable.get(table) ?? "<unexported table>")
 }
 

@@ -159,7 +159,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		"ErrorsService.loadPolicyRow",
 	)(function* (orgId) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorNotificationPolicies)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)])
@@ -221,7 +221,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		}
 
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorNotificationPolicies)
 					.values(merged)
 					.onConflictDoUpdate({
@@ -259,7 +259,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		orgId: OrgId,
 	) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(IssueEscalationPolicies)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)])
@@ -305,7 +305,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			const [firstReferenced, ...restReferenced] = referencedIds
 			if (firstReferenced !== undefined) {
 				const ownedRows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AlertDestinations)
 							.select("id")
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(firstReferenced, ...restReferenced)]),
@@ -333,7 +333,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		}
 
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(IssueEscalationPolicies)
 					.values(merged)
 					.onConflictDoUpdate({
@@ -385,7 +385,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			firstReferenced === undefined
 				? []
 				: yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(AlertDestinations)
 								.select("id")
 								.where(($) => [
@@ -415,7 +415,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	)(function* (orgId, issueId) {
 		yield* Effect.annotateCurrentSpan({ orgId, issueId })
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(IssueEscalations)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
@@ -430,7 +430,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	)(function* (orgId, limit) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(IssueEscalations)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)])

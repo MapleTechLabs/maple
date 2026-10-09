@@ -66,7 +66,7 @@ export const startInvestigationTurn: (
 	const markFailed = (error: string) =>
 		database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(Investigations)
 						.set({ status: "failed", error, updatedAt: nowMs })
 						.where(($) => [$.id.eq(investigationId)]),

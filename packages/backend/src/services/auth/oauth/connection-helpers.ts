@@ -158,17 +158,17 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		const purgeExpiredStates = (currentTime: number) =>
 			dbExecute((db) =>
-				db.orm.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(currentTime)])),
+				db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(currentTime)])),
 			)
 
 		const deleteAuthState = (state: string) =>
-			dbExecute((db) => db.orm.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])))
+			dbExecute((db) => db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])))
 
 		const requireStateRow = Effect.fn("OAuthConnectionHelpers.requireStateRow")(function* (
 			state: string,
 		) {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(OAuthAuthStates)
 						.select()
 						.where(($) => [$.state.eq(state)])
@@ -218,7 +218,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		const loadConnection = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(OAuthConnections)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
@@ -250,7 +250,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			values: Omit<OAuthConnectionInsert, "id" | "orgId" | "provider" | "createdAt" | "updatedAt">,
 		) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(OAuthConnections)
 						.values({
 							id: randomUUID(),
@@ -283,7 +283,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			// revoke even if the stamp itself fails (it is best-effort/ignored below).
 			yield* invalidateConnectionMemo(orgId)
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(OAuthConnections)
 						.set({ revokedAt: currentTime })
 						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider), $.revokedAt.isNull()]),
@@ -294,7 +294,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		/** Drop the org's connection row; reports whether anything was removed. */
 		const deleteConnection = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.deleteFrom(OAuthConnections)
 						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
 						.returning("id"),
@@ -421,7 +421,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			const expiresAt =
 				tokenResponse.expires_in != null ? currentTime + tokenResponse.expires_in * 1000 : null
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(OAuthConnections)
 						.set({
 							accessTokenCiphertext: accessEnc.ciphertext,
@@ -546,7 +546,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				if (accessToken !== rejectedAccessToken) return false
 				const currentTime = yield* Clock.currentTimeMillis
 				const stamped = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(OAuthConnections)
 							.set({ revokedAt: currentTime })
 							.where(($) => [

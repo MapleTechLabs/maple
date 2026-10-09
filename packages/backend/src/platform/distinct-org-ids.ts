@@ -1,6 +1,6 @@
 import * as Orm from "@maple-dev/effect-orm/database"
 import { OrgId, type OrgId as OrgIdType } from "@maple/domain"
-import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Effect, Schema } from "effect"
 
 /** An effect-orm table with an `orgId` column, the only shape this walks. */
@@ -28,9 +28,9 @@ const OrgIdRow = Schema.Struct({ org_id: OrgId })
  * Pattern: https://wiki.postgresql.org/wiki/Loose_indexscan
  */
 export const selectDistinctOrgIds = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	table: OrgScopedTable,
-): Effect.Effect<ReadonlyArray<OrgIdType>, MapleOrmError> => {
+): Effect.Effect<ReadonlyArray<OrgIdType>, MapleDbError> => {
 	const from = Orm.sql.identifier(table.name)
 	const column = Orm.sql.identifier(table.columns.orgId.sqlName ?? "orgId")
 	return Effect.map(

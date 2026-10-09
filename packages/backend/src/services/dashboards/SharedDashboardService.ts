@@ -81,10 +81,7 @@ const toPersistenceError = (error: unknown) =>
 		cause: error,
 	})
 
-type DashboardShareRow = Omit<
-	DashboardShareTableRow,
-	"tokenHash" | "createdBy" | "updatedBy" | "revokedAt"
->
+type DashboardShareRow = Omit<DashboardShareTableRow, "tokenHash" | "createdBy" | "updatedBy" | "revokedAt">
 
 const toDashboardShare = (row: DashboardShareRow, token: string) => {
 	const share = {
@@ -263,7 +260,7 @@ export class SharedDashboardService extends Context.Service<
 		const loadLive = (orgId: OrgId, scope: ShareScope) =>
 			database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardShares)
 							.select(shareColumns)
 							.where(($) => [
@@ -295,7 +292,7 @@ export class SharedDashboardService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardShares)
 							.select(shareColumns)
 							.where(($) => [
@@ -378,7 +375,7 @@ export class SharedDashboardService extends Context.Service<
 				Effect.gen(function* () {
 					const updated = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(DashboardShares)
 									.set({ mode, updatedAt: now, updatedBy: userId })
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(shareId), $.revokedAt.isNull()])
@@ -411,7 +408,9 @@ export class SharedDashboardService extends Context.Service<
 			// the loser is handled rather than prevented — a double-click producing a
 			// 503 is exactly what `revoke` was made idempotent to avoid.
 			const attempt = yield* database
-				.execute((db) => db.orm.run(PG.insertInto(DashboardShares).values(values).returning(shareColumns)))
+				.execute((db) =>
+					db.run(PG.insertInto(DashboardShares).values(values).returning(shareColumns)),
+				)
 				.pipe(
 					Effect.map((rows) => ({ raced: false, rows }) as const),
 					Effect.catch((error) =>
@@ -475,14 +474,14 @@ export class SharedDashboardService extends Context.Service<
 			// per dashboard — is satisfied when the insert lands.
 			const inserted = yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							yield* db.orm.run(
+							yield* db.run(
 								PG.update(DashboardShares)
 									.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(existing.id)]),
 							)
-							return yield* db.orm.run(
+							return yield* db.run(
 								PG.insertInto(DashboardShares).values(values).returning(shareColumns),
 							)
 						}),
@@ -517,7 +516,7 @@ export class SharedDashboardService extends Context.Service<
 
 			const revoked = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(DashboardShares)
 							// `updatedBy` too, not just the timestamp: revoked rows are kept
 							// for audit, and a row that records only who *created* the link
@@ -571,7 +570,7 @@ export class SharedDashboardService extends Context.Service<
 
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardShares)
 							.select(shareColumns)
 							.where(($) => [$.tokenHash.eq(tokenHash), $.revokedAt.isNull()]),
@@ -594,7 +593,9 @@ export class SharedDashboardService extends Context.Service<
 			// is by definition the stored one, and decrypting to prove that again
 			// would only add a cipher round to the viewer hot path.
 			const mode =
-				row.widgetId === null ? row.mode : capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
+				row.widgetId === null
+					? row.mode
+					: capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
 			if (row.widgetId !== null) yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
 			return { share: toDashboardShare({ ...row, mode }, token), orgId: row.orgId }
 		})
@@ -612,7 +613,7 @@ export class SharedDashboardService extends Context.Service<
 
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardShares)
 							.select("id", "orgId", "dashboardId", "widgetId")
 							.where(($) => [$.id.eq(shareId), $.mode.eq("public"), $.revokedAt.isNull()]),

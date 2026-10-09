@@ -177,7 +177,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.id": keyId })
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ApiKeys)
 							.select()
 							.where(($) => [$.id.eq(keyId), $.orgId.eq(orgId)])
@@ -220,7 +220,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			const now = yield* Clock.currentTimeMillis
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ApiKeys)
 							.select("id")
 							.where(($) => [
@@ -251,7 +251,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ApiKeys)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.kind.neq("device")])
@@ -292,7 +292,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 
 			const inserted = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(ApiKeys)
 							.values({
 								id,
@@ -347,7 +347,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 				$.orgId.eq(orgId),
 				$.kind.eq("device"),
 				$.revoked.eq(false),
-				PG.sql.cond`${$.metadataJson} @> ${JSON.stringify({ source: WIDGET_DEVICE_KEY_SOURCE, deviceId })}::jsonb`,
+				PG.sql
+					.cond`${$.metadataJson} @> ${JSON.stringify({ source: WIDGET_DEVICE_KEY_SOURCE, deviceId })}::jsonb`,
 			]
 
 		/**
@@ -392,14 +393,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 
 			const inserted = yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							yield* db.orm.run(
+							yield* db.run(
 								PG.update(ApiKeys)
 									.set({ revoked: true, revokedAt: now })
 									.where(liveDeviceKeysFor(orgId, params.deviceId)),
 							)
-							return yield* db.orm.run(
+							return yield* db.run(
 								PG.insertInto(ApiKeys)
 									.values({
 										id,
@@ -465,7 +466,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			const now = yield* Clock.currentTimeMillis
 			const revokedRows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(ApiKeys)
 							.set({ revoked: true, revokedAt: now })
 							.where(liveDeviceKeysFor(orgId, deviceId))
@@ -505,12 +506,12 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// revoke/roll race can no longer mint a successor for a dead one.
 			const rolled = yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							const [source] = yield* db.orm.run(claimLive(keyId, orgId, now))
+							const [source] = yield* db.run(claimLive(keyId, orgId, now))
 							if (source === undefined) return undefined
 
-							yield* db.orm.run(
+							yield* db.run(
 								PG.insertInto(ApiKeys).values({
 									id,
 									orgId,
@@ -576,14 +577,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// (which would also replicate a pointless row out through Electric).
 			const revokedRows = yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							const claimed = yield* db.orm.run(claimLive(keyId, orgId, now))
+							const claimed = yield* db.run(claimLive(keyId, orgId, now))
 							// An MCP key is the visible face of an OAuth grant whose refresh
 							// family re-mints it hourly. Flipping `revoked` here alone was a
 							// no-op the next rotation undid, so the family goes with it.
 							if (claimed[0]?.kind === "mcp") {
-								yield* revokeFamiliesForAccessKeys(db.orm, [claimed[0].id], now)
+								yield* revokeFamiliesForAccessKeys(db, [claimed[0].id], now)
 							}
 							return claimed
 						}),
@@ -605,7 +606,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			const keyHash = hashApiKey(rawKey, hmacKey)
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ApiKeys)
 							.select()
 							.where(($) => [$.keyHash.eq(keyHash)])
@@ -676,7 +677,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(ApiKeys)
 							.set({ lastUsedAt: now })
 							.where(($) => [

@@ -369,7 +369,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const now = yield* Clock.currentTimeMillis
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscalePollState)
 								.select()
 								.where(($) => [
@@ -386,7 +386,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				if (existing === undefined) {
 					yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(PlanetscalePollState).values({
 									id: randomUUID(),
 									orgId,
@@ -411,7 +411,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// length is the claim signal (never read driver write-result shapes).
 				const claimed = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PlanetscalePollState)
 								.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
 								.where(($) => [
@@ -445,7 +445,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscalePollState)
 								.select()
 								.where(($) => [
@@ -467,7 +467,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscalePollState)
 								.select("databaseId", "lastSuccessAt")
 								.where(($) => [$.orgId.eq(orgId), $.dataset.eq(dataset)]),
@@ -491,7 +491,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PlanetscalePollState)
 								.set(
 									error === null
@@ -528,7 +528,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PlanetscalePollState)
 								.set(
 									error === null
@@ -556,7 +556,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					.pipe(Effect.mapError(toPersistenceError))
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(PlanetscaleConnections)
 								.set(
 									error === null
@@ -627,7 +627,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const now = yield* Clock.currentTimeMillis
 				const existingRows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscaleDatabases)
 								.select()
 								.where(($) => [$.orgId.eq(connection.orgId)]),
@@ -654,14 +654,14 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						return (
 							existing !== undefined
 								? database.execute((client) =>
-										client.orm.run(
+										client.run(
 											PG.update(PlanetscaleDatabases)
 												.set(values)
 												.where(($) => [$.id.eq(existing.id)]),
 										),
 									)
 								: database.execute((client) =>
-										client.orm.run(
+										client.run(
 											PG.insertInto(PlanetscaleDatabases).values({
 												id: randomUUID(),
 												orgId: connection.orgId,
@@ -689,7 +689,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					(row) =>
 						database
 							.execute((client) =>
-								client.orm.run(
+								client.run(
 									PG.update(PlanetscaleDatabases)
 										.set({ deletedAt: now, updatedAt: now })
 										.where(($) => [$.id.eq(row.id)]),
@@ -820,7 +820,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscaleDatabases)
 								.select()
 								.where(($) => [
@@ -968,7 +968,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 
 			const pollAllOrgs = Effect.fn("PlanetScaleService.pollAllOrgs")(function* () {
 				const connections = yield* database
-					.execute((db) => db.orm.run(PG.from(PlanetscaleConnections).select()))
+					.execute((db) => db.run(PG.from(PlanetscaleConnections).select()))
 					.pipe(
 						Effect.mapError(toPersistenceError),
 						Effect.tapError((error) =>
@@ -1024,7 +1024,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				})
 				const connections = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscaleConnections)
 								.select()
 								.where(($) => [$.orgId.eq(orgId)])
@@ -1046,7 +1046,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				if (branch === undefined || branch.length === 0) {
 					const rows = yield* database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(PlanetscaleDatabases)
 									.select()
 									.where(($) => [$.orgId.eq(orgId), $.name.eq(options.database)])
@@ -1134,7 +1134,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				yield* Effect.annotateCurrentSpan({ orgId })
 				return yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscaleDatabases)
 								.select()
 								.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
@@ -1154,7 +1154,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const cursor = parseEventCursor(options.cursor)
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(PlanetscaleEvents)
 								.select()
 								.where(($) => [

@@ -60,7 +60,7 @@ import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { Env } from "@maple/backend/platform/Env"
+import { timestampMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	capBusiestLogSeries,
@@ -243,12 +243,11 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | EdgeCacheService | Env
+	Database | WarehouseQueryService | EdgeCacheService
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const edgeCache = yield* EdgeCacheService
-	const env = yield* Env
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
 	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
@@ -256,7 +255,6 @@ const make: Effect.Effect<
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
 	const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
-
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -280,7 +278,7 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
-			db.orm.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
+			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 		).pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []))
 		const byo = new Set<string>(byoRows.map((r) => r.orgId))
 
@@ -380,7 +378,7 @@ const make: Effect.Effect<
 
 	const loadSettingsRow = Effect.fn("AnomalyDetectionService.loadSettingsRow")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyDetectorSettings)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)])
@@ -397,7 +395,7 @@ const make: Effect.Effect<
 		const existing = yield* loadSettingsRow(orgId)
 		if (existing) return existing
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AnomalyDetectorSettings)
 					.values({
 						orgId,
@@ -443,7 +441,7 @@ const make: Effect.Effect<
 			updatedBy: userId,
 		}
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(AnomalyDetectorSettings)
 					.set(next)
 					.where(($) => [$.orgId.eq(orgId)]),
@@ -503,7 +501,7 @@ const make: Effect.Effect<
 	)(function* (orgId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyIncidents)
 					.select()
 					.where(($) => [
@@ -518,11 +516,12 @@ const make: Effect.Effect<
 							? PG.or(
 									$.errorIssueId.eq(opts.errorIssueId),
 									// jsonb has no LIKE operator; substring-match its text form.
-									PG.sql.cond`${$.fingerprintsJson}::text LIKE ${`%"${opts.errorIssueId}"%`}`,
+									PG.sql
+										.cond`${$.fingerprintsJson}::text LIKE ${`%"${opts.errorIssueId}"%`}`,
 								)
 							: undefined,
-						opts.startTime ? $.lastTriggeredAt.gte(Date.parse(opts.startTime)) : undefined,
-						opts.endTime ? $.firstTriggeredAt.lte(Date.parse(opts.endTime)) : undefined,
+						opts.startTime ? $.lastTriggeredAt.gte(timestampMs(opts.startTime)) : undefined,
+						opts.endTime ? $.firstTriggeredAt.lte(timestampMs(opts.endTime)) : undefined,
 					])
 					.orderBy(["lastTriggeredAt", "desc"], ["id", "desc"])
 					.limit(opts.limit ?? 100)
@@ -538,7 +537,7 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const status = opts.status ?? "open"
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyIncidents)
 					.select(($) => ({
 						serviceName: $.serviceName,
@@ -571,7 +570,7 @@ const make: Effect.Effect<
 		incidentId: AnomalyIncidentId,
 	) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyIncidents)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)])
@@ -606,7 +605,7 @@ const make: Effect.Effect<
 		if (row.status === "resolved") return incidentToDocument(row)
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(AnomalyIncidents)
 					.set({
 						status: "resolved",
@@ -628,7 +627,7 @@ const make: Effect.Effect<
 		// a consolidated incident is cleared, and a newer incident's state is
 		// never clobbered.
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(AnomalyDetectorStates)
 					.set({
 						openIncidentId: null,
@@ -652,7 +651,7 @@ const make: Effect.Effect<
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		if (issueId !== null) {
 			const issueRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("id")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
@@ -670,7 +669,7 @@ const make: Effect.Effect<
 		}
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(AnomalyIncidents)
 					.set({ errorIssueId: issueId, updatedAt: nowMs })
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
@@ -1091,7 +1090,7 @@ const make: Effect.Effect<
 
 	const claimOrg = (orgId: OrgId, nowMs: number) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(AnomalyDetectorSettings)
 					.set({ lastTickAt: nowMs })
 					.where(($) => [
@@ -1126,7 +1125,7 @@ const make: Effect.Effect<
 			batchDetectorStates(Arr.map(Arr.fromIterable(writes), ([, row]) => row)),
 			(chunk) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(AnomalyDetectorStates)
 							.values(chunk)
 							.onConflictDoUpdate({
@@ -1212,7 +1211,7 @@ const make: Effect.Effect<
 		// rows per tick to use one; the rest is fetched by key once the evaluated
 		// set is known.
 		const openStateRows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyDetectorStates)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.openIncidentId.isNotNull()]),
@@ -1228,14 +1227,17 @@ const make: Effect.Effect<
 			fingerprints.length === 0
 				? []
 				: yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(ErrorIssues)
 								.select(($) => ({
 									fingerprintHash: $.fingerprintHash,
 									issueId: $.id,
 									firstSeenAt: $.firstSeenAt,
 								}))
-								.where(($) => [$.orgId.eq(orgId), PG.inList($.fingerprintHash, fingerprints)]),
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.inList($.fingerprintHash, fingerprints),
+								]),
 						),
 					)
 		const issueFirstSeenAt = new Map(issueRows.map((r) => [r.fingerprintHash, r.firstSeenAt]))
@@ -1308,7 +1310,7 @@ const make: Effect.Effect<
 			Arr.chunksOf(missingKeys, DETECTOR_STATE_FETCH_CHUNK),
 			(chunk) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AnomalyDetectorStates)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), PG.inList($.detectorKey, chunk)]),
@@ -1328,7 +1330,7 @@ const make: Effect.Effect<
 			entries: IncidentFingerprintEntry[]
 		}
 		const openIncidentRows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyIncidents)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
@@ -1452,7 +1454,7 @@ const make: Effect.Effect<
 							const severity = headlineSeverity(target.entries, target.row.severity)
 							const fingerprintsJson = target.entries
 							const updated = yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(AnomalyIncidents)
 										.set({
 											fingerprintsJson,
@@ -1500,7 +1502,7 @@ const make: Effect.Effect<
 					) {
 						const reopenTargetId = lastIncidentId
 						const priorRows = yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.from(AnomalyIncidents)
 									.select()
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(reopenTargetId)])
@@ -1546,7 +1548,7 @@ const make: Effect.Effect<
 								updatedAt: nowMs,
 							}
 							const updated = yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(AnomalyIncidents)
 										.set(reopenSet)
 										.where(($) => [
@@ -1626,7 +1628,7 @@ const make: Effect.Effect<
 						// reach here for the same detector; the loser must not create a
 						// second incident or enqueue a second triage.
 						const insertedIncident = yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(AnomalyIncidents)
 									.values(insertValues)
 									.onConflictDoNothing()
@@ -1691,7 +1693,7 @@ const make: Effect.Effect<
 								: null
 						if (triageStatus !== null) {
 							yield* dbExecute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(AnomalyIncidents)
 										.set({ triageStatus, updatedAt: nowMs })
 										.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
@@ -1746,7 +1748,7 @@ const make: Effect.Effect<
 								...(fingerprintsJson !== undefined ? { fingerprintsJson } : undefined),
 							}
 					const updated = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(AnomalyIncidents)
 								.set(continueSet)
 								.where(($) => [
@@ -1808,7 +1810,7 @@ const make: Effect.Effect<
 							: undefined),
 					}
 					const updated = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(AnomalyIncidents)
 								.set(recoverySet)
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId), $.status.eq("open")])
@@ -1856,7 +1858,7 @@ const make: Effect.Effect<
 					// no `LIMIT 1`: the one row it returned could be the very row the
 					// overlay removes, hiding a genuinely live sibling behind it.
 					const persistedOtherStates = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(AnomalyDetectorStates)
 								// lastSampleCount is carried so the promotion below can write the
 								// incident's `last_sample_count` from the promoted series' own count.
@@ -1876,7 +1878,7 @@ const make: Effect.Effect<
 					})
 					if (otherStates.length === 0) {
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(AnomalyIncidents)
 									.set({
 										status: "resolved",
@@ -1944,7 +1946,7 @@ const make: Effect.Effect<
 								: undefined),
 						}
 						yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(AnomalyIncidents)
 									.set(detachSet)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
@@ -1987,7 +1989,7 @@ const make: Effect.Effect<
 		// No-data sweep: open incidents whose series stopped reporting entirely
 		// resolve after an hour of silence (mirrors ErrorsService auto-resolve).
 		const staleIncidents = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AnomalyIncidents)
 					.select()
 					.where(($) => [
@@ -2001,7 +2003,7 @@ const make: Effect.Effect<
 			staleIncidents,
 			Effect.fnUntraced(function* (incident) {
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(AnomalyIncidents)
 							.set({
 								status: "resolved",
@@ -2015,7 +2017,7 @@ const make: Effect.Effect<
 				// Matched on openIncidentId so every series feeding a consolidated
 				// incident is cleared, not just the primary.
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(AnomalyDetectorStates)
 							.set({
 								openIncidentId: null,
@@ -2035,7 +2037,7 @@ const make: Effect.Effect<
 
 		if (runRetention) {
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.deleteFrom(AnomalyDetectorStates).where(($) => [
 						$.orgId.eq(orgId),
 						$.lastEvaluatedAt.lt(nowMs - STATE_RETENTION_MS),
@@ -2053,10 +2055,10 @@ const make: Effect.Effect<
 			const runRetention = Math.floor(nowMs / TICK_CADENCE_MS) % RETENTION_PHASE_EVERY_N_TICKS === 0
 
 			const ingestOrgs = yield* dbExecute((db) =>
-				db.orm.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
+				db.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
 			)
 			const settingsOrgs = yield* dbExecute((db) =>
-				db.orm.run(PG.from(AnomalyDetectorSettings).select("orgId").distinct()),
+				db.run(PG.from(AnomalyDetectorSettings).select("orgId").distinct()),
 			)
 			const knownOrgs = new Set<OrgId>(
 				[...ingestOrgs, ...settingsOrgs].map((r) => decodeOrgIdSync(r.orgId)),
@@ -2066,7 +2068,7 @@ const make: Effect.Effect<
 			// no-data sweep (NO_DATA_RESOLVE_MS) can resolve incidents whose series
 			// went silent.
 			const openIncidentRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AnomalyIncidents)
 						.select("orgId")
 						.distinct()

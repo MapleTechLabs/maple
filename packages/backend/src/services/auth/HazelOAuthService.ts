@@ -298,7 +298,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 
 				yield* oauth.purgeExpiredStates(currentTime)
 				yield* oauth.dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(OAuthAuthStates).values({
 							state,
 							orgId,

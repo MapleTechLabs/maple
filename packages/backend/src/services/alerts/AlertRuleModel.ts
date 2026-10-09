@@ -608,9 +608,7 @@ export const rowToRuleDocument = (
 					noDataBehavior: decodeNoDataBehaviorSync(row.noDataBehavior),
 					lastEvaluationError: evaluationState?.error ?? null,
 					lastEvaluatedAt:
-						evaluationState?.evaluatedAt != null
-							? toIso(evaluationState.evaluatedAt)
-							: null,
+						evaluationState?.evaluatedAt != null ? toIso(evaluationState.evaluatedAt) : null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
 					createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
 					updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),

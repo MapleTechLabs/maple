@@ -57,6 +57,7 @@ import {
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
+type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
 
 /** One scrape attempt as reported by the scraper loop or a manual probe. */
 export interface ScrapeResultReport {
@@ -581,7 +582,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(ScrapeTargets)
 								.select()
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
@@ -626,7 +627,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(ScrapeTargets)
 								.select()
 								.where(($) => [$.orgId.eq(orgId)])
@@ -762,7 +763,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const inserted = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.insertInto(ScrapeTargets)
 								.values({
 									id,
@@ -906,7 +907,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const labels = yield* validateLabelsJson(request.labelsJson)
 
 				const now = yield* Clock.currentTimeMillis
-				const updates: { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] } = {
+				const updates: MutableScrapeTargetSet = {
 					updatedAt: now,
 				}
 
@@ -1012,7 +1013,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(ScrapeTargets)
 								.set(updates)
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)]),
@@ -1050,7 +1051,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.deleteFrom(ScrapeTargets)
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
 								.returning("id"),
@@ -1098,7 +1099,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(ScrapeTargets)
 								.select()
 								.where(($) => [
@@ -1150,7 +1151,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// One UPDATE for the report, skipping rows something newer already wrote
 							// (the scraper loop and create()'s probe both report). Compares `updated_at`:
 							// a failing batch never moves `last_scrape_at`. Equal timestamps still apply.
-							yield* db.orm.execute(Orm.sql`
+							yield* db.execute(Orm.sql`
 								UPDATE scrape_targets AS t SET
 									last_scrape_at = CASE WHEN v.set_scrape_at THEN v.last_scrape_at ELSE t.last_scrape_at END,
 									last_scrape_error = v.last_scrape_error,
@@ -1165,7 +1166,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// them anyway).
 							const [firstTargetId, ...restTargetIds] = [...summaryByTarget.keys()]
 							if (firstTargetId === undefined) return
-							const targetRows = yield* db.orm.run(
+							const targetRows = yield* db.run(
 								PG.from(ScrapeTargets)
 									.select("id", "orgId")
 									.where(($) => [$.id.in_(firstTargetId, ...restTargetIds)]),
@@ -1190,7 +1191,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							})
 
 							if (checkRows.length > 0) {
-								yield* db.orm.run(PG.insertInto(ScrapeTargetChecks).values(checkRows))
+								yield* db.run(PG.insertInto(ScrapeTargetChecks).values(checkRows))
 							}
 						}),
 					)
@@ -1212,7 +1213,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const offset = Math.max(Math.trunc(query.offset ?? 0), 0)
 				return yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(ScrapeTargetChecks)
 								.select()
 								.where(($) => [
@@ -1315,7 +1316,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const updatedRows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(ScrapeTargets)
 								.select()
 								.where(($) => [$.id.eq(targetId)])

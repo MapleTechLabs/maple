@@ -68,7 +68,7 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 
 	yield* database.execute((db) =>
 		Effect.gen(function* () {
-			yield* db.orm.run(
+			yield* db.run(
 				PG.deleteFrom(ScrapeTargetChecks).where(($) => [
 					$.targetId.in_(firstId, ...restIds),
 					$.checkedAt.lt(cutoff),
@@ -83,7 +83,7 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 				capCandidates,
 				(target) =>
 					Effect.gen(function* () {
-						const [boundary] = yield* db.orm.run(
+						const [boundary] = yield* db.run(
 							PG.from(ScrapeTargetChecks)
 								.select("checkedAt")
 								.where(($) => [$.targetId.eq(target.id)])
@@ -92,7 +92,7 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 								.offset(CHECK_MAX_ROWS_PER_TARGET - 1),
 						)
 						if (boundary === undefined) return
-						yield* db.orm.run(
+						yield* db.run(
 							PG.deleteFrom(ScrapeTargetChecks).where(($) => [
 								$.targetId.eq(target.id),
 								$.checkedAt.lt(boundary.checkedAt),
@@ -113,7 +113,7 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 export const runScrapeCheckRetention = Effect.gen(function* () {
 	const database = yield* Database
 	const rows = yield* database.execute((db) =>
-		db.orm.run(PG.from(ScrapeTargets).select("id", "targetType", "scrapeIntervalSeconds")),
+		db.run(PG.from(ScrapeTargets).select("id", "targetType", "scrapeIntervalSeconds")),
 	)
 	yield* pruneChecksForTargets(rows)
 	yield* Effect.annotateCurrentSpan({

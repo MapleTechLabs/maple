@@ -262,7 +262,7 @@ const make: Effect.Effect<
 
 	const selectLinks = (orgId: OrgId, issueId: ErrorIssueId) =>
 		dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssuePullRequests)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
@@ -327,7 +327,7 @@ const make: Effect.Effect<
 
 		// 4. Wherever this org's fixes have most recently been landing.
 		const recent = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssuePullRequests)
 					.select("repoFullName")
 					.where(($) => [$.orgId.eq(orgId)])
@@ -357,7 +357,7 @@ const make: Effect.Effect<
 	)(function* (orgId, issueId) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueVerifications)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
@@ -395,7 +395,7 @@ const make: Effect.Effect<
 	}) {
 		const now = input.nowMs
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssuePullRequests)
 					.values({
 						id: newPullRequestId(),
@@ -430,7 +430,7 @@ const make: Effect.Effect<
 		if (input.state !== undefined) {
 			const state = input.state
 			yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssuePullRequests)
 						.set({
 							title: input.title ?? null,
@@ -455,7 +455,7 @@ const make: Effect.Effect<
 		// Postgres conventions in CLAUDE.md) — and because on a conflict the insert
 		// wrote nothing and the existing row is what callers need.
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssuePullRequests)
 					.select()
 					.where(($) => [
@@ -574,7 +574,7 @@ const make: Effect.Effect<
 	)(function* (orgId, actorId, issueId, pullRequestId) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const existing = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssuePullRequests)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId), $.id.eq(pullRequestId)])
@@ -595,7 +595,7 @@ const make: Effect.Effect<
 		// nothing left to verify, and a live row would keep the issue pinned in
 		// `verifying` with no way out.
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssueVerifications)
 					.set({ status: "abandoned", updatedAt: nowMs })
 					.where(($) => [
@@ -606,7 +606,7 @@ const make: Effect.Effect<
 			),
 		)
 		yield* dbExecute((db) =>
-			db.orm.run(PG.deleteFrom(ErrorIssuePullRequests).where(($) => [$.id.eq(pullRequestId)])),
+			db.run(PG.deleteFrom(ErrorIssuePullRequests).where(($) => [$.id.eq(pullRequestId)])),
 		)
 		yield* workflow.recordEvent(orgId, issueId, actorId, "pr_unlinked", {
 			payload: { pullRequestId, url: row.url, repoFullName: row.repoFullName, number: row.number },
@@ -644,7 +644,7 @@ const make: Effect.Effect<
 		// window, and `.returning()` is what says which one this was — a driver
 		// write-result shape would not.
 		const opened = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssueVerifications)
 					.values({
 						id: verificationId,
@@ -746,7 +746,7 @@ const make: Effect.Effect<
 			// redelivered webhook, or a second PR attached to the same issue must
 			// not open a second window.
 			const open = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssueVerifications)
 						.select()
 						.where(($) => [
@@ -760,7 +760,7 @@ const make: Effect.Effect<
 			if (Arr.isReadonlyArrayNonEmpty(open)) return false
 
 			const issueRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(link.issueId)])
@@ -835,7 +835,7 @@ const make: Effect.Effect<
 			// attacker-influenced text, so a well-formed id from another tenant must
 			// not create a cross-org link.
 			const issueRows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select()
 						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
@@ -874,7 +874,7 @@ const make: Effect.Effect<
 
 		// Every link pointing at this PR, however it was created.
 		const links = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssuePullRequests)
 					.select()
 					.where(($) => [
@@ -897,7 +897,7 @@ const make: Effect.Effect<
 				? "closed"
 				: "open"
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssuePullRequests)
 					.set({
 						state: nextState,
@@ -937,7 +937,7 @@ const make: Effect.Effect<
 		Effect.fn("IssueFixVerification.refuteOnPostMergeOccurrence")(
 			function* (orgId, issueId, observedVersions, nowMs) {
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorIssueVerifications)
 							.select()
 							.where(($) => [
@@ -966,7 +966,7 @@ const make: Effect.Effect<
 		"IssueFixVerification.settledRuns",
 	)(function* (limit) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueVerifications)
 					.innerJoin(Investigations, "inv", (verification, inv) =>
 						verification.investigationId.eq(inv.id),
@@ -999,7 +999,7 @@ const make: Effect.Effect<
 		"IssueFixVerification.dueVerifications",
 	)(function* (nowMs, limit) {
 		return yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueVerifications)
 					.select()
 					.where(($) => [$.status.eq("waiting"), $.verifyAfter.lte(nowMs)])
@@ -1017,7 +1017,7 @@ const make: Effect.Effect<
 		// orphaned agent run is the cheaper casualty — with no investigationId
 		// linked, `settledRuns` never picks it up.
 		yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(ErrorIssueVerifications)
 					.set({
 						status: "running",
@@ -1078,9 +1078,9 @@ const make: Effect.Effect<
 				},
 			)
 			const landed = yield* dbExecute((db) =>
-				db.orm.transaction(
+				db.transaction(
 					Effect.gen(function* () {
-						const updated = yield* db.orm.run(
+						const updated = yield* db.run(
 							PG.update(ErrorIssueVerifications)
 								.set({
 									status: "waiting",
@@ -1095,7 +1095,7 @@ const make: Effect.Effect<
 								.returning("id"),
 						)
 						if (updated.length === 0) return false
-						yield* db.orm.run(PG.insertInto(ErrorIssueEvents).values(retryEvent))
+						yield* db.run(PG.insertInto(ErrorIssueEvents).values(retryEvent))
 						return true
 					}),
 				),
@@ -1108,7 +1108,7 @@ const make: Effect.Effect<
 			verdict === "verified" ? "verified" : verdict === "not_fixed" ? "not_fixed" : "inconclusive"
 
 		const issueRows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
@@ -1139,9 +1139,9 @@ const make: Effect.Effect<
 		)
 
 		const landed = yield* dbExecute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
-					const updated = yield* db.orm.run(
+					const updated = yield* db.run(
 						PG.update(ErrorIssueVerifications)
 							.set({
 								status,
@@ -1154,7 +1154,7 @@ const make: Effect.Effect<
 					)
 					if (updated.length === 0) return false
 					if (Option.isSome(verdictEvent))
-						yield* db.orm.run(PG.insertInto(ErrorIssueEvents).values(verdictEvent.value))
+						yield* db.run(PG.insertInto(ErrorIssueEvents).values(verdictEvent.value))
 					return true
 				}),
 			),

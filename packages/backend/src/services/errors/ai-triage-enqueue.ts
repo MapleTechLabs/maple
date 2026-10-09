@@ -15,7 +15,7 @@ import {
 } from "@maple/domain/http"
 import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm } from "@maple/db/client"
+import type { MapleDb } from "@maple/db/client"
 import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"
 import { Clock, Effect, Option, Schema } from "effect"
 
@@ -44,8 +44,6 @@ import {
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
-
-const STALE_INVESTIGATION_MS = 15 * 60 * 1000
 
 const contextString = (context: Record<string, unknown>, key: string): string | undefined => {
 	const value = context[key]
@@ -248,7 +246,7 @@ const decodePriorSnapshot = Schema.decodeUnknownOption(
 )
 
 const selectPriorDiagnoses = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	orgId: OrgId,
 	serviceName: string,
 	issueId: ErrorIssueId | null,
@@ -384,7 +382,7 @@ export const maybeEnqueueTriage: (
 		const nowMs = yield* Clock.currentTimeMillis
 
 		const existingRows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(Investigations)
 					.select(($) => ({
 						id: $.id,
@@ -405,7 +403,7 @@ export const maybeEnqueueTriage: (
 			if (isInvestigationStale(existing, nowMs)) {
 				const budget = STALE_MS
 				yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Investigations)
 							.set({
 								status: "failed",
@@ -424,7 +422,7 @@ export const maybeEnqueueTriage: (
 		}
 
 		const settingsRows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AiTriageSettings)
 					.select()
 					.where(($) => [$.orgId.eq(input.orgId)])
@@ -448,7 +446,7 @@ export const maybeEnqueueTriage: (
 		if (input.issueId !== undefined) {
 			const issueId = input.issueId
 			const issueRows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select("workflowState")
 						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
@@ -456,7 +454,7 @@ export const maybeEnqueueTriage: (
 				),
 			)
 			const latestRows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(Investigations)
 						.select("id", "status", "createdAt", "startedAt")
 						.where(($) => [$.orgId.eq(input.orgId), $.issueId.eq(issueId)])
@@ -506,7 +504,7 @@ export const maybeEnqueueTriage: (
 		const priorsFor = (serviceName: string) =>
 			database.execute((db) =>
 				selectPriorDiagnoses(
-					db.orm,
+					db,
 					input.orgId,
 					serviceName,
 					input.issueId ?? null,
@@ -530,7 +528,7 @@ export const maybeEnqueueTriage: (
 			if (input.issueId !== undefined && gate.reason === "noise") {
 				const issueId = input.issueId
 				yield* database.execute((db) =>
-					applyClassifierSeverity(db.orm, {
+					applyClassifierSeverity(db, {
 						orgId: input.orgId,
 						issueId,
 						incidentId: input.incidentId,
@@ -564,7 +562,7 @@ export const maybeEnqueueTriage: (
 
 		// One agent, one pass. Shared with `InvestigationService` so the two ceilings
 		// are judged the same way on both paths.
-		const usage = yield* database.execute((db) => selectInvestigationUsage(db.orm, input.orgId, nowMs))
+		const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
 		const quota = evaluateInvestigationQuota({
 			usage,
 			limits: settings,
@@ -612,7 +610,7 @@ export const maybeEnqueueTriage: (
 			...(input.issueId ? { issueId: input.issueId } : undefined),
 		})
 		const inserted = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(Investigations)
 					.values({
 						id: investigationId,

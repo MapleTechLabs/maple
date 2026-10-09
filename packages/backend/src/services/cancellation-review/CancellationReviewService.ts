@@ -11,7 +11,7 @@
  * redelivers, which is the only retry there is.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import {
 	AlertRules,
 	CancellationReviews,
@@ -169,8 +169,8 @@ export class CancellationReviewService extends Context.Service<
 			)
 
 		const count = (
-			query: (orm: MapleOrm) => Effect.Effect<ReadonlyArray<{ readonly count: number }>, MapleOrmError>,
-		) => database.execute((db) => query(db.orm)).pipe(Effect.map((rows) => rows[0]?.count ?? 0))
+			query: (orm: MapleDb) => Effect.Effect<ReadonlyArray<{ readonly count: number }>, MapleDbError>,
+		) => database.execute((db) => query(db)).pipe(Effect.map((rows) => rows[0]?.count ?? 0))
 
 		const readOrg = (orgId: OrgId) =>
 			Effect.all(
@@ -310,23 +310,23 @@ export class CancellationReviewService extends Context.Service<
 				.execute((db) =>
 					Effect.gen(function* () {
 						const subscriptionStartedAt = job.startedAt ?? job.canceledAt ?? 0
-						const inserted = yield* db.orm.run(
+						const inserted = yield* db.run(
 							PG.insertInto(CancellationReviews)
-							.values({
-								id: crypto.randomUUID(),
-								orgId: job.orgId,
-								planId: job.planId,
-								subscriptionStartedAt,
-								canceledAt: job.canceledAt,
-								createdAt: nowMs,
-								updatedAt: nowMs,
-							})
-							.onConflictDoNothing()
-							.returning("id"),
+								.values({
+									id: crypto.randomUUID(),
+									orgId: job.orgId,
+									planId: job.planId,
+									subscriptionStartedAt,
+									canceledAt: job.canceledAt,
+									createdAt: nowMs,
+									updatedAt: nowMs,
+								})
+								.onConflictDoNothing()
+								.returning("id"),
 						)
 						if (inserted[0] !== undefined)
 							return { id: inserted[0].id, state: "claimed" as const }
-						const [existing] = yield* db.orm.run(
+						const [existing] = yield* db.run(
 							PG.from(CancellationReviews)
 								.select("id", "postedAt", "canceledAt", "updatedAt")
 								.where(($) => [
@@ -348,14 +348,11 @@ export class CancellationReviewService extends Context.Service<
 							return { id: existing.id, state: "posted" as const }
 						}
 						// Unposted and recently touched: another delivery is on it.
-						if (
-							existing.postedAt === null &&
-							nowMs - existing.updatedAt < CLAIM_LEASE_MS
-						) {
+						if (existing.postedAt === null && nowMs - existing.updatedAt < CLAIM_LEASE_MS) {
 							return { id: existing.id, state: "busy" as const }
 						}
 						// Take it over, unless another delivery took it between the read and here.
-						const taken = yield* db.orm.run(
+						const taken = yield* db.run(
 							PG.update(CancellationReviews)
 								.set({ postedAt: null, updatedAt: nowMs })
 								.where(($) => [$.id.eq(existing.id), $.updatedAt.eq(existing.updatedAt)])
@@ -527,16 +524,16 @@ export class CancellationReviewService extends Context.Service<
 
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(CancellationReviews)
-							.set({
-								snapshotJson: snapshot,
-								ruleReason: reason,
-								canceledAt: job.canceledAt,
-								postedAt: nowMs,
-								updatedAt: nowMs,
-							})
-							.where(($) => [$.id.eq(claimed.id)]),
+								.set({
+									snapshotJson: snapshot,
+									ruleReason: reason,
+									canceledAt: job.canceledAt,
+									postedAt: nowMs,
+									updatedAt: nowMs,
+								})
+								.where(($) => [$.id.eq(claimed.id)]),
 						),
 					)
 					.pipe(

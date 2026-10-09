@@ -20,15 +20,20 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 		psOrganization: PG.column(PG.text, { name: "ps_organization" }),
 		connectedByUserId: PG.column(PG.text, { name: "connected_by_user_id" }),
 		/** The managed `scrape_targets` row this connection auto-provisioned. */
-		scrapeTargetId: PG.column(PG.nullable(PG.brand(PG.text, ScrapeTargetId)), { name: "scrape_target_id" }),
+		scrapeTargetId: PG.column(PG.nullable(PG.brand(PG.text, ScrapeTargetId)), {
+			name: "scrape_target_id",
+		}),
 		/** Per-connection HMAC secret for inbound PlanetScale webhooks. */
 		webhookSecretCiphertext: PG.column(PG.nullable(PG.text), { name: "webhook_secret_ciphertext" }),
 		webhookSecretIv: PG.column(PG.nullable(PG.text), { name: "webhook_secret_iv" }),
 		webhookSecretTag: PG.column(PG.nullable(PG.text), { name: "webhook_secret_tag" }),
 		/** API permissions probed at org-binding time (e.g. read_databases, read_metrics_endpoints). */
-		detectedPermissionsJson: PG.column(PG.nullable(PG.jsonb(Schema.Record(Schema.String, Schema.Boolean))), {
-			name: "detected_permissions_json",
-		}),
+		detectedPermissionsJson: PG.column(
+			PG.nullable(PG.jsonb(Schema.Record(Schema.String, Schema.Boolean))),
+			{
+				name: "detected_permissions_json",
+			},
+		),
 		lastInventoryAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_inventory_at" }),
 		lastInventoryError: PG.column(PG.nullable(PG.text), { name: "last_inventory_error" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),

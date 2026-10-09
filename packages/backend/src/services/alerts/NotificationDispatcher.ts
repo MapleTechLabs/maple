@@ -237,7 +237,7 @@ const make: Effect.Effect<
 
 			const rowsOption = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(AlertDestinations)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),

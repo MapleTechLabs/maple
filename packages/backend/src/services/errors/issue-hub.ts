@@ -87,7 +87,7 @@ const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(fu
 	const database = yield* Database
 	const select = () =>
 		database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(Actors)
 					.select()
 					.where(($) => [
@@ -103,7 +103,7 @@ const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(fu
 
 	const timestamp = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(Actors)
 				.values({
 					id: decodeActorId(randomUUID()),
@@ -157,7 +157,7 @@ export const upsertAlertIssue: (
 		}
 
 		const existingRows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.eq(fingerprintHash)])
@@ -175,7 +175,7 @@ export const upsertAlertIssue: (
 			// scheduler ticks can both miss the fingerprint and both insert. Without
 			// the conflict clause the loser raises `error_issues_org_fp_idx`.
 			const claimed = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(ErrorIssues)
 						.values({
 							id: candidateId,
@@ -217,7 +217,7 @@ export const upsertAlertIssue: (
 				// A concurrent tick created it. Adopt their row and report it as an
 				// update — emitting a second `created` event would double the history.
 				const winner = yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(ErrorIssues)
 							.select("id")
 							.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.eq(fingerprintHash)])
@@ -254,7 +254,7 @@ export const upsertAlertIssue: (
 			}
 
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssues)
 						.set(($) => ({
 							lastSeenAt: input.timestamp,
@@ -269,7 +269,7 @@ export const upsertAlertIssue: (
 			// Backfill the detector severity only while severity is still unset
 			// (precedence: manual > ai > detector).
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(ErrorIssues)
 						.set({
 							severity: detectorSeverityFor(input.severity),
@@ -286,7 +286,7 @@ export const upsertAlertIssue: (
 			if (reopenFrom !== null) {
 				action = "reopened"
 				yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(ErrorIssues)
 							.set({
 								workflowState: "triage",
@@ -315,7 +315,7 @@ export const upsertAlertIssue: (
 		}
 
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(AlertIncidents)
 					.set({ errorIssueId: issueId, updatedAt: input.timestamp })
 					.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.incidentId)]),
@@ -382,7 +382,7 @@ const recordIssueEvent = Effect.fn("issueHub.recordIssueEvent")(function* (
 ) {
 	const database = yield* Database
 	yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(ErrorIssueEvents).values({
 				id: decodeEventId(randomUUID()),
 				orgId,

@@ -59,10 +59,13 @@ export const resolveChatWorkspace = Effect.fn("resolveChatWorkspace")(function* 
 	yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
 	const rows = yield* database
 		.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ChatWorkspaces)
 					.select()
-					.where(($) => [$.connector.eq(connectorId), $.externalWorkspaceId.eq(externalWorkspaceId)])
+					.where(($) => [
+						$.connector.eq(connectorId),
+						$.externalWorkspaceId.eq(externalWorkspaceId),
+					])
 					.limit(1),
 			),
 		)
@@ -112,9 +115,12 @@ export const forgetChatWorkspace = (
 	Effect.gen(function* () {
 		const deleted = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.deleteFrom(ChatWorkspaces)
-						.where(($) => [$.connector.eq(connectorId), $.externalWorkspaceId.eq(externalWorkspaceId)])
+						.where(($) => [
+							$.connector.eq(connectorId),
+							$.externalWorkspaceId.eq(externalWorkspaceId),
+						])
 						.returning("id"),
 				),
 			)

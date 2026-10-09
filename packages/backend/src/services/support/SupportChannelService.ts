@@ -109,7 +109,7 @@ const make = Effect.gen(function* () {
 	const findRow = (orgId: OrgId) =>
 		database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(OrgSupportChannels)
 						.select()
 						.where(($) => [$.orgId.eq(orgId)]),
@@ -138,7 +138,7 @@ const make = Effect.gen(function* () {
 		const reservationId = crypto.randomUUID()
 		const inserted = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(OrgSupportChannels)
 						.values({
 							orgId,
@@ -156,7 +156,7 @@ const make = Effect.gen(function* () {
 		if (inserted.length > 0) return Option.some(reservationId)
 		const takenOver = yield* database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(OrgSupportChannels)
 						.set({
 							reservationId,
@@ -188,7 +188,7 @@ const make = Effect.gen(function* () {
 	const releaseReservation = (orgId: OrgId, reservationId: string) =>
 		database
 			.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(OrgSupportChannels)
 						.set({ reservedAt: null, reservationId: null })
 						.where(ownedBy(orgId, reservationId)),
@@ -223,7 +223,7 @@ const make = Effect.gen(function* () {
 			if (match !== undefined) {
 				const recorded = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(OrgSupportChannels)
 								.select("orgId")
 								.where(($) => [$.slackChannelId.eq(match.id)]),
@@ -354,7 +354,7 @@ const make = Effect.gen(function* () {
 				const now = yield* Clock.currentTimeMillis
 				const [row] = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgSupportChannels)
 								.set({
 									slackChannelId: channel.id,

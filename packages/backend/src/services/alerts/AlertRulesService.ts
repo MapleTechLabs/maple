@@ -94,7 +94,7 @@ export const makeAlertRulePersistence = (options: {
 		ruleId: AlertRuleDocument["id"],
 	) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				selectStoredAlertRules()
 					.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 					.limit(1),
@@ -123,7 +123,7 @@ export const makeAlertRulePersistence = (options: {
 	) {
 		if (destinationIds.length === 0) return
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AlertDestinations)
 					.select("id")
 					.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
@@ -185,15 +185,15 @@ export const makeAlertRulePersistence = (options: {
 		} as const
 
 		const writeRows = yield* dbExecute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
-					yield* db.orm.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+					yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
 					// Destination existence is checked INSIDE the lock: destination
 					// deletion takes the same per-org advisory lock around its reference
 					// scan, so a rule can no longer commit a reference to a destination
 					// whose deletion validated "unreferenced" concurrently.
 					if (normalized.destinationIds.length > 0) {
-						const destinationRows = yield* db.orm.run(
+						const destinationRows = yield* db.run(
 							PG.from(AlertDestinations)
 								.select("id")
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
@@ -212,7 +212,7 @@ export const makeAlertRulePersistence = (options: {
 						}
 					}
 					if (normalized.enabled) {
-						const activeRows = yield* db.orm.run(
+						const activeRows = yield* db.run(
 							PG.from(AlertRules)
 								.select("id")
 								.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
@@ -229,7 +229,7 @@ export const makeAlertRulePersistence = (options: {
 					}
 
 					return existingId == null
-						? yield* db.orm.run(
+						? yield* db.run(
 								PG.insertInto(AlertRules)
 									.values({
 										id: ruleId,
@@ -240,7 +240,7 @@ export const makeAlertRulePersistence = (options: {
 									})
 									.returning(() => ({ txid: currentTxid })),
 							)
-						: yield* db.orm.run(
+						: yield* db.run(
 								PG.update(AlertRules)
 									.set(ruleFields)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
@@ -278,14 +278,14 @@ export const makeAlertRulePersistence = (options: {
 
 	const listRules = Effect.fn("AlertsService.listRules")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				selectStoredAlertRules()
 					.where(($) => [$.orgId.eq(orgId)])
 					.orderBy(["createdAt", "desc"], ["id", "desc"]),
 			),
 		)
 		const stateRows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(AlertRuleStates)
 					.select("ruleId", "lastError", "lastEvaluatedAt")
 					.where(($) => [$.orgId.eq(orgId)]),
@@ -330,19 +330,22 @@ export const makeAlertRulePersistence = (options: {
 		yield* requireAdmin(roles)
 		yield* requireRuleRow(orgId, ruleId)
 		const deleted = yield* dbExecute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
-					yield* db.orm.run(
-						PG.deleteFrom(AlertDeliveryEvents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+					yield* db.run(
+						PG.deleteFrom(AlertDeliveryEvents).where(($) => [
+							$.orgId.eq(orgId),
+							$.ruleId.eq(ruleId),
+						]),
 					)
-					yield* db.orm.run(
+					yield* db.run(
 						PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
 					)
-					yield* db.orm.run(
+					yield* db.run(
 						PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
 					)
-					yield* db.orm.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
-					return yield* db.orm.run(
+					yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
+					return yield* db.run(
 						PG.deleteFrom(AlertRules)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 							.returning(() => ({ txid: currentTxid })),

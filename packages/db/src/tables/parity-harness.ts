@@ -9,12 +9,13 @@ import { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import * as S from "@maple-dev/effect-orm/schema"
 import { Effect } from "effect"
-import type { PgSchemaTable } from "@maple-dev/effect-orm/postgres"
+import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { listBundledMigrations, runMigrations } from "../migrate"
 
 const headSnapshot = () => {
-	const head = listBundledMigrations().at(-1)!
+	const head = listBundledMigrations().at(-1)
+	if (head === undefined) throw new Error("no bundled migrations")
 	return S.fromDrizzleSnapshot(JSON.parse(readFileSync(join(head.sqlPath, "..", "snapshot.json"), "utf8")))
 }
 
@@ -56,10 +57,11 @@ const isDriftColumn = (row: Record<string, unknown>) =>
 /** Postgres 17 lists a column's NOT NULL as a constraint named after it. */
 const isDriftConstraint = (row: Record<string, unknown>) =>
 	KNOWN_DRIFT.columns.some(
-		(drift) => row.table_name === drift.table && row.conname === `${drift.table}_${drift.column}_not_null`,
+		(drift) =>
+			row.table_name === drift.table && row.conname === `${drift.table}_${drift.column}_not_null`,
 	)
 
-const isTable = (value: unknown): value is PgSchemaTable<string, any, any> =>
+const isTable = (value: unknown): value is PgSchemaTable<string, ColumnDefs, string> =>
 	typeof value === "object" && value !== null && "_tag" in value && value._tag === "Table" && "ddl" in value
 
 /**
@@ -67,7 +69,7 @@ const isTable = (value: unknown): value is PgSchemaTable<string, any, any> =>
  * `complete` also requires them to be every table the database has.
  */
 export const describeParity = (
-	tables: ReadonlyArray<PgSchemaTable<string, any, any>> | Record<string, unknown>,
+	tables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> | Record<string, unknown>,
 	options: { readonly complete?: boolean } = {},
 ) => {
 	const list = Array.isArray(tables) ? tables : Object.values(tables).filter(isTable)

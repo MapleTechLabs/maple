@@ -307,7 +307,7 @@ const make: Effect.Effect<
 				const query = PG.from(ErrorIssues)
 					.select()
 					.where(($) => [...base($), keyset?.($)])
-				return db.orm.run(
+				return db.run(
 					(sort === "severity"
 						? query.orderBy(($) => [
 								[issueSeverityOrder($), "asc"],
@@ -349,7 +349,7 @@ const make: Effect.Effect<
 			const conditions = yield* issueListConditions(orgId, opts)
 			if (conditions === undefined) return 0
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.select(() => ({ total: PG.count() }))
 						.where(conditions),
@@ -366,7 +366,7 @@ const make: Effect.Effect<
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select(($) => ({ serviceName: $.serviceName, openCount: PG.count() }))
 					.where(($) => [
@@ -434,7 +434,7 @@ const make: Effect.Effect<
 				: Effect.succeed([])
 
 			const incidentsEffect = dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIncidents)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
@@ -487,7 +487,7 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId, issueId })
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIncidents)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
@@ -506,7 +506,7 @@ const make: Effect.Effect<
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIncidents)
 					.select()
 					.where(($) => [$.orgId.eq(orgId), $.status.eq("open")])

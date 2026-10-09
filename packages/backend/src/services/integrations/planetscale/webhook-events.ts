@@ -531,14 +531,14 @@ export const insertPlanetScaleEvent: (
 	const database = yield* Database
 	return yield* database.execute((db) =>
 		Effect.gen(function* () {
-			const known = yield* db.orm.run(
+			const known = yield* db.run(
 				PG.from(PlanetscaleDatabases)
 					.select("databaseId")
 					.where(($) => [$.orgId.eq(input.orgId), $.name.eq(input.databaseName)])
 					.limit(1),
 			)
 
-			const rows = yield* db.orm.run(
+			const rows = yield* db.run(
 				PG.insertInto(PlanetscaleEvents)
 					.values({
 						id: randomUUID(),
@@ -624,15 +624,15 @@ export const upsertPlanetScaleIssue: (
 
 	return yield* database
 		.execute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
 					// Distinct source events can share one issue fingerprint and queue batches
 					// process concurrently. Serialize that aggregate before claiming a receipt
 					// so every committed receipt corresponds to exactly one applied occurrence.
-					yield* db.orm.execute(
+					yield* db.execute(
 						Orm.sql`select pg_advisory_xact_lock(hashtext(${input.orgId}), hashtext(${fingerprintHash}))`,
 					)
-					const receipt = yield* db.orm.run(
+					const receipt = yield* db.run(
 						PG.insertInto(PlanetscaleIssueReceipts)
 							.values({
 								orgId: input.orgId,
@@ -643,7 +643,7 @@ export const upsertPlanetScaleIssue: (
 							.returning("eventId"),
 					)
 					if (receipt.length === 0) {
-						const [existing] = yield* db.orm.run(
+						const [existing] = yield* db.run(
 							PG.from(ErrorIssues)
 								.select("id")
 								.where(($) => [
@@ -658,7 +658,7 @@ export const upsertPlanetScaleIssue: (
 
 					const ensureActor = Effect.gen(function* () {
 						const selectActor = () =>
-							db.orm.run(
+							db.run(
 								PG.from(Actors)
 									.select()
 									.where(($) => [
@@ -670,7 +670,7 @@ export const upsertPlanetScaleIssue: (
 							)
 						const existing = yield* selectActor()
 						if (existing[0]) return existing[0].id
-						yield* db.orm.run(
+						yield* db.run(
 							PG.insertInto(Actors)
 								.values({
 									id: decodeActorId(randomUUID()),
@@ -710,7 +710,7 @@ export const upsertPlanetScaleIssue: (
 							readonly payload?: Record<string, unknown>
 						},
 					) =>
-						db.orm.run(
+						db.run(
 							PG.insertInto(ErrorIssueEvents).values({
 								id: decodeEventId(randomUUID()),
 								orgId: input.orgId,
@@ -733,7 +733,7 @@ export const upsertPlanetScaleIssue: (
 								(prior.snoozeUntil == null || prior.snoozeUntil > input.timestamp)
 							if (snoozeActive) return { issueId, action: "skipped" as const }
 
-							yield* db.orm.run(
+							yield* db.run(
 								PG.update(ErrorIssues)
 									.set(($) => ({
 										lastSeenAt: input.timestamp,
@@ -751,7 +751,7 @@ export const upsertPlanetScaleIssue: (
 									: null
 							if (reopenFrom === null) return { issueId, action: "refreshed" as const }
 
-							yield* db.orm.run(
+							yield* db.run(
 								PG.update(ErrorIssues)
 									.set({
 										workflowState: "triage",
@@ -780,14 +780,14 @@ export const upsertPlanetScaleIssue: (
 						.limit(1)
 						.forUpdate()
 
-					const prior: ErrorIssueRow | undefined = (yield* db.orm.run(lockIssue))[0]
+					const prior: ErrorIssueRow | undefined = (yield* db.run(lockIssue))[0]
 
 					if (prior !== undefined) return yield* applyExistingIssue(prior)
 
 					const candidateId = decodeIssueId(randomUUID())
 					// The transaction-scoped fingerprint lock protects the absent-row gap.
 					// Keep the conflict handling defensive for writers that predate the lock.
-					const claimed = yield* db.orm.run(
+					const claimed = yield* db.run(
 						PG.insertInto(ErrorIssues)
 							.values({
 								id: candidateId,
@@ -834,7 +834,7 @@ export const upsertPlanetScaleIssue: (
 					}
 					// A writer outside this lock won. Re-read it under a row lock and apply
 					// this distinct occurrence instead of committing a receipt-only skip.
-					const winner = (yield* db.orm.run(lockIssue))[0]
+					const winner = (yield* db.run(lockIssue))[0]
 					if (winner === undefined) {
 						return yield* Effect.fail(
 							new PlanetScaleIssueConflictUnresolved({

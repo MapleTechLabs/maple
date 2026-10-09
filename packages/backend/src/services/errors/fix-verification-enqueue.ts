@@ -69,7 +69,7 @@ export const enqueueFixVerification: (
 	const orgId: OrgId = verification.orgId
 
 	const settingsRows = yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(AiTriageSettings)
 				.select()
 				.where(($) => [$.orgId.eq(orgId)])
@@ -78,7 +78,7 @@ export const enqueueFixVerification: (
 	)
 	const settings = settingsRows[0]
 
-	const usage = yield* database.execute((db) => selectInvestigationUsage(db.orm, orgId, nowMs))
+	const usage = yield* database.execute((db) => selectInvestigationUsage(db, orgId, nowMs))
 	const quota = evaluateInvestigationQuota({
 		usage,
 		limits: settings
@@ -98,7 +98,7 @@ export const enqueueFixVerification: (
 	}
 
 	const issueRows = yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(ErrorIssues)
 				.select()
 				.where(($) => [$.orgId.eq(orgId), $.id.eq(verification.issueId)])
@@ -171,7 +171,7 @@ export const enqueueFixVerification: (
 
 	const investigationId = decodeInvestigationId(randomUUID())
 	const inserted = yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.insertInto(Investigations)
 				.values({
 					id: investigationId,

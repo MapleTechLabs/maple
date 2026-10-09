@@ -44,7 +44,9 @@ export const IssueEscalations = PG.table("issue_escalations", {
 		source: PG.brand(PG.text, IssueEscalationSourceSchema),
 		reason: PG.brand(PG.text, IssueEscalationReasonSchema),
 		runId: PG.column(PG.nullable(PG.text), { name: "run_id" }),
-		investigationId: PG.column(PG.nullable(PG.brand(PG.text, InvestigationId)), { name: "investigation_id" }),
+		investigationId: PG.column(PG.nullable(PG.brand(PG.text, InvestigationId)), {
+			name: "investigation_id",
+		}),
 		// Triage snapshot captured at enqueue (summary, suspectedCause, ...) so the
 		// dispatch payload survives later runs overwriting the run row.
 		payloadJson: PG.column(PG.jsonb(), { name: "payload_json", default: {} }),

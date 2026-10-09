@@ -141,7 +141,7 @@ const make = Effect.gen(function* () {
 	const stripFromEmailDestinations = Effect.fn("MembershipRevocationService.stripFromEmailDestinations")(
 		function* (orgId: OrgId | null, userId: UserId) {
 			const rows = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(AlertDestinations)
 						.select()
 						.where(($) => [orgId === null ? undefined : $.orgId.eq(orgId), $.type.eq("email")]),
@@ -188,7 +188,7 @@ const make = Effect.gen(function* () {
 					}
 					const now = yield* Clock.currentTimeMillis
 					yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(AlertDestinations)
 								.set({
 									configJson: nextPublic,
@@ -228,17 +228,12 @@ const make = Effect.gen(function* () {
 		// One transaction for the credential tables: a partial purge here is the
 		// exact half-revoked state the whole fix exists to prevent.
 		const credentials = yield* dbExecute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
-					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(
-						db.orm,
-						orgId,
-						userId,
-						now,
-					)
+					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(db, orgId, userId, now)
 					// After the families, so an MCP access key retired above is already
 					// `revoked` and is simply not claimed twice.
-					const revokedKeys = yield* db.orm.run(
+					const revokedKeys = yield* db.run(
 						PG.update(ApiKeys)
 							.set({ revoked: true, revokedAt: now })
 							.where(($) => [
@@ -248,7 +243,7 @@ const make = Effect.gen(function* () {
 							])
 							.returning("id"),
 					)
-					const cliDeleted = yield* db.orm.run(
+					const cliDeleted = yield* db.run(
 						PG.deleteFrom(CliDeviceAuthorizations)
 							.where(($) => [
 								orgId === null ? undefined : $.approvedOrgId.eq(orgId),
@@ -256,7 +251,7 @@ const make = Effect.gen(function* () {
 							])
 							.returning("deviceCodeHash"),
 					)
-					const mcpAuthDeleted = yield* db.orm.run(
+					const mcpAuthDeleted = yield* db.run(
 						PG.deleteFrom(McpOAuthAuthorizations)
 							.where(($) => [
 								orgId === null ? undefined : $.approvedOrgId.eq(orgId),
@@ -264,7 +259,7 @@ const make = Effect.gen(function* () {
 							])
 							.returning("requestIdHash"),
 					)
-					const devicesDeleted = yield* db.orm.run(
+					const devicesDeleted = yield* db.run(
 						PG.deleteFrom(MobileDevices)
 							.where(($) => [
 								orgId === null ? undefined : $.orgId.eq(orgId),
@@ -276,7 +271,7 @@ const make = Effect.gen(function* () {
 					// reads the row on every button click and runs the tool under whatever roles the
 					// user holds. Membership ending has to end that too, or the next click from their
 					// chat account still acts for a member who is gone.
-					const identitiesDeleted = yield* db.orm.run(
+					const identitiesDeleted = yield* db.run(
 						PG.deleteFrom(ChatIdentities)
 							.where(($) => [
 								orgId === null ? undefined : $.orgId.eq(orgId),
@@ -339,9 +334,9 @@ const make = Effect.gen(function* () {
 
 		const now = yield* Clock.currentTimeMillis
 		const summary = yield* dbExecute((db) =>
-			db.orm.transaction(
+			db.transaction(
 				Effect.gen(function* () {
-					const live = yield* db.orm.run(
+					const live = yield* db.run(
 						PG.from(ApiKeys)
 							.select("id", "metadataJson")
 							.where(($) => [$.orgId.eq(orgId), $.createdBy.eq(userId), $.revoked.eq(false)]),
@@ -355,13 +350,13 @@ const make = Effect.gen(function* () {
 					const [first, ...rest] = stale
 					if (first === undefined) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
 
-					const revoked = yield* db.orm.run(
+					const revoked = yield* db.run(
 						PG.update(ApiKeys)
 							.set({ revoked: true, revokedAt: now })
 							.where(($) => [$.id.in_(first, ...rest), $.revoked.eq(false)])
 							.returning("id"),
 					)
-					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db.orm, stale, now)
+					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db, stale, now)
 					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
 				}),
 			),

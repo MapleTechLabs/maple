@@ -222,7 +222,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		const selectInstallationRow = (provider: VcsProviderId, externalInstallationId: string) =>
 			database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsInstallations)
 							.select()
 							.where(($) => [
@@ -251,7 +251,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsInstallations)
 							.select()
 							.where(($) => [$.orgId.eq(orgId)]),
@@ -266,7 +266,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// `isInstallationProcessable` (the single place that rule lives).
 		const listAllInstallations = Effect.fn("VcsRepository.listAllInstallations")(function* () {
 			const rows = yield* database
-				.execute((db) => db.orm.run(PG.from(VcsInstallations).select()))
+				.execute((db) => db.run(PG.from(VcsInstallations).select()))
 				.pipe(Effect.mapError(toReadError("vcs_installations")))
 			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
 		})
@@ -279,7 +279,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsInstallations)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)])
@@ -299,7 +299,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const id = newInstallationId()
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(VcsInstallations)
 							// `status`/`suspended_at` are omitted: a new row takes the schema
 							// default ("active"), and on conflict they are left untouched so a
@@ -353,7 +353,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(VcsInstallations)
 							.set({ status, suspendedAt: status === "suspended" ? now : null, updatedAt: now })
 							.where(($) => [$.id.eq(installationId)]),
@@ -366,7 +366,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			function* (installationId: VcsInstallationId, scope: RepoQueryScope) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(VcsRepositories)
 								.select(repoColumns)
 								.where(($) => [
@@ -391,7 +391,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositories)
 							.select(repoColumns)
 							.where(($) => [
@@ -416,7 +416,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositories)
 							.select(repoColumns)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
@@ -440,7 +440,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			if (repositoryIds.length === 0) return Arr.empty<VcsRepo>()
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositories)
 							.select(repoColumns)
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(...new Set(repositoryIds))]),
@@ -488,9 +488,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// snapshot writes nothing instead of resurrecting purged data.
 			yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							const parent = yield* db.orm.run(
+							const parent = yield* db.run(
 								PG.from(VcsInstallations)
 									.select("id")
 									.where(($) => [$.id.eq(installation.id)])
@@ -500,7 +500,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							yield* Effect.forEach(
 								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
 								(chunk) =>
-									db.orm.run(
+									db.run(
 										PG.insertInto(VcsRepositories)
 											.values(chunk)
 											.onConflictDoUpdate({
@@ -540,7 +540,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(VcsRepositories)
 							.set({ status: "removed", updatedAt: now })
 							.where(($) => [$.id.eq(repositoryId)]),
@@ -558,7 +558,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			repositoryId: VcsRepositoryId,
 		) {
 			const repoRows = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(VcsRepositories)
 						.select("id")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
@@ -571,13 +571,17 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// in-flight sync either commits before this delete acquires the row lock
 			// (its rows are swept below) or sees the row gone and writes nothing.
 			yield* database.execute((db) =>
-				db.orm.transaction(
+				db.transaction(
 					Effect.gen(function* () {
-						yield* db.orm.run(PG.deleteFrom(VcsRepositories).where(($) => [$.id.eq(repositoryId)]))
-						yield* db.orm.run(
-							PG.deleteFrom(VcsRepositoryBranches).where(($) => [$.repositoryId.eq(repositoryId)]),
+						yield* db.run(PG.deleteFrom(VcsRepositories).where(($) => [$.id.eq(repositoryId)]))
+						yield* db.run(
+							PG.deleteFrom(VcsRepositoryBranches).where(($) => [
+								$.repositoryId.eq(repositoryId),
+							]),
 						)
-						yield* db.orm.run(PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.eq(repositoryId)]))
+						yield* db.run(
+							PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.eq(repositoryId)]),
+						)
 					}),
 				),
 			)
@@ -595,12 +599,14 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(VcsRepositories)
 							.set({
 								syncStatus: update.status,
 								lastSyncError: update.error ?? null,
-								...("syncedAt" in update ? { lastSyncedAt: update.syncedAt ?? null } : undefined),
+								...("syncedAt" in update
+									? { lastSyncedAt: update.syncedAt ?? null }
+									: undefined),
 								updatedAt: now,
 							})
 							.where(($) => [$.id.eq(repositoryId)]),
@@ -618,7 +624,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(VcsRepositories)
 							.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
 							.where(($) => [$.id.eq(repositoryId)]),
@@ -674,14 +680,14 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// commits. Returns 0 when the repo is gone.
 			return yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							const parent = yield* db.orm.run(lockRepositoryRow(repository.id))
+							const parent = yield* db.run(lockRepositoryRow(repository.id))
 							if (parent.length === 0) return 0
 							yield* Effect.forEach(
 								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
 								(chunk) =>
-									db.orm.run(
+									db.run(
 										PG.insertInto(VcsCommits)
 											.values(chunk)
 											.onConflictDoUpdate({
@@ -715,7 +721,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// orphaned by a purge racing a stale write is unreadable, not leaked.
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						commitsWithLiveRepo()
 							.where(($) => [$.orgId.eq(orgId), $.sha.eq(sha)])
 							.limit(1),
@@ -737,7 +743,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			if (shas.length === 0) return Arr.empty<VcsCommit>()
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						// Same orphan shield as findCommitBySha.
 						commitsWithLiveRepo().where(($) => [$.orgId.eq(orgId), $.sha.in_(...new Set(shas))]),
 					),
@@ -755,7 +761,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						commitsWithLiveRepo()
 							.where(($) => [
 								$.orgId.eq(orgId),
@@ -808,14 +814,14 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// worker cannot repopulate the picker of a purged repo.
 			yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							const parent = yield* db.orm.run(lockRepositoryRow(repository.id))
+							const parent = yield* db.run(lockRepositoryRow(repository.id))
 							if (parent.length === 0) return
 							yield* Effect.forEach(
 								Arr.chunksOf(values, INSERT_CHUNK_SIZE),
 								(chunk) =>
-									db.orm.run(
+									db.run(
 										PG.insertInto(VcsRepositoryBranches)
 											.values(chunk)
 											.onConflictDoUpdate({
@@ -848,7 +854,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const id = newBranchId()
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(VcsRepositoryBranches)
 							.values({
 								id,
@@ -863,7 +869,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							})
 							.onConflictDoUpdate({
 								target: ["repositoryId", "name"],
-								set: (_, excluded) => ({ isDefault: excluded.isDefault, updatedAt: excluded.updatedAt }),
+								set: (_, excluded) => ({
+									isDefault: excluded.isDefault,
+									updatedAt: excluded.updatedAt,
+								}),
 							})
 							.returning(),
 					),
@@ -881,7 +890,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositoryBranches)
 							.select()
 							.where(($) => [$.repositoryId.eq(repositoryId)]),
@@ -904,9 +913,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.transaction(
+					db.transaction(
 						Effect.gen(function* () {
-							yield* db.orm.run(
+							yield* db.run(
 								PG.update(VcsRepositories)
 									.set({ trackedBranch: branch, updatedAt: now })
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)]),
@@ -914,7 +923,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							// Org-scope the commit wipe too: without it, an id belonging to
 							// another org would no-op the update but still delete that org's
 							// commits. Mirrors the org-scoped delete in purgeRepository.
-							yield* db.orm.run(
+							yield* db.run(
 								PG.deleteFrom(VcsCommits).where(($) => [
 									$.orgId.eq(orgId),
 									$.repositoryId.eq(repositoryId),
@@ -936,7 +945,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(VcsRepositories)
 							.set({ prReviewEnabled: enabled, updatedAt: now })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)]),
@@ -953,7 +962,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositories)
 							// Read raw, so a stale value reaches the lenient decode below instead of failing the row.
 							.select(($) => ({ config: PG.undecoded($.prReviewConfig) }))
@@ -976,7 +985,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(VcsRepositories)
 							.set({ prReviewConfig: config, updatedAt: now })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
@@ -990,7 +999,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		const getPrReviewSettings = Effect.fn("VcsRepository.getPrReviewSettings")(function* (orgId: OrgId) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviewSettings)
 							.select(($) => ({ model: $.model, defaults: PG.undecoded($.defaults) }))
 							.where(($) => [$.orgId.eq(orgId)])
@@ -1033,7 +1042,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			}
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(PrReviewSettings)
 							.values({ orgId, ...values })
 							.onConflictDoUpdate({ target: ["orgId"], set: values }),
@@ -1052,7 +1061,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					(chunk) =>
 						database
 							.execute((db) =>
-								db.orm.run(PG.deleteFrom(VcsRepositoryBranches).where(($) => [$.id.in_(...chunk)])),
+								db.run(
+									PG.deleteFrom(VcsRepositoryBranches).where(($) => [$.id.in_(...chunk)]),
+								),
 							)
 							.pipe(Effect.mapError(toPersistenceError)),
 					{ discard: true },
@@ -1071,7 +1082,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			if (options.truncated) return Arr.empty<string>()
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositoryBranches)
 							.select("id", "name")
 							.where(($) => [$.repositoryId.eq(repositoryId)]),
@@ -1092,7 +1103,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(VcsRepositoryBranches)
 							.select("id")
 							.where(($) => [$.repositoryId.eq(repositoryId), $.name.eq(name)])
@@ -1121,21 +1132,21 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// repo-id read happens INSIDE the transaction, after the installation
 			// delete, so a repo created moments earlier is swept rather than escaping.
 			yield* database.execute((db) =>
-				db.orm.transaction(
+				db.transaction(
 					Effect.gen(function* () {
-						yield* db.orm.run(
+						yield* db.run(
 							PG.deleteFrom(VcsInstallations).where(($) => [
 								$.orgId.eq(orgId),
 								$.id.eq(installationId),
 							]),
 						)
-						const repoRows = yield* db.orm.run(
+						const repoRows = yield* db.run(
 							PG.from(VcsRepositories)
 								.select("id")
 								.where(($) => [$.orgId.eq(orgId), $.installationId.eq(installationId)]),
 						)
 						const repoIds = repoRows.map((r) => r.id)
-						yield* db.orm.run(
+						yield* db.run(
 							PG.deleteFrom(VcsRepositories).where(($) => [
 								$.orgId.eq(orgId),
 								$.installationId.eq(installationId),
@@ -1145,14 +1156,19 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						yield* Effect.forEach(
 							chunks,
 							(chunk) =>
-								db.orm.run(
-									PG.deleteFrom(VcsRepositoryBranches).where(($) => [$.repositoryId.in_(...chunk)]),
+								db.run(
+									PG.deleteFrom(VcsRepositoryBranches).where(($) => [
+										$.repositoryId.in_(...chunk),
+									]),
 								),
 							{ discard: true },
 						)
 						yield* Effect.forEach(
 							chunks,
-							(chunk) => db.orm.run(PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.in_(...chunk)])),
+							(chunk) =>
+								db.run(
+									PG.deleteFrom(VcsCommits).where(($) => [$.repositoryId.in_(...chunk)]),
+								),
 							{ discard: true },
 						)
 					}),

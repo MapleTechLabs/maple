@@ -66,7 +66,6 @@ const bustRuntimeConfigCache = (orgId: OrgId): Effect.Effect<void> =>
 		yield* cache.invalidate({ bucket: ORG_CH_CONFIG_CACHE_BUCKET, key: orgId })
 	}).pipe(
 		// The workflow isolate has no application runtime to own this cache layer.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(EdgeCacheServiceLive),
 		Effect.ignore,
 	)
@@ -329,7 +328,7 @@ const loadConfig = (
 ): Effect.Effect<ChConfig, SchemaApplyConfigError | DatabaseError> =>
 	Effect.gen(function* () {
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(OrgClickHouseSettings)
 					.select()
 					.where(($) => [$.orgId.eq(orgId)])
@@ -393,7 +392,7 @@ const updateRun = (database: DatabaseApi, orgId: OrgId, patch: RunPatch) =>
 	Effect.gen(function* () {
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.update(OrgClickHouseSchemaApplyRuns)
 					.set({ ...patch, updatedAt: now })
 					.where(($) => [$.orgId.eq(orgId)]),
@@ -531,7 +530,7 @@ export const runClickHouseSchemaApply = (
 				}).pipe(Effect.ignore)
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgClickHouseSettings)
 								.set({
 									syncStatus: "error",
@@ -639,7 +638,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 			Effect.gen(function* () {
 				const stampedAt = yield* Clock.currentTimeMillis
 				yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(OrgClickHouseSettings)
 							.set({
 								lastSyncAt: stampedAt,

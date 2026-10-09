@@ -1,5 +1,5 @@
 /**
- * Plain-drizzle severity helpers used by investigation diagnosis persistence.
+ * Severity helpers used by investigation diagnosis persistence, run on the caller's database.
  * Every write is idempotent: deterministic runId-derived ids plus
  * onConflictDoNothing, or guarded UPDATEs.
  */
@@ -14,7 +14,7 @@ import {
 	OrgId,
 } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
 import { Effect, Schema } from "effect"
 import { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
@@ -25,7 +25,7 @@ export { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
  * effect-orm over the caller's client; inside `orm.transaction` the writes join
  * it, so callers can run the severity write atomically alongside their own.
  */
-export type TriageSeverityDb = MapleOrm
+export type TriageSeverityDb = MapleDb
 
 /**
  * The triage-agent actor row was neither found nor insertable. Only reachable
@@ -87,7 +87,7 @@ const ensureTriageAgentActor = (
 	db: TriageSeverityDb,
 	orgId: OrgId,
 	timestamp: number,
-): Effect.Effect<ActorId, MapleOrmError | TriageActorMissingError> =>
+): Effect.Effect<ActorId, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
 		const select = () =>
 			db.run(
@@ -157,7 +157,7 @@ export interface ApplyTriageSeverityOutcome {
 export const applyTriageSeverity = (
 	db: TriageSeverityDb,
 	input: ApplyTriageSeverityInput,
-): Effect.Effect<ApplyTriageSeverityOutcome, MapleOrmError | TriageActorMissingError> =>
+): Effect.Effect<ApplyTriageSeverityOutcome, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
 		const issueRows = yield* db.run(
 			PG.from(ErrorIssues)
@@ -288,7 +288,7 @@ const confidenceLabel = (probability: number): AiTriageResult["confidence"] =>
 export const applyClassifierSeverity = (
 	db: TriageSeverityDb,
 	input: ApplyClassifierSeverityInput,
-): Effect.Effect<{ readonly applied: boolean }, MapleOrmError | TriageActorMissingError> =>
+): Effect.Effect<{ readonly applied: boolean }, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
 		const updated = yield* db.run(
 			PG.update(ErrorIssues)

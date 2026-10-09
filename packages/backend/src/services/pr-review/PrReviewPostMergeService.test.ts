@@ -172,7 +172,7 @@ const seedDueReview = Effect.gen(function* () {
 	const repositoryId = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7")).id
 	const db = yield* Database
 	yield* db.execute((client) =>
-		client.orm.run(
+		client.run(
 			PG.insertInto(PrReviews).values({
 				id: reviewId,
 				orgId,
@@ -196,7 +196,7 @@ const seedDueReview = Effect.gen(function* () {
 const rowState = Effect.gen(function* () {
 	const db = yield* Database
 	const rows = yield* db.execute((client) =>
-		client.orm.run(
+		client.run(
 			PG.from(PrReviews)
 				.select(($) => ({ status: $.postMergeStatus, after: $.postMergeAfter }))
 				.where(($) => [$.id.eq(reviewId)]),
@@ -250,7 +250,7 @@ describe("PrReviewPostMergeService.runTick, lease", () => {
 		const releaseRow = Effect.gen(function* () {
 			const db = yield* Database
 			yield* db.execute((client) =>
-				client.orm.run(
+				client.run(
 					PG.update(PrReviews)
 						.set({ postMergeAfter: DEPLOYED_AT + 999 * 60_000 })
 						.where(($) => [$.id.eq(reviewId)]),

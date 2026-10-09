@@ -99,8 +99,6 @@ type DiscoveryError =
 	| ScrapeTargetUpstreamError
 	| PlanetScaleAccessTokenError
 
-const toPersistenceError = (message: string) => new ScrapeTargetPersistenceError({ message })
-
 // Provider-side (http_sd) failures: transport, timeout, non-2xx non-auth, or an
 // undecodable payload. Kept distinct from persistence (our DB) so the class —
 // not a regex over the message — carries the failure kind downstream.

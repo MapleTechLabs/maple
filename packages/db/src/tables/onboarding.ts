@@ -8,13 +8,21 @@ export const OrgOnboardingState = PG.table("org_onboarding_state", {
 		email: PG.nullable(PG.text),
 		role: PG.nullable(PG.text),
 		demoDataRequested: PG.column(PG.bool, { name: "demo_data_requested", default: false }),
-		onboardingCompletedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "onboarding_completed_at" }),
-		checklistDismissedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "checklist_dismissed_at" }),
+		onboardingCompletedAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "onboarding_completed_at",
+		}),
+		checklistDismissedAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "checklist_dismissed_at",
+		}),
 		firstDataReceivedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "first_data_received_at" }),
 		welcomeEmailSentAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "welcome_email_sent_at" }),
-		connectNudgeEmailSentAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "connect_nudge_email_sent_at" }),
+		connectNudgeEmailSentAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "connect_nudge_email_sent_at",
+		}),
 		stalledEmailSentAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "stalled_email_sent_at" }),
-		activationEmailSentAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "activation_email_sent_at" }),
+		activationEmailSentAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "activation_email_sent_at",
+		}),
 		/** When the onboarding-checklist credit was confirmed applied by billing. Set once, never cleared. */
 		rewardClaimedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "reward_claimed_at" }),
 		/** A claim in flight: taken before the billing call, cleared on outcome, and treated as stale after a lease. */

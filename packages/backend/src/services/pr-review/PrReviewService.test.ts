@@ -1015,7 +1015,7 @@ const seedVotes = (
 		const now = 0
 		const rows = votes.map((vote, i) => ({ vote, id: `vote-${repositoryId}-${i}` }))
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(PrReviewFindings).values(
 					rows.map(({ vote, id }, i) => ({
 						id,
@@ -1039,7 +1039,7 @@ const seedVotes = (
 			),
 		)
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(PrReviewFindingEmbeddings).values(
 					rows.map(({ vote, id }) => ({
 						findingId: id,
@@ -1056,7 +1056,7 @@ const seedVotes = (
 
 const storedEmbeddings = Effect.gen(function* () {
 	const database = yield* Database
-	return yield* database.execute((db) => db.orm.run(PG.from(PrReviewFindingEmbeddings).select()))
+	return yield* database.execute((db) => db.run(PG.from(PrReviewFindingEmbeddings).select()))
 })
 
 const ELSEWHERE = Schema.decodeSync(VcsRepositoryId)("99999999-9999-4999-8999-999999999999")
@@ -1833,7 +1833,7 @@ describe("PrReviewService telemetry", () => {
 			yield* reviews.onPullRequestEvent(orgId, merged)
 			const db = yield* Database
 			const rows = yield* db.execute((client) =>
-				client.orm.run(
+				client.run(
 					PG.from(PrReviews)
 						.select(($) => ({
 							status: $.postMergeStatus,
@@ -1921,7 +1921,7 @@ describe("PrReviewService telemetry, unchanged code and late merges", () => {
 			)
 			const db = yield* Database
 			yield* db.execute((client) =>
-				client.orm.run(
+				client.run(
 					PG.update(PrReviews)
 						.set({ postMergeStatus: "reported" })
 						.where(($) => [$.id.eq(started.reviewId!)]),

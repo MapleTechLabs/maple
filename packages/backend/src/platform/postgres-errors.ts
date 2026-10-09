@@ -1,7 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import * as Orm from "@maple-dev/effect-orm/database"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
-import { Cause, Option } from "effect"
 import { SqlError } from "effect/sql/SqlError"
 import type { DatabaseError } from "./DatabaseLive"
 
@@ -23,21 +21,14 @@ const causeMessage = (cause: unknown): string | undefined => {
 
 /**
  * The `SqlError` behind a driver failure, when there is one. A statement
- * failure arrives as `EffectDrizzleQueryError` whose `cause` is a
- * `Cause<SqlError>`; transaction control fails with a bare `SqlError`.
+ * failure arrives as effect-orm's `DatabaseError` (or, at COMMIT,
+ * `TransactionCommitFailed`) whose `cause` is the `SqlError`.
  * Anything else — a scope refusal, a test double — has none.
  */
 export const driverSqlError = (cause: unknown): SqlError | undefined => {
 	if (cause instanceof SqlError) return cause
-	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed) return driverSqlError(cause.cause)
-	if (cause instanceof EffectDrizzleQueryError) {
-		const inner: unknown = cause.cause
-		if (Cause.isCause(inner)) {
-			const failure = Cause.findErrorOption(inner)
-			return Option.isSome(failure) ? driverSqlError(failure.value) : undefined
-		}
-		return driverSqlError(inner)
-	}
+	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed)
+		return driverSqlError(cause.cause)
 	return undefined
 }
 

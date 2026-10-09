@@ -278,7 +278,7 @@ export class DashboardPersistenceService extends Context.Service<
 				readonly version: number
 			}> = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(Dashboards)
 							.select("payloadJson", "version")
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(dashboardId)]),
@@ -315,7 +315,7 @@ export class DashboardPersistenceService extends Context.Service<
 
 			const latest: ReadonlyArray<DashboardVersionRow> = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardVersions)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.dashboardId.eq(dashboard.id)])
@@ -337,7 +337,7 @@ export class DashboardPersistenceService extends Context.Service<
 			if (canCoalesce && latestRow) {
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(DashboardVersions)
 								.set({
 									snapshotJson,
@@ -355,7 +355,7 @@ export class DashboardPersistenceService extends Context.Service<
 
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(DashboardVersions).values({
 							orgId,
 							id: decodeDashboardVersionIdSync(randomUUID()),
@@ -380,7 +380,7 @@ export class DashboardPersistenceService extends Context.Service<
 				readonly payloadJson: unknown
 			}> = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(Dashboards)
 							.select("id", "payloadJson")
 							.where(($) => [$.orgId.eq(orgId)])
@@ -431,7 +431,7 @@ export class DashboardPersistenceService extends Context.Service<
 			})
 			const updated: ReadonlyArray<{ readonly id: string; readonly txid: string }> = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Dashboards)
 							.set({
 								name: dashboard.name,
@@ -463,7 +463,7 @@ export class DashboardPersistenceService extends Context.Service<
 		) =>
 			database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(Dashboards)
 							.values({
 								orgId,
@@ -656,7 +656,7 @@ export class DashboardPersistenceService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(Dashboards)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(dashboardId)])
 							.returning(($) => ({ id: $.id, txid: currentTxid })),
@@ -681,7 +681,7 @@ export class DashboardPersistenceService extends Context.Service<
 			// a dashboard that no longer exists.
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(DashboardVersions).where(($) => [
 							$.orgId.eq(orgId),
 							$.dashboardId.eq(dashboardId),
@@ -727,7 +727,7 @@ export class DashboardPersistenceService extends Context.Service<
 			const before = options.before
 			const rows: ReadonlyArray<DashboardVersionRow> = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardVersions)
 							.select()
 							.where(($) => [
@@ -764,7 +764,7 @@ export class DashboardPersistenceService extends Context.Service<
 
 			const rows: ReadonlyArray<DashboardVersionRow> = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DashboardVersions)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(versionId)])

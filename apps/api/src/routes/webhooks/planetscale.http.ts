@@ -85,7 +85,7 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PlanetscaleConnections)
 							.select()
 							.where(($) => [$.id.eq(connectionId)])

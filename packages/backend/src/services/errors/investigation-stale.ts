@@ -5,7 +5,7 @@
  * incident-open path and `InvestigationService` import from here.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Investigations } from "@maple/db/tables"
 import { Effect, Option, Schema } from "effect"
 
@@ -79,9 +79,9 @@ export const isInvestigationStale = (
  * Returns how many rows it moved so the tick can report a number that should normally be zero.
  */
 export const sweepAbandonedInvestigations = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	nowMs: number,
-): Effect.Effect<number, MapleOrmError> =>
+): Effect.Effect<number, MapleDbError> =>
 	Effect.map(
 		orm.run(
 			PG.update(Investigations)

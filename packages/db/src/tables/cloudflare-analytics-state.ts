@@ -54,7 +54,12 @@ export const CloudflareAnalyticsState = PG.table("cloudflare_analytics_state", {
 	},
 	primaryKey: ["id"],
 	indexes: [
-		PG.uniqueIndex("cf_analytics_state_org_account_dataset_zone_idx", ["orgId", "accountId", "dataset", "zoneId"]),
+		PG.uniqueIndex("cf_analytics_state_org_account_dataset_zone_idx", [
+			"orgId",
+			"accountId",
+			"dataset",
+			"zoneId",
+		]),
 		PG.index("cf_analytics_state_org_idx", ["orgId"]),
 	],
 	tenantColumn: "orgId",

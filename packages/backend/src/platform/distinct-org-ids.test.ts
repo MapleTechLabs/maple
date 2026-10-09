@@ -38,7 +38,7 @@ describe("selectDistinctOrgIds", () => {
 			// Duplicates per org are the point: a loose index scan must emit each
 			// org exactly once no matter how many rows it owns.
 			yield* database.execute((client) =>
-				client.orm.run(
+				client.run(
 					PG.insertInto(ErrorIssues).values([
 						issueRow("org_c", "1"),
 						issueRow("org_a", "1"),
@@ -50,9 +50,9 @@ describe("selectDistinctOrgIds", () => {
 				),
 			)
 
-			const loose = yield* database.execute((client) => selectDistinctOrgIds(client.orm, ErrorIssues))
+			const loose = yield* database.execute((client) => selectDistinctOrgIds(client, ErrorIssues))
 			const baseline = yield* database.execute((client) =>
-				client.orm.run(PG.from(ErrorIssues).select("orgId").distinct()),
+				client.run(PG.from(ErrorIssues).select("orgId").distinct()),
 			)
 
 			assert.deepStrictEqual([...loose], ["org_a", "org_b", "org_c"])
@@ -65,7 +65,7 @@ describe("selectDistinctOrgIds", () => {
 			const db = createTestDb(createdDbs)
 			const database = yield* Database.pipe(Effect.provide(db.layer))
 
-			const loose = yield* database.execute((client) => selectDistinctOrgIds(client.orm, ErrorIssues))
+			const loose = yield* database.execute((client) => selectDistinctOrgIds(client, ErrorIssues))
 			assert.deepStrictEqual([...loose], [])
 		}),
 	)
@@ -77,14 +77,14 @@ describe("selectDistinctOrgIds", () => {
 
 			yield* database.execute((client) =>
 				Effect.gen(function* () {
-					yield* client.orm.run(
+					yield* client.run(
 						PG.insertInto(ErrorIssueStates).values([
 							{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: 0 },
 							{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: 0 },
 							{ orgId: asOrgId("org_a"), issueId: asIssueId(randomUUID()), updatedAt: 0 },
 						]),
 					)
-					yield* client.orm.run(
+					yield* client.run(
 						PG.insertInto(OrgClickHouseSettings).values(
 							["org_z", "org_y"].map((orgId) => ({
 								orgId: asOrgId(orgId),
@@ -102,11 +102,9 @@ describe("selectDistinctOrgIds", () => {
 				}),
 			)
 
-			const states = yield* database.execute((client) =>
-				selectDistinctOrgIds(client.orm, ErrorIssueStates),
-			)
+			const states = yield* database.execute((client) => selectDistinctOrgIds(client, ErrorIssueStates))
 			const settings = yield* database.execute((client) =>
-				selectDistinctOrgIds(client.orm, OrgClickHouseSettings),
+				selectDistinctOrgIds(client, OrgClickHouseSettings),
 			)
 
 			assert.deepStrictEqual([...states], ["org_a", "org_b"])

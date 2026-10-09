@@ -124,7 +124,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 
 			const findRow = (orgId: OrgId, platform: MobilePlatform, token: string) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(MobileDevices)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.platform.eq(platform), $.token.eq(token)])
@@ -170,54 +170,54 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 
 				if (existing) {
 					const rows = yield* dbExecute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(MobileDevices)
-							.set({
-								// A token can move between users when a shared phone
-								// signs in as someone else — the latest sign-in owns it.
-								userId,
-								environment: input.environment,
-								bundleId: input.bundleId,
-								appVersion: input.appVersion ?? existing.appVersion,
-								deviceName: input.deviceName ?? existing.deviceName,
-								liveActivityStartToken:
-									input.liveActivityStartToken ?? existing.liveActivityStartToken,
-								preferences,
-								disabledAt: null,
-								disabledReason: null,
-								lastSeenAt: now,
-								updatedAt: now,
-							})
-							.where(($) => [$.id.eq(existing.id)])
-							.returning(),
+								.set({
+									// A token can move between users when a shared phone
+									// signs in as someone else — the latest sign-in owns it.
+									userId,
+									environment: input.environment,
+									bundleId: input.bundleId,
+									appVersion: input.appVersion ?? existing.appVersion,
+									deviceName: input.deviceName ?? existing.deviceName,
+									liveActivityStartToken:
+										input.liveActivityStartToken ?? existing.liveActivityStartToken,
+									preferences,
+									disabledAt: null,
+									disabledReason: null,
+									lastSeenAt: now,
+									updatedAt: now,
+								})
+								.where(($) => [$.id.eq(existing.id)])
+								.returning(),
 						),
 					)
 					return toDevice(rows[0] ?? existing)
 				}
 
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(MobileDevices)
-						.values({
-							id: randomUUID(),
-							orgId,
-							userId,
-							platform: input.platform,
-							token: input.token,
-							environment: input.environment,
-							bundleId: input.bundleId,
-							appVersion: input.appVersion ?? null,
-							deviceName: input.deviceName ?? null,
-							liveActivityStartToken: input.liveActivityStartToken ?? null,
-							preferences,
-							disabledAt: null,
-							disabledReason: null,
-							lastPushedAt: null,
-							lastSeenAt: now,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.returning(),
+							.values({
+								id: randomUUID(),
+								orgId,
+								userId,
+								platform: input.platform,
+								token: input.token,
+								environment: input.environment,
+								bundleId: input.bundleId,
+								appVersion: input.appVersion ?? null,
+								deviceName: input.deviceName ?? null,
+								liveActivityStartToken: input.liveActivityStartToken ?? null,
+								preferences,
+								disabledAt: null,
+								disabledReason: null,
+								lastPushedAt: null,
+								lastSeenAt: now,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.returning(),
 					),
 				)
 				return toDevice(rows[0]!)
@@ -231,7 +231,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.deleteFrom(MobileDevices)
 							.where(($) => [
 								$.orgId.eq(orgId),
@@ -264,7 +264,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(MobileDevices)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
@@ -276,7 +276,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			const listForOrg = Effect.fn("MobileDevicesService.listForOrg")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(MobileDevices)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.disabledAt.isNull()]),
@@ -291,7 +291,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			) {
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(MobileDevices)
 							.set({ disabledAt: now, disabledReason: reason, updatedAt: now })
 							.where(($) => [$.id.eq(id)]),
@@ -308,7 +308,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 					ids,
 					(id) =>
 						dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(MobileDevices)
 									.set({ lastPushedAt: now })
 									.where(($) => [$.id.eq(id)]),

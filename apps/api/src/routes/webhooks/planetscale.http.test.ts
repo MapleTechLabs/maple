@@ -66,7 +66,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
@@ -138,7 +138,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
@@ -243,7 +243,7 @@ describe("PlanetScaleWebhookRouter", () => {
 				assert.strictEqual(jobs[0]?.orgId, "org_1")
 				assert.strictEqual(jobs[0]?.connectionId, CONNECTION_ID)
 				assert.strictEqual(
-					(jobs[0]?.event.data as { readonly event: string }).event,
+					(jobs[0]?.event.data as { readonly event: string } | undefined)?.event,
 					"branch.out_of_memory",
 				)
 				assert.strictEqual(jobs[0]?.event.type, "dev.maple.planetscale.webhook.received.v1")
@@ -264,7 +264,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
@@ -313,7 +313,7 @@ describe("PlanetScaleWebhookRouter", () => {
 				assert.strictEqual(deploy.status, 202)
 				assert.strictEqual(jobs.length, 1)
 				assert.strictEqual(
-					(jobs[0]?.event.data as { readonly event: string }).event,
+					(jobs[0]?.event.data as { readonly event: string } | undefined)?.event,
 					"deploy_request.schema_applied",
 				)
 
@@ -348,7 +348,7 @@ describe("PlanetScaleWebhookRouter", () => {
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),

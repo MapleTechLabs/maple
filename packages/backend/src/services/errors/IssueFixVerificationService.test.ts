@@ -106,7 +106,7 @@ const seedIssue = (options: SeedIssueOptions = {}) =>
 		const now = Date.now()
 		const spanMs = options.spanMs ?? 10 * HOUR
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssues).values({
 					id,
 					orgId: ORG,
@@ -135,7 +135,7 @@ const readIssueState = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssues)
 					.select()
 					.where(($) => [$.id.eq(issueId)])
@@ -149,7 +149,7 @@ const readVerification = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueVerifications)
 					.select()
 					.where(($) => [$.issueId.eq(issueId)])
@@ -163,7 +163,7 @@ const readAllVerifications = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueVerifications)
 					.select()
 					.where(($) => [$.issueId.eq(issueId)]),
@@ -175,7 +175,7 @@ const readEventTypes = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.from(ErrorIssueEvents)
 					.select("type")
 					.where(($) => [$.issueId.eq(issueId)]),
@@ -940,27 +940,21 @@ const isInsertInto = (query: unknown, table: string): boolean =>
  * It is a driver error, so `Database.execute` absorbs it as it would a real one.
  */
 const failInsertOf = (db: MapleDb, failTable: string): MapleDb => {
-	const orm = new Proxy(db.orm, {
-		get(target, property, receiver) {
-			const value: unknown = Reflect.get(target, property, receiver)
-			if (property !== "run" || typeof value !== "function") return value
-			return (query: unknown, ...rest: ReadonlyArray<unknown>) =>
-				isInsertInto(query, failTable)
-					? Effect.fail(
-							new Orm.DatabaseError({
-								message: "injected insert failure",
-								sql: `insert into ${failTable} (sabotaged)`,
-								reason: "ConnectionError",
-								cause: new Error("injected insert failure"),
-							}),
-						)
-					: Reflect.apply(value, target, [query, ...rest])
-		},
-	})
-	return new Proxy(db, {
-		get: (target, property, receiver) =>
-			property === "orm" ? orm : Reflect.get(target, property, receiver),
-	})
+	const orm: MapleDb = {
+		...db,
+		run: (query, params) =>
+			isInsertInto(query, failTable)
+				? Effect.fail(
+						new Orm.DatabaseError({
+							message: "injected insert failure",
+							sql: `insert into ${failTable} (sabotaged)`,
+							reason: "ConnectionError",
+							cause: new Error("injected insert failure"),
+						}),
+					)
+				: db.run(query, params),
+	}
+	return orm
 }
 
 const failingEventInsertLayer = (base: Layer.Layer<Database>) =>

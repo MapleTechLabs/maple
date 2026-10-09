@@ -27,7 +27,10 @@ export const ApiKeys = PG.table("api_keys", {
 		createdByEmail: PG.column(PG.nullable(PG.text), { name: "created_by_email" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.uniqueIndex("api_keys_key_hash_unique", ["keyHash"]), PG.index("api_keys_org_id_idx", ["orgId"])],
+	indexes: [
+		PG.uniqueIndex("api_keys_key_hash_unique", ["keyHash"]),
+		PG.index("api_keys_org_id_idx", ["orgId"]),
+	],
 	tenantColumn: "orgId",
 })
 

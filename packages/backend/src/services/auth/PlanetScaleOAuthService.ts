@@ -213,7 +213,6 @@ export class PlanetScaleOAuthService extends Context.Service<
 			database,
 			env,
 		})
-		const apiBase = env.MAPLE_PLANETSCALE_API_BASE_URL.replace(/\/$/, "")
 
 		const apiTarget = (accessToken: string) => ({
 			apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL,
@@ -330,7 +329,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 			yield* oauth.purgeExpiredStates(currentTime)
 			yield* oauth.dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.insertInto(OAuthAuthStates).values({
 						state,
 						orgId,

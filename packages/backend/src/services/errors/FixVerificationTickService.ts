@@ -221,7 +221,7 @@ const make: Effect.Effect<
 
 		for (const row of due) {
 			const context = yield* dbExecute((db) =>
-				db.orm.run(
+				db.run(
 					PG.from(ErrorIssues)
 						.innerJoin(ErrorIssuePullRequests, "pr", (_issue, pr) => pr.id.eq(row.pullRequestId))
 						.select(($) => ({

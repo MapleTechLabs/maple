@@ -302,7 +302,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const rows = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DigestSubscriptions)
 							.select()
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)])
@@ -342,7 +342,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(DigestSubscriptions)
 							.values({
 								id,
@@ -381,7 +381,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									...(input.webAnalyticsEnabled != null
 										? {
 												webAnalyticsEnabled: input.webAnalyticsEnabled,
-												webAnalyticsOptedOutAt: input.webAnalyticsEnabled ? null : now,
+												webAnalyticsOptedOutAt: input.webAnalyticsEnabled
+													? null
+													: now,
 											}
 										: undefined),
 									updatedAt: now,
@@ -411,7 +413,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(DigestSubscriptions)
 							.set({ enabled: false, optedOutAt: now, updatedAt: now })
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
@@ -440,12 +442,16 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// Idempotent: a repeat click (or a deleted row) changes nothing and still succeeds.
 			yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(DigestSubscriptions)
 							.set(
 								verified.kind === "digest"
 									? { enabled: false, optedOutAt: now, updatedAt: now }
-									: { webAnalyticsEnabled: false, webAnalyticsOptedOutAt: now, updatedAt: now },
+									: {
+											webAnalyticsEnabled: false,
+											webAnalyticsOptedOutAt: now,
+											updatedAt: now,
+										},
 							)
 							.where(($) => [$.id.eq(verified.subscriptionId)]),
 					),
@@ -977,7 +983,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				(m) =>
 					database
 						.execute((db) =>
-							db.orm.run(
+							db.run(
 								PG.insertInto(DigestSubscriptions)
 									.values({
 										id: crypto.randomUUID(),
@@ -995,7 +1001,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 										set: ($) => ({
 											email: m.email,
 											enabled: PG.asBoolean($.optedOutAt.isNull()),
-											webAnalyticsEnabled: PG.asBoolean($.webAnalyticsOptedOutAt.isNull()),
+											webAnalyticsEnabled: PG.asBoolean(
+												$.webAnalyticsOptedOutAt.isNull(),
+											),
 											updatedAt: now,
 										}),
 									}),
@@ -1011,7 +1019,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const existingSubs = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DigestSubscriptions)
 							.select("id", "orgId", "userId")
 							.where(($) => [PG.inList($.orgId, activeOrgIds)]),
@@ -1027,7 +1035,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			if (staleIds.length > 0) {
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(DigestSubscriptions)
 								.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
 								.where(($) => [PG.inList($.id, staleIds)]),
@@ -1082,7 +1090,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const subs = yield* database
 				.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(DigestSubscriptions)
 							.select()
 							.where(($) => [$.enabled.eq(true)]),
@@ -1092,8 +1100,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const dueSubs = subs.filter(
 				(s) =>
-					s.dayOfWeek === currentDayOfWeek &&
-					(s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
+					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
 			)
 
 			if (dueSubs.length === 0) {
@@ -1138,12 +1145,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						const claim = yield* database
 							.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(DigestSubscriptions)
 										.set({ lastAttemptedAt: now })
 										.where(($) => [
 											PG.inList($.id, orgSubIds),
-											PG.or($.lastAttemptedAt.isNull(), $.lastAttemptedAt.lt(todayStartMs)),
+											PG.or(
+												$.lastAttemptedAt.isNull(),
+												$.lastAttemptedAt.lt(todayStartMs),
+											),
 										])
 										.returning("id"),
 								),
@@ -1203,7 +1213,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 										Effect.gen(function* () {
 											const lastSentAt = yield* Clock.currentTimeMillis
 											yield* database.execute((db) =>
-												db.orm.run(
+												db.run(
 													PG.update(DigestSubscriptions)
 														.set({ lastSentAt })
 														.where(($) => [$.id.eq(sub.id)]),

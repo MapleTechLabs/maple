@@ -79,7 +79,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			now: DateTime.Utc,
 		) =>
 			database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(PrReviews)
 						.set({ postMergeStatus: status, updatedAt: toMs(now), postMergeAfter })
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
@@ -217,7 +217,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			// leaves the look on the review.
 			const stored = yield* encodePostMerge(report)
 			const won = yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(PrReviews)
 						.set({
 							postMergeStatus: "reported",
@@ -273,7 +273,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			Effect.gen(function* () {
 				const now = yield* DateTime.now
 				const due = yield* database.execute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(PrReviews)
 							.select()
 							.where(($) => [$.postMergeStatus.eq("waiting"), $.postMergeAfter.lte(toMs(now))])
@@ -289,7 +289,7 @@ export class PrReviewPostMergeService extends Context.Service<
 							// Claimed first: an overlapping tick that read the same row finds it leased and
 							// skips it, so the follow-up is posted once.
 							const claimed = yield* database.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.update(PrReviews)
 										.set({ postMergeAfter: toMs(leaseUntil) })
 										.where(($) => [

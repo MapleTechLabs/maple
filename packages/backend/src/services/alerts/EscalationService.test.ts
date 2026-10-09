@@ -89,7 +89,7 @@ const seedIssue = (issueId: ErrorIssueId) =>
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(ErrorIssues).values({
 					id: issueId,
 					orgId: ORG,
@@ -117,7 +117,7 @@ const seedEscalation = (
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(IssueEscalations).values({
 					id: asEscalationId(randomUUID()),
 					orgId: ORG,
@@ -141,7 +141,7 @@ const seedPolicy = (rulesJson: ReadonlyArray<unknown>, enabled = true) =>
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(AlertDestinations)
 					.values({
 						id: DESTINATION_ID,
@@ -162,7 +162,7 @@ const seedPolicy = (rulesJson: ReadonlyArray<unknown>, enabled = true) =>
 			),
 		)
 		yield* database.execute((db) =>
-			db.orm.run(
+			db.run(
 				PG.insertInto(IssueEscalationPolicies).values({
 					orgId: ORG,
 					enabled,
@@ -177,7 +177,7 @@ const seedPolicy = (rulesJson: ReadonlyArray<unknown>, enabled = true) =>
 const loadEscalations = Effect.gen(function* () {
 	const database = yield* Database
 	return yield* database.execute((db) =>
-		db.orm.run(
+		db.run(
 			PG.from(IssueEscalations)
 				.select()
 				.where(($) => [$.orgId.eq(ORG)]),
@@ -358,7 +358,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule())
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.orm.run(
+				db.run(
 					PG.update(AlertDestinations)
 						.set({ enabled: false })
 						.where(($) => [$.id.eq(DESTINATION_ID)]),

@@ -93,10 +93,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			/** Holds the ENCRYPTED row exactly as stored — `toResponse` decrypts per request. */
-			const ingestKeysMemo = new Map<
-				string,
-				{ row: OrgIngestKeyRow; expiresAt: number }
-			>()
+			const ingestKeysMemo = new Map<string, { row: OrgIngestKeyRow; expiresAt: number }>()
 			const env = yield* Env
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -119,7 +116,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const selectRow = Effect.fnUntraced(function* (orgId: OrgId) {
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(OrgIngestKeys)
 								.select()
 								.where(($) => [$.orgId.eq(orgId)])
@@ -146,7 +143,9 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 					publicKey: row.publicKey,
 					privateKey,
 					publicRotatedAt: decodeIsoDateTimeStringSync(new Date(row.publicRotatedAt).toISOString()),
-					privateRotatedAt: decodeIsoDateTimeStringSync(new Date(row.privateRotatedAt).toISOString()),
+					privateRotatedAt: decodeIsoDateTimeStringSync(
+						new Date(row.privateRotatedAt).toISOString(),
+					),
 				})
 			})
 
@@ -178,7 +177,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.insertInto(OrgIngestKeys)
 								.values({
 									orgId,
@@ -245,7 +244,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const selected = Arr.isArrayNonEmpty(misses)
 					? yield* database
 							.execute((db) =>
-								db.orm.run(
+								db.run(
 									PG.from(OrgIngestKeys)
 										.select()
 										.where(($) => [$.orgId.in_(...misses)]),
@@ -292,7 +291,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgIngestKeys)
 								.set({
 									publicKey,
@@ -336,7 +335,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.update(OrgIngestKeys)
 								.set({
 									privateKeyCiphertext: encryptedPrivate.ciphertext,
@@ -376,7 +375,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const keyHash = hashIngestKey(rawKey, lookupHmacKey)
 				const rows = yield* database
 					.execute((db) =>
-						db.orm.run(
+						db.run(
 							PG.from(OrgIngestKeys)
 								.select("orgId")
 								.where(($) => [

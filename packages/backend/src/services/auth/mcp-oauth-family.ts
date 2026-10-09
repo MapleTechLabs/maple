@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { ApiKeys, McpOAuthRefreshTokens } from "@maple/db/tables"
 import type { ApiKeyId, OrgId, UserId } from "@maple/domain/http"
 import { Effect } from "effect"
@@ -16,10 +16,10 @@ import { Effect } from "effect"
 
 /** Revoke a whole family and every access key it has ever minted. */
 export const revokeRefreshFamily = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	familyId: string,
 	now: number,
-): Effect.Effect<void, MapleOrmError> =>
+): Effect.Effect<void, MapleDbError> =>
 	Effect.gen(function* () {
 		const family = yield* orm.run(
 			PG.from(McpOAuthRefreshTokens)
@@ -42,10 +42,10 @@ export const revokeRefreshFamily = (
 	})
 
 const revokeFamilies = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	rows: ReadonlyArray<{ readonly familyId: string }>,
 	now: number,
-): Effect.Effect<number, MapleOrmError> => {
+): Effect.Effect<number, MapleDbError> => {
 	const familyIds = [...new Set(rows.map((row) => row.familyId))]
 	return Effect.forEach(familyIds, (familyId) => revokeRefreshFamily(orm, familyId, now), {
 		discard: true,
@@ -57,10 +57,10 @@ const revokeFamilies = (
  * from "the user revoked the key they can see" to "the grant behind it dies".
  */
 export const revokeFamiliesForAccessKeys = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	accessKeyIds: ReadonlyArray<ApiKeyId>,
 	now: number,
-): Effect.Effect<number, MapleOrmError> => {
+): Effect.Effect<number, MapleDbError> => {
 	const [first, ...rest] = accessKeyIds
 	if (first === undefined) return Effect.succeed(0)
 	return Effect.flatMap(
@@ -75,11 +75,11 @@ export const revokeFamiliesForAccessKeys = (
 
 /** Revoke every family a user holds in one organization, or in all of them when `orgId` is null. */
 export const revokeRefreshFamiliesForMember = (
-	orm: MapleOrm,
+	orm: MapleDb,
 	orgId: OrgId | null,
 	userId: UserId,
 	now: number,
-): Effect.Effect<number, MapleOrmError> =>
+): Effect.Effect<number, MapleDbError> =>
 	Effect.flatMap(
 		orm.run(
 			PG.from(McpOAuthRefreshTokens)

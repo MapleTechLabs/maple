@@ -40,7 +40,6 @@ import {
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { Env } from "@maple/backend/platform/Env"
 
 const decodeIdSync = Schema.decodeUnknownSync(InvestigationId)
 const decodeIsoSync = Schema.decodeUnknownSync(InvestigationDocument.fields.createdAt)
@@ -169,7 +168,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const env = yield* Env
 			const chatSessions = yield* Effect.serviceOption(ChatSessions)
 
 			const dbExecute = makeDbExecute(database, "InvestigationService", makePersistenceError)
@@ -313,7 +311,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 			const loadRow = (orgId: OrgId, id: InvestigationId) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(Investigations)
 							.select(selectStored)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
@@ -327,7 +325,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			// Used for both the dedup fast-path and the concurrent-insert race loser.
 			const loadIncidentRow = (orgId: OrgId, incidentKind: AiTriageIncidentKind, incidentId: string) =>
 				dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(Investigations)
 							.select(selectStored)
 							.where(($) => [
@@ -350,7 +348,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 			const failStaleInvestigations = Effect.fnUntraced(function* (orgId: OrgId, nowMs: number) {
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Investigations)
 							.set({
 								status: "failed",
@@ -407,7 +405,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			)(function* (orgId, opts) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const selectPage = dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.from(Investigations)
 							.select(selectStored)
 							.where(($) => [
@@ -488,7 +486,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// index (org, kind, incident_id) lets only one INSERT win. The loser gets
 				// no returned row and re-reads the winner instead of surfacing a 503.
 				const inserted = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.insertInto(Investigations)
 							.values({
 								id,
@@ -555,7 +553,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						}
 						const doc = yield* createInvestigation(orgId, userId, request)
 						const claimed = yield* dbExecute((db) =>
-							db.orm.run(
+							db.run(
 								PG.update(Investigations)
 									.set(($) => ({
 										startedAt: nowMs,
@@ -592,7 +590,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Investigations)
 							.set(($) => ({
 								status: "investigating",
@@ -624,7 +622,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				})
 				const nowMs = yield* Clock.currentTimeMillis
 				const updated = yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Investigations)
 							.set({ status, updatedAt: nowMs })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
@@ -726,7 +724,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// `updatedAt` is left alone: the hub sorts on it, and bumping it every heartbeat would
 				// walk a running row up the list under the reader. Liveness is `progress.updatedAt`.
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Investigations)
 							.set({ progressJson: progress })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.eq("investigating")]),
@@ -740,7 +738,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
-					db.orm.run(
+					db.run(
 						PG.update(Investigations)
 							.set({ status: "failed", error, updatedAt: nowMs })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.eq("investigating")]),

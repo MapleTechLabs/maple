@@ -41,7 +41,9 @@ export const DashboardVersions = PG.table("dashboard_versions", {
 		snapshotJson: PG.column(PG.jsonb(), { name: "snapshot_json" }),
 		changeKind: PG.column(PG.text, { name: "change_kind" }),
 		changeSummary: PG.column(PG.nullable(PG.text), { name: "change_summary" }),
-		sourceVersionId: PG.column(PG.nullable(PG.brand(PG.text, DashboardVersionId)), { name: "source_version_id" }),
+		sourceVersionId: PG.column(PG.nullable(PG.brand(PG.text, DashboardVersionId)), {
+			name: "source_version_id",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		createdBy: PG.column(PG.brand(PG.text, UserId), { name: "created_by" }),
 	},
@@ -51,7 +53,11 @@ export const DashboardVersions = PG.table("dashboard_versions", {
 		// Prevents two concurrent saves from stamping the same version_number for
 		// the same dashboard. Insert collisions surface as a unique-constraint
 		// error which the persistence layer maps to a concurrency conflict.
-		PG.uniqueIndex("dashboard_versions_org_dashboard_version_unq", ["orgId", "dashboardId", "versionNumber"]),
+		PG.uniqueIndex("dashboard_versions_org_dashboard_version_unq", [
+			"orgId",
+			"dashboardId",
+			"versionNumber",
+		]),
 	],
 	tenantColumn: "orgId",
 })
