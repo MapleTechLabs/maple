@@ -225,7 +225,7 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(both.body.setup_script).toContain("SCOPE_ID='123456789012'")
 		expect(both.body.setup_script).toContain('--folder="$SCOPE_ID" --include-children')
 		expect(both.body.setup_script).toContain(
-			`LOG_FILTER_MODE='set'\nLOG_FILTER='NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT resource.type="k8s_container"'`,
+			`LOG_FILTER_MODE='set'\nLOG_FILTER='NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update" AND NOT logName:"serialconsole.googleapis.com" AND NOT resource.type="k8s_container"'`,
 		)
 		expect(both.body.setup_script).toContain(
 			'gcloud resource-manager folders add-iam-policy-binding "$SCOPE_ID"',
