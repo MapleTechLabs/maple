@@ -54,7 +54,7 @@ export function RefreshButton({
 			disabled={spinning}
 			className={className}
 		>
-			<ArrowRotateClockwiseIcon className={cn("size-3.5", spinning && "animate-spin")} />
+			<ArrowRotateClockwiseIcon className={spinning ? "animate-spin" : undefined} />
 		</Button>
 	)
 }

@@ -180,7 +180,7 @@ function WebAnalyticsPage() {
 							/>
 						}
 					>
-						<PlayRotateClockwiseIcon size={14} />
+						<PlayRotateClockwiseIcon />
 						<span className="hidden sm:inline">Replays</span>
 					</Button>
 				</>

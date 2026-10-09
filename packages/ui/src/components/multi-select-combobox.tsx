@@ -51,6 +51,8 @@ export interface MultiSelectComboboxProps<T extends string = string> {
 	 * visible `triggerLabel` alone leaves it unnamed.
 	 */
 	triggerAriaLabel?: string
+	/** Trigger-mode button size; match it to the toolbar row. */
+	triggerSize?: "sm" | "default"
 	/** Chips-mode placeholder, shown in the inline input. */
 	placeholder?: string
 	/** Trigger-mode placeholder for the search input inside the popup. */
@@ -81,6 +83,7 @@ export function MultiSelectCombobox<T extends string = string>({
 	onChange,
 	options,
 	mode = "chips",
+	triggerSize = "sm",
 	triggerLabel,
 	triggerAriaLabel,
 	placeholder,
@@ -161,10 +164,10 @@ export function MultiSelectCombobox<T extends string = string>({
 				<ComboboxTrigger
 					aria-label={triggerAriaLabel}
 					className={className}
-					render={<Button className="shrink-0 gap-1.5" size="sm" variant="outline" />}
+					render={<Button className="shrink-0 gap-1.5" size={triggerSize} variant="outline" />}
 				>
 					{triggerLabel}
-					<ChevronDownIcon className="text-muted-foreground" size={14} />
+					<ChevronDownIcon className="text-muted-foreground" />
 				</ComboboxTrigger>
 				<ComboboxContent align="start" className="w-64">
 					<div className="border-border border-b p-2">

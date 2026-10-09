@@ -67,7 +67,7 @@ export function IssueDetailSkeleton({
 								{/* Present but inert: the action it starts needs the issue it is
 								    still fetching, and removing it would shift the whole row. */}
 								<Button size="sm" disabled>
-									<PulseIcon className="size-3.5" />
+									<PulseIcon />
 									Investigate
 								</Button>
 							</div>

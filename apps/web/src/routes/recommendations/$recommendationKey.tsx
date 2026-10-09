@@ -508,7 +508,7 @@ function DetailSidebar({
 							onClick={onReopen}
 							loading={busy === "reopen"}
 						>
-							<ArrowRotateAnticlockwiseIcon size={14} />
+							<ArrowRotateAnticlockwiseIcon />
 							Reopen recommendation
 						</Button>
 						<p className="text-xs leading-relaxed text-muted-foreground">
@@ -519,7 +519,7 @@ function DetailSidebar({
 					<div className="flex flex-col gap-2">
 						{isApplyable ? (
 							<Button className="w-full" onClick={onApply} loading={busy === "apply"}>
-								<BoltIcon size={14} />
+								<BoltIcon />
 								Apply mapping
 							</Button>
 						) : (
@@ -529,7 +529,7 @@ function DetailSidebar({
 							</p>
 						)}
 						<Button className="w-full" onClick={onDismiss} loading={busy === "dismiss"}>
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 							Dismiss recommendation
 						</Button>
 					</div>

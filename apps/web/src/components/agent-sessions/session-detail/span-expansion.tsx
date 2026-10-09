@@ -184,7 +184,7 @@ function OpenInTracesLink({ span }: { span: AiSessionSpan }) {
 			}
 		>
 			Open in Traces
-			<ExternalLinkIcon size={11} />
+			<ExternalLinkIcon />
 		</Button>
 	)
 }

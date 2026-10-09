@@ -55,14 +55,14 @@ export function IssueContextMenu({
 			<ContextMenuContent className="w-56 p-1">
 				<ContextMenuSub>
 					<ContextMenuSubTrigger>
-						<WorkflowRingIcon state={issue.workflowState} size={14} />
+						<WorkflowRingIcon state={issue.workflowState} />
 						<span>Change status</span>
 					</ContextMenuSubTrigger>
 					<ContextMenuSubContent className="w-56 p-1">
 						<ContextMenuItem disabled>
-							<WorkflowRingIcon state={issue.workflowState} size={14} />
+							<WorkflowRingIcon state={issue.workflowState} />
 							<span className="flex-1">{WORKFLOW_LABEL[issue.workflowState]}</span>
-							<CheckIcon size={12} className="text-muted-foreground" />
+							<CheckIcon className="text-muted-foreground" />
 						</ContextMenuItem>
 						{targets.length === 0 ? (
 							<ContextMenuItem disabled>
@@ -76,7 +76,7 @@ export function IssueContextMenu({
 									key={state}
 									onClick={() => void mutations.transitionTo(issue.id, state)}
 								>
-									<WorkflowRingIcon state={state} size={14} />
+									<WorkflowRingIcon state={state} />
 									<span className="flex-1">{WORKFLOW_LABEL[state]}</span>
 								</ContextMenuItem>
 							))

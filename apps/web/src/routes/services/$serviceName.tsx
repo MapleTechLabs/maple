@@ -209,7 +209,7 @@ function ServiceDetailPage() {
 						aria-label="Create alert"
 						render={<Link to="/alerts/create" search={{ serviceName }} />}
 					>
-						<BellIcon size={14} />
+						<BellIcon />
 						<span className="hidden sm:inline">Create alert</span>
 					</Button>
 				</>

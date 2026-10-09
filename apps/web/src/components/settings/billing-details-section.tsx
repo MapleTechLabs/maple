@@ -108,7 +108,7 @@ function TaxIdRow({
 					label={`Remove ${taxIdLabel(taxId.type)} ${taxId.value}`}
 					className="ml-auto text-muted-foreground"
 				>
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</IconButton>
 			)}
 		</li>

@@ -53,9 +53,9 @@ export function ApprovalCard({ toolName, input, resolved, onApprove, onDeny }: A
 					className="mt-3 text-muted-foreground hover:text-foreground"
 				>
 					{showRaw ? (
-						<ChevronDownIcon className="size-3" />
+						<ChevronDownIcon />
 					) : (
-						<ChevronRightIcon className="size-3" />
+						<ChevronRightIcon />
 					)}
 					{showRaw ? "Hide raw input" : "Show raw input"}
 				</Button>

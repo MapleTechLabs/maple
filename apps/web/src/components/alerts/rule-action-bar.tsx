@@ -62,7 +62,7 @@ export function RuleActionBar({
 							onClick={onShowTemplates}
 							className="hidden sm:inline-flex"
 						>
-							<SquareTerminalIcon size={14} />
+							<SquareTerminalIcon />
 							Templates
 						</Button>
 					)}
@@ -80,7 +80,7 @@ export function RuleActionBar({
 						</Button>
 					)}
 					<Button type="button" onClick={onSave} disabled={!ready} loading={saving}>
-						<FloppyDiskIcon size={14} />
+						<FloppyDiskIcon />
 						{editing ? "Save changes" : "Create rule"}
 					</Button>
 				</div>

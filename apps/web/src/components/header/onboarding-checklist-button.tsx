@@ -86,7 +86,7 @@ function OnboardingChecklistPill() {
 								claimable && "border-primary bg-primary/20",
 							)}
 						>
-							<StarIcon size={14} className="text-primary" />
+							<StarIcon className="text-primary" />
 							{claimable || deadlineMs === null ? (
 								<span>Claim {credits} credits</span>
 							) : (
@@ -180,7 +180,7 @@ function RewardCallout({
 					</span>
 				</button>
 				<IconButton label="Got it" onClick={onClose} className="-mt-1 shrink-0 text-muted-foreground">
-					<XmarkIcon size={12} />
+					<XmarkIcon />
 				</IconButton>
 			</div>
 		</div>

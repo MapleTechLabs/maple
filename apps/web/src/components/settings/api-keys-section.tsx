@@ -608,12 +608,12 @@ function ApiKeyRow({
 					<RowActionsMenu label={`Actions for ${apiKey.name}`}>
 						{onRoll && (
 							<DropdownMenuItem onClick={onRoll}>
-								<ArrowPathIcon size={14} />
+								<ArrowPathIcon />
 								Roll key
 							</DropdownMenuItem>
 						)}
 						<DropdownMenuItem variant="destructive" onClick={onRevoke}>
-							<TrashIcon size={14} />
+							<TrashIcon />
 							Revoke key
 						</DropdownMenuItem>
 					</RowActionsMenu>

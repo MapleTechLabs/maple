@@ -90,7 +90,7 @@ export function HazelIntegrationCard() {
 						Alert destinations will appear here after connecting your workspace.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
-						<HazelIcon size={16} />
+						<HazelIcon />
 						Connect Hazel
 					</Button>
 					<IntegrationEmptyFooter>

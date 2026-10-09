@@ -79,7 +79,7 @@ export function SendTestEventStrip({ apiKey, onTestSent }: { apiKey: string; onT
 					disabled={!apiKey}
 					className="gap-2 shrink-0"
 				>
-					<PaperPlaneIcon size={13} />
+					<PaperPlaneIcon />
 					Send a test event
 				</Button>
 			</div>

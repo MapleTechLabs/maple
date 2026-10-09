@@ -43,7 +43,7 @@ export function DashboardHistoryPanel({
 					onClick={onClose}
 					className="ml-auto text-muted-foreground hover:text-foreground"
 				>
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</IconButton>
 			</div>
 

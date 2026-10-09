@@ -136,7 +136,7 @@ function RailwayTokenForm({
 						</Button>
 					) : null}
 					<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
-						<RailwayIcon size={14} />
+						<RailwayIcon />
 						{mode === "rotate" ? "Update token" : "Connect Railway"}
 					</Button>
 				</div>

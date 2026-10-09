@@ -161,7 +161,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 					onClick={() => onOpenSpan(failingSpanId)}
 				>
 					Open failing span
-					<ArrowRightIcon size={14} />
+					<ArrowRightIcon />
 				</Button>
 			)}
 		</section>

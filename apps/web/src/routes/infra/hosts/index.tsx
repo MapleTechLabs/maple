@@ -85,7 +85,7 @@ function HostsPage() {
 				description="Every machine sending CPU, memory, disk and network metrics, busiest first."
 				actions={
 					<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add host
 					</Button>
 				}

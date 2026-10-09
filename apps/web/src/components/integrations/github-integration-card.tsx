@@ -292,7 +292,7 @@ function NotConnectedState({ connectFlow }: { connectFlow: IntegrationConnect })
 					Your repositories and commits will appear here after installing.
 				</IntegrationEmptyHint>
 				<Button onClick={connectFlow.connect} loading={connectFlow.busy}>
-					<GithubIcon size={16} />
+					<GithubIcon />
 					Connect GitHub
 				</Button>
 				<IntegrationEmptyFooter>
@@ -370,7 +370,7 @@ function DeactivatedState({
 
 			<div className="flex flex-col items-center gap-2">
 				<Button onClick={onReconnect} loading={busy}>
-					<ArrowRotateClockwiseIcon size={16} />
+					<ArrowRotateClockwiseIcon />
 					Reconnect GitHub
 				</Button>
 				<p className="text-xs text-muted-foreground">
@@ -592,7 +592,7 @@ function ConnectedView({
 									disabled={anyDeleting}
 									loading={isDeleting(repo.id)}
 								>
-									<TrashIcon size={13} />
+									<TrashIcon />
 									Delete
 								</Button>
 							</Item>
@@ -749,7 +749,7 @@ function BranchSelector({
 							<span className="max-w-[10rem] truncate font-medium">
 								{tracked ?? EMPTY_VALUE}
 							</span>
-							<ChevronDownIcon size={12} className="text-muted-foreground" />
+							<ChevronDownIcon className="text-muted-foreground" />
 						</Button>
 					}
 				/>

@@ -272,7 +272,7 @@ export function CloudflareAccountCard() {
 						Your zones and Workers will appear here after connecting.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
-						<CloudflareIcon size={16} />
+						<CloudflareIcon />
 						Connect Cloudflare
 					</Button>
 					<IntegrationEmptyFooter>

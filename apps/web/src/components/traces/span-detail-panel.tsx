@@ -252,7 +252,7 @@ export function SpanDetailPanel({
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
 					<IconButton size="icon" label="Close span details" onClick={onClose}>
-						<XmarkIcon size={16} />
+						<XmarkIcon />
 					</IconButton>
 				</div>
 			</div>

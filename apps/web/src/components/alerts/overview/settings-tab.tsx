@@ -251,7 +251,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<EmptyActions>
 								{isAdmin && (
 									<Button size="sm" onClick={() => manager.openDialog()}>
-										<PlusIcon size={14} />
+										<PlusIcon />
 										Add destination
 									</Button>
 								)}

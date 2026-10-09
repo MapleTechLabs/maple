@@ -215,7 +215,7 @@ function InvestigationsHub() {
 							})
 						}
 					>
-						<SelectTrigger size="sm" className="w-[122px]">
+						<SelectTrigger className="w-[122px]">
 							{/* The trigger renders before the items register, so it
 							    resolves its own label rather than echoing the value. */}
 							<SelectValue>{kindFilterLabel}</SelectValue>
@@ -242,7 +242,7 @@ function InvestigationsHub() {
 							})
 						}}
 					>
-						<SelectTrigger size="sm" className="w-[136px]">
+						<SelectTrigger className="w-[136px]">
 							<SelectValue>{sortLabel}</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
@@ -467,7 +467,7 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 						className="gap-2"
 						render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 					>
-						<ConnectionIcon size={14} />
+						<ConnectionIcon />
 						Set up tracing
 					</Button>
 					<DocsLink page="instrumentation">Setup guide</DocsLink>

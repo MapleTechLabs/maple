@@ -226,10 +226,10 @@ function ChatPageInner({
 								size="icon"
 								className="size-9"
 							>
-								<LinkIcon size={16} />
+								<LinkIcon />
 							</IconButton>
 							<IconButton label="New chat" onClick={createTab} size="icon" className="size-9">
-								<PlusIcon size={16} />
+								<PlusIcon />
 							</IconButton>
 						</header>
 						{conversationArea}
@@ -319,7 +319,7 @@ function SharedChatView({
 							size="sm"
 							className="shrink-0 gap-1.5"
 						>
-							<PlusIcon size={14} />
+							<PlusIcon />
 							New chat
 						</Button>
 					</header>

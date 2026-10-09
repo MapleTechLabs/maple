@@ -171,7 +171,6 @@ export function RuleDiagnosisPanel({
 							className="mt-1.5 text-muted-foreground hover:text-foreground"
 						>
 							<ChevronDownIcon
-								size={13}
 								className={cn("shrink-0 transition-transform", showAll && "rotate-180")}
 							/>
 							{showAll

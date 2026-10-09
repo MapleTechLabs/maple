@@ -540,7 +540,7 @@ function RuleDetailContent() {
 								size="sm"
 								render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
 							>
-								<PencilIcon size={14} />
+								<PencilIcon />
 								Edit rule
 							</Button>
 						</>
@@ -648,7 +648,7 @@ function RuleDetailContent() {
 										size="sm"
 										onClick={() => void openInvestigation(overviewIncident)}
 									>
-										<ChatBubbleSparkleIcon size={14} />
+										<ChatBubbleSparkleIcon />
 										Open investigation
 									</Button>
 								</Panel>
@@ -1061,7 +1061,6 @@ function RuleDetailContent() {
 																			}
 																		>
 																			<ChatBubbleSparkleIcon
-																				size={14}
 																			/>
 																			Open investigation
 																		</DropdownMenuItem>

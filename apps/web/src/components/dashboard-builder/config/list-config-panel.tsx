@@ -228,7 +228,7 @@ function DraggableColumnRow({
 				className="text-muted-foreground hover:text-destructive"
 				onClick={() => removeColumn(index)}
 			>
-				<XmarkIcon size={14} />
+				<XmarkIcon />
 			</IconButton>
 		</Reorder.Item>
 	)

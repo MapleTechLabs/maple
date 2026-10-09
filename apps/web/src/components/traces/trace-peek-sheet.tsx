@@ -190,7 +190,7 @@ export function TracePeekSheet({
 									disabled={!canStepBack}
 									onClick={() => onStep(-1)}
 								>
-									<ArrowUpIcon size={14} />
+									<ArrowUpIcon />
 								</IconButton>
 								<IconButton
 									variant="outline"
@@ -199,7 +199,7 @@ export function TracePeekSheet({
 									disabled={!canStepForward}
 									onClick={() => onStep(1)}
 								>
-									<ArrowDownIcon size={14} />
+									<ArrowDownIcon />
 								</IconButton>
 								{position ? (
 									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">

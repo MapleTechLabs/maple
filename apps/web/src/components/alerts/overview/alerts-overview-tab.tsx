@@ -297,7 +297,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 								})
 							}
 						>
-							<SelectTrigger size="sm" className="w-[170px]">
+							<SelectTrigger className="w-[170px]">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>

@@ -61,7 +61,7 @@ function SpanRowImpl({
 								onToggle(span)
 							}}
 						>
-							{expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+							{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
 						</IconButton>
 					) : (
 						<div className="w-6 shrink-0" />
@@ -152,7 +152,7 @@ function SpanRowImpl({
 							onToggle(span)
 						}}
 					>
-						{expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+						{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
 					</IconButton>
 				) : (
 					<div className="w-6 shrink-0" />

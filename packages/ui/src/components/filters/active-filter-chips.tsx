@@ -86,7 +86,7 @@ export function ActiveFilterChips({ chips, onClearAll, className }: ActiveFilter
 							onClick={chip.onRemove}
 							className="-my-1 text-current/60 hover:bg-current/10 hover:text-current"
 						>
-							<XmarkIcon className="size-3" />
+							<XmarkIcon />
 						</IconButton>
 					</span>
 				)

@@ -250,7 +250,7 @@ export function MembersSection() {
 																)
 															}
 														>
-															<ShieldIcon size={14} />
+															<ShieldIcon />
 															{member.role === "org:admin"
 																? "Change to Member"
 																: "Change to Admin"}
@@ -266,7 +266,7 @@ export function MembersSection() {
 																setRemoveDialogOpen(true)
 															}}
 														>
-															<TrashIcon size={14} />
+															<TrashIcon />
 															Remove member
 														</DropdownMenuItem>
 													</RowActionsMenu>

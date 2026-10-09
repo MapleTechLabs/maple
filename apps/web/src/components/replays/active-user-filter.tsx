@@ -56,7 +56,7 @@ export function ActiveUserFilter({
 				label={clearLabel}
 				className="rounded-full text-muted-foreground before:rounded-full"
 			>
-				<XmarkIcon size={14} />
+				<XmarkIcon />
 			</IconButton>
 		</div>
 	)

@@ -171,7 +171,6 @@ export function TemplateList({
 					options={READINESS_OPTIONS}
 					value={filter}
 					onChange={onFilterChange}
-					size="sm"
 					aria-label="Filter templates by readiness"
 					className="shrink-0"
 				/>

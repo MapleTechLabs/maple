@@ -534,7 +534,7 @@ function Thresholds() {
 							onClick={() => replace(thresholds.filter((_, i) => i !== index))}
 							className="text-muted-foreground hover:text-foreground"
 						>
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				))}

@@ -83,7 +83,7 @@ function AlertsPage() {
 			// While empty, the empty-state CTA is the single add affordance (avoids a duplicate).
 			isAdmin && hasDestinations ? (
 				<Button size="sm" onClick={() => destinationManager.openDialog()}>
-					<PlusIcon size={14} />
+					<PlusIcon />
 					Add destination
 				</Button>
 			) : undefined
@@ -92,7 +92,7 @@ function AlertsPage() {
 				size="sm"
 				render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
 			>
-				<PlusIcon size={14} />
+				<PlusIcon />
 				New rule
 			</Button>
 		)

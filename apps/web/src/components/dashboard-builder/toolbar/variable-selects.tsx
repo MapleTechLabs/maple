@@ -55,7 +55,7 @@ export function VariableSelects({ onManage }: { onManage?: () => void }) {
 						variables.length === 0 ? "Add dashboard variable" : "Manage dashboard variables"
 					}
 				>
-					<PlusIcon size={13} data-icon="inline-start" />
+					<PlusIcon data-icon="inline-start" />
 					{variables.length === 0 ? "Variable" : null}
 				</Button>
 			)}
