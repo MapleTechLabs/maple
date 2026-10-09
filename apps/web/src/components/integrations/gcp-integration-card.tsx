@@ -619,7 +619,7 @@ function GcpSetup({
 			) : (
 				<span className="text-foreground">
 					Nothing yet. If the script stopped with an error, fix what it names and paste it again: it
-					continues where it stopped. If it named a wrong ID, remove this connection and connect the
+					continues where it stopped. If the ID is wrong, remove this connection and connect the
 					right ID: a connection&apos;s ID can&apos;t be changed.{" "}
 					<ExternalLink href={`${DOCS}#troubleshooting`}>Troubleshooting</ExternalLink>
 				</span>
@@ -803,7 +803,7 @@ function OffStatus({ stillSetUp, children }: { stillSetUp: boolean; children: st
 interface StatusProps {
 	readonly connector: V2GcpConnector
 	readonly nowMs: number
-	/** What a row waiting on the setup script says: who runs it, and whether it ran before. */
+	/** What a row waiting on the setup script says: who runs it, and whether a run reported before. */
 	readonly runScript: string
 }
 
@@ -904,7 +904,7 @@ function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
 							</>
 						)}
 						{state.overdue
-							? "No read has arrived yet. Maple retries every 5 minutes."
+							? "No read has arrived yet. Maple retries every 5 minutes. If this lasts an hour, write to support@maple.dev."
 							: "The first read lands within about 10 minutes."}
 					</p>
 				</Status>
@@ -1117,10 +1117,10 @@ function GcpConnectorRow({
 		connector.applied_logs_enabled === null && connector.applied_metrics_enabled === null
 	const cleanedUp = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
 	// What a row or the notice says while Google Cloud waits on the script: who runs it, and
-	// "again" once a run has reported on that capability.
+	// "again" once a run has reported, also when it stopped before this capability.
 	const who = isAdmin ? "Run the setup script" : "A Maple organization admin needs to run the setup script"
-	const runScript = (applied: boolean | null) => `${who}${applied === null ? "" : " again"}.`
 	const reportedAt = saved.setup_reported_at
+	const runScript = `${who}${reportedAt === null ? "" : " again"}.`
 	const open = (rerun: boolean): SetupOpened => ({ at: Date.now(), rerun, seen: reportedAt })
 	// A connection whose script has not run opens on its next step.
 	const [opened, setOpened] = useState<SetupOpened | null>(() =>
@@ -1218,11 +1218,7 @@ function GcpConnectorRow({
 				disabled={updating}
 				onCheckedChange={isAdmin ? (logs_enabled) => void save({ logs_enabled }) : null}
 			>
-				<LogStatus
-					connector={connector}
-					nowMs={nowMs}
-					runScript={runScript(connector.applied_logs_enabled)}
-				/>
+				<LogStatus connector={connector} nowMs={nowMs} runScript={runScript} />
 			</Capability>
 			<Capability
 				title="Metrics and resources"
@@ -1231,11 +1227,7 @@ function GcpConnectorRow({
 				disabled={updating}
 				onCheckedChange={isAdmin ? (metrics_enabled) => void save({ metrics_enabled }) : null}
 			>
-				<MetricsStatus
-					connector={connector}
-					nowMs={nowMs}
-					runScript={runScript(connector.applied_metrics_enabled)}
-				/>
+				<MetricsStatus connector={connector} nowMs={nowMs} runScript={runScript} />
 			</Capability>
 			{pendingChanges.length === 0 ? null : (
 				<div className="px-4 pt-1 pb-2">
