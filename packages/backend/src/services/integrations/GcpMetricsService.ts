@@ -90,8 +90,10 @@ const explainApiError = (
 		return `The ${error.api} API is switched off in the host project ${host}. Run the setup script again: it switches the API on.`
 	}
 	if (error.kind === "denied" || error.kind === "not_found") {
+		// Shown both before the script ever ran and for the minute or two after a run in which
+		// Google does not accept the new grant yet, so it has to read right in both.
 		if (error.api === "IAM Credentials") {
-			return "Maple can't sign in as this connection's read-only service account. It was deleted, or the grant to Maple was removed or blocked by an organization policy. Run the setup script again and read its last lines."
+			return "Maple can't sign in as this connection's read-only service account yet. After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script and read its last lines."
 		}
 		return reading === "metrics"
 			? `Google denied Maple's read of ${scope}: the read-only roles are missing. Run the setup script again: it grants them. A new grant can take a few minutes.`
