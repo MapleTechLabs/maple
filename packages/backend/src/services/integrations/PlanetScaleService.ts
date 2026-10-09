@@ -723,43 +723,45 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						`deploy requests of ${database_.name}`,
 					)(listing.items)
 
-					let inserted = 0
-					let newestUpdate = state?.watermarkAt ?? 0
-					for (const request of requests) {
+					const newestUpdate = requests.reduce(
+						(newest, request) => Math.max(newest, parseTimestamp(request.updated_at) ?? 0),
+						state?.watermarkAt ?? 0,
+					)
+					const pending = requests.flatMap((request) => {
 						const updatedAt = parseTimestamp(request.updated_at) ?? 0
-						if (updatedAt > newestUpdate) newestUpdate = updatedAt
 						// Untouched since the watermark: its transitions are already stored.
-						if (updatedAt !== 0 && updatedAt <= floor) continue
-
+						if (updatedAt !== 0 && updatedAt <= floor) return []
 						const externalId =
 							request.number != null ? String(request.number) : (request.id ?? "")
 						const label = externalId === "" ? "Deploy request" : `Deploy request #${externalId}`
-						for (const row of deployRequestTimelineRows(request)) {
-							if (row.occurredAtMs < now - DEPLOY_REQUESTS_FLOOR_MS) continue
-							const result = yield* appendTimelineEvent({
-								orgId: connection.orgId,
-								databaseName: database_.name,
-								// A deploy request spans two branches; pinning the marker to
-								// one of them would be a guess the payload doesn't support.
-								branchName: "",
-								category: "deploy_request",
-								eventType: row.eventType,
-								state: row.state,
-								externalId,
-								title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
-								source: "backfill",
-								actorLogin: request.actor?.display_name ?? null,
-								url: request.html_url ?? null,
-								payload: {
-									branch: request.branch ?? null,
-									intoBranch: request.into_branch ?? null,
-								},
-								occurredAtMs: row.occurredAtMs,
-								createdAtMs: now,
-							}).pipe(Effect.mapError(toPersistenceError))
-							if (result.inserted) inserted++
-						}
-					}
+						return deployRequestTimelineRows(request)
+							.filter((row) => row.occurredAtMs >= now - DEPLOY_REQUESTS_FLOOR_MS)
+							.map((row) => ({ request, row, externalId, label }))
+					})
+					const appended = yield* Effect.forEach(pending, ({ request, row, externalId, label }) =>
+						appendTimelineEvent({
+							orgId: connection.orgId,
+							databaseName: database_.name,
+							// A deploy request spans two branches; pinning the marker to
+							// one of them would be a guess the payload doesn't support.
+							branchName: "",
+							category: "deploy_request",
+							eventType: row.eventType,
+							state: row.state,
+							externalId,
+							title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
+							source: "backfill",
+							actorLogin: request.actor?.display_name ?? null,
+							url: request.html_url ?? null,
+							payload: {
+								branch: request.branch ?? null,
+								intoBranch: request.into_branch ?? null,
+							},
+							occurredAtMs: row.occurredAtMs,
+							createdAtMs: now,
+						}).pipe(Effect.mapError(toPersistenceError)),
+					)
+					const inserted = appended.filter((result) => result.inserted).length
 
 					// A truncated listing has unobserved requests beyond the ceiling:
 					// advancing the watermark past them would skip them forever. Keep the
@@ -948,20 +950,10 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					),
 				)
 
-				let refreshed = 0
-				let skipped = 0
-				let failures = 0
-				let deployEvents = 0
-				yield* Effect.forEach(
+				const results = yield* Effect.forEach(
 					connections,
 					(connection) =>
 						pollOrg(connection).pipe(
-							Effect.map((result) => {
-								deployEvents += result.deployEvents
-								if (result.outcome === "refreshed") refreshed++
-								else if (result.outcome === "skipped") skipped++
-								else failures++
-							}),
 							// A broken org must not stop the fleet.
 							Effect.catchCause((cause) =>
 								Cause.hasInterruptsOnly(cause)
@@ -971,16 +963,22 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 												orgId: connection.orgId,
 												error: summarizeCause(cause),
 											}),
-											Effect.map(() => {
-												failures++
-											}),
+											Effect.as({ outcome: "failed" as const, deployEvents: 0 }),
 										),
 							),
 						),
-					{ concurrency: ORG_CONCURRENCY, discard: true },
+					{ concurrency: ORG_CONCURRENCY },
 				)
 
-				return { orgs: connections.length, refreshed, skipped, failures, deployEvents }
+				const countOutcome = (outcome: (typeof results)[number]["outcome"]) =>
+					results.filter((result) => result.outcome === outcome).length
+				return {
+					orgs: connections.length,
+					refreshed: countOutcome("refreshed"),
+					skipped: countOutcome("skipped"),
+					failures: countOutcome("failed"),
+					deployEvents: results.reduce((sum, result) => sum + result.deployEvents, 0),
+				}
 			})
 
 			const queryInsights = Effect.fn("PlanetScaleService.queryInsights")(function* (
