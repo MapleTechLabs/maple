@@ -328,9 +328,7 @@ const make: Effect.Effect<
 				([errorRows, alertRows]) =>
 					new Set([
 						...errorRows.map((row) => row.issueId),
-						...alertRows.flatMap((row) =>
-							row.issueId == null ? [] : [row.issueId as ErrorIssueId],
-						),
+						...alertRows.flatMap((row) => (row.issueId == null ? [] : [row.issueId])),
 					]),
 			),
 		)

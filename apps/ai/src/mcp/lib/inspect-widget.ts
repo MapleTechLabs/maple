@@ -127,7 +127,7 @@ export const collectBlockingBuilderWarnings = Effect.fn("collectBlockingBuilderW
 // stat tile actually shows.
 function firstNumericField(result: QueryEngineResult): string | null {
 	if (result.kind === "timeseries") {
-		for (const point of result.data as ReadonlyArray<TimeseriesPoint>) {
+		for (const point of result.data) {
 			for (const [name, v] of Object.entries(point.series)) {
 				if (typeof v === "number" && !Number.isNaN(v)) return name
 			}
@@ -135,7 +135,7 @@ function firstNumericField(result: QueryEngineResult): string | null {
 		return null
 	}
 	if (result.kind === "breakdown") {
-		return (result.data as ReadonlyArray<BreakdownItem>).length > 0 ? "value" : null
+		return result.data.length > 0 ? "value" : null
 	}
 	return null
 }
@@ -143,17 +143,17 @@ function firstNumericField(result: QueryEngineResult): string | null {
 function collectReduceValues(result: QueryEngineResult, field: string): number[] {
 	const values: number[] = []
 	if (result.kind === "timeseries") {
-		for (const point of result.data as ReadonlyArray<TimeseriesPoint>) {
+		for (const point of result.data) {
 			const v = point.series[field]
 			if (typeof v === "number" && !Number.isNaN(v)) values.push(v)
 		}
 	} else if (result.kind === "breakdown") {
 		if (field === "value") {
-			for (const row of result.data as ReadonlyArray<BreakdownItem>) {
+			for (const row of result.data) {
 				if (typeof row.value === "number") values.push(row.value)
 			}
 		} else {
-			for (const row of result.data as ReadonlyArray<BreakdownItem>) {
+			for (const row of result.data) {
 				if (row.name === field && typeof row.value === "number") values.push(row.value)
 			}
 		}
@@ -256,13 +256,13 @@ export function isGroupByRequested(draft: {
 function isSingleAllGroup(result: QueryEngineResult): boolean {
 	if (result.kind === "timeseries") {
 		const names = new Set<string>()
-		for (const point of result.data as ReadonlyArray<TimeseriesPoint>) {
+		for (const point of result.data) {
 			for (const name of Object.keys(point.series)) names.add(name)
 		}
 		return names.size === 1 && names.has("all")
 	}
 	if (result.kind === "breakdown") {
-		const rows = result.data as ReadonlyArray<BreakdownItem>
+		const rows = result.data
 		return rows.length === 1 && rows[0]?.name === "all"
 	}
 	return false
@@ -697,7 +697,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 							status: "success",
 							error: null,
 							warnings: [],
-							data: (result.data as ReadonlyArray<TimeseriesPoint>).map((p) => ({
+							data: result.data.map((p) => ({
 								bucket: p.bucket,
 								series: { ...p.series },
 							})),

@@ -635,7 +635,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			const parseJson = (response: Response, context: string) =>
 				Effect.tryPromise({
-					try: () => response.json() as Promise<unknown>,
+					try: () => response.json(),
 					catch: (cause) =>
 						new GithubAppError({ message: `${context} returned a non-JSON response`, cause }),
 				})

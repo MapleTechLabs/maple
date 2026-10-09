@@ -45,7 +45,7 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 		}
 
 		const body = yield* Effect.tryPromise({
-			try: () => request.json() as Promise<unknown>,
+			try: () => request.json(),
 			// The only outcome that matters is "not a request this Worker can run",
 			// which the decode below reports; the parse failure itself carries nothing.
 			catch: () => "unparseable" as const,

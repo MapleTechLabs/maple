@@ -344,7 +344,7 @@ function Unit({ label = "Unit" }: { label?: string }) {
 			</Select>
 			{isDuration && (
 				<Segments
-					value={state.unit as ValueUnit}
+					value={state.unit}
 					onSelect={(unit) => set({ unit })}
 					options={DURATION_SCALE_OPTIONS}
 				/>

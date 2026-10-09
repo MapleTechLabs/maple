@@ -1181,7 +1181,7 @@ const applyAlertReducer = (
 ): number | null => {
 	const values = Arr.filterMap(observations, (observation) =>
 		observation.hasData && observation.value != null
-			? Result.succeed(observation.value as number)
+			? Result.succeed(observation.value)
 			: Result.failVoid,
 	)
 
@@ -1791,7 +1791,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				tenant,
 				(capabilities) =>
 					CH.logsBreakdownQuery({
-						groupBy: logsQuery.groupBy as "service" | "severity",
+						groupBy: logsQuery.groupBy,
 						...opts,
 						attributeIndexMode: attributeIndexMode(capabilities, "logs"),
 						bodySearchMode: logBodySearchMode(capabilities),
