@@ -218,7 +218,7 @@ const tellClicker = (
 		Effect.ignore,
 	)
 
-const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
+const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 	message: InboundMessage,
 	ports: RelayPorts<R>,
 ) {
@@ -425,7 +425,7 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
  * Nothing the click carried reaches the tool. The control names only a call; the session is this
  * conversation's, and it reads the tool's name and arguments out of its own transcript.
  */
-const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
+const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	action: InboundAction,
 	ports: RelayPorts<R>,
 ) {
@@ -536,7 +536,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
  * Re-read rather than reported: the session's log is what the decision produced, and rendering it
  * the way the turn itself is rendered is what keeps one description of an approval in the codebase.
  */
-const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
+const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 	action: InboundAction,
 	request: ChatActionRequest,
 	orgId: OrgId,
