@@ -166,7 +166,8 @@ done
 case "$url" in
   *testIamPermissions)
     echo "$url $header" >> "$CURL_LOG"
-    [ "$CURL_IAM" = ok ] || exit 22
+    [ "$CURL_IAM" != unanswered ] || exit 22
+    if [ "$CURL_IAM" = nothing ]; then echo "{}"; exit 0; fi
     lacking="\\"$CURL_LACKING\\""
     echo "\${data//$lacking/}" ;;
   *)
@@ -191,7 +192,10 @@ interface RunOptions {
 	billing?: "True" | "False"
 	/** The APIs that are on in the host project. None unless the test says so. */
 	apis?: ReadonlyArray<string>
-	/** A permission the account does not hold, or `unanswered` when Google cannot be asked. */
+	/**
+	 * A permission the account does not hold, `everything` for an account without any, or
+	 * `unanswered` when Google cannot be asked.
+	 */
 	lacking?: string
 	report?: "ok" | "unreachable"
 	/** Extra arguments for the shell the text is fed to, and text typed after it. */
@@ -226,7 +230,12 @@ const run = (script: string, options: RunOptions = {}) => {
 			GCLOUD_BILLING: options.billing ?? "True",
 			GCLOUD_APIS: (options.apis ?? []).join("\n"),
 			CURL_LOG: join(dir, "curl.log"),
-			CURL_IAM: options.lacking === "unanswered" ? "unanswered" : "ok",
+			CURL_IAM:
+				options.lacking === "unanswered"
+					? "unanswered"
+					: options.lacking === "everything"
+						? "nothing"
+						: "ok",
 			CURL_LACKING: options.lacking ?? "",
 			CURL_REPORT: options.report ?? "ok",
 		},
@@ -251,7 +260,7 @@ const RESOURCE_MANAGER_ON = "services enable cloudresourcemanager.googleapis.com
 const isAccessCheck = (command: string) =>
 	command === API_LOOKUP ||
 	command === RESOURCE_MANAGER_ON ||
-	/^(config get-value|auth print-access-token|projects describe|organizations describe|resource-manager folders describe|billing projects describe)/.test(
+	/^(config get-value|auth print-access-token|projects describe|organizations describe|resource-manager folders describe|billing projects describe|logging read)/.test(
 		command,
 	)
 
@@ -268,12 +277,13 @@ const publish = (members: string) =>
 	)
 
 const logsSetupCommands = (scope: Scope) => [
-	"services enable pubsub.googleapis.com logging.googleapis.com cloudresourcemanager.googleapis.com --project=acme-host",
+	// The last access check: whether the sink exists decides whether the filter is tried out.
+	`logging sinks describe ${NAME} ${scope.sink}`,
+	"services enable pubsub.googleapis.com logging.googleapis.com --project=acme-host",
 	`pubsub topics describe ${NAME} --project=acme-host`,
 	`pubsub topics create ${NAME} --project=acme-host`,
 	`pubsub subscriptions describe ${NAME} --project=acme-host`,
 	`pubsub subscriptions create ${NAME} --topic=${NAME} --project=acme-host --push-endpoint=${PUSH_ENDPOINT} --push-no-wrapper --ack-deadline=30 --message-retention-duration=1d --expiration-period=never --min-retry-delay=10s --max-retry-delay=600s`,
-	`logging sinks describe ${NAME} ${scope.sink}`,
 	`logging sinks create ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(false)} ${scope.sinkWrite}`,
 	`logging sinks describe ${NAME} ${scope.sink} --format=value(writerIdentity)`,
 	`projects add-iam-policy-binding acme-host --member=${WRITER} --role=roles/logging.logWriter --condition=None`,
@@ -282,7 +292,7 @@ const logsSetupCommands = (scope: Scope) => [
 ]
 
 const metricsSetupCommands = (scope: Scope) => [
-	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com cloudresourcemanager.googleapis.com --project=acme-host",
+	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
 	`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
 	`iam service-accounts create ${NAME} --project=acme-host --display-name=Maple metrics and resource reader`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
@@ -338,9 +348,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 			...scope.open,
 			"projects describe acme-host --format=value(name)",
 			"billing projects describe acme-host --format=value(billingEnabled)",
-			// Each section asks which of its APIs are off.
-			API_LOOKUP,
-			API_LOOKUP,
+			`logging read ${gcpLogFilter(false)} --limit=1 --freshness=1h ${scope.sink}`,
 		])
 		expect(stdout).toBe(`Maple setup for ${scopeType} ${scope.id}
   Log forwarding          on
@@ -351,6 +359,7 @@ Checking access
 ${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")}
   ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
+  ✓ Log filter accepted
 
 Log forwarding
   ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
@@ -427,6 +436,7 @@ Done. Google Cloud matches your Maple switches.
 		expect(stdout).toContain(`
 Log forwarding
   ✓ Log sink deleted
+  … waiting a minute for Google to stop routing to the topic
   ✓ Push subscription deleted
   ✓ Topic deleted
   ✓ Maple notified
@@ -449,6 +459,7 @@ ${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")
 
 Log forwarding
   ✓ Log sink deleted
+  … waiting a minute for Google to stop routing to the topic
   ✓ Push subscription deleted
   ✓ Topic deleted
 
@@ -570,7 +581,10 @@ Done. Everything was already in place.
 		)
 
 		const { stdout, commands } = run(filtered("exclude_gke_container_logs"), { describe: "found" })
+		expect(stdout).toContain("  ✓ Log filter accepted\n")
 		expect(stdout).toContain("  ✓ Log sink up to date (filter replaced)")
+		// The closing line says what this run changed.
+		expect(stdout).not.toContain("Done. Everything was already in place.")
 		expect(commands).toContain(
 			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(true)} --project=acme-host`,
 		)
@@ -598,6 +612,23 @@ Log forwarding
     What to do: jane@acme.com needs Logs Configuration Writer on project acme-host.
 ${UNFINISHED}`),
 		).toBe(true)
+	})
+
+	it("prints Google's error without its machine-readable details", () => {
+		const { stdout } = run(setup(setupInput("project", { logs: true, metrics: true })), {
+			fail: "topics create",
+			answer: [
+				"WARNING: This command is using service account impersonation.",
+				"ERROR: (gcloud.pubsub.topics.create) Failed to create topic: User not authorized to perform this action.",
+				"- '@type': type.googleapis.com/google.rpc.ErrorInfo",
+				"  metadata:",
+				"    troubleshooter_url: https://console.cloud.google.com/iam-admin/troubleshooter",
+			].join("\n"),
+		})
+		expect(stdout).toContain(
+			"User not authorized to perform this action.\n\n    What to do: jane@acme.com needs Owner on project acme-host.",
+		)
+		expect(stdout).not.toContain("troubleshooter_url")
 	})
 
 	it("reads Google's other refusals for what they are, and never prints the secret back", () => {
@@ -727,6 +758,67 @@ ${UNFINISHED}`)
 
     What to do: Run this script in Cloud Shell: https://shell.cloud.google.com
 `)
+	})
+
+	it("tries the log filter out before anything is created, when the script is going to set it", () => {
+		const unparseable =
+			"ERROR: (gcloud.logging.read) INVALID_ARGUMENT: Unparseable filter: syntax error at line 1, column 16, token ' '"
+		const script = setup(setupInput("project", { logs: true, metrics: false }))
+		const refused = run(script, { fail: "logging read", answer: unparseable })
+		expect(refused.status).toBe(1)
+		expect(refused.commands).toEqual([`logging sinks describe ${NAME} --project=acme-host`])
+		expect(refused.stdout).toContain(`  ✗ Google does not accept the log filter.
+
+      ${unparseable}
+
+    What to do: Google does not accept the log filter. Correct the filter near the top of the script and paste it again. Filter syntax: https://cloud.google.com/logging/docs/view/logging-query-language
+`)
+
+		// Someone who may not read logs can still set the sink up.
+		const unreadable = run(script, { fail: "logging read" })
+		expect(unreadable.status).toBe(0)
+		expect(unreadable.stdout).not.toContain("Log filter accepted")
+
+		// An existing sink that keeps its filter has none to try out.
+		const kept = run(script, { describe: "found", fail: "logging read", answer: unparseable })
+		expect(kept.status).toBe(0)
+		expect(kept.access).not.toContainEqual(expect.stringContaining("logging read"))
+	})
+
+	it("stops in the access check when an API is off and the account may not switch it on", () => {
+		const { status, stdout, commands } = run(
+			setup(setupInput("project", { logs: true, metrics: true })),
+			{
+				apis: [
+					"pubsub.googleapis.com",
+					"logging.googleapis.com",
+					"cloudresourcemanager.googleapis.com",
+				],
+				lacking: "serviceusage.services.enable",
+			},
+		)
+		expect(status).toBe(1)
+		expect(commands).toEqual([])
+		expect(stdout)
+			.toContain(`  ✗ jane@acme.com is missing permissions on project acme-host: serviceusage.services.enable.
+
+    What to do: This script has to switch on: monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com. Ask for Service Usage Admin there, or have an administrator switch them on.
+`)
+	})
+
+	it("reads an account without any of the permissions as a wrong ID first", () => {
+		const { status, stdout, commands } = run(
+			setup(setupInput("project", { logs: true, metrics: true })),
+			{ lacking: "everything" },
+		)
+		expect(status).toBe(1)
+		expect(commands).toEqual([])
+		expect(stdout)
+			.toContain(`  ✗ jane@acme.com has none of the permissions this script needs on project acme-host.
+
+    What to do: Check the ID in Maple. If it is right, this account has no rights there. Ask for Owner there, or have an administrator run this script.
+`)
+		expect(stdout).not.toContain("pubsub.topics.create")
 	})
 
 	it("names a missing permission before the first change", () => {
