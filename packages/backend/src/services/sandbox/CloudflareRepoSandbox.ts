@@ -19,6 +19,7 @@ import {
 	SandboxCheckout,
 	SandboxExecRequest,
 	type SandboxExecResponse,
+	SandboxRunUnavailable,
 } from "@maple/domain/sandbox"
 import {
 	Sandbox,
@@ -70,6 +71,13 @@ const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 export const CHECKOUT_WAIT = Duration.seconds(90)
 const CHECKOUT_POLL = Duration.seconds(2)
 const checkoutWait = Schedule.spaced(CHECKOUT_POLL).pipe(Schedule.upTo({ duration: CHECKOUT_WAIT }))
+
+/**
+ * Headroom over a command's own wall clock for one call into the sandbox Worker. A container in
+ * trouble held calls for over four minutes before answering 500, which spent most of a review's
+ * pass on two tool calls; past this the call is reported as the sandbox being unavailable.
+ */
+export const CALL_HEADROOM = Duration.seconds(60)
 
 const isPending = (answer: Option.Option<SandboxExecResponse>): boolean =>
 	Option.isSome(answer) && answer.value._tag === "SandboxRunCheckoutPending"
@@ -283,13 +291,24 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 					timeoutMs: Duration.toMillis(request.limits.maxWallTime),
 					maxOutputBytes: request.limits.maxOutputBytes,
 				})
+				const callBudget = Duration.sum(request.limits.maxWallTime, CALL_HEADROOM)
 				// Each poll is one cheap round trip that only starts a clone on the first call;
 				// suspended so every repetition asks the port again rather than replaying one answer.
 				// `attempt` counts the schedule steps before this poll, so the last write is the total.
 				const poll = Effect.gen(function* () {
 					const { attempt } = yield* Schedule.CurrentMetadata
 					yield* Effect.annotateCurrentSpan("maple.sandbox.checkout_polls", attempt + 1)
-					return yield* deps.exec(exec)
+					return yield* deps.exec(exec).pipe(
+						Effect.timeoutOrElse({
+							duration: callBudget,
+							orElse: () =>
+								Effect.succeedSome(
+									new SandboxRunUnavailable({
+										message: `The repository sandbox did not answer within ${Duration.toSeconds(callBudget)}s.`,
+									}),
+								),
+						}),
+					)
 				})
 				const answered = yield* poll.pipe(
 					Effect.repeat({ while: isPending, schedule: checkoutWait }),

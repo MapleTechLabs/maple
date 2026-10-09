@@ -77,6 +77,7 @@ describe("handle", () => {
 				}),
 				startProcess: async () => ({ id: "p", status: "running" as const }),
 				getProcess: async () => ({ id: "p", status: "running" as const }),
+				cleanupCompletedProcesses: async () => 0,
 				getProcessLogs: async () => ({ stdout: "", stderr: "" }),
 				writeFile: async () => ({ success: true }),
 			}

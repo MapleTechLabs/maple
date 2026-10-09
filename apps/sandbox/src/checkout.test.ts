@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import {
+	SANDBOX_CHECKOUT_GRACE_MINUTES,
 	SANDBOX_TRAILER,
 	SandboxExecRequest,
 	sandboxCredentialPath,
@@ -79,6 +80,10 @@ const fakeSandbox = (options: FakeOptions, seen: string[] = []): SandboxLike => 
 		getProcess: async (id) => {
 			seen.push(`get:${id}`)
 			return options.process ?? null
+		},
+		cleanupCompletedProcesses: async () => {
+			seen.push("cleanup")
+			return 1
 		},
 		getProcessLogs: async () => options.logs ?? { stdout: "", stderr: "" },
 		writeFile: async (path) => {
@@ -180,10 +185,18 @@ describe("cloneScript", () => {
 		assert.isTrue(script.indexOf("core.symlinks false") < script.indexOf("checkout --quiet --detach"))
 	})
 
-	it("evicts the oldest checkouts, scratch directories included, so the disk cannot fill", () => {
+	it("evicts the least recently used checkouts, so the disk cannot fill", () => {
 		const script = cloneScript(checkout)
 		assert.include(script, "tail -n +4")
-		assert.include(script, ".clone-*/")
+	})
+
+	it("never evicts a checkout or another clone's scratch directory still in use", () => {
+		const script = cloneScript(checkout)
+		// Six reviews of one repository at once each held a commit; evicting by count alone deleted
+		// checkouts and in-flight clones out from under them.
+		assert.include(script, `-maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES}`)
+		assert.include(script, `-name '.clone-*' -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES}`)
+		assert.notInclude(script, ".clone-*/")
 	})
 })
 
@@ -322,6 +335,34 @@ describe("ensureCheckout", () => {
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
 			assert.notInclude(seen.join(" "), "start:")
+		}),
+	)
+
+	it.effect("marks a ready checkout as used, so eviction keeps it", () =>
+		Effect.gen(function* () {
+			const seen: string[] = []
+			yield* ensureCheckout(fakeSandbox({ execs: [{ exitCode: 0 }] }, seen), checkout)
+			assert.include(seen[0]!, `touch -c ${shellQuote(checkoutDir(SHA))}`)
+		}),
+	)
+
+	it.effect("clones again when a finished clone's checkout was evicted", () =>
+		Effect.gen(function* () {
+			const seen: string[] = []
+			const result = yield* ensureCheckout(
+				fakeSandbox(
+					{
+						execs: [{ exitCode: 1 }],
+						process: { id: cloneProcessId(SHA), status: "completed", exitCode: 0 },
+					},
+					seen,
+				),
+				checkout,
+			)
+			assert.isTrue(Option.isSome(result))
+			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
+			// The finished record is cleared first, so the clone id is free to start again.
+			assert.isTrue(seen.indexOf("cleanup") < seen.indexOf(`start:${cloneProcessId(SHA)}`))
 		}),
 	)
 

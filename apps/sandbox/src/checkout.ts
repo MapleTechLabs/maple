@@ -13,6 +13,7 @@
  */
 import {
 	SANDBOX_COMMAND_ENV,
+	SANDBOX_CHECKOUT_GRACE_MINUTES,
 	SANDBOX_MAX_CHECKOUTS,
 	SANDBOX_MIRROR_DIR,
 	SANDBOX_MIRROR_LOCK,
@@ -66,6 +67,8 @@ export interface SandboxLike {
 		options?: { readonly processId?: string },
 	) => Promise<SandboxProcess>
 	readonly getProcess: (id: string) => Promise<SandboxProcess | null>
+	/** Forgets finished processes, so a commit's clone id can be started again. */
+	readonly cleanupCompletedProcesses: () => Promise<number>
 	readonly getProcessLogs: (id: string) => Promise<{ readonly stdout: string; readonly stderr: string }>
 	/**
 	 * Writes through the container's file API, so the content travels in a request
@@ -281,10 +284,13 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// `-T` refuses to nest inside an existing directory, so a checkout another
 		// caller finished first stands and this one's copy is discarded.
 		`mv -T "$t" ${shellQuote(dir)} 2>/dev/null || rm -rf "$t"`,
-		// Keep the newest few commits and drop the rest; a container's disk is small
-		// and every distinct commit an investigation touches leaves one behind. The
-		// glob covers the `.clone-*` scratch directories a failed clone leaves too.
-		`ls -1dt ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/*/ ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/.clone-*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do chmod -R u+w "$old" && rm -rf "$old"; done`,
+		// Keep the most recently used commits and drop the rest; a container's disk is small and
+		// every distinct commit leaves one behind. Nothing used within the grace period goes, nor
+		// another clone's scratch directory: concurrent reviews each hold a commit, and evicting by
+		// count alone deleted checkouts and clones still in use.
+		`ls -1dt ${shellQuote(SANDBOX_WORKSPACE_ROOT)}/*/ 2>/dev/null | tail -n +${SANDBOX_MAX_CHECKOUTS + 1} | while read -r old; do if [ -n "$(find "$old" -maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES})" ]; then chmod -R u+w "$old" && rm -rf "$old"; fi; done`,
+		// Scratch directories a failed clone left behind.
+		`find ${shellQuote(SANDBOX_WORKSPACE_ROOT)} -mindepth 1 -maxdepth 1 -name '.clone-*' -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES} -exec sh -c 'chmod -R u+w "$1" && rm -rf "$1"' _ {} \\;`,
 		"true",
 	].join("\n")
 }
@@ -321,7 +327,11 @@ export const ensureCheckout = (
 	Effect.gen(function* () {
 		const dir = checkoutDir(checkout.sha)
 		const redact = (text: string) => boundMessage(redactSecret(text, checkout.token))
-		const present = yield* call(sandbox, `test -d ${shellQuote(`${dir}/.git`)}`)
+		// Touched on every use: eviction goes by modification time, so this keeps a commit in use.
+		const present = yield* call(
+			sandbox,
+			`test -d ${shellQuote(`${dir}/.git`)} && { touch -c ${shellQuote(dir)} || true; }`,
+		)
 		if (present.exitCode === 0) {
 			// Every ready checkout asks; the Durable Object answers from memory unless a day has passed.
 			yield* optional(sandbox.backupMirror, "backupMirror")
@@ -330,7 +340,11 @@ export const ensureCheckout = (
 
 		const id = cloneProcessId(checkout.sha)
 		const running = yield* promise(() => sandbox.getProcess(id), "getProcess")
-		if (running === null) {
+		// A clone that succeeded but whose directory is gone was evicted since. Answering "call
+		// again" would never end, so its record is cleared and the commit cloned afresh.
+		const evicted = running?.status === "completed" && running.exitCode === 0
+		if (evicted) yield* promise(() => sandbox.cleanupCompletedProcesses(), "cleanupCompletedProcesses")
+		if (running === null || evicted) {
 			// Through the file API, so the token travels in a request body. Anything
 			// handed to a command would sit in `/proc/<pid>/cmdline`, which the account
 			// the agent's own commands run as can read — and the clone overlaps them by
@@ -357,14 +371,7 @@ export const ensureCheckout = (
 					message: `The checkout of ${checkout.repository} at ${checkout.sha} is still being prepared. Call again in a few seconds.`,
 				}),
 			)
-		// Completed, but the directory is not there: the clone lost a race and
-		// discarded its copy, or it failed. Its own logs say which.
-		if (running.status === "completed" && running.exitCode === 0)
-			return Option.some(
-				new SandboxRunCheckoutPending({
-					message: `The checkout of ${checkout.repository} at ${checkout.sha} has just finished. Call again.`,
-				}),
-			)
+		// The clone failed; its own logs say why.
 		const logs = yield* promise(() => sandbox.getProcessLogs(id), "getProcessLogs").pipe(
 			Effect.orElseSucceed(() => ({ stdout: "", stderr: "" })),
 		)
