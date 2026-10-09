@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
@@ -341,14 +341,14 @@ export const mergeStepKey = (step: Pick<PrReviewMergeStep, "kind" | "subject" | 
 const SLUG_MAX = 80
 
 /** FNV-1a of the text, as 8 hex digits: a stable tag for wording a slug cannot tell apart. */
-const fnv1a = (text: string): string => {
-	let hash = 0x811c9dc5
-	for (const char of text) {
-		hash ^= char.codePointAt(0) ?? 0
-		hash = Math.imul(hash, 0x01000193) >>> 0
-	}
-	return hash.toString(16).padStart(8, "0")
-}
+const fnv1a = (text: string): string =>
+	Arr.reduce(
+		Array.from(text),
+		0x811c9dc5,
+		(hash, char) => Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0,
+	)
+		.toString(16)
+		.padStart(8, "0")
 
 /**
  * A reviewer step's title as a key. Split and joined rather than trimmed with `^-+|-+$`, which
@@ -357,11 +357,7 @@ const fnv1a = (text: string): string => {
  * never share a key.
  */
 const titleSlug = (title: string): string => {
-	const slug = title
-		.toLowerCase()
-		.split(/[^a-z0-9]+/)
-		.filter((word) => word.length > 0)
-		.join("-")
+	const slug = Arr.filter(title.toLowerCase().split(/[^a-z0-9]+/), Str.isNonEmpty).join("-")
 	if (slug.length === 0) return fnv1a(title.trim())
 	if (slug.length <= SLUG_MAX && !/[^\x00-\x7f]/.test(title)) return slug
 	return `${slug.slice(0, SLUG_MAX - 9)}-${fnv1a(title.trim())}`
@@ -378,10 +374,13 @@ const TICK_LINE = /^\s*[-*] \[([ xX])\] .*<!-- ms:(\S+) -->\s*$/
 /** The task-list state of every tagged step in a comment body. */
 export const parseMergeStepTicks = (body: string): ReadonlyMap<string, boolean> =>
 	new Map(
-		body.split("\n").flatMap((line) => {
-			const match = TICK_LINE.exec(line)
-			return match === null || match[2] === undefined ? [] : [[match[2], match[1] !== " "] as const]
-		}),
+		Arr.getSomes(
+			Arr.map(body.split("\n"), (line) =>
+				Option.flatMap(Option.fromNullishOr(TICK_LINE.exec(line)), ([, box, key]) =>
+					key === undefined ? Option.none() : Option.some([key, box !== " "] as const),
+				),
+			),
+		),
 	)
 
 /**
@@ -393,8 +392,12 @@ export const mergeStepTickChanges = (
 	after: string,
 ): ReadonlyArray<{ readonly key: string; readonly done: boolean }> => {
 	const was = parseMergeStepTicks(before)
-	return [...parseMergeStepTicks(after)].flatMap(([key, done]) =>
-		was.has(key) && was.get(key) !== done ? [{ key, done }] : [],
+	return Arr.getSomes(
+		Arr.map([...parseMergeStepTicks(after)], ([key, done]) =>
+			Option.flatMap(Option.fromNullishOr(was.get(key)), (previous) =>
+				previous === done ? Option.none() : Option.some({ key, done }),
+			),
+		),
 	)
 }
 

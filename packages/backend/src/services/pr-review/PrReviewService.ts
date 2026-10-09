@@ -68,7 +68,19 @@ import {
 	type PrReviewRow,
 } from "@maple/db"
 import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
-import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Result,
+	Schema,
+} from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -2888,8 +2900,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							ne(prReviewMergeSteps.status, "obsolete"),
 							inArray(prReviewMergeSteps.key, [...keys]),
 						)
-					const done = job.ticks.filter((tick) => tick.done).map((tick) => tick.key)
-					const undone = job.ticks.filter((tick) => !tick.done).map((tick) => tick.key)
+					const [done, undone] = Arr.partition(job.ticks, (tick) =>
+						tick.done ? Result.succeed(tick.key) : Result.fail(tick.key),
+					)
 					const updated = yield* Effect.forEach(
 						[
 							{
@@ -2910,7 +2923,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									updatedAt: msToDate(nowMs),
 								},
 							},
-						].filter(({ keys }) => keys.length > 0),
+						].filter(({ keys }) => Arr.isReadonlyArrayNonEmpty(keys)),
 						({ keys, set }) =>
 							database
 								.execute((db) =>
@@ -2923,7 +2936,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.pipe(Effect.mapError(toPersistence)),
 					)
 					yield* Effect.annotateCurrentSpan({
-						"maple.pr_review.checklist.updated": updated.flat().length,
+						"maple.pr_review.checklist.updated": Arr.flatten(updated).length,
 					})
 				}).pipe(
 					Effect.catchCause((cause) =>
@@ -2985,16 +2998,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								),
 						)
 						.pipe(Effect.mapError(toPersistence))
-					yield* Effect.gen(function* () {
-						const target = yield* providerFor(orgId, repo)
-						if (Option.isNone(target))
-							return yield* Effect.fail(toPersistence({ message: "no provider" }))
-						const { provider, installation, ref } = target.value
-						yield* provider.postPullRequestReply(installation, ref, {
-							number,
-							body: renderMergeReminder(open),
-						})
-					}).pipe(Effect.tapCause(() => release))
+					// Whether the reminder went out; the claim is released on any other end.
+					yield* providerFor(orgId, repo).pipe(
+						Effect.flatMap(
+							Option.match({
+								onNone: () => Effect.succeed(false),
+								onSome: ({ provider, installation, ref }) =>
+									provider
+										.postPullRequestReply(installation, ref, {
+											number,
+											body: renderMergeReminder(open),
+										})
+										.pipe(Effect.as(true)),
+							}),
+						),
+						Effect.onExit((exit) => (Exit.isSuccess(exit) && exit.value ? Effect.void : release)),
+					)
 				}).pipe(
 					Effect.catchCause((cause) =>
 						Effect.logWarning("[PrReview] could not post the open before-merge steps").pipe(

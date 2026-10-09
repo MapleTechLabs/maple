@@ -15,6 +15,7 @@ import {
 	type PrReviewMergeStepStatus,
 	type PullRequestFile,
 } from "@maple/domain/http"
+import { Array as Arr, HashSet, Option, Order, Result, Schema } from "effect"
 
 /** A name the diff starts reading, before the service checks the base does not already. */
 export interface MergeStepName {
@@ -113,32 +114,38 @@ const INFRA =
 export const readsNamesIn = (path: string): boolean =>
 	!TEST_PATH.test(path) && !DOC_PATH.test(path) && !LOCAL_PATH.test(path)
 
-interface PatchLine {
+/** One changed line of a unified diff. */
+export interface PatchLine {
+	readonly kind: "added" | "removed"
 	readonly text: string
-	/** The line in the new file; the line it sat before for a removed one. */
+	/** The line in the new file; for a removed line, the new-file line it sat before. */
 	readonly line: number
 }
 
-/** A unified diff split into the lines it adds, with their head line numbers, and the lines it removes. */
-const splitPatch = (patch: string): { added: Array<PatchLine>; removed: Array<string> } => {
-	const added: Array<PatchLine> = []
-	const removed: Array<string> = []
-	let line = 0
-	for (const raw of patch.split("\n")) {
-		const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(raw)
-		if (hunk !== null) {
-			line = Number(hunk[1])
-			continue
-		}
-		if (raw.startsWith("+")) {
-			added.push({ text: raw.slice(1), line })
-			line++
-		} else if (raw.startsWith("-")) {
-			removed.push(raw.slice(1))
-		} else if (!raw.startsWith("\\")) {
-			line++
-		}
-	}
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)/
+
+/**
+ * A unified diff's added and removed lines, each with its line in the new file. The line counter
+ * is the accumulator: a hunk header resets it, added and context lines advance it, and removed
+ * lines and `\ No newline` markers leave it.
+ */
+export const patchLines = (patch: string): ReadonlyArray<PatchLine> =>
+	Arr.getSomes(
+		Arr.mapAccum(patch.split("\n"), 0, (line, raw): readonly [number, Option.Option<PatchLine>] => {
+			const hunk = HUNK_HEADER.exec(raw)
+			if (hunk !== null) return [Number(hunk[1]), Option.none()]
+			if (raw.startsWith("+"))
+				return [line + 1, Option.some({ kind: "added", text: raw.slice(1), line })]
+			if (raw.startsWith("-")) return [line, Option.some({ kind: "removed", text: raw.slice(1), line })]
+			return [raw.startsWith("\\") ? line : line + 1, Option.none()]
+		})[1],
+	)
+
+/** A diff's lines split by kind. */
+const splitPatch = (patch: string | null) => {
+	const [added, removed] = Arr.partition(patch === null ? [] : patchLines(patch), (line) =>
+		line.kind === "added" ? Result.succeed(line) : Result.fail(line.text),
+	)
 	return { added, removed }
 }
 
@@ -175,7 +182,7 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 	for (const file of files) {
 		if (file.status === "removed") continue
 		const { path } = file
-		const { added, removed } = file.patch === null ? { added: [], removed: [] } : splitPatch(file.patch)
+		const { added, removed } = splitPatch(file.patch)
 		removedText.push(...removed)
 
 		if (MIGRATION_DIR.test(path) && MIGRATION_FILE.test(path) && file.status === "added") {
@@ -253,7 +260,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 }
 
 /** Whether a name was already read on the default branch before this pull request. */
-export type NameVerdict = "new" | "exists" | "unverified"
+export const NameVerdictSchema = Schema.Literals(["new", "exists", "unverified"])
+export type NameVerdict = Schema.Schema.Type<typeof NameVerdictSchema>
 
 /** What a verdict is read from: a search hit's matched text. */
 export interface SearchHit {
@@ -413,18 +421,21 @@ export interface ReconciledMergeSteps {
 }
 
 /** Words that say nothing about which step it is. */
-const FILLER = new Set(
+const FILLER = HashSet.fromIterable(
 	"the and for add run set with from into this that every all environment environments before after merge make sure check".split(
 		" ",
 	),
 )
 
 /** A title's telling words, plural folded: `stores` and `store` are one word. */
-const words = (text: string) =>
-	new Set(
-		(text.toLowerCase().match(/[a-z0-9_]{2,}/g) ?? [])
-			.map((word) => word.replace(/(?<=[a-z]{3})s$/, ""))
-			.filter((word) => !FILLER.has(word)),
+const words = (text: string): ReadonlyArray<string> =>
+	Arr.dedupe(
+		Arr.filter(
+			Arr.map(text.toLowerCase().match(/[a-z0-9_]{2,}/g) ?? [], (word) =>
+				word.replace(/(?<=[a-z]{3})s$/, ""),
+			),
+			(word) => !HashSet.has(FILLER, word),
+		),
 	)
 
 /**
@@ -434,10 +445,14 @@ const words = (text: string) =>
 const similarity = (a: string, b: string): number => {
 	const left = words(a)
 	const right = words(b)
-	const shared = [...left].filter((word) => right.has(word)).length
-	const smaller = Math.min(left.size, right.size)
-	return smaller === 0 ? 0 : shared / smaller
+	const smaller = Math.min(left.length, right.length)
+	return smaller === 0 ? 0 : Arr.intersection(left, right).length / smaller
 }
+
+const MIN_SIMILARITY = 0.6
+const byScoreDescending = Order.flip(
+	Order.mapInput(Order.Number, (match: { readonly score: number }) => match.score),
+)
 
 /**
  * This review's steps against the pull request's stored ones. A step keeps its stored key, and
@@ -449,49 +464,59 @@ export const reconcileMergeSteps = (
 	steps: ReadonlyArray<PrReviewMergeStep>,
 	stored: ReadonlyArray<StoredMergeStep>,
 ): ReconciledMergeSteps => {
-	const byKey = new Map(stored.map((row) => [row.key, row] as const))
-	const claimed = new Set<string>()
-	const keyed = steps.map((step) => {
+	const byKey = new Map(Arr.map(stored, (row) => [row.key, row] as const))
+	const ownKeys = HashSet.fromIterable(Arr.map(steps, mergeStepKey))
+	// Stored manual steps no step of this review names by key: what a reworded step may match.
+	const rewordable = Arr.filter(
+		stored,
+		(row) => row.kind === "manual" && row.status !== "obsolete" && !HashSet.has(ownKeys, row.key),
+	)
+	// The keys claimed so far ride along, so two reworded steps never take the same stored row.
+	const [claimed, keyed] = Arr.mapAccum(steps, HashSet.empty<string>(), (taken, step) => {
 		const own = mergeStepKey(step)
-		if (byKey.has(own) || step.subject !== undefined || step.kind !== "manual") return { key: own, step }
-		const reworded = stored
-			.filter(
-				(row) =>
-					row.kind === "manual" &&
-					row.status !== "obsolete" &&
-					!steps.some((other) => mergeStepKey(other) === row.key),
-			)
-			.map((row) => ({ row, score: similarity(row.title, step.title) }))
-			.filter(({ row, score }) => score >= 0.6 && !claimed.has(row.key))
-			.sort((a, b) => b.score - a.score)[0]
-		const key = reworded?.row.key ?? own
-		claimed.add(key)
-		return { key, step }
+		const key =
+			byKey.has(own) || step.subject !== undefined || step.kind !== "manual"
+				? own
+				: Option.match(
+						Arr.head(
+							Arr.sort(
+								Arr.filter(
+									Arr.map(rewordable, (row) => ({
+										row,
+										score: similarity(row.title, step.title),
+									})),
+									({ row, score }) =>
+										score >= MIN_SIMILARITY && !HashSet.has(taken, row.key),
+								),
+								byScoreDescending,
+							),
+						),
+						{ onNone: () => own, onSome: ({ row }) => row.key },
+					)
+		return [HashSet.add(taken, key), { key, step }] as const
 	})
-	for (const { key } of keyed) claimed.add(key)
 	// Two steps can land on one key (a reviewer step repeating a diff step's subject); keep the first.
-	const unique = keyed.filter(({ key }, i) => keyed.findIndex((other) => other.key === key) === i)
-	const withTicks = unique.map(({ key, step }) => {
-		const row = byKey.get(key)
+	const unique = Arr.dedupeWith(keyed, (a, b) => a.key === b.key)
+	const upserts = Arr.map(unique, ({ key, step }) => {
 		const { done: _done, doneBy: _doneBy, key: _key, ...base } = step
-		const rest = { ...base, key }
+		const row = byKey.get(key)
 		return {
 			key,
-			step:
-				row?.status === "done"
-					? new PrReviewMergeStep({
-							...rest,
-							done: true,
-							...(row.doneBy === null ? undefined : { doneBy: row.doneBy }),
-						})
-					: new PrReviewMergeStep(rest),
+			step: new PrReviewMergeStep({
+				...base,
+				key,
+				...(row?.status === "done"
+					? { done: true, ...(row.doneBy === null ? undefined : { doneBy: row.doneBy }) }
+					: undefined),
+			}),
 		}
 	})
 	return {
-		steps: withTicks.map(({ step }) => step),
-		upserts: withTicks,
-		obsolete: stored
-			.filter((row) => row.status === "open" && !claimed.has(row.key))
-			.map((row) => row.key),
+		steps: Arr.map(upserts, ({ step }) => step),
+		upserts,
+		obsolete: Arr.map(
+			Arr.filter(stored, (row) => row.status === "open" && !HashSet.has(claimed, row.key)),
+			(row) => row.key,
+		),
 	}
 }
