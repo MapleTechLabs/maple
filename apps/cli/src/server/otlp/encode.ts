@@ -399,12 +399,13 @@ export function logAttrMap(attributes: readonly KeyValue[] | undefined, expandJs
 const isJsonObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value)
 
-function parseJsonObject(text: string): unknown {
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
 	const trimmed = text.trim()
 	if (utf8Length(trimmed) > MAX_EXPANDABLE_JSON_BYTES || !trimmed.startsWith("{") || !trimmed.endsWith("}")) {
 		return undefined
 	}
-	return Result.getOrUndefined(Result.try(() => JSON.parse(trimmed) as unknown))
+	const parsed = Result.getOrUndefined(Result.try(() => JSON.parse(trimmed) as unknown))
+	return isJsonObject(parsed) ? parsed : undefined
 }
 
 function expandObject(
