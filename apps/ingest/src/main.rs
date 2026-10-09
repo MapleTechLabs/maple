@@ -908,6 +908,14 @@ trait KeyStore: Send + Sync {
         error: &str,
         now_ms: i64,
     ) -> Result<(), String>;
+
+    /// What a Google Cloud setup script run reported it applied.
+    async fn record_gcp_setup_report(
+        &self,
+        connector_id: &str,
+        report: gcp_logging::SetupReport,
+        now_ms: i64,
+    ) -> Result<(), String>;
 }
 
 #[derive(Clone, Debug)]
@@ -1236,6 +1244,9 @@ enum GcpPushOutcome {
     NotALogEntry,
     /// The connector has log forwarding turned off.
     LogsDisabled,
+    /// A setup script run saying what it applied: recorded on the connector,
+    /// not a log.
+    SetupReport,
 }
 
 #[derive(Clone, Copy)]
@@ -4749,6 +4760,7 @@ async fn handle_gcp_logpush(
         "maple.signal" = "logs",
         "maple.org_id" = tracing::field::Empty,
         "maple.gcp.connector_id" = tracing::field::Empty,
+        "maple.gcp.setup_report" = tracing::field::Empty,
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
@@ -4795,6 +4807,11 @@ async fn handle_gcp_logpush(
                     );
                     metrics::request_completed("logs", "ok", "none", duration);
                     metrics::gcp_disabled_drop();
+                }
+                GcpPushOutcome::SetupReport => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.gcp.setup_report", true);
+                    metrics::request_completed("logs", "ok", "none", duration);
                 }
             }
             response
@@ -4858,6 +4875,26 @@ async fn handle_gcp_logpush_inner(
         resolved.key.clickhouse_ready,
     );
 
+    // A setup script run reporting what it applied. Ahead of everything a log
+    // goes through: it is told to a connector whose log forwarding is off as
+    // well, and it is neither stored nor metered. A report that cannot be
+    // written is refused, so Pub/Sub delivers it again.
+    if let Some(report) = gcp_logging::parse_setup_report(&body) {
+        state
+            .gcp_resolver
+            .store
+            .record_gcp_setup_report(connector_id, report, current_time_millis())
+            .await
+            .map_err(|error| {
+                error!(error = %error, connector_id, "Failed to record GCP setup report");
+                (
+                    ApiError::service_unavailable("Setup report could not be recorded"),
+                    "setup_report",
+                )
+            })?;
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::SetupReport));
+    }
+
     // Acked, not rejected: the sink keeps pushing until the customer removes
     // it, and Pub/Sub would redeliver every refused entry for its retention.
     // Ahead of the entitlement check and metering, so nothing is billed.
@@ -4900,6 +4937,10 @@ async fn handle_gcp_logpush_inner(
     };
 
     if let Some(error) = entitlement_rejection(state, org_id, Signal::Logs.path()).await {
+        state
+            .gcp_resolver
+            .record_health(connector_id, Some(gcp_logging::OVER_PLAN_LIMIT))
+            .await;
         return Err((error, "billing_limit"));
     }
     let request = gcp_logging::build_logs_request(
@@ -4924,7 +4965,7 @@ async fn handle_gcp_logpush_inner(
         Err(error) => {
             state
                 .gcp_resolver
-                .record_health(connector_id, Some(error.message.as_str()))
+                .record_health(connector_id, Some(gcp_logging::ENTRY_NOT_STORED))
                 .await;
             return Err((error, "forward"));
         }
@@ -6706,6 +6747,37 @@ impl KeyStore for PostgresKeyStore {
             .map(|_| ())
             .map_err(|err| format!("postgres record_connector_failure failed: {err}"))
     }
+
+    async fn record_gcp_setup_report(
+        &self,
+        connector_id: &str,
+        report: gcp_logging::SetupReport,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        // A capability the run did not report keeps what an earlier run said.
+        // Log forwarding set up again answers whatever the last push failed on.
+        client
+            .execute(
+                "UPDATE gcp_connectors \
+                 SET applied_logs_enabled = COALESCE($1::boolean, applied_logs_enabled), \
+                     applied_metrics_enabled = COALESCE($2::boolean, applied_metrics_enabled), \
+                     setup_reported_at = to_timestamp($3::bigint / 1000.0), \
+                     last_error = CASE WHEN $1::boolean THEN NULL ELSE last_error END, \
+                     updated_at = to_timestamp($3::bigint / 1000.0) \
+                 WHERE id = $4",
+                &[&report.logs, &report.metrics, &now_ms, &connector_id],
+            )
+            .instrument(postgres_client_span(
+                "record_gcp_setup_report",
+                "UPDATE",
+                GCP_CONNECTORS_TABLE,
+                &self.target,
+            ))
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("postgres record_gcp_setup_report failed: {error}"))
+    }
 }
 
 // Local-dev / single-tenant KeyStore: every well-formed ingest key resolves to
@@ -6784,6 +6856,15 @@ impl KeyStore for StaticKeyStore {
         _table: &'static str,
         _connector_id: &str,
         _error: &str,
+        _now_ms: i64,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn record_gcp_setup_report(
+        &self,
+        _connector_id: &str,
+        _report: gcp_logging::SetupReport,
         _now_ms: i64,
     ) -> Result<(), String> {
         Ok(())
@@ -7881,6 +7962,8 @@ mod tests {
         connector_successes: AtomicU64,
         /// (table, error) of every `record_connector_failure` call.
         connector_failures: std::sync::Mutex<Vec<(&'static str, String)>>,
+        /// (connector id, report) of every `record_gcp_setup_report` call.
+        gcp_setup_reports: std::sync::Mutex<Vec<(String, gcp_logging::SetupReport)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
         targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
         ingest_key_fetches: AtomicU64,
@@ -8034,6 +8117,18 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((table, error.to_owned()));
+            Ok(())
+        }
+        async fn record_gcp_setup_report(
+            &self,
+            connector_id: &str,
+            report: gcp_logging::SetupReport,
+            _now_ms: i64,
+        ) -> Result<(), String> {
+            self.gcp_setup_reports
+                .lock()
+                .unwrap()
+                .push((connector_id.to_owned(), report));
             Ok(())
         }
     }
@@ -9477,6 +9572,57 @@ mod tests {
                 .await
                 .is_err(),
             "nothing may be stored while log forwarding is off"
+        );
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
+        assert!(store.connector_failures.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_records_a_setup_report_and_stores_nothing() {
+        const LOGS_ON: &str = r#"{"logName":"projects/p/logs/maple-setup","timestamp":"2026-10-09T10:00:00Z","jsonPayload":{"logs":true}}"#;
+        const LOGS_OFF: &str = r#"{"logName":"projects/p/logs/maple-setup","timestamp":"2026-10-09T10:00:00Z","jsonPayload":{"logs":false,"metrics":true}}"#;
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-report", &ch_url).await;
+
+        // Through the topic of a connector that forwards logs, and straight
+        // from the script of one whose log forwarding is off.
+        for (connector_id, secret, body) in [
+            ("gcp_conn_1", "gcp-secret", LOGS_ON),
+            ("gcp_conn_off", "gcp-secret-off", LOGS_OFF),
+        ] {
+            let response = gcp_push(&state, connector_id, Some(secret), body).await;
+            assert_eq!(response.status(), StatusCode::OK, "{connector_id}");
+        }
+        // Another connector's secret reports for nobody.
+        let forged = gcp_push(&state, "gcp_conn_off", Some("gcp-secret"), LOGS_ON).await;
+        assert_eq!(forged.status(), StatusCode::UNAUTHORIZED);
+
+        assert_eq!(
+            *store.gcp_setup_reports.lock().unwrap(),
+            [
+                (
+                    "gcp_conn_1".to_owned(),
+                    gcp_logging::SetupReport {
+                        logs: Some(true),
+                        metrics: None
+                    }
+                ),
+                (
+                    "gcp_conn_off".to_owned(),
+                    gcp_logging::SetupReport {
+                        logs: Some(false),
+                        metrics: Some(true)
+                    }
+                ),
+            ]
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "a setup report must not be stored as a log"
         );
         assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
         assert!(store.connector_failures.lock().unwrap().is_empty());
