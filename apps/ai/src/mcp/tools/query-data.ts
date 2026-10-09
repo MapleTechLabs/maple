@@ -547,7 +547,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				kind: params.kind,
 			})
 
-			const run = Effect.fn("McpTool.queryData.run")(function* (resolved: ResolvedQuery) {
+			const run = Effect.fn("McpQueryData.run")(function* (resolved: ResolvedQuery) {
 				const rawSpec = buildRawSpec(params, resolved)
 				const query = yield* decodeQuerySpec(rawSpec).pipe(
 					Effect.mapError(
