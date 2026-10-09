@@ -1012,25 +1012,12 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 			summarizeOutcome(widget, outcomes[i]),
 		)
 
-		let healthyCount = 0
-		let suspiciousCount = 0
-		let brokenCount = 0
-		let skippedCount = 0
-		for (const entry of inspected) {
-			switch (entry.verdict) {
-				case "looks_healthy":
-					healthyCount++
-					break
-				case "suspicious":
-					suspiciousCount++
-					break
-				case "broken":
-					brokenCount++
-					break
-				default:
-					skippedCount++
-			}
-		}
+		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>
+			inspected.filter((entry) => entry.verdict === verdict).length
+		const healthyCount = countVerdict("looks_healthy")
+		const suspiciousCount = countVerdict("suspicious")
+		const brokenCount = countVerdict("broken")
+		const skippedCount = inspected.length - healthyCount - suspiciousCount - brokenCount
 
 		const summary: WidgetInspectionSummary = {
 			ran: true,
