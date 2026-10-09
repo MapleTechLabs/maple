@@ -63,6 +63,7 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -133,6 +134,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	RecommendationIssueService.layer,
 	SetupAuditService.layer,
 	SignalPresenceService.layer,
+	SessionReplayReadService.layer,
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,

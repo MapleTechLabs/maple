@@ -27,6 +27,8 @@ import { OnboardingChecklistService } from "@maple/backend/services/org/Onboardi
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -152,7 +154,14 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
 		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
-		HttpV2SessionReplaysLive,
+		// Real reads over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2SessionReplaysLive.pipe(
+			Layer.provide(
+				Layer.effect(SessionReplayReadService, SessionReplayReadService.make).pipe(
+					Layer.provide(ReplayBlobStore.layer),
+				),
+			),
+		),
 		HttpV2TracesLive,
 		HttpV2LogsLive,
 		HttpV2MetricsLive,
