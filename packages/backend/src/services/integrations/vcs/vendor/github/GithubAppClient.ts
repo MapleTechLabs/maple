@@ -1,7 +1,9 @@
 import { GitCommitSha } from "@maple/domain/http"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { constTrue } from "effect/Function"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
+import type { HttpClientResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { GithubHttp } from "./GithubHttp"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
 
@@ -52,25 +54,27 @@ const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
 // reports zero remaining (the secondary-limit shape). Plain 403s (permissions)
 // are NOT rate limits.
-const isRateLimited = (response: Response): boolean =>
+const isRateLimited = (response: HttpClientResponse.HttpClientResponse): boolean =>
 	response.status === 429 ||
 	(response.status === 403 &&
-		(response.headers.get("retry-after") !== null ||
-			response.headers.get("x-ratelimit-remaining") === "0"))
+		(response.headers["retry-after"] !== undefined || response.headers["x-ratelimit-remaining"] === "0"))
+
+const isOk = (response: HttpClientResponse.HttpClientResponse): boolean =>
+	response.status >= 200 && response.status < 300
 
 // Seconds until the budget returns, per GitHub's guidance: prefer `retry-after`,
 // else wait until the rate-limit reset (epoch seconds), else a conservative minute.
-const rateLimitWaitSeconds = (response: Response, nowMs: number): number => {
-	const retryAfter = response.headers.get("retry-after")
-	if (retryAfter !== null) {
+const rateLimitWaitSeconds = (response: HttpClientResponse.HttpClientResponse, nowMs: number): number => {
+	const retryAfter = response.headers["retry-after"]
+	if (retryAfter !== undefined) {
 		const secs = Number(retryAfter)
 		if (Number.isFinite(secs) && secs >= 0) return secs
 		// `retry-after` may be an HTTP-date instead of delta-seconds.
 		const dateMs = timestampMs(retryAfter)
 		if (Number.isFinite(dateMs)) return Math.max(0, Math.ceil((dateMs - nowMs) / 1000))
 	}
-	const reset = response.headers.get("x-ratelimit-reset")
-	if (reset !== null) {
+	const reset = response.headers["x-ratelimit-reset"]
+	if (reset !== undefined) {
 		const resetSec = Number(reset)
 		if (Number.isFinite(resetSec)) return Math.max(0, Math.ceil(resetSec - nowMs / 1000))
 	}
@@ -480,6 +484,12 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
 
+interface GithubRequestInit {
+	readonly method?: "GET" | "POST" | "PATCH"
+	readonly headers: Readonly<Record<string, string>>
+	readonly body?: string
+}
+
 interface ResolvedAppConfig {
 	readonly appId: string
 	readonly privateKeyPem: string
@@ -491,7 +501,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
-			const http = yield* GithubHttp
+			const httpClient = yield* HttpClient.HttpClient
 
 			// Reuse one token per installation instead of minting a fresh one per repo.
 			// Tokens last ~1h; cache is per-isolate (externalInstallationId → token + expiry).
@@ -508,7 +518,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			const tracedFetch = Effect.fn("GithubAppClient.request", {
 				kind: "client",
 				attributes: { "peer.service": "github" },
-			})(function* (url: string, init: RequestInit | undefined, errorMessage: string) {
+			})(function* (url: string, init: GithubRequestInit | undefined, errorMessage: string) {
 				const parsed = Option.liftThrowable(() => new URL(url))()
 				yield* Effect.annotateCurrentSpan({
 					"http.request.method": init?.method ?? "GET",
@@ -519,17 +529,27 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							}
 						: undefined),
 				})
-				const response = yield* Effect.tryPromise({
-					try: () => http.fetch(url, init),
-					catch: (cause) => new GithubAppError({ message: errorMessage, cause }),
-				})
+				const request = HttpClientRequest.make(init?.method ?? "GET")(url).pipe(
+					(req) =>
+						init?.body === undefined
+							? req
+							: HttpClientRequest.setBody(req, HttpBody.raw(init.body)),
+					HttpClientRequest.setHeaders(init?.headers ?? {}),
+				)
+				const response = yield* httpClient.execute(request).pipe(
+					// The client's own span records `url.full`; this span is the client span.
+					Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+					Effect.mapError((cause) => new GithubAppError({ message: errorMessage, cause })),
+				)
 				yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
 				return response
 			})
 
 			// Run a request, riding out short rate limits inline and surfacing longer
 			// ones as a GithubAppError carrying `retryAfterSeconds`.
-			const rateLimitedFetch = (request: Effect.Effect<Response, GithubAppError>) =>
+			const rateLimitedFetch = (
+				request: Effect.Effect<HttpClientResponse.HttpClientResponse, GithubAppError>,
+			) =>
 				Effect.gen(function* () {
 					let inlineRetries = 0
 					while (true) {
@@ -613,17 +633,22 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return `${signingInput}.${base64UrlBytes(signature)}`
 			})
 
-			const failure = (response: Response, context: string, scope?: "installation" | "repository") =>
+			const failure = (
+				response: HttpClientResponse.HttpClientResponse,
+				context: string,
+				scope?: "installation" | "repository",
+			) =>
 				Effect.gen(function* () {
-					const body = yield* Effect.tryPromise({
-						try: () => response.text(),
-						catch: () =>
-							new GithubAppError({
-								message: `${context} failed`,
-								status: response.status,
-								scope,
-							}),
-					})
+					const body = yield* response.text.pipe(
+						Effect.mapError(
+							() =>
+								new GithubAppError({
+									message: `${context} failed`,
+									status: response.status,
+									scope,
+								}),
+						),
+					)
 					return yield* Effect.fail(
 						new GithubAppError({
 							message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
@@ -633,12 +658,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					)
 				})
 
-			const parseJson = (response: Response, context: string) =>
-				Effect.tryPromise({
-					try: () => response.json(),
-					catch: (cause) =>
-						new GithubAppError({ message: `${context} returned a non-JSON response`, cause }),
-				})
+			const parseJson = (response: HttpClientResponse.HttpClientResponse, context: string) =>
+				response.json.pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({ message: `${context} returned a non-JSON response`, cause }),
+					),
+				)
 
 			const mintInstallationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
 				externalInstallationId: string,
@@ -672,7 +698,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				// A non-rate-limit failure here is the installation auth gate — the
 				// authoritative "installation gone / suspended" signal (rate limits were
 				// already split off by rateLimitedFetch above).
-				if (!response.ok)
+				if (!isOk(response))
 					return yield* failure(response, "Installation token request", "installation")
 				const json = yield* parseJson(response, "Installation token request")
 				const decoded = yield* decodeInstallationToken(json).pipe(
@@ -718,7 +744,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							token,
 							`${config.apiBaseUrl}/installation/repositories?per_page=${PER_PAGE}&page=${page}`,
 						)
-						if (!response.ok) return yield* failure(response, "List installation repositories")
+						if (!isOk(response)) return yield* failure(response, "List installation repositories")
 						const json = yield* parseJson(response, "List installation repositories")
 						const decoded = yield* decodeInstallationRepos(json).pipe(
 							Effect.mapError(
@@ -767,7 +793,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						token,
 						`${base}?per_page=${PER_PAGE}&page=${page}`,
 					)
-					if (!response.ok) return yield* failure(response, "List branches", "repository")
+					if (!isOk(response)) return yield* failure(response, "List branches", "repository")
 					const json = yield* parseJson(response, "List branches")
 					const decoded = yield* decodeBranchList(json).pipe(
 						Effect.mapError(
@@ -816,7 +842,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// Anything else non-2xx (incl. 404 = repo deleted / access lost) is
 						// surfaced as a repository-scoped failure so the orchestrator can mark
 						// the repo unavailable rather than mistaking it for an empty repo.
-						if (!response.ok) return yield* failure(response, "List commits", "repository")
+						if (!isOk(response)) return yield* failure(response, "List commits", "repository")
 						const json = yield* parseJson(response, "List commits")
 						const decoded = yield* decodeCommitList(json).pipe(
 							Effect.mapError(
@@ -868,7 +894,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
-				if (!response.ok) return yield* failure(response, "Get commit", "repository")
+				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
 					Effect.mapError(
@@ -915,7 +941,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						"Scoped installation token request failed",
 					),
 				)
-				if (!response.ok)
+				if (!isOk(response))
 					return yield* failure(response, "Scoped installation token request", "installation")
 				const json = yield* parseJson(response, "Scoped installation token request")
 				const decoded = yield* decodeInstallationToken(json).pipe(
@@ -959,7 +985,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${params.toString()}`,
 				)
-				if (!response.ok) return yield* failure(response, "List pull requests", "repository")
+				if (!isOk(response)) return yield* failure(response, "List pull requests", "repository")
 				const json = yield* parseJson(response, "List pull requests")
 				return yield* decodePullRequestList(json).pipe(
 					Effect.mapError(
@@ -985,7 +1011,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
 				)
 				if (response.status === 404) return null
-				if (!response.ok) return yield* failure(response, "Get pull request", "repository")
+				if (!isOk(response)) return yield* failure(response, "Get pull request", "repository")
 				const json = yield* parseJson(response, "Get pull request")
 				return yield* decodePullRequest(json).pipe(
 					Effect.mapError(
@@ -1036,7 +1062,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						token,
 						`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files?per_page=${PER_PAGE}&page=${page}`,
 					)
-					if (!response.ok) return yield* failure(response, "List pull request files", "repository")
+					if (!isOk(response))
+						return yield* failure(response, "List pull request files", "repository")
 					const json = yield* parseJson(response, "List pull request files")
 					const decoded = yield* decodePullRequestFiles(json).pipe(
 						Effect.mapError(
@@ -1067,7 +1094,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
 				const getJson = Effect.fnUntraced(function* (url: string, context: string) {
 					const response = yield* authedGet(config, token, url)
-					if (!response.ok) return yield* failure(response, context, "repository")
+					if (!isOk(response)) return yield* failure(response, context, "repository")
 					return yield* parseJson(response, context)
 				})
 				const unexpected = (what: string) => (cause: unknown) =>
@@ -1132,7 +1159,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					{ query, variables },
 					context,
 				)
-				if (!response.ok) return yield* failure(response, context, "repository")
+				if (!isOk(response)) return yield* failure(response, context, "repository")
 				return yield* parseJson(response, context)
 			})
 
@@ -1204,7 +1231,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews/${reviewId}/comments?per_page=${PER_PAGE}`,
 				)
-				if (!response.ok) return yield* failure(response, "List review comments", "repository")
+				if (!isOk(response)) return yield* failure(response, "List review comments", "repository")
 				return yield* decodeReviewCommentList(
 					yield* parseJson(response, "List review comments"),
 				).pipe(
@@ -1232,7 +1259,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					{ body },
 					"Reply to review comment",
 				)
-				if (!response.ok) return yield* failure(response, "Reply to review comment", "repository")
+				if (!isOk(response)) return yield* failure(response, "Reply to review comment", "repository")
 				return yield* decodeCreatedComment(
 					yield* parseJson(response, "Reply to review comment"),
 				).pipe(
@@ -1258,7 +1285,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const config = yield* resolveConfig
 					const token = yield* mintInstallationToken(externalInstallationId)
 					const response = yield* authedSend(method, token, url(config), body, context)
-					if (!response.ok) return yield* failure(response, context, "repository")
+					if (!isOk(response)) return yield* failure(response, context, "repository")
 					return yield* Schema.decodeUnknownEffect(schema)(
 						yield* parseJson(response, context),
 					).pipe(
@@ -1282,7 +1309,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${repoBase(config, owner, repo)}/pulls/${number}`,
 				)
-				if (!response.ok) return yield* failure(response, "Get pull request", "repository")
+				if (!isOk(response)) return yield* failure(response, "Get pull request", "repository")
 				return yield* decodePullRequestHead(yield* parseJson(response, "Get pull request")).pipe(
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected pull request payload", cause }),
@@ -1321,7 +1348,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					{ content },
 					"Add reaction",
 				)
-				if (!response.ok) return yield* failure(response, "Add reaction", "repository")
+				if (!isOk(response)) return yield* failure(response, "Add reaction", "repository")
 			})
 
 			/** `admin`, `maintain`, `write`, `triage`, `read` or `none`. */
@@ -1336,7 +1363,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					)
 					// A 404 is a user who is not a collaborator at all.
 					if (response.status === 404) return "none"
-					if (!response.ok)
+					if (!isOk(response))
 						return yield* failure(response, "Get collaborator permission", "repository")
 					const decoded = yield* decodeCollaboratorPermission(
 						yield* parseJson(response, "Get collaborator permission"),
@@ -1374,7 +1401,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${base}/git/commits/${input.parentSha}`,
 				)
-				if (!parentResponse.ok)
+				if (!isOk(parentResponse))
 					return yield* failure(parentResponse, "Read parent commit", "repository")
 				const parent = yield* decodeGitCommit(
 					yield* parseJson(parentResponse, "Read parent commit"),
@@ -1390,7 +1417,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const cached = trees.get(sha)
 					if (cached !== undefined) return cached
 					const response = yield* authedGet(config, token, `${base}/git/trees/${sha}`)
-					if (!response.ok) return yield* failure(response, "Read tree", "repository")
+					if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
 					const listing = yield* decodeGitTreeListing(yield* parseJson(response, "Read tree")).pipe(
 						Effect.mapError(
 							(cause) => new GithubAppError({ message: "Unexpected tree payload", cause }),
@@ -1455,7 +1482,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					{ sha: commit.sha, force: false },
 					"Update branch",
 				)
-				if (!refResponse.ok) return yield* failure(refResponse, "Update branch", "repository")
+				if (!isOk(refResponse)) return yield* failure(refResponse, "Update branch", "repository")
 				return { sha: commit.sha, htmlUrl: commit.html_url ?? null }
 			})
 
@@ -1478,7 +1505,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=${PER_PAGE}`,
 				)
-				if (!response.ok) return yield* failure(response, "Compare commits", "repository")
+				if (!isOk(response)) return yield* failure(response, "Compare commits", "repository")
 				const decoded = yield* decodeComparison(yield* parseJson(response, "Compare commits")).pipe(
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected comparison payload", cause }),
@@ -1507,7 +1534,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${base}/commits/${encodeURIComponent(input.headSha)}/check-runs?check_name=${encodeURIComponent(input.name)}&app_id=${encodeURIComponent(config.appId)}&filter=latest`,
 				)
-				if (!listed.ok) return yield* failure(listed, "List check runs", "repository")
+				if (!isOk(listed)) return yield* failure(listed, "List check runs", "repository")
 				const running = (yield* decodeOwnCheckRunList(
 					yield* parseJson(listed, "List check runs"),
 				).pipe(
@@ -1552,7 +1579,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								{ ...state, output },
 								"Update check run",
 							)
-				if (!response.ok) return yield* failure(response, "Write check run", "repository")
+				if (!isOk(response)) return yield* failure(response, "Write check run", "repository")
 				const json = yield* parseJson(response, "Write check run")
 				return yield* decodeCheckRun(json).pipe(
 					Effect.mapError(
@@ -1593,7 +1620,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					},
 					"Create pull request review",
 				)
-				if (!response.ok) return yield* failure(response, "Create pull request review", "repository")
+				if (!isOk(response))
+					return yield* failure(response, "Create pull request review", "repository")
 				const json = yield* parseJson(response, "Create pull request review")
 				return yield* decodeReview(json).pipe(
 					Effect.mapError(
@@ -1627,7 +1655,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						token,
 						`${base}/issues/${number}/comments?per_page=${PER_PAGE}&page=${page}`,
 					)
-					if (!response.ok)
+					if (!isOk(response))
 						return yield* failure(response, "List pull request comments", "repository")
 					const comments = yield* decodeIssueCommentList(
 						yield* parseJson(response, "List pull request comments"),
@@ -1662,7 +1690,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								{ body: text },
 								"Update comment",
 							)
-				if (!response.ok) return yield* failure(response, "Write pull request comment", "repository")
+				if (!isOk(response))
+					return yield* failure(response, "Write pull request comment", "repository")
 				return yield* decodeIssueComment(
 					yield* parseJson(response, "Write pull request comment"),
 				).pipe(
@@ -1700,7 +1729,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						"GitHub code search failed",
 					),
 				)
-				if (!response.ok) return yield* failure(response, "Search code", "repository")
+				if (!isOk(response)) return yield* failure(response, "Search code", "repository")
 				const json = yield* parseJson(response, "Search code")
 				return yield* decodeCodeSearch(json).pipe(
 					Effect.mapError(
@@ -1725,7 +1754,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?${params.toString()}`,
 				)
-				if (!response.ok) return yield* failure(response, "Get repository file", "repository")
+				if (!isOk(response)) return yield* failure(response, "Get repository file", "repository")
 				const json = yield* parseJson(response, "Get repository file")
 				return yield* decodeContentFile(json).pipe(
 					Effect.mapError(
@@ -1755,7 +1784,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						"Get installation request failed",
 					),
 				)
-				if (!response.ok) return yield* failure(response, "Get installation", "installation")
+				if (!isOk(response)) return yield* failure(response, "Get installation", "installation")
 				const json = yield* parseJson(response, "Get installation")
 				return yield* decodeInstallationDetail(json).pipe(
 					Effect.mapError(
@@ -1798,7 +1827,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						"GitHub OAuth code exchange failed",
 					),
 				)
-				if (!response.ok) return yield* failure(response, "GitHub OAuth code exchange")
+				if (!isOk(response)) return yield* failure(response, "GitHub OAuth code exchange")
 				const json = yield* parseJson(response, "GitHub OAuth code exchange")
 				const decoded = yield* decodeOAuthToken(json).pipe(
 					Effect.mapError(
@@ -1826,7 +1855,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						userAccessToken,
 						`${config.apiBaseUrl}/user/installations?per_page=${PER_PAGE}&page=${page}`,
 					)
-					if (!response.ok) return yield* failure(response, "List user installations")
+					if (!isOk(response)) return yield* failure(response, "List user installations")
 					const json = yield* parseJson(response, "List user installations")
 					const decoded = yield* decodeUserInstallations(json).pipe(
 						Effect.mapError(
@@ -1876,5 +1905,5 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(GithubHttp.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
