@@ -583,11 +583,21 @@ Done. Everything is in place.
 			setup({ ...setupInput("project", { logs: true, metrics: false }), logFilter })
 		expect(filtered("keep")).toContain(`LOG_FILTER_MODE='keep'\nLOG_FILTER='${gcpLogFilter(false)}'`)
 		expect(filtered("default")).toContain(`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(false)}'`)
-		expect(filtered("exclude_gke_container_logs")).toContain(
+		expect(filtered("include_gke_container_logs")).toContain(
 			`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(true)}'`,
 		)
+		// The comment above the filter says which way GKE container logs went, and where to read why.
+		expect(filtered("default")).toContain(
+			"# It also leaves out GKE container logs: workloads that send their logs through OpenTelemetry\n",
+		)
+		expect(filtered("include_gke_container_logs")).toContain(
+			"# GKE container logs are included, as chosen in Maple.",
+		)
+		expect(filtered("include_gke_container_logs")).toContain(
+			"https://maple.dev/docs/integrations/gcp-opentelemetry\n",
+		)
 
-		const { stdout, commands } = run(filtered("exclude_gke_container_logs"), { describe: "found" })
+		const { stdout, commands } = run(filtered("include_gke_container_logs"), { describe: "found" })
 		expect(stdout).toContain("  ✓ Log filter accepted\n")
 		expect(stdout).toContain("  ✓ Log sink up to date (filter replaced)")
 		// The closing line says what this run changed.
@@ -1048,11 +1058,11 @@ esac
 		)
 	})
 
-	it("leaves out high-volume noise by default, and GKE containers on request", () => {
-		expect(gcpLogFilter(false)).toBe(
+	it("leaves out high-volume noise and GKE container logs by default, and keeps the latter on request", () => {
+		expect(gcpLogFilter(true)).toBe(
 			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update" AND NOT logName:"serialconsole.googleapis.com"',
 		)
-		expect(gcpLogFilter(true)).toBe(`${gcpLogFilter(false)} AND NOT resource.type="k8s_container"`)
+		expect(gcpLogFilter(false)).toBe(`${gcpLogFilter(true)} AND NOT resource.type="k8s_container"`)
 	})
 
 	it("passes interpolated values to gcloud verbatim, whatever they contain", () => {
