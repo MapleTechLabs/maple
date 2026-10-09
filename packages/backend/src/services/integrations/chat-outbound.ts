@@ -62,7 +62,7 @@ export interface OwnedChatWorkspace {
  * The org's workspace by id, or `None` when the org has no such workspace — or links it through a
  * connector this build no longer ships, which is the same answer to a caller that wants to post.
  */
-export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(function* (
+export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorkspace")(function* (
 	database: DatabaseApi,
 	registry: ReadonlyArray<RegisteredChatConnector>,
 	orgId: OrgId,

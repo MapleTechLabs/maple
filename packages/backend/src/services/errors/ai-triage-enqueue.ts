@@ -376,7 +376,9 @@ const recordSkip = (
  */
 export const maybeEnqueueTriage: (
 	input: MaybeEnqueueTriageInput,
-) => Effect.Effect<MaybeEnqueueTriageResult, never, Database> = Effect.fn("maybeStartInvestigation")(
+) => Effect.Effect<MaybeEnqueueTriageResult, never, Database> = Effect.fn(
+	"AiTriageEnqueue.maybeStartInvestigation",
+)(
 	function* (input) {
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis

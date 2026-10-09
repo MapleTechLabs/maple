@@ -43,7 +43,7 @@ const unreadable = (message: string) => new IntegrationsPersistenceError({ messa
  * The stored columns are decoded by the table codecs rather than trusted: an unreadable row is
  * this function's failure rather than a bad org id reaching a session id.
  */
-export const resolveChatWorkspace = Effect.fn("resolveChatWorkspace")(function* (
+export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWorkspace")(function* (
 	database: DatabaseApi,
 	connectorId: ChatConnectorId,
 	externalWorkspaceId: string,

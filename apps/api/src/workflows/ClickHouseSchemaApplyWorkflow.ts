@@ -29,7 +29,9 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 		// Init: the application database, bound to the host Worker under `MAPLE_DB`
 		// (a run reads it off its env through `mapleDbConnectionLayer`).
 		yield* MapleDb("api")
-		return Effect.fn("ClickHouseSchemaApplyWorkflow")(function* (payload: SchemaApplyWorkflowPayload) {
+		return Effect.fn("ClickHouseSchemaApplyWorkflow.run")(function* (
+			payload: SchemaApplyWorkflowPayload,
+		) {
 			const env = yield* Cloudflare.WorkerEnvironment
 			return yield* withPgConnectionScope(runClickHouseSchemaApply(payload)).pipe(
 				// `Database` over one Postgres connection for the run, released with it,
