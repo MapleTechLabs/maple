@@ -100,7 +100,7 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	last_metrics_error: Schema.NullOr(Schema.String).annotate({
 		description:
-			"Why the most recent metrics read failed or was incomplete, or `null`. Before the setup script has run it says that Maple has no access yet.",
+			"Why the most recent metrics read failed or was incomplete and what to do about it, or `null`. Before the setup script has run it says that Maple cannot sign in yet: `applied_metrics_enabled` tells that state apart.",
 		examples: [null],
 	}),
 	discovered_project_count: Schema.Number.annotate({

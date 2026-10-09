@@ -3,6 +3,8 @@
  * The Google calls the poller makes, over WebCrypto and `fetch` so they run in a Worker. Nothing
  * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and
  * Google's error code and reason only, never a response body, transport error or schema issue.
+ * The one sentence of Google's that is read, to tell a missing billing account from a missing
+ * role, chooses a reason and is dropped.
  * Untraced on purpose: the HTTP client records a span per request, and "not set up yet" is not an
  * exception.
  */
@@ -31,8 +33,17 @@ const REQUEST_TIMEOUT = Duration.seconds(20)
 const TIME_SERIES_PAGE_SIZE = 2_000
 export const RESOURCE_PAGE_SIZE = 500
 
+/** The Google APIs the poller calls, as a connection's error text names them. */
+const GcpApi = Schema.Literals([
+	"Google OAuth",
+	"IAM Credentials",
+	"Cloud Monitoring",
+	"Cloud Asset Inventory",
+])
+
 export class GcpApiError extends Schema.TaggedError<GcpApiError>()("@maple/api/integrations/GcpApiError", {
 	message: Schema.String,
+	api: GcpApi,
 	/**
 	 * `denied`: 401/403. `not_found`: 404. `rate_limited`: 429. `invalid`: any other 4xx.
 	 * `upstream`: 5xx, transport, timeout or an undecodable body.
@@ -84,28 +95,46 @@ const decodeErrorInfo = Schema.decodeUnknownOption(
 	}),
 )
 
-const errorReason = (body: unknown): string | undefined =>
+const decodeErrorMessage = Schema.decodeUnknownOption(
+	Schema.Struct({ error: Schema.Struct({ message: Schema.String }) }),
+)
+
+// Cloud Monitoring refuses a project without billing with a bare 403: no `ErrorInfo`, only a
+// sentence. Its wording is the one thing that tells that refusal from a missing role.
+const reasonFromMessage = (body: unknown): string | undefined => {
+	const message = Option.getOrUndefined(decodeErrorMessage(body))?.error.message
+	if (message === undefined) return undefined
+	if (message.includes("billing")) return "BILLING_DISABLED"
+	return message.includes("has not been used") || message.includes("is disabled")
+		? "SERVICE_DISABLED"
+		: undefined
+}
+
+const errorReason = (body: unknown, kind: GcpApiError["kind"]): string | undefined =>
 	Option.toArray(decodeErrorDetails(body))
 		.flatMap((decoded) => decoded.error.details)
-		.flatMap((detail) => Option.toArray(decodeErrorInfo(detail)))[0]?.reason
+		.flatMap((detail) => Option.toArray(decodeErrorInfo(detail)))[0]?.reason ??
+	(kind === "denied" ? reasonFromMessage(body) : undefined)
 
-/** One JSON call. `api` names the Google service in the error message. */
+/** One JSON call. `api` names the Google service in the error. */
 const call = <A>(
 	httpClient: HttpClient.HttpClient,
-	api: string,
+	api: GcpApiError["api"],
 	request: HttpClientRequest.HttpClientRequest,
 	decode: (body: unknown) => Effect.Effect<A, Schema.SchemaError>,
 ): Effect.Effect<A, GcpApiError> => {
 	const failed = (what: string) => () =>
-		Effect.fail(new GcpApiError({ message: `${api} ${what}`, kind: "upstream" }))
+		Effect.fail(new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" }))
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(request)
 		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
 		if (response.status >= 300) {
-			const reason = errorReason(body)
+			const kind = errorKind(response.status)
+			const reason = errorReason(body, kind)
 			return yield* new GcpApiError({
-				message: `${api} returned ${response.status}${errorCode(body)}${reason === undefined ? "" : ` (${reason})`}`,
-				kind: errorKind(response.status),
+				message: `${api} returned ${response.status}${errorCode(body)}`,
+				api,
+				kind,
 				...(reason === undefined ? undefined : { reason }),
 			})
 		}
@@ -159,6 +188,7 @@ export const importServiceAccountKey = (encoded: Redacted.Redacted<string>) =>
 			() =>
 				new GcpApiError({
 					message: "MAPLE_GCP_SERVICE_ACCOUNT_KEY is not a base64-encoded service account key",
+					api: "Google OAuth",
 					kind: "invalid",
 				}),
 		),
@@ -237,7 +267,7 @@ export const impersonateReader = Effect.fnUntraced(function* (
 	const account = `${gcpConnectorResourceNames(connector.id).serviceAccountId}@${encodeURIComponent(connector.projectId)}.iam.gserviceaccount.com`
 	const response = yield* call(
 		httpClient,
-		"Google IAM",
+		"IAM Credentials",
 		HttpClientRequest.post(
 			`https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${account}:generateAccessToken`,
 		).pipe(
@@ -250,7 +280,7 @@ export const impersonateReader = Effect.fnUntraced(function* (
 		decodeImpersonatedToken,
 	).pipe(
 		// Not made through the host project, so its reason says nothing about that project.
-		Effect.mapError(({ message, kind }) => new GcpApiError({ message, kind })),
+		Effect.mapError(({ message, api, kind }) => new GcpApiError({ message, api, kind })),
 	)
 	return { accessToken: response.accessToken, quotaProject: connector.projectId } satisfies GcpReader
 })
