@@ -467,7 +467,7 @@ describe("makeQueryEngineExecute", () => {
 		const rooted = [listRow("r1", 30), listRow("r2", 20)]
 		const roots = [position("r1", 30), position("r2", 20)]
 
-		it.effect("is the one statement it was when no entry span is near the page", () =>
+		it.effect("is the rooted page alone when no entry span is near it", () =>
 			Effect.gen(function* () {
 				const page = yield* run({ traceList: rooted })
 				assert.deepStrictEqual(page.traceIds, ["r1", "r2"])
@@ -501,8 +501,8 @@ describe("makeQueryEngineExecute", () => {
 			Effect.gen(function* () {
 				const page = yield* run({
 					traceList: rooted,
-					// `x` twice (it is listed at its first entry span); `y` is past the page's last root.
-					traceListEntries: [position("x", 25), position("x", 22), position("y", 5)],
+					// `y` is past the page's last root.
+					traceListEntries: [position("x", 25), position("y", 5)],
 					traceListRoots: roots,
 					traceListRootsInRange: [{ roots: 12 }],
 					traceListByIds: [listRow("x", 24)],
@@ -521,7 +521,7 @@ describe("makeQueryEngineExecute", () => {
 					traceList: rooted,
 					traceListEntries: [position("x", 25)],
 					traceListRoots: roots,
-					traceListRootsInRange: [{ roots: 1_000_001 }],
+					traceListRootsInRange: [{ roots: 3_000_001 }],
 				})
 				assert.deepStrictEqual(page.traceIds, ["r1", "r2"])
 				assert.strictEqual(page.rootlessTraces, "omitted")

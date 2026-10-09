@@ -13,10 +13,7 @@ const MAX_LIMIT = 1000
 /**
  * Returns the slowest traces in a time range (by root span, or by entry span
  * when a trace has no root), ordered by Duration DESC at the database via the
- * `slow_traces` pipe. Previously this fetched 500 rows from the `list_traces`
- * pipe (sorted by recency) and sorted them in JS, which both over-fetched and
- * returned the wrong page when the actual slowest traces were older than the
- * 500 most-recent.
+ * `slow_traces` pipe.
  *
  * Routing through a named pipe (rather than building raw SQL here) lets the
  * same code run unchanged against both local chDB and the remote warehouse —

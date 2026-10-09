@@ -1200,7 +1200,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		from: 28,
 		to: 29,
 		description:
-			"Create trace_list_entry_spans and its materialized view, so a trace whose root span was never received is still listed",
+			"Create trace_list_entry_spans and its materialized view, so a trace whose root span was never received is found by the trace search",
 		clonedBefore: "any DDL runs",
 		plan: [
 			[

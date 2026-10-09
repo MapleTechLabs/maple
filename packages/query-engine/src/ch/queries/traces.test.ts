@@ -685,19 +685,22 @@ describe("trace list page positions", () => {
 		}
 	})
 
-	it("reads entry spans in the same order, under the same filters, once they have settled", () => {
+	it("reads one settled entry span per trace, in the same order under the same filters", () => {
 		const opts = { limit: 400, serviceName: "api", errorsOnly: true }
 		const roots = body(compileUnsafe(traceListRootPageQuery(opts), baseParams).sql)
 		const entries = body(compileUnsafe(traceListEntryPageQuery(opts), baseParams).sql)
 
 		expect(entries).toContain("FROM trace_list_entry_spans")
 		expect(entries).toContain("trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND")
+		// A trace's first row in page order; the limit then counts traces, not spans.
+		expect(entries).toContain("SELECT DISTINCT ON (traceId)")
 		// Otherwise the roots statement over the other table: no set, no grouping,
 		// so it reads in order and stops at the limit.
 		expect(
 			entries
 				.replaceAll("trace_list_entry_spans", "trace_list_mv")
-				.replace(/\s+AND trace_list_mv\.Timestamp <= now\(\) - INTERVAL 30 SECOND/, ""),
+				.replace(/\s+AND trace_list_mv\.Timestamp <= now\(\) - INTERVAL 30 SECOND/, "")
+				.replace("SELECT DISTINCT ON (traceId)", "SELECT"),
 		).toBe(roots)
 	})
 

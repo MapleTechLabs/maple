@@ -3507,7 +3507,7 @@ SELECT
         WHERE trace_list_mv.OrgId = 'org_sql_catalog'
           AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
-        LIMIT 1000001)) <= 1000000
+        LIMIT 3000001)) <= 3000000
           AND trace_list_mv.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
         FORMAT JSON
 
@@ -3535,7 +3535,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:rootless-traces:rootSpansInRangeQuery:page-candidates  [57c98df8]
+-- builder:rootless-traces:rootSpansInRangeQuery:page-candidates  [81cb1ec3]
 SELECT
           count() AS roots
         FROM (SELECT
@@ -3544,7 +3544,7 @@ SELECT
         WHERE trace_list_mv.OrgId = 'org_sql_catalog'
           AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
-        LIMIT 1000001) AS roots
+        LIMIT 3000001) AS probe
         FORMAT JSON
 
 -- builder:service-endpoints:serviceEndpointsSummaryQuery:default  [3decb4a7]
@@ -6572,8 +6572,8 @@ SELECT
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
 FORMAT JSON
 
--- builder:traces:traceListEntryPageQuery:list-tables  [173eaac7]
-SELECT
+-- builder:traces:traceListEntryPageQuery:list-tables  [d3f01ee1]
+SELECT DISTINCT ON (traceId)
           trace_list_entry_spans.TraceId AS traceId,
           trace_list_entry_spans.Timestamp AS ts,
           trace_list_entry_spans.Duration AS d
@@ -6587,8 +6587,8 @@ SELECT
         LIMIT 400
         FORMAT JSON
 
--- builder:traces:traceListEntryPageQuery:raw-traces  [114280c1]
-SELECT
+-- builder:traces:traceListEntryPageQuery:raw-traces  [18133d9b]
+SELECT DISTINCT ON (traceId)
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -16193,8 +16193,8 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback#2:baseline  [06d5f13f]
-SELECT
+-- spec:traces-list-grouped-attr-fallback#2:baseline  [85dc095d]
+SELECT DISTINCT ON (traceId)
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -16212,8 +16212,8 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback#2:bloom  [c518a8b9]
-SELECT
+-- spec:traces-list-grouped-attr-fallback#2:bloom  [7e5136c7]
+SELECT DISTINCT ON (traceId)
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -16231,8 +16231,8 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback#2:text  [3e2971d5]
-SELECT
+-- spec:traces-list-grouped-attr-fallback#2:text  [1b8089cf]
+SELECT DISTINCT ON (traceId)
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -16290,8 +16290,8 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-duration-sort#2:baseline  [958a9018]
-SELECT
+-- spec:traces-list-grouped-duration-sort#2:baseline  [6f853932]
+SELECT DISTINCT ON (traceId)
           trace_list_entry_spans.TraceId AS traceId,
           trace_list_entry_spans.Timestamp AS ts,
           trace_list_entry_spans.Duration AS d
@@ -16423,8 +16423,8 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped#2:baseline  [5b883d87]
-SELECT
+-- spec:traces-list-grouped#2:baseline  [0c88b671]
+SELECT DISTINCT ON (traceId)
           trace_list_entry_spans.TraceId AS traceId,
           trace_list_entry_spans.Timestamp AS ts,
           trace_list_entry_spans.Duration AS d
@@ -16439,8 +16439,8 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:traces-list-grouped#2:bloom  [5b883d87]
-SELECT
+-- spec:traces-list-grouped#2:bloom  [0c88b671]
+SELECT DISTINCT ON (traceId)
           trace_list_entry_spans.TraceId AS traceId,
           trace_list_entry_spans.Timestamp AS ts,
           trace_list_entry_spans.Duration AS d
@@ -16455,8 +16455,8 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:traces-list-grouped#2:text  [5b883d87]
-SELECT
+-- spec:traces-list-grouped#2:text  [0c88b671]
+SELECT DISTINCT ON (traceId)
           trace_list_entry_spans.TraceId AS traceId,
           trace_list_entry_spans.Timestamp AS ts,
           trace_list_entry_spans.Duration AS d

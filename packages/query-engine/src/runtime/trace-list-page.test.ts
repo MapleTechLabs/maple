@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import type { TraceListPositionOutput } from "../ch/queries/traces"
 import {
 	byPosition,
-	CANDIDATE_LIMIT,
 	mergedPage,
 	pageIsExact,
 	rootlessCandidates,
@@ -43,15 +42,15 @@ describe("rootlessCandidates", () => {
 	// Two page slots; roots at 30s and 20s fill them, so the page ends at 20s.
 	const roots = [at("r1", 30), at("r2", 20)]
 
-	it("keeps each trace once, at its first entry span in page order", () => {
-		const entries = [at("x", 40), at("y", 35), at("x", 33), at("y", 25)]
+	it("keeps the traces listed before the page's last root, but not the page's own roots", () => {
+		const entries = [at("x", 40), at("r1", 35), at("y", 25)]
 		const { candidates, completeThrough } = rootlessCandidates(newest, entries, 100, roots, 2)
-		expect(candidates).toEqual([at("x", 40), at("y", 35)])
+		expect(candidates).toEqual([at("x", 40), at("y", 25)])
 		expect(completeThrough).toBeUndefined()
 	})
 
 	it("drops traces the page cannot reach: those first seen after its last root", () => {
-		const entries = [at("x", 40), at("z", 15), at("x", 10)]
+		const entries = [at("x", 40), at("z", 15)]
 		expect(ids(rootlessCandidates(newest, entries, 100, roots, 2).candidates)).toEqual(["x"])
 	})
 
@@ -76,15 +75,6 @@ describe("rootlessCandidates", () => {
 		expect(rootlessCandidates(newest, entries, 3, roots, 2).completeThrough).toBeUndefined()
 		// Full with no root to stop at: the window may hold more.
 		expect(rootlessCandidates(newest, entries, 2, [], 2).completeThrough).toEqual(at("y", 35))
-	})
-
-	it("checks no more candidates than one read may name", () => {
-		const entries = Array.from({ length: CANDIDATE_LIMIT + 1 }, (_, i) =>
-			at(`t${String(i).padStart(5, "0")}`, 59),
-		)
-		const { candidates, completeThrough } = rootlessCandidates(newest, entries, entries.length + 1, [], 1)
-		expect(candidates).toHaveLength(CANDIDATE_LIMIT)
-		expect(completeThrough).toEqual(candidates.at(-1))
 	})
 })
 

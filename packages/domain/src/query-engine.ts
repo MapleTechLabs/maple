@@ -633,8 +633,8 @@ export const QueryEngineResult = Schema.Union([
 		source: Schema.Literals(["traces", "logs", "product_events"]),
 		data: Schema.Array(ListRow),
 		/**
-		 * Grouped trace lists only. `listed`: this page holds a trace that has no
-		 * root span, listed by an entry span. `omitted`: such traces could not all
+		 * Grouped trace lists only. `listed`: this page, or one before it, holds a
+		 * trace that has no root span, listed by an entry span. `omitted`: such traces could not all
 		 * be looked for on this page (too many candidates or root spans around
 		 * it), so some may be missing; a shorter range or a narrower filter finds them.
 		 */

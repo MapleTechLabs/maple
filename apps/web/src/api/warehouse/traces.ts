@@ -173,8 +173,8 @@ export interface TracesResponse {
 		/** Noise traces dropped from this page (`scannedCount - data.length`). */
 		hiddenCount: number
 		/**
-		 * Traces with no root span on this page: `listed` when it holds one,
-		 * `omitted` when they could not all be looked for and some may be missing.
+		 * Traces with no root span: `listed` when this page or one before it holds
+		 * one, `omitted` when they could not all be looked for and some may be missing.
 		 */
 		rootlessTraces?: "listed" | "omitted"
 	}
@@ -401,7 +401,7 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 	if (input.namespaceMatchMode === "contains") matchModes.serviceNamespace = "contains"
 
 	const rootOnly = input.rootOnly ?? true
-	// The trace-grouped list only lists true roots; `rootOnly: false` is the
+	// The trace-grouped list has one row per trace; `rootOnly: false` is the
 	// explicit opt-out into the legacy per-span list (Datadog's "all spans" view).
 	const groupByTrace = rootOnly
 	const hideNoise = groupByTrace && (input.hideNoise ?? true)

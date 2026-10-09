@@ -169,10 +169,11 @@ Recorded so the next sweep does not re-derive them.
   user-authored SQL against raw tables, so no MV can see it and no routing guard applies.
   Needs its own design: a rollup users can target, or per-rule result caching.
 - **Facet counts for traces with no root span, in a busy window.** The trace list checks only
-  the traces of the page it cuts, so it lists them at any window size. The facets, duration
-  stats and slow traces aggregate the whole window, and ruling a trace out there reads one
-  `trace_list_mv` TraceId per root span in it: they stop at `ROOTLESS_ROOT_BUDGET` roots,
-  count rooted traces only, and say so in the result. Lifting that needs the per-trace answer
+  the traces of the page it cuts, so what it reads follows the page, not the window. The
+  facets, duration stats and slow traces aggregate the whole window, and ruling a trace out
+  there reads one `trace_list_mv` TraceId per root span in it: they stop at
+  `ROOTLESS_ROOT_BUDGET` roots or `ROOTLESS_ENTRY_BUDGET` entry spans, count rooted traces
+  only, and say so in the result. Lifting that needs the per-trace answer
   materialized (the service map's scheduled join is the nearest precedent), not a wider read.
 - **`trace_detail_spans` TTL.** 82 GB, and TTL is the only remaining lever. Column narrowing
   recovered 1.19 GB (1.5%) and the rest is `SpanAttributes` (31 GB) and the incompressible

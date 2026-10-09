@@ -1395,8 +1395,7 @@ const isMissingServiceOverviewMinutely = (error: unknown): boolean => {
  * One page of the grouped trace list, with the traces that have no root span
  * merged in at the positions their entry spans give them.
  *
- * The page of rooted traces is the one statement it always was, and runs
- * alongside a read of the entry spans near the top of the list. Only when that
+ * The page of rooted traces is a single statement, and runs alongside a read of the entry spans near the top of the list. Only when that
  * read finds candidates is anything else asked: which of them have a root span
  * (one `trace_list_mv` read as wide as those candidates, not the window), and,
  * when some have none, the root positions to merge them with and the rows of
@@ -1946,8 +1945,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					tenant,
 					(capabilities) => ({
 						...opts,
-						// Stage 1 pins `ParentSpanId = ''` itself; the broader
-						// entry-point predicate would only widen the OR for nothing.
+						// Stage 1 pins its own population (roots, or entry spans); the
+						// broader entry-point predicate would only widen the OR for nothing.
 						// (`rootOnly` compiles via `whenTrue`, so `false` = no clause.)
 						rootOnly: false,
 						attributeIndexMode: attributeIndexMode(capabilities, "traces"),

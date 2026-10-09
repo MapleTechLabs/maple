@@ -27,6 +27,7 @@ export { CHNumber } from "./schema"
 // Queries — Traces with no root span
 export {
 	ROOTLESS_PAGE_ROOT_BUDGET,
+	ROOTLESS_ROOT_BUDGET,
 	rootedTraceIdsQuery,
 	rootSpansInRangeQuery,
 	rootlessOmittedQuery,

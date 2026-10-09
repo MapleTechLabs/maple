@@ -29,8 +29,11 @@ import { TraceListEntrySpans, TraceListMv, orgIdParam, utcSecondsParam } from ".
 /** Rows of each table one window aggregate (a facet branch, the stats, slow traces) may read. */
 export const ROOTLESS_ROOT_BUDGET = 250_000
 export const ROOTLESS_ENTRY_BUDGET = 1_000_000
-/** Root spans one trace-list page may read to rule its candidates out. */
-export const ROOTLESS_PAGE_ROOT_BUDGET = 1_000_000
+/**
+ * Root spans one trace-list page may read to rule its candidates out: about
+ * half a second of `trace_list_mv` (measured at 0.3 s for 1.8 million).
+ */
+export const ROOTLESS_PAGE_ROOT_BUDGET = 3_000_000
 
 /**
  * A root span is exported when its trace ends, after its children. Until then
@@ -57,6 +60,13 @@ export const rootsInWindow = ($: ColumnAccessor<typeof TraceListMv.columns>) => 
 	$.Timestamp.lte(utcSecondsParam("endTime")),
 ]
 
+/** Entry spans in the `startTime` / `endTime` window. */
+export const entriesInWindow = ($: ColumnAccessor<typeof TraceListEntrySpans.columns>) => [
+	$.OrgId.eq(orgIdParam),
+	$.Timestamp.gte(utcSecondsParam("startTime")),
+	$.Timestamp.lte(utcSecondsParam("endTime")),
+]
+
 const rootProbe = (budget: number) =>
 	from(TraceListMv)
 		.select(() => ({ one: CH.lit(1) }))
@@ -65,11 +75,7 @@ const rootProbe = (budget: number) =>
 
 const entryProbe = from(TraceListEntrySpans)
 	.select(() => ({ one: CH.lit(1) }))
-	.where(($) => [
-		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(utcSecondsParam("startTime")),
-		$.Timestamp.lte(utcSecondsParam("endTime")),
-	])
+	.where(entriesInWindow)
 	.limit(ROOTLESS_ENTRY_BUDGET + 1)
 
 // Scalar subqueries: folded to constants before any table is read, so a window
@@ -107,9 +113,7 @@ export function rootlessOmittedQuery() {
 	return from(TraceListEntrySpans)
 		.select(() => ({ omitted: CH.lit(1) }))
 		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
+			...entriesInWindow($),
 			settledEntrySpan($.Timestamp),
 			CH.not(CH.and(rootsWithin(ROOTLESS_ROOT_BUDGET), entriesWithinBudget)),
 		])
@@ -121,7 +125,7 @@ export function rootlessOmittedQuery() {
  * Which of a list page's candidate traces have a root span. `startTime` /
  * `endTime` are the candidates' own bounds, not the caller's window, so the
  * read is as wide as the page and no wider; none when that range holds more
- * roots than `rootSpansInRangeQuery` allows.
+ * than `ROOTLESS_PAGE_ROOT_BUDGET` roots (`rootSpansInRangeQuery` tells).
  */
 export function rootedTraceIdsQuery(traceIds: ReadonlyArray<string>) {
 	return from(TraceListMv)
@@ -136,7 +140,7 @@ export function rootedTraceIdsQuery(traceIds: ReadonlyArray<string>) {
 
 /** Root spans in that range, counted up to one past `ROOTLESS_PAGE_ROOT_BUDGET`. */
 export function rootSpansInRangeQuery() {
-	return fromQuery(rootProbe(ROOTLESS_PAGE_ROOT_BUDGET), "roots")
+	return fromQuery(rootProbe(ROOTLESS_PAGE_ROOT_BUDGET), "probe")
 		.select(() => ({ roots: CH.count() }))
 		.format("JSON")
 }

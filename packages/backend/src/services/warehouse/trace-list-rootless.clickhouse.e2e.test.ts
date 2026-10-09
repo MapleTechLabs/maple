@@ -21,7 +21,11 @@ import {
 
 const database = uniqueDatabase("maple_trace_rootless_e2e")
 const ORG_ID = "org_trace_rootless_e2e"
-const ORG = Schema.decodeUnknownSync(OrgId)(ORG_ID)
+// An organization with one root span more than the window aggregates may read.
+const BUSY_ORG_ID = "org_trace_rootless_busy"
+// One whose newest entry span has not settled yet.
+const FRESH_ORG_ID = "org_trace_rootless_fresh"
+const asOrgId = Schema.decodeUnknownSync(OrgId)
 const service = Schema.decodeUnknownSync(ServiceName)
 
 // Anchored to now: `traces` carries a 30-day TTL enforced at insert. Three hours
@@ -72,11 +76,11 @@ const SEED: ReadonlyArray<SeedSpan> = [
 ]
 const LATE_ROOT = span("t-late-root", "edge-1", "", 2399, "edge", "Server", 20)
 
-const insert = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
+const insert = async (spans: ReadonlyArray<SeedSpan>, orgId = ORG_ID): Promise<void> => {
 	const rows = spans
 		.map(
 			(s) =>
-				`('${ORG_ID}', '${chDateTime(BASE_MS + s.second * 1000)}', '${s.traceId}', '${s.spanId}', '${s.parentSpanId}', 'op-${s.service}', '${s.kind}', '${s.service}', ${s.durationNs}, '${s.status ?? "Ok"}', '', 1, map(), map())`,
+				`('${orgId}', '${chDateTime(BASE_MS + s.second * 1000)}', '${s.traceId}', '${s.spanId}', '${s.parentSpanId}', 'op-${s.service}', '${s.kind}', '${s.service}', ${s.durationNs}, '${s.status ?? "Ok"}', '', 1, map(), map())`,
 		)
 		.join("\n,")
 	await clickhouseExec(
@@ -109,10 +113,10 @@ const executeQuery = makeQueryEngineExecute<{ readonly orgId: OrgId }>({
 })
 
 type TraceList = Extract<QueryEngineExecuteRequest["query"], { kind: "list"; source: "traces" }>
-const list = async (query: Partial<TraceList> = {}) => {
+const list = async (query: Partial<TraceList> = {}, orgId = ORG_ID) => {
 	const { result } = await Effect.runPromise(
 		executeQuery(
-			{ orgId: ORG },
+			{ orgId: asOrgId(orgId) },
 			{
 				startTime: window.startTime,
 				endTime: window.endTime,
@@ -251,5 +255,52 @@ describe.skipIf(!clickhouseE2eEnabled)("traces with no root span", () => {
 		assert.deepStrictEqual(await serviceFacet(), { web: 1, checkout: 1, gateway: 1, billing: 1, edge: 1 })
 		assert.deepStrictEqual(await listed({ filters: { serviceName: service("orders") } }), [])
 		assert.strictEqual((await summaries())[0]!.rootServiceName, "edge")
+	})
+
+	it("counts rooted traces only past the aggregates' budget, says so, and still lists them", async () => {
+		const busy = { ...window, orgId: BUSY_ORG_ID }
+		await clickhouseExec(
+			`INSERT INTO trace_list_mv (OrgId, Timestamp, TraceId, ServiceName, Duration)
+			 SELECT '${BUSY_ORG_ID}', toDateTime('${window.startTime}') + number % 3000, concat('r-', toString(number)), 'bulk', 1000000
+			 FROM numbers(${CH.ROOTLESS_ROOT_BUDGET + 1})`,
+			database,
+		)
+		// Newer than every root above, so it is the first row of the list.
+		await insert([span("t-busy", "entry-1", "proxy-9", 3300, "edge", "Server", 40)], BUSY_ORG_ID)
+
+		const facets = await run(CH.compileUnionUnsafe(CH.tracesFacetsQuery({ facet: "service" }), busy).sql)
+		assert.deepStrictEqual(
+			facets.map((row) => [row.name, Number(row.count)]),
+			[["bulk", CH.ROOTLESS_ROOT_BUDGET + 1]],
+		)
+		const slow = await run(CH.compileUnsafe(CH.slowTracesQuery({ service: "edge" }), busy).sql)
+		assert.deepStrictEqual(slow, [])
+		assert.strictEqual((await run(CH.compileUnsafe(CH.rootlessOmittedQuery(), busy).sql)).length, 1)
+
+		// The list checks the traces of its page, not the window.
+		const page = await list({ limit: 1 }, BUSY_ORG_ID)
+		assert.deepStrictEqual(traceIds(page.rows), ["t-busy"])
+		assert.strictEqual(page.rootlessTraces, "listed")
+	})
+
+	it("waits for a trace to settle before an entry span stands in for it", async () => {
+		const nowSecond = Math.floor((Date.now() - BASE_MS) / 1000)
+		await insert(
+			[
+				span("t-settled", "entry-1", "proxy-1", nowSecond - 120, "edge", "Server", 5),
+				// Its root may still be on the way.
+				span("t-in-flight", "entry-2", "proxy-2", nowSecond, "edge", "Server", 5),
+			],
+			FRESH_ORG_ID,
+		)
+		const recent = {
+			orgId: FRESH_ORG_ID,
+			startTime: chDateTime(Date.now() - 600_000),
+			endTime: chDateTime(Date.now() + 60_000),
+		}
+		const found = await run(CH.compileUnsafe(CH.traceSummariesQuery({}), recent).sql)
+		assert.deepStrictEqual(traceIds(found), ["t-settled"])
+		const positions = await run(CH.compileUnsafe(CH.traceListEntryPageQuery({}), recent).sql)
+		assert.deepStrictEqual(traceIds(positions), ["t-settled"])
 	})
 })
