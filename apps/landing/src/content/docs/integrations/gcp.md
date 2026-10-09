@@ -321,7 +321,7 @@ The **Resources** tab shows the first 500 resources that match its filters, and 
 
 Until a connection's setup script has run, the page reads **Finish setting up Google Cloud**. After the run it reads **Collecting your first Google Cloud metrics** until the first read lands, within about 10 minutes.
 
-With **Metrics and resources** switched off on every connection, the page leaves the sidebar and the overview. Its address still opens it: for a time range with data it shows what Maple collected before, under the notice **Google Cloud metrics are switched off**, and otherwise it reads **Turn on metrics for Google Cloud**.
+With **Metrics and resources** switched off on every connection, the page leaves the sidebar and the overview. Its address still opens it: for a time range with data it shows the service tabs with what Maple collected before, under the notice **Google Cloud metrics are switched off**, and otherwise it reads **Turn on metrics for Google Cloud**. The **Resources** tab is back once a connection collects again.
 
 ## Google Cloud costs
 

@@ -182,17 +182,21 @@ describe("formatGcpValue", () => {
 
 describe("gcpInfraTabs", () => {
 	it("shows the reporting services in tab order, then the inventory", () => {
-		expect(gcpInfraTabs(["cloudSql", "cloudRun"], undefined)).toEqual([
+		expect(gcpInfraTabs(["cloudSql", "cloudRun"], undefined, true)).toEqual([
 			"cloudRun",
 			"cloudSql",
 			"resources",
 		])
-		expect(gcpInfraTabs([], undefined)).toEqual(["resources"])
+		expect(gcpInfraTabs([], undefined, true)).toEqual(["resources"])
 	})
 
 	it("keeps the requested tab when its service is quiet in the window", () => {
-		expect(gcpInfraTabs(["cloudRun"], "gke")).toEqual(["cloudRun", "gke", "resources"])
-		expect(gcpInfraTabs(["cloudRun"], "resources")).toEqual(["cloudRun", "resources"])
+		expect(gcpInfraTabs(["cloudRun"], "gke", true)).toEqual(["cloudRun", "gke", "resources"])
+		expect(gcpInfraTabs(["cloudRun"], "resources", true)).toEqual(["cloudRun", "resources"])
+	})
+
+	it("leaves the inventory out while no connection collects, also when it is requested", () => {
+		expect(gcpInfraTabs(["cloudRun"], "resources", false)).toEqual(["cloudRun"])
 	})
 })
 

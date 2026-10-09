@@ -193,8 +193,8 @@ function GcpInfra({
 	useIntervalRefresh(refreshPresence, { intervalMs: WAITING_REFRESH_MS, enabled: waiting || quiet })
 
 	const requested: GcpInfraTab | undefined = GCP_INFRA_TABS.find((candidate) => candidate === search.tab)
-	const tabs = gcpInfraTabs(reporting, requested)
-	const tab = requested ?? tabs[0]
+	const tabs = gcpInfraTabs(reporting, requested, connectors.length > 0)
+	const tab = tabs.find((candidate) => candidate === requested) ?? tabs[0]
 
 	// Metrics switched off, and nothing collected before in this range.
 	if (connectors.length === 0 && Result.isSuccess(presenceResult) && reporting.length === 0) {
@@ -332,12 +332,13 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 			)
 		case "off":
 			return (
-				<Alert variant="info" role="status">
+				<Alert role="status">
 					<CircleInfoIcon size={16} />
 					<AlertTitle>Google Cloud metrics are switched off</AlertTitle>
 					<AlertDescription>
-						These tables show what Maple collected before. To collect again, switch on Metrics and
-						resources in the Google Cloud integration, then run the setup script again.
+						These tables show what Maple collected before they were switched off. To collect
+						again, switch on Metrics and resources in the Google Cloud integration, then run the
+						setup script again.
 					</AlertDescription>
 					{integration("Open the integration")}
 				</Alert>

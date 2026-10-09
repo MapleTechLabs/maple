@@ -236,13 +236,17 @@ export type GcpInfraTab = (typeof GCP_INFRA_TABS)[number]
 
 /**
  * The tabs on the page: the services reporting in the window, then the inventory. A requested
- * service tab stays, so a link or a narrower time range lands on its empty state.
+ * service tab stays, so a link or a narrower time range lands on its empty state. The inventory
+ * only while a connection collects: the resources of one that stopped are not listed.
  */
 export const gcpInfraTabs = (
 	reporting: ReadonlyArray<GcpInfraServiceId>,
 	requested: GcpInfraTab | undefined,
+	collecting: boolean,
 ): ReadonlyArray<GcpInfraTab> =>
-	GCP_INFRA_TABS.filter((tab) => tab === GCP_RESOURCES_TAB || tab === requested || reporting.includes(tab))
+	GCP_INFRA_TABS.filter((tab) =>
+		tab === GCP_RESOURCES_TAB ? collecting : tab === requested || reporting.includes(tab),
+	)
 
 export type GcpInfraNotice =
 	/** A connector's reads fail, or arrive with part of the metrics missing. */
