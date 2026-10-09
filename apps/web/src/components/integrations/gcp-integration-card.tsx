@@ -496,7 +496,8 @@ function GcpConnectForm({
 				) : (
 					"the project"
 				)}
-				{scopeRoles.length > 0 ? `, plus ${scopeRoles.join(" and ")} on the ${scopeName}` : ""}.
+				{scopeRoles.length > 0 ? `, plus ${scopeRoles.join(" and ")} on the ${scopeName}` : ""}.{" "}
+				<ExternalLink href={`${DOCS}#roles-for-running-the-script`}>Without Owner</ExternalLink>
 			</p>
 			{overlap === null ? null : (
 				<Alert size="sm" role="note">
