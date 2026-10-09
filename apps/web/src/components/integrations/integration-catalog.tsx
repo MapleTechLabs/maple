@@ -29,12 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
-import {
-	GCP_CONNECTION_STATUS,
-	gcpConnectionState,
-	gcpScopeLabel,
-	gcpWorstState,
-} from "./gcp-connector-state"
+import { GCP_CONNECTION_LABEL, gcpConnectionState, gcpScopeLabel, gcpWorstState } from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -588,7 +583,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			return {
 				kind: "connected",
 				health: worst === "attention" || worst === "healthy" ? worst : "pending",
-				stateLabel: GCP_CONNECTION_STATUS[worst].label,
+				stateLabel: GCP_CONNECTION_LABEL[worst],
 				context:
 					connectors.length === 1
 						? gcpScopeLabel(connectors[0])
@@ -602,23 +597,17 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 				]
 					.filter((part) => part !== null)
 					.join(" · "),
-				// While everything waits for first data, an older time would contradict the label.
-				lastSyncLabel:
-					worst === "waiting"
-						? null
-						: syncedLabel(
-								maxMs(
-									connectors
-										.flatMap((connector) => [
-											connector.logs_enabled ? connector.last_log_received_at : null,
-											connector.metrics_enabled
-												? connector.last_metrics_received_at
-												: null,
-										])
-										.map((iso) => (iso ? Date.parse(iso) : null)),
-								),
-								"last data",
-							),
+				lastSyncLabel: syncedLabel(
+					maxMs(
+						connectors
+							.flatMap((connector) => [
+								connector.logs_enabled ? connector.last_log_received_at : null,
+								connector.metrics_enabled ? connector.last_metrics_received_at : null,
+							])
+							.map((iso) => (iso ? Date.parse(iso) : null)),
+					),
+					"last data",
+				),
 				issue:
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`

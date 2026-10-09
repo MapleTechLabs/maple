@@ -12,11 +12,11 @@ export interface ChecklistStep<Id extends string> extends Omit<SetupStep, "id" |
 }
 
 /**
- * A setup progression rendered as an ordered checklist: PlanetScale's four steps, Google
- * Cloud's three.
+ * A progression rendered as an ordered checklist: PlanetScale's four setup steps, Google
+ * Cloud's setup and disconnect steps.
  *
  * Only an active step expands — a fully-connected org sees quiet confirmation lines, not a
- * form. `children` is keyed by step id so the caller
+ * form. `actions` is keyed by step id so the caller
  * supplies the action (the token form, a Reconnect button) without this
  * component knowing what any step needs.
  */

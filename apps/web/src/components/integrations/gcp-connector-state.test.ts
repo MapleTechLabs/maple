@@ -11,6 +11,7 @@ import {
 	gcpPendingChanges,
 	gcpScopeLabel,
 	gcpScopeRoles,
+	gcpScriptNeeded,
 	gcpSwitchLock,
 	gcpWorstState,
 	type GcpConnectorDraft,
@@ -223,9 +224,15 @@ describe("gcpConnectionState", () => {
 
 	it("has changes pending when a switch and the last report disagree", () => {
 		expect(state({ logs_enabled: false })).toBe("changes-pending")
-		expect(state({ applied_metrics_enabled: null, last_metrics_received_at: null })).toBe(
+		expect(state({ applied_metrics_enabled: false, last_metrics_received_at: ago(90) })).toBe(
 			"changes-pending",
 		)
+	})
+
+	it("stays setup pending while a capability has no report, as between the sections of a first run", () => {
+		const midRun = { applied_metrics_enabled: null, setup_reported_at: ago(0), ...NEVER }
+		expect(state(midRun)).toBe("setup-pending")
+		expect(gcpPendingChanges(connector(midRun), NOW)).toEqual([])
 	})
 
 	it("waits for data once the script reported", () => {
@@ -267,6 +274,20 @@ describe("gcpPendingChanges", () => {
 			"create the log sink, topic and subscription",
 			"remove the read-only service account and its roles",
 		])
+	})
+})
+
+describe("gcpScriptNeeded", () => {
+	const needed = (over: Parameters<typeof connector>[0]) => gcpScriptNeeded(connector(over), NOW)
+
+	it("is null while the switches match what the runs reported", () => {
+		expect(needed({})).toBeNull()
+		expect(needed({ ...NEVER, setup_reported_at: ago(1) })).toBeNull()
+	})
+
+	it("says so whatever else is wrong: a failing capability does not hide a pending change", () => {
+		expect(needed({ logs_enabled: false, last_metrics_error: "denied" })).toBe("changes-pending")
+		expect(needed({ ...fresh, ...NEVER, last_log_error: "wrapped" })).toBe("setup-pending")
 	})
 })
 
