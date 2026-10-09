@@ -29,7 +29,12 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
-import { gcpAttention, gcpScopeLabel } from "./gcp-connector-state"
+import {
+	GCP_CONNECTION_STATUS,
+	gcpConnectionState,
+	gcpScopeLabel,
+	gcpWorstState,
+} from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -182,8 +187,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		category: "infrastructure",
 		isNew: true,
 		name: "Google Cloud",
-		description:
-			"Connect a Google Cloud organization, folder or project by running one script in Cloud Shell.",
+		description: "Logs, metrics and resources from a project, folder or organization.",
 		icon: GoogleCloudIcon,
 		monoIcon: GoogleCloudMonoIcon,
 		accent: GCP_ACCENT,
@@ -499,7 +503,8 @@ export function IntegrationIconPlate({
 
 interface ConnectedOverview {
 	readonly kind: "connected"
-	readonly health: "healthy" | "attention"
+	/** `pending` waits on the owner or on first data: neutral, and not counted as needing attention. */
+	readonly health: "healthy" | "attention" | "pending"
 	/** Short state word next to the health dot ("Healthy", "Needs attention", "Suspended"). */
 	readonly stateLabel: string
 	/** Second line under the name ("Acme Corp", "@acme-corp · GitHub App"). */
@@ -508,7 +513,7 @@ interface ConnectedOverview {
 	readonly stat: string | null
 	/** "synced 2m ago" — null when the integration has no sync concept (Hazel). */
 	readonly lastSyncLabel: string | null
-	/** Warning chip ("1 zone erroring") — presence implies `health: "attention"` visuals. */
+	/** Chip ("1 zone erroring", "Run setup script"): a warning, or an outline while `pending`. */
 	readonly issue: string | null
 }
 
@@ -577,26 +582,19 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onSuccess((status): IntegrationOverview => {
 			const connectors = status.connectors
 			if (connectors.length === 0) return SET_UP
-			const attention = connectors.map(gcpAttention)
-			const count = (kind: (typeof attention)[number]) =>
-				attention.filter((entry) => entry === kind).length
-			const failing = count("failing")
-			const waiting = count("waiting")
-			const issue =
-				failing > 0
-					? `${countLabel(failing, "connection")} failing`
-					: waiting > 0
-						? `${countLabel(waiting, "connection")} waiting for data`
-						: null
+			const now = Date.now()
+			const states = connectors.map((connector) => gcpConnectionState(connector, now))
+			const count = (state: (typeof states)[number]) => states.filter((entry) => entry === state).length
+			const worst = gcpWorstState(states)
 			return {
 				kind: "connected",
-				health: issue ? "attention" : "healthy",
-				stateLabel: issue ? "Needs attention" : "Healthy",
+				health: worst === "attention" || worst === "healthy" ? worst : "pending",
+				stateLabel: GCP_CONNECTION_STATUS[worst].label,
 				context:
 					connectors.length === 1
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
-				stat: `${count(null)} of ${countLabel(connectors.length, "connection")} receiving data`,
+				stat: `${count("healthy")} of ${countLabel(connectors.length, "connection")} receiving data`,
 				lastSyncLabel: syncedLabel(
 					maxMs(
 						connectors
@@ -608,7 +606,12 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					),
 					"last data",
 				),
-				issue,
+				issue:
+					worst === "attention"
+						? `${countLabel(count("attention"), "connection")} failing`
+						: worst === "setup-pending" || worst === "changes-pending"
+							? "Run setup script"
+							: null,
 			}
 		})
 		.onInitial(() => null)
@@ -868,10 +871,13 @@ export function IntegrationsSummary() {
 	)
 }
 
-function HealthDot({ health }: { health: "healthy" | "attention" | "unavailable" }) {
-	if (health === "unavailable") return <StatusDot tone="neutral" />
-	return <StatusDot tone={health === "healthy" ? "ok" : "warn"} />
-}
+/** Dot tone per health. The integration's page header uses it too. */
+export const HEALTH_TONE = {
+	healthy: "ok",
+	attention: "warn",
+	pending: "neutral",
+	unavailable: "neutral",
+} as const
 
 function ConnectedRow({
 	entry,
@@ -903,7 +909,7 @@ function ConnectedRow({
 				)}
 			</span>
 			<span className="flex w-28 shrink-0 items-center gap-2">
-				<HealthDot health={connected?.health ?? "unavailable"} />
+				<StatusDot tone={HEALTH_TONE[connected?.health ?? "unavailable"]} />
 				<span className="truncate text-xs">{connected?.stateLabel ?? "Status unavailable"}</span>
 			</span>
 			{connected?.stat && (
@@ -918,7 +924,11 @@ function ConnectedRow({
 					</span>
 				)}
 				{connected?.issue && (
-					<Badge variant="warn" size="sm" className="hidden sm:inline-flex">
+					<Badge
+						variant={connected.health === "pending" ? "outline" : "warn"}
+						size="sm"
+						className="hidden sm:inline-flex"
+					>
 						{connected.issue}
 					</Badge>
 				)}

@@ -3,159 +3,309 @@ import { describe, expect, it } from "vitest"
 import { Option } from "effect"
 import {
 	cloudShellUrl,
-	gcpAttention,
+	gcpConnectionState,
 	gcpCreateRequest,
 	gcpLogState,
 	gcpMetricsState,
+	gcpOverlapNote,
+	gcpPendingChanges,
 	gcpScopeLabel,
+	gcpScopeRoles,
 	gcpSwitchLock,
+	gcpWorstState,
 	type GcpConnectorDraft,
 } from "./gcp-connector-state"
 
-const RECEIVED_AT = "2026-10-08T09:12:00.000Z"
+const NOW = Date.parse("2026-10-08T12:00:00.000Z")
+const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString()
+
+/** A project connection whose script ran an hour ago and that delivers both. */
+const connector = (over: Partial<Parameters<typeof gcpConnectionState>[0]> = {}) => ({
+	scope_type: "project" as const,
+	logs_enabled: true,
+	metrics_enabled: true,
+	applied_logs_enabled: true as boolean | null,
+	applied_metrics_enabled: true as boolean | null,
+	setup_reported_at: ago(60) as string | null,
+	last_log_received_at: ago(1) as string | null,
+	last_log_error: null as string | null,
+	last_metrics_received_at: ago(4) as string | null,
+	last_metrics_error: null as string | null,
+	discovered_project_count: 1,
+	last_resources_error: null as string | null,
+	...over,
+})
+/** As created: nothing reported, nothing arrived. */
+const fresh = { applied_logs_enabled: null, applied_metrics_enabled: null, setup_reported_at: null }
+const NEVER = { last_log_received_at: null, last_metrics_received_at: null }
 
 describe("gcpLogState", () => {
-	const logs = (last_log_received_at: string | null, last_log_error: string | null) =>
-		gcpLogState({ logs_enabled: true, last_log_received_at, last_log_error })
+	const log = (over: Parameters<typeof connector>[0]) => gcpLogState(connector(over), NOW)
 
-	it("is off when log forwarding is switched off, whatever arrived earlier", () => {
-		expect(
-			gcpLogState({ logs_enabled: false, last_log_received_at: RECEIVED_AT, last_log_error: "x" }),
-		).toEqual({ kind: "off" })
+	it("is off, and says whether the sink is still set up", () => {
+		expect(log({ logs_enabled: false, applied_logs_enabled: false, last_log_error: "x" })).toEqual({
+			kind: "off",
+			stillSetUp: false,
+		})
+		expect(log({ logs_enabled: false, applied_logs_enabled: null })).toEqual({
+			kind: "off",
+			stillSetUp: false,
+		})
+		expect(log({ logs_enabled: false })).toEqual({ kind: "off", stillSetUp: true })
 	})
 
-	it("waits until the first log arrives", () => {
-		expect(logs(null, null)).toEqual({ kind: "waiting" })
-	})
-
-	it("is receiving once a log was accepted", () => {
-		expect(logs(RECEIVED_AT, null)).toEqual({ kind: "receiving", lastLogReceivedAt: RECEIVED_AT })
-	})
-
-	it("reports a rejected push before any log was accepted", () => {
-		expect(logs(null, "invalid secret")).toEqual({
-			kind: "error",
-			error: "invalid secret",
+	it("is failing while the last push was rejected, with the last accepted log", () => {
+		expect(log({ last_log_error: "wrapped", last_log_received_at: ago(5) })).toEqual({
+			kind: "failing",
+			error: "wrapped",
+			lastLogReceivedAt: ago(5),
+		})
+		expect(log({ ...fresh, ...NEVER, last_log_error: "wrapped" })).toMatchObject({
+			kind: "failing",
 			lastLogReceivedAt: null,
 		})
 	})
 
-	it("prefers the error over an earlier accepted log and keeps its time", () => {
-		expect(logs(RECEIVED_AT, "payload too large")).toEqual({
-			kind: "error",
-			error: "payload too large",
-			lastLogReceivedAt: RECEIVED_AT,
+	it("is setup pending until a run reports log forwarding", () => {
+		expect(log({ ...fresh, ...NEVER })).toEqual({ kind: "setup-pending" })
+	})
+
+	it("is setup pending after logs were removed and switched on again, whatever arrived before", () => {
+		expect(log({ applied_logs_enabled: false, last_log_received_at: ago(22) })).toEqual({
+			kind: "setup-pending",
 		})
+	})
+
+	it("trusts a log from the last 15 minutes over a missing report", () => {
+		expect(log({ ...fresh, last_log_received_at: ago(14) })).toMatchObject({ kind: "receiving" })
+	})
+
+	it("waits for the first log once a run reported, and is overdue after 20 minutes", () => {
+		expect(log({ ...NEVER, setup_reported_at: ago(1) })).toEqual({
+			kind: "waiting",
+			reportedAt: ago(1),
+			overdue: false,
+		})
+		expect(log({ ...NEVER, setup_reported_at: ago(21) })).toMatchObject({
+			kind: "waiting",
+			overdue: true,
+		})
+	})
+
+	it("is idle after 24 hours without a log", () => {
+		expect(log({ last_log_received_at: ago(3 * 24 * 60) })).toEqual({
+			kind: "idle",
+			lastLogReceivedAt: ago(3 * 24 * 60),
+		})
+	})
+
+	it("is receiving otherwise", () => {
+		expect(log({})).toEqual({ kind: "receiving", lastLogReceivedAt: ago(1) })
 	})
 })
 
 describe("gcpMetricsState", () => {
-	const connector = (over: Partial<Parameters<typeof gcpMetricsState>[0]> = {}) => ({
-		scope_type: "organization" as const,
-		metrics_enabled: true,
-		last_metrics_received_at: RECEIVED_AT,
-		last_metrics_error: null,
-		discovered_project_count: 14,
-		last_resources_error: null,
-		...over,
-	})
+	const metrics = (over: Parameters<typeof connector>[0]) => gcpMetricsState(connector(over), NOW)
+	const SIGN_IN = "Maple can't sign in as this connection's read-only service account yet."
 
-	it("is off when metrics are switched off, whatever was read earlier", () => {
-		expect(gcpMetricsState(connector({ metrics_enabled: false, last_metrics_error: "x" }))).toEqual({
+	it("is off, and says whether the service account is still set up", () => {
+		expect(metrics({ metrics_enabled: false, applied_metrics_enabled: null })).toEqual({
 			kind: "off",
+			stillSetUp: false,
+		})
+		expect(metrics({ metrics_enabled: false, last_metrics_error: "x" })).toEqual({
+			kind: "off",
+			stillSetUp: true,
 		})
 	})
 
-	it("waits until the first read, with nothing to say yet", () => {
-		expect(gcpMetricsState(connector({ last_metrics_received_at: null }))).toEqual({
+	it("is setup pending until a run reports, and hides the poller's sign-in error", () => {
+		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN })).toEqual({
+			kind: "setup-pending",
+		})
+	})
+
+	it("trusts a read from the last 15 minutes over a missing report", () => {
+		expect(metrics({ ...fresh })).toMatchObject({ kind: "receiving" })
+	})
+
+	it("waits for the first read, and for 10 minutes after a run whatever the poller said before", () => {
+		expect(metrics({ ...NEVER, setup_reported_at: ago(20) })).toEqual({
 			kind: "waiting",
-			note: null,
+			reportedAt: ago(20),
+		})
+		expect(metrics({ ...NEVER, setup_reported_at: ago(2), last_metrics_error: SIGN_IN })).toEqual({
+			kind: "waiting",
+			reportedAt: ago(2),
+		})
+		// Switched off, cleaned up and set up again: the old read and the error in between don't count.
+		expect(
+			metrics({
+				last_metrics_received_at: ago(120),
+				last_metrics_error: SIGN_IN,
+				setup_reported_at: ago(2),
+			}),
+		).toMatchObject({ kind: "waiting" })
+	})
+
+	it("is failing once the grace is over and nothing recent was read", () => {
+		expect(metrics({ ...NEVER, setup_reported_at: ago(11), last_metrics_error: SIGN_IN })).toEqual({
+			kind: "failing",
+			error: SIGN_IN,
+			lastMetricsReceivedAt: null,
+		})
+		expect(metrics({ last_metrics_received_at: ago(42), last_metrics_error: "denied" })).toEqual({
+			kind: "failing",
+			error: "denied",
+			lastMetricsReceivedAt: ago(42),
 		})
 	})
 
-	it("still waits, with the poller's reason, while Maple has no access", () => {
-		expect(
-			gcpMetricsState(
-				connector({ last_metrics_received_at: null, last_metrics_error: "No access yet." }),
-			),
-		).toEqual({ kind: "waiting", note: "No access yet." })
+	it("is incomplete while recent reads arrive with an error or without the resource list", () => {
+		expect(metrics({ last_metrics_error: "3 of 46 metric queries failed." })).toEqual({
+			kind: "incomplete",
+			error: "3 of 46 metric queries failed.",
+			lastMetricsReceivedAt: ago(4),
+		})
+		expect(metrics({ last_resources_error: "The resource list is incomplete." })).toMatchObject({
+			kind: "incomplete",
+			error: "The resource list is incomplete.",
+		})
 	})
 
-	it("is receiving with the project count of a folder or organization", () => {
-		expect(gcpMetricsState(connector())).toEqual({
-			kind: "receiving",
-			lastMetricsReceivedAt: RECEIVED_AT,
+	it("is stalled after 30 minutes without a read and without an error", () => {
+		expect(metrics({ last_metrics_received_at: ago(42) })).toEqual({
+			kind: "stalled",
+			lastMetricsReceivedAt: ago(42),
+		})
+	})
+
+	it("is receiving otherwise, with the project count of a folder or organization", () => {
+		expect(metrics({})).toEqual({ kind: "receiving", lastMetricsReceivedAt: ago(4), projectCount: null })
+		expect(metrics({ scope_type: "organization", discovered_project_count: 14 })).toMatchObject({
 			projectCount: 14,
-			resourcesError: null,
 		})
-	})
-
-	it("leaves the count out for a project and before the first resource sync", () => {
-		expect(
-			gcpMetricsState(connector({ scope_type: "project", discovered_project_count: 1 })),
-		).toMatchObject({
+		expect(metrics({ scope_type: "folder", discovered_project_count: 0 })).toMatchObject({
 			projectCount: null,
-		})
-		expect(gcpMetricsState(connector({ discovered_project_count: 0 }))).toMatchObject({
-			projectCount: null,
-		})
-	})
-
-	it("keeps receiving when only the resource sync fails", () => {
-		expect(gcpMetricsState(connector({ last_resources_error: "Inventory incomplete." }))).toMatchObject({
-			kind: "receiving",
-			resourcesError: "Inventory incomplete.",
-		})
-	})
-
-	it("reports a failed or incomplete read after earlier ones worked", () => {
-		expect(gcpMetricsState(connector({ last_metrics_error: "3 of 40 metric queries failed." }))).toEqual({
-			kind: "error",
-			error: "3 of 40 metric queries failed.",
-			lastMetricsReceivedAt: RECEIVED_AT,
 		})
 	})
 })
 
-describe("gcpAttention", () => {
-	const connector = (over: Partial<Parameters<typeof gcpAttention>[0]> = {}) => ({
-		scope_type: "project" as const,
-		logs_enabled: true,
-		metrics_enabled: true,
-		last_log_received_at: RECEIVED_AT,
-		last_log_error: null,
-		last_metrics_received_at: RECEIVED_AT,
-		last_metrics_error: null,
-		discovered_project_count: 1,
-		last_resources_error: null,
-		...over,
-	})
+describe("gcpConnectionState", () => {
+	const state = (over: Parameters<typeof connector>[0]) => gcpConnectionState(connector(over), NOW)
 
-	it("is quiet while everything switched on delivers", () => {
-		expect(gcpAttention(connector())).toBeNull()
-	})
-
-	it("waits while either switched-on capability has not delivered", () => {
-		expect(gcpAttention(connector({ last_log_received_at: null }))).toBe("waiting")
-		expect(gcpAttention(connector({ last_metrics_received_at: null }))).toBe("waiting")
-	})
-
-	it("ignores a capability that is switched off", () => {
-		expect(gcpAttention(connector({ metrics_enabled: false, last_metrics_received_at: null }))).toBeNull()
-		expect(gcpAttention(connector({ logs_enabled: false, last_log_error: "rejected" }))).toBeNull()
-	})
-
-	it("is failing when either one fails, even while the other waits", () => {
-		expect(gcpAttention(connector({ last_log_error: "rejected", last_metrics_received_at: null }))).toBe(
-			"failing",
-		)
-		expect(gcpAttention(connector({ last_metrics_error: "3 of 40 metric queries failed." }))).toBe(
-			"failing",
+	it("needs attention when a capability is failing, incomplete or stalled", () => {
+		expect(state({ last_log_error: "wrapped" })).toBe("attention")
+		expect(state({ last_metrics_error: "3 of 46 metric queries failed." })).toBe("attention")
+		expect(state({ last_metrics_received_at: ago(42) })).toBe("attention")
+		// Worse than the other capability still waiting on its script.
+		expect(state({ last_log_error: "wrapped", applied_metrics_enabled: false, ...NEVER })).toBe(
+			"attention",
 		)
 	})
 
-	it("does not count a resource sync failure on its own", () => {
-		expect(gcpAttention(connector({ last_resources_error: "Inventory incomplete." }))).toBeNull()
+	it("is setup pending before any run reported", () => {
+		expect(state({ ...fresh, ...NEVER })).toBe("setup-pending")
+	})
+
+	it("has changes pending when a switch and the last report disagree", () => {
+		expect(state({ logs_enabled: false })).toBe("changes-pending")
+		expect(state({ applied_metrics_enabled: null, last_metrics_received_at: null })).toBe(
+			"changes-pending",
+		)
+	})
+
+	it("waits for data once the script reported", () => {
+		expect(state({ ...NEVER, setup_reported_at: ago(1) })).toBe("waiting")
+	})
+
+	it("is healthy while it receives, idles, or has a capability switched off and removed", () => {
+		expect(state({})).toBe("healthy")
+		expect(state({ last_log_received_at: ago(3 * 24 * 60) })).toBe("healthy")
+		expect(state({ metrics_enabled: false, applied_metrics_enabled: false })).toBe("healthy")
+		expect(state({ logs_enabled: false, applied_logs_enabled: null })).toBe("healthy")
+	})
+})
+
+describe("gcpPendingChanges", () => {
+	const changes = (over: Parameters<typeof connector>[0]) => gcpPendingChanges(connector(over), NOW)
+
+	it("lists nothing while the switches match the last report, or before the first run", () => {
+		expect(changes({})).toEqual([])
+		expect(changes({ ...fresh, ...NEVER })).toEqual([])
+	})
+
+	it("lists what a re-run removes and creates", () => {
+		expect(changes({ logs_enabled: false })).toEqual(["remove the log sink, topic and subscription"])
+		expect(
+			changes({
+				logs_enabled: false,
+				applied_metrics_enabled: false,
+				last_metrics_received_at: ago(90),
+			}),
+		).toEqual([
+			"remove the log sink, topic and subscription",
+			"create the read-only service account and grant its roles",
+		])
+		expect(
+			changes({ metrics_enabled: false, applied_logs_enabled: false, last_log_received_at: null }),
+		).toEqual([
+			"create the log sink, topic and subscription",
+			"remove the read-only service account and its roles",
+		])
+	})
+})
+
+describe("gcpWorstState", () => {
+	it("takes the worst of several connections", () => {
+		expect(gcpWorstState(["healthy", "waiting", "changes-pending"])).toBe("changes-pending")
+		expect(gcpWorstState(["setup-pending", "attention"])).toBe("attention")
+		expect(gcpWorstState(["healthy", "healthy"])).toBe("healthy")
+	})
+})
+
+describe("gcpScopeRoles", () => {
+	const both = { logs_enabled: true, metrics_enabled: true }
+
+	it("asks for nothing beyond Owner on a project", () => {
+		expect(gcpScopeRoles("project", both)).toEqual([])
+	})
+
+	it("asks for the sink role with logs and the IAM role with metrics", () => {
+		expect(gcpScopeRoles("organization", both)).toEqual([
+			"Logs Configuration Writer",
+			"Organization Administrator",
+		])
+		expect(gcpScopeRoles("folder", { logs_enabled: false, metrics_enabled: true })).toEqual([
+			"Folder IAM Admin",
+		])
+		expect(gcpScopeRoles("folder", { logs_enabled: true, metrics_enabled: false })).toEqual([
+			"Logs Configuration Writer",
+		])
+	})
+})
+
+describe("gcpOverlapNote", () => {
+	const project = { scope_type: "project" as const, scope_id: "acme-prod" }
+	const staging = { scope_type: "project" as const, scope_id: "acme-staging" }
+	const organization = { scope_type: "organization" as const, scope_id: "123456789012" }
+
+	it("says nothing when the new scope cannot overlap an existing one", () => {
+		expect(gcpOverlapNote("project", [])).toBeNull()
+		expect(gcpOverlapNote("project", [project])).toBeNull()
+		expect(gcpOverlapNote("folder", [organization])).toBeNull()
+	})
+
+	it("names the connected projects an organization or folder may contain", () => {
+		expect(gcpOverlapNote("organization", [project, staging, organization])).toBe(
+			"Projects you already connected (acme-prod, acme-staging) are collected twice if they sit inside this organization. Disconnect them once this connection receives data.",
+		)
+	})
+
+	it("warns a project that it may sit inside a connected organization or folder", () => {
+		expect(gcpOverlapNote("project", [organization])).toBe(
+			"If this project sits inside an organization or folder you already connected, it is collected twice.",
+		)
 	})
 })
 
