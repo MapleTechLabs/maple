@@ -63,9 +63,9 @@ type StoredInvestigationRow = Omit<
 
 const selectStored = ($: PG.ColumnAccessor<typeof Investigations.columns>) => ({
 	...$,
-	subjectJson: PG.sql(PG.jsonb())`${$.subjectJson}`,
-	snapshotJson: PG.sql(PG.nullable(PG.jsonb()))`${$.snapshotJson}`,
-	reportJson: PG.sql(PG.nullable(PG.jsonb()))`${$.reportJson}`,
+	subjectJson: PG.undecoded($.subjectJson),
+	snapshotJson: PG.undecoded($.snapshotJson),
+	reportJson: PG.undecoded($.reportJson),
 	progressJson: storedProgressJson($),
 })
 

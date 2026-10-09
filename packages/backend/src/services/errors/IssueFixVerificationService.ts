@@ -975,7 +975,7 @@ const make: Effect.Effect<
 						...verification,
 						investigationStatus: inv.status,
 						// Undecoded: a malformed report must not stall every settled run behind it.
-						reportJson: PG.sql(PG.nullable(PG.jsonb()))`${inv.reportJson}`,
+						reportJson: PG.undecoded(inv.reportJson),
 					}))
 					.where(($) => [
 						$.status.eq("running"),

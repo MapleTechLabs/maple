@@ -994,9 +994,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 										target: ["orgId", "userId"],
 										set: ($) => ({
 											email: m.email,
-											// A condition is not a SET value, so IS NULL is a typed bool expression.
-											enabled: PG.sql(PG.bool)`${$.optedOutAt} IS NULL`,
-											webAnalyticsEnabled: PG.sql(PG.bool)`${$.webAnalyticsOptedOutAt} IS NULL`,
+											enabled: PG.asBoolean($.optedOutAt.isNull()),
+											webAnalyticsEnabled: PG.asBoolean($.webAnalyticsOptedOutAt.isNull()),
 											updatedAt: now,
 										}),
 									}),

@@ -1,7 +1,8 @@
-import { IntegrationsValidationError } from "@maple/domain/http"
+import { IntegrationsValidationError, OrgId } from "@maple/domain/http"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { planetscaleConnections } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PlanetscaleConnections } from "@maple/db/tables"
 import { ConfigProvider, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
@@ -63,19 +64,21 @@ describe("PlanetScaleWebhookRouter", () => {
 				ENCRYPTION_KEY,
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
-			const now = new Date("2026-07-11T00:00:00.000Z")
+			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.insert(planetscaleConnections).values({
-					id: CONNECTION_ID,
-					orgId: "org_1",
-					psOrganization: "acme",
-					connectedByUserId: "user_1",
-					webhookSecretCiphertext: encrypted.ciphertext,
-					webhookSecretIv: encrypted.iv,
-					webhookSecretTag: encrypted.tag,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.orm.run(
+					PG.insertInto(PlanetscaleConnections).values({
+						id: CONNECTION_ID,
+						orgId: OrgId.make("org_1"),
+						psOrganization: "acme",
+						connectedByUserId: "user_1",
+						webhookSecretCiphertext: encrypted.ciphertext,
+						webhookSecretIv: encrypted.iv,
+						webhookSecretTag: encrypted.tag,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 
 			const { handler, dispose } = HttpRouter.toWebHandler(makeRouterLayer(testDb), {
@@ -133,19 +136,21 @@ describe("PlanetScaleWebhookRouter", () => {
 				ENCRYPTION_KEY,
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
-			const now = new Date("2026-07-11T00:00:00.000Z")
+			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.insert(planetscaleConnections).values({
-					id: CONNECTION_ID,
-					orgId: "org_1",
-					psOrganization: "acme",
-					connectedByUserId: "user_1",
-					webhookSecretCiphertext: encrypted.ciphertext,
-					webhookSecretIv: encrypted.iv,
-					webhookSecretTag: encrypted.tag,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.orm.run(
+					PG.insertInto(PlanetscaleConnections).values({
+						id: CONNECTION_ID,
+						orgId: OrgId.make("org_1"),
+						psOrganization: "acme",
+						connectedByUserId: "user_1",
+						webhookSecretCiphertext: encrypted.ciphertext,
+						webhookSecretIv: encrypted.iv,
+						webhookSecretTag: encrypted.tag,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 			const issueBody = JSON.stringify({
 				timestamp: 1_698_252_879,
@@ -257,19 +262,21 @@ describe("PlanetScaleWebhookRouter", () => {
 				ENCRYPTION_KEY,
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
-			const now = new Date("2026-07-11T00:00:00.000Z")
+			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.insert(planetscaleConnections).values({
-					id: CONNECTION_ID,
-					orgId: "org_1",
-					psOrganization: "acme",
-					connectedByUserId: "user_1",
-					webhookSecretCiphertext: encrypted.ciphertext,
-					webhookSecretIv: encrypted.iv,
-					webhookSecretTag: encrypted.tag,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.orm.run(
+					PG.insertInto(PlanetscaleConnections).values({
+						id: CONNECTION_ID,
+						orgId: OrgId.make("org_1"),
+						psOrganization: "acme",
+						connectedByUserId: "user_1",
+						webhookSecretCiphertext: encrypted.ciphertext,
+						webhookSecretIv: encrypted.iv,
+						webhookSecretTag: encrypted.tag,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(testDb, (job) => Effect.sync(() => jobs.push(job))),
@@ -339,19 +346,21 @@ describe("PlanetScaleWebhookRouter", () => {
 				ENCRYPTION_KEY,
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
-			const now = new Date("2026-07-11T00:00:00.000Z")
+			const now = Date.parse("2026-07-11T00:00:00.000Z")
 			yield* database.execute((db) =>
-				db.insert(planetscaleConnections).values({
-					id: CONNECTION_ID,
-					orgId: "org_1",
-					psOrganization: "acme",
-					connectedByUserId: "user_1",
-					webhookSecretCiphertext: encrypted.ciphertext,
-					webhookSecretIv: encrypted.iv,
-					webhookSecretTag: encrypted.tag,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.orm.run(
+					PG.insertInto(PlanetscaleConnections).values({
+						id: CONNECTION_ID,
+						orgId: OrgId.make("org_1"),
+						psOrganization: "acme",
+						connectedByUserId: "user_1",
+						webhookSecretCiphertext: encrypted.ciphertext,
+						webhookSecretIv: encrypted.iv,
+						webhookSecretTag: encrypted.tag,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 			const issueBody = JSON.stringify({
 				timestamp: 1_698_252_879,

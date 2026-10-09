@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { AlertDestinationId, ErrorIssueId, IssueEscalationId, OrgId } from "@maple/domain/http"
-import { alertDestinations, errorIssues, issueEscalationPolicies, issueEscalations } from "@maple/db"
-import { eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations, ErrorIssues, IssueEscalationPolicies, IssueEscalations } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -89,46 +89,50 @@ const seedIssue = (issueId: ErrorIssueId) =>
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(errorIssues).values({
-				id: issueId,
-				orgId: ORG,
-				fingerprintHash: `fp-${issueId}`,
-				serviceName: "checkout-api",
-				exceptionType: "TimeoutError",
-				exceptionMessage: "upstream timed out",
-				topFrame: "",
-				severity: "high",
-				severitySource: "ai",
-				firstSeenAt: new Date(now),
-				lastSeenAt: new Date(now),
-				createdAt: new Date(now),
-				updatedAt: new Date(now),
-			}),
+			db.orm.run(
+				PG.insertInto(ErrorIssues).values({
+					id: issueId,
+					orgId: ORG,
+					fingerprintHash: `fp-${issueId}`,
+					serviceName: "checkout-api",
+					exceptionType: "TimeoutError",
+					exceptionMessage: "upstream timed out",
+					topFrame: "",
+					severity: "high",
+					severitySource: "ai",
+					firstSeenAt: now,
+					lastSeenAt: now,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			),
 		)
 	})
 
 const seedEscalation = (
 	issueId: ErrorIssueId,
-	overrides: Partial<typeof issueEscalations.$inferInsert> = {},
+	overrides: Partial<PG.InsertRowOf<typeof IssueEscalations>> = {},
 ) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(issueEscalations).values({
-				id: asEscalationId(randomUUID()),
-				orgId: ORG,
-				issueId,
-				severity: "high",
-				source: "ai",
-				reason: "severity_set",
-				payloadJson: { confidence: "medium" },
-				status: "queued",
-				attempts: 0,
-				dedupeKey: `esc:${ORG}:${issueId}:high`,
-				createdAt: new Date(now),
-				...overrides,
-			}),
+			db.orm.run(
+				PG.insertInto(IssueEscalations).values({
+					id: asEscalationId(randomUUID()),
+					orgId: ORG,
+					issueId,
+					severity: "high",
+					source: "ai",
+					reason: "severity_set",
+					payloadJson: { confidence: "medium" },
+					status: "queued",
+					attempts: 0,
+					dedupeKey: `esc:${ORG}:${issueId}:high`,
+					createdAt: now,
+					...overrides,
+				}),
+			),
 		)
 	})
 
@@ -137,40 +141,47 @@ const seedPolicy = (rulesJson: ReadonlyArray<unknown>, enabled = true) =>
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db
-				.insert(alertDestinations)
-				.values({
-					id: DESTINATION_ID,
-					orgId: ORG,
-					name: "On-call",
-					type: "webhook",
-					enabled: true,
-					configJson: { url: "https://example.test/escalations" },
-					secretCiphertext: "test",
-					secretIv: "test",
-					secretTag: "test",
-					createdAt: new Date(now),
-					updatedAt: new Date(now),
-					createdBy: "user_test",
-					updatedBy: "user_test",
-				})
-				.onConflictDoNothing(),
+			db.orm.run(
+				PG.insertInto(AlertDestinations)
+					.values({
+						id: DESTINATION_ID,
+						orgId: ORG,
+						name: "On-call",
+						type: "webhook",
+						enabled: true,
+						configJson: { url: "https://example.test/escalations" },
+						secretCiphertext: "test",
+						secretIv: "test",
+						secretTag: "test",
+						createdAt: now,
+						updatedAt: now,
+						createdBy: "user_test",
+						updatedBy: "user_test",
+					})
+					.onConflictDoNothing(),
+			),
 		)
 		yield* database.execute((db) =>
-			db.insert(issueEscalationPolicies).values({
-				orgId: ORG,
-				enabled,
-				rulesJson,
-				updatedAt: new Date(now),
-				updatedBy: "user_test",
-			}),
+			db.orm.run(
+				PG.insertInto(IssueEscalationPolicies).values({
+					orgId: ORG,
+					enabled,
+					rulesJson,
+					updatedAt: now,
+					updatedBy: "user_test",
+				}),
+			),
 		)
 	})
 
 const loadEscalations = Effect.gen(function* () {
 	const database = yield* Database
 	return yield* database.execute((db) =>
-		db.select().from(issueEscalations).where(eq(issueEscalations.orgId, ORG)),
+		db.orm.run(
+			PG.from(IssueEscalations)
+				.select()
+				.where(($) => [$.orgId.eq(ORG)]),
+		),
 	)
 })
 
@@ -347,10 +358,11 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule())
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db
-					.update(alertDestinations)
-					.set({ enabled: false })
-					.where(eq(alertDestinations.id, DESTINATION_ID)),
+				db.orm.run(
+					PG.update(AlertDestinations)
+						.set({ enabled: false })
+						.where(($) => [$.id.eq(DESTINATION_ID)]),
+				),
 			)
 
 			const service = yield* EscalationService

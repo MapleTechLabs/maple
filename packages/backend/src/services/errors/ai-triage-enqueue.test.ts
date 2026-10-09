@@ -8,8 +8,8 @@ import {
 	IncidentTriageVerdict,
 	OrgId,
 } from "@maple/domain/http"
-import { aiTriageSettings, errorIssueEvents, errorIssues, investigations } from "@maple/db"
-import { and, eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AiTriageSettings, ErrorIssueEvents, ErrorIssues, Investigations } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
@@ -55,12 +55,14 @@ const enableSettings = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db.insert(aiTriageSettings).values({
-			orgId: ORG,
-			enabled: true,
-			maxRunsPerDay: 3,
-			updatedAt: new Date(nowMs),
-		}),
+		db.orm.run(
+			PG.insertInto(AiTriageSettings).values({
+				orgId: ORG,
+				enabled: true,
+				maxRunsPerDay: 3,
+				updatedAt: nowMs,
+			}),
+		),
 	)
 })
 
@@ -78,12 +80,14 @@ const enableAutomation = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db.insert(aiTriageSettings).values({
-			orgId: ORG,
-			enabled: true,
-			maxRunsPerDay: 20,
-			updatedAt: new Date(nowMs),
-		}),
+		db.orm.run(
+			PG.insertInto(AiTriageSettings).values({
+				orgId: ORG,
+				enabled: true,
+				maxRunsPerDay: 20,
+				updatedAt: nowMs,
+			}),
+		),
 	)
 })
 
@@ -97,13 +101,15 @@ const enableWithLimits = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(aiTriageSettings).values({
-				orgId: ORG,
-				enabled: true,
-				maxRunsPerDay,
-				maxPassesPerDay,
-				updatedAt: new Date(nowMs),
-			}),
+			db.orm.run(
+				PG.insertInto(AiTriageSettings).values({
+					orgId: ORG,
+					enabled: true,
+					maxRunsPerDay,
+					maxPassesPerDay,
+					updatedAt: nowMs,
+				}),
+			),
 		)
 	})
 
@@ -135,25 +141,27 @@ const criticalInput = (chatSessions: ChatSessionsApi | undefined, incidentId: st
 
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 
-const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.$inferInsert> = {}) =>
+const seedIssue = (issueId: ErrorIssueId, overrides: Partial<PG.InsertRowOf<typeof ErrorIssues>> = {}) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(errorIssues).values({
-				id: issueId,
-				orgId: ORG,
-				fingerprintHash: `fp-${issueId}`,
-				serviceName: "maple-cli",
-				exceptionType: "@maple/cli/CheckpointCreateError",
-				exceptionMessage: "checkpoint schema mismatch",
-				topFrame: "checkpoints.ts:735",
-				firstSeenAt: new Date(now),
-				lastSeenAt: new Date(now),
-				createdAt: new Date(now),
-				updatedAt: new Date(now),
-				...overrides,
-			}),
+			db.orm.run(
+				PG.insertInto(ErrorIssues).values({
+					id: issueId,
+					orgId: ORG,
+					fingerprintHash: `fp-${issueId}`,
+					serviceName: "maple-cli",
+					exceptionType: "@maple/cli/CheckpointCreateError",
+					exceptionMessage: "checkpoint schema mismatch",
+					topFrame: "checkpoints.ts:735",
+					firstSeenAt: now,
+					lastSeenAt: now,
+					createdAt: now,
+					updatedAt: now,
+					...overrides,
+				}),
+			),
 		)
 	})
 
@@ -218,7 +226,11 @@ describe("maybeEnqueueTriage", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(makeLayer())),
@@ -234,7 +246,11 @@ describe("maybeEnqueueTriage", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.strictEqual(rows[0]?.status, "failed")
 			assert.include(rows[0]?.error ?? "", "agent_unavailable")
@@ -305,7 +321,11 @@ describe("maybeEnqueueTriage", () => {
 			assert.strictEqual(result.reason, "no_binding")
 
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.lengthOf(rows, 1)
 			assert.strictEqual(rows[0]?.status, "failed")
@@ -325,14 +345,15 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({
-						status: "investigating",
-						startedAt: new Date(nowMs - 16 * 60 * 1000),
-						updatedAt: new Date(nowMs - 16 * 60 * 1000),
-					})
-					.where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.update(Investigations)
+						.set({
+							status: "investigating",
+							startedAt: nowMs - 16 * 60 * 1000,
+							updatedAt: nowMs - 16 * 60 * 1000,
+						})
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 
 			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
@@ -340,7 +361,11 @@ describe("maybeEnqueueTriage", () => {
 			assert.strictEqual(second.reason, "duplicate")
 
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.lengthOf(rows, 1)
 			assert.strictEqual(rows[0]?.id, first.investigationId)
@@ -358,10 +383,11 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({ status: "investigating" })
-					.where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.update(Investigations)
+						.set({ status: "investigating" })
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 
 			const second = yield* maybeEnqueueTriage(baseInput("incident-1", chat.chatSessions))
@@ -445,7 +471,11 @@ describe("maybeEnqueueTriage", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.lengthOf(rows, 0)
 		}).pipe(Effect.provide(makeLayer())),
@@ -463,10 +493,11 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({ status: "diagnosed", diagnosedAt: new Date(nowMs), updatedAt: new Date(nowMs) })
-					.where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.update(Investigations)
+						.set({ status: "diagnosed", diagnosedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 
 			// The next incident under the same issue, half an hour later on the same
@@ -515,27 +546,31 @@ describe("maybeEnqueueTriage", () => {
 			})
 
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.lengthOf(rows, 0)
 
 			// The one write a skip makes: the untriaged issue takes the model's severity,
 			// on the timeline, without an escalation.
 			const issue = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.strictEqual(issue[0]?.severity, "low")
 			assert.strictEqual(issue[0]?.severitySource, "ai")
 			const events = yield* database.execute((db) =>
-				db
-					.select()
-					.from(errorIssueEvents)
-					.where(
-						and(
-							eq(errorIssueEvents.issueId, issueId),
-							eq(errorIssueEvents.type, "severity_change"),
-						),
-					),
+				db.orm.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(issueId), $.type.eq("severity_change")]),
+				),
 			)
 			assert.lengthOf(events, 1)
 		}).pipe(Effect.provide(makeLayer())),
@@ -555,7 +590,11 @@ describe("maybeEnqueueTriage", () => {
 			).pipe(Effect.provide(classifier.layer))
 			assert.strictEqual(result.reason, "noise")
 			const issue = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.strictEqual(issue[0]?.severity, "high")
 			assert.strictEqual(issue[0]?.severitySource, "manual")
@@ -577,23 +616,24 @@ describe("maybeEnqueueTriage", () => {
 			const first = yield* maybeEnqueueTriage(issueInput("incident-1", known, chat.chatSessions))
 			assert.isTrue(first.enqueued)
 			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({
-						status: "diagnosed",
-						diagnosedAt: new Date(nowMs),
-						reportJson: new AiTriageResult({
-							headline: "CLI 0.0.22 refuses checkpoints on stores written under schema v11",
-							summary: "Deterministic schema mismatch on end-user stores.",
-							suspectedCause: "The checkpoint manifest predates the bundled schema.",
-							severityAssessment: "high",
-							affectedScope: "A handful of end-user machines.",
-							evidence: [],
-							suggestedActions: [],
-							confidence: "high",
-						}),
-					})
-					.where(eq(investigations.orgId, ORG)),
+				db.orm.run(
+					PG.update(Investigations)
+						.set({
+							status: "diagnosed",
+							diagnosedAt: nowMs,
+							reportJson: new AiTriageResult({
+								headline: "CLI 0.0.22 refuses checkpoints on stores written under schema v11",
+								summary: "Deterministic schema mismatch on end-user stores.",
+								suspectedCause: "The checkpoint manifest predates the bundled schema.",
+								severityAssessment: "high",
+								affectedScope: "A handful of end-user machines.",
+								evidence: [],
+								suggestedActions: [],
+								confidence: "high",
+							}),
+						})
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 
 			// The same defect under another fingerprint. The model recognises it.
@@ -647,7 +687,11 @@ describe("maybeEnqueueTriage", () => {
 			const raised = yield* ordinary("incident-4").pipe(Effect.provide(classifier.layer))
 			assert.isTrue(raised.enqueued)
 			const row = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.incidentId, "incident-4")),
+				db.orm.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.incidentId.eq("incident-4")]),
+				),
 			)
 			assert.strictEqual(row[0]?.snapshotJson?.severity, "critical")
 		}).pipe(Effect.provide(makeLayer())),

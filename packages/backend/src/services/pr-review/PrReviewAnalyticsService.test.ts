@@ -1,13 +1,17 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import {
+	GitCommitSha,
 	OrgId,
 	PrReviewId,
+	PrReviewReport,
 	PrReviewRepositoryConfig,
+	VcsInstallationId,
 	VcsRepositoryId,
 	mergePrReviewConfig,
 } from "@maple/domain/http"
-import { prReviewFindings, prReviews, vcsRepositories } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { PrReviewAnalyticsService } from "./PrReviewAnalyticsService"
@@ -24,42 +28,46 @@ const reviewId = (n: number) =>
 
 const DAY = 86_400_000
 const START = Date.UTC(2026, 8, 1)
-const at = (days: number, hours = 0) => new Date(START + days * DAY + hours * 3_600_000)
+const at = (days: number, hours = 0) => START + days * DAY + hours * 3_600_000
+const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
 const SHA = "a".repeat(40)
 
-const report = (verdict: "clean" | "issues", confidence: number, severities: ReadonlyArray<string>) => ({
-	verdict,
-	summary: "Summary",
-	confidence,
-	coverage: [],
-	findings: severities.map((severity, index) => ({
-		path: "src/index.ts",
-		line: index + 1,
-		category: "correctness",
-		severity,
-		title: `Finding ${index}`,
-		body: "Body",
-	})),
-})
+const report = (verdict: "clean" | "issues", confidence: number, severities: ReadonlyArray<string>) =>
+	Schema.decodeUnknownSync(PrReviewReport)({
+		verdict,
+		summary: "Summary",
+		confidence,
+		coverage: [],
+		findings: severities.map((severity, index) => ({
+			path: "src/index.ts",
+			line: index + 1,
+			category: "correctness",
+			severity,
+			title: `Finding ${index}`,
+			body: "Body",
+		})),
+	})
 
 const seed = Effect.gen(function* () {
 	const database = yield* Database
 	yield* database.execute((db) =>
-		db.insert(vcsRepositories).values(
-			[
-				{ id: REPO, orgId: ORG, fullName: "acme/web" },
-				{ id: OTHER_REPO, orgId: OTHER_ORG, fullName: "other/api" },
-			].map((repo) => ({
-				...repo,
-				provider: "github" as const,
-				installationId: "inst" as never,
-				externalRepoId: repo.id,
-				owner: repo.fullName.split("/")[0] ?? "",
-				name: repo.fullName.split("/")[1] ?? "",
-				htmlUrl: `https://github.com/${repo.fullName}`,
-				createdAt: at(0),
-				updatedAt: at(0),
-			})),
+		db.orm.run(
+			PG.insertInto(VcsRepositories).values(
+				[
+					{ id: REPO, orgId: ORG, fullName: "acme/web" },
+					{ id: OTHER_REPO, orgId: OTHER_ORG, fullName: "other/api" },
+				].map((repo) => ({
+					...repo,
+					provider: "github" as const,
+					installationId: INSTALLATION,
+					externalRepoId: repo.id,
+					owner: repo.fullName.split("/")[0] ?? "",
+					name: repo.fullName.split("/")[1] ?? "",
+					htmlUrl: `https://github.com/${repo.fullName}`,
+					createdAt: at(0),
+					updatedAt: at(0),
+				})),
+			),
 		),
 	)
 	const review = (input: {
@@ -68,73 +76,75 @@ const seed = Effect.gen(function* () {
 		repositoryId?: VcsRepositoryId
 		number: number
 		author: string
-		created: Date
+		created: number
 		status: "completed" | "failed" | "skipped"
 		report?: ReturnType<typeof report>
 		score?: number
-		mergedAt?: Date
+		mergedAt?: number
 	}) => ({
 		id: reviewId(input.n),
 		orgId: input.orgId ?? ORG,
 		repositoryId: input.repositoryId ?? REPO,
 		number: input.number,
-		headSha: SHA.slice(0, 39) + String(input.n % 10),
+		headSha: Schema.decodeUnknownSync(GitCommitSha)(SHA.slice(0, 39) + String(input.n % 10)),
 		url: `https://github.com/acme/web/pull/${input.number}`,
 		title: `PR ${input.number}`,
 		authorLogin: input.author,
 		status: input.status,
-		reportJson: (input.report ?? null) as never,
+		reportJson: input.report ?? null,
 		score: input.score ?? null,
 		inputTokens: 1_000,
 		outputTokens: 100,
-		finishedAt: input.status === "completed" ? new Date(input.created.getTime() + 120_000) : null,
+		finishedAt: input.status === "completed" ? input.created + 120_000 : null,
 		mergedAt: input.mergedAt ?? null,
 		createdAt: input.created,
 		updatedAt: input.created,
 	})
 	yield* database.execute((db) =>
-		db.insert(prReviews).values([
-			review({
-				n: 1,
-				number: 10,
-				author: "ada",
-				created: at(2),
-				status: "completed",
-				report: report("issues", 3, ["critical", "warn"]),
-				score: 65,
-				mergedAt: at(4),
-			}),
-			review({
-				n: 2,
-				number: 10,
-				author: "ada",
-				created: at(3),
-				status: "completed",
-				report: report("clean", 5, []),
-				score: 100,
-				mergedAt: at(4),
-			}),
-			review({ n: 3, number: 11, author: "lin", created: at(5), status: "failed" }),
-			// The previous window, and another tenant: neither may count.
-			review({
-				n: 4,
-				number: 9,
-				author: "ada",
-				created: at(-5),
-				status: "completed",
-				report: report("clean", 4, []),
-			}),
-			review({
-				n: 5,
-				orgId: OTHER_ORG,
-				repositoryId: OTHER_REPO,
-				number: 1,
-				author: "eve",
-				created: at(2),
-				status: "completed",
-				report: report("issues", 1, ["critical"]),
-			}),
-		]),
+		db.orm.run(
+			PG.insertInto(PrReviews).values([
+				review({
+					n: 1,
+					number: 10,
+					author: "ada",
+					created: at(2),
+					status: "completed",
+					report: report("issues", 3, ["critical", "warn"]),
+					score: 65,
+					mergedAt: at(4),
+				}),
+				review({
+					n: 2,
+					number: 10,
+					author: "ada",
+					created: at(3),
+					status: "completed",
+					report: report("clean", 5, []),
+					score: 100,
+					mergedAt: at(4),
+				}),
+				review({ n: 3, number: 11, author: "lin", created: at(5), status: "failed" }),
+				// The previous window, and another tenant: neither may count.
+				review({
+					n: 4,
+					number: 9,
+					author: "ada",
+					created: at(-5),
+					status: "completed",
+					report: report("clean", 4, []),
+				}),
+				review({
+					n: 5,
+					orgId: OTHER_ORG,
+					repositoryId: OTHER_REPO,
+					number: 1,
+					author: "eve",
+					created: at(2),
+					status: "completed",
+					report: report("issues", 1, ["critical"]),
+				}),
+			]),
+		),
 	)
 	const finding = (n: number, severity: "critical" | "warn", status: "open" | "resolved") => ({
 		id: `finding-${n}`,
@@ -153,7 +163,12 @@ const seed = Effect.gen(function* () {
 		updatedAt: at(2, n),
 	})
 	yield* database.execute((db) =>
-		db.insert(prReviewFindings).values([finding(1, "critical", "resolved"), finding(2, "warn", "open")]),
+		db.orm.run(
+			PG.insertInto(PrReviewFindings).values([
+				finding(1, "critical", "resolved"),
+				finding(2, "warn", "open"),
+			]),
+		),
 	)
 })
 

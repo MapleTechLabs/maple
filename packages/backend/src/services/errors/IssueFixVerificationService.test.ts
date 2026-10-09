@@ -5,10 +5,8 @@ import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domai
 import { ErrorIssueId } from "@maple/domain/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { errorIssues, errorIssueEvents } from "@maple/db"
 import type { MapleDb } from "@maple/db/client"
-import { ErrorIssueVerifications } from "@maple/db/tables"
-import { eq } from "drizzle-orm"
+import { ErrorIssueEvents, ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -105,28 +103,30 @@ const seedIssue = (options: SeedIssueOptions = {}) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const id = Schema.decodeSync(ErrorIssueId)(randomUUID())
-		const now = new Date()
+		const now = Date.now()
 		const spanMs = options.spanMs ?? 10 * HOUR
 		yield* database.execute((db) =>
-			db.insert(errorIssues).values({
-				id,
-				orgId: ORG,
-				kind: "error",
-				fingerprintHash: `fp-${id.slice(0, 8)}`,
-				serviceName: "checkout",
-				exceptionType: "TypeError",
-				exceptionMessage: "undefined is not a function",
-				errorLabel: "",
-				topFrame: "src/checkout.ts:42",
-				workflowState: options.workflowState ?? "in_review",
-				severity: options.severity === undefined ? "low" : options.severity,
-				firstSeenAt: new Date(now.getTime() - spanMs),
-				lastSeenAt: now,
-				occurrenceCount: options.occurrenceCount ?? 200,
-				seenVersionsJson: options.seenVersions ?? ["v1", "v2"],
-				createdAt: now,
-				updatedAt: now,
-			}),
+			db.orm.run(
+				PG.insertInto(ErrorIssues).values({
+					id,
+					orgId: ORG,
+					kind: "error",
+					fingerprintHash: `fp-${id.slice(0, 8)}`,
+					serviceName: "checkout",
+					exceptionType: "TypeError",
+					exceptionMessage: "undefined is not a function",
+					errorLabel: "",
+					topFrame: "src/checkout.ts:42",
+					workflowState: options.workflowState ?? "in_review",
+					severity: options.severity === undefined ? "low" : options.severity,
+					firstSeenAt: now - spanMs,
+					lastSeenAt: now,
+					occurrenceCount: options.occurrenceCount ?? 200,
+					seenVersionsJson: options.seenVersions ?? ["v1", "v2"],
+					createdAt: now,
+					updatedAt: now,
+				}),
+			),
 		)
 		return id
 	})
@@ -135,7 +135,12 @@ const readIssueState = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.select().from(errorIssues).where(eq(errorIssues.id, issueId)).limit(1),
+			db.orm.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.id.eq(issueId)])
+					.limit(1),
+			),
 		)
 		return rows[0]
 	})
@@ -170,10 +175,11 @@ const readEventTypes = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db
-				.select({ type: errorIssueEvents.type })
-				.from(errorIssueEvents)
-				.where(eq(errorIssueEvents.issueId, issueId)),
+			db.orm.run(
+				PG.from(ErrorIssueEvents)
+					.select("type")
+					.where(($) => [$.issueId.eq(issueId)]),
+			),
 		)
 		return rows.map((row) => row.type)
 	})

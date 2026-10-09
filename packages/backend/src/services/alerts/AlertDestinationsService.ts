@@ -873,7 +873,7 @@ export class AlertDestinationsService extends Context.Service<
 							name: $.name,
 							// Read as untyped jsonb: a corrupt stored value must reach
 							// decodeStoredAlertRuleDestinationIds, not fail the row codec.
-							destinationIdsJson: PG.sql(PG.jsonb())`${$.destinationIdsJson}`,
+							destinationIdsJson: PG.undecoded($.destinationIdsJson),
 						}))
 						.where(($) => [$.orgId.eq(orgId)]),
 				),

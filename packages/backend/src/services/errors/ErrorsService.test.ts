@@ -20,28 +20,27 @@ import {
 	ErrorIssueEventId,
 	ErrorIssueId,
 } from "@maple/domain/primitives"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	errorFingerprintCandidates,
-	errorIncidents,
-	errorNotificationDeliveries,
-	errorIssues,
-	errorIssueEvents,
-	errorIssueStates,
-	errorNotificationPolicies,
-	errorTickStates,
-	issueEscalations,
-	orgClickHouseSettings,
-	orgIngestKeys,
-} from "@maple/db"
-import { eq } from "drizzle-orm"
+	AlertDestinations,
+	ErrorFingerprintCandidates,
+	ErrorIncidents,
+	ErrorNotificationDeliveries,
+	ErrorIssues,
+	ErrorIssueEvents,
+	ErrorIssueStates,
+	ErrorNotificationPolicies,
+	ErrorTickStates,
+	IssueEscalations,
+	OrgClickHouseSettings,
+	OrgIngestKeys,
+} from "@maple/db/tables"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { isRetryablePostgresContention } from "@maple/backend/platform/postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { msToDate } from "@maple/backend/platform/time"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import type {
 	SqlQueryOptions,
@@ -421,25 +420,27 @@ const asJsonRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schem
 const ORG = asOrgId("org_errors_service_test")
 const USER = asUserId("user_errors_service_test")
 
-const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.$inferInsert> = {}) =>
+const seedIssue = (issueId: ErrorIssueId, overrides: Partial<PG.InsertRowOf<typeof ErrorIssues>> = {}) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(errorIssues).values({
-				id: issueId,
-				orgId: ORG,
-				fingerprintHash: `fp-${issueId}`,
-				serviceName: "checkout-api",
-				exceptionType: "TimeoutError",
-				exceptionMessage: "upstream timed out",
-				topFrame: "",
-				firstSeenAt: new Date(now),
-				lastSeenAt: new Date(now),
-				createdAt: new Date(now),
-				updatedAt: new Date(now),
-				...overrides,
-			}),
+			db.orm.run(
+				PG.insertInto(ErrorIssues).values({
+					id: issueId,
+					orgId: ORG,
+					fingerprintHash: `fp-${issueId}`,
+					serviceName: "checkout-api",
+					exceptionType: "TimeoutError",
+					exceptionMessage: "upstream timed out",
+					topFrame: "",
+					firstSeenAt: now,
+					lastSeenAt: now,
+					createdAt: now,
+					updatedAt: now,
+					...overrides,
+				}),
+			),
 		)
 	})
 
@@ -449,22 +450,24 @@ const seedIngestKeys = (orgIds: ReadonlyArray<string>) =>
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db.insert(orgIngestKeys).values(
-				orgIds.map((orgId) => ({
-					orgId,
-					publicKey: `pk_${orgId}`,
-					publicKeyHash: `pkh_${orgId}`,
-					privateKeyCiphertext: "ct",
-					privateKeyIv: "iv",
-					privateKeyTag: "tag",
-					privateKeyHash: `prh_${orgId}`,
-					publicRotatedAt: new Date(now),
-					privateRotatedAt: new Date(now),
-					createdAt: new Date(now),
-					updatedAt: new Date(now),
-					createdBy: "test",
-					updatedBy: "test",
-				})),
+			db.orm.run(
+				PG.insertInto(OrgIngestKeys).values(
+					orgIds.map((orgId) => ({
+						orgId: asOrgId(orgId),
+						publicKey: `pk_${orgId}`,
+						publicKeyHash: `pkh_${orgId}`,
+						privateKeyCiphertext: "ct",
+						privateKeyIv: "iv",
+						privateKeyTag: "tag",
+						privateKeyHash: `prh_${orgId}`,
+						publicRotatedAt: now,
+						privateRotatedAt: now,
+						createdAt: now,
+						updatedAt: now,
+						createdBy: "test",
+						updatedBy: "test",
+					})),
+				),
 			),
 		)
 	})
@@ -477,7 +480,7 @@ describe("ErrorIssueReadModelsService.countOpenIssuesByService", () => {
 	it.effect("groups actionable error issues by service, excluding done/alert/archived", () =>
 		Effect.gen(function* () {
 			const readModels = yield* ErrorIssueReadModelsService
-			const now = new Date()
+			const now = Date.now()
 			yield* seedIssue(asIssueId(randomUUID()), {
 				serviceName: "checkout-api",
 			})
@@ -533,7 +536,11 @@ describe("Error issue severity, policies, and read models", () => {
 			assert.strictEqual(updated.severitySource, "manual")
 
 			const events = yield* database.execute((db) =>
-				db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
 			)
 			const severityEvents = events.filter((e) => e.type === "severity_change")
 			assert.lengthOf(severityEvents, 1)
@@ -544,7 +551,11 @@ describe("Error issue severity, policies, and read models", () => {
 			})
 
 			const escalations = yield* database.execute((db) =>
-				db.select().from(issueEscalations).where(eq(issueEscalations.issueId, issueId)),
+				db.orm.run(
+					PG.from(IssueEscalations)
+						.select()
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
 			)
 			assert.lengthOf(escalations, 1)
 			assert.strictEqual(escalations[0]?.source, "manual")
@@ -584,7 +595,11 @@ describe("Error issue severity, policies, and read models", () => {
 			assert.isNull(cleared.severitySource)
 
 			const escalations = yield* database.execute((db) =>
-				db.select().from(issueEscalations).where(eq(issueEscalations.issueId, issueId)),
+				db.orm.run(
+					PG.from(IssueEscalations)
+						.select()
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
 			)
 			// Only the initial "medium" set escalates; clearing routes nothing.
 			assert.lengthOf(escalations, 1)
@@ -599,21 +614,23 @@ describe("Error issue severity, policies, and read models", () => {
 			const ownedId = asDestinationId(randomUUID())
 			const foreignId = asDestinationId(randomUUID())
 			yield* database.execute((db) =>
-				db.insert(alertDestinations).values({
-					id: ownedId,
-					orgId: ORG,
-					name: "Primary webhook",
-					type: "webhook",
-					enabled: true,
-					configJson: {},
-					secretCiphertext: "x",
-					secretIv: "x",
-					secretTag: "x",
-					createdAt: new Date(now),
-					updatedAt: new Date(now),
-					createdBy: USER,
-					updatedBy: USER,
-				}),
+				db.orm.run(
+					PG.insertInto(AlertDestinations).values({
+						id: ownedId,
+						orgId: ORG,
+						name: "Primary webhook",
+						type: "webhook",
+						enabled: true,
+						configJson: {},
+						secretCiphertext: "x",
+						secretIv: "x",
+						secretTag: "x",
+						createdAt: now,
+						updatedAt: now,
+						createdBy: USER,
+						updatedBy: USER,
+					}),
+				),
 			)
 
 			const rejected = yield* policies
@@ -668,20 +685,22 @@ describe("Error issue severity, policies, and read models", () => {
 			const alertIssueId = asIssueId(randomUUID())
 			const now = yield* Clock.currentTimeMillis
 			yield* database.execute((db) =>
-				db.insert(errorIssues).values({
-					id: alertIssueId,
-					orgId: ORG,
-					kind: "alert",
-					fingerprintHash: "alert:rule-1:checkout",
-					serviceName: "checkout",
-					exceptionType: "High latency",
-					exceptionMessage: "p95_latency gte 800",
-					topFrame: "",
-					firstSeenAt: new Date(now),
-					lastSeenAt: new Date(now),
-					createdAt: new Date(now),
-					updatedAt: new Date(now),
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorIssues).values({
+						id: alertIssueId,
+						orgId: ORG,
+						kind: "alert",
+						fingerprintHash: "alert:rule-1:checkout",
+						serviceName: "checkout",
+						exceptionType: "High latency",
+						exceptionMessage: "p95_latency gte 800",
+						topFrame: "",
+						firstSeenAt: now,
+						lastSeenAt: now,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 
 			const high = yield* readModels.listIssues(ORG, { severity: "high" })
@@ -757,7 +776,7 @@ describe("Error issue severity, policies, and read models", () => {
 			for (let i = 0; i < 5; i++) {
 				const id = asIssueId(randomUUID())
 				ids.push(id)
-				yield* seedIssue(id, { lastSeenAt: new Date(now - i * 60_000) })
+				yield* seedIssue(id, { lastSeenAt: now - i * 60_000 })
 			}
 
 			const page1 = yield* readModels.listIssues(ORG, { limit: 2 })
@@ -799,7 +818,7 @@ describe("Error issue severity, policies, and read models", () => {
 		Effect.gen(function* () {
 			const readModels = yield* ErrorIssueReadModelsService
 			const now = yield* Clock.currentTimeMillis
-			const sameInstant = new Date(now)
+			const sameInstant = now
 			const ids = ["cccc", "bbbb", "aaaa"].map((prefix) =>
 				asIssueId(`${prefix}${randomUUID().slice(4)}`),
 			)
@@ -833,7 +852,7 @@ describe("Error issue severity, policies, and read models", () => {
 			yield* seedIssue(critical, {
 				severity: "critical",
 				workflowState: "triage",
-				lastSeenAt: new Date(now - 60_000),
+				lastSeenAt: now - 60_000,
 			})
 			yield* seedIssue(high, {
 				severity: "high",
@@ -919,7 +938,11 @@ const loadIssuesByFingerprint = (fingerprintHash: string) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.select().from(errorIssues).where(eq(errorIssues.fingerprintHash, fingerprintHash)),
+			db.orm.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.fingerprintHash.eq(fingerprintHash)]),
+			),
 		)
 	})
 
@@ -933,10 +956,11 @@ const backdateResolution = (issueId: ErrorIssueId, resolvedAtMs: number) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db
-				.update(errorIssues)
-				.set({ resolvedAt: new Date(resolvedAtMs) })
-				.where(eq(errorIssues.id, issueId)),
+			db.orm.run(
+				PG.update(ErrorIssues)
+					.set({ resolvedAt: resolvedAtMs })
+					.where(($) => [$.id.eq(issueId)]),
+			),
 		)
 	})
 
@@ -945,7 +969,11 @@ const setResolvedVersions = (issueId: ErrorIssueId, versions: ReadonlyArray<stri
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.update(errorIssues).set({ resolvedVersionsJson: versions }).where(eq(errorIssues.id, issueId)),
+			db.orm.run(
+				PG.update(ErrorIssues)
+					.set({ resolvedVersionsJson: versions })
+					.where(($) => [$.id.eq(issueId)]),
+			),
 		)
 	})
 
@@ -953,7 +981,11 @@ const loadIncidentsForIssue = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.select().from(errorIncidents).where(eq(errorIncidents.issueId, issueId)),
+			db.orm.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [$.issueId.eq(issueId)]),
+			),
 		)
 	})
 
@@ -961,7 +993,11 @@ const loadEventsForIssue = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+			db.orm.run(
+				PG.from(ErrorIssueEvents)
+					.select()
+					.where(($) => [$.issueId.eq(issueId)]),
+			),
 		)
 	})
 
@@ -984,8 +1020,8 @@ const runTicksUntilCaughtUp = Effect.fn("test.runTicksUntilCaughtUp")(function* 
 	for (let i = 0; i < maxTicks; i++) {
 		const nowMs = yield* Clock.currentTimeMillis
 		const cutoffMs = Math.floor(nowMs / 60_000) * 60_000 - 60_000
-		const cursor = yield* database.execute((db) => db.select().from(errorTickStates))
-		const behind = cursor.length === 0 || cursor.some((row) => row.processedThrough.getTime() < cutoffMs)
+		const cursor = yield* database.execute((db) => db.orm.run(PG.from(ErrorTickStates).select()))
+		const behind = cursor.length === 0 || cursor.some((row) => row.processedThrough < cutoffMs)
 		if (!behind) break
 		const result = yield* errors.runTick()
 		totals.issuesTouched += result.issuesTouched
@@ -1075,21 +1111,27 @@ describe("ErrorsService.runTick", () => {
 		Effect.gen(function* () {
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.insert(errorTickStates).values({
-					orgId: ORG,
-					processedThrough: new Date(processedThroughMs),
-					bootstrapCompleted: true,
-					claimToken: claim?.token ?? null,
-					claimExpiresAt: claim === undefined ? null : new Date(claim.expiresAtMs),
-					updatedAt: new Date(processedThroughMs),
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorTickStates).values({
+						orgId: ORG,
+						processedThrough: processedThroughMs,
+						bootstrapCompleted: true,
+						claimToken: claim?.token ?? null,
+						claimExpiresAt: claim === undefined ? null : claim.expiresAtMs,
+						updatedAt: processedThroughMs,
+					}),
+				),
 			)
 		})
 
 	const cursor = Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+			db.orm.run(
+				PG.from(ErrorTickStates)
+					.select()
+					.where(($) => [$.orgId.eq(ORG)]),
+			),
 		)
 		return rows[0]
 	})
@@ -1108,7 +1150,7 @@ describe("ErrorsService.runTick", () => {
 			yield* errors.runTick()
 
 			assert.isFalse(scanned.has(ORG))
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), PARKED_MS)
+			assert.strictEqual((yield* cursor)?.processedThrough, PARKED_MS)
 		}).pipe(Effect.provide(makeGatingLayer({ scanned })))
 	})
 
@@ -1121,7 +1163,7 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 10 * MINUTE)
+			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 10 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({}))),
 	)
 
@@ -1137,7 +1179,7 @@ describe("ErrorsService.runTick", () => {
 			yield* errors.runTick()
 
 			assert.isFalse(scanned.has(ORG))
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), PARKED_MS)
+			assert.strictEqual((yield* cursor)?.processedThrough, PARKED_MS)
 			// A cursor older than the horizon is only checked from the horizon on.
 			assert.lengthOf(firstErrorSql, 1)
 			assert.include(
@@ -1160,7 +1202,7 @@ describe("ErrorsService.runTick", () => {
 
 			// The hour before the first error is skipped; one window from it is applied.
 			assert.isTrue(scanned.has(ORG))
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), firstErrorMs + 5 * MINUTE)
+			assert.strictEqual((yield* cursor)?.processedThrough, firstErrorMs + 5 * MINUTE)
 		}).pipe(
 			Effect.provide(
 				makeGatingLayer({
@@ -1180,7 +1222,7 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 3 * 60 * MINUTE)
+			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 3 * 60 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({ failFirstErrorLookup: true }))),
 	)
 
@@ -1193,7 +1235,7 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 55 * MINUTE)
+			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 55 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
 	)
 
@@ -1205,13 +1247,13 @@ describe("ErrorsService.runTick", () => {
 			yield* seedCursor(TICK_MS - 12 * MINUTE, { token: "held", expiresAtMs: TICK_MS + MINUTE })
 
 			yield* errors.runTick()
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 12 * MINUTE)
+			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 12 * MINUTE)
 
 			// Two minutes on the lease has lapsed without the tick that took it committing.
 			yield* TestClock.setTime(TICK_MS + 2 * MINUTE)
 			yield* errors.runTick()
 			const row = yield* cursor
-			assert.strictEqual(row?.processedThrough.getTime(), PARKED_MS + 2 * MINUTE)
+			assert.strictEqual(row?.processedThrough, PARKED_MS + 2 * MINUTE)
 			assert.isNull(row?.claimToken)
 		}).pipe(Effect.provide(makeGatingLayer({}))),
 	)
@@ -1225,7 +1267,7 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 
-			assert.strictEqual((yield* cursor)?.processedThrough.getTime(), TICK_MS - 12 * MINUTE)
+			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 12 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true }))),
 	)
 
@@ -1300,9 +1342,9 @@ describe("ErrorsService.runTick", () => {
 				assert.strictEqual(issue.errorLabel, "TimeoutError: upstream timed out")
 				assert.strictEqual(issue.topFrame, "checkout/handler.ts:42")
 				assert.strictEqual(issue.occurrenceCount, 3)
-				assert.strictEqual(issue.firstSeenAt.getTime(), TICK_MS - 120_000)
-				assert.strictEqual(issue.lastSeenAt.getTime(), TICK_MS - 60_000 - 1_000)
-				assert.strictEqual(issue.createdAt.getTime(), TICK_MS - 60_000)
+				assert.strictEqual(issue.firstSeenAt, TICK_MS - 120_000)
+				assert.strictEqual(issue.lastSeenAt, TICK_MS - 60_000 - 1_000)
+				assert.strictEqual(issue.createdAt, TICK_MS - 60_000)
 
 				const events = yield* loadEventsForIssue(issue.id)
 				assert.deepStrictEqual(
@@ -1318,7 +1360,11 @@ describe("ErrorsService.runTick", () => {
 				assert.strictEqual(incidents[0]?.occurrenceCount, 3)
 
 				const states = yield* database.execute((db) =>
-					db.select().from(errorIssueStates).where(eq(errorIssueStates.issueId, issue.id)),
+					db.orm.run(
+						PG.from(ErrorIssueStates)
+							.select()
+							.where(($) => [$.issueId.eq(issue.id)]),
+					),
 				)
 				assert.lengthOf(states, 1)
 				assert.strictEqual(states[0]?.openIncidentId, incidents[0]?.id)
@@ -1379,9 +1425,13 @@ describe("ErrorsService.runTick", () => {
 
 			const database = yield* Database
 			const cursors = yield* database.execute((db) =>
-				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+				db.orm.run(
+					PG.from(ErrorTickStates)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
-			assert.strictEqual(cursors[0]?.processedThrough.getTime(), TICK_MS - 60_000)
+			assert.strictEqual(cursors[0]?.processedThrough, TICK_MS - 60_000)
 			assert.isTrue(cursors[0]?.bootstrapCompleted)
 
 			const events = yield* loadEventsForIssue(issues[0]!.id)
@@ -1434,17 +1484,21 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 			yield* database.execute((db) =>
-				db.insert(errorNotificationPolicies).values({
-					orgId: ORG,
-					enabled: true,
-					destinationIdsJson: [destinationId],
-					updatedAt: new Date(TICK_MS),
-					updatedBy: "test",
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorNotificationPolicies).values({
+						orgId: ORG,
+						enabled: true,
+						destinationIdsJson: [destinationId],
+						updatedAt: TICK_MS,
+						updatedBy: "test",
+					}),
+				),
 			)
 
 			yield* errors.runTick()
-			let deliveries = yield* database.execute((db) => db.select().from(errorNotificationDeliveries))
+			let deliveries = yield* database.execute((db) =>
+				db.orm.run(PG.from(ErrorNotificationDeliveries).select()),
+			)
 			assert.lengthOf(deliveries, 1)
 			assert.strictEqual(deliveries[0]?.status, "queued")
 			assert.strictEqual(deliveries[0]?.attemptCount, 1)
@@ -1452,7 +1506,9 @@ describe("ErrorsService.runTick", () => {
 			rows = []
 			yield* TestClock.setTime(TICK_MS + 60_000)
 			yield* errors.runTick()
-			deliveries = yield* database.execute((db) => db.select().from(errorNotificationDeliveries))
+			deliveries = yield* database.execute((db) =>
+				db.orm.run(PG.from(ErrorNotificationDeliveries).select()),
+			)
 			assert.strictEqual(deliveries[0]?.status, "success")
 			assert.strictEqual(deliveries[0]?.attemptCount, 2)
 			assert.strictEqual(attempts, 2)
@@ -1479,14 +1535,16 @@ describe("ErrorsService.runTick", () => {
 			// Enabled policy with a destination so incident open/resolve actually
 			// dispatches (the dispatcher itself is stubbed — no destination row needed).
 			yield* database.execute((db) =>
-				db.insert(errorNotificationPolicies).values({
-					orgId: ORG,
-					enabled: true,
-					destinationIdsJson: ["7d31c9e1-0000-4000-8000-000000000001"],
-					notifyOnResolve: true,
-					updatedAt: new Date(TICK_MS),
-					updatedBy: "test",
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorNotificationPolicies).values({
+						orgId: ORG,
+						enabled: true,
+						destinationIdsJson: ["7d31c9e1-0000-4000-8000-000000000001"],
+						notifyOnResolve: true,
+						updatedAt: TICK_MS,
+						updatedBy: "test",
+					}),
+				),
 			)
 
 			yield* errors.runTick()
@@ -1539,7 +1597,11 @@ describe("ErrorsService.runTick", () => {
 			const incidents = yield* loadIncidentsForIssue(issue.id)
 			assert.lengthOf(incidents, 2)
 			const states = yield* database.execute((db) =>
-				db.select().from(errorIssueStates).where(eq(errorIssueStates.issueId, issue.id)),
+				db.orm.run(
+					PG.from(ErrorIssueStates)
+						.select()
+						.where(($) => [$.issueId.eq(issue.id)]),
+				),
 			)
 			assert.strictEqual(
 				states[0]?.openIncidentId,
@@ -1652,10 +1714,11 @@ describe("ErrorsService.runTick", () => {
 			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: null })
-					.where(eq(errorIssues.id, issue.id)),
+				db.orm.run(
+					PG.update(ErrorIssues)
+						.set({ workflowState: "wontfix", snoozeUntil: null })
+						.where(($) => [$.id.eq(issue.id)]),
+				),
 			)
 
 			yield* TestClock.setTime(TICK_MS + 120_000)
@@ -1678,7 +1741,7 @@ describe("ErrorsService.runTick", () => {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId, {
 				workflowState: "wontfix",
-				snoozeUntil: new Date(TICK_MS - 1_000),
+				snoozeUntil: TICK_MS - 1_000,
 			})
 
 			const result = yield* errors.runTick()
@@ -1686,7 +1749,11 @@ describe("ErrorsService.runTick", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.strictEqual(rows[0]?.workflowState, "triage")
 			assert.isNull(rows[0]?.snoozeUntil)
@@ -1709,7 +1776,11 @@ describe("ErrorsService.runTick", () => {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
 			const before = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 
 			const result = yield* errors.runTick()
@@ -1727,7 +1798,11 @@ describe("ErrorsService.runTick", () => {
 			})
 
 			const after = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.deepStrictEqual(after, before)
 
@@ -1762,13 +1837,17 @@ describe("ErrorsService.runTick", () => {
 			// Staleness is measured in event time against the window being applied,
 			// so the flip lands in the first window that closes more than 30 minutes
 			// after the last occurrence — within one window width of that boundary.
-			const lastTriggeredMs = incidents[0]!.lastTriggeredAt.getTime()
-			const resolvedAtMs = incidents[0]!.resolvedAt!.getTime()
+			const lastTriggeredMs = incidents[0]!.lastTriggeredAt
+			const resolvedAtMs = incidents[0]!.resolvedAt!
 			assert.isAbove(resolvedAtMs, lastTriggeredMs + 30 * 60_000)
 			assert.isAtMost(resolvedAtMs, lastTriggeredMs + 35 * 60_000)
 
 			const states = yield* database.execute((db) =>
-				db.select().from(errorIssueStates).where(eq(errorIssueStates.issueId, issue.id)),
+				db.orm.run(
+					PG.from(ErrorIssueStates)
+						.select()
+						.where(($) => [$.issueId.eq(issue.id)]),
+				),
 			)
 			assert.isNull(states[0]?.openIncidentId)
 
@@ -1807,9 +1886,13 @@ describe("ErrorsService.runTick", () => {
 			// 5 minutes halved is 3, so the cursor advances 3 of the 5 available
 			// minutes and the next cron picks up the remainder.
 			const cursor = yield* database.execute((db) =>
-				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+				db.orm.run(
+					PG.from(ErrorTickStates)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
-			assert.strictEqual(cursor[0]?.processedThrough.getTime(), TICK_MS + 120_000)
+			assert.strictEqual(cursor[0]?.processedThrough, TICK_MS + 120_000)
 		}).pipe(
 			Effect.provide(
 				makeErrorsLayer(rowsFor, () => {
@@ -1835,16 +1918,27 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(result.incidentsOpened, 3_100)
 
 			const cursor = yield* database.execute((db) =>
-				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+				db.orm.run(
+					PG.from(ErrorTickStates)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
-			assert.strictEqual(cursor[0]?.processedThrough.getTime(), TICK_MS - 60_000)
+			assert.strictEqual(cursor[0]?.processedThrough, TICK_MS - 60_000)
 			// Every chunk landed, not just the ones a counter reports: one `created`
 			// event per issue, and no promoted candidate left behind.
 			const created = yield* database.execute((db) =>
-				db.select().from(errorIssueEvents).where(eq(errorIssueEvents.type, "created")),
+				db.orm.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.type.eq("created")]),
+				),
 			)
 			assert.lengthOf(created, 3_100)
-			assert.lengthOf(yield* database.execute((db) => db.select().from(errorFingerprintCandidates)), 0)
+			assert.lengthOf(
+				yield* database.execute((db) => db.orm.run(PG.from(ErrorFingerprintCandidates).select())),
+				0,
+			)
 
 			// The same burst a minute later lands on the incidents it just opened.
 			yield* TestClock.setTime(TICK_MS + 60_000)
@@ -1871,7 +1965,11 @@ describe("ErrorsService.runTick", () => {
 			yield* errors.runTick()
 
 			const before = yield* database.execute((db) =>
-				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+				db.orm.run(
+					PG.from(ErrorTickStates)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			const issuesBefore = yield* loadIssuesByFingerprint("77777777777777777777")
 
@@ -1927,9 +2025,13 @@ describe("ErrorsService.runTick", () => {
 			const issuesAfter = yield* loadIssuesByFingerprint("77777777777777777777")
 			assert.deepStrictEqual(issuesAfter, issuesBefore)
 			const after = yield* database.execute((db) =>
-				db.select().from(errorTickStates).where(eq(errorTickStates.orgId, ORG)),
+				db.orm.run(
+					PG.from(ErrorTickStates)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
-			assert.strictEqual(after[0]?.processedThrough.getTime(), before[0]?.processedThrough.getTime())
+			assert.strictEqual(after[0]?.processedThrough, before[0]?.processedThrough)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
@@ -1944,10 +2046,11 @@ describe("ErrorsService.runTick", () => {
 			const database = yield* Database
 			const candidates = () =>
 				database.execute((db) =>
-					db
-						.select()
-						.from(errorFingerprintCandidates)
-						.where(eq(errorFingerprintCandidates.fingerprintHash, SCAN_FINGERPRINT)),
+					db.orm.run(
+						PG.from(ErrorFingerprintCandidates)
+							.select()
+							.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+					),
 				)
 
 			yield* TestClock.setTime(TICK_MS)
@@ -2053,10 +2156,10 @@ describe("ErrorsService.runTick", () => {
 				fingerprintHash: REGRESSED,
 				workflowState: "done",
 				// Resolved well before this window, so the rollout grace has elapsed.
-				resolvedAt: new Date(TICK_MS - 3 * 60 * 60 * 1000),
+				resolvedAt: TICK_MS - 3 * 60 * 60 * 1000,
 				occurrenceCount: 10,
-				firstSeenAt: new Date(TICK_MS - 600_000),
-				lastSeenAt: new Date(TICK_MS - 600_000),
+				firstSeenAt: TICK_MS - 600_000,
+				lastSeenAt: TICK_MS - 600_000,
 			})
 			const snoozedId = asIssueId(randomUUID())
 			yield* seedIssue(snoozedId, {
@@ -2090,8 +2193,8 @@ describe("ErrorsService.runTick", () => {
 			// Ongoing: counters accumulate, bounds widen, no second incident.
 			const ongoingAfter = (yield* loadIssuesByFingerprint(ONGOING))[0]!
 			assert.strictEqual(ongoingAfter.occurrenceCount, 3 + 4)
-			assert.strictEqual(ongoingAfter.firstSeenAt.getTime(), ongoing.firstSeenAt.getTime())
-			assert.isAbove(ongoingAfter.lastSeenAt.getTime(), ongoing.lastSeenAt.getTime())
+			assert.strictEqual(ongoingAfter.firstSeenAt, ongoing.firstSeenAt)
+			assert.isAbove(ongoingAfter.lastSeenAt, ongoing.lastSeenAt)
 			const ongoingIncidents = yield* loadIncidentsForIssue(ongoing.id)
 			assert.lengthOf(ongoingIncidents, 1)
 			assert.strictEqual(ongoingIncidents[0]?.occurrenceCount, 3 + 4)
@@ -2155,7 +2258,11 @@ describe("ErrorsService.runTick", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.isNull(rows[0]?.leaseHolderActorId)
 			assert.isNull(rows[0]?.leaseExpiresAt)
@@ -2199,7 +2306,7 @@ describe("ErrorsService.runTick", () => {
 			const archiveCandidate = asIssueId(randomUUID())
 			yield* seedIssue(archiveCandidate, {
 				workflowState: "done",
-				resolvedAt: new Date(RETENTION_TICK_MS - 15 * DAY_MS),
+				resolvedAt: RETENTION_TICK_MS - 15 * DAY_MS,
 			})
 
 			// Archived 91 days ago (> 90-day archived retention): purged together
@@ -2207,45 +2314,51 @@ describe("ErrorsService.runTick", () => {
 			const purgeCandidate = asIssueId(randomUUID())
 			yield* seedIssue(purgeCandidate, {
 				workflowState: "done",
-				resolvedAt: new Date(RETENTION_TICK_MS - 120 * DAY_MS),
-				archivedAt: new Date(RETENTION_TICK_MS - 91 * DAY_MS),
+				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
 			})
-			const seededAt = new Date(RETENTION_TICK_MS - 120 * DAY_MS)
+			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
 			yield* database.execute((db) =>
-				db.insert(errorIssueEvents).values({
-					id: asEventId(randomUUID()),
-					orgId: ORG,
-					issueId: purgeCandidate,
-					actorId: null,
-					type: "created",
-					payloadJson: {},
-					createdAt: seededAt,
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorIssueEvents).values({
+						id: asEventId(randomUUID()),
+						orgId: ORG,
+						issueId: purgeCandidate,
+						actorId: null,
+						type: "created",
+						payloadJson: {},
+						createdAt: seededAt,
+					}),
+				),
 			)
 			yield* database.execute((db) =>
-				db.insert(errorIncidents).values({
-					id: asIncidentId(randomUUID()),
-					orgId: ORG,
-					issueId: purgeCandidate,
-					status: "resolved",
-					reason: "first_seen",
-					firstTriggeredAt: seededAt,
-					lastTriggeredAt: seededAt,
-					resolvedAt: seededAt,
-					occurrenceCount: 1,
-					createdAt: seededAt,
-					updatedAt: seededAt,
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorIncidents).values({
+						id: asIncidentId(randomUUID()),
+						orgId: ORG,
+						issueId: purgeCandidate,
+						status: "resolved",
+						reason: "first_seen",
+						firstTriggeredAt: seededAt,
+						lastTriggeredAt: seededAt,
+						resolvedAt: seededAt,
+						occurrenceCount: 1,
+						createdAt: seededAt,
+						updatedAt: seededAt,
+					}),
+				),
 			)
 			yield* database.execute((db) =>
-				db.insert(errorIssueStates).values({
-					orgId: ORG,
-					issueId: purgeCandidate,
-					lastObservedOccurrenceAt: seededAt,
-					lastEvaluatedAt: seededAt,
-					openIncidentId: null,
-					updatedAt: seededAt,
-				}),
+				db.orm.run(
+					PG.insertInto(ErrorIssueStates).values({
+						orgId: ORG,
+						issueId: purgeCandidate,
+						lastObservedOccurrenceAt: seededAt,
+						lastEvaluatedAt: seededAt,
+						openIncidentId: null,
+						updatedAt: seededAt,
+					}),
+				),
 			)
 
 			const result = yield* errors.runTick()
@@ -2254,19 +2367,31 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(result.issuesDeleted, 1)
 
 			const archivedRows = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, archiveCandidate)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(archiveCandidate)]),
+				),
 			)
 			assert.lengthOf(archivedRows, 1)
-			assert.strictEqual(archivedRows[0]?.archivedAt?.getTime(), RETENTION_TICK_MS)
+			assert.strictEqual(archivedRows[0]?.archivedAt, RETENTION_TICK_MS)
 
 			const purgedIssues = yield* database.execute((db) =>
-				db.select().from(errorIssues).where(eq(errorIssues.id, purgeCandidate)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(purgeCandidate)]),
+				),
 			)
 			assert.lengthOf(purgedIssues, 0)
 			assert.lengthOf(yield* loadIncidentsForIssue(purgeCandidate), 0)
 			assert.lengthOf(yield* loadEventsForIssue(purgeCandidate), 0)
 			const purgedStates = yield* database.execute((db) =>
-				db.select().from(errorIssueStates).where(eq(errorIssueStates.issueId, purgeCandidate)),
+				db.orm.run(
+					PG.from(ErrorIssueStates)
+						.select()
+						.where(($) => [$.issueId.eq(purgeCandidate)]),
+				),
 			)
 			assert.lengthOf(purgedStates, 0)
 		}).pipe(Effect.provide(makeErrorsLayer())),
@@ -2442,7 +2567,7 @@ const makeIdleTickHarness = (
 	}
 }
 
-type TickStateSeed = Partial<typeof errorTickStates.$inferInsert> & {
+type TickStateSeed = Partial<PG.InsertRowOf<typeof ErrorTickStates>> & {
 	readonly orgId: OrgId
 	readonly cursorMs: number
 }
@@ -2453,25 +2578,26 @@ const seedIdleOrgs = (seeds: ReadonlyArray<TickStateSeed>) =>
 		const database = yield* Database
 		yield* seedIngestKeys(seeds.map((seed) => seed.orgId))
 		yield* database.execute((db) =>
-			db.insert(errorTickStates).values(
-				seeds.map(({ cursorMs, ...row }) => ({
-					processedThrough: new Date(cursorMs),
-					bootstrapCompleted: true,
-					updatedAt: new Date(cursorMs),
-					...row,
-				})),
+			db.orm.run(
+				PG.insertInto(ErrorTickStates).values(
+					seeds.map(({ cursorMs, ...row }) => ({
+						processedThrough: cursorMs,
+						bootstrapCompleted: true,
+						updatedAt: cursorMs,
+						...row,
+					})),
+				),
 			),
 		)
 	})
 
 const tickStates = Effect.gen(function* () {
 	const database = yield* Database
-	const rows = yield* database.execute((db) => db.select().from(errorTickStates))
+	const rows = yield* database.execute((db) => db.orm.run(PG.from(ErrorTickStates).select()))
 	return new Map(rows.map((row) => [row.orgId, row]))
 })
 
-const cursorOf = (orgId: OrgId) =>
-	Effect.map(tickStates, (states) => states.get(orgId)?.processedThrough.getTime())
+const cursorOf = (orgId: OrgId) => Effect.map(tickStates, (states) => states.get(orgId)?.processedThrough)
 
 const tickAt = (nowMs: number) =>
 	Effect.gen(function* () {
@@ -2484,7 +2610,11 @@ const issuesOf = (orgId: OrgId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.select().from(errorIssues).where(eq(errorIssues.orgId, orgId)),
+			db.orm.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 		)
 	})
 
@@ -2492,7 +2622,11 @@ const candidatesOf = (orgId: OrgId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.select().from(errorFingerprintCandidates).where(eq(errorFingerprintCandidates.orgId, orgId)),
+			db.orm.run(
+				PG.from(ErrorFingerprintCandidates)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 		)
 	})
 
@@ -2808,7 +2942,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			const failed = yield* tickAt(T)
 			assert.strictEqual(failed.issuesTouched, 0)
 			const state = (yield* tickStates).get(IDLE)
-			assert.strictEqual(state?.processedThrough.getTime(), first)
+			assert.strictEqual(state?.processedThrough, first)
 			assert.isNull(state?.claimToken)
 
 			scanFails = false
@@ -2952,17 +3086,19 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* TestClock.setTime(T)
 			yield* seedIdleOrgs([{ orgId: IDLE, cursorMs: T - 3 * HOUR_MS }])
 			yield* database.execute((db) =>
-				db.insert(orgClickHouseSettings).values({
-					orgId: IDLE,
-					chUrl: "https://clickhouse.example.test",
-					chUser: "default",
-					chDatabase: "default",
-					syncStatus: "connected",
-					createdAt: new Date(T),
-					updatedAt: new Date(T),
-					createdBy: "test",
-					updatedBy: "test",
-				}),
+				db.orm.run(
+					PG.insertInto(OrgClickHouseSettings).values({
+						orgId: IDLE,
+						chUrl: "https://clickhouse.example.test",
+						chUser: "default",
+						chDatabase: "default",
+						syncStatus: "connected",
+						createdAt: T,
+						updatedAt: T,
+						createdBy: "test",
+						updatedBy: "test",
+					}),
+				),
 			)
 
 			yield* tickAt(T)
@@ -3041,12 +3177,12 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* tickAt(T)
 
 			const states = yield* tickStates
-			assert.strictEqual(states.get(IDLE)?.processedThrough.getTime(), first + 5 * MINUTE_MS)
+			assert.strictEqual(states.get(IDLE)?.processedThrough, first + 5 * MINUTE_MS)
 			assert.isTrue(states.get(IDLE)?.bootstrapCompleted)
 			assert.include(h.callsTo(SCAN, IDLE)[0]?.sql, "FROM error_events_by_time")
 			assert.lengthOf(yield* issuesOf(IDLE), 1)
 			// Parked without a scan, so its bootstrap is still to come.
-			assert.strictEqual(states.get(OTHER)?.processedThrough.getTime(), parkedAt(T))
+			assert.strictEqual(states.get(OTHER)?.processedThrough, parkedAt(T))
 			assert.isFalse(states.get(OTHER)?.bootstrapCompleted)
 		}).pipe(Effect.provide(h.layer))
 	})
@@ -3065,20 +3201,20 @@ describe("ErrorsService.runTick idle cursors", () => {
 						orgId: IDLE,
 						cursorMs: T - 4 * HOUR_MS,
 						claimToken: "held",
-						claimExpiresAt: new Date(T + MINUTE_MS),
+						claimExpiresAt: T + MINUTE_MS,
 					},
 				])
 
 				yield* tickAt(T)
 				const held = (yield* tickStates).get(IDLE)
-				assert.strictEqual(held?.processedThrough.getTime(), T - 4 * HOUR_MS)
+				assert.strictEqual(held?.processedThrough, T - 4 * HOUR_MS)
 				assert.strictEqual(held?.claimToken, "held")
 				assert.lengthOf(h.callsTo(LOOKUP), 0)
 				assert.lengthOf(h.callsTo(SCAN), 0)
 
 				yield* tickAt(T + 2 * MINUTE_MS)
 				const released = (yield* tickStates).get(IDLE)
-				assert.strictEqual(released?.processedThrough.getTime(), first + 5 * MINUTE_MS)
+				assert.strictEqual(released?.processedThrough, first + 5 * MINUTE_MS)
 				assert.isNull(released?.claimToken)
 				assert.lengthOf(yield* issuesOf(IDLE), 1)
 			}).pipe(Effect.provide(h.layer))
@@ -3107,7 +3243,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				yield* tickAt(T)
 
 				const state = (yield* tickStates).get(IDLE)
-				assert.strictEqual(state?.processedThrough.getTime(), T - 4 * HOUR_MS)
+				assert.strictEqual(state?.processedThrough, T - 4 * HOUR_MS)
 				assert.strictEqual(state?.claimToken, "other-tick")
 				assert.lengthOf(h.callsTo(SCAN), 0)
 			}).pipe(Effect.provide(h.layer))
@@ -3183,7 +3319,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 						orgId: LOCKED,
 						cursorMs: T - 12 * MINUTE_MS,
 						claimToken: "lapsed",
-						claimExpiresAt: new Date(T - MINUTE_MS),
+						claimExpiresAt: T - MINUTE_MS,
 					},
 					{ orgId: LOCKED_STALE, cursorMs: T - 4 * HOUR_MS },
 					{ orgId: IDLE, cursorMs: T - 12 * MINUTE_MS },
@@ -3197,19 +3333,19 @@ describe("ErrorsService.runTick idle cursors", () => {
 				yield* tickAt(T)
 
 				const locked = yield* tickStates
-				assert.strictEqual(locked.get(IDLE)?.processedThrough.getTime(), parkedAt(T))
-				assert.strictEqual(locked.get(LOCKED)?.processedThrough.getTime(), T - 12 * MINUTE_MS)
+				assert.strictEqual(locked.get(IDLE)?.processedThrough, parkedAt(T))
+				assert.strictEqual(locked.get(LOCKED)?.processedThrough, T - 12 * MINUTE_MS)
 				assert.strictEqual(locked.get(LOCKED)?.claimToken, "lapsed")
-				assert.strictEqual(locked.get(LOCKED_STALE)?.processedThrough.getTime(), T - 4 * HOUR_MS)
+				assert.strictEqual(locked.get(LOCKED_STALE)?.processedThrough, T - 4 * HOUR_MS)
 				assert.lengthOf(h.callsTo(SCAN), 0)
 
 				yield* Effect.promise(() => h.db.pglite.exec("rollback prepared 'open_apply'"))
 				yield* tickAt(T + MINUTE_MS)
 
 				const freed = yield* tickStates
-				assert.strictEqual(freed.get(LOCKED)?.processedThrough.getTime(), parkedAt(T + MINUTE_MS))
+				assert.strictEqual(freed.get(LOCKED)?.processedThrough, parkedAt(T + MINUTE_MS))
 				assert.isNull(freed.get(LOCKED)?.claimToken)
-				assert.strictEqual(freed.get(LOCKED_STALE)?.processedThrough.getTime(), first + 5 * MINUTE_MS)
+				assert.strictEqual(freed.get(LOCKED_STALE)?.processedThrough, first + 5 * MINUTE_MS)
 				assert.lengthOf(yield* issuesOf(LOCKED_STALE), 1)
 			}).pipe(Effect.provide(h.layer))
 		},
@@ -3256,10 +3392,10 @@ describe("ErrorsService.runTick idle cursors", () => {
 				assert.strictEqual(peak, 4)
 				const afterFirst = yield* tickStates
 				for (const org of orgs.slice(0, 40)) {
-					assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough.getTime(), parkedAt(T))
+					assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough, parkedAt(T))
 				}
 				for (const org of orgs.slice(40)) {
-					assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough.getTime(), org.cursorMs)
+					assert.strictEqual(afterFirst.get(org.orgId)?.processedThrough, org.cursorMs)
 				}
 
 				yield* tickAt(T + MINUTE_MS)
@@ -3270,10 +3406,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				)
 				const afterSecond = yield* tickStates
 				for (const org of orgs.slice(40)) {
-					assert.strictEqual(
-						afterSecond.get(org.orgId)?.processedThrough.getTime(),
-						parkedAt(T + MINUTE_MS),
-					)
+					assert.strictEqual(afterSecond.get(org.orgId)?.processedThrough, parkedAt(T + MINUTE_MS))
 				}
 			}).pipe(Effect.provide(h.layer))
 		},
@@ -3314,7 +3447,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 			const states = yield* tickStates
 			assert.lengthOf(
-				orgs.filter((orgId) => states.get(orgId)?.processedThrough.getTime() === parkedAt(T)),
+				orgs.filter((orgId) => states.get(orgId)?.processedThrough === parkedAt(T)),
 				520,
 			)
 			assert.lengthOf(h.callsTo(LOOKUP), 0)
@@ -3415,13 +3548,15 @@ describe("ErrorsService.runTick idle cursors", () => {
 						{ orgId: OTHER, cursorMs: T - 4 * HOUR_MS },
 					])
 					yield* database.execute((db) =>
-						db.insert(errorNotificationPolicies).values({
-							orgId: ACTIVE,
-							enabled: true,
-							destinationIdsJson: [destinationId],
-							updatedAt: new Date(T),
-							updatedBy: "test",
-						}),
+						db.orm.run(
+							PG.insertInto(ErrorNotificationPolicies).values({
+								orgId: ACTIVE,
+								enabled: true,
+								destinationIdsJson: [destinationId],
+								updatedAt: T,
+								updatedBy: "test",
+							}),
+						),
 					)
 
 					const result = yield* tickAt(T)
@@ -3472,7 +3607,7 @@ describe("ErrorsService.claimIssue audit events", () => {
 					leaseExpiresAt:
 						scenario.holder === null
 							? null
-							: msToDate(TICK_MS + (scenario.holder === "self" ? 30_000 : -1)),
+							: TICK_MS + (scenario.holder === "self" ? 30_000 : -1),
 				})
 
 				yield* errors.claimIssue(ORG, actor.id, issueId, leaseDurationMs)
@@ -3515,22 +3650,21 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			// The lease is the whole point: an agent that only ever calls
 			// `propose_fix` must still end up holding it.
 			const [row] = yield* database.execute((db) =>
-				db
-					.select({
-						leaseHolderActorId: errorIssues.leaseHolderActorId,
-						leaseExpiresAt: errorIssues.leaseExpiresAt,
-					})
-					.from(errorIssues)
-					.where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("leaseHolderActorId", "leaseExpiresAt")
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.strictEqual(row?.leaseHolderActorId, actor.id)
 			assert.isNotNull(row?.leaseExpiresAt)
 
 			const events = yield* database.execute((db) =>
-				db
-					.select({ type: errorIssueEvents.type, toState: errorIssueEvents.toState })
-					.from(errorIssueEvents)
-					.where(eq(errorIssueEvents.issueId, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssueEvents)
+						.select("type", "toState")
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
 			)
 			const types = events.map((event) => event.type)
 			expect(types).toContain("claim")
@@ -3576,10 +3710,11 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			// The regression that made the old ordering dangerous: no half-written
 			// proposal left behind by a rejected call.
 			const events = yield* database.execute((db) =>
-				db
-					.select({ type: errorIssueEvents.type })
-					.from(errorIssueEvents)
-					.where(eq(errorIssueEvents.issueId, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssueEvents)
+						.select("type")
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
 			)
 			expect(events.map((event) => event.type)).not.toContain("fix_proposed")
 		}).pipe(Effect.provide(makeErrorsLayer())),
@@ -3607,10 +3742,11 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			// no verification would ever run.
 			assert.isTrue(exit._tag === "Failure")
 			const events = yield* database.execute((db) =>
-				db
-					.select({ type: errorIssueEvents.type })
-					.from(errorIssueEvents)
-					.where(eq(errorIssueEvents.issueId, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssueEvents)
+						.select("type")
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
 			)
 			expect(events.map((event) => event.type)).not.toContain("fix_proposed")
 		}).pipe(Effect.provide(makeErrorsLayer())),
@@ -3626,8 +3762,8 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 			yield* seedIssue(issueId, {
 				workflowState: "in_progress",
 				leaseHolderActorId: asActorId(randomUUID()),
-				claimedAt: new Date(now),
-				leaseExpiresAt: new Date(now + 600_000),
+				claimedAt: now,
+				leaseExpiresAt: now + 600_000,
 			})
 
 			const exit = yield* errors
@@ -3656,10 +3792,11 @@ describe("ErrorsService.transitionIssue claims on in_progress", () => {
 			yield* errors.transitionIssue(ORG, actor.id, issueId, "in_progress")
 
 			const [row] = yield* database.execute((db) =>
-				db
-					.select({ leaseHolderActorId: errorIssues.leaseHolderActorId })
-					.from(errorIssues)
-					.where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("leaseHolderActorId")
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.strictEqual(row?.leaseHolderActorId, actor.id)
 		}).pipe(Effect.provide(makeErrorsLayer())),
@@ -3677,18 +3814,19 @@ describe("ErrorsService.transitionIssue claims on in_progress", () => {
 			yield* seedIssue(issueId, {
 				workflowState: "triage",
 				leaseHolderActorId: holder,
-				claimedAt: new Date(now),
-				leaseExpiresAt: new Date(now + 600_000),
+				claimedAt: now,
+				leaseExpiresAt: now + 600_000,
 			})
 
 			const issue = yield* errors.transitionIssue(ORG, actor.id, issueId, "in_progress")
 
 			assert.strictEqual(issue.workflowState, "in_progress")
 			const [row] = yield* database.execute((db) =>
-				db
-					.select({ leaseHolderActorId: errorIssues.leaseHolderActorId })
-					.from(errorIssues)
-					.where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("leaseHolderActorId")
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.strictEqual(row?.leaseHolderActorId, holder)
 		}).pipe(Effect.provide(makeErrorsLayer())),
@@ -3711,20 +3849,21 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 			yield* seedIssue(issueId, {
 				workflowState: "in_progress",
 				leaseHolderActorId: actor.id,
-				claimedAt: new Date(now),
-				leaseExpiresAt: new Date(now + 60_000),
+				claimedAt: now,
+				leaseExpiresAt: now + 60_000,
 			})
 
 			yield* errors.transitionIssue(ORG, actor.id, issueId, "in_review")
 
 			const [row] = yield* database.execute((db) =>
-				db
-					.select({ leaseExpiresAt: errorIssues.leaseExpiresAt })
-					.from(errorIssues)
-					.where(eq(errorIssues.id, issueId)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("leaseExpiresAt")
+						.where(($) => [$.id.eq(issueId)]),
+				),
 			)
 			assert.isNotNull(row?.leaseExpiresAt)
-			expect(row.leaseExpiresAt.getTime()).toBeGreaterThan(now + 60_000)
+			expect(row.leaseExpiresAt).toBeGreaterThan(now + 60_000)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
@@ -3738,8 +3877,8 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 			yield* seedIssue(issueId, {
 				workflowState: "in_progress",
 				leaseHolderActorId: actor.id,
-				claimedAt: new Date(now),
-				leaseExpiresAt: new Date(now + 60_000),
+				claimedAt: now,
+				leaseExpiresAt: now + 60_000,
 			})
 
 			const done = yield* errors.transitionIssue(ORG, actor.id, issueId, "done")

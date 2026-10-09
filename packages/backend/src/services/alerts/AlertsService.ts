@@ -109,7 +109,6 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { makePersistenceError } from "./alert-persistence"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { withAlertEvaluationScope, type GroupedAlertObservation } from "@maple/query-engine/runtime"
@@ -1517,23 +1516,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						db.orm.run(
 							PG.update(AlertDestinations)
 								.set(($) => {
-									const crossesThreshold = PG.sql
-										.cond`${$.consecutiveFailures} + 1 >= ${DESTINATION_DISABLE_AFTER_FAILURES}`
+									const crossesThreshold = $.consecutiveFailures
+										.add(1)
+										.gte(DESTINATION_DISABLE_AFTER_FAILURES)
+									const columns = AlertDestinations.columns
 									return {
 										consecutiveFailures: $.consecutiveFailures.add(1),
 										lastFailureAt: currentTime,
 										updatedAt: currentTime,
-										enabled: PG.sql(
-											PG.bool,
-										)`case when ${crossesThreshold} then false else ${$.enabled} end`,
-										// The timestamp rides as a bound ISO string: a template has no
-										// column type behind it to encode epoch ms with.
-										disabledAt: PG.sql(
-											PG.nullable(PG.timestamptzMillis),
-										)`case when ${crossesThreshold} then ${msToSqlTimestamp(currentTime)}::timestamptz else ${$.disabledAt} end`,
-										disabledReason: PG.sql(
-											PG.nullable(PG.text),
-										)`case when ${crossesThreshold} then ${reason} else ${$.disabledReason} end`,
+										enabled: PG.caseWhen(
+											[[crossesThreshold, PG.typedValue(columns.enabled, false)]],
+											$.enabled,
+										),
+										disabledAt: PG.caseWhen(
+											[[crossesThreshold, PG.typedValue(columns.disabledAt, currentTime)]],
+											$.disabledAt,
+										),
+										disabledReason: PG.caseWhen(
+											[[crossesThreshold, PG.typedValue(columns.disabledReason, reason)]],
+											$.disabledReason,
+										),
 									}
 								})
 								.where(($) => [$.id.eq(row.destinationId), $.enabled.eq(true)])

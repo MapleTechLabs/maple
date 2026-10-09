@@ -4,8 +4,8 @@ import { ConfigProvider, Effect, Layer } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId, WarehouseQueryError, WarehouseQueryResponse } from "@maple/domain/http"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
-import { digestSubscriptions } from "@maple/db"
-import { eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { DigestSubscriptions } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
@@ -163,22 +163,26 @@ const makeHarness = (
 	return { sends, messages, layer }
 }
 
-const seedSub = (overrides: Partial<typeof digestSubscriptions.$inferInsert> & { email: string }) =>
+const seedSub = (
+	overrides: Partial<PG.InsertRowOf<typeof DigestSubscriptions>> & { email: string; id?: string },
+) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const id = overrides.id ?? randomUUID()
 		yield* database.execute((db) =>
-			db.insert(digestSubscriptions).values({
-				id,
-				orgId: "org_digest_test",
-				userId: `user-${id}`,
-				enabled: true,
-				dayOfWeek: 1,
-				timezone: "UTC",
-				createdAt: new Date(TICK_MS),
-				updatedAt: new Date(TICK_MS),
-				...overrides,
-			}),
+			db.orm.run(
+				PG.insertInto(DigestSubscriptions).values({
+					id,
+					orgId: OrgId.make("org_digest_test"),
+					userId: `user-${id}`,
+					enabled: true,
+					dayOfWeek: 1,
+					timezone: "UTC",
+					createdAt: TICK_MS,
+					updatedAt: TICK_MS,
+					...overrides,
+				}),
+			),
 		)
 		return id
 	})
@@ -187,7 +191,11 @@ const getSub = (id: string) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.select().from(digestSubscriptions).where(eq(digestSubscriptions.id, id)),
+			db.orm.run(
+				PG.from(DigestSubscriptions)
+					.select()
+					.where(($) => [$.id.eq(id)]),
+			),
 		)
 		const row = rows[0]
 		if (!row) {
@@ -213,8 +221,8 @@ describe("DigestService.runDigestTick", () => {
 
 			for (const id of [aId, bId]) {
 				const row = yield* getSub(id)
-				assert.strictEqual(row.lastSentAt?.getTime(), TICK_MS)
-				assert.strictEqual(row.lastAttemptedAt?.getTime(), TICK_MS)
+				assert.strictEqual(row.lastSentAt, TICK_MS)
+				assert.strictEqual(row.lastAttemptedAt, TICK_MS)
 			}
 		}).pipe(Effect.provide(layer))
 	})
@@ -228,7 +236,7 @@ describe("DigestService.runDigestTick", () => {
 			// looks "due" by lastSentAt but must NOT be claimed again today.
 			yield* seedSub({
 				email: "b@example.com",
-				lastAttemptedAt: new Date(TICK_MS - 15 * 60 * 1000),
+				lastAttemptedAt: TICK_MS - 15 * 60 * 1000,
 			})
 			// D is a fresh subscription (never attempted) — claimable.
 			yield* seedSub({ email: "d@example.com" })
@@ -258,7 +266,7 @@ describe("DigestService.runDigestTick", () => {
 			// Claimed for the day so later ticks don't re-query, but never marked sent.
 			const row = yield* getSub(id)
 			assert.strictEqual(row.lastSentAt, null)
-			assert.strictEqual(row.lastAttemptedAt?.getTime(), TICK_MS)
+			assert.strictEqual(row.lastAttemptedAt, TICK_MS)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -801,10 +809,11 @@ describe("DigestService — subscriber opt-out", () => {
 			})
 			// What the sweep itself does to a member it no longer sees in the org.
 			yield* database.execute((db) =>
-				db
-					.update(digestSubscriptions)
-					.set({ enabled: false })
-					.where(eq(digestSubscriptions.id, departed)),
+				db.orm.run(
+					PG.update(DigestSubscriptions)
+						.set({ enabled: false })
+						.where(($) => [$.id.eq(departed)]),
+				),
 			)
 
 			yield* digest.reconcileSubscriptions([

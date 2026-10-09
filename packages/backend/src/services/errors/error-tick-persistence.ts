@@ -200,12 +200,8 @@ const promoteCandidates = (
 					) as versions
 				)`,
 							occurrenceCount: $.occurrenceCount.add(excluded.occurrenceCount),
-							firstSeenAt: PG.sql(
-								PG.timestamptzMillis,
-							)`least(${$.firstSeenAt}, ${excluded.firstSeenAt})`,
-							lastSeenAt: PG.sql(
-								PG.timestamptzMillis,
-							)`greatest(${$.lastSeenAt}, ${excluded.lastSeenAt})`,
+							firstSeenAt: PG.least($.firstSeenAt, excluded.firstSeenAt),
+							lastSeenAt: PG.greatest($.lastSeenAt, excluded.lastSeenAt),
 							updatedAt: excluded.updatedAt,
 						}),
 					})
@@ -575,12 +571,8 @@ export const persistErrorTickWindow = (
 									exceptionMessage: excluded.exceptionMessage,
 									errorLabel: excluded.errorLabel,
 									topFrame: excluded.topFrame,
-									firstSeenAt: PG.sql(
-										PG.timestamptzMillis,
-									)`least(${$.firstSeenAt}, ${excluded.firstSeenAt})`,
-									lastSeenAt: PG.sql(
-										PG.timestamptzMillis,
-									)`greatest(${$.lastSeenAt}, ${excluded.lastSeenAt})`,
+									firstSeenAt: PG.least($.firstSeenAt, excluded.firstSeenAt),
+									lastSeenAt: PG.greatest($.lastSeenAt, excluded.lastSeenAt),
 									occurrenceCount: $.occurrenceCount.add(excluded.occurrenceCount),
 									// The merged set is computed against the pre-update row and arrives
 									// via the INSERT values, so this stays one statement.

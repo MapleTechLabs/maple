@@ -1640,9 +1640,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									publishError: null,
 									// A finished review asked for again is a new review, so it gets a new comment;
 									// a failed one retries in place and replaces its own failure notice.
-									commentAttempt: PG.sql(
-										PG.int4,
-									)`case when ${$.status} in ('completed', 'skipped') then ${$.commentAttempt} + 1 else ${$.commentAttempt} end`,
+									commentAttempt: PG.caseWhen(
+										[[$.status.in_("completed", "skipped"), $.commentAttempt.add(1)]],
+										$.commentAttempt,
+									),
 									reportJson: null,
 									score: null,
 									// The new review reads production again and earns its own post-merge look.
@@ -2208,7 +2209,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							PG.from(PrReviews)
 								// As stored, so a document from an older shape reads as none below.
 								.select(($) => ({
-									telemetryJson: PG.sql(PG.nullable(PG.jsonb()))`${$.telemetryJson}`,
+									telemetryJson: PG.undecoded($.telemetryJson),
 								}))
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
 								.limit(1),

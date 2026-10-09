@@ -36,7 +36,7 @@ const decodeHeartbeat = Schema.decodeUnknownOption(Schema.Struct({ updatedAt: Sc
  * fail the read that only wants to know whether the run is alive.
  */
 export const storedProgressJson = ($: PG.ColumnAccessor<typeof Investigations.columns>) =>
-	PG.sql(PG.nullable(PG.jsonb()))`${$.progressJson}`
+	PG.undecoded($.progressJson)
 
 export const staleTimeoutMessage = (budgetMs: number): string =>
 	`diagnosis_timeout: no diagnosis was submitted within ${Math.round(budgetMs / 60_000)} minutes; retry`

@@ -10,8 +10,8 @@ import {
 	PrReviewOperationTraffic,
 	PrReviewTelemetry,
 } from "@maple/domain/http"
-import { prReviews } from "@maple/db"
-import { eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PrReviews } from "@maple/db/tables"
 import { DateTime, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -172,32 +172,35 @@ const seedDueReview = Effect.gen(function* () {
 	const repositoryId = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7")).id
 	const db = yield* Database
 	yield* db.execute((client) =>
-		client.insert(prReviews).values({
-			id: reviewId,
-			orgId,
-			repositoryId,
-			number: 612,
-			headSha: HEAD,
-			url: "https://github.com/octo/repo/pull/612",
-			status: "completed",
-			telemetryJson: facts,
-			mergedAt: new Date(MERGED_AT),
-			mergeCommitSha: "ccc",
-			postMergeStatus: "waiting",
-			postMergeAfter: new Date(MERGED_AT),
-			createdAt: new Date(MERGED_AT),
-			updatedAt: new Date(MERGED_AT),
-		}),
+		client.orm.run(
+			PG.insertInto(PrReviews).values({
+				id: reviewId,
+				orgId,
+				repositoryId,
+				number: 612,
+				headSha: HEAD,
+				url: "https://github.com/octo/repo/pull/612",
+				status: "completed",
+				telemetryJson: facts,
+				mergedAt: MERGED_AT,
+				mergeCommitSha: "ccc",
+				postMergeStatus: "waiting",
+				postMergeAfter: MERGED_AT,
+				createdAt: MERGED_AT,
+				updatedAt: MERGED_AT,
+			}),
+		),
 	)
 })
 
 const rowState = Effect.gen(function* () {
 	const db = yield* Database
 	const rows = yield* db.execute((client) =>
-		client
-			.select({ status: prReviews.postMergeStatus, after: prReviews.postMergeAfter })
-			.from(prReviews)
-			.where(eq(prReviews.id, reviewId)),
+		client.orm.run(
+			PG.from(PrReviews)
+				.select(($) => ({ status: $.postMergeStatus, after: $.postMergeAfter }))
+				.where(($) => [$.id.eq(reviewId)]),
+		),
 	)
 	return rows[0]
 })
@@ -228,7 +231,7 @@ describe("PrReviewPostMergeService.runTick", () => {
 			const result = yield* service.runTick()
 			assert.equal(result.failedRows, 1)
 			assert.lengthOf(posted, 0)
-			assert.deepStrictEqual(yield* rowState, { status: "waiting", after: new Date(now + 30 * 60_000) })
+			assert.deepStrictEqual(yield* rowState, { status: "waiting", after: now + 30 * 60_000 })
 
 			// Still failing two days after the merge: given up as failed, never reported clean.
 			yield* TestClock.setTime(MERGED_AT + 49 * 3_600_000)
@@ -247,10 +250,11 @@ describe("PrReviewPostMergeService.runTick, lease", () => {
 		const releaseRow = Effect.gen(function* () {
 			const db = yield* Database
 			yield* db.execute((client) =>
-				client
-					.update(prReviews)
-					.set({ postMergeAfter: new Date(DEPLOYED_AT + 999 * 60_000) })
-					.where(eq(prReviews.id, reviewId)),
+				client.orm.run(
+					PG.update(PrReviews)
+						.set({ postMergeAfter: DEPLOYED_AT + 999 * 60_000 })
+						.where(($) => [$.id.eq(reviewId)]),
+				),
 			)
 		}).pipe(Effect.provide(testDb.layer), Effect.orDie)
 		const racing: PrReviewTelemetryServiceApi = {

@@ -7,10 +7,11 @@
  * turned it into a race a live run could lose.
  */
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { eq } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import { Effect, Schema } from "effect"
-import { investigations } from "@maple/db"
-import { InvestigationId, OrgId } from "@maple/domain/http"
+import { Investigations } from "@maple/db/tables"
+import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -27,6 +28,12 @@ const makeLayer = () => createTestDb(createdDbs).layer
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
+const SEED_SUBJECT = new InvestigationFreeformSubject({
+	type: "freeform",
+	title: "seed",
+	prompt: "seed",
+	contextRefs: [],
+})
 const ORG = asOrgId("org_investigation_stale_test")
 
 const NOW = Date.UTC(2026, 8, 20, 12, 0)
@@ -90,30 +97,35 @@ describe("isInvestigationStale", () => {
  * row would all pass `tsc` and fail in prod, on a statement that runs every tick.
  */
 describe("sweepAbandonedInvestigations", () => {
+	const idOf = (id: string) => asInvestigationId(`00000000-0000-4000-8000-${id.padStart(12, "0")}`)
+
 	const seed = (id: string, input: { startedMsAgo: number; heartbeatMsAgo?: number; progress?: unknown }) =>
 		Effect.gen(function* () {
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.insert(investigations).values({
-					id: asInvestigationId(`00000000-0000-4000-8000-${id.padStart(12, "0")}`),
-					orgId: ORG,
-					status: "investigating",
-					seededBy: "system",
-					subjectJson: { type: "question", question: "seed" },
-					startedAt: new Date(NOW - input.startedMsAgo),
-					createdAt: new Date(NOW - input.startedMsAgo),
-					updatedAt: new Date(NOW - input.startedMsAgo),
-					...(input.progress !== undefined
-						? { progressJson: input.progress as never }
-						: input.heartbeatMsAgo === undefined
-							? undefined
-							: {
-									progressJson: {
-										stepCount: 3,
-										steps: [],
-										updatedAt: NOW - input.heartbeatMsAgo,
-									},
-								}),
+				Effect.gen(function* () {
+					yield* db.orm.run(
+						PG.insertInto(Investigations).values({
+							id: idOf(id),
+							orgId: ORG,
+							status: "investigating",
+							seededBy: "system",
+							subjectJson: SEED_SUBJECT,
+							startedAt: NOW - input.startedMsAgo,
+							createdAt: NOW - input.startedMsAgo,
+							updatedAt: NOW - input.startedMsAgo,
+							progressJson:
+								input.heartbeatMsAgo === undefined
+									? null
+									: { stepCount: 3, steps: [], updatedAt: NOW - input.heartbeatMsAgo },
+						}),
+					)
+					// A legacy progress shape the typed codec would reject goes in as raw jsonb.
+					if (input.progress !== undefined) {
+						yield* db.orm.execute(
+							Orm.sql`UPDATE investigations SET progress_json = ${JSON.stringify(input.progress)}::jsonb WHERE id = ${idOf(id)}`,
+						)
+					}
 				}),
 			)
 		})
@@ -122,15 +134,11 @@ describe("sweepAbandonedInvestigations", () => {
 		Effect.gen(function* () {
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db
-					.select({ status: investigations.status })
-					.from(investigations)
-					.where(
-						eq(
-							investigations.id,
-							asInvestigationId(`00000000-0000-4000-8000-${id.padStart(12, "0")}`),
-						),
-					),
+				db.orm.run(
+					PG.from(Investigations)
+						.select("status")
+						.where(($) => [$.id.eq(idOf(id))]),
+				),
 			)
 			return rows[0]?.status
 		})

@@ -54,17 +54,15 @@ export type StoredAlertRuleRow = Omit<AlertRuleRow, StoredJsonColumn> & {
 	readonly [K in StoredJsonColumn]: unknown
 }
 
-const storedJson = PG.nullable(PG.jsonb())
-
 /** Every `alert_rules` column as a `StoredAlertRuleRow`; add a `where` to it. */
 export const selectStoredAlertRules = () =>
 	PG.from(AlertRules).select(($) => ({
 		...$,
-		serviceNamesJson: PG.sql(storedJson)`${$.serviceNamesJson}`,
-		excludeServiceNamesJson: PG.sql(storedJson)`${$.excludeServiceNamesJson}`,
-		environmentsJson: PG.sql(storedJson)`${$.environmentsJson}`,
-		tagsJson: PG.sql(storedJson)`${$.tagsJson}`,
-		destinationIdsJson: PG.sql(storedJson)`${$.destinationIdsJson}`,
+		serviceNamesJson: PG.undecoded($.serviceNamesJson),
+		excludeServiceNamesJson: PG.undecoded($.excludeServiceNamesJson),
+		environmentsJson: PG.undecoded($.environmentsJson),
+		tagsJson: PG.undecoded($.tagsJson),
+		destinationIdsJson: PG.undecoded($.destinationIdsJson),
 	}))
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)

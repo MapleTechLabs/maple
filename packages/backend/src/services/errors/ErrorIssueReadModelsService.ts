@@ -61,13 +61,16 @@ type IssueColumns = PG.ColumnAccessor<typeof ErrorIssues.columns>
 type IssueConditions = ($: IssueColumns) => Array<PG.Condition | undefined>
 
 /** Shared SQL ordering expression for the UI's critical-first issue ordering. */
-const issueSeverityOrder = ($: IssueColumns) => PG.sql(PG.int4)`CASE ${$.severity}
-	WHEN 'critical' THEN 0
-	WHEN 'high' THEN 1
-	WHEN 'medium' THEN 2
-	WHEN 'low' THEN 3
-	ELSE 4
-END`
+const issueSeverityOrder = ($: IssueColumns) =>
+	PG.caseWhen(
+		[
+			[$.severity.eq("critical"), PG.lit(0)],
+			[$.severity.eq("high"), PG.lit(1)],
+			[$.severity.eq("medium"), PG.lit(2)],
+			[$.severity.eq("low"), PG.lit(3)],
+		],
+		PG.lit(4),
+	)
 
 const severitySortRank = (severity: IssueSeverity | null): number =>
 	Match.value(severity).pipe(

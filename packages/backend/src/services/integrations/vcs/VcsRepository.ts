@@ -61,9 +61,6 @@ const newRepositoryId = () => Schema.decodeUnknownSync(VcsRepositoryId)(randomUU
 const newCommitRowId = () => Schema.decodeUnknownSync(VcsCommitRowId)(randomUUID())
 const newBranchId = () => Schema.decodeUnknownSync(VcsBranchId)(randomUUID())
 
-// Stored review configs are decoded leniently by the caller, so they are read untyped.
-const UnknownJsonb = PG.nullable(PG.jsonb())
-
 // Share-lock a repository row for the child upserts' purge gate (see upsertRepositories).
 const lockRepositoryRow = (repositoryId: VcsRepositoryId) =>
 	PG.from(VcsRepositories)
@@ -124,30 +121,12 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		updatedAt: row.updatedAt,
 	})
 
-// Every repository column a `VcsRepo` maps, leaving out `prReviewConfig`: it is read on its
-// own and decoded leniently, so a stale stored config never fails a repository read.
-const REPO_COLUMNS = [
-	"id",
-	"orgId",
-	"provider",
-	"installationId",
-	"externalRepoId",
-	"owner",
-	"name",
-	"fullName",
-	"defaultBranch",
-	"trackedBranch",
-	"htmlUrl",
-	"isPrivate",
-	"isArchived",
-	"status",
-	"syncStatus",
-	"lastSyncedAt",
-	"lastSyncError",
-	"prReviewEnabled",
-	"createdAt",
-	"updatedAt",
-] as const
+// Every repository column, `prReviewConfig` as stored: it is decoded leniently on its own,
+// so a stale stored config never fails a repository read.
+const repoColumns = ($: PG.ColumnAccessor<typeof VcsRepositories.columns>) => ({
+	...$,
+	prReviewConfig: PG.undecoded($.prReviewConfig),
+})
 
 const rowToRepo = (row: Omit<VcsRepositoryRow, "prReviewConfig">): VcsRepo =>
 	decodeRepo({
@@ -389,7 +368,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					.execute((db) =>
 						db.orm.run(
 							PG.from(VcsRepositories)
-								.select(...REPO_COLUMNS)
+								.select(repoColumns)
 								.where(($) => [
 									$.installationId.eq(installationId),
 									// "all" includes provider-removed repos; "active" filters them out.
@@ -414,7 +393,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db.orm.run(
 						PG.from(VcsRepositories)
-							.select(...REPO_COLUMNS)
+							.select(repoColumns)
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.provider.eq(provider),
@@ -439,7 +418,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db.orm.run(
 						PG.from(VcsRepositories)
-							.select(...REPO_COLUMNS)
+							.select(repoColumns)
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
 							.limit(1),
 					),
@@ -463,7 +442,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db.orm.run(
 						PG.from(VcsRepositories)
-							.select(...REPO_COLUMNS)
+							.select(repoColumns)
 							.where(($) => [$.orgId.eq(orgId), $.id.in_(...new Set(repositoryIds))]),
 					),
 				)
@@ -977,7 +956,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					db.orm.run(
 						PG.from(VcsRepositories)
 							// Read raw, so a stale value reaches the lenient decode below instead of failing the row.
-							.select(($) => ({ config: PG.sql(UnknownJsonb)`${$.prReviewConfig}` }))
+							.select(($) => ({ config: PG.undecoded($.prReviewConfig) }))
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
 							.limit(1),
 					),
@@ -1013,7 +992,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db.orm.run(
 						PG.from(PrReviewSettings)
-							.select(($) => ({ model: $.model, defaults: PG.sql(UnknownJsonb)`${$.defaults}` }))
+							.select(($) => ({ model: $.model, defaults: PG.undecoded($.defaults) }))
 							.where(($) => [$.orgId.eq(orgId)])
 							.limit(1),
 					),

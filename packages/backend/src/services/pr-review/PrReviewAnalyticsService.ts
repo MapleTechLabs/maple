@@ -93,8 +93,6 @@ const criticalCountOf = ($: Reviews) =>
 	PG.sql(
 		PG.int4,
 	)`coalesce((select count(*) from jsonb_array_elements(${$.reportJson}->'findings') as f where f->>'severity' = 'critical'), 0)::int`
-/** The stored JSON as it is, so a document from an older shape is decoded leniently here. */
-const rawJson = (column: PG.Expr<unknown>) => PG.sql(PG.nullable(PG.jsonb()))`${column}`
 
 const listColumns = ($: Reviews, repositoryFullName: PG.Expr<string>) => ({
 	id: $.id,
@@ -543,7 +541,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 										$.createdAt.lt(cursor.createdAt),
 										PG.and(
 											$.createdAt.eq(cursor.createdAt),
-											PG.sql.cond`${$.id} < ${cursor.id}`,
+											PG.undecoded($.id).lt(cursor.id),
 										),
 									),
 						])
@@ -571,13 +569,14 @@ export class PrReviewAnalyticsService extends Context.Service<
 					reviewsWithRepositories()
 						.select(($) => ({
 							...listColumns($, $.repo.fullName),
-							report: rawJson($.reportJson),
+							// As stored, so a document from an older shape is decoded leniently below.
+							report: PG.undecoded($.reportJson),
 							checkRunUrl: $.checkRunUrl,
 							reviewUrl: $.reviewUrl,
 							inputTokens: $.inputTokens,
 							outputTokens: $.outputTokens,
 							startedAt: $.startedAt,
-							postMerge: rawJson($.postMergeJson),
+							postMerge: PG.undecoded($.postMergeJson),
 						}))
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
 						.limit(1),

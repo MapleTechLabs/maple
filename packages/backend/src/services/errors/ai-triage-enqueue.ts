@@ -259,14 +259,14 @@ const selectPriorDiagnoses = (
 			PG.from(Investigations)
 				.select(($) => ({
 					id: $.id,
-					reportJson: PG.sql(PG.nullable(PG.jsonb()))`${$.reportJson}`,
-					snapshotJson: PG.sql(PG.nullable(PG.jsonb()))`${$.snapshotJson}`,
+					reportJson: PG.undecoded($.reportJson),
+					snapshotJson: PG.undecoded($.snapshotJson),
 				}))
 				.where(($) => [
 					$.orgId.eq(orgId),
 					$.status.eq("diagnosed"),
 					$.createdAt.gte(sinceMs),
-					PG.sql.cond`${$.snapshotJson}->>'serviceName' = ${serviceName}`,
+					PG.jsonText($.snapshotJson, "serviceName").eq(serviceName),
 					issueId === null ? undefined : PG.or($.issueId.isNull(), $.issueId.neq(issueId)),
 				])
 				.orderBy(($) => [[$.createdAt, "desc"]])
