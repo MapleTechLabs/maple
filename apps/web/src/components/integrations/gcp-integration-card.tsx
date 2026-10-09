@@ -116,7 +116,6 @@ const SCOPES = {
 		idLabel: "Organization ID",
 		idRule: "An organization ID is digits only, such as 123456789012.",
 		listHint: "Or run",
-
 		listCommand: "gcloud organizations list",
 	},
 	folder: {
@@ -124,7 +123,6 @@ const SCOPES = {
 		idLabel: "Folder ID",
 		idRule: "A folder ID is digits only, such as 123456789012.",
 		listHint: "Or, with your organization's ID in place of ORGANIZATION_ID, run",
-
 		listCommand: "gcloud resource-manager folders list --organization=ORGANIZATION_ID",
 	},
 	project: {
@@ -132,7 +130,6 @@ const SCOPES = {
 		idLabel: "Project ID",
 		idRule: PROJECT_ID_RULE,
 		listHint: "Or run",
-
 		listCommand: "gcloud projects list",
 	},
 } as const
@@ -152,20 +149,12 @@ const LOG_FILTERS = [
 /** The card's one link style, the other integrations' (Railway's token link). */
 const LINK = "underline underline-offset-2 hover:no-underline"
 
-/** A link out of Maple. `icon` off inside a sentence, where punctuation follows it. */
-function ExternalLink({
-	href,
-	icon = true,
-	children,
-}: {
-	href: string
-	icon?: boolean
-	children: React.ReactNode
-}) {
+/** A link out of Maple. */
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
 	return (
 		<a href={href} target="_blank" rel="noreferrer" className={LINK}>
 			{children}
-			{icon ? <ExternalLinkIcon size={12} className="ml-1 inline align-[-1px]" /> : null}
+			<ExternalLinkIcon size={12} className="ml-1 inline align-[-1px]" />
 		</a>
 	)
 }
