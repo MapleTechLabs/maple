@@ -448,7 +448,7 @@ function PlanetScaleDatabaseData({
 	const buckets = Result.builder(timeseriesResult)
 		.onSuccess((r) => r.buckets)
 		.orElse(() => NO_BUCKETS)
-	const waiting = Boolean(timeseriesResult.waiting)
+	const waiting = timeseriesResult.waiting
 
 	// The lifecycle timeline: one fetch feeds both the chart markers and the feed
 	// below, so the two can never disagree about what happened.
@@ -544,7 +544,7 @@ function PlanetScaleDatabaseData({
 				) : (
 					<PlanetScaleActivityFeed
 						events={events}
-						waiting={Boolean(eventsResult.waiting)}
+						waiting={eventsResult.waiting}
 						onSelectBranch={onSelectBranch}
 					/>
 				)}
@@ -562,7 +562,7 @@ function PlanetScaleDatabaseData({
 						candidates={candidates}
 						selectedBranches={selectedBranches}
 						onToggleBranch={onToggleBranch}
-						waiting={Boolean(branchStatsResult.waiting)}
+						waiting={branchStatsResult.waiting}
 						emptyMessage={
 							metricsPaused ? METRICS_PAUSED_MESSAGE : "No branches match these filters."
 						}

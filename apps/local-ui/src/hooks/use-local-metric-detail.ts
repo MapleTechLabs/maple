@@ -79,7 +79,7 @@ export function useLocalMetricTimeseries(
 						return rows.map((r) => ({
 							bucket: DateTime.formatIso(r.bucket),
 							series: r.groupName || "value",
-							value: Number(r.rateValue),
+							value: r.rateValue,
 						}))
 					}
 					const metricType = entry.metricType
@@ -91,7 +91,7 @@ export function useLocalMetricTimeseries(
 					return rows.map((r) => ({
 						bucket: DateTime.formatIso(r.bucket),
 						series: r.groupName || "value",
-						value: Number(r.avgValue),
+						value: r.avgValue,
 					}))
 				}
 			: skipToken,
@@ -123,9 +123,9 @@ export function useLocalMetricBreakdown(entry: MetricEntry | null | undefined, b
 						)
 						return rows.map((r) => ({
 							name: r.name,
-							avgValue: Number(r.avgValue),
-							sumValue: Number(r.sumValue),
-							count: Number(r.count),
+							avgValue: r.avgValue,
+							sumValue: r.sumValue,
+							count: r.count,
 						}))
 					}
 				: skipToken,

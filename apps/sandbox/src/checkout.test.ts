@@ -3,26 +3,30 @@ import {
 	SANDBOX_CHECKOUT_GRACE_MINUTES,
 	SANDBOX_TRAILER,
 	SandboxExecRequest,
-	sandboxCredentialPath,
 	shellCommand,
 	shellQuote,
 } from "@maple/domain/sandbox"
 import { Effect, Option } from "effect"
 import {
+	CLONE_TOKEN_ENV,
+	SandboxCallError,
 	checkoutDir,
-	cloneProcessId,
+	checkoutStatusScript,
+	cloneRunner,
 	cloneScript,
+	cloneStateDir,
+	commandArgv,
 	ensureCheckout,
+	execute,
+	isTimedOut,
 	parseTrailer,
 	runExec,
 	wrapCommand,
-	type SandboxLike,
-	type SandboxProcess,
+	type SandboxContainer,
 } from "./checkout"
 
 const SHA = "a".repeat(40)
 const TOKEN = "ghs_secret_token"
-const CREDENTIAL = sandboxCredentialPath(SHA)
 
 const checkout = {
 	repository: "octo/shop",
@@ -51,47 +55,47 @@ const trailer = (
 ) => `\n${SANDBOX_TRAILER} ${exitCode} ${outBytes} ${errBytes} ${isolation}\n`
 
 interface FakeOptions {
-	readonly execs?: ReadonlyArray<{ exitCode?: number; stdout?: string; stderr?: string }>
-	readonly process?: SandboxProcess | null
-	readonly logs?: { stdout: string; stderr: string }
-	readonly rejectExec?: Error
+	/** Answers in order; the first is the checkout status script's. */
+	readonly execs?: ReadonlyArray<{
+		exitCode?: number
+		stdout?: string
+		stderr?: string
+		timedOut?: boolean
+	}>
+	readonly failExec?: string
+	readonly failSpawn?: string
 }
 
-/** A container that answers scripted results and records what it was asked to run. */
-const fakeSandbox = (options: FakeOptions, seen: string[] = []): SandboxLike => {
+/** A container that answers scripted results and records what it was asked to do. */
+const fakeContainer = (options: FakeOptions, seen: string[] = []): SandboxContainer => {
 	let next = 0
 	return {
-		exec: async (command, execOptions) => {
-			seen.push(`exec:${command}${execOptions?.cwd ? ` @${execOptions.cwd}` : ""}`)
-			if (options.rejectExec && next > 0) throw options.rejectExec
-			const answer = options.execs?.[next++] ?? {}
-			return {
-				exitCode: answer.exitCode ?? 0,
-				stdout: answer.stdout ?? "",
-				stderr: answer.stderr ?? "",
-				duration: 7,
-			}
-		},
-		startProcess: async (command, processOptions) => {
-			seen.push(`start:${processOptions?.processId}`)
-			void command
-			return { id: processOptions?.processId ?? "p", status: "running" }
-		},
-		getProcess: async (id) => {
-			seen.push(`get:${id}`)
-			return options.process ?? null
-		},
-		cleanupCompletedProcesses: async () => {
-			seen.push("cleanup")
-			return 1
-		},
-		getProcessLogs: async () => options.logs ?? { stdout: "", stderr: "" },
-		writeFile: async (path) => {
-			seen.push(`write:${path}`)
-			return { success: true }
-		},
+		exec: (command, execOptions) =>
+			Effect.suspend(() => {
+				seen.push(`exec:${command}${execOptions?.cwd ? ` @${execOptions.cwd}` : ""}`)
+				if (options.failExec && next > 0)
+					return Effect.fail(new SandboxCallError({ message: options.failExec }))
+				const answer = options.execs?.[next++] ?? {}
+				return Effect.succeed({
+					exitCode: answer.exitCode ?? 0,
+					stdout: answer.stdout ?? "",
+					stderr: answer.stderr ?? "",
+					duration: 7,
+					timedOut: answer.timedOut ?? false,
+				})
+			}),
+		spawn: (command, env) =>
+			Effect.suspend(() => {
+				seen.push(`spawn:${Object.keys(env).join(",")}`)
+				if (command.includes(TOKEN)) seen.push("TOKEN-IN-COMMAND")
+				return options.failSpawn
+					? Effect.fail(new SandboxCallError({ message: options.failSpawn }))
+					: Effect.void
+			}),
 	}
 }
+
+const status = (stdout: string) => ({ stdout: `${stdout}\n` })
 
 describe("shell quoting", () => {
 	it("survives quotes, spaces and dollar signs", () => {
@@ -164,18 +168,12 @@ describe("cloneScript", () => {
 		assert.include(script, 'rm -rf "$t"')
 	})
 
-	it("keeps the credential out of the command line and removes it afterwards", () => {
+	it("reads the token from its own environment, never from its command line", () => {
 		const script = cloneScript(checkout)
-		// `set -e` leaves the script the moment a clone fails, so only the trap
-		// guarantees the token is gone on every path out.
-		assert.include(script, `trap 'rm -f ${CREDENTIAL}; rm -rf "\${m:-}"' EXIT`)
-		// The token reaches the container through the file API; a command's arguments
-		// are readable by the account the agent's own commands run as.
 		assert.notInclude(script, TOKEN)
-		assert.include(script, CREDENTIAL)
-		// The trap arms the removal before the clone; the explicit line runs it as
-		// soon as the clone is done rather than waiting for the script to end.
-		assert.isTrue(script.indexOf("clone") < script.lastIndexOf(`rm -f ${CREDENTIAL}`))
+		assert.include(script, `password=$${CLONE_TOKEN_ENV}`)
+		// Dropped once the fetch that needs it is done.
+		assert.isTrue(script.indexOf("fetch --quiet") < script.indexOf(`unset ${CLONE_TOKEN_ENV}`))
 		assert.include(script, "chmod -R a+rX,go-w")
 	})
 
@@ -202,19 +200,10 @@ describe("cloneScript", () => {
 })
 
 /** The fake container with the Durable Object's mirror backup calls, recorded or failing. */
-const withMirror = (sandbox: SandboxLike, seen: string[], fail = false): SandboxLike => ({
-	...sandbox,
-	// Over RPC any argument is serialized, and an AbortSignal cannot be; the real call failed so.
-	restoreMirror: async (...args: ReadonlyArray<unknown>) => {
-		if (args.length > 0) throw new Error("AbortSignal serialization is not enabled.")
-		seen.push("restoreMirror")
-		if (fail) throw new Error("R2 is down")
-	},
-	backupMirror: async (...args: ReadonlyArray<unknown>) => {
-		if (args.length > 0) throw new Error("AbortSignal serialization is not enabled.")
-		seen.push("backupMirror")
-		if (fail) throw new Error("R2 is down")
-	},
+const withMirror = (container: SandboxContainer, seen: string[]): SandboxContainer => ({
+	...container,
+	restoreMirror: Effect.sync(() => seen.push("restoreMirror")),
+	backupMirror: Effect.sync(() => seen.push("backupMirror")),
 })
 
 describe("cloneScript's mirror", () => {
@@ -234,15 +223,10 @@ describe("cloneScript's mirror", () => {
 		assert.include(script, "chmod 600 '/workspace/maple-mirror.lock'")
 	})
 
-	it("drops the seed and its archive once the mirror is copied from it", () => {
+	it("starts the mirror from a restored seed by moving it, not copying it", () => {
 		const script = cloneScript(checkout)
-		assert.isTrue(script.indexOf('mv -T "$m"') < script.indexOf("fusermount3 -uz"))
-		assert.include(script, "/var/backups/*.sqsh")
-	})
-
-	it("starts the mirror from a restored seed when one is there", () => {
-		const script = cloneScript(checkout)
-		assert.include(script, "maple-seed")
+		assert.include(script, `mv -T '/workspace/maple-seed' "$m"`)
+		assert.notInclude(script, "cp -a")
 		assert.include(script, "gc.auto 0")
 	})
 
@@ -253,15 +237,47 @@ describe("cloneScript's mirror", () => {
 	})
 })
 
+describe("checkoutStatusScript", () => {
+	const script = checkoutStatusScript(SHA)
+	it("answers ready before it looks at any clone state", () => {
+		assert.isTrue(script.indexOf(`${checkoutDir(SHA)}'/.git`) < script.indexOf("exit-code"))
+	})
+
+	it("marks a ready checkout as used, so eviction keeps it", () => {
+		assert.include(script, `touch -c '${checkoutDir(SHA)}'`)
+		assert.isTrue(script.indexOf("touch -c") < script.indexOf("echo ready"))
+	})
+
+	it("claims with a mkdir that fails when another caller got there first", () => {
+		assert.include(script, `if mkdir '${cloneStateDir(SHA)}' 2>/dev/null; then echo claimed`)
+	})
+
+	it("forgets a failed or lost clone as it reports it, so the next call clones again", () => {
+		assert.match(script, /echo "failed \$code".*rm -rf/)
+		assert.match(script, /echo lost; rm -rf/)
+	})
+})
+
+describe("cloneRunner", () => {
+	it("records the clone's pid, stderr and exit code under its state directory", () => {
+		const runner = cloneRunner(checkout)
+		const state = cloneStateDir(SHA)
+		assert.include(runner, `echo $$ >'${state}'/pid`)
+		assert.include(runner, `2>'${state}'/stderr.log`)
+		assert.include(runner, `mv '${state}'/exit-code.tmp '${state}'/exit-code`)
+		assert.notInclude(runner, TOKEN)
+	})
+})
+
 describe("ensureCheckout", () => {
-	it.effect("restores the mirror backup before starting a cold clone", () =>
+	it.effect("restores the mirror backup before starting a claimed clone", () =>
 		Effect.gen(function* () {
 			const seen: string[] = []
 			yield* ensureCheckout(
-				withMirror(fakeSandbox({ execs: [{ exitCode: 1 }], process: null }, seen), seen),
+				withMirror(fakeContainer({ execs: [status("claimed")] }, seen), seen),
 				checkout,
 			)
-			assert.isTrue(seen.indexOf("restoreMirror") < seen.indexOf(`start:${cloneProcessId(SHA)}`))
+			assert.isTrue(seen.indexOf("restoreMirror") < seen.indexOf(`spawn:${CLONE_TOKEN_ENV}`))
 			assert.notInclude(seen, "backupMirror")
 		}),
 	)
@@ -270,7 +286,7 @@ describe("ensureCheckout", () => {
 		Effect.gen(function* () {
 			const seen: string[] = []
 			const result = yield* ensureCheckout(
-				withMirror(fakeSandbox({ execs: [{ exitCode: 0 }] }, seen), seen),
+				withMirror(fakeContainer({ execs: [status("ready")] }, seen), seen),
 				checkout,
 			)
 			assert.isTrue(Option.isNone(result))
@@ -279,110 +295,76 @@ describe("ensureCheckout", () => {
 		}),
 	)
 
-	it.effect("carries on when the backup store fails, which only costs a full fetch", () =>
+	it.effect("does nothing more when the commit is already checked out", () =>
 		Effect.gen(function* () {
 			const seen: string[] = []
-			const cold = yield* ensureCheckout(
-				withMirror(fakeSandbox({ execs: [{ exitCode: 1 }], process: null }, seen), seen, true),
-				checkout,
-			)
-			assert.isTrue(Option.isSome(cold))
-			if (Option.isSome(cold)) assert.strictEqual(cold.value._tag, "SandboxRunCheckoutPending")
-			assert.include(seen, `start:${cloneProcessId(SHA)}`)
-			const ready = yield* ensureCheckout(
-				withMirror(fakeSandbox({ execs: [{ exitCode: 0 }] }, []), [], true),
-				checkout,
-			)
-			assert.isTrue(Option.isNone(ready))
-		}),
-	)
-
-	it.effect("does nothing when the commit is already checked out", () =>
-		Effect.gen(function* () {
-			const seen: string[] = []
-			const result = yield* ensureCheckout(fakeSandbox({ execs: [{ exitCode: 0 }] }, seen), checkout)
+			const result = yield* ensureCheckout(fakeContainer({ execs: [status("ready")] }, seen), checkout)
 			assert.isTrue(Option.isNone(result))
 			assert.strictEqual(seen.length, 1)
-			assert.include(seen[0]!, checkoutDir(SHA))
 		}),
 	)
 
-	it.effect("starts one background clone and reports the checkout as pending", () =>
+	it.effect("starts the claimed clone with the token in its environment only", () =>
 		Effect.gen(function* () {
 			const seen: string[] = []
 			const result = yield* ensureCheckout(
-				fakeSandbox({ execs: [{ exitCode: 1 }], process: null }, seen),
+				fakeContainer({ execs: [status("claimed")] }, seen),
 				checkout,
 			)
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
-			assert.include(seen, `write:${CREDENTIAL}`)
-			assert.include(seen, `start:${cloneProcessId(SHA)}`)
-			// Staged before the clone, never after.
-			assert.isTrue(seen.indexOf(`write:${CREDENTIAL}`) < seen.indexOf(`start:${cloneProcessId(SHA)}`))
+			assert.include(seen, `spawn:${CLONE_TOKEN_ENV}`)
+			assert.notInclude(seen, "TOKEN-IN-COMMAND")
 		}),
 	)
 
-	it.effect("joins a clone another call already started rather than starting a second", () =>
+	it.effect("releases the claim when the clone cannot be started", () =>
 		Effect.gen(function* () {
 			const seen: string[] = []
-			const result = yield* ensureCheckout(
-				fakeSandbox(
-					{ execs: [{ exitCode: 1 }], process: { id: cloneProcessId(SHA), status: "running" } },
-					seen,
+			const failed = yield* Effect.exit(
+				ensureCheckout(
+					fakeContainer({ execs: [status("claimed")], failSpawn: "no container" }, seen),
+					checkout,
 				),
+			)
+			assert.strictEqual(failed._tag, "Failure")
+			assert.include(seen.at(-1)!, `rm -rf '${cloneStateDir(SHA)}'`)
+		}),
+	)
+
+	it.effect("waits on a clone another call already started rather than starting a second", () =>
+		Effect.gen(function* () {
+			const seen: string[] = []
+			const result = yield* ensureCheckout(
+				fakeContainer({ execs: [status("cloning")] }, seen),
 				checkout,
 			)
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
-			assert.notInclude(seen.join(" "), "start:")
+			assert.notInclude(seen.join(" "), "spawn:")
 		}),
 	)
 
-	it.effect("marks a ready checkout as used, so eviction keeps it", () =>
-		Effect.gen(function* () {
-			const seen: string[] = []
-			yield* ensureCheckout(fakeSandbox({ execs: [{ exitCode: 0 }] }, seen), checkout)
-			assert.include(seen[0]!, `touch -c ${shellQuote(checkoutDir(SHA))}`)
-		}),
-	)
-
-	it.effect("clones again when a finished clone's checkout was evicted", () =>
-		Effect.gen(function* () {
-			const seen: string[] = []
-			const result = yield* ensureCheckout(
-				fakeSandbox(
-					{
-						execs: [{ exitCode: 1 }],
-						process: { id: cloneProcessId(SHA), status: "completed", exitCode: 0 },
-					},
-					seen,
-				),
-				checkout,
-			)
-			assert.isTrue(Option.isSome(result))
-			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
-			// The finished record is cleared first, so the clone id is free to start again.
-			assert.isTrue(seen.indexOf("cleanup") < seen.indexOf(`start:${cloneProcessId(SHA)}`))
-		}),
-	)
-
-	it.effect("reports a failed clone without echoing the credential", () =>
+	it.effect("reports a failed clone without echoing the token", () =>
 		Effect.gen(function* () {
 			const result = yield* ensureCheckout(
-				fakeSandbox({
-					execs: [{ exitCode: 1 }],
-					process: { id: cloneProcessId(SHA), status: "failed", exitCode: 128 },
-					logs: { stdout: "", stderr: `fatal: could not read using ${TOKEN}` },
-				}),
+				fakeContainer({ execs: [status(`failed 128\nfatal: could not read using ${TOKEN}`)] }),
 				checkout,
 			)
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) {
 				assert.strictEqual(result.value._tag, "SandboxRunCheckoutFailed")
+				assert.include(result.value.message, "exit 128")
 				assert.include(result.value.message, "<redacted>")
 				assert.notInclude(result.value.message, TOKEN)
 			}
+		}),
+	)
+
+	it.effect("reports a clone that died without an exit code", () =>
+		Effect.gen(function* () {
+			const result = yield* ensureCheckout(fakeContainer({ execs: [status("lost")] }), checkout)
+			assert.isTrue(Option.isSome(result) && result.value._tag === "SandboxRunCheckoutFailed")
 		}),
 	)
 })
@@ -392,8 +374,8 @@ describe("runExec", () => {
 		Effect.gen(function* () {
 			const seen: string[] = []
 			const response = yield* runExec(
-				fakeSandbox(
-					{ execs: [{ exitCode: 0 }, { stdout: `src/a.ts:1:x${trailer(1, 12, 0)}` }] },
+				fakeContainer(
+					{ execs: [status("ready"), { stdout: `src/a.ts:1:x${trailer(1, 12, 0)}` }] },
 					seen,
 				),
 				request(),
@@ -412,7 +394,7 @@ describe("runExec", () => {
 	it.effect("marks a stream the container had to cut", () =>
 		Effect.gen(function* () {
 			const response = yield* runExec(
-				fakeSandbox({ execs: [{ exitCode: 0 }, { stdout: `abc${trailer(0, 99_999, 0)}` }] }),
+				fakeContainer({ execs: [status("ready"), { stdout: `abc${trailer(0, 99_999, 0)}` }] }),
 				request(),
 			)
 			assert.strictEqual(response._tag, "SandboxRunExited")
@@ -426,7 +408,7 @@ describe("runExec", () => {
 	it.effect("refuses a no-egress command the container could not isolate", () =>
 		Effect.gen(function* () {
 			const response = yield* runExec(
-				fakeSandbox({ execs: [{ exitCode: 0 }, { stdout: trailer(0, 0, 0, "unavailable") }] }),
+				fakeContainer({ execs: [status("ready"), { stdout: trailer(0, 0, 0, "unavailable") }] }),
 				request(),
 			)
 			assert.strictEqual(response._tag, "SandboxRunIsolationUnavailable")
@@ -436,7 +418,7 @@ describe("runExec", () => {
 	it.effect("reports a wrapper that never finished instead of inventing a result", () =>
 		Effect.gen(function* () {
 			const response = yield* runExec(
-				fakeSandbox({ execs: [{ exitCode: 0 }, { stdout: "no trailer", stderr: "shell died" }] }),
+				fakeContainer({ execs: [status("ready"), { stdout: "no trailer", stderr: "shell died" }] }),
 				request(),
 			)
 			assert.strictEqual(response._tag, "SandboxRunCheckoutFailed")
@@ -446,30 +428,70 @@ describe("runExec", () => {
 	it.effect("reports a timeout as its own outcome", () =>
 		Effect.gen(function* () {
 			const response = yield* runExec(
-				fakeSandbox({
-					execs: [{ exitCode: 0 }],
-					rejectExec: new Error("Command timeout after 30000ms"),
-				}),
+				fakeContainer({ execs: [status("ready"), { exitCode: 124, timedOut: true }] }),
 				request(),
 			)
 			assert.strictEqual(response._tag, "SandboxRunTimedOut")
 		}),
 	)
 
-	it.effect("keeps the credential out of a container error that echoes the command", () =>
+	it.effect("stays a typed failure when the container errors", () =>
 		Effect.gen(function* () {
 			const failed = yield* Effect.exit(
 				runExec(
-					fakeSandbox({
-						execs: [{ exitCode: 0 }],
-						rejectExec: new Error(`Failed to execute 'git clone' with ${TOKEN}`),
-					}),
+					fakeContainer({ execs: [status("ready")], failExec: "the container stopped" }),
 					request(),
 				),
 			)
-			// The Worker redacts before this leaves; here it must at least stay in the
-			// typed failure rather than becoming a response the model reads.
 			assert.strictEqual(failed._tag, "Failure")
 		}),
 	)
+})
+
+describe("execute", () => {
+	it.effect("answers a container failure as unavailable, with the token redacted", () =>
+		Effect.gen(function* () {
+			const response = yield* execute(
+				fakeContainer({
+					execs: [status("ready")],
+					failExec: `Failed to execute 'git clone' with ${TOKEN}`,
+				}),
+				request(),
+			)
+			assert.strictEqual(response._tag, "SandboxRunUnavailable")
+			if (response._tag === "SandboxRunUnavailable") {
+				assert.notInclude(response.message, TOKEN)
+				assert.include(response.message, "<redacted>")
+			}
+		}),
+	)
+})
+
+describe("commandArgv", () => {
+	it("runs the command string in bash", () => {
+		assert.deepStrictEqual(commandArgv("echo hi"), ["bash", "-c", "echo hi"])
+	})
+
+	it("bounds it with coreutils timeout, rounding up to whole seconds", () => {
+		assert.deepStrictEqual(commandArgv("echo hi", 1_500), [
+			"timeout",
+			"--kill-after=5",
+			"2",
+			"bash",
+			"-c",
+			"echo hi",
+		])
+	})
+})
+
+describe("isTimedOut", () => {
+	it("reads TERM and KILL exits past the deadline as a timeout", () => {
+		assert.isTrue(isTimedOut(124, 30_000, 30_000))
+		assert.isTrue(isTimedOut(137, 35_100, 30_000))
+	})
+
+	it("leaves a command's own 124 alone when it exited early", () => {
+		assert.isFalse(isTimedOut(124, 200, 30_000))
+		assert.isFalse(isTimedOut(124, 200))
+	})
 })

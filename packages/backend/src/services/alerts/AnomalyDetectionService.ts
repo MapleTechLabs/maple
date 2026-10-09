@@ -754,7 +754,7 @@ const make: Effect.Effect<
 			buckets = rollingCountBuckets(
 				rows.map((r) => ({
 					bucketMs: DateTime.toEpochMillis(r.bucket),
-					count: Number(r.count ?? 0),
+					count: r.count,
 				})),
 				{
 					startMs,
@@ -784,7 +784,7 @@ const make: Effect.Effect<
 			})
 			buckets = rows.map((r) => {
 				const hourMs = DateTime.toEpochMillis(r.hour)
-				const errorLogCount = Number(r.errorLogCount ?? 0)
+				const errorLogCount = r.errorLogCount
 				return new AnomalyTimeseriesBucket({
 					bucket: isoFromEpoch(hourMs),
 					value: perMinute(errorLogCount, hourMs),
@@ -811,9 +811,9 @@ const make: Effect.Effect<
 						: "per_minute"
 			buckets = rows.map((r) => {
 				const hourMs = DateTime.toEpochMillis(r.hour)
-				const requestCount = Number(r.requestCount ?? 0)
-				const errorCount = Number(r.errorCount ?? 0)
-				const p95Ms = Number(r.p95Ms ?? 0)
+				const requestCount = r.requestCount
+				const errorCount = r.errorCount
+				const p95Ms = r.p95Ms
 				const value =
 					signalType === "error_rate"
 						? requestCount > 0
@@ -901,11 +901,11 @@ const make: Effect.Effect<
 				return rows
 					.map((r) => ({
 						hourMs: DateTime.toEpochMillis(r.hour),
-						serviceName: String(r.serviceName ?? ""),
-						deploymentEnv: String(r.deploymentEnv ?? ""),
-						requestCount: Number(r.requestCount ?? 0),
-						errorCount: Number(r.errorCount ?? 0),
-						p95Ms: Number(r.p95Ms ?? 0),
+						serviceName: r.serviceName,
+						deploymentEnv: r.deploymentEnv,
+						requestCount: r.requestCount,
+						errorCount: r.errorCount,
+						p95Ms: r.p95Ms,
 					}))
 					.filter((r) => r.hourMs < currentHourStartMs)
 			}),
@@ -924,11 +924,11 @@ const make: Effect.Effect<
 			.pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
 			hourMs: DateTime.toEpochMillis(r.hour),
-			serviceName: String(r.serviceName ?? ""),
-			deploymentEnv: String(r.deploymentEnv ?? ""),
-			requestCount: Number(r.requestCount ?? 0),
-			errorCount: Number(r.errorCount ?? 0),
-			p95Ms: Number(r.p95Ms ?? 0),
+			serviceName: r.serviceName,
+			deploymentEnv: r.deploymentEnv,
+			requestCount: r.requestCount,
+			errorCount: r.errorCount,
+			p95Ms: r.p95Ms,
 		}))
 
 		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
@@ -990,9 +990,9 @@ const make: Effect.Effect<
 				return rows
 					.map((r) => ({
 						hourMs: DateTime.toEpochMillis(r.hour),
-						serviceName: String(r.serviceName ?? ""),
-						deploymentEnv: String(r.deploymentEnv ?? ""),
-						errorLogCount: Number(r.errorLogCount ?? 0),
+						serviceName: r.serviceName,
+						deploymentEnv: r.deploymentEnv,
+						errorLogCount: r.errorLogCount,
 					}))
 					.filter((r) => r.hourMs < currentHourStartMs)
 			}),
@@ -1011,9 +1011,9 @@ const make: Effect.Effect<
 			.pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
 			hourMs: DateTime.toEpochMillis(r.hour),
-			serviceName: String(r.serviceName ?? ""),
-			deploymentEnv: String(r.deploymentEnv ?? ""),
-			errorLogCount: Number(r.errorLogCount ?? 0),
+			serviceName: r.serviceName,
+			deploymentEnv: r.deploymentEnv,
+			errorLogCount: r.errorLogCount,
 		}))
 
 		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
@@ -1048,10 +1048,10 @@ const make: Effect.Effect<
 			.pipe(Effect.mapError(makePersistenceError))
 
 		const observations = currentRows.map((r) => ({
-			fingerprintHash: String(r.fingerprintHash ?? ""),
-			serviceName: String(r.serviceName ?? ""),
-			deploymentEnv: String(r.deploymentEnv ?? ""),
-			count: Number(r.count ?? 0),
+			fingerprintHash: r.fingerprintHash,
+			serviceName: r.serviceName,
+			deploymentEnv: r.deploymentEnv,
+			count: r.count,
 		}))
 
 		if (observations.length === 0) {
@@ -1081,9 +1081,9 @@ const make: Effect.Effect<
 					})
 					.pipe(Effect.mapError(makePersistenceError))
 				return rows.map((r): ErrorSpikeBaselineEntry => ({
-					fingerprintHash: String(r.fingerprintHash ?? ""),
-					deploymentEnv: String(r.deploymentEnv ?? ""),
-					totalCount: Number(r.totalCount ?? 0),
+					fingerprintHash: r.fingerprintHash,
+					deploymentEnv: r.deploymentEnv,
+					totalCount: r.totalCount,
 				}))
 			}),
 		)

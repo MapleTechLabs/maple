@@ -114,7 +114,7 @@ export function TraceFlowView({
 	useEffect(() => {
 		setNodes((nds) =>
 			nds.map((node) => {
-				const nodeData = node.data as FlowNodeData
+				const nodeData = node.data
 				const isSelected =
 					nodeData.combinedSpans.some((s) => s.spanId === selectedSpanId) ||
 					node.id === selectedSpanId

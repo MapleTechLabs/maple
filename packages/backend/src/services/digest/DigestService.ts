@@ -49,7 +49,7 @@ const ROOT_ROLE = RoleName.make("root")
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
-		message: error instanceof Error ? `${error.message}` : `Digest persistence error: ${String(error)}`,
+		message: error instanceof Error ? error.message : `Digest persistence error: ${String(error)}`,
 	})
 
 /** Row shapes matching query engine output (camelCase from CH DSL) */
@@ -166,8 +166,8 @@ const DIGEST_BREAKDOWN_LIMIT = 10
 function requestsByEnvironment(rows: ReadonlyArray<ServiceOverviewRow>): Map<string, number> {
 	const totals = new Map<string, number>()
 	for (const row of rows) {
-		const environment = String(row.environment ?? "")
-		totals.set(environment, (totals.get(environment) ?? 0) + (Number(row.estimatedSpanCount) || 0))
+		const environment = row.environment
+		totals.set(environment, (totals.get(environment) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 	return totals
 }
@@ -236,15 +236,15 @@ function buildBreakdown(
 	for (const row of current) {
 		const label = dimension(row)
 		const entry = totals.get(label) ?? { requests: 0, errors: 0 }
-		entry.requests += Number(row.estimatedSpanCount) || 0
-		entry.errors += Number(row.estimatedErrorCount) || 0
+		entry.requests += row.estimatedSpanCount || 0
+		entry.errors += row.estimatedErrorCount || 0
 		totals.set(label, entry)
 	}
 
 	const prevTotals = new Map<string, number>()
 	for (const row of previous) {
 		const label = dimension(row)
-		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (Number(row.estimatedSpanCount) || 0))
+		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 
 	return [...totals.entries()]
@@ -266,15 +266,15 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(previous.map((row) => [row.name, Number(row.count) || 0] as const))
+	const previousByName = new Map(previous.map((row) => [row.name, row.count || 0] as const))
 	return current
 		.map((row) => {
 			const label = row.name
-			const requests = Number(row.count) || 0
+			const requests = row.count || 0
 			return {
 				label,
 				requests,
-				errorRate: (Number(row.errorRate) || 0) * 100,
+				errorRate: (row.errorRate || 0) * 100,
 				requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
 			}
 		})
@@ -644,9 +644,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				const row = (response.data as Array<TracesBreakdownRow>)[0]
 				return {
 					name: "all",
-					count: Number(row?.count) || 0,
-					errorRate: Number(row?.errorRate) || 0,
-					p95Duration: Number(row?.p95Duration) || 0,
+					count: row?.count || 0,
+					errorRate: row?.errorRate || 0,
+					p95Duration: row?.p95Duration || 0,
 				}
 			}
 			const cur = summaryRow(curSummary)
@@ -664,26 +664,26 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const curUsageData: Array<ServiceUsageRow> = usageRows.filter((r) => r.period === "current")
 			const prevUsageData: Array<ServiceUsageRow> = usageRows.filter((r) => r.period === "previous")
 			const sumUsage = (data: Array<ServiceUsageRow>) => ({
-				logs: data.reduce((s, r) => s + (Number(r.totalLogCount) || 0), 0),
-				traces: data.reduce((s, r) => s + (Number(r.totalTraceCount) || 0), 0),
+				logs: data.reduce((s, r) => s + (r.totalLogCount || 0), 0),
+				traces: data.reduce((s, r) => s + (r.totalTraceCount || 0), 0),
 				metrics: data.reduce(
 					(s, r) =>
 						s +
-						(Number(r.totalSumMetricCount) || 0) +
-						(Number(r.totalGaugeMetricCount) || 0) +
-						(Number(r.totalHistogramMetricCount) || 0) +
-						(Number(r.totalExpHistogramMetricCount) || 0),
+						(r.totalSumMetricCount || 0) +
+						(r.totalGaugeMetricCount || 0) +
+						(r.totalHistogramMetricCount || 0) +
+						(r.totalExpHistogramMetricCount || 0),
 					0,
 				),
 				totalBytes: data.reduce(
 					(s, r) =>
 						s +
-						(Number(r.totalLogSizeBytes) || 0) +
-						(Number(r.totalTraceSizeBytes) || 0) +
-						(Number(r.totalSumMetricSizeBytes) || 0) +
-						(Number(r.totalGaugeMetricSizeBytes) || 0) +
-						(Number(r.totalHistogramMetricSizeBytes) || 0) +
-						(Number(r.totalExpHistogramMetricSizeBytes) || 0),
+						(r.totalLogSizeBytes || 0) +
+						(r.totalTraceSizeBytes || 0) +
+						(r.totalSumMetricSizeBytes || 0) +
+						(r.totalGaugeMetricSizeBytes || 0) +
+						(r.totalHistogramMetricSizeBytes || 0) +
+						(r.totalExpHistogramMetricSizeBytes || 0),
 					0,
 				),
 			})
@@ -696,7 +696,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// returns rather than on the service name alone.
 			const prevRequestsByService = new Map<string, number>()
 			for (const s of prevOverviewData) {
-				prevRequestsByService.set(serviceKey(s), Number(s.estimatedSpanCount) || 0)
+				prevRequestsByService.set(serviceKey(s), s.estimatedSpanCount || 0)
 			}
 
 			const services: Array<DigestServiceRow> = curOverviewData
@@ -704,15 +704,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					// `estimatedSpanCount` is the sample-weighted count, matching the
 					// summary cards and the rest of the product; `throughput` is the raw
 					// stored-row count and disagrees with both under any sampling.
-					const requests = Number(s.estimatedSpanCount) || 0
-					const errors = Number(s.estimatedErrorCount) || 0
+					const requests = s.estimatedSpanCount || 0
+					const errors = s.estimatedErrorCount || 0
 					return {
 						name: s.serviceName,
-						environment: String(s.environment ?? ""),
-						namespace: String(s.serviceNamespace ?? ""),
+						environment: s.environment,
+						namespace: s.serviceNamespace,
 						requests,
 						errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-						p95Ms: Number(s.p95LatencyMs) || 0,
+						p95Ms: s.p95LatencyMs || 0,
 						requestsDelta: computeDelta(requests, prevRequestsByService.get(serviceKey(s)) ?? 0),
 					}
 				})
@@ -724,9 +724,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const environmentGroups = groupServicesByEnvironment(services, curOverviewData, prevOverviewData)
 			const breakdown = {
-				environments: buildBreakdown(curOverviewData, prevOverviewData, (r) =>
-					String(r.environment ?? ""),
-				),
+				environments: buildBreakdown(curOverviewData, prevOverviewData, (r) => r.environment),
 				namespaces: buildBreakdownFromRows(
 					curNamespaces.data as Array<TracesBreakdownRow>,
 					prevNamespaces.data as Array<TracesBreakdownRow>,
@@ -772,15 +770,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						)
 
 			const errorsData = currentErrors.map((e) => ({
-				message: String(e.errorLabel || e.sampleMessage || "Unknown error"),
-				count: Number(e.count) || 0,
-				affectedServices: Number(e.affectedServicesCount) || 0,
+				message: e.errorLabel || e.sampleMessage || "Unknown error",
+				count: e.count || 0,
+				affectedServices: e.affectedServicesCount || 0,
 				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(e.fingerprintHash) : false,
 			}))
 
 			// Daily request/error buckets (one row per UTC day) for the sparkline.
 			const weekdayInitial = (bucket: string) => {
-				const d = new Date(`${String(bucket).slice(0, 10)}T00:00:00Z`)
+				const d = new Date(`${bucket.slice(0, 10)}T00:00:00Z`)
 				return Number.isNaN(d.getTime()) ? "" : ["S", "M", "T", "W", "T", "F", "S"][d.getUTCDay()]
 			}
 			const series = (seriesResponse.data as Array<TracesTimeseriesRow>)
@@ -789,11 +787,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				// Guard against any boundary off-by-one — keep the 7 most recent days.
 				.slice(-7)
 				.map((r) => {
-					const requests = Number(r.count) || 0
+					const requests = r.count || 0
 					return {
 						label: weekdayInitial(r.bucket),
 						requests,
-						errors: Math.round(requests * (Number(r.errorRate) || 0)),
+						errors: Math.round(requests * (r.errorRate || 0)),
 					}
 				})
 
@@ -831,7 +829,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				topErrors: errorsData,
 				ingestion: { ...curUsage, approximate: isScoped },
 				baseUrl: env.MAPLE_APP_BASE_URL,
-				dashboardUrl: `${env.MAPLE_APP_BASE_URL}`,
+				dashboardUrl: env.MAPLE_APP_BASE_URL,
 				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
 			}
 

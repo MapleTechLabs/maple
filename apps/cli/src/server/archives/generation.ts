@@ -1396,7 +1396,7 @@ export const inspectReconciliationState = async (
 	} catch (error) {
 		return { kind: "FailClosed", reason: error instanceof Error ? error.message : String(error) }
 	}
-	const gc = intent as GcOperationIntent
+	const gc = intent
 	try {
 		// Preflight destination collision (same as create, symlink-aware).
 		const completedDest = join(

@@ -593,9 +593,7 @@ const HISTOGRAM_TABLES = {
 
 export function resolveMetricTable(metricType: MetricType) {
 	const isHistogram = metricType === "histogram" || metricType === "exponential_histogram"
-	const tbl = isHistogram
-		? HISTOGRAM_TABLES[metricType as keyof typeof HISTOGRAM_TABLES]
-		: VALUE_TABLES[metricType as keyof typeof VALUE_TABLES]
+	const tbl = isHistogram ? HISTOGRAM_TABLES[metricType] : VALUE_TABLES[metricType]
 	return { tbl, isHistogram }
 }
 
