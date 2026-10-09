@@ -17,6 +17,7 @@ import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens
 import { revokeRefreshFamily } from "./mcp-oauth-family"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { McpOAuthRateLimit } from "@maple/backend/platform/bindings"
 
@@ -281,6 +282,7 @@ export class McpOAuthService extends Context.Service<
 >()("@maple/api/services/McpOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "McpOAuthService", persistenceError)
 		const env = yield* Env
 		// Absent outside the api Worker (tests): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(McpOAuthRateLimit)
@@ -303,20 +305,18 @@ export class McpOAuthService extends Context.Service<
 		})
 
 		const purgeExpired = Effect.fn("McpOAuthService.purgeExpired")(function* (now: number) {
-			yield* database
-				.execute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							yield* db.run(
-								PG.deleteFrom(McpOAuthAuthorizations).where(($) => [$.expiresAt.lt(now)]),
-							)
-							yield* db.run(
-								PG.deleteFrom(McpOAuthRefreshTokens).where(($) => [$.expiresAt.lt(now)]),
-							)
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.deleteFrom(McpOAuthAuthorizations).where(($) => [$.expiresAt.lt(now)]),
+						)
+						yield* db.run(
+							PG.deleteFrom(McpOAuthRefreshTokens).where(($) => [$.expiresAt.lt(now)]),
+						)
+					}),
+				),
+			)
 		})
 
 		const register = Effect.fn("McpOAuthService.register")(function* (
@@ -349,19 +349,17 @@ export class McpOAuthService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			const clientId = makeOpaqueToken("maple_mcp_client_")
-			yield* database
-				.execute((db) =>
-					db.run(
-						PG.insertInto(McpOAuthClients).values({
-							clientId,
-							clientName,
-							redirectUris,
-							clientUri: input.clientUri ?? null,
-							createdAt: now,
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(McpOAuthClients).values({
+						clientId,
+						clientName,
+						redirectUris,
+						clientUri: input.clientUri ?? null,
+						createdAt: now,
+					}),
+				),
+			)
 			return {
 				client_id: clientId,
 				client_id_issued_at: Math.floor(now / 1000),
@@ -379,16 +377,14 @@ export class McpOAuthService extends Context.Service<
 			requesterKey: string,
 		) {
 			yield* checkRateLimit(`authorize:${requesterKey}`)
-			const clients = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(McpOAuthClients)
-							.select()
-							.where(($) => [$.clientId.eq(input.clientId)])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const clients = yield* dbExecute((db) =>
+				db.run(
+					PG.from(McpOAuthClients)
+						.select()
+						.where(($) => [$.clientId.eq(input.clientId)])
+						.limit(1),
+				),
+			)
 			const client = clients[0]
 			if (!client) return yield* protocolError("invalid_request", "Unknown client_id")
 			if (
@@ -434,24 +430,22 @@ export class McpOAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			yield* purgeExpired(now)
 			const requestId = makeOpaqueToken("mcp_auth_")
-			yield* database
-				.execute((db) =>
-					db.run(
-						PG.insertInto(McpOAuthAuthorizations).values({
-							requestIdHash: hashOpaqueToken(requestId),
-							clientId: client.clientId,
-							clientName: client.clientName,
-							redirectUri: input.redirectUri,
-							state: input.state ?? null,
-							resource: input.resource,
-							scopes,
-							codeChallenge: input.codeChallenge,
-							createdAt: now,
-							expiresAt: now + AUTHORIZATION_REQUEST_TTL_MS,
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(McpOAuthAuthorizations).values({
+						requestIdHash: hashOpaqueToken(requestId),
+						clientId: client.clientId,
+						clientName: client.clientName,
+						redirectUri: input.redirectUri,
+						state: input.state ?? null,
+						resource: input.resource,
+						scopes,
+						codeChallenge: input.codeChallenge,
+						createdAt: now,
+						expiresAt: now + AUTHORIZATION_REQUEST_TTL_MS,
+					}),
+				),
+			)
 			return {
 				consentUrl: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/mcp-authorize?request_id=${encodeURIComponent(requestId)}`,
 			}
@@ -465,16 +459,14 @@ export class McpOAuthService extends Context.Service<
 					message: "OAuth authorization request not found",
 				})
 			}
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(McpOAuthAuthorizations)
-							.select()
-							.where(($) => [$.requestIdHash.eq(hashOpaqueToken(requestId))])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(McpOAuthAuthorizations)
+						.select()
+						.where(($) => [$.requestIdHash.eq(hashOpaqueToken(requestId))])
+						.limit(1),
+				),
+			)
 			if (!rows[0]) {
 				return yield* new McpOAuthAuthorizationNotFoundError({
 					message: "OAuth authorization request not found",
@@ -528,28 +520,26 @@ export class McpOAuthService extends Context.Service<
 			}
 			const now = yield* Clock.currentTimeMillis
 			const code = makeOpaqueToken("mcp_code_")
-			const updated = yield* database
-				.execute((db) =>
-					db.run(
-						PG.update(McpOAuthAuthorizations)
-							.set({
-								authorizationCodeHash: hashOpaqueToken(code),
-								approvedOrgId: identity.orgId,
-								approvedUserId: identity.userId,
-								approvedRoles: [...identity.roles],
-								approvedUserEmail: identity.userEmail,
-								approvedAt: now,
-								expiresAt: now + AUTHORIZATION_CODE_TTL_MS,
-							})
-							.where(($) => [
-								$.requestIdHash.eq(row.requestIdHash),
-								$.approvedAt.isNull(),
-								$.deniedAt.isNull(),
-							])
-							.returning("requestIdHash"),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(McpOAuthAuthorizations)
+						.set({
+							authorizationCodeHash: hashOpaqueToken(code),
+							approvedOrgId: identity.orgId,
+							approvedUserId: identity.userId,
+							approvedRoles: [...identity.roles],
+							approvedUserEmail: identity.userEmail,
+							approvedAt: now,
+							expiresAt: now + AUTHORIZATION_CODE_TTL_MS,
+						})
+						.where(($) => [
+							$.requestIdHash.eq(row.requestIdHash),
+							$.approvedAt.isNull(),
+							$.deniedAt.isNull(),
+						])
+						.returning("requestIdHash"),
+				),
+			)
 			if (updated.length === 0) {
 				return yield* new McpOAuthAuthorizationConflictError({
 					message: "OAuth authorization request was already used",
@@ -569,20 +559,18 @@ export class McpOAuthService extends Context.Service<
 				})
 			}
 			const now = yield* Clock.currentTimeMillis
-			const updated = yield* database
-				.execute((db) =>
-					db.run(
-						PG.update(McpOAuthAuthorizations)
-							.set({ deniedAt: now })
-							.where(($) => [
-								$.requestIdHash.eq(row.requestIdHash),
-								$.approvedAt.isNull(),
-								$.deniedAt.isNull(),
-							])
-							.returning("requestIdHash"),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(McpOAuthAuthorizations)
+						.set({ deniedAt: now })
+						.where(($) => [
+							$.requestIdHash.eq(row.requestIdHash),
+							$.approvedAt.isNull(),
+							$.deniedAt.isNull(),
+						])
+						.returning("requestIdHash"),
+				),
+			)
 			if (updated.length === 0) {
 				return yield* new McpOAuthAuthorizationConflictError({
 					message: "OAuth authorization request was already used",
@@ -630,16 +618,14 @@ export class McpOAuthService extends Context.Service<
 			requesterKey: string,
 		) {
 			yield* checkRateLimit(`token:${requesterKey}`)
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(McpOAuthAuthorizations)
-							.select()
-							.where(($) => [$.authorizationCodeHash.eq(hashOpaqueToken(input.code))])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(McpOAuthAuthorizations)
+						.select()
+						.where(($) => [$.authorizationCodeHash.eq(hashOpaqueToken(input.code))])
+						.limit(1),
+				),
+			)
 			const row = rows[0]
 			const now = yield* Clock.currentTimeMillis
 			if (
@@ -672,61 +658,59 @@ export class McpOAuthService extends Context.Service<
 				roles: approvedRoles,
 				userEmail: row.approvedUserEmail,
 			})
-			const issued = yield* database
-				.execute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							const claimed = yield* db.run(
-								PG.update(McpOAuthAuthorizations)
-									.set({ usedAt: now })
-									.where(($) => [
-										$.requestIdHash.eq(row.requestIdHash),
-										$.usedAt.isNull(),
-										$.expiresAt.gt(now),
-									])
-									.returning("requestIdHash"),
-							)
-							if (claimed.length === 0) return false
-							yield* db.run(
-								PG.insertInto(ApiKeys).values({
-									id: values.accessKeyId,
-									orgId: approvedOrgId,
-									name: row.clientName,
-									description: "OAuth access token for the Maple MCP server",
-									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
-									keyPrefix: values.accessToken.slice(0, 12) + "...",
-									kind: "mcp",
-									scopes: row.scopes,
-									metadataJson: oauthKeyMetadata(approvedRoles, row.clientId, row.resource),
-									expiresAt: now + ACCESS_TOKEN_TTL_MS,
-									createdAt: now,
-									createdBy: approvedUserId,
-									createdByEmail: row.approvedUserEmail,
-								}),
-							)
-							yield* db.run(
-								PG.insertInto(McpOAuthRefreshTokens).values({
-									id: values.refreshId,
-									tokenHash: hashOpaqueToken(values.refreshToken),
-									familyId: values.familyId,
-									clientId: row.clientId,
-									resource: row.resource,
-									scopes: row.scopes,
-									orgId: approvedOrgId,
-									userId: approvedUserId,
-									roles: approvedRoles,
-									userEmail: row.approvedUserEmail,
-									accessKeyId: values.accessKeyId,
-									createdAt: now,
-									expiresAt: now + REFRESH_TOKEN_TTL_MS,
-									familyExpiresAt: now + REFRESH_FAMILY_ABSOLUTE_TTL_MS,
-								}),
-							)
-							return true
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const issued = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const claimed = yield* db.run(
+							PG.update(McpOAuthAuthorizations)
+								.set({ usedAt: now })
+								.where(($) => [
+									$.requestIdHash.eq(row.requestIdHash),
+									$.usedAt.isNull(),
+									$.expiresAt.gt(now),
+								])
+								.returning("requestIdHash"),
+						)
+						if (claimed.length === 0) return false
+						yield* db.run(
+							PG.insertInto(ApiKeys).values({
+								id: values.accessKeyId,
+								orgId: approvedOrgId,
+								name: row.clientName,
+								description: "OAuth access token for the Maple MCP server",
+								keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
+								keyPrefix: values.accessToken.slice(0, 12) + "...",
+								kind: "mcp",
+								scopes: row.scopes,
+								metadataJson: oauthKeyMetadata(approvedRoles, row.clientId, row.resource),
+								expiresAt: now + ACCESS_TOKEN_TTL_MS,
+								createdAt: now,
+								createdBy: approvedUserId,
+								createdByEmail: row.approvedUserEmail,
+							}),
+						)
+						yield* db.run(
+							PG.insertInto(McpOAuthRefreshTokens).values({
+								id: values.refreshId,
+								tokenHash: hashOpaqueToken(values.refreshToken),
+								familyId: values.familyId,
+								clientId: row.clientId,
+								resource: row.resource,
+								scopes: row.scopes,
+								orgId: approvedOrgId,
+								userId: approvedUserId,
+								roles: approvedRoles,
+								userEmail: row.approvedUserEmail,
+								accessKeyId: values.accessKeyId,
+								createdAt: now,
+								expiresAt: now + REFRESH_TOKEN_TTL_MS,
+								familyExpiresAt: now + REFRESH_FAMILY_ABSOLUTE_TTL_MS,
+							}),
+						)
+						return true
+					}),
+				),
+			)
 			if (!issued) return yield* protocolError("invalid_grant", "Authorization code was already used")
 			return tokenResponse(values.accessToken, values.refreshToken, row.scopes)
 		})
@@ -736,16 +720,14 @@ export class McpOAuthService extends Context.Service<
 			requesterKey: string,
 		) {
 			yield* checkRateLimit(`token:${requesterKey}`)
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(McpOAuthRefreshTokens)
-							.select()
-							.where(($) => [$.tokenHash.eq(hashOpaqueToken(input.refreshToken))])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(McpOAuthRefreshTokens)
+						.select()
+						.where(($) => [$.tokenHash.eq(hashOpaqueToken(input.refreshToken))])
+						.limit(1),
+				),
+			)
 			const row = rows[0]
 			const now = yield* Clock.currentTimeMillis
 			const requestedScopes = parseScopes(input.scope)
@@ -765,9 +747,7 @@ export class McpOAuthService extends Context.Service<
 			// rotation window old — rather than being grandfathered in forever.
 			const familyExpiresAtMs = row.familyExpiresAt ?? row.createdAt + REFRESH_FAMILY_ABSOLUTE_TTL_MS
 			if (familyExpiresAtMs <= now) {
-				yield* database
-					.execute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
-					.pipe(Effect.mapError(persistenceError))
+				yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 				return yield* protocolError(
 					"invalid_grant",
 					"Authorization has expired; sign in again to reauthorize",
@@ -777,30 +757,24 @@ export class McpOAuthService extends Context.Service<
 			// grant in the UI, and revoking it used to be a no-op the next rotation
 			// undid. Treating it as the grant's kill switch is what makes that
 			// button — and the membership-removal sweep — actually bite.
-			const accessKeyRows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(ApiKeys)
-							.select("revoked")
-							.where(($) => [$.id.eq(row.accessKeyId)])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const accessKeyRows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ApiKeys)
+						.select("revoked")
+						.where(($) => [$.id.eq(row.accessKeyId)])
+						.limit(1),
+				),
+			)
 			const accessKeyRow = accessKeyRows[0]
 			if (!accessKeyRow || accessKeyRow.revoked) {
-				yield* database
-					.execute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
-					.pipe(Effect.mapError(persistenceError))
+				yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 				return yield* protocolError(
 					"invalid_grant",
 					"The grant behind this refresh token was revoked",
 				)
 			}
 			if (row.revokedAt !== null) {
-				yield* database
-					.execute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
-					.pipe(Effect.mapError(persistenceError))
+				yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 				return yield* protocolError(
 					"invalid_grant",
 					"Refresh token reuse detected; the grant was revoked",
@@ -817,71 +791,65 @@ export class McpOAuthService extends Context.Service<
 				userEmail: row.userEmail,
 				familyId: row.familyId,
 			})
-			const outcome = yield* database
-				.execute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							const claimed = yield* db.run(
-								PG.update(McpOAuthRefreshTokens)
-									.set({ revokedAt: now, replacedById: values.refreshId })
-									.where(($) => [
-										$.id.eq(row.id),
-										$.revokedAt.isNull(),
-										$.expiresAt.gt(now),
-									])
-									.returning("id"),
-							)
-							if (claimed.length === 0) {
-								yield* revokeRefreshFamily(db, row.familyId, now)
-								return "reused" as const
-							}
-							yield* db.run(
-								PG.update(ApiKeys)
-									.set({ revoked: true, revokedAt: now })
-									.where(($) => [$.id.eq(row.accessKeyId)]),
-							)
-							yield* db.run(
-								PG.insertInto(ApiKeys).values({
-									id: values.accessKeyId,
-									orgId: row.orgId,
-									name: "Maple MCP client",
-									description: "OAuth access token for the Maple MCP server",
-									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
-									keyPrefix: values.accessToken.slice(0, 12) + "...",
-									kind: "mcp",
-									scopes: requestedScopes,
-									metadataJson: oauthKeyMetadata(row.roles, row.clientId, row.resource),
-									expiresAt: now + ACCESS_TOKEN_TTL_MS,
-									createdAt: now,
-									createdBy: row.userId,
-									createdByEmail: row.userEmail,
-								}),
-							)
-							yield* db.run(
-								PG.insertInto(McpOAuthRefreshTokens).values({
-									id: values.refreshId,
-									tokenHash: hashOpaqueToken(values.refreshToken),
-									familyId: row.familyId,
-									clientId: row.clientId,
-									resource: row.resource,
-									scopes: requestedScopes,
-									orgId: row.orgId,
-									userId: row.userId,
-									roles: row.roles,
-									userEmail: row.userEmail,
-									accessKeyId: values.accessKeyId,
-									createdAt: now,
-									// Never extended past the rotating token's own window: the
-									// grant dies at whichever of the two comes first.
-									expiresAt: Math.min(now + REFRESH_TOKEN_TTL_MS, familyExpiresAtMs),
-									familyExpiresAt: familyExpiresAtMs,
-								}),
-							)
-							return "issued" as const
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const outcome = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const claimed = yield* db.run(
+							PG.update(McpOAuthRefreshTokens)
+								.set({ revokedAt: now, replacedById: values.refreshId })
+								.where(($) => [$.id.eq(row.id), $.revokedAt.isNull(), $.expiresAt.gt(now)])
+								.returning("id"),
+						)
+						if (claimed.length === 0) {
+							yield* revokeRefreshFamily(db, row.familyId, now)
+							return "reused" as const
+						}
+						yield* db.run(
+							PG.update(ApiKeys)
+								.set({ revoked: true, revokedAt: now })
+								.where(($) => [$.id.eq(row.accessKeyId)]),
+						)
+						yield* db.run(
+							PG.insertInto(ApiKeys).values({
+								id: values.accessKeyId,
+								orgId: row.orgId,
+								name: "Maple MCP client",
+								description: "OAuth access token for the Maple MCP server",
+								keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
+								keyPrefix: values.accessToken.slice(0, 12) + "...",
+								kind: "mcp",
+								scopes: requestedScopes,
+								metadataJson: oauthKeyMetadata(row.roles, row.clientId, row.resource),
+								expiresAt: now + ACCESS_TOKEN_TTL_MS,
+								createdAt: now,
+								createdBy: row.userId,
+								createdByEmail: row.userEmail,
+							}),
+						)
+						yield* db.run(
+							PG.insertInto(McpOAuthRefreshTokens).values({
+								id: values.refreshId,
+								tokenHash: hashOpaqueToken(values.refreshToken),
+								familyId: row.familyId,
+								clientId: row.clientId,
+								resource: row.resource,
+								scopes: requestedScopes,
+								orgId: row.orgId,
+								userId: row.userId,
+								roles: row.roles,
+								userEmail: row.userEmail,
+								accessKeyId: values.accessKeyId,
+								createdAt: now,
+								// Never extended past the rotating token's own window: the
+								// grant dies at whichever of the two comes first.
+								expiresAt: Math.min(now + REFRESH_TOKEN_TTL_MS, familyExpiresAtMs),
+								familyExpiresAt: familyExpiresAtMs,
+							}),
+						)
+						return "issued" as const
+					}),
+				),
+			)
 			if (outcome === "reused") {
 				return yield* protocolError(
 					"invalid_grant",
@@ -894,35 +862,29 @@ export class McpOAuthService extends Context.Service<
 		const revoke = Effect.fn("McpOAuthService.revoke")(function* (token: string, clientId: string) {
 			const now = yield* Clock.currentTimeMillis
 			if (token.startsWith("maple_mcp_refresh_")) {
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(McpOAuthRefreshTokens)
-								.select()
-								.where(($) => [$.tokenHash.eq(hashOpaqueToken(token))])
-								.limit(1),
-						),
-					)
-					.pipe(Effect.mapError(persistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(McpOAuthRefreshTokens)
+							.select()
+							.where(($) => [$.tokenHash.eq(hashOpaqueToken(token))])
+							.limit(1),
+					),
+				)
 				const row = rows[0]
 				if (row && row.clientId === clientId) {
-					yield* database
-						.execute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
-						.pipe(Effect.mapError(persistenceError))
+					yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 				}
 				return
 			}
 			const keyHash = hashApiKey(token, apiKeyHmacKey)
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(ApiKeys)
-							.select()
-							.where(($) => [$.keyHash.eq(keyHash)])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ApiKeys)
+						.select()
+						.where(($) => [$.keyHash.eq(keyHash)])
+						.limit(1),
+				),
+			)
 			const row = rows[0]
 			const metadata = row?.metadataJson
 			if (
@@ -934,29 +896,27 @@ export class McpOAuthService extends Context.Service<
 				"clientId" in metadata &&
 				metadata.clientId === clientId
 			) {
-				yield* database
-					.execute((db) =>
-						db.transaction(
-							Effect.gen(function* () {
-								const refreshRows = yield* db.run(
-									PG.from(McpOAuthRefreshTokens)
-										.select("familyId")
-										.where(($) => [$.accessKeyId.eq(row.id)])
-										.limit(1),
-								)
-								if (refreshRows[0]) {
-									yield* revokeRefreshFamily(db, refreshRows[0].familyId, now)
-									return
-								}
-								yield* db.run(
-									PG.update(ApiKeys)
-										.set({ revoked: true, revokedAt: now })
-										.where(($) => [$.id.eq(row.id)]),
-								)
-							}),
-						),
-					)
-					.pipe(Effect.mapError(persistenceError))
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const refreshRows = yield* db.run(
+								PG.from(McpOAuthRefreshTokens)
+									.select("familyId")
+									.where(($) => [$.accessKeyId.eq(row.id)])
+									.limit(1),
+							)
+							if (refreshRows[0]) {
+								yield* revokeRefreshFamily(db, refreshRows[0].familyId, now)
+								return
+							}
+							yield* db.run(
+								PG.update(ApiKeys)
+									.set({ revoked: true, revokedAt: now })
+									.where(($) => [$.id.eq(row.id)]),
+							)
+						}),
+					),
+				)
 			}
 		})
 
