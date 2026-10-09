@@ -2,7 +2,7 @@
  * Carrying a repository's mirror across container sleeps.
  *
  * A container's disk goes when it sleeps, so without this every cold container re-clones the
- * whole history. The mirror is archived to R2 through the Sandbox SDK's backup API, the handle
+ * whole history. The mirror is archived to R2 through the Sandbox SDK's `DirectoryBackup`, the record
  * kept in the Sandbox Durable Object's own storage (one object per repository per organization,
  * and it outlives the container), and a cold container restores it before its first clone: the
  * clone script then copies the seed into place and fetches only what changed since.
@@ -23,21 +23,29 @@ export const MIRROR_BACKUP_KEY = "maple:mirror-backup"
  */
 export const MIRROR_BACKUP_REFRESH = Duration.hours(24)
 
-/**
- * How long R2 keeps an archive. Longer than the refresh so an active repository always has one,
- * short enough that a disconnected repository's source does not sit in R2 for long.
- */
-export const MIRROR_BACKUP_TTL = Duration.days(7)
-
 /** The bound on a restore, which sits in the path of a clone. Past it the clone starts from scratch. */
 export const MIRROR_RESTORE_TIMEOUT = Duration.seconds(30)
 
-export class StoredMirrorBackup extends Schema.Class<StoredMirrorBackup>("StoredMirrorBackup")({
+/** `DirectoryBackup`'s record: restoring needs all of it, since every restore checks the SHA-256. */
+export const MirrorBackupRecord = Schema.Struct({
 	id: Schema.String,
-	createdAt: Schema.Number,
+	dir: Schema.String,
+	size: Schema.Finite,
+	name: Schema.optionalKey(Schema.String),
+	sha256: Schema.String,
+	format: Schema.Literal("tar+zstd/1"),
+})
+export type MirrorBackupRecord = typeof MirrorBackupRecord.Type
+
+export class StoredMirrorBackup extends Schema.Class<StoredMirrorBackup>("StoredMirrorBackup")({
+	record: MirrorBackupRecord,
+	createdAt: Schema.Finite,
 }) {}
 
-/** Storage hands back whatever was written, possibly by an older deploy; decoded where it is read. */
+/**
+ * Storage hands back whatever was written, possibly by an older deploy; decoded where it is read.
+ * A Sandbox SDK 0.x handle (`{ id, createdAt }`) does not decode, so it reads as no backup.
+ */
 export const decodeStoredMirrorBackup = Schema.decodeUnknownOption(StoredMirrorBackup)
 
 export class MirrorBackupError extends Schema.TaggedError<MirrorBackupError>()(
@@ -53,10 +61,10 @@ export interface MirrorBackupHost {
 	readonly createBackup: (options: {
 		readonly dir: string
 		readonly name: string
-		readonly ttl: number
-	}) => Promise<{ readonly id: string }>
-	readonly restoreBackup: (backup: { readonly id: string; readonly dir: string }) => Promise<void>
-	/** The latest backup's handle from the Durable Object's storage, decoded. */
+	}) => Promise<MirrorBackupRecord>
+	/** `"gone"` when R2 no longer has the archive, or it no longer matches its record. */
+	readonly restoreBackup: (record: MirrorBackupRecord, dir: string) => Promise<"restored" | "gone">
+	/** The latest backup's record from the Durable Object's storage, decoded. */
 	readonly readBackup: () => Promise<Option.Option<StoredMirrorBackup>>
 	readonly writeBackup: (backup: StoredMirrorBackup) => Promise<void>
 	readonly forgetBackup: () => Promise<void>
@@ -73,14 +81,9 @@ const call = <A>(what: string, run: () => Promise<A>) =>
 			}),
 	})
 
-const stored = (host: MirrorBackupHost) => call("read the backup handle", () => host.readBackup())
+const stored = (host: MirrorBackupHost) => call("read the backup record", () => host.readBackup())
 
-/** The SDK's errors for an archive that no longer exists or is past its TTL. */
-const GONE: ReadonlySet<string> = new Set(["BackupNotFoundError", "BackupExpiredError"])
-
-const errorName = (cause: unknown): string => (cause instanceof Error ? cause.name : "")
-
-export type RestoreOutcome = "unconfigured" | "none" | "present" | "restored" | "expired"
+export type RestoreOutcome = "unconfigured" | "none" | "present" | "restored" | "gone"
 
 /**
  * Restore the latest mirror backup to the seed path, if this container has neither a mirror nor
@@ -91,25 +94,15 @@ export const restoreMirror = (host: MirrorBackupHost): Effect.Effect<RestoreOutc
 		if (!host.configured) return "unconfigured"
 		const backup = yield* stored(host)
 		if (Option.isNone(backup)) return "none"
-		if (host.now() - backup.value.createdAt >= Duration.toMillis(MIRROR_BACKUP_TTL)) {
-			yield* call("forget an expired backup", () => host.forgetBackup())
-			return "expired"
-		}
 		const present = yield* call("look for a mirror", () =>
 			host.exec(
 				`test -d ${shellQuote(SANDBOX_MIRROR_DIR)}/objects || test -d ${shellQuote(SANDBOX_SEED_DIR)}/objects`,
 			),
 		)
 		if (present.exitCode === 0) return "present"
-		const gone = yield* call("restore the mirror", () =>
-			host.restoreBackup({ id: backup.value.id, dir: SANDBOX_SEED_DIR }),
+		const restored = yield* call("restore the mirror", () =>
+			host.restoreBackup(backup.value.record, SANDBOX_SEED_DIR),
 		).pipe(
-			Effect.as(false),
-			// R2 lost the archive or it aged out: forget it, or every cold container would try again.
-			Effect.catchIf(
-				(error) => GONE.has(errorName(error.cause)),
-				() => call("forget a missing backup", () => host.forgetBackup()).pipe(Effect.as(true)),
-			),
 			Effect.timeoutOrElse({
 				duration: MIRROR_RESTORE_TIMEOUT,
 				orElse: () =>
@@ -120,7 +113,11 @@ export const restoreMirror = (host: MirrorBackupHost): Effect.Effect<RestoreOutc
 					),
 			}),
 		)
-		return gone ? "expired" : "restored"
+		if (restored === "restored") return "restored"
+		// The bucket's lifecycle rule aged it out, or R2 lost it: forget it, or every cold container
+		// would try again.
+		yield* call("forget a missing backup", () => host.forgetBackup())
+		return "gone"
 	})
 
 export type BackupOutcome = "unconfigured" | "fresh" | "no-mirror" | "created"
@@ -147,12 +144,8 @@ export const backupMirror = (host: MirrorBackupHost): Effect.Effect<BackupOutcom
 				message: `snapshot the mirror: exit ${snapshot.exitCode}: ${snapshot.stderr.trim().slice(0, 500)}`,
 			})
 		const createdAt = host.now()
-		const backup = yield* call("archive the mirror", () =>
-			host.createBackup({
-				dir: SANDBOX_SNAPSHOT_DIR,
-				name: "maple-mirror",
-				ttl: Duration.toSeconds(MIRROR_BACKUP_TTL),
-			}),
+		const record = yield* call("archive the mirror", () =>
+			host.createBackup({ dir: SANDBOX_SNAPSHOT_DIR, name: "maple-mirror" }),
 		).pipe(
 			Effect.ensuring(
 				call("remove the snapshot", () =>
@@ -160,8 +153,8 @@ export const backupMirror = (host: MirrorBackupHost): Effect.Effect<BackupOutcom
 				).pipe(Effect.ignore),
 			),
 		)
-		yield* call("store the backup handle", () =>
-			host.writeBackup(new StoredMirrorBackup({ id: backup.id, createdAt })),
+		yield* call("store the backup record", () =>
+			host.writeBackup(new StoredMirrorBackup({ record, createdAt })),
 		)
 		return "created"
 	})

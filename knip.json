@@ -59,7 +59,8 @@
 		// generated entry would drop the container-backed class export), and the
 		// alchemy declaration beside it is what the root stack yields.
 		"apps/sandbox": {
-			"entry": ["src/worker.ts", "alchemy.run.ts"]
+			"entry": ["src/worker.ts", "alchemy.run.ts"],
+			"ignoreDependencies": ["cloudflare"]
 		},
 		"apps/local-ui": {
 			"entry": ["src/worker.ts"]
