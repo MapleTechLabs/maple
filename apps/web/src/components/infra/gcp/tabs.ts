@@ -212,7 +212,7 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 		column("Latency p95", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.95")),
 		column("Latency p99", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.99")),
 		column("Backend p95", "ms", (m) => m.mean(`${HTTPS}.backend_latencies`, "0.95")),
-		total("Response size", "bytes", `${HTTPS}.response_bytes_count`),
+		total("Bytes sent", "bytes", `${HTTPS}.response_bytes_count`),
 	],
 } satisfies Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>>
 

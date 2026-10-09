@@ -147,7 +147,7 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 	],
 	gke: [
 		// A point is the CPU seconds used in one minute.
-		lines("CPU", "cores", [mean("Usage", `${CONTAINER}.cpu.core_usage_time`, undefined, 1 / 60)]),
+		lines("CPU cores", "cores", [mean("Usage", `${CONTAINER}.cpu.core_usage_time`, undefined, 1 / 60)]),
 		lines("CPU of limit", "percent", [mean("Usage", `${CONTAINER}.cpu.limit_utilization`)], {
 			...OF_LIMIT,
 			note: "Containers with a CPU limit only.",
@@ -176,7 +176,7 @@ export const GCP_INFRA_CHARTS: Record<GcpInfraServiceId, ReadonlyArray<GcpChart>
 		]),
 		lines("Disk bytes per second", "bytes_per_second", [
 			rate("Read", `${INSTANCE}.disk.read_bytes_count`),
-			rate("Written", `${INSTANCE}.disk.write_bytes_count`),
+			rate("Write", `${INSTANCE}.disk.write_bytes_count`),
 		]),
 	],
 	cloudSql: [

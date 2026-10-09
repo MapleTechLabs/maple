@@ -1,4 +1,4 @@
-import { areaY, d3Curve, defineChart, lineY, stack } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, dot, lineY, stack } from "@tanstack/charts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -310,6 +310,23 @@ export function InfraMetricChart({
 					}),
 				)
 
+		// With gaps, a value between two silent buckets is no line at all: mark it, or a
+		// single burst on a long range draws nothing.
+		const lone = gaps
+			? series.map((name) => {
+					const value = valueOf(name)
+					const silent = (point: TransformedPoint | undefined) =>
+						point === undefined || value(point) === null
+					return dot(
+						data.filter(
+							(point, index) =>
+								value(point) !== null && silent(data[index - 1]) && silent(data[index + 1]),
+						),
+						{ x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) },
+					)
+				})
+			: []
+
 		return defineChart({
 			gradients: stacked
 				? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
@@ -321,6 +338,7 @@ export function InfraMetricChart({
 					labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined,
 				}),
 				...bands,
+				...lone,
 				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), plot.chrome)),
 				focusCrosshair(plot.chrome),
 			],
@@ -342,7 +360,7 @@ export function InfraMetricChart({
 			focusRing: false,
 			tooltip: plot.tooltip,
 		})
-	}, [data, series, axis, stacked, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
+	}, [data, series, axis, stacked, gaps, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
 
 	if (data.length === 0) {
 		return <ChartEmpty height={height}>{CHART_EMPTY_MESSAGE}</ChartEmpty>

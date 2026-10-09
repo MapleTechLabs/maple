@@ -176,7 +176,7 @@ describe("gcpLineRows", () => {
 	it("turns CPU seconds per minute into cores and a lag in seconds into milliseconds", () => {
 		expect(
 			gcpLineRows(
-				lineChart("gke", "CPU").series,
+				lineChart("gke", "CPU cores").series,
 				[point(T1, "gcp.kubernetes.container.cpu.core_usage_time", "", 150, 5)],
 				WINDOW,
 			),

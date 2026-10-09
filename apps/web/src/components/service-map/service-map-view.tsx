@@ -910,7 +910,11 @@ function GcpSectionData({
 					</div>
 					<div className="grid grid-cols-2 gap-x-6 gap-y-4">
 						{GCP_INFRA_COLUMNS[service].slice(0, 4).map((spec, index) => (
-							<MetricTile key={spec.label} label={spec.label}>
+							<MetricTile
+								key={spec.label}
+								label={spec.label}
+								caption={spec.total ? "total in range" : undefined}
+							>
 								<MetricValue
 									className={
 										spec.format === "errorRate"

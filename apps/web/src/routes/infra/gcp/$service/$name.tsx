@@ -234,10 +234,10 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 								tone={columnTone(spec, workload.values[index])}
 								subline={
 									spec.total
-										? "total over the range"
+										? "total in range"
 										: spec.format === "errorRate"
-											? "share over the range"
-											: "average over the range"
+											? "share in range"
+											: "average in range"
 								}
 							/>
 						))}

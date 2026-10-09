@@ -335,7 +335,7 @@ Click a cell to narrow every service tab to those workloads, and click it again 
 | Compute Engine  | Instance, project and zone                | CPU, memory (E2 machine types only), network in and out, disk read and write                           |
 | Cloud SQL       | Instance, project and region              | CPU, memory, disk, connections, replica lag                                                            |
 | Pub/Sub         | Subscription and project                  | Backlog, age of the oldest unacknowledged message, delivered, acknowledged, dead-lettered, push errors |
-| Load Balancing  | URL map, backend and project              | Requests, 5xx rate, latency p95 and p99, backend latency p95, response bytes                           |
+| Load Balancing  | URL map, backend and project              | Requests, 5xx rate, latency p95 and p99, backend latency p95, bytes sent                               |
 | Resources       | Resource from the [inventory](#resources) | Type, project, location, state and labels, with a filter by type and by project                        |
 
 Search a tab by name, project or location, filter every service tab by project and region, and click a column to sort by it. The search, the filters and the band cell are part of the page's address, so a link opens the same view. A dash means the workload did not report that metric. CPU below one core is written in millicores: `250m` is a quarter of a core. Cloud Functions (2nd gen) run on Cloud Run and appear on the Cloud Run tab. Pub/Sub topic metrics are collected but have no tab: chart them in a dashboard.
