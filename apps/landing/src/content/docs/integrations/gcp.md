@@ -14,6 +14,8 @@ The Google Cloud integration connects an organization, a folder or a single proj
 
 There is no OAuth step and no service account key. You run a generated `gcloud` script in Cloud Shell, and Maple gets no write access to Google Cloud.
 
+If your workloads also send telemetry over OpenTelemetry, read [Google Cloud with OpenTelemetry](/docs/integrations/gcp-opentelemetry): it covers what to send which way, and why GKE container logs are left out by default.
+
 ## Prerequisites
 
 - You are an admin of the Maple organization.
@@ -46,7 +48,7 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 3. For an organization or folder, enter the **Host project ID**.
 4. Under **What to collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. Click **Get setup script**.
 5. Click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
-6. Click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. To forward fewer logs, choose a [log filter](#log-filter) before you copy.
+6. Click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. To change which logs are forwarded, choose a [log filter](#log-filter) before you copy.
 7. Return to Maple. **Maple confirms the connection** shows a check mark within a minute of the script ending, usually in seconds.
 
 A first run for a project prints:
@@ -131,11 +133,13 @@ A connection keeps one switch on. To stop collecting, [disconnect](#disconnect).
 
 The setup panel's **Log filter** decides which filter the script writes onto the sink:
 
-| Log filter                                    | The script                                                                                                                                                                                                                                           |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Keep the sink's current filter**            | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: read it in the console under **Logging → [Log Router](https://console.cloud.google.com/logs/router)**. |
-| **Maple default**                             | Sets the [default filter](#logs).                                                                                                                                                                                                                    |
-| **Maple default, without GKE container logs** | Sets the default filter and also leaves out GKE container logs. Use it when your pods already send their logs to Maple through an OpenTelemetry collector.                                                                                           |
+| Log filter                                  | The script                                                                                                                                                                                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Recommended: without GKE container logs** | Sets the [default filter](#logs). Preselected for a connection that has no sink yet.                                                                                                                                                                 |
+| **Include GKE container logs**              | Sets the default filter without its GKE container clause. Maple asks you to confirm first: tick the checkbox and click **Include GKE container logs**, or click **Use the recommended filter** to go back. The script appears once you confirm.      |
+| **Keep the sink's current filter**          | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: read it in the console under **Logging → [Log Router](https://console.cloud.google.com/logs/router)**. |
+
+Include GKE container logs only for workloads that don't send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [GKE container logs](/docs/integrations/gcp-opentelemetry#gke-container-logs).
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep the sink's current filter** leave your filter in place, while the other two options replace it.
 
@@ -168,7 +172,7 @@ The page header and the Integrations list show the connection's worst status: **
 
 Then check the data:
 
-1. Open [Logs](/docs/explore/logs) and look for a service named after one of your Cloud Run services, functions, containers or instances.
+1. Open [Logs](/docs/explore/logs) and look for a service named after one of your Cloud Run services, functions or instances.
 2. In the [metrics explorer](/docs/explore/metrics), search for the prefix `gcp`.
 3. Under **Dashboards → Browse templates**, select **Google Cloud** and click **Create dashboard**. To chart one project only, first fill in **Project ID** under **Parameters**, below the preview.
 
@@ -214,16 +218,15 @@ Before it changes anything, the script asks Google which permissions the signed-
 
 Maple receives every entry the sink's filter lets through. The default filter excludes:
 
-| Excluded                    | Filter clause                                                        |
-| --------------------------- | -------------------------------------------------------------------- |
-| Data Access audit logs      | `NOT log_id("cloudaudit.googleapis.com/data_access")`                |
-| Load balancer health checks | `NOT httpRequest.userAgent:"GoogleHC"`                               |
-| Kubernetes lease renewals   | `NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update"` |
-| VM serial console output    | `NOT logName:"serialconsole.googleapis.com"`                         |
+| Excluded                    | Filter clause                                                        | Reason                                                                                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data Access audit logs      | `NOT log_id("cloudaudit.googleapis.com/data_access")`                | They record every API read.                                                                                                                                                                             |
+| Load balancer health checks | `NOT httpRequest.userAgent:"GoogleHC"`                               | Probes hit each backend every few seconds.                                                                                                                                                              |
+| Kubernetes lease renewals   | `NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update"` | A GKE cluster renews its leader-election leases all day: hundreds of audit entries a minute for an idle node.                                                                                           |
+| VM serial console output    | `NOT logName:"serialconsole.googleapis.com"`                         | A VM writes thousands of lines of raw terminal output at boot.                                                                                                                                          |
+| GKE container logs          | `NOT resource.type="k8s_container"`                                  | Instrumented workloads already send their logs to Maple, linked to their traces, so each line would be stored twice. See [GKE container logs](/docs/integrations/gcp-opentelemetry#gke-container-logs). |
 
-All four are high in volume and say little about a workload. Data Access audit logs record every API read. Health checks probe each backend every few seconds. A GKE cluster renews its leader-election leases all day, hundreds of audit entries a minute for an idle node. A VM writes thousands of lines of raw terminal output to its serial console at boot.
-
-**Maple default, without GKE container logs** adds `NOT resource.type="k8s_container"`. To forward different logs, see [Log filter](#log-filter).
+**Include GKE container logs** sets the filter without the last clause. To forward different logs, see [Log filter](#log-filter).
 
 The script reports to Maple through a log named `maple-setup`. Maple reads that entry as the report and does not store it, so don't write your own logs under that name.
 
@@ -349,7 +352,8 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 | **Rejecting logs**: "The Pub/Sub subscription wraps each entry in an envelope Maple can't read." | The subscription was changed to deliver wrapped messages. Run the setup script again: it resets the subscription. Entries sent meanwhile are lost.                                                           |
 | **Rejecting logs**: "Maple could not store an entry just now."                                   | Nothing to do. Pub/Sub retries the entry for up to a day, and the status returns to **Receiving logs** with the next accepted entry.                                                                         |
 | **Rejecting logs**: "This Maple organization is over its plan limit, so Maple refuses new logs." | Raise the plan limit under **Settings → Billing**. Pub/Sub retries refused entries for up to a day.                                                                                                          |
-| GKE logs appear twice                                                                            | Your pods also send logs through an OpenTelemetry collector. Choose **Maple default, without GKE container logs** as the [log filter](#log-filter) and run the script again.                                 |
+| GKE container logs appear twice                                                                  | The sink forwards GKE container logs and your pods also send them over OpenTelemetry. Choose **Recommended: without GKE container logs** as the [log filter](#log-filter) and run the script again.          |
+| GKE container logs are missing                                                                   | The recommended filter leaves them out. If the workloads don't send their logs over OpenTelemetry, choose **Include GKE container logs** as the [log filter](#log-filter) and run the script again.          |
 
 ### Metrics and resources
 
@@ -405,6 +409,7 @@ A connection whose setup script Maple never saw run has a **Remove** button inst
 
 ## Next steps
 
+- [Google Cloud with OpenTelemetry](/docs/integrations/gcp-opentelemetry): what to instrument on GKE, Cloud Run and Compute Engine.
 - [Logs](/docs/explore/logs): search Google Cloud logs next to your application logs.
 - [Dashboards](/docs/dashboards/build-dashboards#templates): start from the **Google Cloud** template.
 - [Alert rules](/docs/alerting/alert-rules): alert on any `gcp.*` metric.

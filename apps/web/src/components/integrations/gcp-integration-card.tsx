@@ -110,6 +110,8 @@ const STEADY_REFRESH_MS = 60_000
 const SCRIPT_PREVIEW_LINES = 10
 
 const DOCS = docsUrl("gcp")
+const OTEL_DOCS = docsUrl("gcpOpenTelemetry")
+const GKE_LOGS_DOCS = `${OTEL_DOCS}#gke-container-logs`
 const MANAGE_RESOURCES_URL = "https://console.cloud.google.com/cloud-resource-manager"
 
 const PROJECT_ID_RULE =
@@ -453,8 +455,9 @@ function GcpConnectForm({
 					/>
 					<FieldLabel htmlFor="gcp-logs-enabled">Log forwarding</FieldLabel>
 					<FieldDescription className="col-start-2">
-						A log sink sends Cloud Logging entries to Maple through Pub/Sub. GKE container logs
-						are left out by default.
+						A log sink sends Cloud Logging entries to Maple through Pub/Sub.{" "}
+						<ExternalLink href={GKE_LOGS_DOCS}>GKE container logs</ExternalLink> are left out by
+						default.
 					</FieldDescription>
 				</Field>
 				<Field
@@ -544,7 +547,8 @@ function GkeContainerLogsAcknowledgement({
 				<p>
 					Instrumented workloads already send their logs to Maple, linked to their traces.
 					Forwarding the same container logs from Google Cloud stores each line twice, and that copy
-					has no trace link.
+					has no trace link.{" "}
+					<ExternalLink href={OTEL_DOCS}>Google Cloud with OpenTelemetry</ExternalLink>
 				</p>
 				<div className="flex items-start gap-2 text-foreground">
 					<Checkbox
@@ -716,7 +720,15 @@ function GcpSetup({
 													.
 												</>
 											) : logFilter.selected === "default" ? (
-												"Forwards platform logs such as request logs, audit logs and managed services. Leaves out GKE container logs, and noise such as health checks and Data Access audit logs."
+												<>
+													Forwards platform logs such as request logs, audit logs
+													and managed services. Leaves out{" "}
+													<ExternalLink href={GKE_LOGS_DOCS}>
+														GKE container logs
+													</ExternalLink>
+													, and noise such as health checks and Data Access audit
+													logs.
+												</>
 											) : (
 												"Forwards the recommended logs and GKE container logs. Workloads that send their logs through OpenTelemetry are then stored twice."
 											)}{" "}
