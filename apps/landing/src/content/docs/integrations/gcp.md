@@ -299,7 +299,7 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 
 ## Infrastructure → Google Cloud
 
-**Infrastructure → Google Cloud** appears in the sidebar and on the Infrastructure overview once a connection has **Metrics and resources** switched on. It has one tab per service that reported metrics in the selected time range, with one row per workload. Counts and byte totals cover the time range; everything else is the average over it.
+**Infrastructure → Google Cloud** appears in the sidebar and on the Infrastructure overview once a connection has **Metrics and resources** switched on. It has one tab per service that reported metrics in the selected time range, with one row per workload. The tab you are on stays when you change the range. Counts and byte totals cover the time range; everything else is the average over it.
 
 | Tab             | One row per                               | Columns                                                                                                |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |

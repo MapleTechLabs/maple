@@ -101,7 +101,7 @@ function GcpPage() {
 		>
 			<PageHero
 				title="Google Cloud"
-				description="Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and the Cloud Asset inventory."
+				description="Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory."
 			/>
 			<ResultView result={statusResult} loading={<Skeleton className="h-64 w-full" />}>
 				{(status) => {
@@ -122,9 +122,7 @@ function GcpPage() {
 										: "Connect an organization, folder or project with metrics and resources switched on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
 								}
 								integration="gcp"
-								actionLabel={
-									connected ? "Open the Google Cloud integration" : "Connect Google Cloud"
-								}
+								actionLabel={connected ? "Open the integration" : "Connect Google Cloud"}
 								docsPage="gcp"
 							/>
 						)
