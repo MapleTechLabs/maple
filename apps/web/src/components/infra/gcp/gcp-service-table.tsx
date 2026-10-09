@@ -59,7 +59,7 @@ export function GcpSummaryBand({
 		<FleetBand<GcpScope>
 			total={workloads.length}
 			noun="workload"
-			caption="share of workloads by average use of a CPU, memory or disk limit, and by error rate"
+			caption="share of workloads by average use of a limit and by error rate"
 			segments={[
 				{
 					key: "healthy",
