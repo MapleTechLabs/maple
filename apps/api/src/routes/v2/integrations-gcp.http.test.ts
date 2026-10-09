@@ -155,6 +155,9 @@ describe("v2 gcp integration over HTTP", () => {
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
 			last_log_received_at: null,
 			last_log_error: null,
+			applied_logs_enabled: null,
+			applied_metrics_enabled: null,
+			setup_reported_at: null,
 			last_metrics_received_at: null,
 			last_metrics_error: null,
 			discovered_project_count: 0,
@@ -188,6 +191,8 @@ describe("v2 gcp integration over HTTP", () => {
 				'gcloud logging sinks delete "$SINK" --organization="$SCOPE_ID"',
 			),
 		})
+		// The connector is gone: its cleanup script has nothing to report to.
+		expect(deleted.body.cleanup_script).not.toContain("maple_gcp_")
 
 		const gone = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
 		expect(gone.status).toBe(404)
@@ -208,7 +213,7 @@ describe("v2 gcp integration over HTTP", () => {
 		const path = `${CONNECTORS}/${created.body.id}`
 
 		const both = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {
-			exclude_gke_container_logs: true,
+			log_filter: "exclude_gke_container_logs",
 		})
 		expect(both.status).toBe(200)
 		expect(Object.keys(both.body).sort()).toEqual(["cleanup_script", "object", "setup_script"])
@@ -219,18 +224,32 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(both.body.setup_script).toContain("PROJECT_ID='acme-host'")
 		expect(both.body.setup_script).toContain("SCOPE_ID='123456789012'")
 		expect(both.body.setup_script).toContain('--folder="$SCOPE_ID" --include-children')
-		expect(both.body.setup_script).toContain('NOT resource.type="k8s_container"')
+		expect(both.body.setup_script).toContain(
+			`LOG_FILTER_MODE='set'\nLOG_FILTER='NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT resource.type="k8s_container"'`,
+		)
 		expect(both.body.setup_script).toContain(
 			'gcloud resource-manager folders add-iam-policy-binding "$SCOPE_ID"',
 		)
-		expect(both.body.cleanup_script).not.toContain("maple_gcp_")
+		// What is copied is the script as a here-document for a bash process of its own.
+		expect(both.body.setup_script).toMatch(/^ \{ .*\nbash \/dev\/fd\/3 3<<'MAPLE_SETUP_SCRIPT'\n/)
+		expect(both.body.cleanup_script).toMatch(/\nMAPLE_CLEANUP_SCRIPT\n\}\n$/)
+		// The cleanup script tells Maple that it ran, with the connector's secret.
+		expect(both.body.cleanup_script).toContain("?secret=maple_gcp_")
+
+		// Without an option an existing sink keeps its filter; with logs off there is none to carry.
+		const kept = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
+		expect(kept.body.setup_script).toContain("LOG_FILTER_MODE='keep'")
+		const unknown = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {
+			log_filter: "everything",
+		})
+		expect(unknown.status).toBe(400)
 
 		const patched = await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
 		expect(patched.status).toBe(200)
 		expect(patched.body).toEqual({ ...created.body, logs_enabled: false })
 
 		const metricsOnly = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
-		expect(metricsOnly.body.setup_script).not.toContain("maple_gcp_")
+		expect(metricsOnly.body.setup_script).not.toContain("LOG_FILTER")
 		expect(metricsOnly.body.setup_script).toContain("gcloud logging sinks delete")
 		await harness.dispose()
 	})

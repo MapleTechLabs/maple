@@ -68,7 +68,7 @@ const organizationScope: CreateGcpConnectorInput = {
 	metricsEnabled: true,
 }
 
-const scriptOptions = { excludeGkeContainerLogs: false }
+const scriptOptions = { logFilter: "keep" } as const
 
 interface StoredConnector {
 	readonly secret_ciphertext: string
@@ -86,6 +86,8 @@ describe("GcpConnectorService", () => {
 			assert.strictEqual(connector.projectId, "acme-prod")
 			assert.isNull(connector.lastLogReceivedAt)
 			assert.isNull(connector.lastLogError)
+			assert.isNull(connector.appliedLogsEnabled)
+			assert.isNull(connector.setupReportedAt)
 
 			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
 			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
@@ -158,17 +160,21 @@ describe("GcpConnectorService", () => {
 			const gcp = yield* GcpConnectorService
 			assert.isTrue((yield* gcp.status(orgId)).metricsAvailable)
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
-			const both = yield* gcp.scripts(orgId, connector.id, { excludeGkeContainerLogs: true })
+			const both = yield* gcp.scripts(orgId, connector.id, {
+				logFilter: "exclude_gke_container_logs",
+			})
 			assert.include(both.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
 			assert.include(both.setupScript, 'NOT resource.type="k8s_container"')
 			assert.include(both.setupScript, '--organization="$SCOPE_ID" --include-children')
 			assert.include(both.setupScript, "PROJECT_ID='acme-host'")
-			assert.notInclude(both.cleanupScript, "maple_gcp_")
+			assert.include(both.setupScript, "MAPLE_URL='http://127.0.0.1:3471/integrations?integration=gcp'")
+			// Both scripts tell Maple that they ran, so both carry the secret.
+			assert.include(both.cleanupScript, "?secret=maple_gcp_")
 
 			const metricsOnly = yield* gcp.update(orgId, connector.id, { logsEnabled: false })
 			assert.deepStrictEqual(metricsOnly, { ...connector, logsEnabled: false })
 			const afterOptOut = yield* gcp.scripts(orgId, connector.id, scriptOptions)
-			assert.notInclude(afterOptOut.setupScript, "maple_gcp_")
+			assert.notInclude(afterOptOut.setupScript, "LOG_FILTER")
 			assert.include(afterOptOut.setupScript, "gcloud logging sinks delete")
 
 			const logsOnly = yield* gcp.update(orgId, connector.id, {
@@ -188,10 +194,17 @@ describe("GcpConnectorService", () => {
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
-					"UPDATE gcp_connectors SET last_received_at = $1, last_error = $2 WHERE id = $3",
+					`UPDATE gcp_connectors SET last_received_at = $1, last_error = $2,
+					   applied_logs_enabled = true, setup_reported_at = $1 WHERE id = $3`,
 					["2026-10-08T09:12:00.000Z", "payload was not a LogEntry", connector.id],
 				),
 			)
+			// What a setup run reported describes Google Cloud, so no switch changes it.
+			const reported = {
+				...connector,
+				appliedLogsEnabled: true,
+				setupReportedAt: Date.parse("2026-10-08T09:12:00.000Z"),
+			}
 			const lastPush = {
 				lastLogReceivedAt: Date.parse("2026-10-08T09:12:00.000Z"),
 				lastLogError: "payload was not a LogEntry",
@@ -199,13 +212,13 @@ describe("GcpConnectorService", () => {
 
 			// Kept while logs stay on, and while they are off.
 			const stillOn = yield* gcp.update(orgId, connector.id, { logsEnabled: true })
-			assert.deepStrictEqual(stillOn, { ...connector, ...lastPush })
+			assert.deepStrictEqual(stillOn, { ...reported, ...lastPush })
 			const off = yield* gcp.update(orgId, connector.id, { logsEnabled: false })
-			assert.deepStrictEqual(off, { ...connector, ...lastPush, logsEnabled: false })
+			assert.deepStrictEqual(off, { ...reported, ...lastPush, logsEnabled: false })
 
 			const backOn = yield* gcp.update(orgId, connector.id, { logsEnabled: true })
-			assert.deepStrictEqual(backOn, connector)
-			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [connector])
+			assert.deepStrictEqual(backOn, reported)
+			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [reported])
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 
@@ -360,6 +373,7 @@ describe("GcpConnectorService", () => {
 			const deleted = yield* gcp.delete(orgId, connector.id)
 			assert.deepStrictEqual(deleted.connector, connector)
 			assert.include(deleted.cleanupScript, gcpConnectorResourceNames(connector.id).sink)
+			assert.notInclude(deleted.cleanupScript, "maple_gcp_")
 			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [])
 			const again = yield* Effect.flip(gcp.delete(orgId, connector.id))
 			assert.strictEqual(again._tag, "@maple/http/errors/IntegrationsNotFoundError")

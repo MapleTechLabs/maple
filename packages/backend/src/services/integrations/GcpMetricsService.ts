@@ -11,7 +11,7 @@
  */
 import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
-import type { GcpProjectId, OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/domain/primitives"
 import { gcpConnectors, gcpResources, type GcpConnectorRow } from "@maple/db"
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -71,21 +71,44 @@ const METRICS = GCP_METRIC_GROUPS.flatMap((group) => group.metrics.map((metric) 
 
 const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
 
-const SETUP_HINT =
-	"Run the setup script in Cloud Shell to grant Maple read access; if it already ran, wait a few minutes for the grant to apply."
+const RETRIES = "Maple retries in 5 minutes."
+const NOT_STORED = `${RETRIES} Nothing to do.`
 
-/** What the connection shows for a failed call. The host project is the one Google checks. */
-const describeApiError = (error: GcpApiError, hostProject: GcpProjectId) => {
+/** Why a failed call failed and what to do about it, in the customer's terms. */
+const explainApiError = (
+	error: GcpApiError,
+	connector: GcpConnectorRow,
+	reading: "metrics" | "resources",
+) => {
+	// The host project is the one Google checks for billing, enabled APIs and quota.
+	const host = connector.projectId
+	const scope = `${connector.scopeType} ${connector.scopeId}`
 	if (error.reason === "BILLING_DISABLED") {
-		return `${error.message}. This API requires billing to be enabled on the host project ${hostProject}.`
+		return `The host project ${host} has no active billing account, and ${error.api} only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${host} Maple retries every 5 minutes.`
 	}
 	if (error.reason === "SERVICE_DISABLED") {
-		return `${error.message}. This API is not enabled in the host project ${hostProject}; run the setup script again.`
+		return `The ${error.api} API is switched off in the host project ${host}. Run the setup script again: it switches the API on.`
 	}
-	return error.kind === "denied" || error.kind === "not_found"
-		? `${error.message}. ${SETUP_HINT}`
-		: error.message
+	if (error.kind === "denied" || error.kind === "not_found") {
+		if (error.api === "IAM Credentials") {
+			return "Maple can't sign in as this connection's read-only service account. It was deleted, or the grant to Maple was removed or blocked by an organization policy. Run the setup script again and read its last lines."
+		}
+		return reading === "metrics"
+			? `Google denied Maple's read of ${scope}: the read-only roles are missing. Run the setup script again: it grants them. A new grant can take a few minutes.`
+			: `Google denied the resource listing for ${scope}. Run the setup script again: it grants Cloud Asset Viewer.`
+	}
+	if (error.kind === "rate_limited") {
+		return `Google rate-limited the ${error.api} API for the host project ${host}. Maple kept what it read and retries in 5 minutes. If this repeats, raise that API's quota on the project.`
+	}
+	return `Google's ${error.api} API did not answer Maple's request. ${RETRIES} If this repeats, write to support@maple.dev.`
 }
+
+/**
+ * What the connection shows for a failed call: one sentence of cause, one of what to do, and
+ * Google's status at the end.
+ */
+const describeApiError = (error: GcpApiError, connector: GcpConnectorRow, reading: "metrics" | "resources") =>
+	`${explainApiError(error, connector, reading)} (${error.message})`
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -298,7 +321,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						return null
 					}
 				}
-				return `The scope holds more than ${MAX_RESOURCE_PAGES * RESOURCE_PAGE_SIZE} resources; the inventory is incomplete.`
+				return `The scope holds more than ${(MAX_RESOURCE_PAGES * RESOURCE_PAGE_SIZE).toLocaleString("en-US")} resources, so the resource list is incomplete. Metrics are unaffected. Connect folders or projects separately for a full list.`
 			})
 
 			/**
@@ -315,7 +338,10 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				syncResources(connector, tick, scope, reader).pipe(
 					Effect.timeoutOrElse({
 						duration: RESOURCE_SYNC_TIMEOUT,
-						orElse: () => Effect.succeed("The inventory sync ran out of time; it is incomplete."),
+						orElse: () =>
+							Effect.succeed(
+								"The resource listing ran out of time and is incomplete. Maple retries within the hour.",
+							),
 					}),
 					Effect.map((note) => ({
 						lastResourcesError: note,
@@ -324,10 +350,12 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					Effect.catchTags({
 						"@maple/api/integrations/GcpApiError": (error) =>
 							Effect.succeed({
-								lastResourcesError: describeApiError(error, connector.projectId),
+								lastResourcesError: describeApiError(error, connector, "resources"),
 							}),
 						"@maple/http/errors/IntegrationsPersistenceError": () =>
-							Effect.succeed({ lastResourcesError: "Maple could not store the inventory." }),
+							Effect.succeed({
+								lastResourcesError: `Maple could not store the resource list just now. ${NOT_STORED}`,
+							}),
 					}),
 				)
 
@@ -434,12 +462,12 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						...(firstFailure === undefined
 							? []
 							: [
-									`${failed} of ${METRICS.length} metric queries failed. First: ${firstFailure.type}: ${firstFailure.error.message}.`,
+									`${failed} of ${METRICS.length} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
 								]),
 						...(incomplete === 0
 							? []
 							: [
-									`${incomplete} of ${METRICS.length} metric queries held more than one poll reads; connect folders or projects separately to collect all of it.`,
+									`${incomplete} of ${METRICS.length} metric queries hold more series than one read takes. Connect the folders or projects separately to collect all of it.`,
 								]),
 					]
 					yield* updateConnector(connector.id, {
@@ -467,20 +495,23 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							orElse: () =>
 								recordFailure(
 									connector,
-									"Reading the metrics took too long. Maple retries on the next poll.",
+									`Reading the metrics took longer than two minutes. ${RETRIES} If this repeats, connect folders or projects separately.`,
 								),
 						}),
 						Effect.catchTags({
 							"@maple/api/integrations/GcpApiError": (error) =>
-								recordFailure(connector, describeApiError(error, connector.projectId)),
+								recordFailure(connector, describeApiError(error, connector, "metrics")),
 							"@maple/api/integrations/GcpMetricsIngestError": (error) =>
 								error.status === 402
 									? recordFailure(
 											connector,
-											"Metrics are paused: this organization is over its plan limit.",
+											"Metrics are paused: this Maple organization is over its plan limit. Maple tries again in an hour. See Settings, Billing.",
 											tick.now + BILLING_HOLD_MS,
 										)
-									: recordFailure(connector, error.message),
+									: recordFailure(
+											connector,
+											`Maple could not store the metrics it read just now. ${NOT_STORED}`,
+										),
 						}),
 					),
 			)
