@@ -303,18 +303,16 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 					<AlertDescription>
 						<GcpMessage text={notice.error} />
 					</AlertDescription>
-					{settings}
 				</Alert>
 			)
 		case "stalled":
 			return (
 				<Alert variant="warn">
 					<CircleWarningIcon size={16} />
-					<AlertTitle>Google Cloud metrics are behind</AlertTitle>
+					<AlertTitle>Google Cloud metrics have stalled</AlertTitle>
 					<AlertDescription>
 						Maple has not read Cloud Monitoring for over 30 minutes. It retries on its own.
 					</AlertDescription>
-					{settings}
 				</Alert>
 			)
 		case "waiting":

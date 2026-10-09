@@ -912,7 +912,12 @@ function MetricsStatus({ connector, nowMs, runScript }: StatusProps) {
 			)
 		case "stalled":
 			return (
-				<Status status={status} at={state.lastMetricsReceivedAt} atPrefix="last read">
+				<Status
+					status={status}
+					at={state.lastMetricsReceivedAt}
+					atPrefix="last read"
+					link={infrastructure}
+				>
 					<p>Maple retries on its own.</p>
 				</Status>
 			)
