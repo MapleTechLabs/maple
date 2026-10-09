@@ -13,7 +13,7 @@
  * a summed fan-out).
  */
 import { errorIssueEvents, investigations } from "@maple/db"
-import type { MapleDb } from "@maple/db/client"
+import type { MapleDbLike } from "@maple/db/client"
 import {
 	InvestigationSubjectDiscriminator,
 	type AiTriageResult,
@@ -104,7 +104,7 @@ export interface ApplyDiagnosisInput {
  * transaction matters: a crash between them would leave an issue escalated with
  * no audit event explaining why.
  */
-const writeDiagnosis = (db: MapleDb, input: ApplyDiagnosisInput) =>
+const writeDiagnosis = (db: MapleDbLike, input: ApplyDiagnosisInput) =>
 	Effect.gen(function* () {
 		const confidence: InvestigationConfidence = input.report.confidence
 		const now = new Date(input.nowMs)
@@ -225,7 +225,7 @@ export interface ApplyInconclusiveInput {
  * - `error: null` — the raw error string in that column is what the UI used to
  *   render in a destructive box. The report replaces it.
  */
-const writeInconclusive = (db: MapleDb, input: ApplyInconclusiveInput) =>
+const writeInconclusive = (db: MapleDbLike, input: ApplyInconclusiveInput) =>
 	Effect.gen(function* () {
 		const now = new Date(input.nowMs)
 		yield* db

@@ -1,4 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import * as Orm from "@maple-dev/effect-orm/database"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Cause, Option } from "effect"
 import { SqlError } from "effect/sql/SqlError"
@@ -28,6 +29,7 @@ const causeMessage = (cause: unknown): string | undefined => {
  */
 export const driverSqlError = (cause: unknown): SqlError | undefined => {
 	if (cause instanceof SqlError) return cause
+	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed) return driverSqlError(cause.cause)
 	if (cause instanceof EffectDrizzleQueryError) {
 		const inner: unknown = cause.cause
 		if (Cause.isCause(inner)) {

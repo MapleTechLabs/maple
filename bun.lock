@@ -721,6 +721,7 @@
         "@effect/sql-pg": "4.0.1",
         "@effect/sql-pglite": "4.0.1",
         "@electric-sql/pglite": "^0.5.8",
+        "@maple-dev/effect-orm": "0.4.0",
         "@maple/domain": "workspace:*",
         "drizzle-orm": "1.0.0-rc.5-5935859",
         "effect": "catalog:effect",

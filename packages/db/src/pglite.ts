@@ -1,14 +1,15 @@
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import type { PGliteInterface } from "@electric-sql/pglite"
 import * as PgliteDrizzle from "drizzle-orm/effect-pglite"
-import { Effect, Layer, type Scope } from "effect"
+import { Context, Effect, Layer, type Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
-import { mapleDrizzleServices } from "./client"
+import * as SqlClient from "effect/sql/SqlClient"
+import { makeMapleOrm, mapleDrizzleServices, type MapleOrm } from "./client"
 
 // Kept out of `./client` so the Workers do not bundle the embedded-Postgres driver.
 
 /** Drizzle over an embedded PGlite instance — local dev and vitest. */
-export type MaplePgliteDb = PgliteDrizzle.EffectPgDatabase
+export type MaplePgliteDb = PgliteDrizzle.EffectPgDatabase & { readonly orm: MapleOrm }
 
 /**
  * Build the Effect drizzle database over an instance the caller owns. The
@@ -23,5 +24,6 @@ export const makeMaplePgliteDb = (
 		const services = yield* Layer.build(
 			Layer.merge(mapleDrizzleServices, PgliteClient.layer({ liveClient: pglite })),
 		)
-		return yield* PgliteDrizzle.make().pipe(Effect.provideContext(services))
+		const drizzle = yield* PgliteDrizzle.make().pipe(Effect.provideContext(services))
+		return Object.assign(drizzle, { orm: makeMapleOrm(Context.get(services, SqlClient.SqlClient)) })
 	})

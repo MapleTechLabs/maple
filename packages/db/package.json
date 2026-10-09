@@ -8,7 +8,8 @@
 		"./config": "./src/config.ts",
 		"./migrate": "./src/migrate.ts",
 		"./pglite": "./src/pglite.ts",
-		"./schema": "./src/schema/index.ts"
+		"./schema": "./src/schema/index.ts",
+		"./tables": "./src/tables/index.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -26,6 +27,7 @@
 		"@effect/sql-pglite": "4.0.1",
 		"@electric-sql/pglite": "^0.5.8",
 		"@maple/domain": "workspace:*",
+		"@maple-dev/effect-orm": "0.4.0",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect",
 		"pg": "^8.23.1",

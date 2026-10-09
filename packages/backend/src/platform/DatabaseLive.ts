@@ -1,5 +1,6 @@
 import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollector } from "@maple/db/client"
 import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Cause, Clock, Context, Effect, Result, Schema } from "effect"
 import { SqlError } from "effect/sql/SqlError"
@@ -86,6 +87,15 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 	}
 	if (cause instanceof SqlError) {
 		return new DatabaseError({ message: driverRootError(cause)?.message ?? cause.message, cause })
+	}
+	// effect-orm keeps the driver's `SqlError` as `cause`, so classification reads it as for drizzle.
+	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed) {
+		const root = driverRootError(cause.cause)?.message ?? cause.message
+		const statement = cause instanceof Orm.DatabaseError ? capQueryMessage(cause.sql) : undefined
+		return new DatabaseError({
+			message: statement === undefined || statement === "" ? root : `${root} [while: ${statement}]`,
+			cause: driverSqlError(cause.cause) ?? new Error(cause.message),
+		})
 	}
 	const message = cause instanceof Error ? cause.message : "Database operation failed"
 	const rootCause = cause instanceof Error && cause.cause instanceof Error ? cause.cause.message : undefined
