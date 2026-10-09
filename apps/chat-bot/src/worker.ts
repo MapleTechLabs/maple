@@ -28,6 +28,7 @@ import { connectorConfigEnv } from "./resources/env.ts"
 import { connectorWebhookRouter } from "./routes/webhook.ts"
 import { ConnectorRelayLive, ConnectorRelayObject } from "./relay/ConnectorRelay.ts"
 import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSocket.ts"
+import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /** Config-sourced env. Connector config is optional: a connector without it is skipped. */
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
@@ -144,7 +145,10 @@ export default ChatBot.make(
 				),
 				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Workers.CronEventSourceLive,
-				WorkerTelemetry({ serviceName: "maple-chat-bot" }),
+				WorkerTelemetry({
+					serviceName: "maple-chat-bot",
+					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+				}),
 			),
 		),
 	),
