@@ -6,7 +6,7 @@ import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ChartLoading } from "@maple/ui/components/charts"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
@@ -100,14 +100,6 @@ function WebAnalyticsPage() {
 	const filters = filtersFromSearch(search)
 	const activeTab = decodeTab(search.tab)
 
-	const onTabChange = (value: unknown) => {
-		const next = decodeTab(value)
-		navigate({
-			replace: true,
-			search: (prev) => ({ ...prev, tab: next === "overview" ? undefined : next }),
-		})
-	}
-
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
@@ -194,19 +186,21 @@ function WebAnalyticsPage() {
 				</>
 			}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
-			// View tabs share the header row with the range controls on wide
-			// screens, same as Hosts; the header stacks them on narrow ones.
-			titleContent={
-				<Tabs value={activeTab} onValueChange={onTabChange} className="min-w-0">
-					<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
-						<TabsTrigger value="overview" className="h-8 px-2 text-sm sm:h-8">
-							Overview
-						</TabsTrigger>
-						<TabsTrigger value="ai" className="h-8 px-2 text-sm sm:h-8">
-							AI traffic
-						</TabsTrigger>
-					</TabsList>
-				</Tabs>
+			tabs={
+				<UnderlineTabStrip navigation label="Analytics views">
+					{ANALYTICS_TABS.map((tab) => (
+						<Link
+							key={tab}
+							to="/analytics"
+							replace
+							search={(prev) => ({ ...prev, tab: tab === "overview" ? undefined : tab })}
+							aria-current={tab === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab === activeTab)}
+						>
+							{tab === "overview" ? "Overview" : "AI traffic"}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			}
 			filters={
 				<AnalyticsFilterSidebar

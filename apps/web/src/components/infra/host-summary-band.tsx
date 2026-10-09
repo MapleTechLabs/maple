@@ -59,7 +59,7 @@ export function HostSummaryBand({
 			noun="host"
 			caption="share of the fleet by its busiest of CPU, memory and disk"
 			segments={[
-				{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+				{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 				{ key: "elevated", count: elevated, className: TONE_FILL.warn },
 				{ key: "saturated", count: saturated, className: TONE_FILL.crit },
 			]}

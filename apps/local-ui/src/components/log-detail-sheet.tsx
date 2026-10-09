@@ -155,7 +155,7 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 		isJson ? (
 			<pre
 				className={cn(
-					"font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words",
+					"font-mono text-ui leading-relaxed whitespace-pre-wrap break-words",
 					clamp && "line-clamp-6",
 				)}
 			>

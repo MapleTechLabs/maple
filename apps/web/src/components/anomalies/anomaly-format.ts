@@ -146,12 +146,7 @@ const severityToneOf = (tone: Tone): SeverityTone => ({
 export const SEVERITY_TONE: Record<"critical" | "warning" | "resolved", SeverityTone> = {
 	critical: severityToneOf("crit"),
 	warning: severityToneOf("warn"),
-	resolved: {
-		badge: TONE_SOFT.neutral,
-		accent: "bg-border/60",
-		text: TONE_TEXT.neutral,
-		tone: "neutral",
-	},
+	resolved: severityToneOf("done"),
 } satisfies Record<"critical" | "warning" | "resolved", SeverityTone>
 
 export function severityToneFor(

@@ -42,7 +42,6 @@ export function MetricsBrowseFilters({
 	return (
 		<div className="flex min-w-0 flex-wrap items-center gap-2">
 			<ToolbarSearch
-				size="sm"
 				className="w-64"
 				placeholder="Search metrics..."
 				query={q}
@@ -110,7 +109,7 @@ export function MetricsBrowse({ q, type, view, onPatch, onOpenMetric, ...time }:
 			key={`${deferredSearch}|${type ?? ""}|${effectiveStartTime}|${effectiveEndTime}`}
 			search={deferredSearch}
 			metricType={type}
-			onOpenMetric={onOpenMetric}
+			linkTime={time}
 			onClearFilters={handleClearFilters}
 			startTime={effectiveStartTime}
 			endTime={effectiveEndTime}

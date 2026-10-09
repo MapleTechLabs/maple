@@ -11,6 +11,7 @@ import { TagGroupHeaderRow } from "@/components/alerts/overview/shared"
 import { Link } from "@tanstack/react-router"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
 import { PaperPlaneIcon, PlusIcon, TruckIcon } from "@/components/icons"
 import {
 	buildDestinationCreateParamsV2,
@@ -218,7 +219,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 				{/* Destinations section */}
 				<section className="space-y-4">
 					<div>
-						<h2 className="text-lg font-semibold">Destinations</h2>
+						<SectionHeading title="Destinations" />
 						<p className="text-muted-foreground text-sm">
 							Destinations are reusable across rules and keep provider retries and failures
 							auditable.
@@ -281,7 +282,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 				{/* Delivery log section */}
 				<section className="space-y-4">
 					<div>
-						<h2 className="text-lg font-semibold">Delivery log</h2>
+						<SectionHeading title="Delivery log" />
 						<p className="text-muted-foreground text-sm">
 							Every queued, retried, and completed notification attempt across alert
 							destinations.

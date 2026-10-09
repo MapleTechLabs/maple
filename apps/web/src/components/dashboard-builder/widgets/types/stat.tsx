@@ -27,7 +27,7 @@ function StatPresetPreview({ preset }: { preset: WidgetPresetDefinition }) {
 	const { display } = preset
 	return (
 		<PreviewFrame title={display.title} className="flex flex-col items-center justify-center gap-1.5">
-			<div className="text-lg font-bold tabular-nums">
+			<div className="text-lg font-semibold tabular-nums">
 				{formatValue(SAMPLE_VALUES[preset.id] ?? 0, display.unit, display.prefix, display.suffix)}
 			</div>
 		</PreviewFrame>

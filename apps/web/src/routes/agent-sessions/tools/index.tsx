@@ -52,6 +52,7 @@ function AgentToolsPage() {
 	// One object for the whole render tree below: it is a dependency of every
 	// selection memo down there, and a fresh literal defeats all of them.
 	const window = useMemo(() => ({ startTime, endTime }), [startTime, endTime])
+	const tabCounts = useAgentSessionsTabCounts(window)
 
 	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) => {
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
@@ -71,7 +72,15 @@ function AgentToolsPage() {
 		<PageRefreshProvider timePreset={preset}>
 			<DashboardPage
 				breadcrumbs={[{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }]}
-				// The view lays out its own tab strip, toolbar and gutters edge to edge.
+				tabs={
+					<AgentSessionsTabs
+						active="tools"
+						search={search}
+						counts={tabCounts}
+						className="border-b border-border"
+					/>
+				}
+				// The view lays out its own toolbar and gutters edge to edge.
 				scrollClassName="p-0"
 			>
 				<AgentToolsBody
@@ -79,6 +88,7 @@ function AgentToolsPage() {
 					window={window}
 					preset={preset}
 					onSearchChange={onSearchChange}
+					tabCounts={tabCounts}
 					actions={
 						<TimeRangeHeaderControls
 							search={search}
@@ -109,17 +119,18 @@ function AgentToolsBody({
 	window,
 	preset,
 	onSearchChange,
+	tabCounts,
 	actions,
 }: {
 	search: ToolAnalyticsSearch & TimeRangeSearch
 	window: { startTime: string; endTime: string }
 	preset: string
 	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
+	tabCounts: { sessions?: number; tools?: number }
 	actions: ReactNode
 }) {
 	const results = useToolAnalytics(search, window)
 	const { reload } = usePageRefreshContext()
-	const tabCounts = useAgentSessionsTabCounts(window)
 	// Memoized: it is memo input for the detail links the table builds.
 	const timeRange = useMemo(
 		() => ({
@@ -168,15 +179,7 @@ function AgentToolsBody({
 
 	return Result.builder(results.totals)
 		.onInitial(() => (
-			<div className="flex flex-col gap-5 pt-4">
-				{/* The real strip while the page waits: it is what must not move when
-				    a reader switches tabs. */}
-				<AgentSessionsTabs
-					active="tools"
-					search={timeRange}
-					counts={tabCounts}
-					className="border-b border-border px-6"
-				/>
+			<div className="flex flex-col gap-5 pt-3">
 				<Skeleton className="mx-6 h-8 max-w-2xl" />
 				<ToolMetricStripLoading />
 				<Skeleton className="mx-6 h-56" />

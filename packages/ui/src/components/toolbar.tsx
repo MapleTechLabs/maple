@@ -11,7 +11,7 @@ import { SearchInput } from "./ui/search-input"
 import { StatusDot } from "./ui/status-dot"
 import { useDebouncedCallback } from "../hooks/use-debounced-callback"
 import { cn } from "../lib/utils"
-import { TONE_TEXT } from "../lib/tone"
+import { TONE_TEXT, type Tone } from "../lib/tone"
 import { formatNumber } from "../lib/format"
 
 export function Toolbar({ children, className }: { children: ReactNode; className?: string }) {
@@ -121,17 +121,26 @@ export function ToolbarStat({
 	label,
 	dot,
 	danger,
+	tone,
 }: {
-	value: number
+	/** Numbers are formatted; strings (rates, durations) render as given. */
+	value: number | string
 	label: string
 	dot?: boolean
 	danger?: boolean
+	tone?: Tone
 }) {
 	return (
 		<span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
-			{dot ? <StatusDot tone="info" /> : null}
-			<span className={cn("font-medium tabular-nums", danger && value > 0 && TONE_TEXT.crit)}>
-				{formatNumber(value)}
+			{dot ? <StatusDot tone="ok" /> : null}
+			<span
+				className={cn(
+					"font-medium tabular-nums",
+					tone && TONE_TEXT[tone],
+					danger && typeof value === "number" && value > 0 && TONE_TEXT.crit,
+				)}
+			>
+				{typeof value === "number" ? formatNumber(value) : value}
 			</span>
 			<span className="text-muted-foreground">{label}</span>
 		</span>

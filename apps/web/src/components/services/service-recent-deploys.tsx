@@ -114,7 +114,7 @@ function RowFrame({
 			<div className="mt-0.5 shrink-0">{avatar}</div>
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
 				<div className="flex items-center gap-2">
-					<div className="min-w-0 flex-1 truncate text-[13px]">{line1}</div>
+					<div className="min-w-0 flex-1 truncate text-ui">{line1}</div>
 					{chip}
 				</div>
 				<div className="flex items-baseline gap-1.5 text-2xs text-muted-foreground">{line2}</div>

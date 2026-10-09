@@ -338,7 +338,7 @@ function TracePeekLoaded({
 		return (
 			<>
 				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{shortId(traceId, "trace")}</SheetTitle>
+					<SheetTitle className="font-mono text-title">{shortId(traceId, "trace")}</SheetTitle>
 					<SheetDescription>
 						{data.spans.length === 0
 							? "This trace could not be found. It may have expired or not been ingested yet."

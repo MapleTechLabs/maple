@@ -129,7 +129,7 @@ export const StatWidget = memo(function StatWidget({ dataState, display, mode }:
 	// formatted value that reads fine one breakpoint up.
 	const valueText = (
 		<span
-			className="text-base font-bold tabular-nums @min-[150px]/widget:text-2xl @min-[280px]/widget:text-3xl"
+			className="text-base font-semibold tabular-nums @min-[150px]/widget:text-2xl @min-[280px]/widget:text-3xl"
 			style={thresholdColor ? { color: thresholdColor } : undefined}
 		>
 			{formattedValue}

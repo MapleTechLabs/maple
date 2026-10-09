@@ -56,12 +56,12 @@ const KIND_BADGE: Record<IssueKind, { label: string; variant: "ok" | "warn" | "i
 	naming: { label: "Naming", variant: "info" },
 } satisfies Record<IssueKind, { label: string; variant: "ok" | "warn" | "info" }>
 
-const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "secondary" | "outline" }> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" | "outline" }> = {
 	open: { label: "Open", variant: "outline" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
 	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "ok" },
-} satisfies Record<IssueStatus, { label: string; variant: "ok" | "secondary" | "outline" }>
+	resolved: { label: "Resolved", variant: "done" },
+} satisfies Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" | "outline" }>
 
 const MODE = {
 	auto: {

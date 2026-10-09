@@ -293,7 +293,7 @@ function PodsPage() {
 								noun="live pod"
 								caption="share of the live fleet by peak utilization"
 								segments={[
-									{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
 										key: "elevated",
 										count: counts.elevatedPods,

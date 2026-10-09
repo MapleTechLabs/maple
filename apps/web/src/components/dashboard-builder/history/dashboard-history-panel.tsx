@@ -5,6 +5,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Result } from "@/lib/effect-atom"
 import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
 import { HistoryIcon, XmarkIcon } from "@/components/icons"
 import { useDashboardVersions } from "./use-dashboard-history"
 import { VersionListItem } from "./version-list-item"
@@ -35,8 +36,7 @@ export function DashboardHistoryPanel({
 		<aside className="flex h-full w-80 shrink-0 flex-col border-l bg-background">
 			<div className="flex items-center gap-2 border-b px-4 py-3">
 				<HistoryIcon className="size-4" />
-				<h2 className="text-sm font-medium tracking-tight">History</h2>
-				<span className="ml-1 font-mono text-3xs text-muted-foreground">{versions.length}</span>
+				<SectionHeading title="History" count={versions.length} />
 				<IconButton
 					size="icon-xs"
 					label="Close history panel"

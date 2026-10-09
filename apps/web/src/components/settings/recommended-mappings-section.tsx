@@ -35,12 +35,12 @@ const KIND_TAG: Record<IssueKind, { label: string; className: string }> = {
 	naming: { label: "Naming", className: TONE_TEXT.warn },
 } satisfies Record<IssueKind, { label: string; className: string }>
 
-const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "secondary" }> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" }> = {
 	open: { label: "Open", variant: "secondary" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
 	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "secondary" },
-} satisfies Record<IssueStatus, { label: string; variant: "ok" | "secondary" }>
+	resolved: { label: "Resolved", variant: "done" },
+} satisfies Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" }>
 
 const MODE = {
 	auto: {

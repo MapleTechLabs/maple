@@ -278,6 +278,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			<div className="space-y-4">
 				<div className="flex items-center gap-3">
 					<SearchInput
+						size="default"
 						className="flex-1 max-w-xs"
 						placeholder="Search rules..."
 						value={searchQuery}

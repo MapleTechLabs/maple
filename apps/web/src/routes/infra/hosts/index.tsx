@@ -76,7 +76,7 @@ function HostsPage() {
 	return (
 		<DashboardPage
 			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Hosts" }]}
-			titleContent={<HostsViewTabs view="hosts" timeSearch={search} />}
+			tabs={<HostsViewTabs view="hosts" timeSearch={search} />}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
 			gap="lg"
 		>

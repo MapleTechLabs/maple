@@ -68,7 +68,7 @@ import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
@@ -548,17 +548,20 @@ function RuleDetailContent() {
 				/>
 			)}
 			tabs={() => (
-				<Tabs
-					value={activeTab}
-					onValueChange={(v) => {
-						if (isRuleDetailTab(v)) navigate({ search: (prev) => ({ ...prev, tab: v }) })
-					}}
-				>
-					<TabsList variant="underline">
-						<TabsTrigger value="overview">Overview</TabsTrigger>
-						<TabsTrigger value="history">History</TabsTrigger>
-					</TabsList>
-				</Tabs>
+				<UnderlineTabStrip navigation label="Rule sections">
+					{tabValues.map((tab) => (
+						<Link
+							key={tab}
+							to="/alerts/$ruleId"
+							params={{ ruleId: ruleIdParam }}
+							search={(prev) => ({ ...prev, tab })}
+							aria-current={tab === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab === activeTab)}
+						>
+							{tab === "overview" ? "Overview" : "History"}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			)}
 		>
 			{(rule) => (
@@ -652,7 +655,7 @@ function RuleDetailContent() {
 							) : null}
 
 							<div className="space-y-3">
-								<h2 className="text-lg font-semibold">Configuration</h2>
+								<SectionHeading title="Configuration" />
 								<Card>
 									<CardContent className="p-5">
 										<KeyValueList className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
@@ -814,7 +817,7 @@ function RuleDetailContent() {
 							{Result.builder(checksResult)
 								.onError((error) => (
 									<div className="space-y-4">
-										<h2 className="text-lg font-semibold">Checks</h2>
+										<SectionHeading title="Checks" />
 										<ErrorState
 											error={error}
 											title="Failed to load checks"
@@ -859,7 +862,7 @@ function RuleDetailContent() {
 								<div className="space-y-6">
 									<div className="flex items-center justify-between">
 										<div>
-											<h2 className="text-lg font-semibold">History</h2>
+											<SectionHeading title="History" />
 											<p className="text-muted-foreground text-sm">
 												{stats.totalTriggered} total triggers
 											</p>
@@ -1306,7 +1309,7 @@ function ChecksPanel({
 
 	return (
 		<div className="space-y-4">
-			<h2 className="text-lg font-semibold">Checks</h2>
+			<SectionHeading title="Checks" />
 			<StatRail columns={totals.errored > 0 ? 5 : 4}>
 				<StatRailItem size="sm" eyebrow="Total checks" value={totals.total} />
 				<StatRailItem

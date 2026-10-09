@@ -186,7 +186,7 @@ export interface ZoneStatusInfo {
 export const STATUS_META: Record<ZoneStatusKind, { label: string; order: number; tone: Tone }> = {
 	live: { label: "Live", order: 0, tone: "ok" },
 	issue: { label: "Issues", order: 1, tone: "crit" },
-	"no-data": { label: "No data", order: 2, tone: "warn" },
+	"no-data": { label: "No data", order: 2, tone: "neutral" },
 	paused: { label: "Paused", order: 3, tone: "neutral" },
 	disabled: { label: "Disabled", order: 4, tone: "neutral" },
 } satisfies Record<ZoneStatusKind, { label: string; order: number; tone: Tone }>
@@ -244,9 +244,9 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (usageLoaded && lastSyncedAt) {
 		return {
 			kind: "no-data",
-			tone: "warn",
+			tone: "neutral",
 			detail: "No data in last 24h",
-			detailClass: TONE_TEXT.warn,
+			detailClass: TONE_TEXT.neutral,
 		}
 	}
 	if (lastSyncedAt) {
@@ -259,9 +259,9 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	}
 	return {
 		kind: "no-data",
-		tone: "warn",
+		tone: "neutral",
 		detail: "Waiting for first data",
-		detailClass: TONE_TEXT.warn,
+		detailClass: TONE_TEXT.neutral,
 	}
 }
 

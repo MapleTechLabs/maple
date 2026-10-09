@@ -197,7 +197,7 @@ function ContainersPage() {
 	return (
 		<DashboardPage
 			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Containers" }]}
-			titleContent={<HostsViewTabs view="containers" timeSearch={search} />}
+			tabs={<HostsViewTabs view="containers" timeSearch={search} />}
 			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
 			filters={
 				<ContainersFilterSidebarView

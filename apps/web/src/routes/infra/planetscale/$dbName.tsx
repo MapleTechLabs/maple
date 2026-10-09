@@ -586,7 +586,7 @@ function PlanetScaleDatabaseData({
 			<section className="space-y-2">
 				<div className="flex flex-wrap items-baseline justify-between gap-3">
 					<div className="flex flex-wrap items-baseline gap-2">
-						<h2 className="text-sm font-medium text-foreground">Top queries</h2>
+						<SectionHeading title="Top queries" />
 						{/* Query Insights answers one branch at a time — with several
 						    selected this says which one is on screen. */}
 						<PlanetScaleBranchScope

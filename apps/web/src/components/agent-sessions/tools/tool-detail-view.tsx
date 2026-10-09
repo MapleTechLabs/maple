@@ -112,7 +112,7 @@ export function ToolDetailView({
 								<TooltipTrigger
 									render={<span />}
 									tabIndex={0}
-									className="w-0 min-w-0 flex-1 cursor-default truncate text-[13px] text-muted-foreground"
+									className="w-0 min-w-0 flex-1 cursor-default truncate text-ui text-muted-foreground"
 								>
 									{data.description}
 								</TooltipTrigger>
@@ -120,7 +120,7 @@ export function ToolDetailView({
 							</Tooltip>
 						)}
 					</div>
-					<p className="font-mono text-[13px] text-muted-foreground">{subtitle.join(" · ")}</p>
+					<p className="font-mono text-ui text-muted-foreground">{subtitle.join(" · ")}</p>
 				</div>
 				{headerControls ? (
 					<div className="flex shrink-0 items-center gap-2 pt-1">{headerControls}</div>

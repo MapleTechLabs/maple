@@ -4,6 +4,9 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
+import { Link } from "@tanstack/react-router"
+import { toQueryBuilderMetricType } from "@maple/query-model"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -21,7 +24,8 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 interface MetricsTableProps {
 	search: string
 	metricType: ListMetricsInput["metricType"] | null
-	onOpenMetric: (metric: Metric) => void
+	/** The page's own time params, carried onto each metric's link. */
+	linkTime: { startTime?: string; endTime?: string; timePreset?: string }
 	onClearFilters: () => void
 	startTime?: string
 	endTime?: string
@@ -67,7 +71,7 @@ const MAX_LIMIT = 1000
 export function MetricsTable({
 	search,
 	metricType,
-	onOpenMetric,
+	linkTime,
 	onClearFilters,
 	startTime,
 	endTime,
@@ -136,16 +140,25 @@ export function MetricsTable({
 							return (
 								<TableRow
 									key={`${metric.metricName}-${metric.metricType}-${metric.serviceName}`}
-									className="cursor-pointer hover:bg-muted/50"
-									onClick={() => onOpenMetric(metric)}
+									className="hover:bg-muted/50"
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
-											<TruncatedText
-												text={metric.metricName}
-												mono
-												className="text-xs"
-											/>
+											<Link
+												to="/metrics/$metricName"
+												params={{ metricName: metric.metricName }}
+												search={{
+													...linkTime,
+													type: toQueryBuilderMetricType(metric.metricType) ?? undefined,
+												}}
+												className={cn("block min-w-0", ROW_STRETCHED_LINK_CLASS)}
+											>
+												<TruncatedText
+													text={metric.metricName}
+													mono
+													className={cn("text-xs", ROW_LINK_LIFT)}
+												/>
+											</Link>
 											{metric.metricDescription && (
 												<span className="text-3xs text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
