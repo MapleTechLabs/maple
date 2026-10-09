@@ -1958,8 +1958,10 @@ export function traceListRootPageQuery(opts: TraceListOpts): TraceListPage {
  * The traces a list page could be cut from by a settled entry span
  * (Server/Consumer with a parent), each at its first one in page order: where
  * the trace is listed if it has no root, which is `rootedTraceIdsQuery`'s
- * question. `DISTINCT ON` keeps the first row per trace of the ordered read,
- * which still stops at the limit (measured: the newest 400 of 7 days in 0.1 s).
+ * question. ClickHouse parses `DISTINCT ON (x)` as `LIMIT 1 BY x`, which runs
+ * after `ORDER BY` (unlike a plain `DISTINCT`): the first row per trace of the
+ * ordered read, which still stops at the limit (measured: the newest 400 of
+ * 7 days in 0.1 s).
  */
 export function traceListEntryPageQuery(opts: TraceListOpts): TraceListPage {
 	return traceListPositions(opts, true).distinctOn("traceId").format("JSON")
