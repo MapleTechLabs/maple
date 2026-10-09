@@ -25,22 +25,21 @@ import {
 	MAX_VERIFICATION_ATTEMPTS,
 } from "@maple/domain/http"
 import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/domain/primitives"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	errorIssueEvents,
-	errorIssuePullRequests,
-	errorIssues,
-	errorIssueVerifications,
-	investigations,
+	ErrorIssueEvents,
+	ErrorIssuePullRequests,
+	ErrorIssues,
+	ErrorIssueVerifications,
+	Investigations,
 	type ErrorIssuePullRequestRow,
 	type ErrorIssueRow,
 	type ErrorIssueVerificationRow,
-} from "@maple/db"
-import { and, desc, eq, inArray, lte, ne } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { PullRequestLookup } from "./PullRequestLookup"
@@ -50,6 +49,8 @@ const decodePullRequestIdSync = Schema.decodeUnknownSync(ErrorIssuePullRequestId
 const decodeVerificationIdSync = Schema.decodeUnknownSync(ErrorIssueVerificationIdSchema)
 const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueIdSchema)
 const decodeDateTimeSync = Schema.decodeUnknownSync(ErrorIssuePullRequestDocument.fields.createdAt)
+
+const decodeReportSummary = Schema.decodeUnknownOption(Schema.Struct({ summary: Schema.String }))
 
 const HOUR_MS = 60 * 60_000
 
@@ -72,10 +73,7 @@ const HOUR_MS = 60 * 60_000
 export const occurrenceRatePerHour = (
 	row: Pick<ErrorIssueRow, "occurrenceCount" | "firstSeenAt" | "lastSeenAt">,
 ): number => {
-	const firstMs = dateToMs(row.firstSeenAt)
-	const lastMs = dateToMs(row.lastSeenAt)
-	if (firstMs === null || lastMs === null) return 0
-	const spanMs = lastMs - firstMs
+	const spanMs = row.lastSeenAt - row.firstSeenAt
 	if (spanMs <= 0 || row.occurrenceCount <= 0) return 0
 	return row.occurrenceCount / (spanMs / HOUR_MS)
 }
@@ -219,7 +217,7 @@ const make: Effect.Effect<
 
 	const newPullRequestId = () => decodePullRequestIdSync(randomUUID())
 	const newVerificationId = () => decodeVerificationIdSync(randomUUID())
-	const isoFromDate = (date: Date) => decodeDateTimeSync(date.toISOString())
+	const isoFromMs = (ms: number) => decodeDateTimeSync(new Date(ms).toISOString())
 
 	const rowToDocument = (
 		row: ErrorIssuePullRequestRow,
@@ -235,11 +233,11 @@ const make: Effect.Effect<
 			title: row.title ?? null,
 			authorLogin: row.authorLogin ?? null,
 			state: row.state,
-			mergedAt: row.mergedAt == null ? null : isoFromDate(row.mergedAt),
+			mergedAt: row.mergedAt == null ? null : isoFromMs(row.mergedAt),
 			mergeCommitSha: row.mergeCommitSha ?? null,
 			linkSource: row.linkSource,
 			linkedByActor: row.linkedByActorId == null ? null : (actorMap.get(row.linkedByActorId) ?? null),
-			createdAt: isoFromDate(row.createdAt),
+			createdAt: isoFromMs(row.createdAt),
 		})
 
 	const verificationToDocument = (row: ErrorIssueVerificationRow): ErrorIssueVerificationDocument =>
@@ -248,8 +246,8 @@ const make: Effect.Effect<
 			issueId: row.issueId,
 			pullRequestId: row.pullRequestId,
 			status: row.status,
-			mergedAt: isoFromDate(row.mergedAt),
-			verifyAfter: isoFromDate(row.verifyAfter),
+			mergedAt: isoFromMs(row.mergedAt),
+			verifyAfter: isoFromMs(row.verifyAfter),
 			baselineVersions: row.baselineVersionsJson,
 			baselineOccurrenceCount: row.baselineOccurrenceCount,
 			baselineRatePerHour: row.baselineRatePerHour,
@@ -258,19 +256,18 @@ const make: Effect.Effect<
 			verdict: row.verdict ?? null,
 			verdictNote: row.verdictNote ?? null,
 			attempt: row.attempt,
-			createdAt: isoFromDate(row.createdAt),
-			updatedAt: isoFromDate(row.updatedAt),
+			createdAt: isoFromMs(row.createdAt),
+			updatedAt: isoFromMs(row.updatedAt),
 		})
 
 	const selectLinks = (orgId: OrgId, issueId: ErrorIssueId) =>
 		dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssuePullRequests)
-				.where(
-					and(eq(errorIssuePullRequests.orgId, orgId), eq(errorIssuePullRequests.issueId, issueId)),
-				)
-				.orderBy(desc(errorIssuePullRequests.createdAt)),
+			db.run(
+				PG.from(ErrorIssuePullRequests)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+					.orderBy(["createdAt", "desc"]),
+			),
 		)
 
 	const hydrateLinks = Effect.fn("IssueFixVerification.hydrateLinks")(function* (
@@ -330,12 +327,13 @@ const make: Effect.Effect<
 
 		// 4. Wherever this org's fixes have most recently been landing.
 		const recent = yield* dbExecute((db) =>
-			db
-				.select({ repoFullName: errorIssuePullRequests.repoFullName })
-				.from(errorIssuePullRequests)
-				.where(eq(errorIssuePullRequests.orgId, orgId))
-				.orderBy(desc(errorIssuePullRequests.createdAt))
-				.limit(RECENT_LINK_SCAN_LIMIT),
+			db.run(
+				PG.from(ErrorIssuePullRequests)
+					.select("repoFullName")
+					.where(($) => [$.orgId.eq(orgId)])
+					.orderBy(($) => [[$.createdAt, "desc"]])
+					.limit(RECENT_LINK_SCAN_LIMIT),
+			),
 		)
 		const connectedSet = new Set(connected)
 		for (const row of recent) {
@@ -359,16 +357,12 @@ const make: Effect.Effect<
 	)(function* (orgId, issueId) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssueVerifications)
-				.where(
-					and(
-						eq(errorIssueVerifications.orgId, orgId),
-						eq(errorIssueVerifications.issueId, issueId),
-					),
-				)
-				.orderBy(desc(errorIssueVerifications.createdAt)),
+			db.run(
+				PG.from(ErrorIssueVerifications)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+					.orderBy(["createdAt", "desc"]),
+			),
 		)
 		return new ErrorIssueVerificationsResponse({
 			verifications: rows.map(verificationToDocument),
@@ -399,38 +393,33 @@ const make: Effect.Effect<
 		readonly mergeCommitSha?: string | null
 		readonly nowMs: number
 	}) {
-		const now = msToDate(input.nowMs)
+		const now = input.nowMs
 		yield* dbExecute((db) =>
-			db
-				.insert(errorIssuePullRequests)
-				.values({
-					id: newPullRequestId(),
-					orgId: input.orgId,
-					issueId: input.issueId,
-					provider: input.provider,
-					externalRepoId: input.externalRepoId ?? null,
-					repoFullName: input.repoFullName,
-					number: input.number,
-					url: input.url,
-					title: input.title ?? null,
-					authorLogin: input.authorLogin ?? null,
-					state: input.state ?? "open",
-					mergedAt: input.mergedAtMs == null ? null : msToDate(input.mergedAtMs),
-					mergeCommitSha: input.mergeCommitSha ?? null,
-					linkSource: input.source,
-					linkedByActorId: input.actorId,
-					createdAt: now,
-					updatedAt: now,
-				})
-				.onConflictDoNothing({
-					target: [
-						errorIssuePullRequests.orgId,
-						errorIssuePullRequests.issueId,
-						errorIssuePullRequests.provider,
-						errorIssuePullRequests.repoFullName,
-						errorIssuePullRequests.number,
-					],
-				}),
+			db.run(
+				PG.insertInto(ErrorIssuePullRequests)
+					.values({
+						id: newPullRequestId(),
+						orgId: input.orgId,
+						issueId: input.issueId,
+						provider: input.provider,
+						externalRepoId: input.externalRepoId ?? null,
+						repoFullName: input.repoFullName,
+						number: input.number,
+						url: input.url,
+						title: input.title ?? null,
+						authorLogin: input.authorLogin ?? null,
+						state: input.state ?? "open",
+						mergedAt: input.mergedAtMs ?? null,
+						mergeCommitSha: input.mergeCommitSha ?? null,
+						linkSource: input.source,
+						linkedByActorId: input.actorId,
+						createdAt: now,
+						updatedAt: now,
+					})
+					.onConflictDoNothing({
+						target: ["orgId", "issueId", "provider", "repoFullName", "number"],
+					}),
+			),
 		)
 
 		// A caller that resolved the PR's real state applies it to the existing row
@@ -439,26 +428,26 @@ const make: Effect.Effect<
 		// without this the conflict path would leave a merged PR recorded as `open`
 		// forever, since the insert wrote nothing.
 		if (input.state !== undefined) {
+			const state = input.state
 			yield* dbExecute((db) =>
-				db
-					.update(errorIssuePullRequests)
-					.set({
-						title: input.title ?? null,
-						authorLogin: input.authorLogin ?? null,
-						state: input.state,
-						mergedAt: input.mergedAtMs == null ? null : msToDate(input.mergedAtMs),
-						mergeCommitSha: input.mergeCommitSha ?? null,
-						updatedAt: now,
-					})
-					.where(
-						and(
-							eq(errorIssuePullRequests.orgId, input.orgId),
-							eq(errorIssuePullRequests.issueId, input.issueId),
-							eq(errorIssuePullRequests.provider, input.provider),
-							eq(errorIssuePullRequests.repoFullName, input.repoFullName),
-							eq(errorIssuePullRequests.number, input.number),
-						),
-					),
+				db.run(
+					PG.update(ErrorIssuePullRequests)
+						.set({
+							title: input.title ?? null,
+							authorLogin: input.authorLogin ?? null,
+							state,
+							mergedAt: input.mergedAtMs ?? null,
+							mergeCommitSha: input.mergeCommitSha ?? null,
+							updatedAt: now,
+						})
+						.where(($) => [
+							$.orgId.eq(input.orgId),
+							$.issueId.eq(input.issueId),
+							$.provider.eq(input.provider),
+							$.repoFullName.eq(input.repoFullName),
+							$.number.eq(input.number),
+						]),
+				),
 			)
 		}
 
@@ -466,19 +455,18 @@ const make: Effect.Effect<
 		// Postgres conventions in CLAUDE.md) — and because on a conflict the insert
 		// wrote nothing and the existing row is what callers need.
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssuePullRequests)
-				.where(
-					and(
-						eq(errorIssuePullRequests.orgId, input.orgId),
-						eq(errorIssuePullRequests.issueId, input.issueId),
-						eq(errorIssuePullRequests.provider, input.provider),
-						eq(errorIssuePullRequests.repoFullName, input.repoFullName),
-						eq(errorIssuePullRequests.number, input.number),
-					),
-				)
-				.limit(1),
+			db.run(
+				PG.from(ErrorIssuePullRequests)
+					.select()
+					.where(($) => [
+						$.orgId.eq(input.orgId),
+						$.issueId.eq(input.issueId),
+						$.provider.eq(input.provider),
+						$.repoFullName.eq(input.repoFullName),
+						$.number.eq(input.number),
+					])
+					.limit(1),
+			),
 		)
 		return rows[0] ?? null
 	})
@@ -561,7 +549,7 @@ const make: Effect.Effect<
 		// issue waits in `in_review` for a webhook that is never coming.
 		if (row.state === "merged") {
 			yield* openMergedVerifications(orgId, [row], {
-				mergedAtMs: row.mergedAt === null ? nowMs : dateToMs(row.mergedAt),
+				mergedAtMs: row.mergedAt ?? nowMs,
 				mergeCommitSha: row.mergeCommitSha,
 				nowMs,
 			})
@@ -586,17 +574,12 @@ const make: Effect.Effect<
 	)(function* (orgId, actorId, issueId, pullRequestId) {
 		yield* workflow.requireIssue(orgId, issueId)
 		const existing = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssuePullRequests)
-				.where(
-					and(
-						eq(errorIssuePullRequests.orgId, orgId),
-						eq(errorIssuePullRequests.issueId, issueId),
-						eq(errorIssuePullRequests.id, pullRequestId),
-					),
-				)
-				.limit(1),
+			db.run(
+				PG.from(ErrorIssuePullRequests)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId), $.id.eq(pullRequestId)])
+					.limit(1),
+			),
 		)
 		const row = existing[0]
 		if (row === undefined) {
@@ -612,19 +595,18 @@ const make: Effect.Effect<
 		// nothing left to verify, and a live row would keep the issue pinned in
 		// `verifying` with no way out.
 		yield* dbExecute((db) =>
-			db
-				.update(errorIssueVerifications)
-				.set({ status: "abandoned", updatedAt: msToDate(nowMs) })
-				.where(
-					and(
-						eq(errorIssueVerifications.orgId, orgId),
-						eq(errorIssueVerifications.pullRequestId, pullRequestId),
-						inArray(errorIssueVerifications.status, ["waiting", "running"]),
-					),
-				),
+			db.run(
+				PG.update(ErrorIssueVerifications)
+					.set({ status: "abandoned", updatedAt: nowMs })
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.pullRequestId.eq(pullRequestId),
+						$.status.in_("waiting", "running"),
+					]),
+			),
 		)
 		yield* dbExecute((db) =>
-			db.delete(errorIssuePullRequests).where(eq(errorIssuePullRequests.id, pullRequestId)),
+			db.run(PG.deleteFrom(ErrorIssuePullRequests).where(($) => [$.id.eq(pullRequestId)])),
 		)
 		yield* workflow.recordEvent(orgId, issueId, actorId, "pr_unlinked", {
 			payload: { pullRequestId, url: row.url, repoFullName: row.repoFullName, number: row.number },
@@ -662,27 +644,28 @@ const make: Effect.Effect<
 		// window, and `.returning()` is what says which one this was — a driver
 		// write-result shape would not.
 		const opened = yield* dbExecute((db) =>
-			db
-				.insert(errorIssueVerifications)
-				.values({
-					id: verificationId,
-					orgId,
-					issueId: issue.id,
-					pullRequestId: link.id,
-					status: "waiting",
-					mergedAt: msToDate(mergedAtMs),
-					verifyAfter: msToDate(verifyAfterMs),
-					// The builds this issue was known to affect at merge time. Everything
-					// downstream is a membership test against this array.
-					baselineVersionsJson: issue.seenVersionsJson,
-					baselineOccurrenceCount: issue.occurrenceCount,
-					baselineRatePerHour: ratePerHour,
-					attempt: 0,
-					createdAt: msToDate(nowMs),
-					updatedAt: msToDate(nowMs),
-				})
-				.onConflictDoNothing()
-				.returning({ id: errorIssueVerifications.id }),
+			db.run(
+				PG.insertInto(ErrorIssueVerifications)
+					.values({
+						id: verificationId,
+						orgId,
+						issueId: issue.id,
+						pullRequestId: link.id,
+						status: "waiting",
+						mergedAt: mergedAtMs,
+						verifyAfter: verifyAfterMs,
+						// The builds this issue was known to affect at merge time. Everything
+						// downstream is a membership test against this array.
+						baselineVersionsJson: issue.seenVersionsJson,
+						baselineOccurrenceCount: issue.occurrenceCount,
+						baselineRatePerHour: ratePerHour,
+						attempt: 0,
+						createdAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.onConflictDoNothing()
+					.returning("id"),
+			),
 		)
 		if (opened.length === 0) return
 
@@ -739,7 +722,7 @@ const make: Effect.Effect<
 	 */
 	const openMergedVerifications = Effect.fn("IssueFixVerification.openMergedVerifications")(function* (
 		orgId: OrgId,
-		links: ReadonlyArray<typeof errorIssuePullRequests.$inferSelect>,
+		links: ReadonlyArray<ErrorIssuePullRequestRow>,
 		merge: {
 			readonly mergedAtMs: number
 			readonly mergeCommitSha: string | null
@@ -763,26 +746,26 @@ const make: Effect.Effect<
 			// redelivered webhook, or a second PR attached to the same issue must
 			// not open a second window.
 			const open = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(errorIssueVerifications)
-					.where(
-						and(
-							eq(errorIssueVerifications.orgId, orgId),
-							eq(errorIssueVerifications.issueId, link.issueId),
-							inArray(errorIssueVerifications.status, ["waiting", "running"]),
-						),
-					)
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssueVerifications)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.eq(link.issueId),
+							$.status.in_("waiting", "running"),
+						])
+						.limit(1),
+				),
 			)
-			if (Arr.isArrayNonEmpty(open)) return false
+			if (Arr.isReadonlyArrayNonEmpty(open)) return false
 
 			const issueRows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, link.issueId)))
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(link.issueId)])
+						.limit(1),
+				),
 			)
 			const issue = Arr.head(issueRows)
 			if (Option.isNone(issue)) return false
@@ -802,7 +785,7 @@ const make: Effect.Effect<
 			yield* openVerification({
 				orgId,
 				issue: issue.value,
-				link: { ...link, mergedAt: msToDate(mergedAtMs), mergeCommitSha },
+				link: { ...link, mergedAt: mergedAtMs, mergeCommitSha },
 				mergedAtMs,
 				nowMs,
 				systemActor,
@@ -852,11 +835,12 @@ const make: Effect.Effect<
 			// attacker-influenced text, so a well-formed id from another tenant must
 			// not create a cross-org link.
 			const issueRows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, issueId)))
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
+						.limit(1),
+				),
 			)
 			if (issueRows[0] === undefined) continue
 			const created = yield* upsertLink({
@@ -873,7 +857,7 @@ const make: Effect.Effect<
 				externalRepoId: input.externalRepoId,
 				nowMs,
 			})
-			if (created !== null && dateToMs(created.createdAt) === nowMs) {
+			if (created !== null && created.createdAt === nowMs) {
 				linksAutoCreated += 1
 				yield* workflow.recordEvent(input.orgId, issueId, null, "pr_linked", {
 					payload: {
@@ -890,19 +874,19 @@ const make: Effect.Effect<
 
 		// Every link pointing at this PR, however it was created.
 		const links = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssuePullRequests)
-				.where(
-					and(
-						eq(errorIssuePullRequests.orgId, input.orgId),
-						eq(errorIssuePullRequests.provider, input.provider),
-						eq(errorIssuePullRequests.repoFullName, input.repoFullName),
-						eq(errorIssuePullRequests.number, input.number),
-					),
-				),
+			db.run(
+				PG.from(ErrorIssuePullRequests)
+					.select()
+					.where(($) => [
+						$.orgId.eq(input.orgId),
+						$.provider.eq(input.provider),
+						$.repoFullName.eq(input.repoFullName),
+						$.number.eq(input.number),
+					]),
+			),
 		)
-		if (links.length === 0) {
+		const [firstLink, ...restLinks] = links
+		if (firstLink === undefined) {
 			return { linksAutoCreated, verificationsOpened, linksUpdated: 0 }
 		}
 
@@ -913,30 +897,26 @@ const make: Effect.Effect<
 				? "closed"
 				: "open"
 		yield* dbExecute((db) =>
-			db
-				.update(errorIssuePullRequests)
-				.set({
-					state: nextState,
-					title: input.title ?? null,
-					authorLogin: input.authorLogin ?? null,
-					externalRepoId: input.externalRepoId,
-					mergedAt: input.mergedAtMs === null ? null : msToDate(input.mergedAtMs),
-					mergeCommitSha: input.mergeCommitSha,
-					updatedAt: msToDate(nowMs),
-				})
-				.where(
-					and(
-						inArray(
-							errorIssuePullRequests.id,
-							links.map((link) => link.id),
-						),
+			db.run(
+				PG.update(ErrorIssuePullRequests)
+					.set({
+						state: nextState,
+						title: input.title ?? null,
+						authorLogin: input.authorLogin ?? null,
+						externalRepoId: input.externalRepoId,
+						mergedAt: input.mergedAtMs,
+						mergeCommitSha: input.mergeCommitSha,
+						updatedAt: nowMs,
+					})
+					.where(($) => [
+						$.id.in_(firstLink.id, ...restLinks.map((link) => link.id)),
 						// A GitHub merge is irreversible, so a non-merged event reaching a
 						// link already marked merged can only be a stale or out-of-order
 						// queue delivery — never let it regress the state or null the merge
 						// metadata a verification window was opened from.
-						...(input.merged ? [] : [ne(errorIssuePullRequests.state, "merged")]),
-					),
-				),
+						input.merged ? undefined : $.state.neq("merged"),
+					]),
+			),
 		)
 
 		if (!input.merged) {
@@ -957,17 +937,16 @@ const make: Effect.Effect<
 		Effect.fn("IssueFixVerification.refuteOnPostMergeOccurrence")(
 			function* (orgId, issueId, observedVersions, nowMs) {
 				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(errorIssueVerifications)
-						.where(
-							and(
-								eq(errorIssueVerifications.orgId, orgId),
-								eq(errorIssueVerifications.issueId, issueId),
-								inArray(errorIssueVerifications.status, ["waiting", "running"]),
-							),
-						)
-						.limit(1),
+					db.run(
+						PG.from(ErrorIssueVerifications)
+							.select()
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.issueId.eq(issueId),
+								$.status.in_("waiting", "running"),
+							])
+							.limit(1),
+					),
 				)
 				const verification = rows[0]
 				if (verification === undefined) return false
@@ -987,33 +966,32 @@ const make: Effect.Effect<
 		"IssueFixVerification.settledRuns",
 	)(function* (limit) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select({
-					verification: errorIssueVerifications,
-					investigationStatus: investigations.status,
-					reportJson: investigations.reportJson,
-				})
-				.from(errorIssueVerifications)
-				.innerJoin(investigations, eq(investigations.id, errorIssueVerifications.investigationId))
-				.where(
-					and(
-						eq(errorIssueVerifications.status, "running"),
+			db.run(
+				PG.from(ErrorIssueVerifications)
+					.innerJoin(Investigations, "inv", (verification, inv) =>
+						verification.investigationId.eq(inv.id),
+					)
+					.select(({ inv, ...verification }) => ({
+						...verification,
+						investigationStatus: inv.status,
+						// Undecoded: a malformed report must not stall every settled run behind it.
+						reportJson: PG.undecoded(inv.reportJson),
+					}))
+					.where(($) => [
+						$.status.eq("running"),
 						// `investigating` is still in flight. Everything else — diagnosed,
 						// inconclusive, failed — is a finished run with something to say.
-						ne(investigations.status, "investigating"),
-					),
-				)
-				.limit(limit),
+						$.inv.status.neq("investigating"),
+					])
+					.limit(limit),
+			),
 		)
-		return rows.map((row) => ({
-			verification: row.verification,
-			investigationStatus: row.investigationStatus,
-			summary:
-				typeof row.reportJson === "object" &&
-				row.reportJson !== null &&
-				typeof (row.reportJson as { summary?: unknown }).summary === "string"
-					? (row.reportJson as { summary: string }).summary
-					: null,
+		return rows.map(({ investigationStatus, reportJson, ...verification }) => ({
+			verification,
+			investigationStatus,
+			summary: Option.getOrNull(
+				Option.map(decodeReportSummary(reportJson), (report) => report.summary),
+			),
 		}))
 	})
 
@@ -1021,16 +999,12 @@ const make: Effect.Effect<
 		"IssueFixVerification.dueVerifications",
 	)(function* (nowMs, limit) {
 		return yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssueVerifications)
-				.where(
-					and(
-						eq(errorIssueVerifications.status, "waiting"),
-						lte(errorIssueVerifications.verifyAfter, msToDate(nowMs)),
-					),
-				)
-				.limit(limit),
+			db.run(
+				PG.from(ErrorIssueVerifications)
+					.select()
+					.where(($) => [$.status.eq("waiting"), $.verifyAfter.lte(nowMs)])
+					.limit(limit),
+			),
 		)
 	})
 
@@ -1043,20 +1017,15 @@ const make: Effect.Effect<
 		// orphaned agent run is the cheaper casualty — with no investigationId
 		// linked, `settledRuns` never picks it up.
 		yield* dbExecute((db) =>
-			db
-				.update(errorIssueVerifications)
-				.set({
-					status: "running",
-					investigationId,
-					updatedAt: msToDate(nowMs),
-				})
-				.where(
-					and(
-						eq(errorIssueVerifications.id, row.id),
-						eq(errorIssueVerifications.status, row.status),
-						eq(errorIssueVerifications.attempt, row.attempt),
-					),
-				),
+			db.run(
+				PG.update(ErrorIssueVerifications)
+					.set({
+						status: "running",
+						investigationId,
+						updatedAt: nowMs,
+					})
+					.where(($) => [$.id.eq(row.id), $.status.eq(row.status), $.attempt.eq(row.attempt)]),
+			),
 		)
 	})
 
@@ -1071,12 +1040,11 @@ const make: Effect.Effect<
 		// a decisive `not_fixed`. The verdict event commits in the same
 		// transaction: a status that settled without its event is invisible to
 		// the timeline AND to the next tick, so nothing could ever repair it.
-		const guard = () =>
-			and(
-				eq(errorIssueVerifications.id, row.id),
-				eq(errorIssueVerifications.status, row.status),
-				eq(errorIssueVerifications.attempt, row.attempt),
-			)
+		const guard = ($: PG.ColumnAccessor<typeof ErrorIssueVerifications.columns>) => [
+			$.id.eq(row.id),
+			$.status.eq(row.status),
+			$.attempt.eq(row.attempt),
+		]
 		const lostRace = Effect.logInfo("[FixVerification] verdict lost a race and was not applied").pipe(
 			Effect.annotateLogs({ orgId: row.orgId, verificationId: row.id, verdict }),
 		)
@@ -1088,10 +1056,7 @@ const make: Effect.Effect<
 			// Wait at least as long again as the first window did, and never less
 			// than the untriaged-severity window — an inconclusive result means the
 			// last look was too short, so a shorter retry would be pointless.
-			const verifyAfterMs = dateToMs(row.verifyAfter)
-			const mergedAtMs = dateToMs(row.mergedAt)
-			const firstWindowMs =
-				verifyAfterMs === null || mergedAtMs === null ? 0 : verifyAfterMs - mergedAtMs
+			const firstWindowMs = row.verifyAfter - row.mergedAt
 			const extendedMs = Math.max(
 				verificationWindowMs({ severity: null, ratePerHour: row.baselineRatePerHour }),
 				firstWindowMs,
@@ -1113,23 +1078,24 @@ const make: Effect.Effect<
 				},
 			)
 			const landed = yield* dbExecute((db) =>
-				db.transaction((tx) =>
+				db.transaction(
 					Effect.gen(function* () {
-						const updated = yield* tx
-							.update(errorIssueVerifications)
-							.set({
-								status: "waiting",
-								attempt: row.attempt + 1,
-								verifyAfter: msToDate(nowMs + extendedMs),
-								verdict: null,
-								verdictNote: note,
-								investigationId: null,
-								updatedAt: msToDate(nowMs),
-							})
-							.where(guard())
-							.returning({ id: errorIssueVerifications.id })
+						const updated = yield* db.run(
+							PG.update(ErrorIssueVerifications)
+								.set({
+									status: "waiting",
+									attempt: row.attempt + 1,
+									verifyAfter: nowMs + extendedMs,
+									verdict: null,
+									verdictNote: note,
+									investigationId: null,
+									updatedAt: nowMs,
+								})
+								.where(guard)
+								.returning("id"),
+						)
 						if (updated.length === 0) return false
-						yield* tx.insert(errorIssueEvents).values(retryEvent)
+						yield* db.run(PG.insertInto(ErrorIssueEvents).values(retryEvent))
 						return true
 					}),
 				),
@@ -1142,11 +1108,12 @@ const make: Effect.Effect<
 			verdict === "verified" ? "verified" : verdict === "not_fixed" ? "not_fixed" : "inconclusive"
 
 		const issueRows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssues)
-				.where(and(eq(errorIssues.orgId, row.orgId), eq(errorIssues.id, row.issueId)))
-				.limit(1),
+			db.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
+					.limit(1),
+			),
 		)
 		const issue = Arr.head(issueRows)
 
@@ -1172,21 +1139,22 @@ const make: Effect.Effect<
 		)
 
 		const landed = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.transaction(
 				Effect.gen(function* () {
-					const updated = yield* tx
-						.update(errorIssueVerifications)
-						.set({
-							status,
-							verdict,
-							verdictNote: note,
-							updatedAt: msToDate(nowMs),
-						})
-						.where(guard())
-						.returning({ id: errorIssueVerifications.id })
+					const updated = yield* db.run(
+						PG.update(ErrorIssueVerifications)
+							.set({
+								status,
+								verdict,
+								verdictNote: note,
+								updatedAt: nowMs,
+							})
+							.where(guard)
+							.returning("id"),
+					)
 					if (updated.length === 0) return false
 					if (Option.isSome(verdictEvent))
-						yield* tx.insert(errorIssueEvents).values(verdictEvent.value)
+						yield* db.run(PG.insertInto(ErrorIssueEvents).values(verdictEvent.value))
 					return true
 				}),
 			),

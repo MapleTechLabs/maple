@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
-import { errorIncidents, errorIssues } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIncidents, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { Clock, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
@@ -85,25 +85,27 @@ const seedIssue = (
 	orgId: OrgId,
 	issueId: ErrorIssueId,
 	now: number,
-	overrides: Partial<typeof errorIssues.$inferInsert> = {},
+	overrides: Partial<PG.InsertRowOf<typeof ErrorIssues>> = {},
 ) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.insert(errorIssues).values({
-				id: issueId,
-				orgId,
-				fingerprintHash: `fp-${issueId}`,
-				serviceName: "checkout-api",
-				exceptionType: "TimeoutError",
-				exceptionMessage: "upstream timed out",
-				topFrame: "handler.ts:42",
-				firstSeenAt: msToDate(now - 60_000),
-				lastSeenAt: msToDate(now),
-				createdAt: msToDate(now),
-				updatedAt: msToDate(now),
-				...overrides,
-			}),
+			db.run(
+				PG.insertInto(ErrorIssues).values({
+					id: issueId,
+					orgId,
+					fingerprintHash: `fp-${issueId}`,
+					serviceName: "checkout-api",
+					exceptionType: "TimeoutError",
+					exceptionMessage: "upstream timed out",
+					topFrame: "handler.ts:42",
+					firstSeenAt: now - 60_000,
+					lastSeenAt: now,
+					createdAt: now,
+					updatedAt: now,
+					...overrides,
+				}),
+			),
 		)
 	})
 
@@ -123,17 +125,19 @@ describe("ErrorIssueReadModelsService", () => {
 				fingerprintHash: "fp-hidden",
 			})
 			yield* database.execute((db) =>
-				db.insert(errorIncidents).values({
-					id: incidentId,
-					orgId: ORG,
-					issueId,
-					status: "open",
-					reason: "first_seen",
-					firstTriggeredAt: msToDate(now - 30_000),
-					lastTriggeredAt: msToDate(now),
-					createdAt: msToDate(now),
-					updatedAt: msToDate(now),
-				}),
+				db.run(
+					PG.insertInto(ErrorIncidents).values({
+						id: incidentId,
+						orgId: ORG,
+						issueId,
+						status: "open",
+						reason: "first_seen",
+						firstTriggeredAt: now - 30_000,
+						lastTriggeredAt: now,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 
 			const listed = yield* readModels.listIssues(ORG, {
@@ -207,12 +211,12 @@ describe("ErrorIssueReadModelsService", () => {
 			const regressed = asIssueId(randomUUID())
 			const ongoing = asIssueId(randomUUID())
 
-			yield* seedIssue(ORG, fresh, now, { firstSeenAt: msToDate(now - 60_000) })
+			yield* seedIssue(ORG, fresh, now, { firstSeenAt: now - 60_000 })
 			yield* seedIssue(ORG, regressed, now, {
-				firstSeenAt: msToDate(now - 86_400_000),
-				lastRegressedAt: msToDate(now - 30_000),
+				firstSeenAt: now - 86_400_000,
+				lastRegressedAt: now - 30_000,
 			})
-			yield* seedIssue(ORG, ongoing, now, { firstSeenAt: msToDate(now - 86_400_000) })
+			yield* seedIssue(ORG, ongoing, now, { firstSeenAt: now - 86_400_000 })
 
 			const listed = yield* readModels.listIssues(ORG, {
 				introducedAfter: new Date(now - 120_000).toISOString(),

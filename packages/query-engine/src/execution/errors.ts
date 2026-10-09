@@ -242,9 +242,12 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"SYNTAX_ERROR",
 			"UNKNOWN_FUNCTION",
 			"AMBIGUOUS_COLUMN_NAME",
+			// A literal the column cannot read, e.g. `EventsName != ''` on an Array.
+			"CANNOT_READ_ARRAY_FROM_TEXT",
+			"CANNOT_PARSE_TEXT",
 		]),
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{

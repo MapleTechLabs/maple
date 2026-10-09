@@ -28,14 +28,14 @@ import {
 	type AlertRuleId,
 	type ManagedWarehouseError,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDeliveryEvents,
-	alertDestinations,
-	alertIncidents,
-	alertRules,
+	AlertDeliveryEvents,
+	AlertDestinations,
+	AlertIncidents,
+	AlertRules,
 	type AlertIncidentRow,
-} from "@maple/db"
-import { and, desc, eq } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -148,8 +148,8 @@ const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStat
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
 
-const toIso = (value: Date | null | undefined): IsoDateTimeValue | null =>
-	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
+const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
+	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
 
 const makeValidationError = (message: string) => new AlertValidationError({ message, details: [] })
 
@@ -165,8 +165,8 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		comparator: decodeAlertComparatorSync(row.comparator),
 		threshold: row.threshold,
 		thresholdUpper: row.thresholdUpper,
-		firstTriggeredAt: decodeIsoDateTimeStringSync(row.firstTriggeredAt.toISOString()),
-		lastTriggeredAt: decodeIsoDateTimeStringSync(row.lastTriggeredAt.toISOString()),
+		firstTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.firstTriggeredAt).toISOString()),
+		lastTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.lastTriggeredAt).toISOString()),
 		resolvedAt: toIso(row.resolvedAt),
 		lastObservedValue: row.lastObservedValue,
 		lastSampleCount: row.lastSampleCount,
@@ -205,19 +205,20 @@ export class AlertReadModelsService extends Context.Service<
 				...(options.status !== undefined ? { status: options.status } : undefined),
 				...(options.ruleId !== undefined ? { ruleId: options.ruleId } : undefined),
 			})
-			const conditions = [
-				eq(alertIncidents.orgId, orgId),
-				options.status ? eq(alertIncidents.status, options.status) : undefined,
-				options.ruleId ? eq(alertIncidents.ruleId, options.ruleId) : undefined,
-			].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined)
+			const { status, ruleId } = options
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertIncidents)
-					.where(and(...conditions))
-					.orderBy(desc(alertIncidents.lastTriggeredAt), desc(alertIncidents.id))
-					.limit(options.limit ?? 100)
-					.offset(options.offset ?? 0),
+				db.run(
+					PG.from(AlertIncidents)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							status ? $.status.eq(status) : undefined,
+							ruleId ? $.ruleId.eq(ruleId) : undefined,
+						])
+						.orderBy(["lastTriggeredAt", "desc"], ["id", "desc"])
+						.limit(options.limit ?? 100)
+						.offset(options.offset ?? 0),
+				),
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 			return new AlertIncidentsListResponse({
@@ -231,11 +232,12 @@ export class AlertReadModelsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertIncidents)
-					.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.id, incidentId)))
-					.limit(1),
+				db.run(
+					PG.from(AlertIncidents)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)])
+						.limit(1),
+				),
 			)
 			const incident = rows[0]
 			if (incident === undefined) {
@@ -263,11 +265,12 @@ export class AlertReadModelsService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 			// Verify the rule exists and belongs to this org before querying Tinybird.
 			const ruleRow = yield* dbExecute((db) =>
-				db
-					.select({ id: alertRules.id })
-					.from(alertRules)
-					.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-					.limit(1),
+				db.run(
+					PG.from(AlertRules)
+						.select("id")
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+						.limit(1),
+				),
 			)
 			if (ruleRow.length === 0) {
 				return yield* new AlertRuleNotFoundError({
@@ -374,11 +377,12 @@ export class AlertReadModelsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 			const ruleRow = yield* dbExecute((db) =>
-				db
-					.select({ id: alertRules.id })
-					.from(alertRules)
-					.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-					.limit(1),
+				db.run(
+					PG.from(AlertRules)
+						.select("id")
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+						.limit(1),
+				),
 			)
 			if (ruleRow.length === 0) {
 				return yield* new AlertRuleNotFoundError({
@@ -458,35 +462,28 @@ export class AlertReadModelsService extends Context.Service<
 			options: ListAlertDeliveryEventsOptions = {},
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
+			const { incidentId, ruleId } = options
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDeliveryEvents)
-					.where(
-						and(
-							eq(alertDeliveryEvents.orgId, orgId),
-							options.incidentId === undefined
-								? undefined
-								: eq(alertDeliveryEvents.incidentId, options.incidentId),
-							options.ruleId === undefined
-								? undefined
-								: eq(alertDeliveryEvents.ruleId, options.ruleId),
-						),
-					)
-					.orderBy(desc(alertDeliveryEvents.createdAt), desc(alertDeliveryEvents.id))
-					.limit(options.limit ?? 100)
-					.offset(options.offset ?? 0),
+				db.run(
+					PG.from(AlertDeliveryEvents)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							incidentId === undefined ? undefined : $.incidentId.eq(incidentId),
+							ruleId === undefined ? undefined : $.ruleId.eq(ruleId),
+						])
+						.orderBy(["createdAt", "desc"], ["id", "desc"])
+						.limit(options.limit ?? 100)
+						.offset(options.offset ?? 0),
+				),
 			)
 
 			const destinationRows = yield* dbExecute((db) =>
-				db
-					.select({
-						id: alertDestinations.id,
-						name: alertDestinations.name,
-						type: alertDestinations.type,
-					})
-					.from(alertDestinations)
-					.where(eq(alertDestinations.orgId, orgId)),
+				db.run(
+					PG.from(AlertDestinations)
+						.select("id", "name", "type")
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
 			)
 			const destinationMap = new Map(destinationRows.map((row) => [row.id, row]))
 
@@ -506,7 +503,7 @@ export class AlertReadModelsService extends Context.Service<
 					eventType: decodeAlertEventTypeSync(row.eventType),
 					attemptNumber: row.attemptNumber,
 					status: decodeAlertDeliveryStatusSync(row.status),
-					scheduledAt: decodeIsoDateTimeStringSync(row.scheduledAt.toISOString()),
+					scheduledAt: decodeIsoDateTimeStringSync(new Date(row.scheduledAt).toISOString()),
 					attemptedAt: toIso(row.attemptedAt),
 					providerMessage: row.providerMessage,
 					providerReference: row.providerReference,

@@ -4,12 +4,10 @@
  * One module because it used to live in two and they drifted. Both the
  * incident-open path and `InvestigationService` import from here.
  */
-import { investigations } from "@maple/db"
-import type { MapleDbLike } from "@maple/db/client"
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
-import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
-import { Effect } from "effect"
-import { msToDate } from "@maple/backend/platform/time"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
+import { Investigations } from "@maple/db/tables"
+import { Effect, Option, Schema } from "effect"
 
 /** One agent pass. If it has not answered in this long, it is not going to. */
 export const STALE_MS = 15 * 60 * 1000
@@ -31,6 +29,15 @@ export const STALE_MS = 15 * 60 * 1000
  */
 export const PROGRESS_HEARTBEAT_STALE_MS = 5 * 60 * 1000
 
+const decodeHeartbeat = Schema.decodeUnknownOption(Schema.Struct({ updatedAt: Schema.Number }))
+
+/**
+ * `progress_json` as stored, selected without its schema: a malformed progress record must not
+ * fail the read that only wants to know whether the run is alive.
+ */
+export const storedProgressJson = ($: PG.ColumnAccessor<typeof Investigations.columns>) =>
+	PG.undecoded($.progressJson)
+
 export const staleTimeoutMessage = (budgetMs: number): string =>
 	`diagnosis_timeout: no diagnosis was submitted within ${Math.round(budgetMs / 60_000)} minutes; retry`
 
@@ -38,14 +45,15 @@ export const staleTimeoutMessage = (budgetMs: number): string =>
 export const isInvestigationStale = (
 	row: {
 		readonly status: string
-		readonly startedAt: Date | null
-		readonly progressJson?: { readonly updatedAt: number } | null
+		readonly startedAt: number | null
+		/** Stored progress, possibly undecoded; only its `updatedAt` is read. */
+		readonly progressJson?: unknown
 	},
 	nowMs: number,
 ): boolean => {
 	if (row.status !== "investigating") return false
-	if (row.startedAt === null || row.startedAt.getTime() >= nowMs - STALE_MS) return false
-	const heartbeat = row.progressJson?.updatedAt
+	if (row.startedAt === null || row.startedAt >= nowMs - STALE_MS) return false
+	const heartbeat = Option.getOrUndefined(decodeHeartbeat(row.progressJson))?.updatedAt
 	return heartbeat === undefined || heartbeat < nowMs - PROGRESS_HEARTBEAT_STALE_MS
 }
 
@@ -71,27 +79,27 @@ export const isInvestigationStale = (
  * Returns how many rows it moved so the tick can report a number that should normally be zero.
  */
 export const sweepAbandonedInvestigations = (
-	db: MapleDbLike,
+	orm: MapleDb,
 	nowMs: number,
-): Effect.Effect<number, EffectDrizzleQueryError> =>
+): Effect.Effect<number, MapleDbError> =>
 	Effect.map(
-		db
-			.update(investigations)
-			.set({
-				status: "failed",
-				error: staleTimeoutMessage(STALE_MS),
-				updatedAt: msToDate(nowMs),
-			})
-			.where(
-				and(
-					eq(investigations.status, "investigating"),
-					lt(investigations.startedAt, msToDate(nowMs - STALE_MS)),
-					or(
-						isNull(investigations.progressJson),
-						sql`coalesce((${investigations.progressJson}->>'updatedAt')::bigint, 0) < ${nowMs - PROGRESS_HEARTBEAT_STALE_MS}`,
+		orm.run(
+			PG.update(Investigations)
+				.set({
+					status: "failed",
+					error: staleTimeoutMessage(STALE_MS),
+					updatedAt: nowMs,
+				})
+				.where(($) => [
+					$.status.eq("investigating"),
+					$.startedAt.lt(nowMs - STALE_MS),
+					PG.or(
+						$.progressJson.isNull(),
+						PG.sql
+							.cond`coalesce((${$.progressJson}->>'updatedAt')::bigint, 0) < ${nowMs - PROGRESS_HEARTBEAT_STALE_MS}`,
 					),
-				),
-			)
-			.returning({ id: investigations.id }),
+				])
+				.returning("id"),
+		),
 		(rows) => rows.length,
 	)
