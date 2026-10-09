@@ -1081,6 +1081,14 @@ export interface CloudflareAnalyticsServiceApi {
 		orgId: OrgId,
 		accountId?: string,
 	) => Effect.Effect<void, IntegrationsPersistenceError>
+	/** The enabled HTTP-dataset zone row by name, naming the account that owns it; null when unknown. */
+	readonly findHttpZone: (
+		orgId: OrgId,
+		zoneName: string,
+	) => Effect.Effect<
+		{ readonly zoneId: string; readonly accountId: string } | null,
+		IntegrationsPersistenceError
+	>
 }
 
 export class CloudflareAnalyticsService extends Context.Service<
@@ -2784,6 +2792,32 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
+		const findHttpZone = Effect.fn("CloudflareAnalyticsService.findHttpZone")(function* (
+			orgId: OrgId,
+			zoneName: string,
+		) {
+			yield* Effect.annotateCurrentSpan("orgId", orgId)
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(CloudflareAnalyticsState)
+						.select("zoneId", "accountId")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.dataset.eq(HTTP_DATASET),
+							$.zoneName.eq(zoneName),
+							// A zone that moved between accounts (or belongs to one the grant no
+							// longer covers) leaves a disabled row behind; it names the wrong account.
+							$.enabled.eq(true),
+							// "" is a pre-multi-account orphan and names no account.
+							$.accountId.neq(""),
+						])
+						.orderBy(($) => [[$.updatedAt, "desc"]])
+						.limit(1),
+				),
+			)
+			return rows[0] ?? null
+		})
+
 		return {
 			pollAllOrgs,
 			pollOrg,
@@ -2792,6 +2826,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			getUsage,
 			listHyperdriveConfigs: listHyperdriveConfigsForOrg,
 			resetOrgState,
+			findHttpZone,
 		} satisfies CloudflareAnalyticsServiceApi
 	}),
 }) {
