@@ -151,9 +151,11 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
 	return (
 		<a href={href} target="_blank" rel="noreferrer" className={LINK}>
 			{children}
-			{/* A word joiner: the icon never wraps onto a line of its own. */}
-			{"\u2060"}
-			<ExternalLinkIcon size={12} className="ml-1 inline align-[-1px]" />
+			{/* A word joiner in a no-wrap span: the icon never wraps away from the last word. */}
+			<span className="whitespace-nowrap">
+				{"\u2060"}
+				<ExternalLinkIcon size={12} className="ml-1 inline align-[-1px]" />
+			</span>
 		</a>
 	)
 }
