@@ -768,7 +768,7 @@ export class McpOAuthService extends Context.Service<
 			if (familyExpiresAtMs <= now) {
 				yield* database
 					.execute((db) =>
-						db.transaction((tx) => revokeRefreshFamily(tx, row.familyId, new Date(now))),
+						db.transaction((tx) => revokeRefreshFamily(db.orm, row.familyId, now)),
 					)
 					.pipe(Effect.mapError(persistenceError))
 				return yield* protocolError(
@@ -793,7 +793,7 @@ export class McpOAuthService extends Context.Service<
 			if (!accessKeyRow || accessKeyRow.revoked) {
 				yield* database
 					.execute((db) =>
-						db.transaction((tx) => revokeRefreshFamily(tx, row.familyId, new Date(now))),
+						db.transaction((tx) => revokeRefreshFamily(db.orm, row.familyId, now)),
 					)
 					.pipe(Effect.mapError(persistenceError))
 				return yield* protocolError(
@@ -804,7 +804,7 @@ export class McpOAuthService extends Context.Service<
 			if (row.revokedAt) {
 				yield* database
 					.execute((db) =>
-						db.transaction((tx) => revokeRefreshFamily(tx, row.familyId, new Date(now))),
+						db.transaction((tx) => revokeRefreshFamily(db.orm, row.familyId, now)),
 					)
 					.pipe(Effect.mapError(persistenceError))
 				return yield* protocolError(
@@ -839,7 +839,7 @@ export class McpOAuthService extends Context.Service<
 								)
 								.returning({ id: mcpOAuthRefreshTokens.id })
 							if (claimed.length === 0) {
-								yield* revokeRefreshFamily(tx, row.familyId, new Date(now))
+								yield* revokeRefreshFamily(db.orm, row.familyId, now)
 								return "reused" as const
 							}
 							yield* tx
@@ -909,7 +909,7 @@ export class McpOAuthService extends Context.Service<
 				if (row && row.clientId === clientId) {
 					yield* database
 						.execute((db) =>
-							db.transaction((tx) => revokeRefreshFamily(tx, row.familyId, new Date(now))),
+							db.transaction((tx) => revokeRefreshFamily(db.orm, row.familyId, now)),
 						)
 						.pipe(Effect.mapError(persistenceError))
 				}
@@ -940,7 +940,7 @@ export class McpOAuthService extends Context.Service<
 									.where(eq(mcpOAuthRefreshTokens.accessKeyId, row.id))
 									.limit(1)
 								if (refreshRows[0]) {
-									yield* revokeRefreshFamily(tx, refreshRows[0].familyId, new Date(now))
+									yield* revokeRefreshFamily(db.orm, refreshRows[0].familyId, now)
 									return
 								}
 								yield* tx

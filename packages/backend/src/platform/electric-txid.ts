@@ -1,3 +1,4 @@
+import * as PG from "@maple-dev/effect-orm/postgres"
 import { PostgresTransactionId } from "@maple/domain"
 import { sql } from "drizzle-orm"
 
@@ -21,6 +22,12 @@ import { sql } from "drizzle-orm"
 export const txidColumn = {
 	txid: sql<string>`pg_current_xact_id()::xid::text`,
 }
+
+/**
+ * The statement's transaction id for an effect-orm `returning`, as `txidColumn`
+ * is for drizzle: `.returning(($) => ({ id: $.id, txid: currentTxid }))`.
+ */
+export const currentTxid = PG.sql(PG.text)`pg_current_xact_id()::xid::text`
 
 /**
  * Reads the txid from a `.returning(txidColumn)` result row. Returns `undefined`

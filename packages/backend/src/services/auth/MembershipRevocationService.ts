@@ -233,12 +233,7 @@ const make = Effect.gen(function* () {
 		const credentials = yield* dbExecute((db) =>
 			db.transaction((tx) =>
 				Effect.gen(function* () {
-					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(
-						tx,
-						orgId,
-						userId,
-						revokedAt,
-					)
+					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(db.orm, orgId, userId, now)
 					// After the families, so an MCP access key retired above is already
 					// `revoked` and is simply not claimed twice.
 					const revokedKeys = yield* tx
@@ -373,7 +368,7 @@ const make = Effect.gen(function* () {
 						.set({ revoked: true, revokedAt })
 						.where(and(inArray(apiKeys.id, stale), eq(apiKeys.revoked, false)))
 						.returning({ id: apiKeys.id })
-					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(tx, stale, revokedAt)
+					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db.orm, stale, now)
 					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
 				}),
 			),

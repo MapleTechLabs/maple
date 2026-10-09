@@ -33,6 +33,9 @@ export type MapleDb = PgEffectDatabase<EffectPgQueryEffectHKT, EffectPgQueryResu
 /** effect-orm's database over the invocation's client: `db.orm.run(PG.from(T)...)`. */
 export type MapleOrm = Orm.DatabaseApi
 
+/** What `db.orm.run` fails with. */
+export type MapleOrmError = Orm.DatabaseError | QueryBuilderError | CompiledQueryDecodeError
+
 /** The `tx` handed to a `db.transaction` callback. */
 export type MapleTx = Parameters<Parameters<MapleDb["transaction"]>[0]>[0]
 
