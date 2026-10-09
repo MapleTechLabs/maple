@@ -13,7 +13,8 @@
  * would differ on every replay.
  */
 import { createDecipheriv } from "node:crypto"
-import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgClickHouseSchemaApplyRuns, OrgClickHouseSettings } from "@maple/db/tables"
 import {
 	clickHouseSchemaVersion,
 	clickHouseSchemaFeatures,
@@ -31,13 +32,11 @@ import {
 } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { eq } from "drizzle-orm"
 import { Cause, Clock, Config, Effect, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { EdgeCacheService } from "@maple/cache"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Database, type DatabaseApi, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 import {
 	invalidateOrgRuntimeConfigMemo,
 	ORG_CH_CONFIG_CACHE_BUCKET,
@@ -330,7 +329,12 @@ const loadConfig = (
 ): Effect.Effect<ChConfig, SchemaApplyConfigError | DatabaseError> =>
 	Effect.gen(function* () {
 		const rows = yield* database.execute((db) =>
-			db.select().from(orgClickHouseSettings).where(eq(orgClickHouseSettings.orgId, orgId)).limit(1),
+			db.orm.run(
+				PG.from(OrgClickHouseSettings)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)])
+					.limit(1),
+			),
 		)
 		const row = rows[0]
 		if (!row) {
@@ -380,8 +384,8 @@ type RunPatch = Partial<{
 	appliedVersions: ReadonlyArray<number> | null
 	skipped: unknown
 	errorMessage: string | null
-	startedAt: Date | null
-	finishedAt: Date | null
+	startedAt: number | null
+	finishedAt: number | null
 }>
 
 /** Stamps `updatedAt` from the clock, so it only ever runs inside a step (or on the failure path). */
@@ -389,10 +393,11 @@ const updateRun = (database: DatabaseApi, orgId: OrgId, patch: RunPatch) =>
 	Effect.gen(function* () {
 		const now = yield* Clock.currentTimeMillis
 		yield* database.execute((db) =>
-			db
-				.update(orgClickHouseSchemaApplyRuns)
-				.set({ ...patch, updatedAt: msToDate(now) })
-				.where(eq(orgClickHouseSchemaApplyRuns.orgId, orgId)),
+			db.orm.run(
+				PG.update(OrgClickHouseSchemaApplyRuns)
+					.set({ ...patch, updatedAt: now })
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 		)
 	})
 
@@ -522,18 +527,19 @@ export const runClickHouseSchemaApply = (
 				yield* updateRun(database, orgId, {
 					status: "failed",
 					errorMessage: message,
-					finishedAt: msToDate(finishedAt),
+					finishedAt,
 				}).pipe(Effect.ignore)
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgClickHouseSettings)
-							.set({
-								syncStatus: "error",
-								lastSyncError: message,
-								updatedAt: msToDate(finishedAt),
-							})
-							.where(eq(orgClickHouseSettings.orgId, orgId)),
+						db.orm.run(
+							PG.update(OrgClickHouseSettings)
+								.set({
+									syncStatus: "error",
+									lastSyncError: message,
+									updatedAt: finishedAt,
+								})
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.ignore)
 				yield* bustRuntimeConfigCache(orgId)
@@ -573,7 +579,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 					status: "running",
 					phase: "connecting",
 					errorMessage: null,
-					startedAt: msToDate(startedAt),
+					startedAt,
 				})
 				return c
 			}),
@@ -633,16 +639,17 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 			Effect.gen(function* () {
 				const stampedAt = yield* Clock.currentTimeMillis
 				yield* database.execute((db) =>
-					db
-						.update(orgClickHouseSettings)
-						.set({
-							lastSyncAt: msToDate(stampedAt),
-							lastSyncError: null,
-							syncStatus: "connected",
-							schemaVersion: clickHouseSchemaVersion,
-							updatedAt: msToDate(stampedAt),
-						})
-						.where(eq(orgClickHouseSettings.orgId, orgId)),
+					db.orm.run(
+						PG.update(OrgClickHouseSettings)
+							.set({
+								lastSyncAt: stampedAt,
+								lastSyncError: null,
+								syncStatus: "connected",
+								schemaVersion: clickHouseSchemaVersion,
+								updatedAt: stampedAt,
+							})
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 				)
 				yield* bustRuntimeConfigCache(orgId)
 			}),
@@ -778,7 +785,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 					currentMigration: null,
 					appliedVersions,
 					skipped: skippedFeatures,
-					finishedAt: msToDate(finishedAt),
+					finishedAt,
 				})
 			}),
 			STEP,

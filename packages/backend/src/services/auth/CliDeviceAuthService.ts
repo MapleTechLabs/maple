@@ -17,14 +17,9 @@ import {
 	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
-import {
-	apiKeys as apiKeysTable,
-	cliDeviceAuthorizations,
-	generateApiKey,
-	hashApiKey,
-	parseIngestKeyLookupHmacKey,
-} from "@maple/db"
-import { and, eq, isNull, lt } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -137,9 +132,7 @@ export class CliDeviceAuthService extends Context.Service<
 		const purgeExpired = Effect.fn("CliDeviceAuthService.purgeExpired")(function* (now: number) {
 			yield* database
 				.execute((db) =>
-					db
-						.delete(cliDeviceAuthorizations)
-						.where(lt(cliDeviceAuthorizations.expiresAt, new Date(now))),
+					db.orm.run(PG.deleteFrom(CliDeviceAuthorizations).where(($) => [$.expiresAt.lt(now)])),
 				)
 				.pipe(Effect.mapError(persistenceError))
 		})
@@ -164,11 +157,12 @@ export class CliDeviceAuthService extends Context.Service<
 			}
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(cliDeviceAuthorizations)
-						.where(eq(cliDeviceAuthorizations.userCodeHash, hashCode(normalized)))
-						.limit(1),
+					db.orm.run(
+						PG.from(CliDeviceAuthorizations)
+							.select()
+							.where(($) => [$.userCodeHash.eq(hashCode(normalized))])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(persistenceError))
 			const row = Option.fromNullishOr(rows[0])
@@ -181,7 +175,7 @@ export class CliDeviceAuthService extends Context.Service<
 		const requireActive = Effect.fn("CliDeviceAuthService.requireActive")(function* (userCode: string) {
 			const found = yield* findByUserCode(userCode)
 			const now = yield* Clock.currentTimeMillis
-			if (found.row.expiresAt.getTime() <= now) {
+			if (found.row.expiresAt <= now) {
 				return yield* new CliDeviceExpiredError({ message: "CLI login code has expired" })
 			}
 			return found
@@ -199,13 +193,15 @@ export class CliDeviceAuthService extends Context.Service<
 			const verificationUri = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/cli-login`
 			yield* database
 				.execute((db) =>
-					db.insert(cliDeviceAuthorizations).values({
-						deviceCodeHash: hashCode(deviceCode),
-						userCodeHash: hashCode(userCode),
-						deviceName: deviceName.trim().slice(0, 120) || "Maple CLI",
-						createdAt: new Date(now),
-						expiresAt: new Date(now + DEVICE_TTL_SECONDS * 1000),
-					}),
+					db.orm.run(
+						PG.insertInto(CliDeviceAuthorizations).values({
+							deviceCodeHash: hashCode(deviceCode),
+							userCodeHash: hashCode(userCode),
+							deviceName: deviceName.trim().slice(0, 120) || "Maple CLI",
+							createdAt: now,
+							expiresAt: now + DEVICE_TTL_SECONDS * 1000,
+						}),
+					),
 				)
 				.pipe(Effect.mapError(persistenceError))
 			const displayed = displayUserCode(userCode)
@@ -221,17 +217,18 @@ export class CliDeviceAuthService extends Context.Service<
 
 		const inspect = Effect.fn("CliDeviceAuthService.inspect")(function* (userCode: string) {
 			const { row, normalized } = yield* requireActive(userCode)
-			const status = row.deniedAt
-				? ("denied" as const)
-				: row.apiKeyId
-					? ("complete" as const)
-					: row.approvedAt
-						? ("approved" as const)
-						: ("pending" as const)
+			const status =
+				row.deniedAt !== null
+					? ("denied" as const)
+					: row.apiKeyId
+						? ("complete" as const)
+						: row.approvedAt !== null
+							? ("approved" as const)
+							: ("pending" as const)
 			return new CliDeviceInfoResponse({
 				userCode: displayUserCode(normalized),
 				deviceName: row.deviceName,
-				expiresAt: row.expiresAt.toISOString(),
+				expiresAt: new Date(row.expiresAt).toISOString(),
 				status,
 			})
 		})
@@ -241,29 +238,28 @@ export class CliDeviceAuthService extends Context.Service<
 			identity: ApprovalIdentity,
 		) {
 			const { row } = yield* requireActive(userCode)
-			if (row.approvedAt || row.deniedAt) {
+			if (row.approvedAt !== null || row.deniedAt !== null) {
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
 			const now = yield* Clock.currentTimeMillis
 			const updated = yield* database
 				.execute((db) =>
-					db
-						.update(cliDeviceAuthorizations)
-						.set({
-							approvedOrgId: identity.orgId,
-							approvedUserId: identity.userId,
-							approvedRoles: [...identity.roles],
-							approvedUserEmail: identity.userEmail,
-							approvedAt: new Date(now),
-						})
-						.where(
-							and(
-								eq(cliDeviceAuthorizations.deviceCodeHash, row.deviceCodeHash),
-								isNull(cliDeviceAuthorizations.approvedAt),
-								isNull(cliDeviceAuthorizations.deniedAt),
-							),
-						)
-						.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash }),
+					db.orm.run(
+						PG.update(CliDeviceAuthorizations)
+							.set({
+								approvedOrgId: identity.orgId,
+								approvedUserId: identity.userId,
+								approvedRoles: [...identity.roles],
+								approvedUserEmail: identity.userEmail,
+								approvedAt: now,
+							})
+							.where(($) => [
+								$.deviceCodeHash.eq(row.deviceCodeHash),
+								$.approvedAt.isNull(),
+								$.deniedAt.isNull(),
+							])
+							.returning("deviceCodeHash"),
+					),
 				)
 				.pipe(Effect.mapError(persistenceError))
 			if (updated.length === 0) {
@@ -274,23 +270,22 @@ export class CliDeviceAuthService extends Context.Service<
 
 		const deny = Effect.fn("CliDeviceAuthService.deny")(function* (userCode: string) {
 			const { row } = yield* requireActive(userCode)
-			if (row.approvedAt || row.deniedAt) {
+			if (row.approvedAt !== null || row.deniedAt !== null) {
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
 			const now = yield* Clock.currentTimeMillis
 			const updated = yield* database
 				.execute((db) =>
-					db
-						.update(cliDeviceAuthorizations)
-						.set({ deniedAt: new Date(now) })
-						.where(
-							and(
-								eq(cliDeviceAuthorizations.deviceCodeHash, row.deviceCodeHash),
-								isNull(cliDeviceAuthorizations.approvedAt),
-								isNull(cliDeviceAuthorizations.deniedAt),
-							),
-						)
-						.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash }),
+					db.orm.run(
+						PG.update(CliDeviceAuthorizations)
+							.set({ deniedAt: now })
+							.where(($) => [
+								$.deviceCodeHash.eq(row.deviceCodeHash),
+								$.approvedAt.isNull(),
+								$.deniedAt.isNull(),
+							])
+							.returning("deviceCodeHash"),
+					),
 				)
 				.pipe(Effect.mapError(persistenceError))
 			if (updated.length === 0) {
@@ -310,22 +305,24 @@ export class CliDeviceAuthService extends Context.Service<
 		) {
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(cliDeviceAuthorizations)
-						.where(eq(cliDeviceAuthorizations.deviceCodeHash, deviceCodeHash))
-						.limit(1),
+					db.orm.run(
+						PG.from(CliDeviceAuthorizations)
+							.select()
+							.where(($) => [$.deviceCodeHash.eq(deviceCodeHash)])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(persistenceError))
 			return Option.fromNullishOr(rows[0])
 		})
 
 		const completeFromRow: (
-			row: typeof cliDeviceAuthorizations.$inferSelect,
+			row: CliDeviceAuthorizationRow,
 		) => Effect.Effect<PollResponse, CliDevicePersistenceError> = Effect.fn(
 			"CliDeviceAuthService.completeFromRow",
-		)(function* (row: typeof cliDeviceAuthorizations.$inferSelect) {
-			if (!row.approvedOrgId || !row.approvedUserId || !row.approvedRoles) {
+		)(function* (row: CliDeviceAuthorizationRow) {
+			const { approvedOrgId, approvedUserId, approvedRoles } = row
+			if (!approvedOrgId || !approvedUserId || !approvedRoles) {
 				return new CliDevicePendingResponse({ status: "pending", interval: POLL_INTERVAL_SECONDS })
 			}
 			if (row.tokenCiphertext && row.tokenIv && row.tokenTag) {
@@ -337,8 +334,8 @@ export class CliDeviceAuthService extends Context.Service<
 				return new CliDeviceCompleteResponse({
 					status: "complete",
 					token,
-					orgId: row.approvedOrgId,
-					userId: row.approvedUserId,
+					orgId: approvedOrgId,
+					userId: approvedUserId,
 				})
 			}
 
@@ -352,43 +349,44 @@ export class CliDeviceAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const won = yield* database
 				.execute((db) =>
-					db.transaction((tx) =>
+					db.orm.transaction(
 						Effect.gen(function* () {
-							const claimed = yield* tx
-								.update(cliDeviceAuthorizations)
-								.set({
-									apiKeyId,
-									tokenCiphertext: encrypted.ciphertext,
-									tokenIv: encrypted.iv,
-									tokenTag: encrypted.tag,
-								})
-								.where(
-									and(
-										eq(cliDeviceAuthorizations.deviceCodeHash, row.deviceCodeHash),
-										isNull(cliDeviceAuthorizations.apiKeyId),
-									),
-								)
-								.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
+							const claimed = yield* db.orm.run(
+								PG.update(CliDeviceAuthorizations)
+									.set({
+										apiKeyId,
+										tokenCiphertext: encrypted.ciphertext,
+										tokenIv: encrypted.iv,
+										tokenTag: encrypted.tag,
+									})
+									.where(($) => [
+										$.deviceCodeHash.eq(row.deviceCodeHash),
+										$.apiKeyId.isNull(),
+									])
+									.returning("deviceCodeHash"),
+							)
 							if (claimed.length === 0) return false
-							yield* tx.insert(apiKeysTable).values({
-								id: apiKeyId,
-								orgId: row.approvedOrgId!,
-								name: row.deviceName,
-								description: "Created by maple auth login",
-								keyHash: hashApiKey(rawToken, apiKeyHmacKey),
-								keyPrefix: rawToken.slice(0, 12) + "...",
-								kind: "standard",
-								scopes: null,
-								metadataJson: {
-									source: "maple_cli",
-									roles: row.approvedRoles,
-									deviceName: row.deviceName,
-								},
-								expiresAt: new Date(now + CLI_KEY_TTL_MS),
-								createdAt: new Date(now),
-								createdBy: row.approvedUserId!,
-								createdByEmail: row.approvedUserEmail,
-							})
+							yield* db.orm.run(
+								PG.insertInto(ApiKeys).values({
+									id: apiKeyId,
+									orgId: approvedOrgId,
+									name: row.deviceName,
+									description: "Created by maple auth login",
+									keyHash: hashApiKey(rawToken, apiKeyHmacKey),
+									keyPrefix: rawToken.slice(0, 12) + "...",
+									kind: "standard",
+									scopes: null,
+									metadataJson: {
+										source: "maple_cli",
+										roles: [...approvedRoles],
+										deviceName: row.deviceName,
+									},
+									expiresAt: now + CLI_KEY_TTL_MS,
+									createdAt: now,
+									createdBy: approvedUserId,
+									createdByEmail: row.approvedUserEmail,
+								}),
+							)
 							return true
 						}),
 					),
@@ -414,8 +412,8 @@ export class CliDeviceAuthService extends Context.Service<
 					return new CliDeviceCompleteResponse({
 						status: "complete",
 						token,
-						orgId: row.approvedOrgId,
-						userId: row.approvedUserId,
+						orgId: approvedOrgId,
+						userId: approvedUserId,
 					})
 				}
 				return yield* new CliDevicePersistenceError({ message: "CLI credential issuance raced" })
@@ -423,8 +421,8 @@ export class CliDeviceAuthService extends Context.Service<
 			return new CliDeviceCompleteResponse({
 				status: "complete",
 				token: rawToken,
-				orgId: row.approvedOrgId,
-				userId: row.approvedUserId,
+				orgId: approvedOrgId,
+				userId: approvedUserId,
 			})
 		})
 
@@ -433,12 +431,12 @@ export class CliDeviceAuthService extends Context.Service<
 			const row = yield* loadByDeviceCode(deviceCode)
 			if (Option.isNone(row)) return new CliDeviceExpiredResponse({ status: "expired" })
 			const now = yield* Clock.currentTimeMillis
-			if (row.value.expiresAt.getTime() <= now) {
+			if (row.value.expiresAt <= now) {
 				yield* purgeExpired(now)
 				return new CliDeviceExpiredResponse({ status: "expired" })
 			}
-			if (row.value.deniedAt) return new CliDeviceDeniedResponse({ status: "denied" })
-			if (!row.value.approvedAt) {
+			if (row.value.deniedAt !== null) return new CliDeviceDeniedResponse({ status: "denied" })
+			if (row.value.approvedAt === null) {
 				return new CliDevicePendingResponse({ status: "pending", interval: POLL_INTERVAL_SECONDS })
 			}
 			return yield* completeFromRow(row.value)

@@ -30,7 +30,7 @@ const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const ORG = asOrgId("org_investigation_stale_test")
 
 const NOW = Date.UTC(2026, 8, 20, 12, 0)
-const startedAgo = (ms: number) => new Date(NOW - ms)
+const startedAgo = (ms: number) => NOW - ms
 
 const row = (input: { status?: string; startedMsAgo?: number; heartbeatMsAgo?: number | null }) => ({
 	status: input.status ?? "investigating",
@@ -146,7 +146,7 @@ describe("sweepAbandonedInvestigations", () => {
 			yield* seed("4", { startedMsAgo: 60_000 })
 
 			const database = yield* Database
-			const moved = yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW))
+			const moved = yield* database.execute((db) => sweepAbandonedInvestigations(db.orm, NOW))
 
 			assert.strictEqual(moved, 2)
 			assert.strictEqual(yield* statusOf("1"), "failed")
@@ -164,7 +164,7 @@ describe("sweepAbandonedInvestigations", () => {
 				progress: { stepCount: 1, steps: [] },
 			})
 			const database = yield* Database
-			assert.strictEqual(yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW)), 1)
+			assert.strictEqual(yield* database.execute((db) => sweepAbandonedInvestigations(db.orm, NOW)), 1)
 			assert.strictEqual(yield* statusOf("5"), "failed")
 		}).pipe(Effect.provide(makeLayer())),
 	)

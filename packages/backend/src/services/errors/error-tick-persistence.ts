@@ -1,18 +1,20 @@
 import { randomUUID } from "node:crypto"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	errorFingerprintCandidates,
-	errorIncidents,
-	errorIssues,
-	errorIssueEvents,
-	errorIssueStates,
-	errorNotificationDeliveries,
-	errorTickStates,
+	ErrorFingerprintCandidates,
+	ErrorIncidents,
+	ErrorIssues,
+	ErrorIssueEvents,
+	ErrorIssueStates,
+	ErrorNotificationDeliveries,
+	ErrorTickStates,
 	type ErrorIssueEventInsert,
 	type ErrorIssueRow,
 	type ErrorNotificationPolicyRow,
-} from "@maple/db"
-import type { MapleDb, MapleDbError, MapleTx } from "@maple/db/client"
-import { msToDate, msToSqlTimestamp } from "@maple/backend/platform/time"
+} from "@maple/db/tables"
+import type { MapleDb, MapleDbError, MapleOrm } from "@maple/db/client"
+import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import type {
 	ActorId,
 	AlertDestinationId,
@@ -24,7 +26,6 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Array as Arr, Effect, Schema } from "effect"
 
 export interface ErrorTickScanRow {
@@ -117,8 +118,11 @@ const REGRESSION_GRACE_MS = 60 * 60 * 1000
  */
 const MAX_TRACKED_VERSIONS = 50
 
-/** The transaction handle `persistErrorTickWindow` runs its statements on. */
-type ErrorTickTransaction = MapleTx
+/** The handle `persistErrorTickWindow` runs its statements on, inside its transaction. */
+type ErrorTickTransaction = MapleOrm
+
+/** A jsonb build set, as the `least`/`greatest`-style SET expressions below return it. */
+const VersionListJson = PG.jsonb(Schema.Array(Schema.String))
 
 /**
  * Rows per statement for the window's bulk reads and writes. Postgres caps a
@@ -149,59 +153,64 @@ const promoteCandidates = (
 	tx: ErrorTickTransaction,
 	input: PersistErrorTickWindowInput,
 	unknownRows: ReadonlyArray<ErrorTickScanRow>,
-	windowEnd: Date,
+	windowEnd: number,
 ): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
 	Effect.gen(function* () {
 		if (unknownRows.length === 0) return []
 
 		const upserted = yield* inChunks(unknownRows, (chunk) =>
-			tx
-				.insert(errorFingerprintCandidates)
-				.values(
-					chunk.map((row) => ({
-						orgId: input.orgId,
-						fingerprintHash: row.fingerprintHash,
-						serviceName: row.serviceName,
-						exceptionType: row.exceptionType,
-						exceptionMessage: row.exceptionMessage,
-						errorLabel: row.errorLabel,
-						topFrame: row.topFrame,
-						serviceVersionsJson: mergeVersions([], row.serviceVersions),
-						occurrenceCount: row.count,
-						firstSeenAt: msToDate(row.firstSeenMs),
-						lastSeenAt: msToDate(row.lastSeenMs),
-						updatedAt: windowEnd,
-					})),
-				)
-				.onConflictDoUpdate({
-					target: [errorFingerprintCandidates.orgId, errorFingerprintCandidates.fingerprintHash],
-					set: {
-						serviceName: sql`excluded.service_name`,
-						exceptionType: sql`excluded.exception_type`,
-						exceptionMessage: sql`excluded.exception_message`,
-						errorLabel: sql`excluded.error_label`,
-						topFrame: sql`excluded.top_frame`,
-						// Union rather than overwrite: a candidate accumulates across ticks and
-						// the builds it was seen from seed the issue it is promoted into. The
-						// cap mirrors MAX_TRACKED_VERSIONS; which build is dropped past it is
-						// unordered, which is fine for a row that lives at most a day.
-						serviceVersionsJson: sql`(
+			tx.run(
+				PG.insertInto(ErrorFingerprintCandidates)
+					.values(
+						chunk.map((row) => ({
+							orgId: input.orgId,
+							fingerprintHash: row.fingerprintHash,
+							serviceName: row.serviceName,
+							exceptionType: row.exceptionType,
+							exceptionMessage: row.exceptionMessage,
+							errorLabel: row.errorLabel,
+							topFrame: row.topFrame,
+							serviceVersionsJson: mergeVersions([], row.serviceVersions),
+							occurrenceCount: row.count,
+							firstSeenAt: row.firstSeenMs,
+							lastSeenAt: row.lastSeenMs,
+							updatedAt: windowEnd,
+						})),
+					)
+					.onConflictDoUpdate({
+						target: ["orgId", "fingerprintHash"],
+						set: ($, excluded) => ({
+							serviceName: excluded.serviceName,
+							exceptionType: excluded.exceptionType,
+							exceptionMessage: excluded.exceptionMessage,
+							errorLabel: excluded.errorLabel,
+							topFrame: excluded.topFrame,
+							// Union rather than overwrite: a candidate accumulates across ticks and
+							// the builds it was seen from seed the issue it is promoted into. The
+							// cap mirrors MAX_TRACKED_VERSIONS; which build is dropped past it is
+							// unordered, which is fine for a row that lives at most a day.
+							serviceVersionsJson: PG.sql(VersionListJson)`(
 					select coalesce(jsonb_agg(version), '[]'::jsonb)
 					from (
 						select distinct value as version
 						from jsonb_array_elements(
-							${errorFingerprintCandidates.serviceVersionsJson} || excluded.service_versions_json
+							${$.serviceVersionsJson} || ${excluded.serviceVersionsJson}
 						)
-						limit ${sql.raw(String(MAX_TRACKED_VERSIONS))}
+						limit ${MAX_TRACKED_VERSIONS}
 					) as versions
 				)`,
-						occurrenceCount: sql`${errorFingerprintCandidates.occurrenceCount} + excluded.occurrence_count`,
-						firstSeenAt: sql`least(${errorFingerprintCandidates.firstSeenAt}, excluded.first_seen_at)`,
-						lastSeenAt: sql`greatest(${errorFingerprintCandidates.lastSeenAt}, excluded.last_seen_at)`,
-						updatedAt: sql`excluded.updated_at`,
-					},
-				})
-				.returning(),
+							occurrenceCount: $.occurrenceCount.add(excluded.occurrenceCount),
+							firstSeenAt: PG.sql(
+								PG.timestamptzMillis,
+							)`least(${$.firstSeenAt}, ${excluded.firstSeenAt})`,
+							lastSeenAt: PG.sql(
+								PG.timestamptzMillis,
+							)`greatest(${$.lastSeenAt}, ${excluded.lastSeenAt})`,
+							updatedAt: excluded.updatedAt,
+						}),
+					})
+					.returning(),
+			),
 		)
 
 		const ready = upserted.filter((row) => row.occurrenceCount >= PROMOTION_MIN_OCCURRENCES)
@@ -210,14 +219,11 @@ const promoteCandidates = (
 		yield* Effect.forEach(
 			chunks(ready),
 			(chunk) =>
-				tx.delete(errorFingerprintCandidates).where(
-					and(
-						eq(errorFingerprintCandidates.orgId, input.orgId),
-						inArray(
-							errorFingerprintCandidates.fingerprintHash,
-							chunk.map((row) => row.fingerprintHash),
-						),
-					),
+				tx.run(
+					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
+						$.orgId.eq(input.orgId),
+						$.fingerprintHash.in_(...chunk.map((row) => row.fingerprintHash)),
+					]),
 				),
 			{ discard: true },
 		)
@@ -231,8 +237,8 @@ const promoteCandidates = (
 			topFrame: row.topFrame,
 			serviceVersions: row.serviceVersionsJson,
 			count: row.occurrenceCount,
-			firstSeenMs: row.firstSeenAt.getTime(),
-			lastSeenMs: row.lastSeenAt.getTime(),
+			firstSeenMs: row.firstSeenAt,
+			lastSeenMs: row.lastSeenAt,
 		}))
 	})
 
@@ -264,8 +270,8 @@ export const isRegression = (
 ): boolean => {
 	if (prior.workflowState !== "done") return false
 
-	const resolvedAtMs = prior.resolvedAt?.getTime()
-	if (resolvedAtMs !== undefined && row.lastSeenMs < resolvedAtMs + REGRESSION_GRACE_MS) return false
+	const resolvedAtMs = prior.resolvedAt
+	if (resolvedAtMs !== null && row.lastSeenMs < resolvedAtMs + REGRESSION_GRACE_MS) return false
 
 	// A window can carry several builds. It is a regression if ANY of them was
 	// not already running when the issue was resolved — one new build firing is
@@ -361,7 +367,7 @@ const buildEvent = (
 	fromState: options.fromState ?? null,
 	toState: options.toState ?? null,
 	payloadJson: options.payload ?? {},
-	createdAt: msToDate(input.windowEndMs),
+	createdAt: input.windowEndMs,
 })
 
 const openNotificationsEnabled = (
@@ -384,14 +390,14 @@ const buildNotificationRows = (input: PersistErrorTickWindowInput, payload: Noti
 		payloadJson: payload,
 		status: "queued" as const,
 		attemptCount: 0,
-		scheduledAt: msToDate(input.windowEndMs),
+		scheduledAt: input.windowEndMs,
 		claimedAt: null,
 		claimExpiresAt: null,
 		claimedBy: null,
 		attemptedAt: null,
 		errorMessage: null,
-		createdAt: msToDate(input.windowEndMs),
-		updatedAt: msToDate(input.windowEndMs),
+		createdAt: input.windowEndMs,
+		updatedAt: input.windowEndMs,
 	}))
 }
 
@@ -414,9 +420,10 @@ export const persistErrorTickWindow = (
 	PersistErrorTickWindowResult,
 	MapleDbError | ErrorTickClaimLost | ErrorTickUpsertMissingRow
 > =>
-	db.transaction((tx) =>
+	db.orm.transaction(
 		Effect.gen(function* () {
-			const windowEnd = msToDate(input.windowEndMs)
+			const tx = db.orm
+			const windowEnd = input.windowEndMs
 			// The raw `sql` bulk updates below bind this with no column type behind it,
 			// so it has to reach the driver as a string — see `msToSqlTimestamp`.
 			const windowEndSql = msToSqlTimestamp(input.windowEndMs)
@@ -426,27 +433,22 @@ export const persistErrorTickWindow = (
 			// next cron: the TTL degrades to pure crash recovery. Without this a slow
 			// window is stolen, rolled back at the checkpoint, and retried at the same
 			// width forever — the org silently stops producing issues.
-			const held = yield* tx
-				.select({ orgId: errorTickStates.orgId })
-				.from(errorTickStates)
-				.where(
-					and(
-						eq(errorTickStates.orgId, input.orgId),
-						eq(errorTickStates.claimToken, input.claimToken),
-					),
-				)
-				.for("update")
+			const held = yield* tx.run(
+				PG.from(ErrorTickStates)
+					.select("orgId")
+					.where(($) => [$.orgId.eq(input.orgId), $.claimToken.eq(input.claimToken)])
+					.forUpdate(),
+			)
 			if (held.length === 0) return yield* Effect.fail(claimLost(input.orgId, "preflight"))
 
 			const rows = mergeScanRows(input.rows)
 			const fingerprints = rows.map((row) => row.fingerprintHash)
 			const existingIssues = yield* inChunks(fingerprints, (chunk) =>
-				tx
-					.select()
-					.from(errorIssues)
-					.where(
-						and(eq(errorIssues.orgId, input.orgId), inArray(errorIssues.fingerprintHash, chunk)),
-					),
+				tx.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.in_(...chunk)]),
+				),
 			)
 			const issueByFingerprint = new Map(existingIssues.map((row) => [row.fingerprintHash, row]))
 
@@ -497,7 +499,7 @@ export const persistErrorTickWindow = (
 				// means suppressed indefinitely.
 				if (
 					prior?.workflowState === "wontfix" &&
-					(prior.snoozeUntil == null || prior.snoozeUntil.getTime() > input.windowEndMs)
+					(prior.snoozeUntil == null || prior.snoozeUntil > input.windowEndMs)
 				) {
 					continue
 				}
@@ -529,69 +531,71 @@ export const persistErrorTickWindow = (
 				// expressions all read the pre-update row, so the regression flip and the
 				// counter accumulation stay consistent with each other.
 				const upserted = yield* inChunks(applicable, (chunk) =>
-					tx
-						.insert(errorIssues)
-						.values(
-							chunk.map(({ row, prior }) => ({
-								id: input.makeIssueId(),
-								orgId: input.orgId,
-								fingerprintHash: row.fingerprintHash,
-								fingerprintVersion: FINGERPRINT_VERSION,
-								serviceName: row.serviceName,
-								exceptionType: row.exceptionType,
-								exceptionMessage: row.exceptionMessage,
-								errorLabel: row.errorLabel,
-								topFrame: row.topFrame,
-								workflowState: "triage" as const,
-								priority: 3,
-								assignedActorId: null,
-								leaseHolderActorId: null,
-								leaseExpiresAt: null,
-								claimedAt: null,
-								notes: null,
-								firstSeenAt: msToDate(row.firstSeenMs),
-								lastSeenAt: msToDate(row.lastSeenMs),
-								occurrenceCount: row.count,
-								seenVersionsJson: mergeVersions(
-									prior?.seenVersionsJson ?? [],
-									row.serviceVersions,
-								),
-								resolvedAt: null,
-								resolvedByActorId: null,
-								snoozeUntil: null,
-								archivedAt: null,
-								createdAt: windowEnd,
-								updatedAt: windowEnd,
-							})),
-						)
-						.onConflictDoUpdate({
-							target: [errorIssues.orgId, errorIssues.fingerprintHash],
-							set: {
-								fingerprintVersion: sql`excluded.fingerprint_version`,
-								serviceName: sql`excluded.service_name`,
-								exceptionType: sql`excluded.exception_type`,
-								exceptionMessage: sql`excluded.exception_message`,
-								errorLabel: sql`excluded.error_label`,
-								topFrame: sql`excluded.top_frame`,
-								firstSeenAt: sql`least(${errorIssues.firstSeenAt}, excluded.first_seen_at)`,
-								lastSeenAt: sql`greatest(${errorIssues.lastSeenAt}, excluded.last_seen_at)`,
-								occurrenceCount: sql`${errorIssues.occurrenceCount} + excluded.occurrence_count`,
-								// The merged set is computed against the pre-update row and arrives
-								// via the INSERT values, so this stays one statement.
-								seenVersionsJson: sql`excluded.seen_versions_json`,
-								// Reopening is NOT decided here. It used to be
-								// `case when workflow_state = 'done' then 'triage'`, which reopened a
-								// fixed issue on any occurrence at all — including one from a build
-								// that predates the fix. That needs the issue's resolved-build set,
-								// which SQL cannot reach from `excluded`, so `isRegression` decides in
-								// TypeScript and the targeted update below applies it.
-								updatedAt: sql`excluded.updated_at`,
-							},
-						})
-						.returning({
-							id: errorIssues.id,
-							fingerprintHash: errorIssues.fingerprintHash,
-						}),
+					tx.run(
+						PG.insertInto(ErrorIssues)
+							.values(
+								chunk.map(({ row, prior }) => ({
+									id: input.makeIssueId(),
+									orgId: input.orgId,
+									fingerprintHash: row.fingerprintHash,
+									fingerprintVersion: FINGERPRINT_VERSION,
+									serviceName: row.serviceName,
+									exceptionType: row.exceptionType,
+									exceptionMessage: row.exceptionMessage,
+									errorLabel: row.errorLabel,
+									topFrame: row.topFrame,
+									workflowState: "triage" as const,
+									priority: 3,
+									assignedActorId: null,
+									leaseHolderActorId: null,
+									leaseExpiresAt: null,
+									claimedAt: null,
+									notes: null,
+									firstSeenAt: row.firstSeenMs,
+									lastSeenAt: row.lastSeenMs,
+									occurrenceCount: row.count,
+									seenVersionsJson: mergeVersions(
+										prior?.seenVersionsJson ?? [],
+										row.serviceVersions,
+									),
+									resolvedAt: null,
+									resolvedByActorId: null,
+									snoozeUntil: null,
+									archivedAt: null,
+									createdAt: windowEnd,
+									updatedAt: windowEnd,
+								})),
+							)
+							.onConflictDoUpdate({
+								target: ["orgId", "fingerprintHash"],
+								set: ($, excluded) => ({
+									fingerprintVersion: excluded.fingerprintVersion,
+									serviceName: excluded.serviceName,
+									exceptionType: excluded.exceptionType,
+									exceptionMessage: excluded.exceptionMessage,
+									errorLabel: excluded.errorLabel,
+									topFrame: excluded.topFrame,
+									firstSeenAt: PG.sql(
+										PG.timestamptzMillis,
+									)`least(${$.firstSeenAt}, ${excluded.firstSeenAt})`,
+									lastSeenAt: PG.sql(
+										PG.timestamptzMillis,
+									)`greatest(${$.lastSeenAt}, ${excluded.lastSeenAt})`,
+									occurrenceCount: $.occurrenceCount.add(excluded.occurrenceCount),
+									// The merged set is computed against the pre-update row and arrives
+									// via the INSERT values, so this stays one statement.
+									seenVersionsJson: excluded.seenVersionsJson,
+									// Reopening is NOT decided here. It used to be
+									// `case when workflow_state = 'done' then 'triage'`, which reopened a
+									// fixed issue on any occurrence at all — including one from a build
+									// that predates the fix. That needs the issue's resolved-build set,
+									// which SQL cannot reach from `excluded`, so `isRegression` decides in
+									// TypeScript and the targeted update below applies it.
+									updatedAt: excluded.updatedAt,
+								}),
+							})
+							.returning("id", "fingerprintHash"),
+					),
 				)
 
 				const idByFingerprint = new Map(upserted.map((row) => [row.fingerprintHash, row.id]))
@@ -657,32 +661,29 @@ export const persistErrorTickWindow = (
 				yield* Effect.forEach(
 					chunks(regressedIds),
 					(chunk) =>
-						tx
-							.update(errorIssues)
-							.set({
-								workflowState: "regressed",
-								resolvedAt: null,
-								resolvedByActorId: null,
-								lastRegressedAt: windowEnd,
-								regressionCount: sql`${errorIssues.regressionCount} + 1`,
-								updatedAt: windowEnd,
-							})
-							.where(and(eq(errorIssues.orgId, input.orgId), inArray(errorIssues.id, chunk))),
+						tx.run(
+							PG.update(ErrorIssues)
+								.set(($) => ({
+									workflowState: "regressed",
+									resolvedAt: null,
+									resolvedByActorId: null,
+									lastRegressedAt: windowEnd,
+									regressionCount: $.regressionCount.add(1),
+									updatedAt: windowEnd,
+								}))
+								.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
+						),
 					{ discard: true },
 				)
 			}
 
 			const observedIssueIds = observed.map((entry) => entry.issueId)
 			const states = yield* inChunks(observedIssueIds, (chunk) =>
-				tx
-					.select()
-					.from(errorIssueStates)
-					.where(
-						and(
-							eq(errorIssueStates.orgId, input.orgId),
-							inArray(errorIssueStates.issueId, chunk),
-						),
-					),
+				tx.run(
+					PG.from(ErrorIssueStates)
+						.select()
+						.where(($) => [$.orgId.eq(input.orgId), $.issueId.in_(...chunk)]),
+				),
 			)
 			const stateByIssue = new Map(states.map((row) => [row.issueId, row]))
 
@@ -713,15 +714,14 @@ export const persistErrorTickWindow = (
 				chunks(refreshing),
 				(chunk) =>
 					Effect.gen(function* () {
-						const incidentValues = sql.join(
+						const incidentValues = Orm.sql.join(
 							chunk.map(
 								(item) =>
-									sql`(${item.incidentId}::text, ${msToSqlTimestamp(item.row.lastSeenMs)}::timestamptz, ${item.row.count}::integer)`,
+									Orm.sql`(${item.incidentId}::text, ${msToSqlTimestamp(item.row.lastSeenMs)}::timestamptz, ${item.row.count}::integer)`,
 							),
-							sql`, `,
 						)
-						yield* tx.execute(sql`
-				update ${errorIncidents} as t
+						yield* tx.execute(Orm.sql`
+				update error_incidents as t
 				set last_triggered_at = greatest(t.last_triggered_at, v.last_seen),
 				    occurrence_count = t.occurrence_count + v.cnt,
 				    updated_at = ${windowEndSql}::timestamptz
@@ -729,15 +729,14 @@ export const persistErrorTickWindow = (
 				where t.id = v.incident_id
 			`)
 
-						const stateValues = sql.join(
+						const stateValues = Orm.sql.join(
 							chunk.map(
 								(item) =>
-									sql`(${item.issueId}::text, ${msToSqlTimestamp(item.row.lastSeenMs)}::timestamptz)`,
+									Orm.sql`(${item.issueId}::text, ${msToSqlTimestamp(item.row.lastSeenMs)}::timestamptz)`,
 							),
-							sql`, `,
 						)
-						yield* tx.execute(sql`
-				update ${errorIssueStates} as t
+						yield* tx.execute(Orm.sql`
+				update error_issue_states as t
 				set last_observed_occurrence_at = greatest(t.last_observed_occurrence_at, v.last_seen),
 				    last_evaluated_at = ${windowEndSql}::timestamptz,
 				    updated_at = ${windowEndSql}::timestamptz
@@ -756,32 +755,30 @@ export const persistErrorTickWindow = (
 				// `open_incident_id` is already set fails the `setWhere` and is therefore
 				// absent from RETURNING, so the claimed set is exactly what came back.
 				const claimed = yield* inChunks(claiming, (chunk) =>
-					tx
-						.insert(errorIssueStates)
-						.values(
-							chunk.map((item) => ({
-								orgId: input.orgId,
-								issueId: item.entry.issueId,
-								lastObservedOccurrenceAt: msToDate(item.entry.row.lastSeenMs),
-								lastEvaluatedAt: windowEnd,
-								openIncidentId: item.incidentId,
-								updatedAt: windowEnd,
-							})),
-						)
-						.onConflictDoUpdate({
-							target: [errorIssueStates.orgId, errorIssueStates.issueId],
-							set: {
-								lastObservedOccurrenceAt: sql`excluded.last_observed_occurrence_at`,
-								lastEvaluatedAt: sql`excluded.last_evaluated_at`,
-								openIncidentId: sql`excluded.open_incident_id`,
-								updatedAt: sql`excluded.updated_at`,
-							},
-							setWhere: isNull(errorIssueStates.openIncidentId),
-						})
-						.returning({
-							issueId: errorIssueStates.issueId,
-							openIncidentId: errorIssueStates.openIncidentId,
-						}),
+					tx.run(
+						PG.insertInto(ErrorIssueStates)
+							.values(
+								chunk.map((item) => ({
+									orgId: input.orgId,
+									issueId: item.entry.issueId,
+									lastObservedOccurrenceAt: item.entry.row.lastSeenMs,
+									lastEvaluatedAt: windowEnd,
+									openIncidentId: item.incidentId,
+									updatedAt: windowEnd,
+								})),
+							)
+							.onConflictDoUpdate({
+								target: ["orgId", "issueId"],
+								set: (_, excluded) => ({
+									lastObservedOccurrenceAt: excluded.lastObservedOccurrenceAt,
+									lastEvaluatedAt: excluded.lastEvaluatedAt,
+									openIncidentId: excluded.openIncidentId,
+									updatedAt: excluded.updatedAt,
+								}),
+								where: ($) => $.openIncidentId.isNull(),
+							})
+							.returning("issueId", "openIncidentId"),
+					),
 				)
 
 				const claimedIncidentByIssue = new Map(
@@ -795,20 +792,22 @@ export const persistErrorTickWindow = (
 					yield* Effect.forEach(
 						chunks(opened),
 						(chunk) =>
-							tx.insert(errorIncidents).values(
-								chunk.map((item) => ({
-									id: item.incidentId,
-									orgId: input.orgId,
-									issueId: item.entry.issueId,
-									status: "open" as const,
-									reason: item.reason,
-									firstTriggeredAt: msToDate(item.entry.row.firstSeenMs),
-									lastTriggeredAt: msToDate(item.entry.row.lastSeenMs),
-									resolvedAt: null,
-									occurrenceCount: item.entry.row.count,
-									createdAt: windowEnd,
-									updatedAt: windowEnd,
-								})),
+							tx.run(
+								PG.insertInto(ErrorIncidents).values(
+									chunk.map((item) => ({
+										id: item.incidentId,
+										orgId: input.orgId,
+										issueId: item.entry.issueId,
+										status: "open" as const,
+										reason: item.reason,
+										firstTriggeredAt: item.entry.row.firstSeenMs,
+										lastTriggeredAt: item.entry.row.lastSeenMs,
+										resolvedAt: null,
+										occurrenceCount: item.entry.row.count,
+										createdAt: windowEnd,
+										updatedAt: windowEnd,
+									})),
+								),
 							),
 						{ discard: true },
 					)
@@ -840,37 +839,32 @@ export const persistErrorTickWindow = (
 				}
 			}
 
-			const staleBefore = msToDate(input.windowEndMs - input.autoResolveMinutes * 60_000)
-			const staleIncidents = yield* tx
-				.select()
-				.from(errorIncidents)
-				.where(
-					and(
-						eq(errorIncidents.orgId, input.orgId),
-						eq(errorIncidents.status, "open"),
-						lt(errorIncidents.lastTriggeredAt, staleBefore),
-					),
-				)
+			const staleBefore = input.windowEndMs - input.autoResolveMinutes * 60_000
+			const staleIncidents = yield* tx.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [
+						$.orgId.eq(input.orgId),
+						$.status.eq("open"),
+						$.lastTriggeredAt.lt(staleBefore),
+					]),
+			)
 
 			let incidentsResolved = 0
 			if (staleIncidents.length > 0) {
 				// `status = 'open'` in the predicate keeps the flip idempotent, and
 				// RETURNING reports exactly which rows this transaction resolved.
 				const flipped = yield* inChunks(staleIncidents, (chunk) =>
-					tx
-						.update(errorIncidents)
-						.set({ status: "resolved", resolvedAt: windowEnd, updatedAt: windowEnd })
-						.where(
-							and(
-								eq(errorIncidents.orgId, input.orgId),
-								inArray(
-									errorIncidents.id,
-									chunk.map((incident) => incident.id),
-								),
-								eq(errorIncidents.status, "open"),
-							),
-						)
-						.returning({ id: errorIncidents.id }),
+					tx.run(
+						PG.update(ErrorIncidents)
+							.set({ status: "resolved", resolvedAt: windowEnd, updatedAt: windowEnd })
+							.where(($) => [
+								$.orgId.eq(input.orgId),
+								$.id.in_(...chunk.map((incident) => incident.id)),
+								$.status.eq("open"),
+							])
+							.returning("id"),
+					),
 				)
 				const flippedIds = new Set(flipped.map((row) => row.id))
 				incidentsResolved = flippedIds.size
@@ -883,22 +877,15 @@ export const persistErrorTickWindow = (
 					yield* Effect.forEach(
 						chunks(resolvedIncidents),
 						(chunk) =>
-							tx
-								.update(errorIssueStates)
-								.set({ openIncidentId: null, updatedAt: windowEnd })
-								.where(
-									and(
-										eq(errorIssueStates.orgId, input.orgId),
-										inArray(
-											errorIssueStates.issueId,
-											chunk.map((incident) => incident.issueId),
-										),
-										inArray(
-											errorIssueStates.openIncidentId,
-											chunk.map((incident) => incident.id),
-										),
-									),
-								),
+							tx.run(
+								PG.update(ErrorIssueStates)
+									.set({ openIncidentId: null, updatedAt: windowEnd })
+									.where(($) => [
+										$.orgId.eq(input.orgId),
+										$.issueId.in_(...chunk.map((incident) => incident.issueId)),
+										$.openIncidentId.in_(...chunk.map((incident) => incident.id)),
+									]),
+							),
 						{ discard: true },
 					)
 
@@ -907,12 +894,11 @@ export const persistErrorTickWindow = (
 							...new Set(resolvedIncidents.map((incident) => incident.issueId)),
 						]
 						const staleIssues = yield* inChunks(staleIssueIds, (chunk) =>
-							tx
-								.select()
-								.from(errorIssues)
-								.where(
-									and(eq(errorIssues.orgId, input.orgId), inArray(errorIssues.id, chunk)),
-								),
+							tx.run(
+								PG.from(ErrorIssues)
+									.select()
+									.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
+							),
 						)
 						const staleIssueById = new Map(staleIssues.map((issue) => [issue.id, issue]))
 						for (const incident of resolvedIncidents) {
@@ -935,40 +921,36 @@ export const persistErrorTickWindow = (
 				}
 			}
 
-			yield* Effect.forEach(chunks(events), (chunk) => tx.insert(errorIssueEvents).values(chunk), {
-				discard: true,
-			})
+			yield* Effect.forEach(
+				chunks(events),
+				(chunk) => tx.run(PG.insertInto(ErrorIssueEvents).values(chunk)),
+				{
+					discard: true,
+				},
+			)
 			yield* Effect.forEach(
 				chunks(notifications),
 				(chunk) =>
-					tx
-						.insert(errorNotificationDeliveries)
-						.values(chunk)
-						.onConflictDoNothing({
-							target: [
-								errorNotificationDeliveries.deliveryKey,
-								errorNotificationDeliveries.destinationId,
-							],
-						}),
+					tx.run(
+						PG.insertInto(ErrorNotificationDeliveries)
+							.values(chunk)
+							.onConflictDoNothing({ target: ["deliveryKey", "destinationId"] }),
+					),
 				{ discard: true },
 			)
 
-			const advanced = yield* tx
-				.update(errorTickStates)
-				.set({
-					processedThrough: windowEnd,
-					bootstrapCompleted: true,
-					claimToken: null,
-					claimExpiresAt: null,
-					updatedAt: windowEnd,
-				})
-				.where(
-					and(
-						eq(errorTickStates.orgId, input.orgId),
-						eq(errorTickStates.claimToken, input.claimToken),
-					),
-				)
-				.returning({ orgId: errorTickStates.orgId })
+			const advanced = yield* tx.run(
+				PG.update(ErrorTickStates)
+					.set({
+						processedThrough: windowEnd,
+						bootstrapCompleted: true,
+						claimToken: null,
+						claimExpiresAt: null,
+						updatedAt: windowEnd,
+					})
+					.where(($) => [$.orgId.eq(input.orgId), $.claimToken.eq(input.claimToken)])
+					.returning("orgId"),
+			)
 			if (advanced.length === 0) return yield* Effect.fail(claimLost(input.orgId, "checkpoint"))
 
 			return {

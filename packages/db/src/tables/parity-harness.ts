@@ -22,12 +22,12 @@ const tableOf = (entity: S.PgSchemaEntity): string => (entity.kind === "table" ?
 
 /** Every column, constraint and index of `tables`, as Postgres itself prints them. */
 const catalog = async (db: PGlite, tables: ReadonlyArray<string>) => {
-	const columns = await db.query(
+	const columns = await db.query<Record<string, unknown>>(
 		`SELECT table_name, column_name, data_type, udt_name, is_nullable, column_default, is_identity, identity_generation
 		 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ANY($1) ORDER BY table_name, column_name`,
 		[tables],
 	)
-	const constraints = await db.query(
+	const constraints = await db.query<Record<string, unknown>>(
 		`SELECT c.conrelid::regclass::text AS table_name, c.conname, pg_get_constraintdef(c.oid) AS def
 		 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
 		 WHERE n.nspname = 'public' AND c.conrelid::regclass::text = ANY($1) ORDER BY 1, 2`,

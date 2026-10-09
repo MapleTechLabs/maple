@@ -1,19 +1,18 @@
 import { EdgeCacheService } from "@maple/cache"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	apiKeys,
-	chatIdentities,
-	cliDeviceAuthorizations,
-	mcpOAuthAuthorizations,
-	mobileDevices,
-} from "@maple/db"
+	AlertDestinations,
+	ApiKeys,
+	ChatIdentities,
+	CliDeviceAuthorizations,
+	McpOAuthAuthorizations,
+	MobileDevices,
+} from "@maple/db/tables"
 import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
-import { and, eq, inArray } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { msToDate } from "@maple/backend/platform/time"
 import {
 	DestinationPublicConfigSchema,
 	SecretConfigFromJson,
@@ -142,77 +141,76 @@ const make = Effect.gen(function* () {
 	const stripFromEmailDestinations = Effect.fn("MembershipRevocationService.stripFromEmailDestinations")(
 		function* (orgId: OrgId | null, userId: UserId) {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDestinations)
-					.where(
-						orgId === null
-							? eq(alertDestinations.type, "email")
-							: and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.type, "email")),
-					),
+				db.orm.run(
+					PG.from(AlertDestinations)
+						.select()
+						.where(($) => [orgId === null ? undefined : $.orgId.eq(orgId), $.type.eq("email")]),
+				),
 			)
-			let updated = 0
-			for (const row of rows) {
-				const secretJson = yield* decryptAes256Gcm(
-					{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
-					encryptionKey,
-					() =>
-						new MembershipRevocationError({
-							message: `Could not decrypt alert destination ${row.id}`,
-							...(orgId === null ? undefined : { orgId }),
-						}),
-				)
-				const secret = decodeSecretConfig(secretJson)
-				if (secret._tag === "None" || secret.value.type !== "email") continue
-				const remaining = secret.value.members.filter((member) => member.userId !== userId)
-				if (remaining.length === secret.value.members.length) continue
+			const outcomes = yield* Effect.forEach(rows, (row) =>
+				Effect.gen(function* () {
+					const secretJson = yield* decryptAes256Gcm(
+						{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
+						encryptionKey,
+						() =>
+							new MembershipRevocationError({
+								message: `Could not decrypt alert destination ${row.id}`,
+								...(orgId === null ? undefined : { orgId }),
+							}),
+					)
+					const secret = decodeSecretConfig(secretJson)
+					if (secret._tag === "None" || secret.value.type !== "email") return false
+					const remaining = secret.value.members.filter((member) => member.userId !== userId)
+					if (remaining.length === secret.value.members.length) return false
 
-				const nextSecret = { type: "email" as const, members: remaining }
-				const encrypted = yield* encryptAes256Gcm(
-					JSON.stringify(nextSecret),
-					encryptionKey,
-					(message) =>
-						new MembershipRevocationError({
-							message,
-							...(orgId === null ? undefined : { orgId }),
-						}),
-				)
-				const publicConfig = decodePublicConfig(row.configJson)
-				const first = remaining[0]
-				const nextPublic = {
-					...(publicConfig._tag === "Some" ? publicConfig.value : { channelLabel: null }),
-					summary:
-						first === undefined
-							? "Email"
-							: remaining.length === 1
-								? (first.name ?? first.email)
-								: `${first.name ?? first.email} +${remaining.length - 1} more`,
-					channelLabel: first?.email ?? null,
-					memberUserIds: remaining.map((member) => member.userId),
-				}
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db
-						.update(alertDestinations)
-						.set({
-							configJson: nextPublic,
-							secretCiphertext: encrypted.ciphertext,
-							secretIv: encrypted.iv,
-							secretTag: encrypted.tag,
-							updatedAt: msToDate(now),
-							...(remaining.length === 0
-								? {
-										enabled: false,
-										disabledAt: msToDate(now),
-										disabledReason: "Last recipient left the organization",
-									}
-								: undefined),
-						})
-						.where(eq(alertDestinations.id, row.id)),
-				)
-				updated += 1
-			}
-			return updated
+					const nextSecret = { type: "email" as const, members: remaining }
+					const encrypted = yield* encryptAes256Gcm(
+						JSON.stringify(nextSecret),
+						encryptionKey,
+						(message) =>
+							new MembershipRevocationError({
+								message,
+								...(orgId === null ? undefined : { orgId }),
+							}),
+					)
+					const publicConfig = decodePublicConfig(row.configJson)
+					const first = remaining[0]
+					const nextPublic = {
+						...(publicConfig._tag === "Some" ? publicConfig.value : { channelLabel: null }),
+						summary:
+							first === undefined
+								? "Email"
+								: remaining.length === 1
+									? (first.name ?? first.email)
+									: `${first.name ?? first.email} +${remaining.length - 1} more`,
+						channelLabel: first?.email ?? null,
+						memberUserIds: remaining.map((member) => member.userId),
+					}
+					const now = yield* Clock.currentTimeMillis
+					yield* dbExecute((db) =>
+						db.orm.run(
+							PG.update(AlertDestinations)
+								.set({
+									configJson: nextPublic,
+									secretCiphertext: encrypted.ciphertext,
+									secretIv: encrypted.iv,
+									secretTag: encrypted.tag,
+									updatedAt: now,
+									...(remaining.length === 0
+										? {
+												enabled: false,
+												disabledAt: now,
+												disabledReason: "Last recipient left the organization",
+											}
+										: undefined),
+								})
+								.where(($) => [$.id.eq(row.id)]),
+						),
+					)
+					return true
+				}),
+			)
+			return outcomes.filter(Boolean).length
 		},
 	)
 
@@ -226,67 +224,66 @@ const make = Effect.gen(function* () {
 		yield* invalidateMembership(userId)
 
 		const now = yield* Clock.currentTimeMillis
-		const revokedAt = msToDate(now)
 
 		// One transaction for the credential tables: a partial purge here is the
 		// exact half-revoked state the whole fix exists to prevent.
 		const credentials = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.orm.transaction(
 				Effect.gen(function* () {
-					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(db.orm, orgId, userId, now)
+					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(
+						db.orm,
+						orgId,
+						userId,
+						now,
+					)
 					// After the families, so an MCP access key retired above is already
 					// `revoked` and is simply not claimed twice.
-					const revokedKeys = yield* tx
-						.update(apiKeys)
-						.set({ revoked: true, revokedAt })
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(apiKeys.orgId, orgId)]),
-								eq(apiKeys.createdBy, userId),
-								eq(apiKeys.revoked, false),
-							),
-						)
-						.returning({ id: apiKeys.id })
-					const cliDeleted = yield* tx
-						.delete(cliDeviceAuthorizations)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(cliDeviceAuthorizations.approvedOrgId, orgId)]),
-								eq(cliDeviceAuthorizations.approvedUserId, userId),
-							),
-						)
-						.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
-					const mcpAuthDeleted = yield* tx
-						.delete(mcpOAuthAuthorizations)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(mcpOAuthAuthorizations.approvedOrgId, orgId)]),
-								eq(mcpOAuthAuthorizations.approvedUserId, userId),
-							),
-						)
-						.returning({ requestIdHash: mcpOAuthAuthorizations.requestIdHash })
-					const devicesDeleted = yield* tx
-						.delete(mobileDevices)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(mobileDevices.orgId, orgId)]),
-								eq(mobileDevices.userId, userId),
-							),
-						)
-						.returning({ id: mobileDevices.id })
+					const revokedKeys = yield* db.orm.run(
+						PG.update(ApiKeys)
+							.set({ revoked: true, revokedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.createdBy.eq(userId),
+								$.revoked.eq(false),
+							])
+							.returning("id"),
+					)
+					const cliDeleted = yield* db.orm.run(
+						PG.deleteFrom(CliDeviceAuthorizations)
+							.where(($) => [
+								orgId === null ? undefined : $.approvedOrgId.eq(orgId),
+								$.approvedUserId.eq(userId),
+							])
+							.returning("deviceCodeHash"),
+					)
+					const mcpAuthDeleted = yield* db.orm.run(
+						PG.deleteFrom(McpOAuthAuthorizations)
+							.where(($) => [
+								orgId === null ? undefined : $.approvedOrgId.eq(orgId),
+								$.approvedUserId.eq(userId),
+							])
+							.returning("requestIdHash"),
+					)
+					const devicesDeleted = yield* db.orm.run(
+						PG.deleteFrom(MobileDevices)
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+							])
+							.returning("id"),
+					)
 					// A chat identity is standing authority to approve a change AS this user: the bot
 					// reads the row on every button click and runs the tool under whatever roles the
 					// user holds. Membership ending has to end that too, or the next click from their
 					// chat account still acts for a member who is gone.
-					const identitiesDeleted = yield* tx
-						.delete(chatIdentities)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(chatIdentities.orgId, orgId)]),
-								eq(chatIdentities.userId, userId),
-							),
-						)
-						.returning({ id: chatIdentities.id })
+					const identitiesDeleted = yield* db.orm.run(
+						PG.deleteFrom(ChatIdentities)
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+							])
+							.returning("id"),
+					)
 					return {
 						apiKeysRevoked: revokedKeys.length,
 						mcpFamiliesRevoked,
@@ -341,33 +338,29 @@ const make = Effect.gen(function* () {
 		}
 
 		const now = yield* Clock.currentTimeMillis
-		const revokedAt = msToDate(now)
 		const summary = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.orm.transaction(
 				Effect.gen(function* () {
-					const live = yield* tx
-						.select({ id: apiKeys.id, metadataJson: apiKeys.metadataJson })
-						.from(apiKeys)
-						.where(
-							and(
-								eq(apiKeys.orgId, orgId),
-								eq(apiKeys.createdBy, userId),
-								eq(apiKeys.revoked, false),
-							),
-						)
+					const live = yield* db.orm.run(
+						PG.from(ApiKeys)
+							.select("id", "metadataJson")
+							.where(($) => [$.orgId.eq(orgId), $.createdBy.eq(userId), $.revoked.eq(false)]),
+					)
 					const stale = live
 						.filter((row) => {
 							const pinned = decodePinnedRoles(row.metadataJson)
 							return pinned._tag === "Some" && isAdmin(pinned.value.roles)
 						})
 						.map((row) => row.id)
-					if (stale.length === 0) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
+					const [first, ...rest] = stale
+					if (first === undefined) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
 
-					const revoked = yield* tx
-						.update(apiKeys)
-						.set({ revoked: true, revokedAt })
-						.where(and(inArray(apiKeys.id, stale), eq(apiKeys.revoked, false)))
-						.returning({ id: apiKeys.id })
+					const revoked = yield* db.orm.run(
+						PG.update(ApiKeys)
+							.set({ revoked: true, revokedAt: now })
+							.where(($) => [$.id.in_(first, ...rest), $.revoked.eq(false)])
+							.returning("id"),
+					)
 					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db.orm, stale, now)
 					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
 				}),

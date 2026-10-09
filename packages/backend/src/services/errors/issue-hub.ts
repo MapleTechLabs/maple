@@ -7,8 +7,8 @@ import {
 	ErrorIssueEventId,
 	ErrorIssueId,
 } from "@maple/domain/primitives"
-import { actors, alertIncidents, errorIssues, errorIssueEvents, type ErrorIssueRow } from "@maple/db"
-import { and, eq, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Actors, AlertIncidents, ErrorIssueEvents, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
 import { Clock, Effect, Schema } from "effect"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -87,38 +87,38 @@ const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(fu
 	const database = yield* Database
 	const select = () =>
 		database.execute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(
-					and(
-						eq(actors.orgId, orgId),
-						eq(actors.type, "agent"),
-						eq(actors.agentName, SYSTEM_ALERTS_AGENT_NAME),
-					),
-				)
-				.limit(1),
+			db.orm.run(
+				PG.from(Actors)
+					.select()
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.type.eq("agent"),
+						$.agentName.eq(SYSTEM_ALERTS_AGENT_NAME),
+					])
+					.limit(1),
+			),
 		)
 	const existing = yield* select()
 	if (existing[0]) return existing[0].id
 
 	const timestamp = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db
-			.insert(actors)
-			.values({
-				id: decodeActorId(randomUUID()),
-				orgId,
-				type: "agent",
-				userId: null,
-				agentName: SYSTEM_ALERTS_AGENT_NAME,
-				model: null,
-				capabilitiesJson: ["system", "alert-issues"],
-				createdBy: null,
-				createdAt: new Date(timestamp),
-				lastActiveAt: new Date(timestamp),
-			})
-			.onConflictDoNothing(),
+		db.orm.run(
+			PG.insertInto(Actors)
+				.values({
+					id: decodeActorId(randomUUID()),
+					orgId,
+					type: "agent",
+					userId: null,
+					agentName: SYSTEM_ALERTS_AGENT_NAME,
+					model: null,
+					capabilitiesJson: ["system", "alert-issues"],
+					createdBy: null,
+					createdAt: timestamp,
+					lastActiveAt: timestamp,
+				})
+				.onConflictDoNothing(),
+		),
 	)
 	const after = yield* select()
 	const row = after[0]
@@ -157,13 +157,12 @@ export const upsertAlertIssue: (
 		}
 
 		const existingRows = yield* database.execute((db) =>
-			db
-				.select()
-				.from(errorIssues)
-				.where(
-					and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.fingerprintHash, fingerprintHash)),
-				)
-				.limit(1),
+			db.orm.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.eq(fingerprintHash)])
+					.limit(1),
+			),
 		)
 		const prior: ErrorIssueRow | undefined = existingRows[0]
 
@@ -176,42 +175,41 @@ export const upsertAlertIssue: (
 			// scheduler ticks can both miss the fingerprint and both insert. Without
 			// the conflict clause the loser raises `error_issues_org_fp_idx`.
 			const claimed = yield* database.execute((db) =>
-				db
-					.insert(errorIssues)
-					.values({
-						id: candidateId,
-						orgId: input.orgId,
-						kind: "alert",
-						sourceRefJson,
-						fingerprintHash,
-						serviceName: input.serviceName,
-						exceptionType: input.ruleName,
-						exceptionMessage: describeIncident(input),
-						errorLabel: input.ruleName,
-						topFrame: "",
-						workflowState: "triage",
-						priority: 3,
-						severity: detectorSeverityFor(input.severity),
-						severitySource: "detector",
-						assignedActorId: null,
-						leaseHolderActorId: null,
-						leaseExpiresAt: null,
-						claimedAt: null,
-						notes: null,
-						firstSeenAt: new Date(input.timestamp),
-						lastSeenAt: new Date(input.timestamp),
-						occurrenceCount: 1,
-						resolvedAt: null,
-						resolvedByActorId: null,
-						snoozeUntil: null,
-						archivedAt: null,
-						createdAt: new Date(input.timestamp),
-						updatedAt: new Date(input.timestamp),
-					})
-					.onConflictDoNothing({
-						target: [errorIssues.orgId, errorIssues.fingerprintHash],
-					})
-					.returning({ id: errorIssues.id }),
+				db.orm.run(
+					PG.insertInto(ErrorIssues)
+						.values({
+							id: candidateId,
+							orgId: input.orgId,
+							kind: "alert",
+							sourceRefJson,
+							fingerprintHash,
+							serviceName: input.serviceName,
+							exceptionType: input.ruleName,
+							exceptionMessage: describeIncident(input),
+							errorLabel: input.ruleName,
+							topFrame: "",
+							workflowState: "triage",
+							priority: 3,
+							severity: detectorSeverityFor(input.severity),
+							severitySource: "detector",
+							assignedActorId: null,
+							leaseHolderActorId: null,
+							leaseExpiresAt: null,
+							claimedAt: null,
+							notes: null,
+							firstSeenAt: input.timestamp,
+							lastSeenAt: input.timestamp,
+							occurrenceCount: 1,
+							resolvedAt: null,
+							resolvedByActorId: null,
+							snoozeUntil: null,
+							archivedAt: null,
+							createdAt: input.timestamp,
+							updatedAt: input.timestamp,
+						})
+						.onConflictDoNothing({ target: ["orgId", "fingerprintHash"] })
+						.returning("id"),
+				),
 			)
 
 			const insertedId = claimed[0]?.id
@@ -219,16 +217,12 @@ export const upsertAlertIssue: (
 				// A concurrent tick created it. Adopt their row and report it as an
 				// update — emitting a second `created` event would double the history.
 				const winner = yield* database.execute((db) =>
-					db
-						.select({ id: errorIssues.id })
-						.from(errorIssues)
-						.where(
-							and(
-								eq(errorIssues.orgId, input.orgId),
-								eq(errorIssues.fingerprintHash, fingerprintHash),
-							),
-						)
-						.limit(1),
+					db.orm.run(
+						PG.from(ErrorIssues)
+							.select("id")
+							.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.eq(fingerprintHash)])
+							.limit(1),
+					),
 				)
 				issueId = winner[0]?.id ?? candidateId
 				action = "refreshed"
@@ -252,7 +246,7 @@ export const upsertAlertIssue: (
 			issueId = prior.id
 			const snoozeActive =
 				prior.workflowState === "wontfix" &&
-				(prior.snoozeUntil == null || prior.snoozeUntil.getTime() > input.timestamp)
+				(prior.snoozeUntil == null || prior.snoozeUntil > input.timestamp)
 			if (snoozeActive) {
 				// Mirrors the errors tick: a wontfix issue with an active (or
 				// indefinite) snooze is left alone entirely.
@@ -260,33 +254,29 @@ export const upsertAlertIssue: (
 			}
 
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({
-						lastSeenAt: new Date(input.timestamp),
-						occurrenceCount: sql`${errorIssues.occurrenceCount} + 1`,
-						exceptionMessage: describeIncident(input),
-						sourceRefJson,
-						updatedAt: new Date(input.timestamp),
-					})
-					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id))),
+				db.orm.run(
+					PG.update(ErrorIssues)
+						.set(($) => ({
+							lastSeenAt: input.timestamp,
+							occurrenceCount: $.occurrenceCount.add(1),
+							exceptionMessage: describeIncident(input),
+							sourceRefJson,
+							updatedAt: input.timestamp,
+						}))
+						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
+				),
 			)
 			// Backfill the detector severity only while severity is still unset
 			// (precedence: manual > ai > detector).
 			yield* database.execute((db) =>
-				db
-					.update(errorIssues)
-					.set({
-						severity: detectorSeverityFor(input.severity),
-						severitySource: "detector",
-					})
-					.where(
-						and(
-							eq(errorIssues.orgId, input.orgId),
-							eq(errorIssues.id, prior.id),
-							sql`${errorIssues.severity} IS NULL`,
-						),
-					),
+				db.orm.run(
+					PG.update(ErrorIssues)
+						.set({
+							severity: detectorSeverityFor(input.severity),
+							severitySource: "detector",
+						})
+						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id), $.severity.isNull()]),
+				),
 			)
 
 			const reopenFrom: WorkflowState | null =
@@ -296,16 +286,17 @@ export const upsertAlertIssue: (
 			if (reopenFrom !== null) {
 				action = "reopened"
 				yield* database.execute((db) =>
-					db
-						.update(errorIssues)
-						.set({
-							workflowState: "triage",
-							resolvedAt: null,
-							resolvedByActorId: null,
-							snoozeUntil: null,
-							updatedAt: new Date(input.timestamp),
-						})
-						.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id))),
+					db.orm.run(
+						PG.update(ErrorIssues)
+							.set({
+								workflowState: "triage",
+								resolvedAt: null,
+								resolvedByActorId: null,
+								snoozeUntil: null,
+								updatedAt: input.timestamp,
+							})
+							.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
+					),
 				)
 				const actorId = yield* ensureSystemAlertsActor(input.orgId)
 				yield* recordIssueEvent(input.orgId, issueId, actorId, "state_change", {
@@ -324,10 +315,11 @@ export const upsertAlertIssue: (
 		}
 
 		yield* database.execute((db) =>
-			db
-				.update(alertIncidents)
-				.set({ errorIssueId: issueId, updatedAt: new Date(input.timestamp) })
-				.where(and(eq(alertIncidents.orgId, input.orgId), eq(alertIncidents.id, input.incidentId))),
+			db.orm.run(
+				PG.update(AlertIncidents)
+					.set({ errorIssueId: issueId, updatedAt: input.timestamp })
+					.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.incidentId)]),
+			),
 		)
 
 		yield* maybeEnqueueTriage({
@@ -390,16 +382,18 @@ const recordIssueEvent = Effect.fn("issueHub.recordIssueEvent")(function* (
 ) {
 	const database = yield* Database
 	yield* database.execute((db) =>
-		db.insert(errorIssueEvents).values({
-			id: decodeEventId(randomUUID()),
-			orgId,
-			issueId,
-			actorId,
-			type,
-			fromState: opts.fromState ?? null,
-			toState: opts.toState ?? null,
-			payloadJson: opts.payload ?? {},
-			createdAt: new Date(opts.timestamp),
-		}),
+		db.orm.run(
+			PG.insertInto(ErrorIssueEvents).values({
+				id: decodeEventId(randomUUID()),
+				orgId,
+				issueId,
+				actorId,
+				type,
+				fromState: opts.fromState ?? null,
+				toState: opts.toState ?? null,
+				payloadJson: opts.payload ?? {},
+				createdAt: opts.timestamp,
+			}),
+		),
 	)
 })

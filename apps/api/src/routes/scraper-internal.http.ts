@@ -15,7 +15,7 @@ import {
 	PlanetScaleDiscoveryService,
 	type PlanetScaleSubTarget,
 } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
-import type { ScrapeTargetRow } from "@maple/db"
+import type { ScrapeTargetRow } from "@maple/db/tables"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 
 const decodeTargetIdSync = Schema.decodeUnknownSync(ScrapeTargetId)

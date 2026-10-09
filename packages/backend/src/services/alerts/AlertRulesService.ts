@@ -15,26 +15,27 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDeliveryEvents,
-	alertDestinations,
-	alertIncidents,
-	alertRuleClaims,
-	alertRules,
-	alertRuleStates,
-} from "@maple/db"
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+	AlertDeliveryEvents,
+	AlertDestinations,
+	AlertIncidents,
+	AlertRuleClaims,
+	AlertRules,
+	AlertRuleStates,
+} from "@maple/db/tables"
 import { Array as Arr, Context, Effect, HashSet, Layer, Schema } from "effect"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
+import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import {
 	makeAlertRuleNormalizer,
 	makeAlertValidationError,
 	normalizedRuleToDocument,
 	normalizeOptionalString,
 	rowToRuleDocument,
+	selectStoredAlertRules,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
 import { makePersistenceError } from "./alert-persistence"
@@ -93,11 +94,11 @@ export const makeAlertRulePersistence = (options: {
 		ruleId: AlertRuleDocument["id"],
 	) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(alertRules)
-				.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-				.limit(1),
+			db.orm.run(
+				selectStoredAlertRules()
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+					.limit(1),
+			),
 		)
 		return rows[0]
 	})
@@ -122,15 +123,11 @@ export const makeAlertRulePersistence = (options: {
 	) {
 		if (destinationIds.length === 0) return
 		const rows = yield* dbExecute((db) =>
-			db
-				.select({ id: alertDestinations.id })
-				.from(alertDestinations)
-				.where(
-					and(
-						eq(alertDestinations.orgId, orgId),
-						inArray(alertDestinations.id, [...destinationIds]),
-					),
-				),
+			db.orm.run(
+				PG.from(AlertDestinations)
+					.select("id")
+					.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
+			),
 		)
 		const existingIds = HashSet.fromIterable(Arr.map(rows, (row) => row.id))
 		const missing = Arr.filter(destinationIds, (id) => !HashSet.has(existingIds, id))
@@ -183,28 +180,24 @@ export const makeAlertRulePersistence = (options: {
 			reducer: normalized.compiledPlan.reducer,
 			sampleCountStrategy: normalized.compiledPlan.sampleCountStrategy,
 			noDataBehavior: normalized.compiledPlan.noDataBehavior,
-			updatedAt: msToDate(timestamp),
+			updatedAt: timestamp,
 			updatedBy: userId,
 		} as const
 
 		const writeRows = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.orm.transaction(
 				Effect.gen(function* () {
-					yield* tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+					yield* db.orm.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
 					// Destination existence is checked INSIDE the lock: destination
 					// deletion takes the same per-org advisory lock around its reference
 					// scan, so a rule can no longer commit a reference to a destination
 					// whose deletion validated "unreferenced" concurrently.
 					if (normalized.destinationIds.length > 0) {
-						const destinationRows = yield* tx
-							.select({ id: alertDestinations.id })
-							.from(alertDestinations)
-							.where(
-								and(
-									eq(alertDestinations.orgId, orgId),
-									inArray(alertDestinations.id, [...normalized.destinationIds]),
-								),
-							)
+						const destinationRows = yield* db.orm.run(
+							PG.from(AlertDestinations)
+								.select("id")
+								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
+						)
 						const existingIds = new Set(destinationRows.map((destination) => destination.id))
 						const missingDestinationId = normalized.destinationIds.find(
 							(id) => !existingIds.has(id),
@@ -219,10 +212,11 @@ export const makeAlertRulePersistence = (options: {
 						}
 					}
 					if (normalized.enabled) {
-						const activeRows = yield* tx
-							.select({ id: alertRules.id })
-							.from(alertRules)
-							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.enabled, true)))
+						const activeRows = yield* db.orm.run(
+							PG.from(AlertRules)
+								.select("id")
+								.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
+						)
 						const alreadyActive =
 							existingId != null && activeRows.some((row) => row.id === existingId)
 						if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
@@ -235,21 +229,23 @@ export const makeAlertRulePersistence = (options: {
 					}
 
 					return existingId == null
-						? yield* tx
-								.insert(alertRules)
-								.values({
-									id: ruleId,
-									orgId,
-									...ruleFields,
-									createdAt: msToDate(timestamp),
-									createdBy: userId,
-								})
-								.returning(txidColumn)
-						: yield* tx
-								.update(alertRules)
-								.set(ruleFields)
-								.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, existingId)))
-								.returning(txidColumn)
+						? yield* db.orm.run(
+								PG.insertInto(AlertRules)
+									.values({
+										id: ruleId,
+										orgId,
+										...ruleFields,
+										createdAt: timestamp,
+										createdBy: userId,
+									})
+									.returning(() => ({ txid: currentTxid })),
+							)
+						: yield* db.orm.run(
+								PG.update(AlertRules)
+									.set(ruleFields)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
+									.returning(() => ({ txid: currentTxid })),
+							)
 				}),
 			),
 		)
@@ -282,30 +278,27 @@ export const makeAlertRulePersistence = (options: {
 
 	const listRules = Effect.fn("AlertsService.listRules")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(alertRules)
-				.where(eq(alertRules.orgId, orgId))
-				.orderBy(desc(alertRules.createdAt), desc(alertRules.id)),
+			db.orm.run(
+				selectStoredAlertRules()
+					.where(($) => [$.orgId.eq(orgId)])
+					.orderBy(["createdAt", "desc"], ["id", "desc"]),
+			),
 		)
 		const stateRows = yield* dbExecute((db) =>
-			db
-				.select({
-					ruleId: alertRuleStates.ruleId,
-					lastError: alertRuleStates.lastError,
-					lastEvaluatedAt: alertRuleStates.lastEvaluatedAt,
-				})
-				.from(alertRuleStates)
-				.where(eq(alertRuleStates.orgId, orgId)),
+			db.orm.run(
+				PG.from(AlertRuleStates)
+					.select("ruleId", "lastError", "lastEvaluatedAt")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 		)
 		const errorByRule = new Map<string, RuleEvaluationState>()
 		for (const state of stateRows) {
 			if (state.lastError == null) continue
 			const existing = errorByRule.get(state.ruleId)
-			if (existing == null || (dateToMs(state.lastEvaluatedAt) ?? 0) > (existing.evaluatedAt ?? 0)) {
+			if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
 				errorByRule.set(state.ruleId, {
 					error: state.lastError,
-					evaluatedAt: dateToMs(state.lastEvaluatedAt),
+					evaluatedAt: state.lastEvaluatedAt,
 				})
 			}
 		}
@@ -337,24 +330,23 @@ export const makeAlertRulePersistence = (options: {
 		yield* requireAdmin(roles)
 		yield* requireRuleRow(orgId, ruleId)
 		const deleted = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.orm.transaction(
 				Effect.gen(function* () {
-					yield* tx
-						.delete(alertDeliveryEvents)
-						.where(
-							and(eq(alertDeliveryEvents.orgId, orgId), eq(alertDeliveryEvents.ruleId, ruleId)),
-						)
-					yield* tx
-						.delete(alertIncidents)
-						.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId)))
-					yield* tx
-						.delete(alertRuleStates)
-						.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId)))
-					yield* tx.delete(alertRuleClaims).where(eq(alertRuleClaims.ruleId, ruleId))
-					return yield* tx
-						.delete(alertRules)
-						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-						.returning(txidColumn)
+					yield* db.orm.run(
+						PG.deleteFrom(AlertDeliveryEvents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+					)
+					yield* db.orm.run(
+						PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+					)
+					yield* db.orm.run(
+						PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+					)
+					yield* db.orm.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
+					return yield* db.orm.run(
+						PG.deleteFrom(AlertRules)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+							.returning(() => ({ txid: currentTxid })),
+					)
 				}),
 			),
 		)

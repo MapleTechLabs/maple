@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as schema from "@maple/db"
-import { getColumns, is, Table } from "drizzle-orm"
+import * as tables from "@maple/db/tables"
 import { ORG_DELETE_REGISTRY } from "./OrganizationService"
 
 /**
@@ -13,27 +12,24 @@ import { ORG_DELETE_REGISTRY } from "./OrganizationService"
 
 const ORG_COLUMN_NAMES = new Set(["org_id", "approved_org_id"])
 
+const isTable = (value: unknown): value is (typeof tables.allTables)[number] =>
+	tables.allTables.some((table) => table === value)
+
+const exportedTables = () =>
+	Object.entries(tables).flatMap(([exportName, value]) => (isTable(value) ? [[exportName, value] as const] : []))
+
 const orgScopedTables = () => {
 	const found = new Map<string, string>()
-	for (const [exportName, value] of Object.entries(schema)) {
-		if (!is(value, Table)) continue
-		const columns = getColumns(value)
-		for (const column of Object.values(columns)) {
-			if (ORG_COLUMN_NAMES.has(column.name)) {
-				found.set(exportName, column.name)
-				break
-			}
-		}
+	for (const [exportName, table] of exportedTables()) {
+		const column = table.ddl.columns.find((item) => ORG_COLUMN_NAMES.has(item.name))
+		if (column !== undefined) found.set(exportName, column.name)
 	}
 	return found
 }
 
-const registeredNames = (tables: ReadonlyArray<unknown>) => {
-	const byTable = new Map<unknown, string>()
-	for (const [exportName, value] of Object.entries(schema)) {
-		if (is(value, Table)) byTable.set(value, exportName)
-	}
-	return tables.map((table) => byTable.get(table) ?? "<unexported table>")
+const registeredNames = (registered: ReadonlyArray<unknown>) => {
+	const byTable = new Map<unknown, string>(exportedTables().map(([exportName, table]) => [table, exportName]))
+	return registered.map((table) => byTable.get(table) ?? "<unexported table>")
 }
 
 describe("org-scoped table registry", () => {
@@ -78,16 +74,16 @@ describe("org-scoped table registry", () => {
 			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
 		])
 		for (const name of [
-			"apiKeys",
-			"mcpOAuthRefreshTokens",
-			"mcpOAuthAuthorizations",
-			"cliDeviceAuthorizations",
-			"mobileDevices",
+			"ApiKeys",
+			"McpOAuthRefreshTokens",
+			"McpOAuthAuthorizations",
+			"CliDeviceAuthorizations",
+			"MobileDevices",
 			// Public bearer token, encrypted inbound-webhook HMAC secret, and live
 			// APNs push tokens respectively — all resolvable after the org is gone.
-			"dashboardShares",
-			"planetscaleConnections",
-			"liveActivities",
+			"DashboardShares",
+			"PlanetscaleConnections",
+			"LiveActivities",
 		]) {
 			expect(purged.has(name), `${name} must be purged on org deletion`).toBe(true)
 		}

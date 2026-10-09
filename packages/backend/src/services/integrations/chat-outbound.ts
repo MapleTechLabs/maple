@@ -8,7 +8,8 @@
  * is what makes it theirs.
  */
 import type { Buffer } from "node:buffer"
-import { chatWorkspaces } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ChatWorkspaces } from "@maple/db/tables"
 import {
 	ConnectorCredentials,
 	WORKSPACE_CREDENTIALS,
@@ -18,7 +19,6 @@ import {
 } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import { ChatWorkspaceId, type OrgId } from "@maple/domain/http"
-import { and, eq } from "drizzle-orm"
 import { Array as Arr, Context, Effect, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
@@ -70,11 +70,12 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 	encryptionKey: Buffer,
 ) {
 	const rows = yield* database.execute((db) =>
-		db
-			.select()
-			.from(chatWorkspaces)
-			.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-			.limit(1),
+		db.orm.run(
+			PG.from(ChatWorkspaces)
+				.select()
+				.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+				.limit(1),
+		),
 	)
 	const row = rows[0]
 	if (row === undefined) return Option.none<OwnedChatWorkspace>()

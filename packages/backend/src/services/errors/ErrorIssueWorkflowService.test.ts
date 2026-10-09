@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Layer, Predicate, Schema } from "effect"
 import {
 	ErrorIncidentId,
 	ErrorIssueId,
@@ -14,11 +14,10 @@ import {
 	errorIssueEvents,
 	errorIssuePullRequests,
 	errorIssueStates,
-	issueEscalations,
 } from "@maple/db"
-import type { MapleTx } from "@maple/db/client"
+import type { MapleDb, MapleOrm } from "@maple/db/client"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { and, eq } from "drizzle-orm"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -54,62 +53,48 @@ const makeLayer = () => {
 	return Layer.mergeAll(workflow, actors).pipe(Layer.provideMerge(database))
 }
 
-/**
- * A statement that fails when run, the way a dying connection fails one. It
- * still accepts the builder chain (`.values`, `.onConflictDoNothing`,
- * `.returning`) so the failure lands where the real statement would run, and
- * it is a driver error so `Database.execute` absorbs it exactly as it would a
- * real one.
- */
-const failingStatement = (): Effect.Effect<never, EffectDrizzleQueryError> => {
-	const failure = Effect.fail(
-		new EffectDrizzleQueryError({
-			query: "insert (sabotaged)",
-			params: [],
-			cause: new Error("injected insert failure"),
-		}),
-	)
-	const chain: typeof failure = new Proxy(failure, {
-		get(target, property) {
-			if (property in target) {
-				// SAFETY: a Proxy get trap receives a key for its target; indexed access keeps
-				// the Effect's own property types while the runtime branch checks callability.
-				const value = target[property as keyof typeof target]
-				return typeof value === "function" ? value.bind(target) : value
-			}
-			return () => chain
-		},
-	})
-	return chain
-}
+/** An effect-orm insert into `table`, read off the builder's runtime shape. */
+const isInsertInto = (query: unknown, table: string): boolean =>
+	Predicate.hasProperty(query, "_tag") &&
+	query._tag === "CHInsert" &&
+	Predicate.hasProperty(query, "_state") &&
+	Predicate.hasProperty(query._state, "table") &&
+	Predicate.hasProperty(query._state.table, "name") &&
+	query._state.table.name === table
 
 /**
  * The client with one table's inserts sabotaged, inside and outside
- * transactions — a stand-in for the connection dying mid-write, which is what
- * the workflow's multi-statement operations must survive atomically.
+ * transactions: a stand-in for the connection dying mid-write, which is what
+ * the workflow's multi-statement operations must survive atomically. It is a
+ * driver error, so `Database.execute` absorbs it exactly as it would a real one.
  */
-const failInsertOf = <T extends object>(client: T, failTable: unknown): T =>
-	new Proxy(client, {
+const failInsertOf = (db: MapleDb, failTable: string): MapleDb => {
+	const orm: MapleOrm = {
+		...db.orm,
+		run: (query, params) =>
+			isInsertInto(query, failTable)
+				? Effect.fail(
+						new Orm.DatabaseError({
+							message: "injected insert failure",
+							sql: `insert into ${failTable} (sabotaged)`,
+							reason: "ConnectionError",
+							cause: new Error("injected insert failure"),
+						}),
+					)
+				: db.orm.run(query, params),
+	}
+	return new Proxy(db, {
 		get(target, property) {
-			// SAFETY: a Proxy get trap receives a key for its target; indexed access preserves
-			// the target's own property type while the runtime branch below validates callability.
-			const value = target[property as keyof T]
-			if (typeof value !== "function") return value
-			if (property === "insert") {
-				return (table: unknown) =>
-					table === failTable ? failingStatement() : value.call(target, table)
-			}
-			if (property === "transaction") {
-				return <Result, E, R>(
-					callback: (tx: MapleTx) => Effect.Effect<Result, E, R>,
-					...rest: ReadonlyArray<unknown>
-				) => value.call(target, (tx: MapleTx) => callback(failInsertOf(tx, failTable)), ...rest)
-			}
-			return value.bind(target)
+			if (property === "orm") return orm
+			// SAFETY: a Proxy get trap receives a key for its target; indexed access keeps
+			// the target's own property type while the runtime branch checks callability.
+			const value = target[property as keyof MapleDb]
+			return typeof value === "function" ? value.bind(target) : value
 		},
 	})
+}
 
-const makeFaultyLayer = (failTable: unknown) => {
+const makeFaultyLayer = (failTable: string) => {
 	const database = createTestDb(createdDbs).layer
 	const faulty = Layer.effect(
 		Database,
@@ -295,7 +280,7 @@ describe("ErrorIssueWorkflowService", () => {
 				db.select().from(errorIncidents).where(eq(errorIncidents.id, incidentId)),
 			)
 			assert.strictEqual(incident?.status, "open")
-		}).pipe(Effect.provide(makeFaultyLayer(errorIssueEvents))),
+		}).pipe(Effect.provide(makeFaultyLayer("error_issue_events"))),
 	)
 
 	it.effect("rolls the severity change back when the escalation outbox insert fails", () =>
@@ -326,7 +311,7 @@ describe("ErrorIssueWorkflowService", () => {
 					.where(and(eq(errorIssueEvents.orgId, ORG), eq(errorIssueEvents.issueId, issueId))),
 			)
 			assert.deepStrictEqual(events, [])
-		}).pipe(Effect.provide(makeFaultyLayer(issueEscalations))),
+		}).pipe(Effect.provide(makeFaultyLayer("issue_escalations"))),
 	)
 
 	it.effect("hydrates activity rollups: comments, agent notes, and non-abandoned PR links", () =>

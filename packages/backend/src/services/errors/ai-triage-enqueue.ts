@@ -14,14 +14,13 @@ import {
 	PRIOR_DIAGNOSES_LIMIT,
 } from "@maple/domain/http"
 import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
-import { aiTriageSettings, errorIssues, investigations } from "@maple/db"
-import type { MapleDbLike } from "@maple/db/client"
-import { and, desc, eq, gte, isNull, lt, ne, or, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleOrm } from "@maple/db/client"
+import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"
 import { Clock, Effect, Option, Schema } from "effect"
 
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs } from "@maple/backend/platform/time"
 
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import {
@@ -40,6 +39,7 @@ import {
 	STALE_MS,
 	isInvestigationStale,
 	staleTimeoutMessage,
+	storedProgressJson,
 } from "@maple/backend/services/errors/investigation-stale"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
@@ -239,43 +239,50 @@ export interface MaybeEnqueueTriageResult {
  * own issue is excluded: its history is the issue gate's business, judged
  * without a model.
  */
+/** Only what the classifier is shown; a stored report that drifted elsewhere still counts. */
+const decodePriorReport = Schema.decodeUnknownOption(
+	Schema.Struct({ headline: Schema.optional(Schema.String), summary: Schema.optional(Schema.String) }),
+)
+const decodePriorSnapshot = Schema.decodeUnknownOption(
+	Schema.Struct({ exceptionType: Schema.optional(Schema.NullOr(Schema.String)) }),
+)
+
 const selectPriorDiagnoses = (
-	db: MapleDbLike,
+	orm: MapleOrm,
 	orgId: OrgId,
 	serviceName: string,
 	issueId: ErrorIssueId | null,
 	sinceMs: number,
 ) =>
 	Effect.map(
-		db
-			.select({
-				id: investigations.id,
-				reportJson: investigations.reportJson,
-				snapshotJson: investigations.snapshotJson,
-			})
-			.from(investigations)
-			.where(
-				and(
-					eq(investigations.orgId, orgId),
-					eq(investigations.status, "diagnosed"),
-					gte(investigations.createdAt, new Date(sinceMs)),
-					sql`${investigations.snapshotJson}->>'serviceName' = ${serviceName}`,
-					issueId === null
-						? undefined
-						: or(isNull(investigations.issueId), ne(investigations.issueId, issueId)),
-				),
-			)
-			.orderBy(desc(investigations.createdAt))
-			.limit(PRIOR_DIAGNOSES_LIMIT),
+		orm.run(
+			PG.from(Investigations)
+				.select(($) => ({
+					id: $.id,
+					reportJson: PG.sql(PG.nullable(PG.jsonb()))`${$.reportJson}`,
+					snapshotJson: PG.sql(PG.nullable(PG.jsonb()))`${$.snapshotJson}`,
+				}))
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.status.eq("diagnosed"),
+					$.createdAt.gte(sinceMs),
+					PG.sql.cond`${$.snapshotJson}->>'serviceName' = ${serviceName}`,
+					issueId === null ? undefined : PG.or($.issueId.isNull(), $.issueId.neq(issueId)),
+				])
+				.orderBy(($) => [[$.createdAt, "desc"]])
+				.limit(PRIOR_DIAGNOSES_LIMIT),
+		),
 		(rows) =>
 			rows.flatMap((row) => {
-				const headline = row.reportJson?.headline ?? row.reportJson?.summary
+				const report = Option.getOrUndefined(decodePriorReport(row.reportJson))
+				const headline = report?.headline ?? report?.summary
 				if (headline === undefined || headline.trim().length === 0) return []
+				const snapshot = Option.getOrUndefined(decodePriorSnapshot(row.snapshotJson))
 				return [
 					new IncidentTriagePriorDiagnosis({
 						investigationId: row.id,
 						headline,
-						exceptionType: row.snapshotJson?.exceptionType ?? null,
+						exceptionType: snapshot?.exceptionType ?? null,
 					}),
 				]
 			}),
@@ -377,44 +384,52 @@ export const maybeEnqueueTriage: (
 		const nowMs = yield* Clock.currentTimeMillis
 
 		const existingRows = yield* database.execute((db) =>
-			db
-				.select()
-				.from(investigations)
-				.where(
-					and(
-						eq(investigations.orgId, input.orgId),
-						eq(investigations.incidentKind, input.incidentKind),
-						eq(investigations.incidentId, input.incidentId),
-					),
-				)
-				.limit(1),
+			db.orm.run(
+				PG.from(Investigations)
+					.select(($) => ({
+						id: $.id,
+						status: $.status,
+						startedAt: $.startedAt,
+						progressJson: storedProgressJson($),
+					}))
+					.where(($) => [
+						$.orgId.eq(input.orgId),
+						$.incidentKind.eq(input.incidentKind),
+						$.incidentId.eq(input.incidentId),
+					])
+					.limit(1),
+			),
 		)
 		const existing = existingRows[0]
 		if (existing) {
 			if (isInvestigationStale(existing, nowMs)) {
 				const budget = STALE_MS
 				yield* database.execute((db) =>
-					db
-						.update(investigations)
-						.set({
-							status: "failed",
-							error: staleTimeoutMessage(budget),
-							updatedAt: new Date(nowMs),
-						})
-						.where(
-							and(
-								eq(investigations.orgId, input.orgId),
-								eq(investigations.id, existing.id),
-								lt(investigations.startedAt, new Date(nowMs - budget)),
-							),
-						),
+					db.orm.run(
+						PG.update(Investigations)
+							.set({
+								status: "failed",
+								error: staleTimeoutMessage(budget),
+								updatedAt: nowMs,
+							})
+							.where(($) => [
+								$.orgId.eq(input.orgId),
+								$.id.eq(existing.id),
+								$.startedAt.lt(nowMs - budget),
+							]),
+					),
 				)
 			}
 			return { enqueued: false, investigationId: existing.id, reason: "duplicate" as const }
 		}
 
 		const settingsRows = yield* database.execute((db) =>
-			db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, input.orgId)).limit(1),
+			db.orm.run(
+				PG.from(AiTriageSettings)
+					.select()
+					.where(($) => [$.orgId.eq(input.orgId)])
+					.limit(1),
+			),
 		)
 		const settings = settingsRows[0]
 		if (!input.force && (settings === undefined || !settings.enabled)) {
@@ -433,24 +448,21 @@ export const maybeEnqueueTriage: (
 		if (input.issueId !== undefined) {
 			const issueId = input.issueId
 			const issueRows = yield* database.execute((db) =>
-				db
-					.select({ workflowState: errorIssues.workflowState })
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, issueId)))
-					.limit(1),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("workflowState")
+						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
+						.limit(1),
+				),
 			)
 			const latestRows = yield* database.execute((db) =>
-				db
-					.select({
-						id: investigations.id,
-						status: investigations.status,
-						createdAt: investigations.createdAt,
-						startedAt: investigations.startedAt,
-					})
-					.from(investigations)
-					.where(and(eq(investigations.orgId, input.orgId), eq(investigations.issueId, issueId)))
-					.orderBy(desc(investigations.createdAt))
-					.limit(1),
+				db.orm.run(
+					PG.from(Investigations)
+						.select("id", "status", "createdAt", "startedAt")
+						.where(($) => [$.orgId.eq(input.orgId), $.issueId.eq(issueId)])
+						.orderBy(["createdAt", "desc"])
+						.limit(1),
+				),
 			)
 			const latestRow = latestRows[0]
 			const latest: LatestIssueInvestigation | null =
@@ -459,8 +471,8 @@ export const maybeEnqueueTriage: (
 					: {
 							id: latestRow.id,
 							status: latestRow.status,
-							createdAtMs: dateToMs(latestRow.createdAt),
-							startedAtMs: dateToMs(latestRow.startedAt),
+							createdAtMs: latestRow.createdAt,
+							startedAtMs: latestRow.startedAt,
 						}
 			const issueGate = evaluateIssueGate({
 				workflowState: issueRows[0]?.workflowState ?? null,
@@ -494,7 +506,7 @@ export const maybeEnqueueTriage: (
 		const priorsFor = (serviceName: string) =>
 			database.execute((db) =>
 				selectPriorDiagnoses(
-					db,
+					db.orm,
 					input.orgId,
 					serviceName,
 					input.issueId ?? null,
@@ -518,7 +530,7 @@ export const maybeEnqueueTriage: (
 			if (input.issueId !== undefined && gate.reason === "noise") {
 				const issueId = input.issueId
 				yield* database.execute((db) =>
-					applyClassifierSeverity(db, {
+					applyClassifierSeverity(db.orm, {
 						orgId: input.orgId,
 						issueId,
 						incidentId: input.incidentId,
@@ -552,7 +564,7 @@ export const maybeEnqueueTriage: (
 
 		// One agent, one pass. Shared with `InvestigationService` so the two ceilings
 		// are judged the same way on both paths.
-		const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
+		const usage = yield* database.execute((db) => selectInvestigationUsage(db.orm, input.orgId, nowMs))
 		const quota = evaluateInvestigationQuota({
 			usage,
 			limits: settings,
@@ -600,25 +612,26 @@ export const maybeEnqueueTriage: (
 			...(input.issueId ? { issueId: input.issueId } : undefined),
 		})
 		const inserted = yield* database.execute((db) =>
-			db
-				.insert(investigations)
-				.values({
-					id: investigationId,
-					orgId: input.orgId,
-					status: "investigating",
-					seededBy: "system",
-					subjectJson: subject,
-					snapshotJson: snapshot,
-					incidentKind: input.incidentKind,
-					incidentId: input.incidentId,
-					issueId: input.issueId ?? null,
-					startedAt: new Date(nowMs),
-					autonomousTurns: 1,
-					createdAt: new Date(nowMs),
-					updatedAt: new Date(nowMs),
-				})
-				.onConflictDoNothing()
-				.returning({ id: investigations.id }),
+			db.orm.run(
+				PG.insertInto(Investigations)
+					.values({
+						id: investigationId,
+						orgId: input.orgId,
+						status: "investigating",
+						seededBy: "system",
+						subjectJson: subject,
+						snapshotJson: snapshot,
+						incidentKind: input.incidentKind,
+						incidentId: input.incidentId,
+						issueId: input.issueId ?? null,
+						startedAt: nowMs,
+						autonomousTurns: 1,
+						createdAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.onConflictDoNothing()
+					.returning("id"),
+			),
 		)
 		if (inserted.length === 0) {
 			return { enqueued: false, reason: "duplicate" as const }

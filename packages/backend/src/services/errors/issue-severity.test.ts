@@ -61,7 +61,7 @@ const setup = Effect.gen(function* () {
 	})
 
 	const apply = (overrides: Partial<ApplyTriageSeverityInput> = {}) =>
-		database.execute((db) => applyTriageSeverity(db, baseInput(overrides)))
+		database.execute((db) => applyTriageSeverity(db.orm, baseInput(overrides)))
 
 	const setIssueSeverity = (
 		severity: "critical" | "high" | "medium" | "low",

@@ -1,5 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
-import { alertDestinations } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations, type AlertDestinationRow } from "@maple/db/tables"
 import {
 	AlertDeliveryError,
 	type AlertComparator,
@@ -9,7 +9,6 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { and, eq, inArray } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { buildAlertChatUrl } from "./AlertDeliveryDispatch"
@@ -238,15 +237,11 @@ const make: Effect.Effect<
 
 			const rowsOption = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(alertDestinations)
-						.where(
-							and(
-								eq(alertDestinations.orgId, orgId),
-								inArray(alertDestinations.id, [...destinationIds]),
-							),
-						),
+					db.orm.run(
+						PG.from(AlertDestinations)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
+					),
 				)
 				.pipe(
 					Effect.tapError((error) =>

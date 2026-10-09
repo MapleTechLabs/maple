@@ -14,10 +14,9 @@ import {
 	PrReviewPostMerge,
 	PrReviewPostMergeIssue,
 	type PrReviewPostMergeStatus,
-	PrReviewTelemetry,
 } from "@maple/domain/http"
-import { prReviews } from "@maple/db"
-import { and, asc, eq, lte } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PrReviews, type PrReviewRow } from "@maple/db/tables"
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -59,9 +58,8 @@ export interface PrReviewPostMergeServiceApi {
 
 type Outcome = "reported" | "waiting" | "gave_up" | "skipped"
 
-const decodeTelemetry = Schema.decodeUnknownOption(PrReviewTelemetry)
 const encodePostMerge = Schema.encodeEffect(PrReviewPostMerge)
-const toDate = DateTime.toDateUtc
+const toMs = DateTime.toEpochMillis
 
 export class PrReviewPostMergeService extends Context.Service<
 	PrReviewPostMergeService,
@@ -77,36 +75,37 @@ export class PrReviewPostMergeService extends Context.Service<
 			orgId: OrgId,
 			id: PrReviewId,
 			status: PrReviewPostMergeStatus,
-			values: Partial<typeof prReviews.$inferInsert>,
+			postMergeAfter: number | null,
 			now: DateTime.Utc,
 		) =>
 			database.execute((db) =>
-				db
-					.update(prReviews)
-					.set({ postMergeStatus: status, updatedAt: toDate(now), ...values })
-					.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, id))),
+				db.orm.run(
+					PG.update(PrReviews)
+						.set({ postMergeStatus: status, updatedAt: toMs(now), postMergeAfter })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+				),
 			)
 
 		const later = (orgId: OrgId, id: PrReviewId, at: DateTime.Utc, now: DateTime.Utc) =>
-			settle(orgId, id, "waiting", { postMergeAfter: toDate(at) }, now)
+			settle(orgId, id, "waiting", toMs(at), now)
 
 		const examine = Effect.fn("PrReviewPostMerge.examine")(function* (
-			row: typeof prReviews.$inferSelect,
+			row: PrReviewRow,
 			now: DateTime.Utc,
 			/** The lease this examination holds; it reports only while the row still carries it. */
 			leaseUntil: DateTime.Utc,
 		) {
 			const orgId = row.orgId
-			const mergedAt = row.mergedAt === null ? now : DateTime.fromDateUnsafe(row.mergedAt)
+			const mergedAt = row.mergedAt === null ? now : DateTime.makeUnsafe(row.mergedAt)
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": row.id })
-			const facts = Option.getOrUndefined(decodeTelemetry(row.telemetryJson))
+			const facts = row.telemetryJson ?? undefined
 			const services = facts === undefined ? [] : postMergeServices(facts)
 			// A review that only found a removed name has no service to narrow by: it reads every
 			// service's versions and waits for the merge commit itself.
 			const breaksOnly =
 				facts !== undefined && services.length === 0 && openContractBreaks(facts).length > 0
 			if (facts === undefined || (services.length === 0 && !breaksOnly)) {
-				yield* settle(orgId, row.id, "no_traffic", { postMergeAfter: null }, now)
+				yield* settle(orgId, row.id, "no_traffic", null, now)
 				return "gave_up" satisfies Outcome
 			}
 			const versions = yield* telemetry.deploymentsSince(orgId, services, mergedAt, now)
@@ -125,7 +124,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			})
 			if (picked === undefined) {
 				if (elapsed(mergedAt, now, POST_MERGE_GIVE_UP)) {
-					yield* settle(orgId, row.id, "no_deploy", { postMergeAfter: null }, now)
+					yield* settle(orgId, row.id, "no_deploy", null, now)
 					return "gave_up" satisfies Outcome
 				}
 				yield* later(orgId, row.id, DateTime.addDuration(now, POST_MERGE_RETRY), now)
@@ -218,22 +217,21 @@ export class PrReviewPostMergeService extends Context.Service<
 			// leaves the look on the review.
 			const stored = yield* encodePostMerge(report)
 			const won = yield* database.execute((db) =>
-				db
-					.update(prReviews)
-					.set({
-						postMergeStatus: "reported",
-						postMergeAfter: null,
-						postMergeJson: stored,
-						updatedAt: toDate(now),
-					})
-					.where(
-						and(
-							eq(prReviews.id, row.id),
-							eq(prReviews.postMergeStatus, "waiting"),
-							eq(prReviews.postMergeAfter, toDate(leaseUntil)),
-						),
-					)
-					.returning({ id: prReviews.id }),
+				db.orm.run(
+					PG.update(PrReviews)
+						.set({
+							postMergeStatus: "reported",
+							postMergeAfter: null,
+							postMergeJson: stored,
+							updatedAt: toMs(now),
+						})
+						.where(($) => [
+							$.id.eq(row.id),
+							$.postMergeStatus.eq("waiting"),
+							$.postMergeAfter.eq(toMs(leaseUntil)),
+						])
+						.returning("id"),
+				),
 			)
 			if (won.length === 0) return "skipped" satisfies Outcome
 			yield* Effect.annotateCurrentSpan({
@@ -247,7 +245,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			return "reported" satisfies Outcome
 		})
 
-		const postComment = (orgId: OrgId, row: typeof prReviews.$inferSelect, body: string) =>
+		const postComment = (orgId: OrgId, row: PrReviewRow, body: string) =>
 			Effect.gen(function* () {
 				const repository = yield* repositories.getRepositoryById(orgId, row.repositoryId)
 				if (Option.isNone(repository)) return
@@ -275,17 +273,13 @@ export class PrReviewPostMergeService extends Context.Service<
 			Effect.gen(function* () {
 				const now = yield* DateTime.now
 				const due = yield* database.execute((db) =>
-					db
-						.select()
-						.from(prReviews)
-						.where(
-							and(
-								eq(prReviews.postMergeStatus, "waiting"),
-								lte(prReviews.postMergeAfter, toDate(now)),
-							),
-						)
-						.orderBy(asc(prReviews.postMergeAfter))
-						.limit(TICK_LIMIT),
+					db.orm.run(
+						PG.from(PrReviews)
+							.select()
+							.where(($) => [$.postMergeStatus.eq("waiting"), $.postMergeAfter.lte(toMs(now))])
+							.orderBy(["postMergeAfter", "asc"])
+							.limit(TICK_LIMIT),
+					),
 				)
 				const outcomes = yield* Effect.forEach(
 					due,
@@ -295,17 +289,16 @@ export class PrReviewPostMergeService extends Context.Service<
 							// Claimed first: an overlapping tick that read the same row finds it leased and
 							// skips it, so the follow-up is posted once.
 							const claimed = yield* database.execute((db) =>
-								db
-									.update(prReviews)
-									.set({ postMergeAfter: toDate(leaseUntil) })
-									.where(
-										and(
-											eq(prReviews.id, row.id),
-											eq(prReviews.postMergeStatus, "waiting"),
-											lte(prReviews.postMergeAfter, toDate(now)),
-										),
-									)
-									.returning({ id: prReviews.id }),
+								db.orm.run(
+									PG.update(PrReviews)
+										.set({ postMergeAfter: toMs(leaseUntil) })
+										.where(($) => [
+											$.id.eq(row.id),
+											$.postMergeStatus.eq("waiting"),
+											$.postMergeAfter.lte(toMs(now)),
+										])
+										.returning("id"),
+								),
 							)
 							if (claimed.length === 0) return "skipped" as const
 							return yield* examine(row, now, leaseUntil)
@@ -313,7 +306,7 @@ export class PrReviewPostMergeService extends Context.Service<
 							Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
 							Effect.catchCause((cause) => {
 								const mergedAt =
-									row.mergedAt === null ? now : DateTime.fromDateUnsafe(row.mergedAt)
+									row.mergedAt === null ? now : DateTime.makeUnsafe(row.mergedAt)
 								// A read that keeps failing is given up with the rest, never read as clean.
 								const giveUp = elapsed(mergedAt, now, POST_MERGE_GIVE_UP)
 								return Effect.logWarning(
@@ -326,13 +319,7 @@ export class PrReviewPostMergeService extends Context.Service<
 									}),
 									Effect.andThen(
 										(giveUp
-											? settle(
-													row.orgId,
-													row.id,
-													"failed",
-													{ postMergeAfter: null },
-													now,
-												)
+											? settle(row.orgId, row.id, "failed", null, now)
 											: later(
 													row.orgId,
 													row.id,

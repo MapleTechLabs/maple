@@ -12,8 +12,9 @@
  * differently, and the token totals they have to report differ (one pass versus
  * a summed fan-out).
  */
-import { errorIssueEvents, investigations } from "@maple/db"
-import type { MapleDbLike } from "@maple/db/client"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleOrm } from "@maple/db/client"
+import { ErrorIssueEvents, Investigations } from "@maple/db/tables"
 import {
 	InvestigationSubjectDiscriminator,
 	type AiTriageResult,
@@ -23,7 +24,6 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueEventId, ErrorIssueId, type InvestigationId } from "@maple/domain/primitives"
 import { createHash } from "node:crypto"
-import { and, eq } from "drizzle-orm"
 import { Effect, identity, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -104,37 +104,38 @@ export interface ApplyDiagnosisInput {
  * transaction matters: a crash between them would leave an issue escalated with
  * no audit event explaining why.
  */
-const writeDiagnosis = (db: MapleDbLike, input: ApplyDiagnosisInput) =>
+const writeDiagnosis = (orm: MapleOrm, input: ApplyDiagnosisInput) =>
 	Effect.gen(function* () {
 		const confidence: InvestigationConfidence = input.report.confidence
-		const now = new Date(input.nowMs)
+		const now = input.nowMs
 
-		yield* db
-			.update(investigations)
-			.set({
-				status: "diagnosed",
-				reportJson: input.report,
-				// Explicit null rather than `undefined`: an unassessed report must write
-				// "no severity" onto the row, not silently omit the column from the UPDATE
-				// and leave a stale one standing.
-				severity: input.report.severityAssessment ?? null,
-				confidence,
-				model: input.model,
-				inputTokens: input.inputTokens,
-				outputTokens: input.outputTokens,
-				error: null,
-				diagnosedAt: now,
-				updatedAt: now,
-			})
-			.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
+		yield* orm.run(
+			PG.update(Investigations)
+				.set({
+					status: "diagnosed",
+					reportJson: input.report,
+					// Explicit null rather than `undefined`: an unassessed report must write
+					// "no severity" onto the row, not silently omit the column from the UPDATE
+					// and leave a stale one standing.
+					severity: input.report.severityAssessment ?? null,
+					confidence,
+					model: input.model,
+					inputTokens: input.inputTokens,
+					outputTokens: input.outputTokens,
+					error: null,
+					diagnosedAt: now,
+					updatedAt: now,
+				})
+				.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.investigationId)]),
+		)
 
 		if (!input.issueId) return
 		// See `subjectType` above: a verification's report must not re-rank the issue.
 		if (Option.contains(input.subjectType, "fix_verification")) return
 		const decodedIssueId = decodeIssueId(input.issueId)
-		yield* db.transaction((tx) =>
+		yield* orm.transaction(
 			Effect.gen(function* () {
-				const applied = yield* applyTriageSeverity(tx, {
+				const applied = yield* applyTriageSeverity(orm, {
 					orgId: input.orgId,
 					issueId: decodedIssueId,
 					runId: input.investigationId,
@@ -144,24 +145,25 @@ const writeDiagnosis = (db: MapleDbLike, input: ApplyDiagnosisInput) =>
 					timestamp: input.nowMs,
 					result: input.report,
 				})
-				yield* tx
-					.insert(errorIssueEvents)
-					.values({
-						id: decodeEventId(deterministicInvestigationEventId(input.investigationId)),
-						orgId: input.orgId,
-						issueId: decodedIssueId,
-						actorId: applied.actorId,
-						type: "ai_triage",
-						payloadJson: {
-							investigationId: input.investigationId,
-							summary: input.report.summary,
-							severityAssessment: input.report.severityAssessment ?? null,
-							confidence,
-							applied: applied.applied,
-						},
-						createdAt: now,
-					})
-					.onConflictDoNothing()
+				yield* orm.run(
+					PG.insertInto(ErrorIssueEvents)
+						.values({
+							id: decodeEventId(deterministicInvestigationEventId(input.investigationId)),
+							orgId: input.orgId,
+							issueId: decodedIssueId,
+							actorId: applied.actorId,
+							type: "ai_triage",
+							payloadJson: {
+								investigationId: input.investigationId,
+								summary: input.report.summary,
+								severityAssessment: input.report.severityAssessment ?? null,
+								confidence,
+								applied: applied.applied,
+							},
+							createdAt: now,
+						})
+						.onConflictDoNothing(),
+				)
 			}),
 		)
 	})
@@ -189,7 +191,7 @@ export const applyDiagnosisWrites: (
 	"applyDiagnosisWrites",
 )(function* (input) {
 	const database = yield* Database
-	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db, input))
+	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db.orm, input))
 })
 
 export interface ApplyInconclusiveInput {
@@ -225,11 +227,9 @@ export interface ApplyInconclusiveInput {
  * - `error: null` — the raw error string in that column is what the UI used to
  *   render in a destructive box. The report replaces it.
  */
-const writeInconclusive = (db: MapleDbLike, input: ApplyInconclusiveInput) =>
-	Effect.gen(function* () {
-		const now = new Date(input.nowMs)
-		yield* db
-			.update(investigations)
+const writeInconclusive = (orm: MapleOrm, input: ApplyInconclusiveInput) =>
+	orm.run(
+		PG.update(Investigations)
 			.set({
 				status: "inconclusive",
 				reportJson: input.report,
@@ -243,10 +243,10 @@ const writeInconclusive = (db: MapleDbLike, input: ApplyInconclusiveInput) =>
 				outputTokens: input.outputTokens,
 				error: null,
 				diagnosedAt: null,
-				updatedAt: now,
+				updatedAt: input.nowMs,
 			})
-			.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
-	})
+			.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.investigationId)]),
+	)
 
 /**
  * Publish a partial result. See {@link applyInconclusiveWrites}' body above for
@@ -257,5 +257,9 @@ export const applyInconclusiveWrites: (
 	input: ApplyInconclusiveInput,
 ) => Effect.Effect<void, DatabaseError, Database> = Effect.fn("applyInconclusiveWrites")(function* (input) {
 	const database = yield* Database
-	yield* makeDbExecute(database, "applyInconclusiveWrites", identity)((db) => writeInconclusive(db, input))
+	yield* makeDbExecute(
+		database,
+		"applyInconclusiveWrites",
+		identity,
+	)((db) => writeInconclusive(db.orm, input))
 })

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { errorIssues, errorIssueStates, orgClickHouseSettings } from "@maple/db"
+import { ErrorIssues, ErrorIssueStates, OrgClickHouseSettings } from "@maple/db/tables"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -50,7 +51,7 @@ describe("selectDistinctOrgIds", () => {
 			)
 
 			const loose = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, errorIssues, errorIssues.orgId),
+				selectDistinctOrgIds(client.orm, ErrorIssues),
 			)
 			const baseline = yield* database.execute((client) =>
 				client.selectDistinct({ orgId: errorIssues.orgId }).from(errorIssues),
@@ -67,7 +68,7 @@ describe("selectDistinctOrgIds", () => {
 			const database = yield* Database.pipe(Effect.provide(db.layer))
 
 			const loose = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, errorIssues, errorIssues.orgId),
+				selectDistinctOrgIds(client.orm, ErrorIssues),
 			)
 			assert.deepStrictEqual([...loose], [])
 		}),
@@ -102,10 +103,10 @@ describe("selectDistinctOrgIds", () => {
 			)
 
 			const states = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, errorIssueStates, errorIssueStates.orgId),
+				selectDistinctOrgIds(client.orm, ErrorIssueStates),
 			)
 			const settings = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, orgClickHouseSettings, orgClickHouseSettings.orgId),
+				selectDistinctOrgIds(client.orm, OrgClickHouseSettings),
 			)
 
 			assert.deepStrictEqual([...states], ["org_a", "org_b"])

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
-import { agentFeedback, type AgentFeedbackRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AgentFeedback as AgentFeedbackTable, type AgentFeedbackRow } from "@maple/db/tables"
 import {
 	AgentFeedbackImpact,
 	AgentFeedbackKind,
@@ -8,11 +9,9 @@ import {
 	AgentType,
 } from "@maple/domain/http"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { desc, eq } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 
 export interface AgentFeedback {
 	readonly id: AgentFeedbackId
@@ -97,7 +96,7 @@ const toFeedback = (row: AgentFeedbackRow): AgentFeedback => ({
 		version: row.agentVersion,
 	},
 	source: decodeSource(row.source),
-	createdAtMs: dateToMs(row.createdAt),
+	createdAtMs: row.createdAt,
 })
 
 export class AgentFeedbackService extends Context.Service<AgentFeedbackService, AgentFeedbackServiceApi>()(
@@ -121,10 +120,10 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 					"maple.feedback.agent_type": input.agent.type,
 					...(agentName !== null ? { "maple.feedback.agent_name": agentName } : undefined),
 				})
-				const now = msToDate(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db
-						.insert(agentFeedback)
+					db.orm.run(
+						PG.insertInto(AgentFeedbackTable)
 						.values({
 							id: randomUUID(),
 							orgId,
@@ -143,6 +142,7 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 							createdAt: now,
 						})
 						.returning(),
+					),
 				)
 				const row = rows[0]
 				if (row === undefined) {
@@ -157,13 +157,14 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(agentFeedback)
-						.where(eq(agentFeedback.orgId, orgId))
-						.orderBy(desc(agentFeedback.createdAt), desc(agentFeedback.id))
-						.limit(page.limit)
-						.offset(page.offset),
+					db.orm.run(
+						PG.from(AgentFeedbackTable)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(["createdAt", "desc"], ["id", "desc"])
+							.limit(page.limit)
+							.offset(page.offset),
+					),
 				)
 				return rows.map(toFeedback)
 			})

@@ -23,22 +23,22 @@ import {
 	parsePullRequestUrl,
 } from "@maple/domain/http"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	actors,
-	errorIncidents,
-	errorNotificationDeliveries,
+	Actors,
+	ErrorIncidents,
+	ErrorNotificationDeliveries,
 	type ErrorNotificationDeliveryRow,
-	errorFingerprintCandidates,
-	errorIssues,
-	errorIssueEvents,
+	ErrorFingerprintCandidates,
+	ErrorIssues,
+	ErrorIssueEvents,
 	type ErrorIssueRow,
-	errorIssueStates,
-	errorNotificationPolicies,
-	errorTickStates,
-	orgClickHouseSettings,
-	orgIngestKeys,
-} from "@maple/db"
-import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
+	ErrorIssueStates,
+	ErrorNotificationPolicies,
+	ErrorTickStates,
+	OrgClickHouseSettings,
+	OrgIngestKeys,
+} from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
 import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -272,7 +272,7 @@ const make: Effect.Effect<
 
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorsService")
 
-	const isoFromDate = (date: Date) => decodeIsoDateTimeStringSync(date.toISOString())
+	const isoFromMs = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -299,7 +299,7 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
-			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
+			db.orm.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 		).pipe(Effect.option)
 		// Without the BYO set an org on its own warehouse reads as idle, and
 		// managed discovery says nothing about its data: not a discovered result.
@@ -467,7 +467,7 @@ const make: Effect.Effect<
 			message: "Issue is held by another actor",
 			issueId,
 			currentHolderActorId: row?.leaseHolderActorId ?? null,
-			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromDate(row.leaseExpiresAt),
+			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromMs(row.leaseExpiresAt),
 		})
 
 	/**
@@ -488,35 +488,35 @@ const make: Effect.Effect<
 	) {
 		const leaseExpiresAt = timestamp + leaseMs
 		const claimed = yield* dbExecute((db) =>
-			db
-				.update(errorIssues)
-				.set({
-					leaseHolderActorId: actorId,
-					leaseExpiresAt: new Date(leaseExpiresAt),
-					claimedAt: new Date(timestamp),
-					updatedAt: new Date(timestamp),
-				})
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						eq(errorIssues.id, issueId),
-						or(
-							isNull(errorIssues.leaseHolderActorId),
-							eq(errorIssues.leaseHolderActorId, actorId),
-							lt(errorIssues.leaseExpiresAt, new Date(timestamp)),
+			db.orm.run(
+				PG.update(ErrorIssues)
+					.set({
+						leaseHolderActorId: actorId,
+						leaseExpiresAt,
+						claimedAt: timestamp,
+						updatedAt: timestamp,
+					})
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.id.eq(issueId),
+						PG.or(
+							$.leaseHolderActorId.isNull(),
+							$.leaseHolderActorId.eq(actorId),
+							$.leaseExpiresAt.lt(timestamp),
 						),
-					),
-				)
-				.returning(),
+					])
+					.returning(),
+			),
 		)
 
 		if (claimed.length === 0) {
 			const latestRows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-					.limit(1),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+						.limit(1),
+				),
 			)
 			return yield* Effect.fail(leaseConflict(issueId, latestRows[0] ?? null))
 		}
@@ -722,7 +722,7 @@ const make: Effect.Effect<
 
 		yield* dispatcher
 			.dispatch(orgId, destinationIds, {
-				deliveryKey: `err:${orgId}:${row.id}:transition:${toState}:${row.updatedAt.getTime()}`,
+				deliveryKey: `err:${orgId}:${row.id}:transition:${toState}:${row.updatedAt}`,
 				ruleId: row.id,
 				ruleName: `${row.exceptionType} in ${row.serviceName}`,
 				groupKey: row.serviceName,
@@ -755,7 +755,7 @@ const make: Effect.Effect<
 
 		yield* dispatcher
 			.dispatch(orgId, destinationIds, {
-				deliveryKey: `err:${orgId}:${row.id}:claim:${(row.claimedAt ?? row.updatedAt).getTime()}`,
+				deliveryKey: `err:${orgId}:${row.id}:claim:${row.claimedAt ?? row.updatedAt}`,
 				ruleId: row.id,
 				ruleName: `${row.exceptionType} in ${row.serviceName}`,
 				groupKey: row.serviceName,
@@ -776,16 +776,16 @@ const make: Effect.Effect<
 	})
 
 	const notificationWorkerId = `errors-${randomUUID()}`
-	const claimableNotificationWhere = (currentTime: number) =>
-		or(
-			and(
-				eq(errorNotificationDeliveries.status, "queued"),
-				lte(errorNotificationDeliveries.scheduledAt, new Date(currentTime)),
-			),
-			and(
-				eq(errorNotificationDeliveries.status, "processing"),
-				isNotNull(errorNotificationDeliveries.claimExpiresAt),
-				lte(errorNotificationDeliveries.claimExpiresAt, new Date(currentTime)),
+	const claimableNotificationWhere = (
+		$: PG.ColumnAccessor<typeof ErrorNotificationDeliveries.columns>,
+		currentTime: number,
+	) =>
+		PG.or(
+			PG.and($.status.eq("queued"), $.scheduledAt.lte(currentTime)),
+			PG.and(
+				$.status.eq("processing"),
+				$.claimExpiresAt.isNotNull(),
+				$.claimExpiresAt.lte(currentTime),
 			),
 		)
 
@@ -820,12 +820,13 @@ const make: Effect.Effect<
 	const processNotificationOutbox = Effect.fn("ErrorsService.processNotificationOutbox")(function* () {
 		const currentTime = yield* Clock.currentTimeMillis
 		const due = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorNotificationDeliveries)
-				.where(claimableNotificationWhere(currentTime))
-				.orderBy(asc(errorNotificationDeliveries.scheduledAt))
-				.limit(NOTIFICATION_OUTBOX_BATCH_SIZE),
+			db.orm.run(
+				PG.from(ErrorNotificationDeliveries)
+					.select()
+					.where(($) => [claimableNotificationWhere($, currentTime)])
+					.orderBy(["scheduledAt", "asc"])
+					.limit(NOTIFICATION_OUTBOX_BATCH_SIZE),
+			),
 		)
 
 		yield* Effect.forEach(
@@ -833,23 +834,19 @@ const make: Effect.Effect<
 			(row) =>
 				Effect.gen(function* () {
 					const claimedRows = yield* dbExecute((db) =>
-						db
-							.update(errorNotificationDeliveries)
-							.set({
-								status: "processing",
-								attemptCount: sql`${errorNotificationDeliveries.attemptCount} + 1`,
-								claimedAt: new Date(currentTime),
-								claimExpiresAt: new Date(currentTime + NOTIFICATION_CLAIM_TTL_MS),
-								claimedBy: notificationWorkerId,
-								updatedAt: new Date(currentTime),
-							})
-							.where(
-								and(
-									eq(errorNotificationDeliveries.id, row.id),
-									claimableNotificationWhere(currentTime),
-								),
-							)
-							.returning(),
+						db.orm.run(
+							PG.update(ErrorNotificationDeliveries)
+								.set(($) => ({
+									status: "processing",
+									attemptCount: $.attemptCount.add(1),
+									claimedAt: currentTime,
+									claimExpiresAt: currentTime + NOTIFICATION_CLAIM_TTL_MS,
+									claimedBy: notificationWorkerId,
+									updatedAt: currentTime,
+								}))
+								.where(($) => [$.id.eq(row.id), claimableNotificationWhere($, currentTime)])
+								.returning(),
+						),
 					)
 					const claimed = claimedRows[0]
 					if (!claimed) return
@@ -857,23 +854,22 @@ const make: Effect.Effect<
 					const payloadOption = decodeErrorNotificationOutboxPayload(claimed.payloadJson)
 					if (Option.isNone(payloadOption)) {
 						yield* dbExecute((db) =>
-							db
-								.update(errorNotificationDeliveries)
-								.set({
-									status: "failed",
-									attemptedAt: new Date(currentTime),
-									errorMessage: "Stored error notification payload is invalid",
-									claimedAt: null,
-									claimExpiresAt: null,
-									claimedBy: null,
-									updatedAt: new Date(currentTime),
-								})
-								.where(
-									and(
-										eq(errorNotificationDeliveries.id, claimed.id),
-										eq(errorNotificationDeliveries.claimedBy, notificationWorkerId),
-									),
-								),
+							db.orm.run(
+								PG.update(ErrorNotificationDeliveries)
+									.set({
+										status: "failed",
+										attemptedAt: currentTime,
+										errorMessage: "Stored error notification payload is invalid",
+										claimedAt: null,
+										claimExpiresAt: null,
+										claimedBy: null,
+										updatedAt: currentTime,
+									})
+									.where(($) => [
+										$.id.eq(claimed.id),
+										$.claimedBy.eq(notificationWorkerId),
+									]),
+							),
 						)
 						return
 					}
@@ -890,50 +886,46 @@ const make: Effect.Effect<
 					const retryDelayMs = Math.min(30_000 * 2 ** (claimed.attemptCount - 1), 15 * 60_000)
 
 					yield* dbExecute((db) =>
-						db
-							.update(errorNotificationDeliveries)
-							.set(
-								delivered
-									? {
-											status: "success",
-											attemptedAt: new Date(currentTime),
-											errorMessage: null,
-											claimedAt: null,
-											claimExpiresAt: null,
-											claimedBy: null,
-											updatedAt: new Date(currentTime),
-										}
-									: retryable && !exhausted
+						db.orm.run(
+							PG.update(ErrorNotificationDeliveries)
+								.set(
+									delivered
 										? {
-												status: "queued",
-												scheduledAt: new Date(currentTime + retryDelayMs),
-												attemptedAt: new Date(currentTime),
-												errorMessage:
-													destination?.error ?? "Notification delivery failed",
+												status: "success",
+												attemptedAt: currentTime,
+												errorMessage: null,
 												claimedAt: null,
 												claimExpiresAt: null,
 												claimedBy: null,
-												updatedAt: new Date(currentTime),
+												updatedAt: currentTime,
 											}
-										: {
-												status: "failed",
-												attemptedAt: new Date(currentTime),
-												errorMessage:
-													destination?.error ??
-													destination?.status ??
-													"Notification delivery failed",
-												claimedAt: null,
-												claimExpiresAt: null,
-												claimedBy: null,
-												updatedAt: new Date(currentTime),
-											},
-							)
-							.where(
-								and(
-									eq(errorNotificationDeliveries.id, claimed.id),
-									eq(errorNotificationDeliveries.claimedBy, notificationWorkerId),
-								),
-							),
+										: retryable && !exhausted
+											? {
+													status: "queued",
+													scheduledAt: currentTime + retryDelayMs,
+													attemptedAt: currentTime,
+													errorMessage:
+														destination?.error ?? "Notification delivery failed",
+													claimedAt: null,
+													claimExpiresAt: null,
+													claimedBy: null,
+													updatedAt: currentTime,
+												}
+											: {
+													status: "failed",
+													attemptedAt: currentTime,
+													errorMessage:
+														destination?.error ??
+														destination?.status ??
+														"Notification delivery failed",
+													claimedAt: null,
+													claimExpiresAt: null,
+													claimedBy: null,
+													updatedAt: currentTime,
+												},
+								)
+								.where(($) => [$.id.eq(claimed.id), $.claimedBy.eq(notificationWorkerId)]),
+						),
 					)
 				}),
 			{ concurrency: 5 },
@@ -958,45 +950,43 @@ const make: Effect.Effect<
 	) {
 		return yield* dbExecute((db) =>
 			Effect.gen(function* () {
-				const actorRows = yield* db
-					.select()
-					.from(actors)
-					.where(
-						and(
-							eq(actors.orgId, orgId),
-							eq(actors.type, "agent"),
-							eq(actors.agentName, SYSTEM_AGENT_NAME),
-						),
-					)
-					.limit(1)
-				const policyRows = yield* db
-					.select()
-					.from(errorNotificationPolicies)
-					.where(eq(errorNotificationPolicies.orgId, orgId))
-					.limit(1)
-				const expiredLeases = yield* db
-					.select()
-					.from(errorIssues)
-					.where(
-						and(
-							eq(errorIssues.orgId, orgId),
-							isNotNull(errorIssues.leaseExpiresAt),
-							lt(errorIssues.leaseExpiresAt, new Date(nowMs)),
-						),
-					)
+				const actorRows = yield* db.orm.run(
+					PG.from(Actors)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.type.eq("agent"),
+							$.agentName.eq(SYSTEM_AGENT_NAME),
+						])
+						.limit(1),
+				)
+				const policyRows = yield* db.orm.run(
+					PG.from(ErrorNotificationPolicies)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.limit(1),
+				)
+				const expiredLeases = yield* db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.leaseExpiresAt.isNotNull(),
+							$.leaseExpiresAt.lt(nowMs),
+						]),
+				)
 				// Wake up wontfix issues whose snooze has elapsed, so that new events
 				// observed in this tick are treated as regressions rather than skipped.
-				const wakeCandidates = yield* db
-					.select()
-					.from(errorIssues)
-					.where(
-						and(
-							eq(errorIssues.orgId, orgId),
-							eq(errorIssues.workflowState, "wontfix"),
-							isNotNull(errorIssues.snoozeUntil),
-							lt(errorIssues.snoozeUntil, new Date(nowMs)),
-						),
-					)
+				const wakeCandidates = yield* db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.workflowState.eq("wontfix"),
+							$.snoozeUntil.isNotNull(),
+							$.snoozeUntil.lt(nowMs),
+						]),
+				)
 				return {
 					actorRow: actorRows[0] ?? null,
 					policyRow: policyRows[0] ?? null,
@@ -1019,15 +1009,16 @@ const make: Effect.Effect<
 			Effect.gen(function* () {
 				const prevActorId = row.leaseHolderActorId
 				yield* dbExecute((db) =>
-					db
-						.update(errorIssues)
-						.set({
-							leaseHolderActorId: null,
-							leaseExpiresAt: null,
-							claimedAt: null,
-							updatedAt: new Date(nowMs),
-						})
-						.where(eq(errorIssues.id, row.id)),
+					db.orm.run(
+						PG.update(ErrorIssues)
+							.set({
+								leaseHolderActorId: null,
+								leaseExpiresAt: null,
+								claimedAt: null,
+								updatedAt: nowMs,
+							})
+							.where(($) => [$.id.eq(row.id)]),
+					),
 				)
 				yield* recordEvent(orgId, row.id, systemActor.id, "lease_expired", {
 					payload: { previousHolderActorId: prevActorId },
@@ -1051,20 +1042,21 @@ const make: Effect.Effect<
 		nowMs: number,
 	) {
 		const claimToken = randomUUID()
-		const initialProcessedThrough = new Date(cutoffMs - TICK_BOOTSTRAP_WINDOW_MS)
+		const initialProcessedThrough = cutoffMs - TICK_BOOTSTRAP_WINDOW_MS
 		const claim = yield* dbExecute((db) =>
 			Effect.gen(function* () {
-				yield* db
-					.insert(errorTickStates)
-					.values({
-						orgId,
-						processedThrough: initialProcessedThrough,
-						bootstrapCompleted: false,
-						claimToken: null,
-						claimExpiresAt: null,
-						updatedAt: new Date(nowMs),
-					})
-					.onConflictDoNothing({ target: errorTickStates.orgId })
+				yield* db.orm.run(
+					PG.insertInto(ErrorTickStates)
+						.values({
+							orgId,
+							processedThrough: initialProcessedThrough,
+							bootstrapCompleted: false,
+							claimToken: null,
+							claimExpiresAt: null,
+							updatedAt: nowMs,
+						})
+						.onConflictDoNothing({ target: ["orgId"] }),
+				)
 
 				// `for update skip locked` is what makes the TTL a crash-recovery
 				// mechanism rather than a deadline. `persistErrorTickWindow` holds this
@@ -1072,39 +1064,27 @@ const make: Effect.Effect<
 				// apply is skipped here instead of being stolen and rolled back at its
 				// checkpoint — the retry-forever loop that stalls an org permanently.
 				// Only a dead worker leaves the row unlocked with a lapsed lease.
-				const claimable = db
-					.select({ orgId: errorTickStates.orgId })
-					.from(errorTickStates)
-					.where(
-						and(
-							eq(errorTickStates.orgId, orgId),
-							lt(errorTickStates.processedThrough, new Date(cutoffMs)),
-							or(
-								isNull(errorTickStates.claimExpiresAt),
-								lte(errorTickStates.claimExpiresAt, new Date(nowMs)),
-							),
-						),
-					)
-					.for("update", { skipLocked: true })
+				const claimable = PG.from(ErrorTickStates)
+					.select("orgId")
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.processedThrough.lt(cutoffMs),
+						PG.or($.claimExpiresAt.isNull(), $.claimExpiresAt.lte(nowMs)),
+					])
+					.forUpdate({ skipLocked: true })
 
-				const claimed = yield* db
-					.update(errorTickStates)
-					.set({
-						claimToken,
-						claimExpiresAt: new Date(nowMs + TICK_CLAIM_TTL_MS),
-						updatedAt: new Date(nowMs),
-					})
-					.where(inArray(errorTickStates.orgId, claimable))
-					.returning({
-						processedThrough: errorTickStates.processedThrough,
-						bootstrapCompleted: errorTickStates.bootstrapCompleted,
-					})
+				const claimed = yield* db.orm.run(
+					PG.update(ErrorTickStates)
+						.set({ claimToken, claimExpiresAt: nowMs + TICK_CLAIM_TTL_MS, updatedAt: nowMs })
+						.where(($) => [PG.inSubquery($.orgId, claimable)])
+						.returning("processedThrough", "bootstrapCompleted"),
+				)
 				return claimed
 			}),
 		)
 		const row = claim[0]
 		if (!row) return null
-		const windowStartMs = row.processedThrough.getTime()
+		const windowStartMs = row.processedThrough
 		return {
 			claimToken,
 			isBootstrap: !row.bootstrapCompleted,
@@ -1115,10 +1095,11 @@ const make: Effect.Effect<
 
 	const releaseTickClaim = (orgId: OrgId, claimToken: string, nowMs: number) =>
 		dbExecute((db) =>
-			db
-				.update(errorTickStates)
-				.set({ claimToken: null, claimExpiresAt: null, updatedAt: new Date(nowMs) })
-				.where(and(eq(errorTickStates.orgId, orgId), eq(errorTickStates.claimToken, claimToken))),
+			db.orm.run(
+				PG.update(ErrorTickStates)
+					.set({ claimToken: null, claimExpiresAt: null, updatedAt: nowMs })
+					.where(($) => [$.orgId.eq(orgId), $.claimToken.eq(claimToken)]),
+			),
 		).pipe(Effect.ignore)
 
 	const processOrg = Effect.fn("ErrorsService.processOrg")(function* (
@@ -1312,13 +1293,11 @@ const make: Effect.Effect<
 		// committed window, and it touches only the handful of issues in `verifying`.
 		if (Option.isSome(fixVerification) && rows.length > 0) {
 			const verifyingIssues = yield* dbExecute((db) =>
-				db
-					.select({
-						id: errorIssues.id,
-						fingerprintHash: errorIssues.fingerprintHash,
-					})
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.workflowState, "verifying"))),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("id", "fingerprintHash")
+						.where(($) => [$.orgId.eq(orgId), $.workflowState.eq("verifying")]),
+				),
 			)
 			if (verifyingIssues.length > 0) {
 				const versionsByFingerprint = new Map(
@@ -1392,93 +1371,90 @@ const make: Effect.Effect<
 			// error-kind — alert and integration issues key off their own
 			// identifiers, not the ClickHouse fingerprint.
 			const staleFingerprintRows = yield* dbExecute((db) =>
-				db
-					.update(errorIssues)
-					.set({ archivedAt: new Date(nowMs), updatedAt: new Date(nowMs) })
-					.where(
-						and(
-							eq(errorIssues.orgId, orgId),
-							eq(errorIssues.kind, "error"),
-							lt(errorIssues.fingerprintVersion, FINGERPRINT_VERSION),
-							isNull(errorIssues.archivedAt),
-						),
-					)
-					.returning({ id: errorIssues.id }),
+				db.orm.run(
+					PG.update(ErrorIssues)
+						.set({ archivedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.kind.eq("error"),
+							$.fingerprintVersion.lt(FINGERPRINT_VERSION),
+							$.archivedAt.isNull(),
+						])
+						.returning("id"),
+				),
 			)
 
 			const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
 			const archivedRows = yield* dbExecute((db) =>
-				db
-					.update(errorIssues)
-					.set({ archivedAt: new Date(nowMs), updatedAt: new Date(nowMs) })
-					.where(
-						and(
-							eq(errorIssues.orgId, orgId),
-							eq(errorIssues.workflowState, "done"),
-							isNull(errorIssues.archivedAt),
-							isNotNull(errorIssues.resolvedAt),
-							lt(errorIssues.resolvedAt, new Date(resolvedCutoff)),
-						),
-					)
-					.returning({ id: errorIssues.id }),
+				db.orm.run(
+					PG.update(ErrorIssues)
+						.set({ archivedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.workflowState.eq("done"),
+							$.archivedAt.isNull(),
+							$.resolvedAt.isNotNull(),
+							$.resolvedAt.lt(resolvedCutoff),
+						])
+						.returning("id"),
+				),
 			)
 			issuesArchived = archivedRows.length + staleFingerprintRows.length
 
 			// Candidates that never reached the promotion threshold. Without this the
 			// holding table would accumulate every one-off fingerprint forever.
 			yield* dbExecute((db) =>
-				db
-					.delete(errorFingerprintCandidates)
-					.where(
-						and(
-							eq(errorFingerprintCandidates.orgId, orgId),
-							lt(
-								errorFingerprintCandidates.lastSeenAt,
-								new Date(nowMs - CANDIDATE_RETENTION_MS),
-							),
-						),
-					),
+				db.orm.run(
+					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
+						$.orgId.eq(orgId),
+						$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
+					]),
+				),
 			)
 
 			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
 			const toDelete = yield* dbExecute((db) =>
-				db
-					.select({ id: errorIssues.id })
-					.from(errorIssues)
-					.where(
-						and(
-							eq(errorIssues.orgId, orgId),
-							isNotNull(errorIssues.archivedAt),
-							lt(errorIssues.archivedAt, new Date(archivedCutoff)),
-						),
-					)
-					.limit(500),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select("id")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.archivedAt.isNotNull(),
+							$.archivedAt.lt(archivedCutoff),
+						])
+						.limit(500),
+				),
 			)
 			if (toDelete.length > 0) {
 				const ids = toDelete.map((r) => r.id)
 				yield* dbExecute((db) =>
-					db
-						.delete(errorIncidents)
-						.where(and(eq(errorIncidents.orgId, orgId), inArray(errorIncidents.issueId, ids))),
+					db.orm.run(
+						PG.deleteFrom(ErrorIncidents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
 				)
 				yield* dbExecute((db) =>
-					db
-						.delete(errorIssueStates)
-						.where(
-							and(eq(errorIssueStates.orgId, orgId), inArray(errorIssueStates.issueId, ids)),
-						),
+					db.orm.run(
+						PG.deleteFrom(ErrorIssueStates).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
 				)
 				yield* dbExecute((db) =>
-					db
-						.delete(errorIssueEvents)
-						.where(
-							and(eq(errorIssueEvents.orgId, orgId), inArray(errorIssueEvents.issueId, ids)),
-						),
+					db.orm.run(
+						PG.deleteFrom(ErrorIssueEvents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
 				)
 				yield* dbExecute((db) =>
-					db
-						.delete(errorIssues)
-						.where(and(eq(errorIssues.orgId, orgId), inArray(errorIssues.id, ids))),
+					db.orm.run(
+						PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)]),
+					),
 				)
 				issuesDeleted = ids.length
 			}
@@ -1527,23 +1503,14 @@ const make: Effect.Effect<
 		const horizonMs = cutoffMs - TICK_IDLE_RECOVERY_HORIZON_MS
 		// A lease that has lapsed belongs to a tick that died mid-org. Left in
 		// place it would pin the cursor for as long as the org stays idle.
-		const unclaimed = or(
-			isNull(errorTickStates.claimExpiresAt),
-			lte(errorTickStates.claimExpiresAt, new Date(nowMs)),
-		)
+		const unclaimed = ($: PG.ColumnAccessor<typeof ErrorTickStates.columns>) =>
+			PG.or($.claimExpiresAt.isNull(), $.claimExpiresAt.lte(nowMs))
 		const trailing = (yield* dbExecute((db) =>
-			db
-				.select({
-					orgId: errorTickStates.orgId,
-					processedThrough: errorTickStates.processedThrough,
-				})
-				.from(errorTickStates)
-				.where(
-					and(
-						lte(errorTickStates.processedThrough, new Date(parkedAtMs - TICK_MAX_WINDOW_MS)),
-						unclaimed,
-					),
-				),
+			db.orm.run(
+				PG.from(ErrorTickStates)
+					.select("orgId", "processedThrough")
+					.where(($) => [$.processedThrough.lte(parkedAtMs - TICK_MAX_WINDOW_MS), unclaimed($)]),
+			),
 		)).filter((row) => idle.has(row.orgId))
 
 		// `skip locked` for the reason `claimTickWindow` has it: a lapsed lease can
@@ -1554,36 +1521,34 @@ const make: Effect.Effect<
 				Arr.chunksOf(orgIds, TICK_CURSOR_UPDATE_CHUNK),
 				(chunk) =>
 					dbExecute((db) =>
-						db
-							.update(errorTickStates)
-							.set({
-								processedThrough: new Date(toMs),
-								claimToken: null,
-								claimExpiresAt: null,
-								updatedAt: new Date(nowMs),
-							})
-							.where(
-								inArray(
-									errorTickStates.orgId,
-									db
-										.select({ orgId: errorTickStates.orgId })
-										.from(errorTickStates)
-										.where(
-											and(
-												inArray(errorTickStates.orgId, chunk),
-												lt(errorTickStates.processedThrough, new Date(toMs)),
-												unclaimed,
-											),
-										)
-										.for("update", { skipLocked: true }),
-								),
-							),
+						db.orm.run(
+							PG.update(ErrorTickStates)
+								.set({
+									processedThrough: toMs,
+									claimToken: null,
+									claimExpiresAt: null,
+									updatedAt: nowMs,
+								})
+								.where(($) => [
+									PG.inSubquery(
+										$.orgId,
+										PG.from(ErrorTickStates)
+											.select("orgId")
+											.where(($inner) => [
+												$inner.orgId.in_(...chunk),
+												$inner.processedThrough.lt(toMs),
+												unclaimed($inner),
+											])
+											.forUpdate({ skipLocked: true }),
+									),
+								]),
+						),
 					),
 				{ discard: true },
 			)
 
-		const isObserved = (row: { readonly processedThrough: Date }) =>
-			row.processedThrough.getTime() >= nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
+		const isObserved = (row: { readonly processedThrough: number }) =>
+			row.processedThrough >= nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS
 
 		// A quarantined org stays where it is until the quarantine ends, so it is
 		// passed over before the cap: counted, it would keep a lookup from an org
@@ -1595,7 +1560,7 @@ const make: Effect.Effect<
 			trailing
 				.filter((row) => !isObserved(row))
 				// Most recent first: a short outage gap before rows that are weeks old.
-				.toSorted((a, b) => b.processedThrough.getTime() - a.processedThrough.getTime()),
+				.toSorted((a, b) => b.processedThrough - a.processedThrough),
 			TICK_IDLE_RECOVERY_LOOKUPS,
 		)) {
 			if (lookups.length >= TICK_IDLE_RECOVERY_LOOKUPS) break
@@ -1615,7 +1580,7 @@ const make: Effect.Effect<
 			lookups,
 			(row) =>
 				Effect.gen(function* () {
-					const cursorMs = row.processedThrough.getTime()
+					const cursorMs = row.processedThrough
 					const fromMs = Math.max(cursorMs, horizonMs)
 					const rows = yield* warehouse
 						.compiledQuery(
@@ -1689,12 +1654,10 @@ const make: Effect.Effect<
 		// rows a call — together ~36% of all database CPU. Walk the btree instead.
 		// `org_ingest_keys` stays a plain DISTINCT on purpose: it is ~1 row per org,
 		// where a loose index scan costs an index descent per row and wins nothing.
-		const stateOrgs = yield* dbExecute((db) =>
-			selectDistinctOrgIds(db, errorIssueStates, errorIssueStates.orgId),
-		)
-		const issueOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, errorIssues, errorIssues.orgId))
+		const stateOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db.orm, ErrorIssueStates))
+		const issueOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db.orm, ErrorIssues))
 		const ingestOrgs = yield* dbExecute((db) =>
-			db.selectDistinct({ orgId: orgIngestKeys.orgId }).from(orgIngestKeys),
+			db.orm.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
 		)
 		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...ingestOrgs.map((r) => r.orgId)])
 
@@ -1815,7 +1778,7 @@ const make: Effect.Effect<
 		// One statement for every org, outside the per-org loop: an abandoned run is
 		// rare and the matching set is almost always empty, so paying a round-trip per
 		// org to discover that would cost more than the sweep saves.
-		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db, nowMs))
+		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db.orm, nowMs))
 		if (investigationsAbandoned > 0) {
 			yield* Effect.logWarning("Failed investigations whose agent pass never returned").pipe(
 				Effect.annotateLogs({ count: investigationsAbandoned, budgetMs: STALE_MS }),

@@ -44,15 +44,14 @@ import {
 	UserId as UserIdSchema,
 } from "@maple/domain/http"
 import * as CH from "@maple/query-engine/ch"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	cloudflareAnalyticsState,
-	cloudflareHyperdriveConfigs,
-	oauthConnections,
-	type CloudflareAnalyticsStateInsert,
-	type CloudflareAnalyticsStateRow,
+	CloudflareAnalyticsState,
+	CloudflareHyperdriveConfigs,
+	OAuthConnections,
+	type CloudflareAnalyticsStateRow as StoredStateRow,
 	type CloudflareHyperdriveConfigRow,
-} from "@maple/db"
-import { and, eq, gt, inArray, isNull, lt, or } from "drizzle-orm"
+} from "@maple/db/tables"
 import {
 	Array as Arr,
 	Cause,
@@ -80,7 +79,6 @@ import {
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
@@ -143,6 +141,11 @@ import {
 import * as Integrations from "@maple/query-engine-integrations"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import type { MapleOrmError } from "@maple/db/client"
+
+/** The poller mirrors its writes onto the rows it loaded, so it holds them mutable. */
+type CloudflareAnalyticsStateRow = { -readonly [K in keyof StoredStateRow]: StoredStateRow[K] }
+type StateRowSet = PG.UpdateSetOf<typeof CloudflareAnalyticsState>
 
 /**
  * OAuth scopes the poller needs (space-delimited ids in `oauth_connections.scope`). Kept next to
@@ -698,7 +701,7 @@ const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow |
 	const effectiveEnd = floorToBucket(now - SAFETY_LAG_MS)
 	const floor = backfillFloor(row, now)
 	const window = maxWindowMs(row)
-	const watermarkMs = row.watermarkAt == null ? null : dateToMs(row.watermarkAt)
+	const watermarkMs = row.watermarkAt
 	let start = watermarkMs ?? floorToBucket(effectiveEnd - window)
 	if (start < floor) start = floor
 	start = floorToBucket(start)
@@ -715,7 +718,7 @@ const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow |
 const backfillWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow | null => {
 	if (row.backfillAt == null) return null
 	const floor = backfillFloor(row, now)
-	const end = floorToBucket(dateToMs(row.backfillAt))
+	const end = floorToBucket(row.backfillAt)
 	if (end <= floor) return null
 	const start = Math.max(floorToBucket(end - maxWindowMs(row)), floor)
 	if (end <= start) return null
@@ -1114,30 +1117,30 @@ export class CloudflareAnalyticsService extends Context.Service<
 		})
 
 		const loadStateRows = (orgId: OrgId, accountId?: string) =>
-			dbExecute((db) =>
-				db
-					.select()
-					.from(cloudflareAnalyticsState)
-					.where(
-						and(
-							eq(cloudflareAnalyticsState.orgId, orgId),
-							...(accountId === undefined
-								? []
-								: [eq(cloudflareAnalyticsState.accountId, accountId)]),
-						),
-					),
-			)
+			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleOrmError> =>
+				db.orm.run(
+					PG.from(CloudflareAnalyticsState)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							accountId === undefined ? undefined : $.accountId.eq(accountId),
+						]),
+				),
+			).pipe(Effect.map((rows) => Arr.copy(rows)))
 
 		/** One IN-list UPDATE over the given state rows; no-op on an empty id list. */
-		const updateRows = (rowIds: ReadonlyArray<string>, set: Partial<CloudflareAnalyticsStateInsert>) =>
-			rowIds.length === 0
+		const updateRows = (rowIds: ReadonlyArray<string>, set: StateRowSet) => {
+			const [first, ...rest] = rowIds
+			return first === undefined
 				? Effect.void
 				: dbExecute((db) =>
-						db
-							.update(cloudflareAnalyticsState)
-							.set(set)
-							.where(inArray(cloudflareAnalyticsState.id, [...rowIds])),
+						db.orm.run(
+							PG.update(CloudflareAnalyticsState)
+								.set(set)
+								.where(($) => [$.id.in_(first, ...rest)]),
+						),
 					)
+		}
 
 		const recordError = (
 			rowIds: ReadonlyArray<string>,
@@ -1147,9 +1150,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 		) =>
 			updateRows(rowIds, {
 				lastError: message.slice(0, 500),
-				lastErrorAt: msToDate(now),
+				lastErrorAt: now,
 				...(options?.disable ? { enabled: false } : undefined),
-				updatedAt: msToDate(now),
+				updatedAt: now,
 			})
 
 		/** Stamp an error on every state row of one connection (org × account). */
@@ -1161,20 +1164,16 @@ export class CloudflareAnalyticsService extends Context.Service<
 			options?: { disable?: boolean },
 		) =>
 			dbExecute((db) =>
-				db
-					.update(cloudflareAnalyticsState)
-					.set({
-						lastError: message.slice(0, 500),
-						lastErrorAt: msToDate(now),
-						...(options?.disable ? { enabled: false } : undefined),
-						updatedAt: msToDate(now),
-					})
-					.where(
-						and(
-							eq(cloudflareAnalyticsState.orgId, orgId),
-							eq(cloudflareAnalyticsState.accountId, accountId),
-						),
-					),
+				db.orm.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({
+							lastError: message.slice(0, 500),
+							lastErrorAt: now,
+							...(options?.disable ? { enabled: false } : undefined),
+							updatedAt: now,
+						})
+						.where(($) => [$.orgId.eq(orgId), $.accountId.eq(accountId)]),
+				),
 			)
 
 		/**
@@ -1189,25 +1188,21 @@ export class CloudflareAnalyticsService extends Context.Service<
 			now: number,
 		) =>
 			updateRows(rowIds, {
-				watermarkAt: msToDate(headEndMs),
-				lastSuccessAt: msToDate(now),
+				watermarkAt: headEndMs,
+				lastSuccessAt: now,
 				lastError: null,
 				lastErrorAt: null,
-				updatedAt: msToDate(now),
+				updatedAt: now,
 			}).pipe(
 				Effect.andThen(
 					rowIds.length === 0
 						? Effect.void
 						: dbExecute((db) =>
-								db
-									.update(cloudflareAnalyticsState)
-									.set({ backfillAt: msToDate(headStartMs), updatedAt: msToDate(now) })
-									.where(
-										and(
-											inArray(cloudflareAnalyticsState.id, [...rowIds]),
-											isNull(cloudflareAnalyticsState.backfillAt),
-										),
-									),
+								db.orm.run(
+									PG.update(CloudflareAnalyticsState)
+										.set({ backfillAt: headStartMs, updatedAt: now })
+										.where(($) => [PG.inList($.id, rowIds), $.backfillAt.isNull()]),
+								),
 							),
 				),
 			)
@@ -1215,11 +1210,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 		/** Advance the BACKFILL frontier down after an older history window landed. */
 		const advanceBackfill = (rowIds: ReadonlyArray<string>, backfillStartMs: number, now: number) =>
 			updateRows(rowIds, {
-				backfillAt: msToDate(backfillStartMs),
-				lastSuccessAt: msToDate(now),
+				backfillAt: backfillStartMs,
+				lastSuccessAt: now,
 				lastError: null,
 				lastErrorAt: null,
-				updatedAt: msToDate(now),
+				updatedAt: now,
 			})
 
 		/**
@@ -1229,20 +1224,21 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 */
 		const ensureAccountRows = (orgId: OrgId, accountId: string, now: number) =>
 			dbExecute((db) =>
-				db
-					.insert(cloudflareAnalyticsState)
-					.values(
-						ACCOUNT_DATASETS.map((dataset) => ({
-							id: randomUUID(),
-							orgId,
-							accountId,
-							dataset: dataset.id,
-							zoneId: "",
-							createdAt: msToDate(now),
-							updatedAt: msToDate(now),
-						})),
-					)
-					.onConflictDoNothing(),
+				db.orm.run(
+					PG.insertInto(CloudflareAnalyticsState)
+						.values(
+							ACCOUNT_DATASETS.map((dataset) => ({
+								id: randomUUID(),
+								orgId,
+								accountId,
+								dataset: dataset.id,
+								zoneId: "",
+								createdAt: now,
+								updatedAt: now,
+							})),
+						)
+						.onConflictDoNothing(),
+				),
 			)
 
 		/**
@@ -1250,28 +1246,27 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * (it carries the zone-discovery timestamp) or null — no anchor yet, or another tick owns it.
 		 */
 		const claimLease = (orgId: OrgId, accountId: string, now: number) =>
-			dbExecute((db) =>
-				db
-					.update(cloudflareAnalyticsState)
-					.set({ leaseUntil: msToDate(now + LEASE_MS), updatedAt: msToDate(now) })
-					.where(
-						and(
-							eq(cloudflareAnalyticsState.orgId, orgId),
-							eq(cloudflareAnalyticsState.accountId, accountId),
-							eq(cloudflareAnalyticsState.dataset, WORKERS_DATASET),
-							eq(cloudflareAnalyticsState.zoneId, ""),
-							or(
-								isNull(cloudflareAnalyticsState.leaseUntil),
-								lt(cloudflareAnalyticsState.leaseUntil, msToDate(now)),
+			dbExecute((db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleOrmError> =>
+				db.orm.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.accountId.eq(accountId),
+							$.dataset.eq(WORKERS_DATASET),
+							$.zoneId.eq(""),
+							PG.or(
+								$.leaseUntil.isNull(),
+								$.leaseUntil.lt(now),
 								// Corrupt-lease escape hatch: a live lease is always bounded by now+LEASE_MS,
 								// so anything beyond 2x that is impossible under normal operation (e.g. a
 								// clock jump or a crashed writer that left a bogus far-future value) and is
 								// safe to reclaim rather than let it wedge the org forever.
-								gt(cloudflareAnalyticsState.leaseUntil, msToDate(now + 2 * LEASE_MS)),
+								$.leaseUntil.gt(now + 2 * LEASE_MS),
 							),
-						),
-					)
-					.returning(),
+						])
+						.returning(),
+				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
 		/**
@@ -1287,27 +1282,21 @@ export class CloudflareAnalyticsService extends Context.Service<
 			orgId: OrgId,
 			accountId: string,
 			now: number,
-			claimedUntil: Date | null,
+			claimedUntil: number | null,
 			holdUntilMs?: number,
 		) =>
 			dbExecute((db) =>
-				db
-					.update(cloudflareAnalyticsState)
-					.set({
-						leaseUntil: holdUntilMs == null ? null : msToDate(holdUntilMs),
-						updatedAt: msToDate(now),
-					})
-					.where(
-						and(
-							eq(cloudflareAnalyticsState.orgId, orgId),
-							eq(cloudflareAnalyticsState.accountId, accountId),
-							eq(cloudflareAnalyticsState.dataset, WORKERS_DATASET),
-							eq(cloudflareAnalyticsState.zoneId, ""),
-							claimedUntil == null
-								? isNull(cloudflareAnalyticsState.leaseUntil)
-								: eq(cloudflareAnalyticsState.leaseUntil, claimedUntil),
-						),
-					),
+				db.orm.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ leaseUntil: holdUntilMs ?? null, updatedAt: now })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.accountId.eq(accountId),
+							$.dataset.eq(WORKERS_DATASET),
+							$.zoneId.eq(""),
+							claimedUntil == null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+						]),
+				),
 			)
 
 		/**
@@ -1341,36 +1330,44 @@ export class CloudflareAnalyticsService extends Context.Service<
 						dataset: dataset.id,
 						zoneId: zone.id,
 						zoneName: zone.name,
-						createdAt: msToDate(now),
-						updatedAt: msToDate(now),
+						createdAt: now,
+						updatedAt: now,
 					})),
 			)
 			const inserted =
 				missing.length === 0
 					? []
-					: yield* dbExecute((db) =>
-							db
-								.insert(cloudflareAnalyticsState)
-								.values(missing)
-								.onConflictDoNothing()
-								.returning(),
+					: yield* dbExecute(
+							(db): Effect.Effect<ReadonlyArray<CloudflareAnalyticsStateRow>, MapleOrmError> =>
+								db.orm.run(
+									PG.insertInto(CloudflareAnalyticsState)
+										.values(missing)
+										.onConflictDoNothing()
+										.returning(),
+								),
 						)
 
-			for (const dataset of ZONE_DATASETS) {
-				for (const zone of zones) {
+			const reappeared = ZONE_DATASETS.flatMap((dataset) =>
+				zones.flatMap((zone) => {
 					const existing = byDatasetZone.get(`${dataset.id}:${zone.id}`)
-					if (!existing || (existing.zoneName === zone.name && existing.enabled)) continue
+					if (!existing || (existing.zoneName === zone.name && existing.enabled)) return []
+					return [{ existing, zone }]
+				}),
+			)
+			yield* Effect.forEach(
+				reappeared,
+				({ existing, zone }) =>
 					// Re-enable on reappearance; a dataset-level disable re-asserts itself on the
 					// next settings check, so this errs on the side of collecting again.
-					yield* updateRows([existing.id], {
-						zoneName: zone.name,
-						enabled: true,
-						updatedAt: msToDate(now),
-					})
-					existing.zoneName = zone.name
-					existing.enabled = true
-				}
-			}
+					Effect.andThen(
+						updateRows([existing.id], { zoneName: zone.name, enabled: true, updatedAt: now }),
+						Effect.sync(() => {
+							existing.zoneName = zone.name
+							existing.enabled = true
+						}),
+					),
+				{ discard: true },
+			)
 
 			// `rows` is already scoped to this connection's account, so a zone that moved to a
 			// sibling account is disabled here and freshly discovered by that account's tick.
@@ -1390,13 +1387,13 @@ export class CloudflareAnalyticsService extends Context.Service<
 				{
 					enabled: false,
 					lastError: "Zone no longer present on the Cloudflare account",
-					lastErrorAt: msToDate(now),
-					updatedAt: msToDate(now),
+					lastErrorAt: now,
+					updatedAt: now,
 				},
 			)
 			for (const row of vanished) row.enabled = false
 
-			yield* updateRows([anchorId], { discoveredAt: msToDate(now), updatedAt: msToDate(now) })
+			yield* updateRows([anchorId], { discoveredAt: now, updatedAt: now })
 
 			return [...rows, ...inserted]
 		})
@@ -1416,8 +1413,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const stale = rows.filter(
 				(row) =>
 					row.enabled &&
-					(row.settingsFetchedAt == null ||
-						now - dateToMs(row.settingsFetchedAt) > SETTINGS_TTL_MS),
+					(row.settingsFetchedAt == null || now - row.settingsFetchedAt > SETTINGS_TTL_MS),
 			)
 			if (stale.length === 0) return wrote
 
@@ -1491,32 +1487,31 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 				// Group rows by their resulting update payload — zones on the same Cloudflare
 				// plan (the common case) collapse into one UPDATE.
-				const updates = new Map<
-					string,
-					{ ids: string[]; set: Partial<CloudflareAnalyticsStateInsert> }
-				>()
+				const updates = new Map<string, { ids: string[]; set: StateRowSet }>()
 				for (const row of [...plan.zones, ...(plan.includeAccount ? staleAccount : [])]) {
 					const dataset = DATASET_BY_ID.get(row.dataset)
 					if (!dataset) continue
 					const settings = dataset.settingsNode(decoded, row)
 					if (settings === undefined) continue
-					const set: Partial<CloudflareAnalyticsStateInsert> = {
+					const set: StateRowSet = {
 						settingsJson: settings == null ? null : JSON.stringify(settings),
-						settingsFetchedAt: msToDate(now),
+						settingsFetchedAt: now,
 						quantilesAvailable: quantilesFromAvailableFields(
 							settings,
 							dataset.availableFieldsNeedle,
 						),
 						...(settings?.enabled === false ? { enabled: false } : undefined),
-						updatedAt: msToDate(now),
+						updatedAt: now,
 					}
 					const key = `${set.settingsJson}|${set.quantilesAvailable}|${set.enabled ?? ""}`
 					const group = updates.get(key)
 					if (group) group.ids.push(row.id)
 					else updates.set(key, { ids: [row.id], set })
 				}
-				for (const group of updates.values()) {
-					yield* updateRows(group.ids, group.set)
+				if (updates.size > 0) {
+					yield* Effect.forEach(updates.values(), (group) => updateRows(group.ids, group.set), {
+						discard: true,
+					})
 					wrote = true
 				}
 			}
@@ -1665,7 +1660,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					kind = "other"
 				}
 				if (kind === "quantiles-unavailable") {
-					yield* updateRows(rowIds, { quantilesAvailable: false, updatedAt: msToDate(now) })
+					yield* updateRows(rowIds, { quantilesAvailable: false, updatedAt: now })
 					// The next round rebuilds the document without the quantile fields — retry.
 					results.push({ part, outcome: { kind: "quantiles-downgraded" } })
 				} else if (kind === "disabled") {
@@ -1815,10 +1810,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 					"maple.cloudflare.hyperdrive_config_count": configs.length,
 				})
 				const existingRows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(cloudflareHyperdriveConfigs)
-						.where(eq(cloudflareHyperdriveConfigs.orgId, orgId)),
+					db.orm.run(
+						PG.from(CloudflareHyperdriveConfigs)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 				)
 				const existingByConfigId = new Map(existingRows.map((row) => [row.configId, row]))
 				const upstreamIds = new Set(configs.map((config) => config.id))
@@ -1835,24 +1831,27 @@ export class CloudflareAnalyticsService extends Context.Service<
 							originDatabase: config.origin.database,
 							originUser: config.origin.user,
 							deletedAt: null,
-							updatedAt: msToDate(now),
+							updatedAt: now,
 						}
 						const existing = existingByConfigId.get(config.id)
 						return existing !== undefined
 							? dbExecute((db) =>
-									db
-										.update(cloudflareHyperdriveConfigs)
-										.set(values)
-										.where(eq(cloudflareHyperdriveConfigs.id, existing.id)),
+									db.orm.run(
+										PG.update(CloudflareHyperdriveConfigs)
+											.set(values)
+											.where(($) => [$.id.eq(existing.id)]),
+									),
 								)
 							: dbExecute((db) =>
-									db.insert(cloudflareHyperdriveConfigs).values({
-										id: randomUUID(),
-										orgId,
-										configId: config.id,
-										createdAt: msToDate(now),
-										...values,
-									}),
+									db.orm.run(
+										PG.insertInto(CloudflareHyperdriveConfigs).values({
+											id: randomUUID(),
+											orgId,
+											configId: config.id,
+											createdAt: now,
+											...values,
+										}),
+									),
 								)
 					},
 					{ concurrency: 4, discard: true },
@@ -1872,10 +1871,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 					),
 					(row) =>
 						dbExecute((db) =>
-							db
-								.update(cloudflareHyperdriveConfigs)
-								.set({ deletedAt: msToDate(now), updatedAt: msToDate(now) })
-								.where(eq(cloudflareHyperdriveConfigs.id, row.id)),
+							db.orm.run(
+								PG.update(CloudflareHyperdriveConfigs)
+									.set({ deletedAt: now, updatedAt: now })
+									.where(($) => [$.id.eq(row.id)]),
+							),
 						),
 					{ concurrency: 4, discard: true },
 				)
@@ -1886,15 +1886,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 			function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				return yield* dbExecute((db) =>
-					db
-						.select()
-						.from(cloudflareHyperdriveConfigs)
-						.where(
-							and(
-								eq(cloudflareHyperdriveConfigs.orgId, orgId),
-								isNull(cloudflareHyperdriveConfigs.deletedAt),
-							),
-						),
+					db.orm.run(
+						PG.from(CloudflareHyperdriveConfigs)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+					),
 				)
 			},
 		)
@@ -1986,7 +1982,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// between reuse the reconciled state rows.
 				let rows: CloudflareAnalyticsStateRow[]
 				let liveScripts = parseLiveScripts(anchor.liveScriptsJson)
-				if (anchor.discoveredAt == null || now - dateToMs(anchor.discoveredAt) > DISCOVERY_TTL_MS) {
+				if (anchor.discoveredAt == null || now - anchor.discoveredAt > DISCOVERY_TTL_MS) {
 					const zonesResult = yield* Effect.result(listZones(accessToken, accountId, apiBaseUrl))
 					if (Result.isFailure(zonesResult)) {
 						const error = zonesResult.failure
@@ -2033,12 +2029,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 							scriptCount: scriptsResult.success.items.length,
 						})
 						liveScripts = null
-						yield* updateRows([anchor.id], { liveScriptsJson: null, updatedAt: msToDate(now) })
+						yield* updateRows([anchor.id], { liveScriptsJson: null, updatedAt: now })
 					} else {
 						liveScripts = new Set(scriptsResult.success.items)
 						yield* updateRows([anchor.id], {
 							liveScriptsJson: JSON.stringify(scriptsResult.success.items),
-							updatedAt: msToDate(now),
+							updatedAt: now,
 						})
 					}
 					// Hyperdrive config inventory rides the same discovery TTL. It only feeds the
@@ -2159,8 +2155,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 											Effect.map(() => {
 												progressed = true
 												if (item.phase === "head") {
-													const watermark = msToDate(item.window.end)
-													const seed = msToDate(item.window.start)
+													const watermark = item.window.end
+													const seed = item.window.start
 													for (const row of part.rows) {
 														row.watermarkAt = watermark
 														// Seed the backfill frontier once (mirrors advanceHead's
@@ -2168,7 +2164,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 														if (row.backfillAt == null) row.backfillAt = seed
 													}
 												} else {
-													const frontier = msToDate(item.window.start)
+													const frontier = item.window.start
 													for (const row of part.rows) row.backfillAt = frontier
 												}
 											}),
@@ -2341,14 +2337,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		const pollAllOrgs = Effect.fn("CloudflareAnalyticsService.pollAllOrgs")(function* () {
 			const connectionRows = yield* dbExecute((db) =>
-				db
-					.selectDistinct({ orgId: oauthConnections.orgId, scope: oauthConnections.scope })
-					.from(oauthConnections)
-					// Revoked grants fail identically every tick until the account reconnects
-					// (which clears revokedAt) — skip them instead of re-erroring forever.
-					.where(
-						and(eq(oauthConnections.provider, "cloudflare"), isNull(oauthConnections.revokedAt)),
-					),
+				db.orm.run(
+					PG.from(OAuthConnections)
+						.select("orgId", "scope")
+						.distinct()
+						// Revoked grants fail identically every tick until the account reconnects
+						// (which clears revokedAt) — skip them instead of re-erroring forever.
+						.where(($) => [$.provider.eq("cloudflare"), $.revokedAt.isNull()]),
+				),
 			)
 			// Orgs where NO connection carries the analytics scopes can't be polled — the status
 			// endpoint already surfaces that (analyticsCapable: false), so skipping them here avoids
@@ -2462,17 +2458,17 @@ export class CloudflareAnalyticsService extends Context.Service<
 				id: row.zoneId,
 				name: row.zoneName ?? row.zoneId,
 				enabled: row.enabled,
-				lastSyncedAt: row.lastSuccessAt == null ? null : dateToMs(row.lastSuccessAt),
+				lastSyncedAt: row.lastSuccessAt,
 				lastError: row.lastError,
-				watermarkAt: row.watermarkAt == null ? null : dateToMs(row.watermarkAt),
-				backfillAt: row.backfillAt == null ? null : dateToMs(row.backfillAt),
+				watermarkAt: row.watermarkAt,
+				backfillAt: row.backfillAt,
 			})
 			const toWorkers = (row: CloudflareAnalyticsStateRow): CloudflareAnalyticsWorkersStatusFields => ({
 				enabled: row.enabled,
-				lastSyncedAt: row.lastSuccessAt == null ? null : dateToMs(row.lastSuccessAt),
+				lastSyncedAt: row.lastSuccessAt,
 				lastError: row.lastError,
-				watermarkAt: row.watermarkAt == null ? null : dateToMs(row.watermarkAt),
-				backfillAt: row.backfillAt == null ? null : dateToMs(row.backfillAt),
+				watermarkAt: row.watermarkAt,
+				backfillAt: row.backfillAt,
 			})
 			const accountIds = [...new Set(rows.map((row) => row.accountId))].sort()
 			const accounts = accountIds.map((accountId): CloudflareAnalyticsAccountStatus => {
@@ -2733,20 +2729,22 @@ export class CloudflareAnalyticsService extends Context.Service<
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
 			}
 			const now = yield* Clock.currentTimeMillis
-			const accountFilter =
-				accountId === undefined ? [] : [eq(cloudflareAnalyticsState.accountId, accountId)]
 			yield* dbExecute((db) =>
-				db
-					.update(cloudflareAnalyticsState)
-					.set({
-						enabled: true,
-						lastError: null,
-						lastErrorAt: null,
-						discoveredAt: null,
-						leaseUntil: null,
-						updatedAt: msToDate(now),
-					})
-					.where(and(eq(cloudflareAnalyticsState.orgId, orgId), ...accountFilter)),
+				db.orm.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({
+							enabled: true,
+							lastError: null,
+							lastErrorAt: null,
+							discoveredAt: null,
+							leaseUntil: null,
+							updatedAt: now,
+						})
+						.where(($) => [
+							$.orgId.eq(orgId),
+							accountId === undefined ? undefined : $.accountId.eq(accountId),
+						]),
+				),
 			)
 			// Manual recovery path: also clear the revocation stamp so pollAllOrgs
 			// picks the connection up again (reconnect clears it via upsertConnection,
@@ -2755,12 +2753,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// whose externalUserId only ever holds the grant's FIRST account — filtering by it
 			// would match nothing for every other account and leave the org stuck revoked.
 			yield* dbExecute((db) =>
-				db
-					.update(oauthConnections)
-					.set({ revokedAt: null })
-					.where(
-						and(eq(oauthConnections.orgId, orgId), eq(oauthConnections.provider, "cloudflare")),
-					),
+				db.orm.run(
+					PG.update(OAuthConnections)
+						.set({ revokedAt: null })
+						.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")]),
+				),
 			)
 		})
 

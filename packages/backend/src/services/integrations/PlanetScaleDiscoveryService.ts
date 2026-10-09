@@ -7,7 +7,7 @@ import {
 	ScrapeTargetUpstreamError,
 } from "@maple/domain/http"
 import { globToRegExp } from "@maple/domain/glob"
-import type { scrapeTargets } from "@maple/db"
+import type { ScrapeTargetRow } from "@maple/db/tables"
 import {
 	Clock,
 	Context,
@@ -33,8 +33,6 @@ import {
 	planetScaleBearerHeader,
 	type PlanetScaleAccessTokenError,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-
-type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
 /**
  * Resolves PlanetScale `planetscale`-type scrape targets into their concrete

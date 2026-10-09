@@ -17,15 +17,15 @@ import {
 	type IssueSeverity,
 	type OrgId,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	errorIssues,
-	issueEscalationPolicies,
-	issueEscalations,
+	AlertDestinations,
+	ErrorIssues,
+	IssueEscalationPolicies,
+	IssueEscalations,
 	type IssueEscalationPolicyRow,
 	type IssueEscalationRow,
-} from "@maple/db"
-import { and, asc, eq, inArray } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -73,11 +73,12 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 
 		const loadPolicy = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db
-					.select()
-					.from(issueEscalationPolicies)
-					.where(eq(issueEscalationPolicies.orgId, orgId))
-					.limit(1),
+				db.orm.run(
+					PG.from(IssueEscalationPolicies)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.limit(1),
+				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
 		const finalize = (
@@ -88,17 +89,18 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			deliveryResults?: unknown,
 		) =>
 			dbExecute((db) =>
-				db
-					.update(issueEscalations)
-					.set({
-						status,
-						error: error ?? null,
-						...(!(deliveryResults === undefined)
-							? { deliveryResultsJson: deliveryResults }
-							: undefined),
-						...(!(status === "queued") ? { processedAt: new Date(timestamp) } : undefined),
-					})
-					.where(eq(issueEscalations.id, row.id)),
+				db.orm.run(
+					PG.update(IssueEscalations)
+						.set({
+							status,
+							error: error ?? null,
+							...(!(deliveryResults === undefined)
+								? { deliveryResultsJson: deliveryResults }
+								: undefined),
+							...(!(status === "queued") ? { processedAt: timestamp } : undefined),
+						})
+						.where(($) => [$.id.eq(row.id)]),
+				),
 			)
 
 		const processOne = Effect.fn("EscalationService.processOne")(function* (
@@ -110,18 +112,13 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			// Optimistic claim: bump attempts iff nobody else already has. A
 			// concurrent tick loses the CAS and skips the row.
 			const claimed = yield* dbExecute((db) =>
-				db
-					.update(issueEscalations)
-					.set({ attempts: row.attempts + 1 })
-					.where(
-						and(
-							eq(issueEscalations.id, row.id),
-							eq(issueEscalations.status, "queued"),
-							eq(issueEscalations.attempts, row.attempts),
-						),
-					)
-					// The returned row is the claim: empty means the CAS lost.
-					.returning({ id: issueEscalations.id }),
+				db.orm.run(
+					PG.update(IssueEscalations)
+						.set({ attempts: row.attempts + 1 })
+						.where(($) => [$.id.eq(row.id), $.status.eq("queued"), $.attempts.eq(row.attempts)])
+						// The returned row is the claim: empty means the CAS lost.
+						.returning("id"),
+				),
 			)
 			if (claimed.length === 0) {
 				return "contended" as const
@@ -143,16 +140,15 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				configuredDestinationIds.length === 0
 					? []
 					: yield* dbExecute((db) =>
-							db
-								.select({ id: alertDestinations.id })
-								.from(alertDestinations)
-								.where(
-									and(
-										eq(alertDestinations.orgId, row.orgId),
-										eq(alertDestinations.enabled, true),
-										inArray(alertDestinations.id, configuredDestinationIds),
-									),
-								),
+							db.orm.run(
+								PG.from(AlertDestinations)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.enabled.eq(true),
+										$.id.in_(...configuredDestinationIds),
+									]),
+							),
 						)
 			const confidence = Option.getOrUndefined(decodeConfidence(payload.confidence))
 			const decision = evaluateEscalationPolicy({
@@ -176,11 +172,12 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			}
 
 			const issueRows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, row.orgId), eq(errorIssues.id, row.issueId)))
-					.limit(1),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
+						.limit(1),
+				),
 			)
 			const issue = issueRows[0]
 			if (!issue) {
@@ -275,12 +272,13 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			"EscalationService.runEscalationTick",
 		)(function* () {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(issueEscalations)
-					.where(eq(issueEscalations.status, "queued"))
-					.orderBy(asc(issueEscalations.createdAt))
-					.limit(ESCALATIONS_PER_TICK),
+				db.orm.run(
+					PG.from(IssueEscalations)
+						.select()
+						.where(($) => [$.status.eq("queued")])
+						.orderBy(["createdAt", "asc"])
+						.limit(ESCALATIONS_PER_TICK),
+				),
 			)
 
 			const policyCache = new Map<OrgId, IssueEscalationPolicyRow | null>()

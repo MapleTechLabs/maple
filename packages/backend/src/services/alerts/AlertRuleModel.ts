@@ -31,13 +31,41 @@ import {
 	type QueryBuilderQueryDraftPayload,
 	type OrgId,
 } from "@maple/domain/http"
-import type { AlertRuleRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { Array as Arr, Effect, Match, Result, Schema } from "effect"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 
 const StringArraySchema = Schema.Array(Schema.String)
+
+type StoredJsonColumn =
+	| "serviceNamesJson"
+	| "excludeServiceNamesJson"
+	| "environmentsJson"
+	| "tagsJson"
+	| "destinationIdsJson"
+
+/**
+ * An `alert_rules` row with its schema-typed jsonb columns read as `unknown`. The model
+ * decodes them itself, so a malformed stored value is `AlertRuleStoredConfigInvalidError`.
+ */
+export type StoredAlertRuleRow = Omit<AlertRuleRow, StoredJsonColumn> & {
+	readonly [K in StoredJsonColumn]: unknown
+}
+
+const storedJson = PG.nullable(PG.jsonb())
+
+/** Every `alert_rules` column as a `StoredAlertRuleRow`; add a `where` to it. */
+export const selectStoredAlertRules = () =>
+	PG.from(AlertRules).select(($) => ({
+		...$,
+		serviceNamesJson: PG.sql(storedJson)`${$.serviceNamesJson}`,
+		excludeServiceNamesJson: PG.sql(storedJson)`${$.excludeServiceNamesJson}`,
+		environmentsJson: PG.sql(storedJson)`${$.environmentsJson}`,
+		tagsJson: PG.sql(storedJson)`${$.tagsJson}`,
+		destinationIdsJson: PG.sql(storedJson)`${$.destinationIdsJson}`,
+	}))
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
 
@@ -97,7 +125,7 @@ export const normalizedRuleToDocument = (
 		readonly txid?: AlertRuleDocument["txid"]
 	},
 ): AlertRuleDocument => {
-	const timestamp = decodeIsoDateTimeStringSync(msToDate(options.timestamp).toISOString())
+	const timestamp = decodeIsoDateTimeStringSync(new Date(options.timestamp).toISOString())
 	return new AlertRuleDocument({
 		id: rule.id,
 		name: rule.name,
@@ -411,7 +439,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 
 const parseCompiledPlan = (
 	row: Pick<
-		AlertRuleRow,
+		StoredAlertRuleRow,
 		| "id"
 		| "signalType"
 		| "querySpecJson"
@@ -460,8 +488,8 @@ const parseCompiledPlan = (
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
 
-const toIso = (value: Date | null | undefined): IsoDateTimeValue | null =>
-	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
+const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
+	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
 
 type StoredRuleComponent = AlertRuleStoredConfigInvalidError["component"]
 
@@ -500,7 +528,7 @@ const decodeNullableStoredRuleComponent = <S extends Schema.Top>(
 ): Effect.Effect<S["Type"] | null, AlertRuleStoredConfigInvalidError, S["DecodingServices"]> =>
 	value == null ? Effect.succeed(null) : decodeStoredRuleComponent(ruleId, component, schema, value)
 
-export const decodeStoredAlertRuleMetadata = (row: AlertRuleRow) =>
+export const decodeStoredAlertRuleMetadata = (row: StoredAlertRuleRow) =>
 	Effect.all({
 		serviceNames: decodeStoredStringArray(row.id, "service_names", row.serviceNamesJson),
 		excludeServiceNames: decodeStoredStringArray(
@@ -542,7 +570,7 @@ export const decodeStoredAlertRuleDestinationIds = (
 	)
 
 export const rowToRuleDocument = (
-	row: AlertRuleRow,
+	row: StoredAlertRuleRow,
 	evaluationState?: RuleEvaluationState,
 ): Effect.Effect<AlertRuleDocument, AlertRuleStoredConfigInvalidError> =>
 	Effect.gen(function* () {
@@ -583,11 +611,11 @@ export const rowToRuleDocument = (
 					lastEvaluationError: evaluationState?.error ?? null,
 					lastEvaluatedAt:
 						evaluationState?.evaluatedAt != null
-							? decodeIsoDateTimeStringSync(msToDate(evaluationState.evaluatedAt).toISOString())
+							? toIso(evaluationState.evaluatedAt)
 							: null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
-					createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-					updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+					createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+					updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 					createdBy: decodeUserIdSync(row.createdBy),
 					updatedBy: decodeUserIdSync(row.updatedBy),
 				})
@@ -604,7 +632,7 @@ export const rowToRuleDocument = (
 
 export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 	const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
-		row: AlertRuleRow,
+		row: StoredAlertRuleRow,
 	): Effect.fn.Return<NormalizedRule, AlertRuleStoredConfigInvalidError> {
 		const stored = yield* decodeStoredAlertRuleMetadata(row)
 		const decoded = yield* Effect.try({
@@ -658,8 +686,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			alertOnNoData: row.noDataBehavior === "alert",
 			destinationIds: yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson),
 			compiledPlan: yield* parseCompiledPlan(row),
-			createdAt: dateToMs(row.createdAt),
-			updatedAt: dateToMs(row.updatedAt),
+			createdAt: row.createdAt,
+			updatedAt: row.updatedAt,
 		}
 	})
 

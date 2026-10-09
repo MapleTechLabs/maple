@@ -27,14 +27,14 @@ import {
 	SharePersistenceError,
 	UserId,
 } from "@maple/domain/http"
-import { dashboardShares, generateShareToken, hashShareToken, shareTokenSuffix } from "@maple/db"
-import { and, eq, isNull } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { generateShareToken, hashShareToken, shareTokenSuffix } from "@maple/db"
+import { DashboardShares, type DashboardShareRow as DashboardShareTableRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
-import { msToDate } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 
 /** SQLSTATE for `unique_violation` — here, `dashboard_shares_live_unq`. */
@@ -70,8 +70,10 @@ export interface ShareScope {
  * whole-board scope has to be selected with `is null` rather than `= null` —
  * getting this wrong silently matches nothing and reads as "not shared".
  */
-const scopeMatches = (scope: ShareScope) =>
-	scope.widgetId === null ? isNull(dashboardShares.widgetId) : eq(dashboardShares.widgetId, scope.widgetId)
+type ShareColumns = PG.ColumnAccessor<typeof DashboardShares.columns>
+
+const scopeMatches = ($: ShareColumns, scope: ShareScope) =>
+	scope.widgetId === null ? $.widgetId.isNull() : $.widgetId.eq(scope.widgetId)
 
 const toPersistenceError = (error: unknown) =>
 	new SharePersistenceError({
@@ -79,19 +81,10 @@ const toPersistenceError = (error: unknown) =>
 		cause: error,
 	})
 
-interface DashboardShareRow {
-	readonly id: DashboardShareId
-	readonly orgId: OrgId
-	readonly dashboardId: DashboardId
-	readonly widgetId: string | null
-	readonly mode: DashboardShareMode
-	readonly tokenCiphertext: string
-	readonly tokenIv: string
-	readonly tokenTag: string
-	readonly tokenSuffix: string
-	readonly createdAt: Date
-	readonly updatedAt: Date
-}
+type DashboardShareRow = Omit<
+	DashboardShareTableRow,
+	"tokenHash" | "createdBy" | "updatedBy" | "revokedAt"
+>
 
 const toDashboardShare = (row: DashboardShareRow, token: string) => {
 	const share = {
@@ -100,8 +93,8 @@ const toDashboardShare = (row: DashboardShareRow, token: string) => {
 		mode: row.mode,
 		token,
 		tokenSuffix: row.tokenSuffix,
-		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 	}
 
 	return row.widgetId === null
@@ -115,19 +108,19 @@ class ShareEncryptionKeyConfigError extends Schema.TaggedError<ShareEncryptionKe
 ) {}
 
 /** Columns every read here projects. Keeps `token_hash` out of memory by default. */
-const shareColumns = {
-	id: dashboardShares.id,
-	orgId: dashboardShares.orgId,
-	dashboardId: dashboardShares.dashboardId,
-	widgetId: dashboardShares.widgetId,
-	mode: dashboardShares.mode,
-	tokenCiphertext: dashboardShares.tokenCiphertext,
-	tokenIv: dashboardShares.tokenIv,
-	tokenTag: dashboardShares.tokenTag,
-	tokenSuffix: dashboardShares.tokenSuffix,
-	createdAt: dashboardShares.createdAt,
-	updatedAt: dashboardShares.updatedAt,
-} as const
+const shareColumns = ($: ShareColumns) => ({
+	id: $.id,
+	orgId: $.orgId,
+	dashboardId: $.dashboardId,
+	widgetId: $.widgetId,
+	mode: $.mode,
+	tokenCiphertext: $.tokenCiphertext,
+	tokenIv: $.tokenIv,
+	tokenTag: $.tokenTag,
+	tokenSuffix: $.tokenSuffix,
+	createdAt: $.createdAt,
+	updatedAt: $.updatedAt,
+})
 
 export interface SharedDashboardServiceApi {
 	/** The live share for one scope, or `None`. Carries the decrypted token. */
@@ -270,17 +263,16 @@ export class SharedDashboardService extends Context.Service<
 		const loadLive = (orgId: OrgId, scope: ShareScope) =>
 			database
 				.execute((db) =>
-					db
-						.select(shareColumns)
-						.from(dashboardShares)
-						.where(
-							and(
-								eq(dashboardShares.orgId, orgId),
-								eq(dashboardShares.dashboardId, scope.dashboardId),
-								scopeMatches(scope),
-								isNull(dashboardShares.revokedAt),
-							),
-						),
+					db.orm.run(
+						PG.from(DashboardShares)
+							.select(shareColumns)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dashboardId.eq(scope.dashboardId),
+								scopeMatches($, scope),
+								$.revokedAt.isNull(),
+							]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -303,16 +295,15 @@ export class SharedDashboardService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select(shareColumns)
-						.from(dashboardShares)
-						.where(
-							and(
-								eq(dashboardShares.orgId, orgId),
-								eq(dashboardShares.dashboardId, dashboardId),
-								isNull(dashboardShares.revokedAt),
-							),
-						),
+					db.orm.run(
+						PG.from(DashboardShares)
+							.select(shareColumns)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dashboardId.eq(dashboardId),
+								$.revokedAt.isNull(),
+							]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			return yield* Effect.forEach(rows, decodeShare)
@@ -354,9 +345,9 @@ export class SharedDashboardService extends Context.Service<
 					tokenIv: encrypted.iv,
 					tokenTag: encrypted.tag,
 					tokenSuffix: shareTokenSuffix(rawToken),
-					createdAt: msToDate(now),
+					createdAt: now,
 					createdBy: userId,
-					updatedAt: msToDate(now),
+					updatedAt: now,
 					updatedBy: userId,
 					revokedAt: null,
 				},
@@ -387,17 +378,12 @@ export class SharedDashboardService extends Context.Service<
 				Effect.gen(function* () {
 					const updated = yield* database
 						.execute((db) =>
-							db
-								.update(dashboardShares)
-								.set({ mode, updatedAt: msToDate(now), updatedBy: userId })
-								.where(
-									and(
-										eq(dashboardShares.orgId, orgId),
-										eq(dashboardShares.id, shareId),
-										isNull(dashboardShares.revokedAt),
-									),
-								)
-								.returning(shareColumns),
+							db.orm.run(
+								PG.update(DashboardShares)
+									.set({ mode, updatedAt: now, updatedBy: userId })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(shareId), $.revokedAt.isNull()])
+									.returning(shareColumns),
+							),
 						)
 						.pipe(Effect.mapError(toPersistenceError))
 
@@ -425,7 +411,7 @@ export class SharedDashboardService extends Context.Service<
 			// the loser is handled rather than prevented — a double-click producing a
 			// 503 is exactly what `revoke` was made idempotent to avoid.
 			const attempt = yield* database
-				.execute((db) => db.insert(dashboardShares).values(values).returning(shareColumns))
+				.execute((db) => db.orm.run(PG.insertInto(DashboardShares).values(values).returning(shareColumns)))
 				.pipe(
 					Effect.map((rows) => ({ raced: false, rows }) as const),
 					Effect.catch((error) =>
@@ -489,22 +475,16 @@ export class SharedDashboardService extends Context.Service<
 			// per dashboard — is satisfied when the insert lands.
 			const inserted = yield* database
 				.execute((db) =>
-					db.transaction((tx) =>
+					db.orm.transaction(
 						Effect.gen(function* () {
-							yield* tx
-								.update(dashboardShares)
-								.set({
-									revokedAt: msToDate(now),
-									updatedAt: msToDate(now),
-									updatedBy: userId,
-								})
-								.where(
-									and(
-										eq(dashboardShares.orgId, orgId),
-										eq(dashboardShares.id, existing.id),
-									),
-								)
-							return yield* tx.insert(dashboardShares).values(values).returning(shareColumns)
+							yield* db.orm.run(
+								PG.update(DashboardShares)
+									.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(existing.id)]),
+							)
+							return yield* db.orm.run(
+								PG.insertInto(DashboardShares).values(values).returning(shareColumns),
+							)
 						}),
 					),
 				)
@@ -537,21 +517,20 @@ export class SharedDashboardService extends Context.Service<
 
 			const revoked = yield* database
 				.execute((db) =>
-					db
-						.update(dashboardShares)
-						// `updatedBy` too, not just the timestamp: revoked rows are kept
-						// for audit, and a row that records only who *created* the link
-						// cannot answer who took it down.
-						.set({ revokedAt: msToDate(now), updatedAt: msToDate(now), updatedBy: userId })
-						.where(
-							and(
-								eq(dashboardShares.orgId, orgId),
-								eq(dashboardShares.dashboardId, scope.dashboardId),
-								scopeMatches(scope),
-								isNull(dashboardShares.revokedAt),
-							),
-						)
-						.returning({ id: dashboardShares.id }),
+					db.orm.run(
+						PG.update(DashboardShares)
+							// `updatedBy` too, not just the timestamp: revoked rows are kept
+							// for audit, and a row that records only who *created* the link
+							// cannot answer who took it down.
+							.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dashboardId.eq(scope.dashboardId),
+								scopeMatches($, scope),
+								$.revokedAt.isNull(),
+							])
+							.returning("id"),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -592,12 +571,11 @@ export class SharedDashboardService extends Context.Service<
 
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select(shareColumns)
-						.from(dashboardShares)
-						.where(
-							and(eq(dashboardShares.tokenHash, tokenHash), isNull(dashboardShares.revokedAt)),
-						),
+					db.orm.run(
+						PG.from(DashboardShares)
+							.select(shareColumns)
+							.where(($) => [$.tokenHash.eq(tokenHash), $.revokedAt.isNull()]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -615,11 +593,9 @@ export class SharedDashboardService extends Context.Service<
 			// `token` is the one the caller presented — it hashed to this row, so it
 			// is by definition the stored one, and decrypting to prove that again
 			// would only add a cipher round to the viewer hot path.
-			let mode = row.mode
-			if (row.widgetId !== null) {
-				mode = capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
-				yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
-			}
+			const mode =
+				row.widgetId === null ? row.mode : capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
+			if (row.widgetId !== null) yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
 			return { share: toDashboardShare({ ...row, mode }, token), orgId: row.orgId }
 		})
 
@@ -636,21 +612,11 @@ export class SharedDashboardService extends Context.Service<
 
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select({
-							id: dashboardShares.id,
-							orgId: dashboardShares.orgId,
-							dashboardId: dashboardShares.dashboardId,
-							widgetId: dashboardShares.widgetId,
-						})
-						.from(dashboardShares)
-						.where(
-							and(
-								eq(dashboardShares.id, shareId),
-								eq(dashboardShares.mode, "public"),
-								isNull(dashboardShares.revokedAt),
-							),
-						),
+					db.orm.run(
+						PG.from(DashboardShares)
+							.select("id", "orgId", "dashboardId", "widgetId")
+							.where(($) => [$.id.eq(shareId), $.mode.eq("public"), $.revokedAt.isNull()]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 

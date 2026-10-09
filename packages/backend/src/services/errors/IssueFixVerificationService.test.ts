@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Predicate, Schema } from "effect"
 import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
-import { errorIssues, errorIssueEvents, errorIssueVerifications } from "@maple/db"
-import type { MapleTx } from "@maple/db/client"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { errorIssues, errorIssueEvents } from "@maple/db"
+import type { MapleDb } from "@maple/db/client"
+import { ErrorIssueVerifications } from "@maple/db/tables"
 import { eq } from "drizzle-orm"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -142,11 +144,12 @@ const readVerification = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db
-				.select()
-				.from(errorIssueVerifications)
-				.where(eq(errorIssueVerifications.issueId, issueId))
-				.limit(1),
+			db.orm.run(
+				PG.from(ErrorIssueVerifications)
+					.select()
+					.where(($) => [$.issueId.eq(issueId)])
+					.limit(1),
+			),
 		)
 		return rows[0]
 	})
@@ -155,7 +158,11 @@ const readAllVerifications = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		return yield* database.execute((db) =>
-			db.select().from(errorIssueVerifications).where(eq(errorIssueVerifications.issueId, issueId)),
+			db.orm.run(
+				PG.from(ErrorIssueVerifications)
+					.select()
+					.where(($) => [$.issueId.eq(issueId)]),
+			),
 		)
 	})
 
@@ -190,23 +197,23 @@ const mergeEvent = (overrides: Partial<PullRequestEventInput> = {}): PullRequest
 
 describe("occurrenceRatePerHour", () => {
 	it("averages occurrences over the observed span", () => {
-		const now = new Date()
+		const now = Date.now()
 		expect(
 			occurrenceRatePerHour({
 				occurrenceCount: 100,
-				firstSeenAt: new Date(now.getTime() - 10 * HOUR),
+				firstSeenAt: now - 10 * HOUR,
 				lastSeenAt: now,
 			}),
 		).toBeCloseTo(10)
 	})
 
 	it("returns zero for a degenerate span or no occurrences", () => {
-		const now = new Date()
+		const now = Date.now()
 		expect(occurrenceRatePerHour({ occurrenceCount: 5, firstSeenAt: now, lastSeenAt: now })).toBe(0)
 		expect(
 			occurrenceRatePerHour({
 				occurrenceCount: 0,
-				firstSeenAt: new Date(now.getTime() - HOUR),
+				firstSeenAt: now - HOUR,
 				lastSeenAt: now,
 			}),
 		).toBe(0)
@@ -563,7 +570,7 @@ describe("onPullRequestEvent — merge", () => {
 				// The baseline is the snapshot everything downstream tests membership against.
 				expect(verification?.baselineVersionsJson).toEqual(["v1", "v2"])
 				expect(verification?.baselineRatePerHour).toBeCloseTo(20)
-				expect(verification?.verifyAfter.getTime()).toBeCloseTo(mergedAtMs + 12 * HOUR, -4)
+				expect(verification?.verifyAfter).toBeCloseTo(mergedAtMs + 12 * HOUR, -4)
 
 				const events = yield* readEventTypes(issueId)
 				expect(events).toContain("pr_merged")
@@ -599,8 +606,8 @@ describe("onPullRequestEvent — merge", () => {
 				yield* service.onPullRequestEvent(mergeEvent({ mergedAtMs }))
 				yield* service.onPullRequestEvent(mergeEvent({ number: 613, mergedAtMs }))
 
-				const busyWindow = (yield* readVerification(busy))?.verifyAfter.getTime()
-				const quietWindow = (yield* readVerification(quiet))?.verifyAfter.getTime()
+				const busyWindow = (yield* readVerification(busy))?.verifyAfter
+				const quietWindow = (yield* readVerification(quiet))?.verifyAfter
 				expect(busyWindow).toBeDefined()
 				expect(quietWindow).toBeDefined()
 				expect(quietWindow!).toBeGreaterThan(busyWindow!)
@@ -858,7 +865,7 @@ describe("applyVerdict", () => {
 				const retried = yield* readVerification(issueId)
 				expect(retried?.status).toBe("waiting")
 				expect(retried?.attempt).toBe(1)
-				expect(retried?.verifyAfter.getTime()).toBeGreaterThan(nowMs)
+				expect(retried?.verifyAfter).toBeGreaterThan(nowMs)
 				// Still verifying — the issue has not been handed back yet.
 				expect((yield* readIssueState(issueId))?.workflowState).toBe("verifying")
 			}).pipe(Effect.provide(layer))
@@ -900,7 +907,7 @@ describe("dueVerifications", () => {
 				expect(yield* service.dueVerifications(Date.now(), 10)).toHaveLength(0)
 
 				const verification = yield* readVerification(issueId)
-				const dueAtMs = verification!.verifyAfter.getTime()
+				const dueAtMs = verification!.verifyAfter
 				expect(yield* service.dueVerifications(dueAtMs + 1000, 10)).toHaveLength(1)
 
 				// A running row is somebody else's work, not due work.
@@ -911,60 +918,44 @@ describe("dueVerifications", () => {
 	)
 })
 
-/**
- * A statement that fails when run, the way a dying connection fails one. It
- * still accepts the builder chain (`.values`, `.onConflictDoNothing`,
- * `.returning`) so the failure lands where the real statement would run, and
- * it is a driver error so `Database.execute` absorbs it exactly as it would a
- * real one.
- */
-const failingStatement = (): Effect.Effect<never, EffectDrizzleQueryError> => {
-	const failure = Effect.fail(
-		new EffectDrizzleQueryError({
-			query: "insert (sabotaged)",
-			params: [],
-			cause: new Error("injected insert failure"),
-		}),
-	)
-	const chain: typeof failure = new Proxy(failure, {
-		get(target, property) {
-			if (property in target) {
-				// SAFETY: a Proxy get trap receives a key for its target; indexed access keeps
-				// the Effect's own property types while the runtime branch checks callability.
-				const value = target[property as keyof typeof target]
-				return typeof value === "function" ? value.bind(target) : value
-			}
-			return () => chain
-		},
-	})
-	return chain
-}
+/** An effect-orm insert into `table`, read off the builder's runtime shape. */
+const isInsertInto = (query: unknown, table: string): boolean =>
+	Predicate.hasProperty(query, "_tag") &&
+	query._tag === "CHInsert" &&
+	Predicate.hasProperty(query, "_state") &&
+	Predicate.hasProperty(query._state, "table") &&
+	Predicate.hasProperty(query._state.table, "name") &&
+	query._state.table.name === table
 
 /**
  * The client with one table's inserts sabotaged, inside and outside
- * transactions — a stand-in for the connection dying mid-write, which
+ * transactions: a stand-in for the connection dying mid-write, which
  * `applyVerdict` must survive without settling a row it did not fully record.
+ * It is a driver error, so `Database.execute` absorbs it as it would a real one.
  */
-const failInsertOf = <T extends object>(client: T, failTable: unknown): T =>
-	new Proxy(client, {
-		get(target, property) {
-			// SAFETY: a Proxy get trap receives a key for its target; indexed access preserves
-			// the target's own property type while the runtime branch below validates callability.
-			const value = target[property as keyof T]
-			if (typeof value !== "function") return value
-			if (property === "insert") {
-				return (table: unknown) =>
-					table === failTable ? failingStatement() : value.call(target, table)
-			}
-			if (property === "transaction") {
-				return <Result, E, R>(
-					callback: (tx: MapleTx) => Effect.Effect<Result, E, R>,
-					...rest: ReadonlyArray<unknown>
-				) => value.call(target, (tx: MapleTx) => callback(failInsertOf(tx, failTable)), ...rest)
-			}
-			return value.bind(target)
+const failInsertOf = (db: MapleDb, failTable: string): MapleDb => {
+	const orm = new Proxy(db.orm, {
+		get(target, property, receiver) {
+			const value: unknown = Reflect.get(target, property, receiver)
+			if (property !== "run" || typeof value !== "function") return value
+			return (query: unknown, ...rest: ReadonlyArray<unknown>) =>
+				isInsertInto(query, failTable)
+					? Effect.fail(
+							new Orm.DatabaseError({
+								message: "injected insert failure",
+								sql: `insert into ${failTable} (sabotaged)`,
+								reason: "ConnectionError",
+								cause: new Error("injected insert failure"),
+							}),
+						)
+					: Reflect.apply(value, target, [query, ...rest])
 		},
 	})
+	return new Proxy(db, {
+		get: (target, property, receiver) =>
+			property === "orm" ? orm : Reflect.get(target, property, receiver),
+	})
+}
 
 const failingEventInsertLayer = (base: Layer.Layer<Database>) =>
 	Layer.effect(
@@ -972,7 +963,7 @@ const failingEventInsertLayer = (base: Layer.Layer<Database>) =>
 		Effect.gen(function* () {
 			const real = yield* Database
 			return {
-				execute: (fn) => real.execute((db) => fn(failInsertOf(db, errorIssueEvents))),
+				execute: (fn) => real.execute((db) => fn(failInsertOf(db, "error_issue_events"))),
 			} satisfies DatabaseApi
 		}),
 	).pipe(Layer.provide(base))

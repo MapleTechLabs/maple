@@ -6,7 +6,7 @@ import type {
 	SelfDescribingHttpError,
 } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
-import type { PlanetScaleDatabaseRow } from "@maple/db"
+import type { PlanetScaleDatabaseRow } from "@maple/db/tables"
 import type {
 	V2PlanetScaleConnectResponse,
 	V2PlanetScaleDatabase,
@@ -357,9 +357,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							return {
 								object: "planetscale_integration.database_list" as const,
 								databases: Arr.map(rows, toPlanetScaleDatabase),
-								last_inventory_at: isoTimestampOrNull(
-									connection?.lastInventoryAt?.getTime() ?? null,
-								),
+								last_inventory_at: isoTimestampOrNull(connection?.lastInventoryAt ?? null),
 							} satisfies V2PlanetScaleDatabaseList
 						}),
 					)
@@ -469,7 +467,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 												source: row.source,
 												actor_login: row.actorLogin,
 												url: row.url,
-												occurred_at: isoTimestamp(row.occurredAt.getTime()),
+												occurred_at: isoTimestamp(row.occurredAt),
 											})),
 											next_cursor: nextCursor,
 										})),

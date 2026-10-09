@@ -23,12 +23,11 @@ import {
 	type WorkflowState,
 	type WarehouseReadError,
 } from "@maple/domain/http"
-import { errorIncidents, type ErrorIncidentRow, errorIssues } from "@maple/db"
-import { and, desc, eq, gt, gte, ilike, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIncidents, type ErrorIncidentRow, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, DateTime, Effect, Layer, Match, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
@@ -58,8 +57,11 @@ const ACTIONABLE_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
 	"in_review",
 ]
 
+type IssueColumns = PG.ColumnAccessor<typeof ErrorIssues.columns>
+type IssueConditions = ($: IssueColumns) => Array<PG.Condition | undefined>
+
 /** Shared SQL ordering expression for the UI's critical-first issue ordering. */
-const issueSeverityOrder = sql<number>`CASE ${errorIssues.severity}
+const issueSeverityOrder = ($: IssueColumns) => PG.sql(PG.int4)`CASE ${$.severity}
 	WHEN 'critical' THEN 0
 	WHEN 'high' THEN 1
 	WHEN 'medium' THEN 2
@@ -171,49 +173,18 @@ const make: Effect.Effect<
 			issueId: row.issueId,
 			status: row.status,
 			reason: row.reason,
-			firstTriggeredAt: decodeIsoDateTimeStringSync(row.firstTriggeredAt.toISOString()),
-			lastTriggeredAt: decodeIsoDateTimeStringSync(row.lastTriggeredAt.toISOString()),
+			firstTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.firstTriggeredAt).toISOString()),
+			lastTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.lastTriggeredAt).toISOString()),
 			resolvedAt:
-				row.resolvedAt == null ? null : decodeIsoDateTimeStringSync(row.resolvedAt.toISOString()),
+				row.resolvedAt == null
+					? null
+					: decodeIsoDateTimeStringSync(new Date(row.resolvedAt).toISOString()),
 			occurrenceCount: row.occurrenceCount,
 		})
 
-	/** The filter half of the issue list, shared by the page and its count. `undefined` = matches nothing. */
-	const issueListConditions = Effect.fn("ErrorsService.issueListConditions")(function* (
-		orgId: OrgId,
-		opts: IssueListFilters,
-	) {
-		const conditions: Array<SQL> = [eq(errorIssues.orgId, orgId)]
-		if (opts.workflowState) conditions.push(eq(errorIssues.workflowState, opts.workflowState))
-		if (opts.actionable) conditions.push(inArray(errorIssues.workflowState, ACTIONABLE_WORKFLOW_STATES))
-		if (opts.severity === "unset") conditions.push(isNull(errorIssues.severity))
-		else if (opts.severity) conditions.push(eq(errorIssues.severity, opts.severity))
-		if (opts.kind) conditions.push(eq(errorIssues.kind, opts.kind))
-		if (opts.service) conditions.push(eq(errorIssues.serviceName, opts.service))
-		if (opts.exceptionType)
-			conditions.push(
-				or(
-					eq(errorIssues.exceptionType, opts.exceptionType),
-					eq(errorIssues.errorLabel, opts.exceptionType),
-				) ?? sql`false`,
-			)
-		if (opts.search) {
-			const pattern = `%${opts.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
-			conditions.push(
-				or(
-					ilike(errorIssues.exceptionType, pattern),
-					ilike(errorIssues.exceptionMessage, pattern),
-					ilike(errorIssues.errorLabel, pattern),
-					ilike(errorIssues.serviceName, pattern),
-				) ?? sql`false`,
-			)
-		}
-		if (opts.fingerprintHashes !== undefined)
-			conditions.push(inArray(errorIssues.fingerprintHash, opts.fingerprintHashes))
-
-		// `""` is a real filter (raw spans without a deployment env), so check
-		// for undefined rather than truthiness.
-		if (opts.deploymentEnv !== undefined) {
+	/** Fingerprints the warehouse saw in one deployment env, over the list's window (30d by default). */
+	const envFingerprintHashes = (orgId: OrgId, deploymentEnv: string, opts: IssueListFilters) =>
+		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
 			const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : Number.NaN
 			const startMs = opts.startTime ? parseWarehouseDateTime(opts.startTime) : Number.NaN
@@ -224,7 +195,7 @@ const make: Effect.Effect<
 			const compiled = CH.compile(
 				CH.errorFingerprintsQuery({
 					services: opts.service ? [opts.service] : undefined,
-					deploymentEnvs: [opts.deploymentEnv],
+					deploymentEnvs: [deploymentEnv],
 				}),
 				{
 					orgId,
@@ -235,32 +206,64 @@ const make: Effect.Effect<
 			const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
 				context: "errorIssueEnvFingerprints",
 			})
-			const hashes = fingerprintRows.map((row) => row.fingerprintHash).filter((hash) => hash.length > 0)
-			if (hashes.length === 0) return undefined
-			conditions.push(inArray(errorIssues.fingerprintHash, hashes))
-		}
+			return fingerprintRows.map((row) => row.fingerprintHash).filter((hash) => hash.length > 0)
+		})
 
-		if (opts.assignedActorId) conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
-		if (!opts.includeArchived) conditions.push(isNull(errorIssues.archivedAt))
-		if (opts.endTime) {
-			const endMs = parseWarehouseDateTime(opts.endTime)
-			if (Number.isFinite(endMs)) conditions.push(lt(errorIssues.firstSeenAt, msToDate(endMs)))
+	/** The filter half of the issue list, shared by the page and its count. `undefined` = matches nothing. */
+	const issueListConditions = Effect.fn("ErrorsService.issueListConditions")(function* (
+		orgId: OrgId,
+		opts: IssueListFilters,
+	) {
+		// `""` is a real filter (raw spans without a deployment env), so check
+		// for undefined rather than truthiness.
+		const envHashes =
+			opts.deploymentEnv === undefined
+				? undefined
+				: yield* envFingerprintHashes(orgId, opts.deploymentEnv, opts)
+		if (envHashes !== undefined && envHashes.length === 0) return undefined
+
+		const finiteMs = (value: string | undefined) => {
+			const ms = value ? parseWarehouseDateTime(value) : Number.NaN
+			return Number.isFinite(ms) ? ms : undefined
 		}
-		if (opts.startTime) {
-			const startMs = parseWarehouseDateTime(opts.startTime)
-			if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, msToDate(startMs)))
-		}
-		if (opts.introducedAfter) {
-			const sinceMs = parseWarehouseDateTime(opts.introducedAfter)
-			if (Number.isFinite(sinceMs)) {
-				const since = msToDate(sinceMs)
-				const introduced = or(
-					gte(errorIssues.firstSeenAt, since),
-					gte(errorIssues.lastRegressedAt, since),
-				)
-				if (introduced) conditions.push(introduced)
-			}
-		}
+		const endMs = finiteMs(opts.endTime)
+		const startMs = finiteMs(opts.startTime)
+		const sinceMs = finiteMs(opts.introducedAfter)
+		const pattern = opts.search ? `%${opts.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%` : undefined
+		const conditions: IssueConditions = ($) => [
+			$.orgId.eq(orgId),
+			opts.workflowState ? $.workflowState.eq(opts.workflowState) : undefined,
+			opts.actionable ? $.workflowState.in_(...ACTIONABLE_WORKFLOW_STATES) : undefined,
+			opts.severity === "unset"
+				? $.severity.isNull()
+				: opts.severity
+					? $.severity.eq(opts.severity)
+					: undefined,
+			opts.kind ? $.kind.eq(opts.kind) : undefined,
+			opts.service ? $.serviceName.eq(opts.service) : undefined,
+			opts.exceptionType
+				? PG.or($.exceptionType.eq(opts.exceptionType), $.errorLabel.eq(opts.exceptionType))
+				: undefined,
+			pattern === undefined
+				? undefined
+				: PG.or(
+						$.exceptionType.ilike(pattern),
+						$.exceptionMessage.ilike(pattern),
+						$.errorLabel.ilike(pattern),
+						$.serviceName.ilike(pattern),
+					),
+			opts.fingerprintHashes === undefined
+				? undefined
+				: $.fingerprintHash.in_(...opts.fingerprintHashes),
+			envHashes === undefined ? undefined : $.fingerprintHash.in_(...envHashes),
+			opts.assignedActorId ? $.assignedActorId.eq(opts.assignedActorId) : undefined,
+			opts.includeArchived ? undefined : $.archivedAt.isNull(),
+			endMs === undefined ? undefined : $.firstSeenAt.lt(endMs),
+			startMs === undefined ? undefined : $.lastSeenAt.gt(startMs),
+			sinceMs === undefined
+				? undefined
+				: PG.or($.firstSeenAt.gte(sinceMs), $.lastRegressedAt.gte(sinceMs)),
+		]
 		return conditions
 	})
 
@@ -279,49 +282,41 @@ const make: Effect.Effect<
 				yield* Effect.annotateCurrentSpan({ issueCount: 0, hasMore: false })
 				return new ErrorIssuesListResponse({ issues: [] })
 			}
-			const conditions = [...base]
-			if (opts.cursor) {
-				const cursorSeenAt = msToDate(opts.cursor.lastSeenAt)
-				const keyset =
-					sort === "severity" && "severityRank" in opts.cursor
-						? or(
-								gt(issueSeverityOrder, opts.cursor.severityRank),
-								and(
-									eq(issueSeverityOrder, opts.cursor.severityRank),
-									or(
-										lt(errorIssues.lastSeenAt, cursorSeenAt),
-										and(
-											eq(errorIssues.lastSeenAt, cursorSeenAt),
-											lt(errorIssues.id, opts.cursor.id),
-										),
-									),
-								),
+			const cursor = opts.cursor
+			const keyset =
+				cursor === undefined
+					? undefined
+					: ($: IssueColumns) => {
+							const seenBefore = PG.or(
+								$.lastSeenAt.lt(cursor.lastSeenAt),
+								PG.and($.lastSeenAt.eq(cursor.lastSeenAt), $.id.lt(cursor.id)),
 							)
-						: or(
-								lt(errorIssues.lastSeenAt, cursorSeenAt),
-								and(
-									eq(errorIssues.lastSeenAt, cursorSeenAt),
-									lt(errorIssues.id, opts.cursor.id),
-								),
-							)
-				if (keyset) conditions.push(keyset)
-			}
+							return sort === "severity" && "severityRank" in cursor
+								? PG.or(
+										issueSeverityOrder($).gt(cursor.severityRank),
+										PG.and(issueSeverityOrder($).eq(cursor.severityRank), seenBefore),
+									)
+								: seenBefore
+						}
 
 			const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
 			const fetched = yield* dbExecute((db) => {
-				const query = db
+				const query = PG.from(ErrorIssues)
 					.select()
-					.from(errorIssues)
-					.where(and(...conditions))
-				return (
-					sort === "severity"
-						? query.orderBy(
-								issueSeverityOrder,
-								desc(errorIssues.lastSeenAt),
-								desc(errorIssues.id),
-							)
-						: query.orderBy(desc(errorIssues.lastSeenAt), desc(errorIssues.id))
-				).limit(limit + 1)
+					.where(($) => [...base($), keyset?.($)])
+				return db.orm.run(
+					(sort === "severity"
+						? query.orderBy(($) => [
+								[issueSeverityOrder($), "asc"],
+								[$.lastSeenAt, "desc"],
+								[$.id, "desc"],
+							])
+						: query.orderBy(($) => [
+								[$.lastSeenAt, "desc"],
+								[$.id, "desc"],
+							])
+					).limit(limit + 1),
+				)
 			})
 			const hasMore = fetched.length > limit
 			const rows = hasMore ? fetched.slice(0, limit) : fetched
@@ -334,11 +329,11 @@ const make: Effect.Effect<
 					? sort === "severity"
 						? encodeIssueSeverityListCursor({
 								severityRank: severitySortRank(lastRow.severity),
-								lastSeenAt: dateToMs(lastRow.lastSeenAt),
+								lastSeenAt: lastRow.lastSeenAt,
 								id: decodeErrorIssueIdSync(lastRow.id),
 							})
 						: encodeIssueListCursor({
-								lastSeenAt: dateToMs(lastRow.lastSeenAt),
+								lastSeenAt: lastRow.lastSeenAt,
 								id: decodeErrorIssueIdSync(lastRow.id),
 							})
 					: undefined
@@ -351,10 +346,11 @@ const make: Effect.Effect<
 			const conditions = yield* issueListConditions(orgId, opts)
 			if (conditions === undefined) return 0
 			const rows = yield* dbExecute((db) =>
-				db
-					.select({ total: sql<number>`count(*)::int` })
-					.from(errorIssues)
-					.where(and(...conditions)),
+				db.orm.run(
+					PG.from(ErrorIssues)
+						.select(() => ({ total: PG.count() }))
+						.where(conditions),
+				),
 			)
 			const total = rows[0]?.total ?? 0
 			yield* Effect.annotateCurrentSpan({ orgId, issueTotal: total })
@@ -367,21 +363,17 @@ const make: Effect.Effect<
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db
-				.select({
-					serviceName: errorIssues.serviceName,
-					openCount: sql<number>`count(*)::int`,
-				})
-				.from(errorIssues)
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						inArray(errorIssues.workflowState, ACTIONABLE_WORKFLOW_STATES),
-						eq(errorIssues.kind, "error"),
-						isNull(errorIssues.archivedAt),
-					),
-				)
-				.groupBy(errorIssues.serviceName),
+			db.orm.run(
+				PG.from(ErrorIssues)
+					.select(($) => ({ serviceName: $.serviceName, openCount: PG.count() }))
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.workflowState.in_(...ACTIONABLE_WORKFLOW_STATES),
+						$.kind.eq("error"),
+						$.archivedAt.isNull(),
+					])
+					.groupBy("serviceName"),
+			),
 		)
 		const counts = rows.filter((row) => row.serviceName !== "")
 		yield* Effect.annotateCurrentSpan({ serviceCount: counts.length })
@@ -439,12 +431,13 @@ const make: Effect.Effect<
 				: Effect.succeed([])
 
 			const incidentsEffect = dbExecute((db) =>
-				db
-					.select()
-					.from(errorIncidents)
-					.where(and(eq(errorIncidents.orgId, orgId), eq(errorIncidents.issueId, issueId)))
-					.orderBy(desc(errorIncidents.lastTriggeredAt))
-					.limit(50),
+				db.orm.run(
+					PG.from(ErrorIncidents)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+						.orderBy(["lastTriggeredAt", "desc"])
+						.limit(50),
+				),
 			)
 
 			const [timeseriesRows, sampleRows, environmentRows, incidentRows] = yield* Effect.all(
@@ -491,12 +484,13 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId, issueId })
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIncidents)
-				.where(and(eq(errorIncidents.orgId, orgId), eq(errorIncidents.issueId, issueId)))
-				.orderBy(desc(errorIncidents.lastTriggeredAt))
-				.limit(200),
+			db.orm.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+					.orderBy(["lastTriggeredAt", "desc"])
+					.limit(200),
+			),
 		)
 		yield* Effect.annotateCurrentSpan("incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
@@ -509,12 +503,13 @@ const make: Effect.Effect<
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIncidents)
-				.where(and(eq(errorIncidents.orgId, orgId), eq(errorIncidents.status, "open")))
-				.orderBy(desc(errorIncidents.lastTriggeredAt))
-				.limit(500),
+			db.orm.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.status.eq("open")])
+					.orderBy(["lastTriggeredAt", "desc"])
+					.limit(500),
+			),
 		)
 		yield* Effect.annotateCurrentSpan("incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({

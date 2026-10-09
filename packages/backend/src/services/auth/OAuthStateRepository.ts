@@ -1,6 +1,6 @@
 import { OAuthStatePersistenceError } from "@maple/domain/http"
-import { oauthAuthStates, type OAuthAuthStateInsert, type OAuthAuthStateRow } from "@maple/db"
-import { eq, lt } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OAuthAuthStates, type OAuthAuthStateInsert, type OAuthAuthStateRow } from "@maple/db/tables"
 import { Context, Effect, Layer, Option } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 
@@ -30,21 +30,26 @@ export class OAuthStateRepository extends Context.Service<OAuthStateRepository, 
 			const purgeExpired = Effect.fn("OAuthStateRepository.purgeExpired")(function* (now: number) {
 				yield* database
 					.execute((db) =>
-						db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, new Date(now))),
+						db.orm.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(now)])),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
 			const insert = Effect.fn("OAuthStateRepository.insert")(function* (row: OAuthAuthStateInsert) {
 				yield* database
-					.execute((db) => db.insert(oauthAuthStates).values(row))
+					.execute((db) => db.orm.run(PG.insertInto(OAuthAuthStates).values(row)))
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
 			const findByState = Effect.fn("OAuthStateRepository.findByState")(function* (state: string) {
 				const rows = yield* database
 					.execute((db) =>
-						db.select().from(oauthAuthStates).where(eq(oauthAuthStates.state, state)).limit(1),
+						db.orm.run(
+							PG.from(OAuthAuthStates)
+								.select()
+								.where(($) => [$.state.eq(state)])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 				return Option.fromNullishOr(rows[0])
@@ -52,7 +57,9 @@ export class OAuthStateRepository extends Context.Service<OAuthStateRepository, 
 
 			const deleteByState = Effect.fn("OAuthStateRepository.deleteByState")(function* (state: string) {
 				yield* database
-					.execute((db) => db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)))
+					.execute((db) =>
+						db.orm.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])),
+					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 

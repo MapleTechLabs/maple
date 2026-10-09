@@ -396,12 +396,12 @@ describe("ScrapeTargetsService", () => {
 
 			const checks = yield* service.listChecks(orgId, target.id, {})
 			assert.lengthOf(checks, 2)
-			assert.strictEqual(checks[0]?.checkedAt.getTime(), scrapedAt + 15_000)
+			assert.strictEqual(checks[0]?.checkedAt, scrapedAt + 15_000)
 			assert.strictEqual(checks[0]?.error, "target returned HTTP 503")
 			assert.strictEqual(checks[0]?.subTargetKey, "branch-1")
 			assert.strictEqual(checks[0]?.durationMs, 1100)
 			assert.isNull(checks[0]?.samplesScraped)
-			assert.strictEqual(checks[1]?.checkedAt.getTime(), scrapedAt)
+			assert.strictEqual(checks[1]?.checkedAt, scrapedAt)
 			assert.isNull(checks[1]?.error)
 			assert.strictEqual(checks[1]?.subTargetKey, "")
 			assert.strictEqual(checks[1]?.durationMs, 250)
@@ -411,16 +411,16 @@ describe("ScrapeTargetsService", () => {
 			// Time-range + limit filtering.
 			const limited = yield* service.listChecks(orgId, target.id, { limit: 1 })
 			assert.lengthOf(limited, 1)
-			assert.strictEqual(limited[0]?.checkedAt.getTime(), scrapedAt + 15_000)
+			assert.strictEqual(limited[0]?.checkedAt, scrapedAt + 15_000)
 			const secondPage = yield* service.listChecks(orgId, target.id, { limit: 1, offset: 1 })
 			assert.lengthOf(secondPage, 1)
-			assert.strictEqual(secondPage[0]?.checkedAt.getTime(), scrapedAt)
+			assert.strictEqual(secondPage[0]?.checkedAt, scrapedAt)
 			const windowed = yield* service.listChecks(orgId, target.id, {
 				startTime: scrapedAt - 1,
 				endTime: scrapedAt + 1,
 			})
 			assert.lengthOf(windowed, 1)
-			assert.strictEqual(windowed[0]?.checkedAt.getTime(), scrapedAt)
+			assert.strictEqual(windowed[0]?.checkedAt, scrapedAt)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -532,7 +532,7 @@ describe("ScrapeTargetsService", () => {
 			yield* runScrapeCheckRetention
 			const pruned = yield* service.listChecks(orgId, target.id, {})
 			assert.lengthOf(pruned, 1)
-			assert.strictEqual(pruned[0]?.checkedAt.getTime(), now - 60 * 60 * 1000)
+			assert.strictEqual(pruned[0]?.checkedAt, now - 60 * 60 * 1000)
 			// `makeLayer` consumes the db layer; the retention job needs `Database` directly.
 		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb), testDb.layer)))
 	})
@@ -815,16 +815,16 @@ describe("summarizeScrapeResults", () => {
 		// Success then failure: the error wins, lastScrapeAt stays at the good scrape,
 		// updatedAt follows the last applied result while reportedAt is the max.
 		assert.deepStrictEqual(summary.get(a), {
-			lastScrapeAt: new Date(3_000),
+			lastScrapeAt: 3_000,
 			lastScrapeError: "connection refused",
-			updatedAt: new Date(1_000),
-			reportedAt: new Date(3_000),
+			updatedAt: 1_000,
+			reportedAt: 3_000,
 		})
 		assert.deepStrictEqual(summary.get(b), {
 			lastScrapeAt: null,
 			lastScrapeError: "boom",
-			updatedAt: new Date(1_500),
-			reportedAt: new Date(2_000),
+			updatedAt: 1_500,
+			reportedAt: 2_000,
 		})
 	})
 
@@ -840,10 +840,10 @@ describe("summarizeScrapeResults", () => {
 			{ targetId: a, scrapedAt: 2_000, error: null, subTargetKey: "dev" },
 		])
 		assert.deepStrictEqual(recovered.get(a), {
-			lastScrapeAt: new Date(2_000),
+			lastScrapeAt: 2_000,
 			lastScrapeError: null,
-			updatedAt: new Date(2_000),
-			reportedAt: new Date(2_000),
+			updatedAt: 2_000,
+			reportedAt: 2_000,
 		})
 	})
 })

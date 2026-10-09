@@ -8,11 +8,11 @@
  * per question rather than two.
  */
 import { Buffer } from "node:buffer"
-import { chatWorkspaces } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ChatWorkspaces } from "@maple/db/tables"
 import type { ChatWorkspaceSettings } from "@maple/chat-platform"
 import { ChatConnectorId, ChatWorkspaceId, IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
-import { and, eq } from "drizzle-orm"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import {
 	openChatWorkspaceCredentials,
@@ -32,14 +32,6 @@ export interface ChatWorkspaceResolution {
 	readonly credentials: string | undefined
 }
 
-const decodeStored = Schema.decodeUnknownEffect(
-	Schema.Struct({
-		orgId: OrgId,
-		id: ChatWorkspaceId,
-		settings: Schema.Record(Schema.String, Schema.String),
-	}),
-)
-
 const persistenceError = (error: DatabaseError) =>
 	new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
 
@@ -48,9 +40,8 @@ const unreadable = (message: string) => new IntegrationsPersistenceError({ messa
 /**
  * The org a workspace belongs to, or `None` when nothing has linked it.
  *
- * The stored columns are decoded rather than trusted: their types are a cast over whatever is in
- * the table, and an unreadable row is this function's failure rather than a bad org id reaching a
- * session id.
+ * The stored columns are decoded by the table codecs rather than trusted: an unreadable row is
+ * this function's failure rather than a bad org id reaching a session id.
  */
 export const resolveChatWorkspace = Effect.fn("resolveChatWorkspace")(function* (
 	database: DatabaseApi,
@@ -68,29 +59,22 @@ export const resolveChatWorkspace = Effect.fn("resolveChatWorkspace")(function* 
 	yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
 	const rows = yield* database
 		.execute((db) =>
-			db
-				.select()
-				.from(chatWorkspaces)
-				.where(
-					and(
-						eq(chatWorkspaces.connector, connectorId),
-						eq(chatWorkspaces.externalWorkspaceId, externalWorkspaceId),
-					),
-				)
-				.limit(1),
+			db.orm.run(
+				PG.from(ChatWorkspaces)
+					.select()
+					.where(($) => [$.connector.eq(connectorId), $.externalWorkspaceId.eq(externalWorkspaceId)])
+					.limit(1),
+			),
 		)
 		.pipe(Effect.mapError(persistenceError))
 	const row = rows[0]
 	if (row === undefined) return Option.none<ChatWorkspaceResolution>()
-	const stored = yield* decodeStored(row).pipe(
-		Effect.mapError((error) => unreadable(`Stored chat workspace is unreadable: ${error.message}`)),
-	)
 	const sealed = storedCredentials(row)
 	if (sealed === null) {
 		return Option.some({
-			orgId: stored.orgId,
-			workspaceId: stored.id,
-			settings: stored.settings,
+			orgId: row.orgId,
+			workspaceId: row.id,
+			settings: row.settings,
 			credentials: undefined,
 		})
 	}
@@ -102,14 +86,14 @@ export const resolveChatWorkspace = Effect.fn("resolveChatWorkspace")(function* 
 	const credentials = yield* openChatWorkspaceCredentials(
 		sealed,
 		encryptionKey,
-		{ orgId: stored.orgId, connector: connectorId, externalWorkspaceId },
+		{ orgId: row.orgId, connector: connectorId, externalWorkspaceId },
 		// The message never carries the cause: everything below it is key material and ciphertext.
 		(message) => unreadable(`Stored chat workspace credential is unreadable: ${message}`),
 	)
 	return Option.some({
-		orgId: stored.orgId,
-		workspaceId: stored.id,
-		settings: stored.settings,
+		orgId: row.orgId,
+		workspaceId: row.id,
+		settings: row.settings,
 		credentials,
 	})
 })
@@ -128,15 +112,11 @@ export const forgetChatWorkspace = (
 	Effect.gen(function* () {
 		const deleted = yield* database
 			.execute((db) =>
-				db
-					.delete(chatWorkspaces)
-					.where(
-						and(
-							eq(chatWorkspaces.connector, connectorId),
-							eq(chatWorkspaces.externalWorkspaceId, externalWorkspaceId),
-						),
-					)
-					.returning({ id: chatWorkspaces.id }),
+				db.orm.run(
+					PG.deleteFrom(ChatWorkspaces)
+						.where(($) => [$.connector.eq(connectorId), $.externalWorkspaceId.eq(externalWorkspaceId)])
+						.returning("id"),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError))
 		return deleted.length > 0

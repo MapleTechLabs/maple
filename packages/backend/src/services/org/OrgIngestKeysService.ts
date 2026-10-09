@@ -12,11 +12,11 @@ import {
 	createIngestKeyId,
 	hashIngestKey,
 	inferIngestKeyType,
-	orgIngestKeys,
 	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
 } from "@maple/db"
-import { eq, inArray } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgIngestKeys, type OrgIngestKeyRow } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import {
 	decryptAes256Gcm,
@@ -95,7 +95,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			/** Holds the ENCRYPTED row exactly as stored — `toResponse` decrypts per request. */
 			const ingestKeysMemo = new Map<
 				string,
-				{ row: typeof orgIngestKeys.$inferSelect; expiresAt: number }
+				{ row: OrgIngestKeyRow; expiresAt: number }
 			>()
 			const env = yield* Env
 			const encryptionKey = yield* parseEncryptionKey(
@@ -119,7 +119,12 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const selectRow = Effect.fnUntraced(function* (orgId: OrgId) {
 				const rows = yield* database
 					.execute((db) =>
-						db.select().from(orgIngestKeys).where(eq(orgIngestKeys.orgId, orgId)).limit(1),
+						db.orm.run(
+							PG.from(OrgIngestKeys)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -127,7 +132,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			})
 
 			// Untraced: synchronous AES-GCM decrypt, ~0ms — never worth a span.
-			const toResponse = Effect.fnUntraced(function* (row: typeof orgIngestKeys.$inferSelect) {
+			const toResponse = Effect.fnUntraced(function* (row: OrgIngestKeyRow) {
 				const privateKey = yield* decryptPrivateKey(
 					{
 						ciphertext: row.privateKeyCiphertext,
@@ -140,8 +145,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				return new IngestKeysResponse({
 					publicKey: row.publicKey,
 					privateKey,
-					publicRotatedAt: decodeIsoDateTimeStringSync(row.publicRotatedAt.toISOString()),
-					privateRotatedAt: decodeIsoDateTimeStringSync(row.privateRotatedAt.toISOString()),
+					publicRotatedAt: decodeIsoDateTimeStringSync(new Date(row.publicRotatedAt).toISOString()),
+					privateRotatedAt: decodeIsoDateTimeStringSync(new Date(row.privateRotatedAt).toISOString()),
 				})
 			})
 
@@ -173,24 +178,25 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				yield* database
 					.execute((db) =>
-						db
-							.insert(orgIngestKeys)
-							.values({
-								orgId,
-								publicKey,
-								publicKeyHash,
-								privateKeyCiphertext: encryptedPrivate.ciphertext,
-								privateKeyIv: encryptedPrivate.iv,
-								privateKeyTag: encryptedPrivate.tag,
-								privateKeyHash,
-								publicRotatedAt: new Date(now),
-								privateRotatedAt: new Date(now),
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
-								createdBy: userId,
-								updatedBy: userId,
-							})
-							.onConflictDoNothing(),
+						db.orm.run(
+							PG.insertInto(OrgIngestKeys)
+								.values({
+									orgId,
+									publicKey,
+									publicKeyHash,
+									privateKeyCiphertext: encryptedPrivate.ciphertext,
+									privateKeyIv: encryptedPrivate.iv,
+									privateKeyTag: encryptedPrivate.tag,
+									privateKeyHash,
+									publicRotatedAt: now,
+									privateRotatedAt: now,
+									createdAt: now,
+									updatedAt: now,
+									createdBy: userId,
+									updatedBy: userId,
+								})
+								.onConflictDoNothing(),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -239,7 +245,11 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const selected = Arr.isArrayNonEmpty(misses)
 					? yield* database
 							.execute((db) =>
-								db.select().from(orgIngestKeys).where(inArray(orgIngestKeys.orgId, misses)),
+								db.orm.run(
+									PG.from(OrgIngestKeys)
+										.select()
+										.where(($) => [$.orgId.in_(...misses)]),
+								),
 							)
 							.pipe(Effect.mapError(toPersistenceError))
 					: []
@@ -282,16 +292,17 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgIngestKeys)
-							.set({
-								publicKey,
-								publicKeyHash,
-								publicRotatedAt: new Date(now),
-								updatedAt: new Date(now),
-								updatedBy: userId,
-							})
-							.where(eq(orgIngestKeys.orgId, orgId)),
+						db.orm.run(
+							PG.update(OrgIngestKeys)
+								.set({
+									publicKey,
+									publicKeyHash,
+									publicRotatedAt: now,
+									updatedAt: now,
+									updatedBy: userId,
+								})
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -325,18 +336,19 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgIngestKeys)
-							.set({
-								privateKeyCiphertext: encryptedPrivate.ciphertext,
-								privateKeyIv: encryptedPrivate.iv,
-								privateKeyTag: encryptedPrivate.tag,
-								privateKeyHash,
-								privateRotatedAt: new Date(now),
-								updatedAt: new Date(now),
-								updatedBy: userId,
-							})
-							.where(eq(orgIngestKeys.orgId, orgId)),
+						db.orm.run(
+							PG.update(OrgIngestKeys)
+								.set({
+									privateKeyCiphertext: encryptedPrivate.ciphertext,
+									privateKeyIv: encryptedPrivate.iv,
+									privateKeyTag: encryptedPrivate.tag,
+									privateKeyHash,
+									privateRotatedAt: now,
+									updatedAt: now,
+									updatedBy: userId,
+								})
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -364,15 +376,16 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const keyHash = hashIngestKey(rawKey, lookupHmacKey)
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.select({ orgId: orgIngestKeys.orgId })
-							.from(orgIngestKeys)
-							.where(
-								keyType === "public"
-									? eq(orgIngestKeys.publicKeyHash, keyHash)
-									: eq(orgIngestKeys.privateKeyHash, keyHash),
-							)
-							.limit(1),
+						db.orm.run(
+							PG.from(OrgIngestKeys)
+								.select("orgId")
+								.where(($) => [
+									keyType === "public"
+										? $.publicKeyHash.eq(keyHash)
+										: $.privateKeyHash.eq(keyHash),
+								])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 

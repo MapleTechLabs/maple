@@ -16,10 +16,9 @@
  * the start it is judging.
  */
 
-import { investigations } from "@maple/db"
-import type { MapleDbLike } from "@maple/db/client"
-import { and, eq, gte, sql } from "drizzle-orm"
-import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleOrm, MapleOrmError } from "@maple/db/client"
+import { Investigations } from "@maple/db/tables"
 import { Effect } from "effect"
 import type { IssueSeverity, OrgId } from "@maple/domain/http"
 
@@ -72,30 +71,26 @@ export interface InvestigationUsage {
  * so restarting an investigation opened last week correctly spends today's
  * budget instead of escaping the window entirely.
  *
- * Takes the drizzle client rather than the `Database` service so both call sites
+ * Takes the orm client rather than the `Database` service so both call sites
  * can pass their own `execute` wrapper — `InvestigationService` has `dbExecute`,
  * `maybeEnqueueTriage` has `database.execute`, and neither should have to adopt
  * the other's.
  */
 export const selectInvestigationUsage = (
-	db: MapleDbLike,
+	orm: MapleOrm,
 	orgId: OrgId,
 	nowMs: number,
-): Effect.Effect<InvestigationUsage, EffectDrizzleQueryError> =>
+): Effect.Effect<InvestigationUsage, MapleOrmError> =>
 	Effect.map(
-		db
-			.select({
-				runs: sql<number>`count(*)::int`,
-				// One agent turn per start.
-				passes: sql<number>`count(*)::int`,
-			})
-			.from(investigations)
-			.where(
-				and(
-					eq(investigations.orgId, orgId),
-					gte(investigations.startedAt, new Date(startOfUtcDay(nowMs))),
-				),
-			),
+		orm.run(
+			PG.from(Investigations)
+				.select(() => ({
+					runs: PG.count(),
+					// One agent turn per start.
+					passes: PG.count(),
+				}))
+				.where(($) => [$.orgId.eq(orgId), $.startedAt.gte(startOfUtcDay(nowMs))]),
+		),
 		(rows) => ({ runs: rows[0]?.runs ?? 0, passes: rows[0]?.passes ?? 0 }),
 	)
 

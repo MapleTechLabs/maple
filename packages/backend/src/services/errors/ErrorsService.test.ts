@@ -1907,7 +1907,7 @@ describe("ErrorsService.runTick", () => {
 							notifyOnClaim: false,
 							minOccurrenceCount: 1,
 							severity: "warning",
-							updatedAt: new Date(TICK_MS),
+							updatedAt: TICK_MS,
 							updatedBy: "test",
 						},
 						destinationIds: [],
@@ -2504,9 +2504,11 @@ describe("ErrorsService.runTick idle cursors", () => {
 	const fingerprint = (n: number) => `100000000000000000${n}`
 
 	const isTrailingCursorRead = (sql: string) =>
-		sql.startsWith('select "org_id", "processed_through"') && sql.includes('"processed_through" <=')
+		sql.startsWith("SELECT") &&
+		sql.includes('"processed_through" AS "processedThrough"') &&
+		sql.includes('"processed_through" <=')
 	const isIdleCursorMove = (sql: string) =>
-		sql.startsWith('update "error_tick_states" set "processed_through"') && sql.includes("skip locked")
+		sql.startsWith('UPDATE "error_tick_states" SET "processed_through"') && sql.includes("SKIP LOCKED")
 
 	// Boundaries
 
@@ -2973,7 +2975,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 	it.effect("nothing is moved or looked up when the BYO-ClickHouse org list cannot be read", () => {
 		const h = makeIdleTickHarness({
 			errors: [{ orgId: OTHER, atMs: T - 2 * HOUR_MS }],
-			rejectSql: (sql) => sql.includes('from "org_clickhouse_settings"'),
+			rejectSql: (sql) => sql.includes('FROM "org_clickhouse_settings"'),
 		})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T)

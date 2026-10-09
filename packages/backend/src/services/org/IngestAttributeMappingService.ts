@@ -14,13 +14,12 @@ import {
 	type OrgId,
 	type UpdateIngestAttributeMappingRequest,
 } from "@maple/domain/http"
-import { orgIngestAttributeMappings } from "@maple/db"
-import { and, desc, eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgIngestAttributeMappings, type OrgIngestAttributeMappingRow } from "@maple/db/tables"
 import { Array, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 
-type MappingRow = typeof orgIngestAttributeMappings.$inferSelect
+type MappingRow = OrgIngestAttributeMappingRow
 
 export interface IngestAttributeMappingServiceApi {
 	readonly list: (
@@ -84,8 +83,8 @@ const rowToResponse = (row: MappingRow): IngestAttributeMapping =>
 		targetKey: row.targetKey,
 		operation: decodeOperationSync(row.operation),
 		enabled: row.enabled,
-		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 	})
 
 const validateRule = Effect.fnUntraced(function* (rule: {
@@ -126,16 +125,12 @@ export class IngestAttributeMappingService extends Context.Service<
 			const rows = yield* runDb(
 				"selectById",
 				database.execute((db) =>
-					db
-						.select()
-						.from(orgIngestAttributeMappings)
-						.where(
-							and(
-								eq(orgIngestAttributeMappings.orgId, orgId),
-								eq(orgIngestAttributeMappings.id, mappingId),
-							),
-						)
-						.limit(1),
+					db.orm.run(
+						PG.from(OrgIngestAttributeMappings)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
+							.limit(1),
+					),
 				),
 			)
 
@@ -167,14 +162,15 @@ export class IngestAttributeMappingService extends Context.Service<
 			const rows = yield* runDb(
 				"list",
 				database.execute((db) =>
-					db
-						.select()
-						.from(orgIngestAttributeMappings)
-						.where(eq(orgIngestAttributeMappings.orgId, orgId))
-						.orderBy(
-							desc(orgIngestAttributeMappings.createdAt),
-							desc(orgIngestAttributeMappings.id),
-						),
+					db.orm.run(
+						PG.from(OrgIngestAttributeMappings)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(($) => [
+								[$.createdAt, "desc"],
+								[$.id, "desc"],
+							]),
+					),
 				),
 			)
 
@@ -197,18 +193,20 @@ export class IngestAttributeMappingService extends Context.Service<
 			yield* runDb(
 				"create",
 				database.execute((db) =>
-					db.insert(orgIngestAttributeMappings).values({
-						id,
-						orgId,
-						name: request.name.trim(),
-						sourceContext: request.sourceContext,
-						sourceKey: request.sourceKey.trim(),
-						targetKey: request.targetKey.trim(),
-						operation: request.operation,
-						enabled: request.enabled ?? true,
-						createdAt: new Date(now),
-						updatedAt: new Date(now),
-					}),
+					db.orm.run(
+						PG.insertInto(OrgIngestAttributeMappings).values({
+							id,
+							orgId,
+							name: request.name.trim(),
+							sourceContext: request.sourceContext,
+							sourceKey: request.sourceKey.trim(),
+							targetKey: request.targetKey.trim(),
+							operation: request.operation,
+							enabled: request.enabled ?? true,
+							createdAt: now,
+							updatedAt: now,
+						}),
+					),
 				),
 			)
 
@@ -244,28 +242,24 @@ export class IngestAttributeMappingService extends Context.Service<
 			yield* validateRule(merged)
 
 			const now = yield* Clock.currentTimeMillis
-			const updates: Partial<typeof orgIngestAttributeMappings.$inferInsert> = {
-				updatedAt: msToDate(now),
+			const updates = {
+				updatedAt: now,
+				...(request.name !== undefined ? { name: request.name.trim() } : {}),
+				...(request.sourceContext !== undefined ? { sourceContext: request.sourceContext } : {}),
+				...(request.sourceKey !== undefined ? { sourceKey: request.sourceKey.trim() } : {}),
+				...(request.targetKey !== undefined ? { targetKey: request.targetKey.trim() } : {}),
+				...(request.operation !== undefined ? { operation: request.operation } : {}),
+				...(request.enabled !== undefined ? { enabled: request.enabled } : {}),
 			}
-			if (request.name !== undefined) updates.name = request.name.trim()
-			if (request.sourceContext !== undefined) updates.sourceContext = request.sourceContext
-			if (request.sourceKey !== undefined) updates.sourceKey = request.sourceKey.trim()
-			if (request.targetKey !== undefined) updates.targetKey = request.targetKey.trim()
-			if (request.operation !== undefined) updates.operation = request.operation
-			if (request.enabled !== undefined) updates.enabled = request.enabled
 
 			yield* runDb(
 				"update",
 				database.execute((db) =>
-					db
-						.update(orgIngestAttributeMappings)
-						.set(updates)
-						.where(
-							and(
-								eq(orgIngestAttributeMappings.orgId, orgId),
-								eq(orgIngestAttributeMappings.id, mappingId),
-							),
-						),
+					db.orm.run(
+						PG.update(OrgIngestAttributeMappings)
+							.set(updates)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)]),
+					),
 				),
 			)
 
@@ -293,15 +287,11 @@ export class IngestAttributeMappingService extends Context.Service<
 			const rows = yield* runDb(
 				"delete",
 				database.execute((db) =>
-					db
-						.delete(orgIngestAttributeMappings)
-						.where(
-							and(
-								eq(orgIngestAttributeMappings.orgId, orgId),
-								eq(orgIngestAttributeMappings.id, mappingId),
-							),
-						)
-						.returning({ id: orgIngestAttributeMappings.id }),
+					db.orm.run(
+						PG.deleteFrom(OrgIngestAttributeMappings)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
+							.returning("id"),
+					),
 				),
 			)
 

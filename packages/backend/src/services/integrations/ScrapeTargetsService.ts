@@ -20,8 +20,14 @@ import {
 	type CreateScrapeTargetRequest,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
-import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	ScrapeTargetChecks,
+	ScrapeTargets,
+	type ScrapeTargetCheckRow,
+	type ScrapeTargetRow,
+} from "@maple/db/tables"
 import { Array as Arr, Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -31,7 +37,7 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate, msToSqlTimestamp } from "@maple/backend/platform/time"
+import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	BasicCredentialsSchema,
@@ -50,7 +56,7 @@ import {
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
-type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
+type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 
 /** One scrape attempt as reported by the scraper loop or a manual probe. */
 export interface ScrapeResultReport {
@@ -65,11 +71,11 @@ export interface ScrapeResultReport {
  * `lastScrapeAt` is null when no result succeeded, leaving the stored value untouched.
  */
 export interface ScrapeTargetSummary {
-	readonly lastScrapeAt: Date | null
+	readonly lastScrapeAt: number | null
 	readonly lastScrapeError: string | null
-	readonly updatedAt: Date
+	readonly updatedAt: number
 	/** Newest `scrapedAt`, the furthest the write may advance the row to. */
-	readonly reportedAt: Date
+	readonly reportedAt: number
 }
 
 const applyScrapeResult = (
@@ -82,7 +88,7 @@ const applyScrapeResult = (
 		result.error !== null && result.subTargetKey
 			? `[branch:${result.subTargetKey}] ${result.error}`
 			: result.error
-	const scrapedAt = new Date(result.scrapedAt)
+	const scrapedAt = result.scrapedAt
 	return {
 		// Failure keeps lastScrapeAt at the last good scrape so data gaps stay visible.
 		lastScrapeAt: error === null ? scrapedAt : (previous?.lastScrapeAt ?? null),
@@ -384,22 +390,23 @@ const rowToResponse = Effect.fn("ScrapeTargetsService.rowToResponse")(function* 
 		row,
 		"created_at",
 		Schema.decodeUnknownEffect(IsoDateTimeString),
-		row.createdAt.toISOString(),
+		new Date(row.createdAt).toISOString(),
 	)
 	const updatedAt = yield* decodeStored(
 		row,
 		"updated_at",
 		Schema.decodeUnknownEffect(IsoDateTimeString),
-		row.updatedAt.toISOString(),
+		new Date(row.updatedAt).toISOString(),
 	)
-	const lastScrapeAt = row.lastScrapeAt
-		? yield* decodeStored(
-				row,
-				"last_scrape_at",
-				Schema.decodeUnknownEffect(IsoDateTimeString),
-				row.lastScrapeAt.toISOString(),
-			)
-		: null
+	const lastScrapeAt =
+		row.lastScrapeAt !== null
+			? yield* decodeStored(
+					row,
+					"last_scrape_at",
+					Schema.decodeUnknownEffect(IsoDateTimeString),
+					new Date(row.lastScrapeAt).toISOString(),
+				)
+			: null
 	return new ScrapeTargetResponse({
 		id,
 		name: row.name,
@@ -574,11 +581,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.select()
-							.from(scrapeTargets)
-							.where(and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, targetId)))
-							.limit(1),
+						db.orm.run(
+							PG.from(ScrapeTargets)
+								.select()
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -618,11 +626,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.select()
-							.from(scrapeTargets)
-							.where(eq(scrapeTargets.orgId, orgId))
-							.orderBy(desc(scrapeTargets.createdAt), desc(scrapeTargets.id)),
+						db.orm.run(
+							PG.from(ScrapeTargets)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.orderBy(["createdAt", "desc"], ["id", "desc"]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -753,26 +762,28 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const inserted = yield* database
 					.execute((db) =>
-						db
-							.insert(scrapeTargets)
-							.values({
-								id,
-								orgId,
-								name,
-								serviceName,
-								url,
-								targetType,
-								discoveryConfigJson,
-								scrapeIntervalSeconds:
-									request.scrapeIntervalSeconds ?? (targetType === "planetscale" ? 30 : 15),
-								labelsJson: labels ?? null,
-								authType,
-								...credentialFields,
-								enabled: request.enabled !== false,
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
-							})
-							.returning({ id: scrapeTargets.id }),
+						db.orm.run(
+							PG.insertInto(ScrapeTargets)
+								.values({
+									id,
+									orgId,
+									name,
+									serviceName,
+									url,
+									targetType,
+									discoveryConfigJson,
+									scrapeIntervalSeconds:
+										request.scrapeIntervalSeconds ??
+										(targetType === "planetscale" ? 30 : 15),
+									labelsJson: labels ?? null,
+									authType,
+									...credentialFields,
+									enabled: request.enabled !== false,
+									createdAt: now,
+									updatedAt: now,
+								})
+								.returning("id"),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 				if (inserted.length !== 1) {
@@ -895,7 +906,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const labels = yield* validateLabelsJson(request.labelsJson)
 
 				const now = yield* Clock.currentTimeMillis
-				const updates: Partial<typeof scrapeTargets.$inferInsert> = { updatedAt: msToDate(now) }
+				const updates: { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] } = {
+					updatedAt: now,
+				}
 
 				// Track URL changes separately for the credential-origin check below.
 				let nextUrl: string | null = null
@@ -999,10 +1012,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				yield* database
 					.execute((db) =>
-						db
-							.update(scrapeTargets)
-							.set(updates)
-							.where(and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, targetId))),
+						db.orm.run(
+							PG.update(ScrapeTargets)
+								.set(updates)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -1036,10 +1050,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.delete(scrapeTargets)
-							.where(and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, targetId)))
-							.returning({ id: scrapeTargets.id }),
+						db.orm.run(
+							PG.deleteFrom(ScrapeTargets)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+								.returning("id"),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -1083,17 +1098,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.select()
-							.from(scrapeTargets)
-							.where(
-								interval === undefined
-									? eq(scrapeTargets.enabled, true)
-									: and(
-											eq(scrapeTargets.enabled, true),
-											eq(scrapeTargets.scrapeIntervalSeconds, interval),
-										),
-							),
+						db.orm.run(
+							PG.from(ScrapeTargets)
+								.select()
+								.where(($) => [
+									$.enabled.eq(true),
+									interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
+								]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -1125,21 +1137,21 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* database
 					.execute((db) =>
 						Effect.gen(function* () {
-							const values = sql.join(
+							const values = Orm.sql.join(
 								[...summaryByTarget].map(([targetId, summary]) => {
 									const scrapeAt =
 										summary.lastScrapeAt === null
 											? null
-											: msToSqlTimestamp(summary.lastScrapeAt.getTime())
-									return sql`(${targetId}::text, ${scrapeAt}::timestamptz, ${scrapeAt !== null}::boolean, ${summary.lastScrapeError}::text, ${msToSqlTimestamp(summary.updatedAt.getTime())}::timestamptz, ${msToSqlTimestamp(summary.reportedAt.getTime())}::timestamptz)`
+											: msToSqlTimestamp(summary.lastScrapeAt)
+									return Orm.sql`(${targetId}::text, ${scrapeAt}::timestamptz, ${scrapeAt !== null}::boolean, ${summary.lastScrapeError}::text, ${msToSqlTimestamp(summary.updatedAt)}::timestamptz, ${msToSqlTimestamp(summary.reportedAt)}::timestamptz)`
 								}),
-								sql`, `,
+								Orm.sql`, `,
 							)
 							// One UPDATE for the report, skipping rows something newer already wrote
 							// (the scraper loop and create()'s probe both report). Compares `updated_at`:
 							// a failing batch never moves `last_scrape_at`. Equal timestamps still apply.
-							yield* db.execute(sql`
-								UPDATE ${scrapeTargets} AS t SET
+							yield* db.orm.execute(Orm.sql`
+								UPDATE scrape_targets AS t SET
 									last_scrape_at = CASE WHEN v.set_scrape_at THEN v.last_scrape_at ELSE t.last_scrape_at END,
 									last_scrape_error = v.last_scrape_error,
 									updated_at = v.updated_at
@@ -1151,10 +1163,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// Durable check history: one row per scheduled scrape attempt.
 							// Results for deleted targets are skipped (the FK would reject
 							// them anyway).
-							const targetRows = yield* db
-								.select({ id: scrapeTargets.id, orgId: scrapeTargets.orgId })
-								.from(scrapeTargets)
-								.where(inArray(scrapeTargets.id, [...summaryByTarget.keys()]))
+							const [firstTargetId, ...restTargetIds] = [...summaryByTarget.keys()]
+							if (firstTargetId === undefined) return
+							const targetRows = yield* db.orm.run(
+								PG.from(ScrapeTargets)
+									.select("id", "orgId")
+									.where(($) => [$.id.in_(firstTargetId, ...restTargetIds)]),
+							)
 							const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
 
 							const checkRows = results.flatMap((result) => {
@@ -1165,7 +1180,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 										targetId: result.targetId,
 										orgId,
 										subTargetKey: result.subTargetKey ?? "",
-										checkedAt: new Date(result.scrapedAt),
+										checkedAt: result.scrapedAt,
 										error: result.error,
 										durationMs: result.durationMs ?? null,
 										samplesScraped: result.samplesScraped ?? null,
@@ -1175,7 +1190,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							})
 
 							if (checkRows.length > 0) {
-								yield* db.insert(scrapeTargetChecks).values(checkRows)
+								yield* db.orm.run(PG.insertInto(ScrapeTargetChecks).values(checkRows))
 							}
 						}),
 					)
@@ -1195,25 +1210,23 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* requireTarget(orgId, targetId)
 				const limit = Math.min(Math.max(query.limit ?? 50, 1), 500)
 				const offset = Math.max(Math.trunc(query.offset ?? 0), 0)
-				const conditions = [
-					eq(scrapeTargetChecks.targetId, targetId),
-					eq(scrapeTargetChecks.orgId, orgId),
-					...(query.startTime !== undefined
-						? [gte(scrapeTargetChecks.checkedAt, new Date(query.startTime))]
-						: []),
-					...(query.endTime !== undefined
-						? [lte(scrapeTargetChecks.checkedAt, new Date(query.endTime))]
-						: []),
-				]
 				return yield* database
 					.execute((db) =>
-						db
-							.select()
-							.from(scrapeTargetChecks)
-							.where(and(...conditions))
-							.orderBy(desc(scrapeTargetChecks.checkedAt), desc(scrapeTargetChecks.id))
-							.limit(limit)
-							.offset(offset),
+						db.orm.run(
+							PG.from(ScrapeTargetChecks)
+								.select()
+								.where(($) => [
+									$.targetId.eq(targetId),
+									$.orgId.eq(orgId),
+									query.startTime !== undefined
+										? $.checkedAt.gte(query.startTime)
+										: undefined,
+									query.endTime !== undefined ? $.checkedAt.lte(query.endTime) : undefined,
+								])
+								.orderBy(["checkedAt", "desc"], ["id", "desc"])
+								.limit(limit)
+								.offset(offset),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
@@ -1302,7 +1315,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const updatedRows = yield* database
 					.execute((db) =>
-						db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
+						db.orm.run(
+							PG.from(ScrapeTargets)
+								.select()
+								.where(($) => [$.id.eq(targetId)])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -1317,9 +1335,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				return new ScrapeTargetProbeResponse({
 					success: Exit.isSuccess(requestExit),
-					lastScrapeAt: updated.value.lastScrapeAt
-						? decodeIsoDateTimeStringSync(updated.value.lastScrapeAt.toISOString())
-						: null,
+					lastScrapeAt:
+						updated.value.lastScrapeAt !== null
+							? decodeIsoDateTimeStringSync(new Date(updated.value.lastScrapeAt).toISOString())
+							: null,
 					lastScrapeError: updated.value.lastScrapeError ?? null,
 				})
 			})

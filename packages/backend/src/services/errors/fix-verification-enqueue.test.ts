@@ -8,13 +8,9 @@ import {
 	ErrorIssueVerificationId,
 	InvestigationId,
 } from "@maple/domain/primitives"
-import {
-	aiTriageSettings,
-	errorIssues,
-	errorIssueVerifications,
-	investigations,
-	type ErrorIssueVerificationRow,
-} from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { aiTriageSettings, errorIssues, investigations } from "@maple/db"
+import { ErrorIssueVerifications, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { eq } from "drizzle-orm"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
@@ -118,8 +114,8 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 			issueId,
 			pullRequestId: Schema.decodeSync(ErrorIssuePullRequestId)(randomUUID()),
 			status: "waiting",
-			mergedAt: new Date(nowMs - HOUR),
-			verifyAfter: now,
+			mergedAt: nowMs - HOUR,
+			verifyAfter: nowMs,
 			baselineVersionsJson: ["v1", "v2"],
 			baselineOccurrenceCount: 200,
 			baselineRatePerHour: 20,
@@ -128,10 +124,12 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 			verdictNote: null,
 			postMergeOccurrenceCount: 0,
 			attempt: 0,
-			createdAt: now,
-			updatedAt: now,
+			createdAt: nowMs,
+			updatedAt: nowMs,
 		}
-		yield* database.execute((db) => db.insert(errorIssueVerifications).values(verification))
+		yield* database.execute((db) =>
+			db.orm.run(PG.insertInto(ErrorIssueVerifications).values(verification)),
+		)
 		return { issueId, verification }
 	})
 

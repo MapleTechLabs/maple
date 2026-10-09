@@ -6,7 +6,8 @@
  * config a service would acquire. The dashboard's own link flow calls the same functions, so there
  * is one query per question rather than two.
  */
-import { chatIdentities } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ChatIdentities, type ChatIdentityRow } from "@maple/db/tables"
 import {
 	ChatConnectorId,
 	ChatIdentityId,
@@ -14,10 +15,8 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { and, eq } from "drizzle-orm"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 
 /** One person's chat account, and the Maple user it speaks for. */
 export interface ChatIdentityLink {
@@ -29,32 +28,19 @@ export interface ChatIdentityLink {
 	readonly createdAtMs: number
 }
 
-const decodeStored = Schema.decodeUnknownEffect(
-	Schema.Struct({ id: ChatIdentityId, userId: UserId, externalUserId: Schema.String }),
-)
-
 const persistenceError = (error: DatabaseError) =>
 	new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
 
 const unreadable = (message: string) => new IntegrationsPersistenceError({ message })
 
-const readRow = (row: {
-	id: string
-	userId: string
-	externalUserId: string
-	displayName: string | null
-	createdAt: Date
-}) =>
-	decodeStored(row).pipe(
-		Effect.map((stored): ChatIdentityLink => ({
-			id: stored.id,
-			userId: stored.userId,
-			externalUserId: stored.externalUserId,
-			displayName: row.displayName,
-			createdAtMs: dateToMs(row.createdAt),
-		})),
-		Effect.mapError((error) => unreadable(`Stored chat identity is unreadable: ${error.message}`)),
-	)
+// The table codecs decode and brand every column, so a stored row is already a link.
+const readRow = (row: ChatIdentityRow): ChatIdentityLink => ({
+	id: row.id,
+	userId: row.userId,
+	externalUserId: row.externalUserId,
+	displayName: row.displayName,
+	createdAtMs: row.createdAt,
+})
 
 /**
  * The Maple user a chat account speaks for in this org, or `None` when nobody has linked it.
@@ -71,21 +57,20 @@ export const resolveChatIdentity = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db
-					.select()
-					.from(chatIdentities)
-					.where(
-						and(
-							eq(chatIdentities.orgId, orgId),
-							eq(chatIdentities.connector, connectorId),
-							eq(chatIdentities.externalUserId, externalUserId),
-						),
-					)
-					.limit(1),
+				db.orm.run(
+					PG.from(ChatIdentities)
+						.select()
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.connector.eq(connectorId),
+							$.externalUserId.eq(externalUserId),
+						])
+						.limit(1),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError))
 		const row = rows[0]
-		return row === undefined ? Option.none() : Option.some(yield* readRow(row))
+		return row === undefined ? Option.none() : Option.some(readRow(row))
 	})
 
 /** Every link this user holds in this org, across connectors — at most one per connector. */
@@ -100,15 +85,14 @@ export const listChatIdentities = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db
-					.select()
-					.from(chatIdentities)
-					.where(and(eq(chatIdentities.orgId, orgId), eq(chatIdentities.userId, userId))),
+				db.orm.run(
+					PG.from(ChatIdentities)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError))
-		return yield* Effect.forEach(rows, (row) =>
-			Effect.map(readRow(row), (link) => ({ ...link, connector: row.connector })),
-		)
+		return rows.map((row) => ({ ...readRow(row), connector: row.connector }))
 	})
 
 /**
@@ -140,51 +124,46 @@ export const linkChatIdentity = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db.transaction((tx) =>
+				db.orm.transaction(
 					Effect.gen(function* () {
 						// Their previous account on this connector, if any. Deleted rather than left
-						// beside the new one — see above.
-						yield* tx
-							.delete(chatIdentities)
-							.where(
-								and(
-									eq(chatIdentities.orgId, input.orgId),
-									eq(chatIdentities.connector, input.connectorId),
-									eq(chatIdentities.userId, input.userId),
-								),
-							)
-						return yield* tx
-							.insert(chatIdentities)
-							.values({
-								id: input.id,
-								orgId: input.orgId,
-								connector: input.connectorId,
-								externalUserId: input.externalUserId,
-								userId: input.userId,
-								displayName: input.displayName ?? null,
-								createdAt: msToDate(input.nowMs),
-							})
-							// The same account, previously linked to somebody else: take it over.
-							.onConflictDoUpdate({
-								target: [
-									chatIdentities.orgId,
-									chatIdentities.connector,
-									chatIdentities.externalUserId,
-								],
-								set: {
+						// beside the new one (see above).
+						yield* db.orm.run(
+							PG.deleteFrom(ChatIdentities).where(($) => [
+								$.orgId.eq(input.orgId),
+								$.connector.eq(input.connectorId),
+								$.userId.eq(input.userId),
+							]),
+						)
+						return yield* db.orm.run(
+							PG.insertInto(ChatIdentities)
+								.values({
+									id: input.id,
+									orgId: input.orgId,
+									connector: input.connectorId,
+									externalUserId: input.externalUserId,
 									userId: input.userId,
 									displayName: input.displayName ?? null,
-									createdAt: msToDate(input.nowMs),
-								},
-							})
-							.returning()
+									createdAt: input.nowMs,
+								})
+								// The same account, previously linked to somebody else: take it over.
+								.onConflictDoUpdate({
+									target: ["orgId", "connector", "externalUserId"],
+									set: {
+										userId: input.userId,
+										displayName: input.displayName ?? null,
+										createdAt: input.nowMs,
+									},
+								})
+								.returning(),
+						)
 					}),
 				),
 			)
 			.pipe(Effect.mapError(persistenceError))
 		const row = rows[0]
 		if (row === undefined) return yield* Effect.fail(unreadable("The chat identity was not stored"))
-		return yield* readRow(row)
+		return readRow(row)
 	})
 
 /** Drop this user's link for this connector, and answer whether there was one. */
@@ -197,16 +176,11 @@ export const unlinkChatIdentity = (
 	Effect.gen(function* () {
 		const deleted = yield* database
 			.execute((db) =>
-				db
-					.delete(chatIdentities)
-					.where(
-						and(
-							eq(chatIdentities.orgId, orgId),
-							eq(chatIdentities.connector, connectorId),
-							eq(chatIdentities.userId, userId),
-						),
-					)
-					.returning({ id: chatIdentities.id }),
+				db.orm.run(
+					PG.deleteFrom(ChatIdentities)
+						.where(($) => [$.orgId.eq(orgId), $.connector.eq(connectorId), $.userId.eq(userId)])
+						.returning("id"),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError))
 		return deleted.length > 0

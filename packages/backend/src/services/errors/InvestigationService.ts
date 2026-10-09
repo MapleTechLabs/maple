@@ -22,8 +22,8 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
 
-import { investigations, type InvestigationRow } from "@maple/db"
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Investigations, type InvestigationRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import {
 	applyDiagnosisWrites,
@@ -35,6 +35,7 @@ import {
 	STALE_MS,
 	isInvestigationStale,
 	staleTimeoutMessage,
+	storedProgressJson,
 } from "@maple/backend/services/errors/investigation-stale"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -45,6 +46,28 @@ const decodeIdSync = Schema.decodeUnknownSync(InvestigationId)
 const decodeIsoSync = Schema.decodeUnknownSync(InvestigationDocument.fields.createdAt)
 
 export const newInvestigationId = () => decodeIdSync(randomUUID())
+
+/**
+ * A row with its jsonb columns as stored. `rowToDocument` decodes each one itself, so a malformed
+ * field surfaces as `InvestigationDataCorruptionError` naming it instead of failing the read.
+ */
+type StoredInvestigationRow = Omit<
+	InvestigationRow,
+	"subjectJson" | "snapshotJson" | "reportJson" | "progressJson"
+> & {
+	readonly subjectJson: unknown
+	readonly snapshotJson: unknown
+	readonly reportJson: unknown
+	readonly progressJson: unknown
+}
+
+const selectStored = ($: PG.ColumnAccessor<typeof Investigations.columns>) => ({
+	...$,
+	subjectJson: PG.sql(PG.jsonb())`${$.subjectJson}`,
+	snapshotJson: PG.sql(PG.nullable(PG.jsonb()))`${$.snapshotJson}`,
+	reportJson: PG.sql(PG.nullable(PG.jsonb()))`${$.reportJson}`,
+	progressJson: storedProgressJson($),
+})
 
 const makePersistenceError = makePersistenceErrorMapper(
 	InvestigationPersistenceError,
@@ -151,7 +174,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 			const dbExecute = makeDbExecute(database, "InvestigationService", makePersistenceError)
 
-			const iso = (date: Date) => decodeIsoSync(date.toISOString())
+			const iso = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
 
 			const fallbackSnapshot = (subject: InvestigationSubject) =>
 				new InvestigationSubjectSnapshot({
@@ -218,14 +241,14 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					Effect.mapError((cause) => storedDataCorruption(investigationId, field, value, cause)),
 				)
 
-			const parseReport = (row: InvestigationRow) =>
+			const parseReport = (row: StoredInvestigationRow) =>
 				row.reportJson == null
 					? Effect.succeed(null)
 					: decodeStoredField(row.id, "report", AiTriageResult, row.reportJson)
 
 			// Progress degrades to null rather than failing the document: unlike `report`, it is not
 			// part of what an investigation is, and losing it should not take the diagnosis down.
-			const parseProgress = (row: InvestigationRow) =>
+			const parseProgress = (row: StoredInvestigationRow) =>
 				row.progressJson == null
 					? Effect.succeed(null)
 					: decodeStoredField(row.id, "progress", InvestigationProgress, row.progressJson).pipe(
@@ -244,7 +267,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							),
 						)
 
-			const rowToDocument = Effect.fnUntraced(function* (row: InvestigationRow) {
+			const rowToDocument = Effect.fnUntraced(function* (row: StoredInvestigationRow) {
 				const subject = yield* decodeStoredField(
 					row.id,
 					"subject",
@@ -280,8 +303,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							outputTokens: row.outputTokens ?? null,
 							error: row.error ?? null,
 							createdAt: iso(row.createdAt),
-							startedAt: row.startedAt ? iso(row.startedAt) : null,
-							diagnosedAt: row.diagnosedAt ? iso(row.diagnosedAt) : null,
+							startedAt: row.startedAt === null ? null : iso(row.startedAt),
+							diagnosedAt: row.diagnosedAt === null ? null : iso(row.diagnosedAt),
 							updatedAt: iso(row.updatedAt),
 						}),
 					catch: (cause) => storedDataCorruption(row.id, "document", row.id, cause),
@@ -290,31 +313,31 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 			const loadRow = (orgId: OrgId, id: InvestigationId) =>
 				dbExecute((db) =>
-					db
-						.select()
-						.from(investigations)
-						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, id)))
-						.limit(1),
-				).pipe(Effect.map((rows) => rows[0]))
+					db.orm.run(
+						PG.from(Investigations)
+							.select(selectStored)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
+							.limit(1),
+					),
+				).pipe(Effect.map((rows): StoredInvestigationRow | undefined => rows[0]))
 
-			const documentFor = (_orgId: OrgId, row: InvestigationRow) => rowToDocument(row)
+			const documentFor = (_orgId: OrgId, row: StoredInvestigationRow) => rowToDocument(row)
 
 			// Look up the single incident-anchored row (the partial unique index key).
 			// Used for both the dedup fast-path and the concurrent-insert race loser.
 			const loadIncidentRow = (orgId: OrgId, incidentKind: AiTriageIncidentKind, incidentId: string) =>
 				dbExecute((db) =>
-					db
-						.select()
-						.from(investigations)
-						.where(
-							and(
-								eq(investigations.orgId, orgId),
-								eq(investigations.incidentKind, incidentKind),
-								eq(investigations.incidentId, incidentId),
-							),
-						)
-						.limit(1),
-				).pipe(Effect.map((rows) => rows[0]))
+					db.orm.run(
+						PG.from(Investigations)
+							.select(selectStored)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.incidentKind.eq(incidentKind),
+								$.incidentId.eq(incidentId),
+							])
+							.limit(1),
+					),
+				).pipe(Effect.map((rows): StoredInvestigationRow | undefined => rows[0]))
 
 			/**
 			 * A row still claiming to be investigating long after its autonomous pass
@@ -322,25 +345,24 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			 * doesn't issue an UPDATE that would match nothing — the investigation
 			 * detail page polls every 3s, which otherwise turns every read into a write.
 			 */
-			const isStale = (row: InvestigationRow, nowMs: number): boolean =>
+			const isStale = (row: StoredInvestigationRow, nowMs: number): boolean =>
 				isInvestigationStale(row, nowMs)
 
 			const failStaleInvestigations = Effect.fnUntraced(function* (orgId: OrgId, nowMs: number) {
 				yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({
-							status: "failed",
-							error: staleTimeoutMessage(STALE_MS),
-							updatedAt: new Date(nowMs),
-						})
-						.where(
-							and(
-								eq(investigations.orgId, orgId),
-								eq(investigations.status, "investigating"),
-								lt(investigations.startedAt, new Date(nowMs - STALE_MS)),
-							),
-						),
+					db.orm.run(
+						PG.update(Investigations)
+							.set({
+								status: "failed",
+								error: staleTimeoutMessage(STALE_MS),
+								updatedAt: nowMs,
+							})
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.status.eq("investigating"),
+								$.startedAt.lt(nowMs - STALE_MS),
+							]),
+					),
 				).pipe(Effect.asVoid)
 			})
 
@@ -384,30 +406,32 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				"InvestigationService.listInvestigations",
 			)(function* (orgId, opts) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const conditions = [
-					eq(investigations.orgId, orgId),
-					opts.issueId ? eq(investigations.issueId, opts.issueId) : undefined,
-					opts.incidentKind ? eq(investigations.incidentKind, opts.incidentKind) : undefined,
-					opts.incidentId ? eq(investigations.incidentId, opts.incidentId) : undefined,
-					opts.status ? eq(investigations.status, opts.status) : undefined,
-				].filter((c): c is NonNullable<typeof c> => c !== undefined)
 				const selectPage = dbExecute((db) =>
-					db
-						.select()
-						.from(investigations)
-						.where(and(...conditions))
-						.orderBy(desc(investigations.createdAt), desc(investigations.id))
-						.limit(opts.limit ?? 50)
-						.offset(opts.offset ?? 0),
+					db.orm.run(
+						PG.from(Investigations)
+							.select(selectStored)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								opts.issueId ? $.issueId.eq(opts.issueId) : undefined,
+								opts.incidentKind ? $.incidentKind.eq(opts.incidentKind) : undefined,
+								opts.incidentId ? $.incidentId.eq(opts.incidentId) : undefined,
+								opts.status ? $.status.eq(opts.status) : undefined,
+							])
+							.orderBy(($) => [
+								[$.createdAt, "desc"],
+								[$.id, "desc"],
+							])
+							.limit(opts.limit ?? 50)
+							.offset(opts.offset ?? 0),
+					),
 				)
-				let rows = yield* selectPage
+				const firstPage = yield* selectPage
 				const nowMs = yield* Clock.currentTimeMillis
 				// Sweep only when this page actually contains a timed-out run, then
 				// re-read so the caller sees the corrected status.
-				if (rows.some((row) => isStale(row, nowMs))) {
-					yield* failStaleInvestigations(orgId, nowMs)
-					rows = yield* selectPage
-				}
+				const rows = firstPage.some((row) => isStale(row, nowMs))
+					? yield* failStaleInvestigations(orgId, nowMs).pipe(Effect.andThen(selectPage))
+					: firstPage
 				return new InvestigationsListResponse({
 					investigations: yield* Effect.forEach(rows, (row) => rowToDocument(row)),
 				})
@@ -464,22 +488,23 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// index (org, kind, incident_id) lets only one INSERT win. The loser gets
 				// no returned row and re-reads the winner instead of surfacing a 503.
 				const inserted = yield* dbExecute((db) =>
-					db
-						.insert(investigations)
-						.values({
-							id,
-							orgId,
-							status: "investigating",
-							seededBy: userId ? "user" : "system",
-							subjectJson: subject,
-							snapshotJson: request.snapshot ?? fallbackSnapshot(subject),
-							...incidentColumns,
-							createdBy: userId,
-							createdAt: new Date(nowMs),
-							updatedAt: new Date(nowMs),
-						})
-						.onConflictDoNothing()
-						.returning({ id: investigations.id }),
+					db.orm.run(
+						PG.insertInto(Investigations)
+							.values({
+								id,
+								orgId,
+								status: "investigating",
+								seededBy: userId ? "user" : "system",
+								subjectJson: subject,
+								snapshotJson: request.snapshot ?? fallbackSnapshot(subject),
+								...incidentColumns,
+								createdBy: userId,
+								createdAt: nowMs,
+								updatedAt: nowMs,
+							})
+							.onConflictDoNothing()
+							.returning("id"),
+					),
 				)
 
 				if (inserted.length === 0) {
@@ -530,22 +555,21 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						}
 						const doc = yield* createInvestigation(orgId, userId, request)
 						const claimed = yield* dbExecute((db) =>
-							db
-								.update(investigations)
-								.set({
-									startedAt: new Date(nowMs),
-									autonomousTurns: sql`${investigations.autonomousTurns} + 1`,
-									updatedAt: new Date(nowMs),
-								})
-								.where(
-									and(
-										eq(investigations.orgId, orgId),
-										eq(investigations.id, doc.id),
-										eq(investigations.status, "investigating"),
-										isNull(investigations.startedAt),
-									),
-								)
-								.returning({ id: investigations.id }),
+							db.orm.run(
+								PG.update(Investigations)
+									.set(($) => ({
+										startedAt: nowMs,
+										autonomousTurns: $.autonomousTurns.add(1),
+										updatedAt: nowMs,
+									}))
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(doc.id),
+										$.status.eq("investigating"),
+										$.startedAt.isNull(),
+									])
+									.returning("id"),
+							),
 						)
 						if (claimed.length === 0) return doc
 						yield* sendAutonomousTurn(orgId, doc, nowMs)
@@ -568,16 +592,17 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
 				yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({
-							status: "investigating",
-							error: null,
-							startedAt: new Date(nowMs),
-							autonomousTurns: sql`${investigations.autonomousTurns} + 1`,
-							updatedAt: new Date(nowMs),
-						})
-						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, id))),
+					db.orm.run(
+						PG.update(Investigations)
+							.set(($) => ({
+								status: "investigating",
+								error: null,
+								startedAt: nowMs,
+								autonomousTurns: $.autonomousTurns.add(1),
+								updatedAt: nowMs,
+							}))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+					),
 				)
 				const restarting = new InvestigationDocument({
 					...existing,
@@ -599,11 +624,12 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				})
 				const nowMs = yield* Clock.currentTimeMillis
 				const updated = yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({ status, updatedAt: new Date(nowMs) })
-						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, id)))
-						.returning({ id: investigations.id }),
+					db.orm.run(
+						PG.update(Investigations)
+							.set({ status, updatedAt: nowMs })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
+							.returning("id"),
+					),
 				)
 				if (updated.length === 0) {
 					return yield* Effect.fail(
@@ -700,16 +726,11 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// `updatedAt` is left alone: the hub sorts on it, and bumping it every heartbeat would
 				// walk a running row up the list under the reader. Liveness is `progress.updatedAt`.
 				yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({ progressJson: progress })
-						.where(
-							and(
-								eq(investigations.orgId, orgId),
-								eq(investigations.id, id),
-								eq(investigations.status, "investigating"),
-							),
-						),
+					db.orm.run(
+						PG.update(Investigations)
+							.set({ progressJson: progress })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.eq("investigating")]),
+					),
 				)
 			})
 
@@ -719,16 +740,11 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
-					db
-						.update(investigations)
-						.set({ status: "failed", error, updatedAt: new Date(nowMs) })
-						.where(
-							and(
-								eq(investigations.orgId, orgId),
-								eq(investigations.id, id),
-								eq(investigations.status, "investigating"),
-							),
-						),
+					db.orm.run(
+						PG.update(Investigations)
+							.set({ status: "failed", error, updatedAt: nowMs })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.eq("investigating")]),
+					),
 				)
 			})
 
