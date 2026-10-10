@@ -3353,7 +3353,7 @@ SELECT
           sum(shapes.bErr) AS errorCount,
           if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
           if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
-          toString(max(shapes.bLastSeen)) AS lastSeen
+          max(shapes.bLastSeen) AS lastSeen
         FROM (
 SELECT
           service_map_db_query_shapes_hourly.ServiceName AS bService,
@@ -3447,7 +3447,7 @@ SELECT
           sum(shapes.bErr) AS errorCount,
           if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
           if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
-          toString(max(shapes.bLastSeen)) AS lastSeen
+          max(shapes.bLastSeen) AS lastSeen
         FROM (
 SELECT
           service_map_db_query_shapes_hourly.ServiceName AS bService,
@@ -4328,15 +4328,15 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:allServices  [cc7e9fe3]
+-- builder:service-operations:routeUsageQuery:allServices  [679f9639]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
           sum(route_windows.bSpanCount) AS spanCount,
           sum(route_windows.bErrorCount) AS errorCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
-          toString(min(route_windows.bFirst)) AS firstSeen,
-          toString(max(route_windows.bLast)) AS lastSeen
+          min(route_windows.bFirst) AS firstSeen,
+          max(route_windows.bLast) AS lastSeen
         FROM (
 SELECT
           traces.ServiceName AS bServiceName,
@@ -4390,15 +4390,15 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:searchStalest  [45e0cd47]
+-- builder:service-operations:routeUsageQuery:searchStalest  [8998c3e5]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
           sum(route_windows.bSpanCount) AS spanCount,
           sum(route_windows.bErrorCount) AS errorCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
-          toString(min(route_windows.bFirst)) AS firstSeen,
-          toString(max(route_windows.bLast)) AS lastSeen
+          min(route_windows.bFirst) AS firstSeen,
+          max(route_windows.bLast) AS lastSeen
         FROM (
 SELECT
           traces.ServiceName AS bServiceName,
@@ -9057,9 +9057,10 @@ SELECT
         ORDER BY totalSizeBytes DESC
         FORMAT JSON
 
--- pipe:list_logs:default:baseline  [3e0dd5a5]
+-- pipe:list_logs:default:baseline  [e892c9d2]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9089,9 +9090,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:default:bloom  [3e0dd5a5]
+-- pipe:list_logs:default:bloom  [e892c9d2]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9121,9 +9123,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:default:text  [3e0dd5a5]
+-- pipe:list_logs:default:text  [e892c9d2]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9153,9 +9156,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:baseline  [12ccde13]
+-- pipe:list_logs:searched:baseline  [4089be08]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9193,9 +9197,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:bloom  [ca3b875f]
+-- pipe:list_logs:searched:bloom  [74bedc54]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9233,9 +9238,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:text  [7ac1f4bb]
+-- pipe:list_logs:searched:text  [e30d1660]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -11097,14 +11103,14 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- pipe:slow_traces:default:baseline  [94ac2455]
+-- pipe:slow_traces:default:baseline  [23e2dc88]
 SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.SpanName AS spanName,
           trace_list_mv.ServiceName AS serviceName,
           trace_list_mv.Duration / 1000000 AS durationMs,
           trace_list_mv.StatusCode AS statusCode,
-          toString(trace_list_mv.Timestamp) AS timestamp
+          trace_list_mv.Timestamp AS timestamp
         FROM trace_list_mv
         WHERE trace_list_mv.OrgId = 'org_sql_catalog'
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
@@ -11250,7 +11256,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_search:default:baseline  [b1656c33]
+-- pipe:span_search:default:baseline  [8fc1ed98]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11261,7 +11267,7 @@ SELECT
           traces.StatusMessage AS statusMessage,
           traces.SpanAttributes AS spanAttributes,
           traces.ResourceAttributes AS resourceAttributes,
-          toString(traces.Timestamp) AS timestamp
+          traces.Timestamp AS timestamp
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -11278,7 +11284,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:span_search:default:bloom  [b1656c33]
+-- pipe:span_search:default:bloom  [8fc1ed98]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11289,7 +11295,7 @@ SELECT
           traces.StatusMessage AS statusMessage,
           traces.SpanAttributes AS spanAttributes,
           traces.ResourceAttributes AS resourceAttributes,
-          toString(traces.Timestamp) AS timestamp
+          traces.Timestamp AS timestamp
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -11306,7 +11312,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:span_search:default:text  [b1656c33]
+-- pipe:span_search:default:text  [8fc1ed98]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11317,7 +11323,7 @@ SELECT
           traces.StatusMessage AS statusMessage,
           traces.SpanAttributes AS spanAttributes,
           traces.ResourceAttributes AS resourceAttributes,
-          toString(traces.Timestamp) AS timestamp
+          traces.Timestamp AS timestamp
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'

@@ -6,6 +6,7 @@ import { cn } from "../../lib/utils"
 import { httpStatusTone } from "../../lib/http"
 import { TONE_SOFT } from "../../lib/tone"
 import { TruncatedId } from "../ui/truncated-id"
+import { TruncatedText } from "../ui/truncated-text"
 import { formatDuration } from "../../lib/format"
 import { cacheResultStyles } from "../../lib/cache"
 import type { CacheInfo } from "../../lib/cache"
@@ -167,7 +168,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 					)}
 				>
 					<div className="flex items-center gap-1.5 min-w-0 text-2xs">
-						<span className="font-semibold text-muted-foreground">Missing Span</span>
+						<span className="font-semibold text-muted-foreground">Missing span</span>
 						<span className="flex-1" />
 						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
 					</div>
@@ -253,12 +254,9 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 					<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 						{/* Row 1: operation + status */}
 						<div className="flex min-w-0 items-center gap-1.5">
-							<span
-								className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground"
-								title={primaryText}
-							>
+							<TruncatedText mono className="flex-1 text-2xs font-medium text-foreground">
 								{primaryText}
-							</span>
+							</TruncatedText>
 							<StatusBadge desc={desc} isError={isError} statusCode={span.statusCode} />
 						</div>
 

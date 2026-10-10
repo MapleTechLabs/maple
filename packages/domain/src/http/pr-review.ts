@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
@@ -291,6 +291,116 @@ export const mergePrReviewConfig = (
 	)
 }
 
+/** What a step before merge is about; the comment groups and labels by it. */
+export const PrReviewMergeStepKind = Schema.Literals([
+	"secret",
+	"env",
+	"migration",
+	"warehouse",
+	"infra",
+	"manual",
+]).annotate({ identifier: "PrReviewMergeStepKind" })
+export type PrReviewMergeStepKind = Schema.Schema.Type<typeof PrReviewMergeStepKind>
+
+/**
+ * Something a person has to do outside the diff before the change can ship: a secret to add, a
+ * migration to check, a schema to deploy. `diff` steps are read off the diff by the service;
+ * `reviewer` steps are ones the agent named from what it read.
+ */
+export class PrReviewMergeStep extends Schema.Class<PrReviewMergeStep>("PrReviewMergeStep")({
+	kind: PrReviewMergeStepKind,
+	title: Schema.String,
+	/** The secret, variable or file the step is about; what a reviewer step must name to replace it. */
+	subject: Schema.optionalKey(Schema.String),
+	path: Schema.optionalKey(Schema.String),
+	line: Schema.optionalKey(Schema.Number),
+	source: Schema.Literals(["diff", "reviewer"]),
+	/** Its identity across pushes ({@link mergeStepKey}), set once the step is tracked. */
+	key: Schema.optionalKey(Schema.String),
+	/** Ticked on the pull request, on this review's comment or an earlier one. */
+	done: Schema.optionalKey(Schema.Boolean),
+	/** Who ticked it. */
+	doneBy: Schema.optionalKey(Schema.String),
+}) {}
+
+export const PrReviewMergeStepStatus = Schema.Literals(["open", "done", "obsolete"]).annotate({
+	identifier: "PrReviewMergeStepStatus",
+})
+export type PrReviewMergeStepStatus = Schema.Schema.Type<typeof PrReviewMergeStepStatus>
+
+/**
+ * A step's identity across pushes: the kind and what it is about, or its wording for a reviewer
+ * step without a subject. A tick is stored against this key, so it survives a new review comment.
+ */
+export const mergeStepKey = (step: Pick<PrReviewMergeStep, "kind" | "subject" | "title">): string => {
+	const about = step.subject ?? titleSlug(step.title)
+	// It is written into an HTML comment: no whitespace, no `--`, no `>`.
+	return `${step.kind}:${about.replace(/\s+/g, "_").replace(/-{2,}/g, "-").replace(/>/g, "")}`
+}
+
+const SLUG_MAX = 80
+
+/** FNV-1a of the text, as 8 hex digits: a stable tag for wording a slug cannot tell apart. */
+const fnv1a = (text: string): string =>
+	Arr.reduce(
+		Array.from(text),
+		0x811c9dc5,
+		(hash, char) => Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0,
+	)
+		.toString(16)
+		.padStart(8, "0")
+
+/**
+ * A reviewer step's title as a key. Split and joined rather than trimmed with `^-+|-+$`, which
+ * backtracks on long runs of `-`. A slug cut for length, or one with no ASCII word left, carries a
+ * hash of the whole title, so two titles that differ only past the cut or only in non-ASCII words
+ * never share a key.
+ */
+const titleSlug = (title: string): string => {
+	const slug = Arr.filter(title.toLowerCase().split(/[^a-z0-9]+/), Str.isNonEmpty).join("-")
+	if (slug.length === 0) return fnv1a(title.trim())
+	if (slug.length <= SLUG_MAX && !/[^\x00-\x7f]/.test(title)) return slug
+	return `${slug.slice(0, SLUG_MAX - 9)}-${fnv1a(title.trim())}`
+}
+
+/** How every review comment starts: `<!-- maple-pr-review <reviewId> <attempt> -->`. */
+export const PR_REVIEW_COMMENT_MARKER_PREFIX = "<!-- maple-pr-review "
+
+/** The hidden tag after a rendered step, so a tick is read by key rather than by wording. */
+export const mergeStepTag = (key: string): string => `<!-- ms:${key} -->`
+
+const TICK_LINE = /^\s*[-*] \[([ xX])\] .*<!-- ms:(\S+) -->\s*$/
+
+/** The task-list state of every tagged step in a comment body. */
+export const parseMergeStepTicks = (body: string): ReadonlyMap<string, boolean> =>
+	new Map(
+		Arr.getSomes(
+			Arr.map(body.split("\n"), (line) =>
+				Option.flatMap(Option.fromNullishOr(TICK_LINE.exec(line)), ([, box, key]) =>
+					key === undefined ? Option.none() : Option.some([key, box !== " "] as const),
+				),
+			),
+		),
+	)
+
+/**
+ * The steps an edit ticked or unticked: tagged in both bodies with a different state. A step only
+ * one body holds is not a tick, and neither is an edit that left every box alone.
+ */
+export const mergeStepTickChanges = (
+	before: string,
+	after: string,
+): ReadonlyArray<{ readonly key: string; readonly done: boolean }> => {
+	const was = parseMergeStepTicks(before)
+	return Arr.getSomes(
+		Arr.map([...parseMergeStepTicks(after)], ([key, done]) =>
+			Option.flatMap(Option.fromNullishOr(was.get(key)), (previous) =>
+				previous === done ? Option.none() : Option.some({ key, done }),
+			),
+		),
+	)
+}
+
 /** The stored review: the shape a reader can rely on. */
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({
 	verdict: PrReviewVerdict,
@@ -316,6 +426,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** What production telemetry says about the change; set by the service, never by the model. */
 	telemetry: Schema.optionalKey(PrReviewTelemetry),
+	/** What has to happen outside the diff before merge; diff steps are set by the service. */
+	beforeMerge: Schema.optionalKey(Schema.Array(PrReviewMergeStep)),
 }) {}
 
 /**
@@ -366,6 +478,7 @@ export const PrReviewSubmission = Schema.Struct({
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	keyChanges: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	beforeMerge: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	checked: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	tests: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewTestSignal, Schema.String]))),
 	risk: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewRisk, Schema.String]))),
@@ -392,6 +505,7 @@ const MAX_TEXT = 4_000
 const MAX_SUMMARY = 800
 const MAX_KEY_CHANGES = 4
 const MAX_CHECKED = 3
+const MAX_BEFORE_MERGE = 6
 const MAX_BULLET = 200
 /** Removed names the reviewer may claim are still emitted; one per contract break is plenty. */
 const MAX_DISMISSALS = 20
@@ -542,6 +656,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			: submittedVerdict
 	const keyChanges = bulletsOf(submission.keyChanges, MAX_KEY_CHANGES)
 	const checked = bulletsOf(submission.checked, MAX_CHECKED)
+	const beforeMerge = bulletsOf(submission.beforeMerge, MAX_BEFORE_MERGE).map(
+		(title) => new PrReviewMergeStep({ kind: "manual", title, source: "reviewer" }),
+	)
 	const tests = typeof submission.tests === "string" ? submission.tests.trim().toLowerCase() : undefined
 	const risk = typeof submission.risk === "string" ? submission.risk.trim().toLowerCase() : undefined
 	const rawConfidence = toNumber(submission.confidence)
@@ -556,6 +673,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			summary: clip(submission.summary?.trim() || "", MAX_SUMMARY),
 			...(keyChanges.length > 0 ? { keyChanges } : undefined),
 			...(checked.length > 0 ? { checked } : undefined),
+			...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 			...(isTestSignal(tests) ? { tests } : undefined),
 			...(isRisk(risk) ? { risk } : undefined),
 			...(confidence === undefined ? undefined : { confidence }),
@@ -653,8 +771,11 @@ export interface PrReviewConfidenceResult {
 	/** A finding or an early end held the number below what the other signals gave. */
 	readonly capped: boolean
 	/** What held it down, when something did. */
-	readonly cappedBy?: "critical" | "warn" | "partial"
+	readonly cappedBy?: "critical" | "warn" | "partial" | "unread"
 }
+
+/** Unread reviewed files at which a review reads as "needs attention"; fewer hold it at 8. */
+export const PR_REVIEW_UNREAD_CAP_FILES = 3
 
 /**
  * What each signal takes off a 10. Whole points, so one soft signal (partial tests, a medium-risk
@@ -699,7 +820,8 @@ const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? ""
  *
  * It starts from the findings' quality score, then takes whole points off for untested behavior, a
  * risky area and new work that cannot be observed. Findings cap it: a critical at 4 (2 with more
- * than one), a security warning at 6, any warning at 8, and a review that ended early at 6. The
+ * than one), a security warning at 6, any warning at 8, a review that ended early at 6, and
+ * reviewed files left unread at 8 (6 from three files). The
  * reviewer's own number can lower the result by up to two points or raise it by one, never past a
  * cap. `undefined` for a pull request with nothing to review.
  */
@@ -719,6 +841,7 @@ export const confidencePrReview = (
 	const securityWarn = all.some((finding) => finding.severity === "warn" && finding.category === "security")
 	const { score } = scorePrReview(report, carriedOpen)
 	const unobservable = report.coverage.filter((unit) => !unit.instrumented).length
+	const unread = report.unreviewed?.length ?? 0
 
 	const factors: Array<string> = []
 	if (criticals > 0) factors.push(findingPhrase(criticals, "critical"))
@@ -732,6 +855,7 @@ export const confidencePrReview = (
 			`${report.coverage.length - unobservable}/${report.coverage.length} new units observable`,
 		)
 	}
+	if (unread > 0) factors.push(`${unread} ${unread === 1 ? "file" : "files"} not read`)
 
 	const deduction =
 		(report.tests === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.tests[report.tests]) +
@@ -746,45 +870,43 @@ export const confidencePrReview = (
 					Math.min(signals + PR_REVIEW_CONFIDENCE_JUDGEMENT.raise, Math.round(report.confidence)),
 				)
 
-	// In the order the caps bind: a security warning holds at 6 like an early end, any other at 8.
-	const cappedBy =
-		criticals > 0
-			? "critical"
-			: securityWarn
-				? "warn"
-				: partial
-					? "partial"
-					: warns > 0
-						? "warn"
-						: undefined
-	const cap =
-		criticals > 1
-			? 2
-			: criticals === 1
-				? 4
-				: securityWarn || partial
-					? 6
-					: warns > 0
-						? 8
-						: PR_REVIEW_CONFIDENCE_MAX
+	// Every cap that applies, tightest first; the first one is what the comment says held it down.
+	// A security warning holds at 6 like an early end or a pass that left 3+ files unread.
+	const caps: ReadonlyArray<{
+		readonly at: number
+		readonly by: NonNullable<PrReviewConfidenceResult["cappedBy"]>
+		readonly why: string
+	}> = [
+		...(criticals > 1
+			? [{ at: 2, by: "critical" as const, why: `${criticals} critical findings are open` }]
+			: []),
+		...(criticals === 1 ? [{ at: 4, by: "critical" as const, why: "a critical finding is open" }] : []),
+		...(securityWarn ? [{ at: 6, by: "warn" as const, why: "a security warning is open" }] : []),
+		...(partial ? [{ at: 6, by: "partial" as const, why: "the review ended early" }] : []),
+		...(unread > 0
+			? [
+					{
+						at: unread >= PR_REVIEW_UNREAD_CAP_FILES ? 6 : 8,
+						by: "unread" as const,
+						why: `${unread} reviewed ${unread === 1 ? "file was" : "files were"} not read`,
+					},
+				]
+			: []),
+		...(warns > 0 ? [{ at: 8, by: "warn" as const, why: "a warning is open" }] : []),
+	]
+	const binding = caps.reduce<(typeof caps)[number] | undefined>(
+		(tightest, cap) => (tightest === undefined || cap.at < tightest.at ? cap : tightest),
+		undefined,
+	)
+	const cap = binding?.at ?? PR_REVIEW_CONFIDENCE_MAX
 	const confidence = toConfidence(Math.min(cap, judged))
-	if (judged > cap) {
-		const why =
-			criticals > 1
-				? `${criticals} critical findings are open`
-				: criticals === 1
-					? "a critical finding is open"
-					: cappedBy === "warn"
-						? securityWarn
-							? "a security warning is open"
-							: "a warning is open"
-						: "the review ended early"
+	if (binding !== undefined && judged > cap) {
 		return {
 			confidence,
-			reason: `Held at ${cap} because ${why}.`,
+			reason: `Held at ${cap} because ${binding.why}.`,
 			factors,
 			capped: true,
-			...(cappedBy === undefined ? undefined : { cappedBy }),
+			cappedBy: binding.by,
 		}
 	}
 	return { confidence, reason: report.confidenceReason, factors, capped: false }
@@ -804,27 +926,6 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	telemetryDismissals: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, line: Schema.Number })),
 	),
-}) {}
-
-/** One review in a repository's list: enough to scan outcomes without loading the report. */
-export class PrReviewListItem extends Schema.Class<PrReviewListItem>("PrReviewListItem")({
-	id: PrReviewId,
-	number: Schema.Number,
-	title: Schema.NullOr(Schema.String),
-	url: Schema.String,
-	headSha: GitCommitSha,
-	status: PrReviewStatus,
-	skipReason: Schema.NullOr(PrReviewSkipReason),
-	verdict: Schema.NullOr(PrReviewVerdict),
-	score: Schema.NullOr(Schema.Number),
-	/** 1 to 10; null until a report is stored, and for reports stored before confidence existed. */
-	confidence: Schema.NullOr(Schema.Number),
-	findings: Schema.Number,
-	commentUrl: Schema.NullOr(Schema.String),
-	publishError: Schema.NullOr(Schema.String),
-	error: Schema.NullOr(Schema.String),
-	createdAt: Schema.Number,
-	finishedAt: Schema.NullOr(Schema.Number),
 }) {}
 
 /** A review row as the dashboard reads it. */

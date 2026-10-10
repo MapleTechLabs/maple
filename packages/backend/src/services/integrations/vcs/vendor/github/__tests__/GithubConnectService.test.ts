@@ -10,7 +10,7 @@ import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
-import type { GithubHttp } from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import type { HttpClient } from "effect/http"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
@@ -69,10 +69,10 @@ const connectResponders = (...rest: Array<() => Response>) => [
 ]
 
 // Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
-// real GithubAppClient backed by the stubbed GithubHttp, and a recording queue.
+// real GithubAppClient backed by the stubbed HttpClient, and a recording queue.
 const connectLayer = (
 	testDb: TestDb,
-	http: Layer.Layer<GithubHttp>,
+	http: Layer.Layer<HttpClient.HttpClient>,
 	sent: Array<VcsSyncJob>,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) => {

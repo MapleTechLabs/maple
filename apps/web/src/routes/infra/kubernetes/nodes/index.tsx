@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { ErrorState } from "@/components/common/error-state"
@@ -96,9 +96,11 @@ function NodesPage() {
 		environments: search.environments,
 	}
 
-	const nodesResult = useAtomValue(
-		listNodesResultAtom({ data: { startTime, endTime, ...filters, limit: NODE_LIST_LIMIT } }),
-	)
+	const nodesAtom = listNodesResultAtom({
+		data: { startTime, endTime, ...filters, limit: NODE_LIST_LIMIT },
+	})
+	const nodesResult = useAtomValue(nodesAtom)
+	const refreshNodes = useAtomRefresh(nodesAtom)
 	const facetsResult = useAtomValue(nodeFacetsResultAtom({ data: { startTime, endTime } }))
 
 	const onFilterChange = <K extends keyof NodeFilters>(key: K, value: NodeFilters[K]) => {
@@ -135,7 +137,9 @@ function NodesPage() {
 		>
 			{Result.builder(nodesResult)
 				.onInitial(() => <NodeTableLoading />)
-				.onError((err) => <ErrorState error={err} />)
+				.onError((err) => (
+					<ErrorState error={err} title="Failed to load nodes" onRetry={refreshNodes} />
+				))
 				.onSuccess((response, result) => {
 					const nodes = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)

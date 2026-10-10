@@ -80,12 +80,12 @@ export function AlertsEmptyState({
 							</div>
 							{openDestinationDialog ? (
 								<Button size="sm" onClick={openDestinationDialog}>
-									<PaperPlaneIcon size={14} />
+									<PaperPlaneIcon />
 									Add destination
 								</Button>
 							) : (
 								<Button size="sm" render={<Link to="/alerts" search={{ tab: "settings" }} />}>
-									<PaperPlaneIcon size={14} />
+									<PaperPlaneIcon />
 									Add destination
 								</Button>
 							)}
@@ -109,7 +109,7 @@ export function AlertsEmptyState({
 							size="sm"
 							render={<Link to="/alerts/create" search={{ serviceName }} />}
 						>
-							<PlusIcon size={14} />
+							<PlusIcon />
 							Start from scratch
 						</Button>
 						<DocsLink page="alertRules" />

@@ -37,7 +37,7 @@ export function LinkedInvestigationPanel({
 					</p>
 				</div>
 				<Button size="sm" variant="outline" onClick={onStart} disabled={starting}>
-					<PulseIcon className="size-3.5" />
+					<PulseIcon />
 					Start investigation
 				</Button>
 			</Panel>

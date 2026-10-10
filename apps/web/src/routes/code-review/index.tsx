@@ -19,7 +19,7 @@ import {
 import { ResultView } from "@/components/common/result-view"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewSearchFields)
 
@@ -36,7 +36,7 @@ function CodeReviewAnalyticsPage() {
 	// The resolved window, shared by the page's query and the filters' author list.
 	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 
-	const query = retainedQuery("codeReview", "analytics", {
+	const query = retainedInternalQuery("codeReview", "analytics", {
 		query: {
 			...window,
 			repositoryId: search.repo,

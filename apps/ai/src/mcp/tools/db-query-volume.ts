@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { DbQueryVolumeOutput } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -35,8 +35,8 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				dbSystem: params.db_system ?? "all",
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.db_system": params.db_system ?? "all",
 			})
 
 			const rows = yield* withTenantExecutor(
@@ -76,7 +76,7 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 					errorCount: row.errorCount,
 					avgMs: row.avgDurationMs,
 					p95Ms: row.p95DurationMs,
-					lastSeen: row.lastSeen,
+					lastSeen: DateTime.formatIso(row.lastSeen),
 				})),
 			}
 		}),

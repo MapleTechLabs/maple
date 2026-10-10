@@ -310,6 +310,8 @@ export const listLogs = defineQuery({
 				excludedSeverities: payload.excludedSeverities,
 				excludedEnvironments: payload.excludedDeploymentEnvs,
 				excludedNamespaces: payload.excludedNamespaces,
+				attributeFilters: payload.attributeFilters,
+				resourceAttributeFilters: payload.resourceAttributeFilters,
 				minSeverity: payload.minSeverity,
 				traceId: payload.traceId,
 				spanId: payload.spanId,
@@ -338,6 +340,7 @@ export const listLogs = defineQuery({
 					})),
 				),
 				limit: payload.limit,
+				order: payload.order,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -604,7 +607,6 @@ export const releaseErrorFingerprints = defineQuery({
 				endTime: payload.endTime,
 				serviceVersion: payload.commitSha,
 			},
-			{ rowSchema: CH.releaseErrorFingerprintsRowSchema },
 		),
 })
 

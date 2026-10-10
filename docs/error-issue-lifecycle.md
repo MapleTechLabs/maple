@@ -112,7 +112,7 @@ or regression), `maybeEnqueueTriage` starts an investigation, subject to a daily
 in model passes (`maxRunsPerDay`, `maxPassesPerDay`; one investigation is one pass).
 
 Three gates stand between an open incident and that pass, cheapest first, and every refusal lands
-on the `maybeStartInvestigation` span as `maple.investigation.start_result`:
+on the `AiTriageEnqueue.maybeStartInvestigation` span as `maple.investigation.start_result`:
 
 1. **The issue's own history** (`evaluateIssueGate`, no model). An issue past `triage`/`regressed`
    is somebody's already; one diagnosed within the last week (a day for alerts and anomalies) is

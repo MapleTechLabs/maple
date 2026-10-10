@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { DateTime } from "effect"
 import type { CH } from "@maple/query-engine"
 import { foldCatalogRows, previewValues } from "./use-local-metrics"
 
@@ -9,8 +10,8 @@ const row = (overrides: Partial<CH.ListMetricsOutput>): CH.ListMetricsOutput => 
 	metricDescription: "",
 	metricUnit: "{request}",
 	dataPointCount: 10,
-	firstSeen: "2026-07-30 13:00:00",
-	lastSeen: "2026-07-30 14:00:00",
+	firstSeen: DateTime.makeUnsafe("2026-07-30T13:00:00Z"),
+	lastSeen: DateTime.makeUnsafe("2026-07-30T14:00:00Z"),
 	isMonotonic: 1,
 	...overrides,
 })
@@ -19,13 +20,17 @@ describe("foldCatalogRows", () => {
 	it("folds per-service rows into one entry spanning the earliest first-seen", () => {
 		const { entries, serviceFacets } = foldCatalogRows([
 			row({}),
-			row({ serviceName: "worker", firstSeen: "2026-07-30 12:00:00", dataPointCount: 5 }),
+			row({
+				serviceName: "worker",
+				firstSeen: DateTime.makeUnsafe("2026-07-30T12:00:00Z"),
+				dataPointCount: 5,
+			}),
 		])
 		expect(entries).toHaveLength(1)
 		expect(entries[0]).toMatchObject({
 			serviceNames: ["api", "worker"],
 			dataPointCount: 15,
-			firstSeen: "2026-07-30 12:00:00",
+			firstSeen: "2026-07-30T12:00:00.000Z",
 			isMonotonic: true,
 		})
 		expect(serviceFacets).toEqual([

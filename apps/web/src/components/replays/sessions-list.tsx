@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { countLabel, EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
 import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
@@ -346,15 +347,13 @@ function SessionListRow({
 						className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
 					/>
 				</div>
-				<div
-					className={cn(
-						"mt-0.5 truncate text-xs text-muted-foreground",
-						secondary === entry && "font-mono",
-					)}
-					title={entry}
+				<TruncatedText
+					mono={secondary === entry}
+					className="mt-0.5 text-xs text-muted-foreground"
+					text={entry}
 				>
 					{secondary}
-				</div>
+				</TruncatedText>
 				{/* Tags and signals get their own columns at @2xl, the org only at @3xl,
 				    so the org stays in this stacked line through the band between. */}
 				<div
@@ -509,7 +508,7 @@ function SessionBadges({ session }: { session: SessionRow }) {
 		<>
 			{session.errorCount > 0 && <ErrorCountPill count={session.errorCount} />}
 			{session.traceCount > 0 && (
-				<Badge pill size="xs" mono className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+				<Badge pill size="xs" mono className="bg-chart-1/12 text-chart-1">
 					{countLabel(session.traceCount, "trace")}
 				</Badge>
 			)}

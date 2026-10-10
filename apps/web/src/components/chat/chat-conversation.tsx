@@ -4,6 +4,7 @@ import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { toastExit } from "@/lib/error-toast"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
 import { useMapleChat, type FailedSend } from "@/hooks/use-maple-chat"
@@ -191,7 +192,8 @@ export function ChatConversation({
 			const exit = await decideProposal({
 				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "deny" }),
 			})
-			if (toastExit(exit, { error: "Couldn't deny this change" })) resolveApproval(toolCallId, "denied")
+			if (toastExit(exit, { error: "Failed to deny this change" }))
+				resolveApproval(toolCallId, "denied")
 		},
 		[decideProposal, sessionId, resolveApproval],
 	)
@@ -410,10 +412,10 @@ function EmptyNotice({
 }) {
 	return (
 		<div className="flex flex-col items-center justify-center gap-2 text-center">
-			<p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
+			<Eyebrow as="p" variant="label" className="flex items-center gap-1.5 text-muted-foreground/70">
 				{busy ? <DotLoader /> : null}
 				<span className={busy ? "shimmer" : undefined}>{title}</span>
-			</p>
+			</Eyebrow>
 			<p className="max-w-sm text-sm text-muted-foreground">{children}</p>
 		</div>
 	)

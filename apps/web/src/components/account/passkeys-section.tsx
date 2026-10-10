@@ -160,7 +160,7 @@ export function PasskeysSection() {
 													})
 												}
 											>
-												<PencilIcon size={14} />
+												<PencilIcon />
 												Rename
 											</DropdownMenuItem>
 											<DropdownMenuItem
@@ -168,7 +168,7 @@ export function PasskeysSection() {
 												disabled={isBusy}
 												onClick={() => setPendingRemoval(passkey)}
 											>
-												<TrashIcon size={14} />
+												<TrashIcon />
 												Remove
 											</DropdownMenuItem>
 										</RowActionsMenu>

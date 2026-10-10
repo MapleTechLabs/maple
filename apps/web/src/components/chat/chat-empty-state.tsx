@@ -3,6 +3,7 @@ import { ArrowTrendUpIcon, CornerDownLeftIcon, PixelSparkleIcon } from "@/compon
 import { CONCEPT_ICON } from "@/components/icons/concept"
 import type { IconProps } from "@/components/icons/icon"
 import { DocsLink } from "@/components/common/docs-link"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 
 interface Tone {
@@ -85,7 +86,7 @@ export function ChatEmptyState({
 				)}
 			</div>
 
-			<div className="mt-6 overflow-hidden rounded-xl border border-border/60 bg-gradient-to-b from-card/70 to-card/20">
+			<Panel className="mt-6 border-border/60 bg-transparent bg-gradient-to-b from-card/70 to-card/20">
 				{suggestions.map((suggestion, index) => {
 					const { Glyph, chip } = toneFor(suggestion)
 					return (
@@ -111,7 +112,7 @@ export function ChatEmptyState({
 						</button>
 					)
 				})}
-			</div>
+			</Panel>
 
 			<p className="mt-3 text-center text-muted-foreground/60 text-xs">
 				Or just start typing. Your keystrokes land in the composer.

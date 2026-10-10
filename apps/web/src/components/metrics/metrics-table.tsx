@@ -1,9 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
+import { Link } from "@tanstack/react-router"
+import { toQueryBuilderMetricType } from "@maple/query-model"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
@@ -21,14 +24,15 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 interface MetricsTableProps {
 	search: string
 	metricType: ListMetricsInput["metricType"] | null
-	onOpenMetric: (metric: Metric) => void
+	/** The page's own time params, carried onto each metric's link. */
+	linkTime: { startTime?: string; endTime?: string; timePreset?: string }
 	onClearFilters: () => void
 	startTime?: string
 	endTime?: string
 }
 
 const SKELETON_COLUMNS = [
-	{ header: "Metric Name", headClassName: "w-[40%]", skeleton: "w-48" },
+	{ header: "Metric name", headClassName: "w-[40%]", skeleton: "w-48" },
 	{
 		header: "Type",
 		headClassName: "hidden md:table-cell w-[100px]",
@@ -48,7 +52,7 @@ const SKELETON_COLUMNS = [
 		skeleton: "w-12",
 	},
 	{
-		header: "Last Seen",
+		header: "Last seen",
 		headClassName: "hidden md:table-cell w-[100px]",
 		cellClassName: "hidden md:table-cell",
 		skeleton: "w-16",
@@ -67,7 +71,7 @@ const MAX_LIMIT = 1000
 export function MetricsTable({
 	search,
 	metricType,
-	onOpenMetric,
+	linkTime,
 	onClearFilters,
 	startTime,
 	endTime,
@@ -124,11 +128,11 @@ export function MetricsTable({
 				<Table className="table-fixed">
 					<TableHeader>
 						<TableRow>
-							<TableHead className="w-[40%]">Metric Name</TableHead>
+							<TableHead className="w-[40%]">Metric name</TableHead>
 							<TableHead className="w-[100px]">Type</TableHead>
 							<TableHead className="w-[120px]">Service</TableHead>
 							<TableHead className="w-[100px]">Points</TableHead>
-							<TableHead className="w-[100px]">Last Seen</TableHead>
+							<TableHead className="w-[100px]">Last seen</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -136,23 +140,27 @@ export function MetricsTable({
 							return (
 								<TableRow
 									key={`${metric.metricName}-${metric.metricType}-${metric.serviceName}`}
-									className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-									tabIndex={0}
-									onClick={() => onOpenMetric(metric)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											onOpenMetric(metric)
-										}
-									}}
+									className="hover:bg-muted/50"
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
-											<TruncatedText
-												text={metric.metricName}
-												mono
-												className="text-xs"
-											/>
+											<Link
+												to="/metrics/$metricName"
+												params={{ metricName: metric.metricName }}
+												search={{
+													...linkTime,
+													type:
+														toQueryBuilderMetricType(metric.metricType) ??
+														undefined,
+												}}
+												className={cn("block min-w-0", ROW_STRETCHED_LINK_CLASS)}
+											>
+												<TruncatedText
+													text={metric.metricName}
+													mono
+													className={cn("text-xs", ROW_LINK_LIFT)}
+												/>
+											</Link>
 											{metric.metricDescription && (
 												<span className="text-3xs text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
@@ -176,7 +184,9 @@ export function MetricsTable({
 												<span className="min-w-0 truncate">{metric.serviceName}</span>
 											</Badge>
 										) : (
-											<span className="text-xs text-muted-foreground">-</span>
+											<span className="text-xs text-muted-foreground">
+												{EMPTY_VALUE}
+											</span>
 										)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell font-mono text-xs">

@@ -52,7 +52,7 @@ const props = Effect.gen(function* () {
 })
 
 // Dynamic imports keep the route graph's Schema ASTs out of the startup-CPU budget.
-const AppLayer = Layer.unwrap(
+const AppLive = Layer.unwrap(
 	Effect.all(
 		[
 			Effect.promise(() => import("./routes/shape.http")),
@@ -85,7 +85,7 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 		const app = yield* cachedRecoverable(
 			Effect.gen(function* () {
 				const scope = yield* Scope.make()
-				return yield* HttpRouter.toHttpEffect(AppLayer).pipe(Scope.provide(scope))
+				return yield* HttpRouter.toHttpEffect(AppLive).pipe(Scope.provide(scope))
 			}).pipe(Effect.orDie),
 		)
 

@@ -17,6 +17,8 @@
 
 import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 
+import { EMPTY_VALUE } from "./empty-value"
+
 export type TimeInput = string | number | Date
 
 /**
@@ -68,7 +70,7 @@ export function relativeParts(epochMs: number, nowMs: number = Date.now()): Rela
 
 /** `"3h ago"` / `"in 3h"` / `"just now"`, from an epoch-ms instant. */
 export function formatRelativeFrom(epochMs: number, nowMs: number = Date.now()): string {
-	if (!Number.isFinite(epochMs)) return "—"
+	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	const { value, unit, future } = relativeParts(epochMs, nowMs)
 	if (unit === "s" && value < 5) return "just now"
 	return future ? `in ${value}${unit}` : `${value}${unit} ago`
@@ -76,7 +78,7 @@ export function formatRelativeFrom(epochMs: number, nowMs: number = Date.now()):
 
 /** `"3h"` / `"now"`, from an epoch-ms instant. For dense table cells and chips. */
 export function formatRelativeShortFrom(epochMs: number, nowMs: number = Date.now()): string {
-	if (!Number.isFinite(epochMs)) return "—"
+	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	const { value, unit } = relativeParts(epochMs, nowMs)
 	if (unit === "s" && value < 5) return "now"
 	return `${value}${unit}`
@@ -104,7 +106,7 @@ export function formatRelativeTimeOrDate(
 	timeZone?: string,
 ): string {
 	const epochMs = toEpochMs(input)
-	if (!Number.isFinite(epochMs)) return "—"
+	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	if (nowMs - epochMs >= RELATIVE_CUTOVER_MS) {
 		// The date branch is a wall-clock reading, so it takes the viewer's selected
 		// zone where the page has one; the relative branch is zone-free.

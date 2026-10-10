@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
@@ -97,7 +98,6 @@ export function DashboardSectionView<W extends CanvasWidget>({
 					>
 						<ChevronDownIcon
 							className={cn("transition-transform duration-150", collapsed && "-rotate-90")}
-							size={14}
 						/>
 					</IconButton>
 				) : (
@@ -133,27 +133,27 @@ export function DashboardSectionView<W extends CanvasWidget>({
 							label={`Add widget to ${section.title}`}
 							onClick={() => onAddWidget(activeTabId)}
 						>
-							<PlusIcon size={14} />
+							<PlusIcon />
 						</IconButton>
 					)}
 					{editable && (
 						<RowActionsMenu label={`${section.title} options`}>
 							<DropdownMenuItem onClick={() => actions?.addTab(section.id)}>
-								<PlusIcon size={14} />
+								<PlusIcon />
 								Add tab
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								disabled={index === 0}
 								onClick={() => actions?.reorderSections(index, index - 1)}
 							>
-								<ArrowUpIcon size={14} />
+								<ArrowUpIcon />
 								Move up
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								disabled={index === sectionCount - 1}
 								onClick={() => actions?.reorderSections(index, index + 1)}
 							>
-								<ArrowUpIcon size={14} className="rotate-180" />
+								<ArrowUpIcon className="rotate-180" />
 								Move down
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
@@ -183,7 +183,7 @@ export function DashboardSectionView<W extends CanvasWidget>({
 								variant="destructive"
 								onClick={() => setDeleteSectionOpen(true)}
 							>
-								<TrashIcon size={14} />
+								<TrashIcon />
 								Delete group…
 							</DropdownMenuItem>
 						</RowActionsMenu>
@@ -195,15 +195,15 @@ export function DashboardSectionView<W extends CanvasWidget>({
 			{!collapsed &&
 				(widgets.length === 0 ? (
 					editable ? (
-						<div className="flex items-center gap-2 px-1 py-6 text-xs text-muted-foreground">
+						<EmptyMessage className="flex items-center gap-2 px-1 py-6 text-left">
 							<span>No widgets in this group yet.</span>
 							<Button variant="ghost" size="sm" onClick={() => onAddWidget(activeTabId)}>
-								<PlusIcon size={14} />
+								<PlusIcon />
 								Add widget
 							</Button>
-						</div>
+						</EmptyMessage>
 					) : (
-						<p className="px-1 py-6 text-xs text-muted-foreground">This group is empty.</p>
+						<EmptyMessage className="px-1 py-6 text-left">This group is empty.</EmptyMessage>
 					)
 				) : (
 					<div className="pt-2">

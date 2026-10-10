@@ -192,7 +192,7 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 			// is the row that has to answer "why are we waiting six hours?".
 			const windowMs = Number(payloadString(p.windowMs) ?? Number.NaN)
 			const rate = Number(payloadString(p.ratePerHour) ?? Number.NaN)
-			const window = Number.isFinite(windowMs) ? formatDuration(windowMs) : null
+			const window = Number.isFinite(windowMs) ? formatSpokenDuration(windowMs) : null
 			if (window === null) return "Watching for this error to come back."
 			const because =
 				Number.isFinite(rate) && rate > 0
@@ -220,7 +220,7 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 }
 
 /** "6 hours", "3 days" — a duration a person would say out loud. */
-function formatDuration(ms: number): string {
+function formatSpokenDuration(ms: number): string {
 	const minutes = Math.round(ms / 60_000)
 	if (minutes < 60) return countLabel(minutes, "minute")
 	const hours = Math.round(minutes / 60)
@@ -272,7 +272,7 @@ export function IssueTimeline({
 
 	if (items.length === 0) {
 		return (
-			<EmptyMessage dashed className="rounded-xl py-10">
+			<EmptyMessage dashed className="py-10">
 				<p className="text-sm font-medium text-foreground">No activity yet</p>
 				<p className="mt-1 text-xs">
 					Comments from your team and notes from agents working this issue land here.

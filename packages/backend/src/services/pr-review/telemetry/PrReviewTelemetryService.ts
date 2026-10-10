@@ -13,13 +13,12 @@ import {
 	type PullRequestFile,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
-import { alertRules, dashboards, errorIssues, vcsCommits } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertRules, Dashboards, ErrorIssues, VcsCommits } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
-import { and, desc, eq, gte, inArray, isNull, notInArray } from "drizzle-orm"
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { dateToMs } from "@maple/backend/platform/time"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
@@ -38,10 +37,19 @@ export const TELEMETRY_WINDOW_DAYS = 7
 const OPEN_ISSUE_WINDOW = Duration.days(14)
 
 /** A deployed version's first-seen time, decoded where the warehouse string enters. */
-const decodeFirstSeen = Schema.decodeUnknownEffect(Schema.DateTimeUtcFromString)
-
 /** Issues no longer anyone's problem. */
 const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
+const CATALOG_ISSUE_COLUMNS = [
+	"id",
+	"fingerprintHash",
+	"serviceName",
+	"exceptionType",
+	"errorLabel",
+	"exceptionMessage",
+	"topFrame",
+	"occurrenceCount",
+	"lastSeenAt",
+] as const
 const ISSUE_SCAN_LIMIT = 500
 const SOURCE_SCAN_LIMIT = 500
 
@@ -146,7 +154,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			endTime: end,
 		})
 
-		const catalogFor = Effect.fn("PrReviewTelemetry.catalog")(function* (
+		const catalogFor = Effect.fn("PrReviewTelemetryService.catalog")(function* (
 			orgId: OrgId,
 			now: DateTime.Utc,
 		) {
@@ -217,34 +225,34 @@ export class PrReviewTelemetryService extends Context.Service<
 			return catalog
 		})
 
-		const referenceSources = Effect.fn("PrReviewTelemetry.referenceSources")(function* (orgId: OrgId) {
+		const referenceSources = Effect.fn("PrReviewTelemetryService.referenceSources")(function* (
+			orgId: OrgId,
+		) {
 			const [rules, boards] = yield* Effect.all(
 				[
 					database.execute((db) =>
-						db
-							.select({
-								id: alertRules.id,
-								name: alertRules.name,
-								querySpecJson: alertRules.querySpecJson,
-								queryBuilderDraftJson: alertRules.queryBuilderDraftJson,
-								rawQuerySql: alertRules.rawQuerySql,
-								groupBy: alertRules.groupBy,
-							})
-							.from(alertRules)
-							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.enabled, true)))
-							.limit(SOURCE_SCAN_LIMIT),
+						db.run(
+							PG.from(AlertRules)
+								.select(
+									"id",
+									"name",
+									"querySpecJson",
+									"queryBuilderDraftJson",
+									"rawQuerySql",
+									"groupBy",
+								)
+								.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)])
+								.limit(SOURCE_SCAN_LIMIT),
+						),
 					),
 					database.execute((db) =>
-						db
-							.select({
-								id: dashboards.id,
-								name: dashboards.name,
-								payloadJson: dashboards.payloadJson,
-							})
-							.from(dashboards)
-							.where(eq(dashboards.orgId, orgId))
-							.orderBy(desc(dashboards.updatedAt))
-							.limit(SOURCE_SCAN_LIMIT),
+						db.run(
+							PG.from(Dashboards)
+								.select("id", "name", "payloadJson")
+								.where(($) => [$.orgId.eq(orgId)])
+								.orderBy(($) => [[$.updatedAt, "desc"]])
+								.limit(SOURCE_SCAN_LIMIT),
+						),
 					),
 				],
 				{ concurrency: "unbounded" },
@@ -270,38 +278,26 @@ export class PrReviewTelemetryService extends Context.Service<
 			]
 		})
 
-		const openIssues = Effect.fn("PrReviewTelemetry.openIssues")(function* (
+		const openIssues = Effect.fn("PrReviewTelemetryService.openIssues")(function* (
 			orgId: OrgId,
 			now: DateTime.Utc,
 		) {
 			const rows = yield* database.execute((db) =>
-				db
-					.select({
-						id: errorIssues.id,
-						fingerprintHash: errorIssues.fingerprintHash,
-						serviceName: errorIssues.serviceName,
-						exceptionType: errorIssues.exceptionType,
-						errorLabel: errorIssues.errorLabel,
-						exceptionMessage: errorIssues.exceptionMessage,
-						topFrame: errorIssues.topFrame,
-						occurrenceCount: errorIssues.occurrenceCount,
-						lastSeenAt: errorIssues.lastSeenAt,
-					})
-					.from(errorIssues)
-					.where(
-						and(
-							eq(errorIssues.orgId, orgId),
-							eq(errorIssues.kind, "error"),
-							isNull(errorIssues.archivedAt),
-							notInArray(errorIssues.workflowState, [...CLOSED_STATES]),
-							gte(
-								errorIssues.lastSeenAt,
-								DateTime.toDateUtc(DateTime.subtractDuration(now, OPEN_ISSUE_WINDOW)),
+				db.run(
+					PG.from(ErrorIssues)
+						.select(...CATALOG_ISSUE_COLUMNS)
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.kind.eq("error"),
+							$.archivedAt.isNull(),
+							$.workflowState.notIn(...CLOSED_STATES),
+							$.lastSeenAt.gte(
+								DateTime.toEpochMillis(DateTime.subtractDuration(now, OPEN_ISSUE_WINDOW)),
 							),
-						),
-					)
-					.orderBy(desc(errorIssues.lastSeenAt))
-					.limit(ISSUE_SCAN_LIMIT),
+						])
+						.orderBy(["lastSeenAt", "desc"])
+						.limit(ISSUE_SCAN_LIMIT),
+				),
 			)
 			return rows.map(toCatalogIssue)
 		})
@@ -361,19 +357,15 @@ export class PrReviewTelemetryService extends Context.Service<
 					),
 				{ concurrency: 4 },
 			).pipe(
-				// Each version's first-seen time decoded at the warehouse boundary: a malformed one fails
-				// the read, which the tick retries, rather than dropping the deploy.
-				Effect.flatMap((perService) =>
-					Effect.forEach(perService.flat(), (row) =>
-						decodeFirstSeen(row.firstSeen).pipe(
-							Effect.map((firstSeen): Deployment => ({
-								service: row.serviceName,
-								environment: row.environment,
-								commitSha: row.commitSha,
-								firstSeen,
-							})),
-						),
-					),
+				// `firstSeen` is decoded by the row schema: a malformed one fails the read, which the
+				// tick retries, rather than dropping the deploy.
+				Effect.map((perService) =>
+					perService.flat().map((row): Deployment => ({
+						service: row.serviceName,
+						environment: row.environment,
+						commitSha: row.commitSha,
+						firstSeen: row.firstSeen,
+					})),
 				),
 				Effect.map((versions) =>
 					versions
@@ -447,29 +439,18 @@ export class PrReviewTelemetryService extends Context.Service<
 				? Effect.succeed([])
 				: database
 						.execute((db) =>
-							db
-								.select({
-									id: errorIssues.id,
-									fingerprintHash: errorIssues.fingerprintHash,
-									serviceName: errorIssues.serviceName,
-									exceptionType: errorIssues.exceptionType,
-									errorLabel: errorIssues.errorLabel,
-									exceptionMessage: errorIssues.exceptionMessage,
-									topFrame: errorIssues.topFrame,
-									occurrenceCount: errorIssues.occurrenceCount,
-									lastSeenAt: errorIssues.lastSeenAt,
-								})
-								.from(errorIssues)
-								.where(
-									and(
-										eq(errorIssues.orgId, orgId),
-										eq(errorIssues.kind, "error"),
-										inArray(errorIssues.serviceName, [...services]),
-										gte(errorIssues.firstSeenAt, DateTime.toDateUtc(since)),
-									),
-								)
-								.orderBy(desc(errorIssues.occurrenceCount))
-								.limit(20),
+							db.run(
+								PG.from(ErrorIssues)
+									.select(...CATALOG_ISSUE_COLUMNS)
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.kind.eq("error"),
+										$.serviceName.in_(...services),
+										$.firstSeenAt.gte(DateTime.toEpochMillis(since)),
+									])
+									.orderBy(["occurrenceCount", "desc"])
+									.limit(20),
+							),
 						)
 						.pipe(
 							Effect.map((rows) => rows.map(toCatalogIssue)),
@@ -499,21 +480,19 @@ export class PrReviewTelemetryService extends Context.Service<
 				? Effect.succeed(new Map())
 				: database
 						.execute((db) =>
-							db
-								.select({ sha: vcsCommits.sha, committedAt: vcsCommits.committedAt })
-								.from(vcsCommits)
-								.where(
-									and(
-										eq(vcsCommits.orgId, orgId),
-										eq(vcsCommits.repositoryId, repositoryId),
-										inArray(
-											vcsCommits.sha,
-											shas.flatMap((sha) =>
+							db.run(
+								PG.from(VcsCommits)
+									.select("sha", "committedAt")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.repositoryId.eq(repositoryId),
+										$.sha.in_(
+											...shas.flatMap((sha) =>
 												Option.toArray(decodeSha(sha.toLowerCase())),
 											),
 										),
-									),
-								),
+									]),
+							),
 						)
 						.pipe(
 							Effect.map(
@@ -523,7 +502,7 @@ export class PrReviewTelemetryService extends Context.Service<
 											(row) =>
 												[
 													row.sha.toLowerCase(),
-													DateTime.fromDateUnsafe(row.committedAt),
+													DateTime.makeUnsafe(row.committedAt),
 												] as const,
 										),
 									),
@@ -554,7 +533,7 @@ const toCatalogIssue = (row: {
 	readonly exceptionMessage: string
 	readonly topFrame: string
 	readonly occurrenceCount: number
-	readonly lastSeenAt: Date
+	readonly lastSeenAt: number
 }): CatalogIssue => ({
 	id: row.id,
 	fingerprintHash: row.fingerprintHash,
@@ -562,5 +541,5 @@ const toCatalogIssue = (row: {
 	service: row.serviceName,
 	topFrame: row.topFrame,
 	occurrences: row.occurrenceCount,
-	lastSeenAt: dateToMs(row.lastSeenAt) ?? 0,
+	lastSeenAt: row.lastSeenAt,
 })

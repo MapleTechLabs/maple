@@ -34,7 +34,7 @@ import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/com
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewListSearchFields)
 type Status = NonNullable<Schema.Schema.Type<typeof searchSchema>["status"]>
@@ -73,7 +73,7 @@ function CodeReviewPullRequestsPage() {
 	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 	const [limit, setLimit] = useState(PAGE)
 
-	const query = retainedQuery("codeReview", "listReviews", {
+	const query = retainedInternalQuery("codeReview", "listReviews", {
 		query: {
 			...window,
 			repositoryId: search.repo,
@@ -331,7 +331,7 @@ function ReviewTable({
 										</span>
 									)}
 								</TableCell>
-								<TableCell className="hidden px-4 text-right text-muted-foreground sm:table-cell">
+								<TableCell className="hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell">
 									<RelativeTime value={review.createdAt} tooltip="title" />
 								</TableCell>
 							</TableRow>

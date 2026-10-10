@@ -85,7 +85,7 @@ export function SectionTabBar({
 								className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover/tab:opacity-100 pointer-coarse:opacity-100"
 								onClick={() => onDelete(tab.id)}
 							>
-								<TrashIcon size={11} />
+								<TrashIcon />
 							</IconButton>
 						)}
 					</div>
@@ -98,7 +98,7 @@ export function SectionTabBar({
 					className="shrink-0 text-muted-foreground"
 					onClick={onAddTab}
 				>
-					<PlusIcon size={13} />
+					<PlusIcon />
 				</IconButton>
 			)}
 		</div>

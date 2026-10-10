@@ -15,7 +15,8 @@
 
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
-import { Effect } from "effect"
+import { utcSecondsParam } from "../ch/tables"
+import { DateTime, Effect, Result } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 
@@ -58,6 +59,9 @@ export interface BuilderFixture {
 const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
+/** The same window for builders whose bounds are `DateTime.Utc`. */
+const START_UTC = DateTime.makeUnsafe("2026-01-01T10:30:00Z")
+const END_UTC = DateTime.makeUnsafe("2026-01-03T14:15:00Z")
 const SESSION_ID = "sess_0af7651916cd43dd"
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const SPAN_ID = "b7ad6b7169203331"
@@ -268,11 +272,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
 				window,
 			),
 	},
@@ -282,12 +288,14 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-step-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -297,11 +305,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "visitor-session-step",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "visitor",
-					windowSeconds: 3_600,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "visitor",
+						windowSeconds: 3_600,
+					}),
+				),
 				window,
 			),
 	},
@@ -311,7 +321,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-key",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({ steps: FUNNEL_STEPS, keyBy: "session", windowSeconds: 1_800 }),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "session",
+						windowSeconds: 1_800,
+					}),
+				),
 				window,
 			),
 	},
@@ -321,13 +337,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-dimension",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelBreakdownQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-					breakdownBy: "utmSource",
-					limit: 10,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "utmSource",
+						limit: 10,
+					}),
+				),
 				window,
 			),
 	},
@@ -337,13 +355,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "attribute-session-step",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelBreakdownQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "user",
-					windowSeconds: 7 * 86_400,
-					breakdownBy: "attribute:plan",
-					limit: 5,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "user",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "attribute:plan",
+						limit: 5,
+					}),
+				),
 				window,
 			),
 	},
@@ -355,11 +375,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelTimingQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelTimingQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
 				window,
 			),
 	},
@@ -369,12 +391,14 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "visitor-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelLeaversQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "visitor",
-					windowSeconds: 7 * 86_400,
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelLeaversQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "visitor",
+						windowSeconds: 7 * 86_400,
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -384,15 +408,17 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "after-person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsPathsQuery({
-					anchor: { kind: "event", eventName: "signup_completed" },
-					direction: "after",
-					depth: 3,
-					branches: 4,
-					keyBy: "person",
-					windowSeconds: 86_400,
-					exclude: ["heartbeat", "/"],
-				}),
+				Result.getOrThrow(
+					CH.productEventsPathsQuery({
+						anchor: { kind: "event", eventName: "signup_completed" },
+						direction: "after",
+						depth: 3,
+						branches: 4,
+						keyBy: "person",
+						windowSeconds: 86_400,
+						exclude: ["heartbeat", "/"],
+					}),
+				),
 				window,
 			),
 	},
@@ -402,16 +428,18 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "before-session-pages-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsPathsQuery({
-					anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
-					direction: "before",
-					depth: 2,
-					branches: 3,
-					keyBy: "session",
-					windowSeconds: 3_600,
-					include: "pages",
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsPathsQuery({
+						anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
+						direction: "before",
+						depth: 2,
+						branches: 3,
+						keyBy: "session",
+						windowSeconds: 3_600,
+						include: "pages",
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -666,7 +694,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "getSessionReplayQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.getSessionReplayQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.getSessionReplayQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -676,7 +704,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplayChunkIndexQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionReplayChunkIndexQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionReplayChunkIndexQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -686,7 +714,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplayEventsQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionReplayEventsQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionReplayEventsQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -700,8 +728,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.sessionReplayEventsQuery({
-					startTime: START_TIME,
-					endTime: END_TIME,
+					startTime: START_UTC,
+					endTime: END_UTC,
 					fromChunkSeq: 16,
 					toChunkSeq: 31,
 					limit: 40,
@@ -723,8 +751,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(
 				CH.sessionTraceSummariesQuery({
 					traceIds: [TRACE_ID],
-					startTime: START_TIME,
-					endTime: END_TIME,
+					startTime: DateTime.makeUnsafe("2026-01-01T10:30:00Z"),
+					endTime: DateTime.makeUnsafe("2026-01-03T14:15:00Z"),
 				}),
 				{ orgId: ORG_ID },
 			),
@@ -736,7 +764,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionTranscriptQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionTranscriptQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionTranscriptQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -746,7 +774,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionActivityQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionActivityQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionActivityQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -1480,8 +1508,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTimeString("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTimeString("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 				}).format("JSON"),
 				{ orgId: ORG_ID, hourStart: START_TIME, hourEnd: END_TIME },
 			),
@@ -1495,8 +1523,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTimeString("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTimeString("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 					deploymentEnv: "production",
 					parentServiceName: "web",
 				}).format("JSON"),

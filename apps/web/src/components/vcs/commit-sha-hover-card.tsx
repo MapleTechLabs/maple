@@ -1,12 +1,12 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import type { VcsCommitDetailResponse } from "@maple/domain/http"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@maple/ui/components/ui/hover-card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
+import { CopyableBadge } from "@maple/ui/components/ui/copyable-badge"
 import { useCopy } from "@maple/ui/hooks/use-copy"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { shortId } from "@maple/ui/lib/ids"
@@ -154,11 +154,11 @@ export function CommitShaHoverCard({
 
 const COMMIT_DETAIL_TTL_MS = 5 * 60_000
 
-// Per-SHA query atom. Wrapping `MapleApiAtomClient.query` in `Atom.family` keyed by
+// Per-SHA query atom. Wrapping `MapleInternalAtomClient.query` in `Atom.family` keyed by
 // the SHA *string* is what actually lets the prefetch subscriber, the popup body,
 // the deploy-marker flags, and the commit-list rows share ONE fetch + cached result.
 export const commitQueryAtom = Atom.family((sha: string) =>
-	retainedQuery("integrations", "vcsCommitDetail", {
+	retainedInternalQuery("integrations", "vcsCommitDetail", {
 		params: { sha },
 		timeToLive: COMMIT_DETAIL_TTL_MS,
 	}),
@@ -172,7 +172,7 @@ export const commitQueryAtom = Atom.family((sha: string) =>
  * reuses the same atom (and its cached result).
  */
 export const commitsQueryAtom = Atom.family((shasKey: string) =>
-	retainedQuery("integrations", "vcsCommitDetails", {
+	retainedInternalQuery("integrations", "vcsCommitDetails", {
 		query: { shas: shasKey },
 		timeToLive: COMMIT_DETAIL_TTL_MS,
 	}),
@@ -247,7 +247,7 @@ function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailRespon
 				<p
 					className={cn(
 						"font-medium leading-snug text-foreground",
-						compact ? "line-clamp-2 text-[13px]" : "line-clamp-2 text-sm",
+						compact ? "line-clamp-2 text-ui" : "line-clamp-2 text-sm",
 					)}
 				>
 					{title}
@@ -448,25 +448,12 @@ function ExternalText({
 	)
 }
 
-// The short SHA, rendered as a copy button (copies the full SHA). Replaces the
-// bare badge so the value is actually useful instead of just decorative.
+// The short SHA as a copy badge (copies the full SHA).
 function CopyableSha({ sha }: { sha: string }) {
-	const { copy, status } = useCopy({ label: "Commit SHA", toast: false })
-
 	return (
-		<button
-			type="button"
-			onClick={() => void copy(sha)}
-			aria-label="Copy commit SHA"
-			className="group inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-2xs text-foreground/80 transition-colors hover:bg-muted/70"
-		>
+		<CopyableBadge value={sha} label="commit SHA" variant="muted" size="sm" className="font-mono">
 			{shortId(sha, "sha")}
-			<CopyIndicator
-				status={status}
-				iconSize={11}
-				className="text-muted-foreground transition-colors group-hover:text-foreground/80"
-			/>
-		</button>
+		</CopyableBadge>
 	)
 }
 

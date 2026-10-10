@@ -6,7 +6,7 @@ import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { ChartLoading } from "@maple/ui/components/charts/_shared/chart-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { ChartCard } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
@@ -294,22 +294,21 @@ function MetricChart({
 	}`
 
 	return (
-		<Panel>
-			<PanelHeader
-				title={
-					<span className="font-mono" title={queryLabel}>
-						{queryLabel}
+		<ChartCard
+			title={
+				<span className="font-mono" title={queryLabel}>
+					{queryLabel}
+				</span>
+			}
+			legend={
+				capped || unit ? (
+					<span className="flex items-center gap-3 text-xs text-muted-foreground">
+						{capped ? <span>Top {GROUP_BY_SERIES_LIMIT} series</span> : null}
+						{unit ? <span>unit: {unit}</span> : null}
 					</span>
-				}
-				action={
-					capped || unit ? (
-						<span className="flex items-center gap-3 text-xs text-muted-foreground">
-							{capped ? <span>Top {GROUP_BY_SERIES_LIMIT} series</span> : null}
-							{unit ? <span>unit: {unit}</span> : null}
-						</span>
-					) : undefined
-				}
-			/>
+				) : undefined
+			}
+		>
 			<div className="h-80 p-3">
 				{Result.builder(result)
 					.onInitial(() => <ChartSkeleton variant="area" />)
@@ -333,6 +332,6 @@ function MetricChart({
 					)
 					.render()}
 			</div>
-		</Panel>
+		</ChartCard>
 	)
 }

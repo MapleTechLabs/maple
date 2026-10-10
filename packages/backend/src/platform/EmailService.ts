@@ -3,7 +3,7 @@ import { EmailSender } from "./bindings"
 import { Env } from "./Env"
 
 class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
-	"@maple/api/platform/EmailDeliveryError",
+	"@maple/backend/platform/EmailDeliveryError",
 	{ message: Schema.String },
 ) {}
 
@@ -50,8 +50,8 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 				options?: EmailSendOptions,
 			) {
 				// PII: never stamp recipient/reply-to addresses on spans or logs
-				yield* Effect.annotateCurrentSpan("email.subject", subject)
-				yield* Effect.annotateCurrentSpan("email.provider", "cloudflare")
+				yield* Effect.annotateCurrentSpan("maple.email.subject", subject)
+				yield* Effect.annotateCurrentSpan("maple.email.provider", "cloudflare")
 
 				if (Option.isNone(sender)) {
 					return yield* Effect.fail(
@@ -89,7 +89,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 						}),
 					)
 
-				yield* Effect.annotateCurrentSpan("email.message_id", result.messageId)
+				yield* Effect.annotateCurrentSpan("maple.email.message_id", result.messageId)
 				yield* Effect.logInfo("Email sent successfully").pipe(
 					Effect.annotateLogs({ subject, messageId: result.messageId }),
 				)

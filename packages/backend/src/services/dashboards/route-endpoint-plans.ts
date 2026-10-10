@@ -233,16 +233,16 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 						data: funnelWidgetBreakdownRows(
 							payload.steps,
 							rows.map((row) => ({
-								group: String(row.group),
-								step: Number(row.step),
-								count: Number(row.count) || 0,
+								group: row.group,
+								step: row.step,
+								count: row.count || 0,
 							})),
 						),
 					}
 				}
 				yield* validateFunnelDefinition(productEventsFunnelOpts(payload))
 				const rows = yield* runQuery(Queries.productEventsFunnel, context.tenant, payload)
-				const counts = rows.map((row) => ({ step: Number(row.step), count: Number(row.count) || 0 }))
+				const counts = rows.map((row) => ({ step: row.step, count: row.count || 0 }))
 				// The drop-off view's extras. A one-step funnel has no "between"
 				// and no leavers, so it draws with counts alone.
 				if (details !== true || payload.steps.length < 2) {
@@ -263,14 +263,14 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 						counts,
 						funnelStepDetails(
 							timing.map((row) => ({
-								step: Number(row.step),
-								p50Ms: Number(row.p50Ms) || 0,
-								p90Ms: Number(row.p90Ms) || 0,
+								step: row.step,
+								p50Ms: row.p50Ms || 0,
+								p90Ms: row.p90Ms || 0,
 							})),
 							leavers.map((row) => ({
-								step: Number(row.step),
-								next: String(row.next),
-								count: Number(row.count) || 0,
+								step: row.step,
+								next: row.next,
+								count: row.count || 0,
 							})),
 						),
 					),
@@ -309,10 +309,10 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				})
 				const rows = yield* runQuery(Queries.productEventsPaths, context.tenant, payload)
 				const data: ReadonlyArray<PathsWidgetRow> = rows.map((row) => ({
-					hop: Number(row.hop) || 0,
-					fromNode: String(row.fromNode),
-					toNode: String(row.toNode),
-					count: Number(row.count) || 0,
+					hop: row.hop || 0,
+					fromNode: row.fromNode,
+					toNode: row.toNode,
+					count: row.count || 0,
 				}))
 				return { data }
 			}),

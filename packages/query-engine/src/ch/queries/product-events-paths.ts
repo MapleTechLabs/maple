@@ -21,7 +21,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
 import { ProductEvents, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
@@ -79,32 +79,33 @@ export const productEventsPathsRowSchema = Schema.Struct({
 })
 export type ProductEventsPathsOutput = typeof productEventsPathsRowSchema.Type
 
-function validate(opts: ProductEventsPathsOpts): void {
+function validate(opts: ProductEventsPathsOpts): ProductEventsFunnelError | undefined {
 	if (!Number.isInteger(opts.depth) || opts.depth < 1 || opts.depth > PATHS_MAX_DEPTH) {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "InvalidLimit",
 			message: `paths depth must be an integer in 1..${PATHS_MAX_DEPTH}, got ${String(opts.depth)}`,
 		})
 	}
 	if (!Number.isInteger(opts.branches) || opts.branches < 1 || opts.branches > PATHS_MAX_BRANCHES) {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "InvalidLimit",
 			message: `paths branches must be an integer in 1..${PATHS_MAX_BRANCHES}, got ${String(opts.branches)}`,
 		})
 	}
 	if (!Number.isFinite(opts.windowSeconds) || opts.windowSeconds <= 0) {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "InvalidWindow",
 			message: `windowSeconds must be a positive number, got ${String(opts.windowSeconds)}`,
 		})
 	}
 	const anchorName = opts.anchor.kind === "event" ? opts.anchor.eventName : opts.anchor.pagePath
 	if (anchorName.trim() === "") {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "NoSteps",
 			message: "paths need an anchor event or page",
 		})
 	}
+	return undefined
 }
 
 /** The include filter over a projected `kind` column; `undefined` for "all". */
@@ -148,8 +149,8 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 		personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 	const inRange = ($: OpenJoinAccessor<typeof ProductEvents.columns>) => [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		keyOf($).neq(""),
 		hasPopulationFilter(filters)
 			? inSubquery(keyOf($), matchingPersonsSubquery(keyBy, filters))
@@ -214,8 +215,9 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
  */
 export function productEventsPathsQuery(
 	opts: ProductEventsPathsOpts,
-): CHQuery<any, ProductEventsPathsOutput, any> {
-	validate(opts)
+): Result.Result<CHQuery<any, ProductEventsPathsOutput, any>, ProductEventsFunnelError> {
+	const invalid = validate(opts)
+	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
 	const forward = opts.direction === "after"
 
@@ -333,8 +335,10 @@ export function productEventsPathsQuery(
 		})
 		.groupBy("hop", "fromNode", "toNode")
 
-	return fromQuery(mapped, "mapped")
-		.select(($) => ({ hop: $.hop, fromNode: $.fromNode, toNode: $.toNode, count: $.count }))
-		.orderBy(["hop", "asc"], ["count", "desc"], ["fromNode", "asc"], ["toNode", "asc"])
-		.format("JSON")
+	return Result.succeed(
+		fromQuery(mapped, "mapped")
+			.select(($) => ({ hop: $.hop, fromNode: $.fromNode, toNode: $.toNode, count: $.count }))
+			.orderBy(["hop", "asc"], ["count", "desc"], ["fromNode", "asc"], ["toNode", "asc"])
+			.format("JSON"),
+	)
 }

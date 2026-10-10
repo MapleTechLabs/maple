@@ -57,7 +57,11 @@ interface PageState {
 	rightPanel?: React.ReactNode
 }
 
-const DEFAULT_NOT_FOUND = <ResourceNotFound title="Not found" />
+export const CRUMB_LOADING = "Loading…"
+export const CRUMB_NOT_FOUND = "Not found"
+export const CRUMB_ERROR = "Error"
+
+const DEFAULT_NOT_FOUND = <ResourceNotFound title={CRUMB_NOT_FOUND} />
 
 /**
  * A detail route's one shell. Loading, error, not-found and loaded states swap only the
@@ -85,10 +89,10 @@ export function ResultPage<A, E, B>({
 	children,
 	...page
 }: ResultPageProps<A, E, B>) {
-	const notFoundState: PageState = { crumb: "Not found", body: notFound }
+	const notFoundState: PageState = { crumb: CRUMB_NOT_FOUND, body: notFound }
 	const state: PageState =
 		invalid !== undefined
-			? { crumb: "Not found", body: invalid }
+			? { crumb: CRUMB_NOT_FOUND, body: invalid }
 			: Result.builder(result)
 					.onSuccess((value, success): PageState => {
 						const selected = select(value)
@@ -106,7 +110,7 @@ export function ResultPage<A, E, B>({
 					.onError((cause): PageState => {
 						if (isNotFoundError?.(cause)) return notFoundState
 						return {
-							crumb: "Error",
+							crumb: CRUMB_ERROR,
 							body: error ? (
 								error(cause)
 							) : (
@@ -114,7 +118,7 @@ export function ResultPage<A, E, B>({
 							),
 						}
 					})
-					.orElse((): PageState => ({ crumb: "Loading…", body: loading, header: loadingHeader }))
+					.orElse((): PageState => ({ crumb: CRUMB_LOADING, body: loading, header: loadingHeader }))
 
 	return (
 		<DashboardPage

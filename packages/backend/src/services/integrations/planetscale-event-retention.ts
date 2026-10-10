@@ -1,6 +1,5 @@
-import { msToDate, msToSqlTimestamp } from "@maple/backend/platform/time"
-import { planetscaleEvents, planetscaleIssueReceipts } from "@maple/db"
-import { and, desc, eq, lt, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PlanetscaleEvents, PlanetscaleIssueReceipts } from "@maple/db/tables"
 import { Clock, Effect } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 
@@ -30,65 +29,72 @@ const EVENT_MAX_ROWS_PER_ORG = 20_000
  */
 export const runPlanetScaleEventRetention = Effect.gen(function* () {
 	const now = yield* Clock.currentTimeMillis
-	const cutoff = msToDate(now - EVENT_RETENTION_MS)
+	const cutoff = now - EVENT_RETENTION_MS
 	const database = yield* Database
 
 	const { orgs, deletedByAge, deletedReceipts } = yield* database.execute((db) =>
 		Effect.gen(function* () {
 			// A bounded indexed sweep retains replay protection for 90 days after processing.
-			const receipts = yield* db
-				.delete(planetscaleIssueReceipts)
-				.where(sql`
-   (${planetscaleIssueReceipts.orgId}, ${planetscaleIssueReceipts.eventId}) IN (
-    SELECT org_id, event_id FROM planetscale_issue_receipts
-    WHERE processed_at < ${msToSqlTimestamp(now - EVENT_RETENTION_MS)}::timestamptz
-    ORDER BY processed_at LIMIT 5000
-   )`)
-				.returning({ eventId: planetscaleIssueReceipts.eventId })
-			const aged = yield* db
-				.delete(planetscaleEvents)
-				.where(lt(planetscaleEvents.occurredAt, cutoff))
-				.returning({ id: planetscaleEvents.id })
+			const expiredReceipts = PG.from(PlanetscaleIssueReceipts)
+				.select("orgId", "eventId")
+				.where(($) => [$.processedAt.lt(cutoff)])
+				.orderBy(($) => [[$.processedAt, "asc"]])
+				.limit(5000)
+			const receipts = yield* db.run(
+				PG.deleteFrom(PlanetscaleIssueReceipts)
+					.where(($) => [PG.sql.cond`(${$.orgId}, ${$.eventId}) IN (${expiredReceipts})`])
+					.returning("eventId"),
+			)
+			const aged = yield* db.run(
+				PG.deleteFrom(PlanetscaleEvents)
+					.where(($) => [$.occurredAt.lt(cutoff)])
+					.returning("id"),
+			)
 
 			// Only orgs that could still be over the cap after the age delete are
-			// probed — the OFFSET probe walks up to EVENT_MAX_ROWS_PER_ORG index
+			// probed: the OFFSET probe walks up to EVENT_MAX_ROWS_PER_ORG index
 			// entries, so running it for every org would cost far more than it saves.
-			const overCap = yield* db
-				.select({ orgId: planetscaleEvents.orgId, total: sql<number>`count(*)::int` })
-				.from(planetscaleEvents)
-				.groupBy(planetscaleEvents.orgId)
-				.having(sql`count(*) > ${EVENT_MAX_ROWS_PER_ORG}`)
+			const overCap = yield* db.run(
+				PG.from(PlanetscaleEvents)
+					.select(($) => ({ orgId: $.orgId, total: PG.count() }))
+					.groupBy("orgId")
+					.having(() => [PG.count().gt(EVENT_MAX_ROWS_PER_ORG)]),
+			)
 
-			for (const org of overCap) {
-				// Drop everything older than the Nth-newest row. The probe rides the
-				// (org_id, occurred_at) index.
-				const boundary = (yield* db
-					.select({ occurredAt: planetscaleEvents.occurredAt })
-					.from(planetscaleEvents)
-					.where(eq(planetscaleEvents.orgId, org.orgId))
-					.orderBy(desc(planetscaleEvents.occurredAt))
-					.limit(1)
-					.offset(EVENT_MAX_ROWS_PER_ORG - 1))[0]
-				if (boundary === undefined) continue
-				yield* db
-					.delete(planetscaleEvents)
-					.where(
-						and(
-							eq(planetscaleEvents.orgId, org.orgId),
-							lt(planetscaleEvents.occurredAt, boundary.occurredAt),
-						),
-					)
-			}
+			yield* Effect.forEach(
+				overCap,
+				(org) =>
+					Effect.gen(function* () {
+						// Drop everything older than the Nth-newest row. The probe rides the
+						// (org_id, occurred_at) index.
+						const [boundary] = yield* db.run(
+							PG.from(PlanetscaleEvents)
+								.select("occurredAt")
+								.where(($) => [$.orgId.eq(org.orgId)])
+								.orderBy(["occurredAt", "desc"])
+								.limit(1)
+								.offset(EVENT_MAX_ROWS_PER_ORG - 1),
+						)
+						if (boundary === undefined) return
+						yield* db.run(
+							PG.deleteFrom(PlanetscaleEvents).where(($) => [
+								$.orgId.eq(org.orgId),
+								$.occurredAt.lt(boundary.occurredAt),
+							]),
+						)
+					}),
+				{ discard: true },
+			)
 
 			return { orgs: overCap.length, deletedByAge: aged.length, deletedReceipts: receipts.length }
 		}),
 	)
 
 	yield* Effect.annotateCurrentSpan({
-		"planetscale.event_retention.deleted_by_age": deletedByAge,
-		"planetscale.event_retention.deleted_receipts": deletedReceipts,
-		"planetscale.event_retention.orgs_capped": orgs,
-		"planetscale.event_retention.outcome": "completed",
+		"maple.planetscale.event_retention.deleted_by_age": deletedByAge,
+		"maple.planetscale.event_retention.deleted_receipts": deletedReceipts,
+		"maple.planetscale.event_retention.orgs_capped": orgs,
+		"maple.planetscale.event_retention.outcome": "completed",
 	})
 	yield* Effect.logInfo("[planetscale] event retention tick complete").pipe(
 		Effect.annotateLogs({ deletedByAge, orgsCapped: orgs }),
@@ -96,7 +102,7 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 }).pipe(
 	// tapCause lets the cause propagate so `withSpan` marks the tick as Error.
 	Effect.tapCause((cause) =>
-		Effect.annotateCurrentSpan({ "planetscale.event_retention.outcome": "failed" }).pipe(
+		Effect.annotateCurrentSpan({ "maple.planetscale.event_retention.outcome": "failed" }).pipe(
 			Effect.flatMap(() =>
 				Effect.logError("[planetscale] event retention tick failed").pipe(
 					Effect.annotateLogs({ error: String(cause) }),

@@ -111,14 +111,13 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				widgets.push(widget)
 			}
 
-			const seenIds = new Set<string>()
-			for (const w of widgets) {
-				if (seenIds.has(w.id)) {
-					return yield* invalid(
-						`Duplicate widget id "${w.id}" in widgets_json. Each widget needs a unique id (or omit id to auto-generate).`,
-					)
-				}
-				seenIds.add(w.id)
+			const duplicate = widgets.find(
+				(w, index) => widgets.findIndex((other) => other.id === w.id) !== index,
+			)
+			if (duplicate !== undefined) {
+				return yield* invalid(
+					`Duplicate widget id "${duplicate.id}" in widgets_json. Each widget needs a unique id (or omit id to auto-generate).`,
+				)
 			}
 
 			// Validate every widget's query before persisting anything — an atomic,

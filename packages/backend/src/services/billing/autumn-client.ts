@@ -92,16 +92,16 @@ export const summariseSubscriptions = (response: unknown): Record<string, string
 	const describe = (pick: (sub: PlanGatingSubscription) => string | null | undefined) =>
 		subscriptions.map((sub) => pick(sub) ?? "-").join(",")
 	return {
-		"billing.subscription_count": subscriptions.length,
-		"billing.subscription_statuses": describe((sub) => sub.status),
-		"billing.subscription_plan_ids": describe((sub) => sub.planId),
+		"maple.billing.subscription_count": subscriptions.length,
+		"maple.billing.subscription_statuses": describe((sub) => sub.status),
+		"maple.billing.subscription_plan_ids": describe((sub) => sub.planId),
 		// Which rows the gate discards, positionally aligned with the two lists
 		// above: "addon" / "auto" / "-" per subscription.
-		"billing.subscription_excluded": subscriptions
+		"maple.billing.subscription_excluded": subscriptions
 			.map((sub) => (sub.addOn ? "addon" : sub.autoEnable ? "auto" : "-"))
 			.join(","),
-		"billing.has_active_plan": responseHasActivePlan(response),
-		"billing.has_plan_history": responseHasPlanHistory(response),
+		"maple.billing.has_active_plan": responseHasActivePlan(response),
+		"maple.billing.has_plan_history": responseHasPlanHistory(response),
 	}
 }
 
@@ -120,7 +120,7 @@ const customerCacheTtl = (response: unknown): number => {
 // fails with this so `getOrCompute` never stores it, then the caller recovers it
 // into the normal path. Mirrors `AutumnResult` so `.result` stays typed.
 class UncacheableAutumnResult extends Schema.TaggedError<UncacheableAutumnResult>()(
-	"@maple/api/billing/UncacheableAutumnResult",
+	"@maple/backend/billing/UncacheableAutumnResult",
 	{
 		message: Schema.String,
 		result: Schema.Struct({ statusCode: Schema.Number, response: Schema.Unknown }),
@@ -159,7 +159,7 @@ export const readCustomerCached = (
 		)
 		.pipe(
 			Effect.map((cached) => ({ result: cached.value, hit: cached.hit })),
-			Effect.catchTag("@maple/api/billing/UncacheableAutumnResult", (error) =>
+			Effect.catchTag("@maple/backend/billing/UncacheableAutumnResult", (error) =>
 				Effect.succeed({ result: error.result, hit: false }),
 			),
 		)
@@ -283,7 +283,7 @@ export const resolveAttachConflict = (
 		const holdsPlan = customer.subscriptions.some(
 			(sub) => sub.planId === planId && sub.status === "active",
 		)
-		yield* Effect.annotateCurrentSpan({ "billing.attach_conflict_resolved": holdsPlan })
+		yield* Effect.annotateCurrentSpan({ "maple.billing.attach_conflict_resolved": holdsPlan })
 		return holdsPlan ? {} : yield* conflict
 	})
 

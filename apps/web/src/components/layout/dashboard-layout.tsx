@@ -126,7 +126,7 @@ function Breadcrumbs({
 			</Breadcrumb>
 			<div className="ml-auto flex shrink-0 items-center gap-2">
 				<IconButton variant="outline" label="Ask Maple AI" shortcut="C" onClick={openGlobalChat}>
-					<ChatBubbleSparkleIcon size={16} />
+					<ChatBubbleSparkleIcon />
 				</IconButton>
 				<OnboardingChecklistButton />
 				<ConnectButton />
@@ -135,14 +135,14 @@ function Breadcrumbs({
 				    context, so a page that composes no `Filters` gets no button here. */}
 				<PageLayout.FilterSidebarTrigger>
 					<Button variant="outline" size="icon-sm" aria-label="Open filters">
-						<LayoutLeftIcon size={16} />
+						<LayoutLeftIcon />
 					</Button>
 				</PageLayout.FilterSidebarTrigger>
 				{/* Same self-gating for the trailing context rail, which is inline above
 				    `lg` and a sheet below it. */}
 				<PageLayout.RightSidebarTrigger>
 					<Button variant="outline" size="icon-sm" aria-label="Open context">
-						<LayoutRightIcon size={16} />
+						<LayoutRightIcon />
 					</Button>
 				</PageLayout.RightSidebarTrigger>
 				{children}

@@ -31,8 +31,12 @@ import {
 	type TableDiffEntry,
 } from "@maple/domain/clickhouse"
 import { EdgeCacheService } from "@maple/cache"
-import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
-import { and, eq, inArray, lt, notInArray, or } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	OrgClickHouseSchemaApplyRuns,
+	OrgClickHouseSettings,
+	type OrgClickHouseSettingsRow,
+} from "@maple/db/tables"
 import {
 	Array as Arr,
 	Clock,
@@ -55,9 +59,9 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { SchemaApplyWorkflow } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { dateToMs } from "@maple/backend/platform/time"
 import { validateExternalUrl } from "@maple/safe-fetch"
 
 /**
@@ -76,7 +80,7 @@ type RuntimeBackendConfig = {
 	readonly database: string
 }
 
-type ActiveRow = typeof orgClickHouseSettings.$inferSelect
+type ActiveRow = OrgClickHouseSettingsRow
 
 /** The columns `resolveRuntimeConfig` actually caches — see `selectCachedRow`. */
 type CachedSettingsRow = Pick<
@@ -631,8 +635,8 @@ export const validateClickHouseCredentialTransport = (
 const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
 	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
 
-const isIsoDateTime = (value: Date | null | undefined) =>
-	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
+const isIsoDateTime = (value: number | null | undefined) =>
+	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
 
 const decodeStatus = (raw: string | null | undefined): "connected" | "error" | null => {
 	if (raw === "connected" || raw === "error") return raw
@@ -908,6 +912,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 >()("@maple/api/services/OrgClickHouseSettingsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "OrgClickHouseSettingsService", toPersistenceError)
 		const env = yield* Env
 		const httpClient = yield* HttpClient.HttpClient
 		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
@@ -943,15 +948,14 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (
 			orgId: OrgId,
 		) {
-			const rows = yield* database
-				.execute((db) =>
-					db
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgClickHouseSettings)
 						.select()
-						.from(orgClickHouseSettings)
-						.where(eq(orgClickHouseSettings.orgId, orgId))
+						.where(($) => [$.orgId.eq(orgId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 			return Option.fromNullishOr(rows[0])
 		})
 
@@ -962,24 +966,23 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const selectCachedRow = Effect.fn("OrgClickHouseSettingsService.selectCachedRow")(function* (
 			orgId: OrgId,
 		) {
-			const rows = yield* database
-				.execute((db) =>
-					db
-						.select({
-							schemaVersion: orgClickHouseSettings.schemaVersion,
-							syncStatus: orgClickHouseSettings.syncStatus,
-							chUrl: orgClickHouseSettings.chUrl,
-							chUser: orgClickHouseSettings.chUser,
-							chDatabase: orgClickHouseSettings.chDatabase,
-							chPasswordCiphertext: orgClickHouseSettings.chPasswordCiphertext,
-							chPasswordIv: orgClickHouseSettings.chPasswordIv,
-							chPasswordTag: orgClickHouseSettings.chPasswordTag,
-						})
-						.from(orgClickHouseSettings)
-						.where(eq(orgClickHouseSettings.orgId, orgId))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgClickHouseSettings)
+						.select(
+							"schemaVersion",
+							"syncStatus",
+							"chUrl",
+							"chUser",
+							"chDatabase",
+							"chPasswordCiphertext",
+							"chPasswordIv",
+							"chPasswordTag",
+						)
+						.where(($) => [$.orgId.eq(orgId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 			return Option.fromNullishOr(rows[0])
 		})
 
@@ -1134,10 +1137,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				plainPassword.length > 0 ? yield* encryptToken(plainPassword, encryptionKey) : null
 
 			const now = yield* Clock.currentTimeMillis
-			yield* database
-				.execute((db) =>
-					db
-						.insert(orgClickHouseSettings)
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(OrgClickHouseSettings)
 						.values({
 							orgId,
 							chUrl: url,
@@ -1147,22 +1149,20 @@ export class OrgClickHouseSettingsService extends Context.Service<
 							chPasswordTag: encryptedPassword?.tag ?? null,
 							chDatabase: dbName,
 							syncStatus: "connected",
-							lastSyncAt: new Date(now),
+							lastSyncAt: now,
 							lastSyncError: null,
-							// schemaVersion is preserved across re-saves — credentials
+							// schemaVersion is preserved across re-saves; credentials
 							// changing doesn't invalidate the schema apply state.
 							schemaVersion: Option.isSome(existingRow)
 								? existingRow.value.schemaVersion
 								: null,
-							createdAt: Option.isSome(existingRow)
-								? existingRow.value.createdAt
-								: new Date(now),
-							updatedAt: new Date(now),
+							createdAt: Option.isSome(existingRow) ? existingRow.value.createdAt : now,
+							updatedAt: now,
 							createdBy: Option.isSome(existingRow) ? existingRow.value.createdBy : userId,
 							updatedBy: userId,
 						})
 						.onConflictDoUpdate({
-							target: orgClickHouseSettings.orgId,
+							target: ["orgId"],
 							set: {
 								chUrl: url,
 								chUser: user,
@@ -1171,14 +1171,14 @@ export class OrgClickHouseSettingsService extends Context.Service<
 								chPasswordTag: encryptedPassword?.tag ?? null,
 								chDatabase: dbName,
 								syncStatus: "connected",
-								lastSyncAt: new Date(now),
+								lastSyncAt: now,
 								lastSyncError: null,
-								updatedAt: new Date(now),
+								updatedAt: now,
 								updatedBy: userId,
 							},
 						}),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			yield* invalidateRuntimeConfigCache(orgId)
 			const refreshed = yield* selectActiveRow(orgId)
@@ -1191,11 +1191,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* requireAdmin(roles)
-			yield* database
-				.execute((db) =>
-					db.delete(orgClickHouseSettings).where(eq(orgClickHouseSettings.orgId, orgId)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			yield* dbExecute((db) =>
+				db.run(PG.deleteFrom(OrgClickHouseSettings).where(($) => [$.orgId.eq(orgId)])),
+			)
 			yield* invalidateRuntimeConfigCache(orgId)
 			return new OrgClickHouseSettingsDeleteResponse({ configured: false })
 		})
@@ -1235,23 +1233,22 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			let appliedSchemaVersion = row.schemaVersion ?? null
 			if (shouldHealSchemaVersion(entries, row.schemaVersion ?? null, clickHouseSchemaVersion)) {
 				const now = yield* Clock.currentTimeMillis
-				yield* database
-					.execute((db) =>
-						db
-							.update(orgClickHouseSettings)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgClickHouseSettings)
 							.set({
 								schemaVersion: clickHouseSchemaVersion,
 								syncStatus: "connected",
-								lastSyncAt: new Date(now),
+								lastSyncAt: now,
 								lastSyncError: null,
-								updatedAt: new Date(now),
+								updatedAt: now,
 							})
-							.where(eq(orgClickHouseSettings.orgId, orgId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
 				yield* invalidateRuntimeConfigCache(orgId)
 				appliedSchemaVersion = clickHouseSchemaVersion
-				yield* Effect.annotateCurrentSpan("clickhouse.schemaVersion.healed", true)
+				yield* Effect.annotateCurrentSpan("maple.clickhouse.schema_version_healed", true)
 				yield* Effect.logInfo("Self-healed ClickHouse schema_version to current version").pipe(
 					Effect.annotateLogs({
 						orgId,
@@ -1300,10 +1297,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// reclaimable — the workflow stamps progress on every step, so a silent
 			// stall that long means the instance died without reaching its catch.
 			const now = yield* Clock.currentTimeMillis
-			const claimed = yield* database
-				.execute((db) =>
-					db
-						.insert(orgClickHouseSchemaApplyRuns)
+			const claimed = yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(OrgClickHouseSchemaApplyRuns)
 						.values({
 							orgId,
 							workflowInstanceId: null,
@@ -1317,18 +1313,16 @@ export class OrgClickHouseSettingsService extends Context.Service<
 							errorMessage: null,
 							startedAt: null,
 							finishedAt: null,
-							createdAt: new Date(now),
-							updatedAt: new Date(now),
+							createdAt: now,
+							updatedAt: now,
 						})
 						.onConflictDoUpdate({
-							target: orgClickHouseSchemaApplyRuns.orgId,
-							setWhere: or(
-								notInArray(orgClickHouseSchemaApplyRuns.status, ["queued", "running"]),
-								lt(
-									orgClickHouseSchemaApplyRuns.updatedAt,
-									new Date(now - STALE_APPLY_RUN_MS),
+							target: ["orgId"],
+							where: ($) =>
+								PG.or(
+									$.status.notIn("queued", "running"),
+									$.updatedAt.lt(now - STALE_APPLY_RUN_MS),
 								),
-							),
 							set: {
 								status: "queued",
 								phase: "queued",
@@ -1340,12 +1334,12 @@ export class OrgClickHouseSettingsService extends Context.Service<
 								errorMessage: null,
 								startedAt: null,
 								finishedAt: null,
-								updatedAt: new Date(now),
+								updatedAt: now,
 							},
 						})
-						.returning({ orgId: orgClickHouseSchemaApplyRuns.orgId }),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+						.returning("orgId"),
+				),
+			)
 			if (claimed.length === 0) {
 				return new OrgClickHouseApplySchemaStarted({ status: "already_running" })
 			}
@@ -1363,20 +1357,16 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				Effect.tapError((error) =>
 					database
 						.execute((db) =>
-							db
-								.update(orgClickHouseSchemaApplyRuns)
-								.set({
-									status: "failed",
-									errorMessage: error.message,
-									finishedAt: new Date(now),
-									updatedAt: new Date(now),
-								})
-								.where(
-									and(
-										eq(orgClickHouseSchemaApplyRuns.orgId, orgId),
-										eq(orgClickHouseSchemaApplyRuns.status, "queued"),
-									),
-								),
+							db.run(
+								PG.update(OrgClickHouseSchemaApplyRuns)
+									.set({
+										status: "failed",
+										errorMessage: error.message,
+										finishedAt: now,
+										updatedAt: now,
+									})
+									.where(($) => [$.orgId.eq(orgId), $.status.eq("queued")]),
+							),
 						)
 						.pipe(Effect.ignore),
 				),
@@ -1391,15 +1381,14 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* requireAdmin(roles)
-			const rows = yield* database
-				.execute((db) =>
-					db
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgClickHouseSchemaApplyRuns)
 						.select()
-						.from(orgClickHouseSchemaApplyRuns)
-						.where(eq(orgClickHouseSchemaApplyRuns.orgId, orgId))
+						.where(($) => [$.orgId.eq(orgId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 			const row = rows[0]
 			if (!row) {
 				return new OrgClickHouseApplySchemaStatus({
@@ -1435,8 +1424,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				appliedVersions,
 				skipped: decodeSkippedEntries(row.skipped),
 				errorMessage: row.errorMessage ?? null,
-				startedAt: dateToMs(row.startedAt),
-				finishedAt: dateToMs(row.finishedAt),
+				startedAt: row.startedAt,
+				finishedAt: row.finishedAt,
 			})
 		})
 
@@ -1461,24 +1450,23 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		// the whole set: the dial is the cost, not the row count.
 		const selectCachedRowsForOrgs = Effect.fn("OrgClickHouseSettingsService.selectCachedRowsForOrgs")(
 			function* (orgIds: ReadonlyArray<OrgId>) {
-				const rows = yield* database
-					.execute((db) =>
-						db
-							.select({
-								orgId: orgClickHouseSettings.orgId,
-								schemaVersion: orgClickHouseSettings.schemaVersion,
-								syncStatus: orgClickHouseSettings.syncStatus,
-								chUrl: orgClickHouseSettings.chUrl,
-								chUser: orgClickHouseSettings.chUser,
-								chDatabase: orgClickHouseSettings.chDatabase,
-								chPasswordCiphertext: orgClickHouseSettings.chPasswordCiphertext,
-								chPasswordIv: orgClickHouseSettings.chPasswordIv,
-								chPasswordTag: orgClickHouseSettings.chPasswordTag,
-							})
-							.from(orgClickHouseSettings)
-							.where(inArray(orgClickHouseSettings.orgId, [...orgIds])),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgClickHouseSettings)
+							.select(
+								"orgId",
+								"schemaVersion",
+								"syncStatus",
+								"chUrl",
+								"chUser",
+								"chDatabase",
+								"chPasswordCiphertext",
+								"chPasswordIv",
+								"chPasswordTag",
+							)
+							.where(($) => [$.orgId.in_(...orgIds)]),
+					),
+				)
 				return rows
 			},
 		)
@@ -1497,8 +1485,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				}),
 			)
 			yield* Effect.annotateCurrentSpan({
-				"clickhouse.config.prime_requested": orgIds.length,
-				"clickhouse.config.primed_orgs": pending.length,
+				"maple.clickhouse.config.prime_requested": orgIds.length,
+				"maple.clickhouse.config.primed_orgs": pending.length,
 			})
 			if (Arr.isReadonlyArrayEmpty(pending)) return
 
@@ -1646,7 +1634,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				.pipe(
 					Effect.tap((result) =>
 						Effect.annotateCurrentSpan(
-							"clickhouse.config.source",
+							"maple.clickhouse.config.source",
 							result.hit ? "edge_cache" : "postgres",
 						),
 					),
@@ -1660,10 +1648,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 
 				if (memoized !== undefined && nowMs < memoized.freshUntil) {
 					yield* Effect.annotateCurrentSpan({
-						"clickhouse.config.source": "memo",
-						// Legacy spelling, dual-emitted until dashboards move to
-						// `clickhouse.config.source`.
-						"clickhouse.config.memoHit": true,
+						"maple.clickhouse.config.source": "memo",
 					})
 					return memoized.value
 				}
@@ -1671,11 +1656,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				if (memoized !== undefined && nowMs < memoized.hardUntil) {
 					const forked = yield* refreshCachedSettings(orgId, nowMs)
 					yield* Effect.annotateCurrentSpan({
-						"clickhouse.config.source": "memo_stale",
-						"clickhouse.config.refresh_forked": forked,
-						"clickhouse.config.stale_age_ms":
+						"maple.clickhouse.config.source": "memo_stale",
+						"maple.clickhouse.config.refresh_forked": forked,
+						"maple.clickhouse.config.stale_age_ms":
 							nowMs - (memoized.freshUntil - ORG_CH_CONFIG_MEMO_TTL_MS),
-						"clickhouse.config.memoHit": true,
 					})
 					return memoized.value
 				}
@@ -1687,9 +1671,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				const failed = runtimeConfigFailures.get(orgId)
 				if (failed !== undefined && nowMs - failed.atMs < ORG_CH_CONFIG_FAILURE_TTL_MS) {
 					yield* Effect.annotateCurrentSpan({
-						"clickhouse.config.source": "postgres_failed",
-						"clickhouse.config.memoHit": false,
-						"clickhouse.config.failure_reused": true,
+						"maple.clickhouse.config.source": "postgres_failed",
+						"maple.clickhouse.config.failure_reused": true,
 					})
 					return yield* Effect.fail(failed.error)
 				}
@@ -1697,8 +1680,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				// Overwritten by `readSharedOrPostgres` on success; setting it first
 				// leaves failures attributed to the Postgres compute path.
 				yield* Effect.annotateCurrentSpan({
-					"clickhouse.config.source": "postgres",
-					"clickhouse.config.memoHit": false,
+					"maple.clickhouse.config.source": "postgres",
 				})
 				const cached = yield* readSharedOrPostgres(orgId).pipe(
 					Effect.tapError((error) =>
@@ -1714,7 +1696,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const resolveRuntimeConfig = Effect.fn("OrgClickHouseSettingsService.resolveRuntimeConfig")(
 			function* (orgId: OrgId) {
 				if (ignoreOrgClickHouse) {
-					yield* Effect.annotateCurrentSpan("clickhouse.config.source", "ignored_dev")
+					yield* Effect.annotateCurrentSpan("maple.clickhouse.config.source", "ignored_dev")
 					return Option.none<RuntimeBackendConfig>()
 				}
 				const cached = yield* resolveCachedSettings(orgId)
@@ -1730,7 +1712,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				// alerting; the schemaDiff path self-heals the value when the live schema is
 				// in sync.
 				yield* Effect.annotateCurrentSpan(
-					"clickhouse.schemaDrift",
+					"maple.clickhouse.schema_drift",
 					cached.schemaVersion !== clickHouseSchemaVersion,
 				)
 				const password = yield* decryptStoredPassword(cached)
@@ -1822,29 +1804,4 @@ export class OrgClickHouseSettingsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
-
-	static readonly get = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.get(orgId, roles))
-
-	static readonly upsert = (
-		orgId: OrgId,
-		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
-		payload: OrgClickHouseSettingsUpsertRequest,
-	) => this.use((service) => service.upsert(orgId, userId, roles, payload))
-
-	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.delete(orgId, roles))
-
-	static readonly resolveRuntimeConfig = (orgId: OrgId) =>
-		this.use((service) => service.resolveRuntimeConfig(orgId))
-
-	static readonly invalidateRuntimeConfig = (orgId: OrgId) =>
-		this.use((service) => service.invalidateRuntimeConfig(orgId))
-
-	static readonly isWarehouseWriteReady = (orgId: OrgId) =>
-		this.use((service) => service.isWarehouseWriteReady(orgId))
-
-	static readonly collectorConfig = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.collectorConfig(orgId, roles))
 }

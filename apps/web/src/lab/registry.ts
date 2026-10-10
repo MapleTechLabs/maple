@@ -148,6 +148,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/logs",
+		title: "Logs stream",
+		description:
+			"The `/logs` stream over a production-like fixture: access lines, slow queries, a payment outage with stack traces, JSON bodies. Toggles for wrap, density, search and pinned columns.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
@@ -221,6 +229,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Overview charts",
 		description:
 			"Service-detail chart bench pinned to cursor sync — the cross-browser gate's overview scenario.",
+		kind: "bench",
+		session: "none",
+	},
+	{
+		path: "/lab/bench/dashboard-grid",
+		title: "Dashboard grid",
+		description:
+			"A `?n=`-widget dashboard (default 50) in edit mode for drag, resize and mount timing via window.__dashboardGridBench.",
 		kind: "bench",
 		session: "none",
 	},

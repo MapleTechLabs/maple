@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema } from "effect"
 import { ServiceDeploymentsOutput } from "@maple/domain/mcp-outputs"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -65,8 +65,8 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			const lastSeenPrecision: "minute" | "hour" = minutePrecision ? "minute" : "hour"
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				minutePrecision,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.minute_precision": minutePrecision,
 			})
 
 			const rows = yield* withTenantExecutor(
@@ -91,19 +91,20 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 
 			const perGroup = new Map<string, number>()
-			const newest = new Map<string, string>()
+			const newest = new Map<string, number>()
 			for (const row of rows) {
 				const key = groupKey({ service: row.serviceName, environment: row.environment })
 				perGroup.set(key, (perGroup.get(key) ?? 0) + 1)
 				const seen = newest.get(key)
-				if (seen === undefined || row.lastSeen > seen) newest.set(key, row.lastSeen)
+				const lastSeenMs = DateTime.toEpochMillis(row.lastSeen)
+				if (seen === undefined || lastSeenMs > seen) newest.set(key, lastSeenMs)
 			}
 			const versions = rows.map((row) => ({
 				service: row.serviceName,
 				environment: row.environment,
 				commitSha: row.commitSha,
-				firstSeen: row.firstSeen,
-				lastSeen: row.lastSeen,
+				firstSeen: DateTime.formatIso(row.firstSeen),
+				lastSeen: DateTime.formatIso(row.lastSeen),
 				spanCount: row.spanCount,
 				errorCount: row.errorCount,
 				errorRate: row.spanCount > 0 ? row.errorCount / row.spanCount : 0,
@@ -111,7 +112,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 				p95Ms: row.p95LatencyMs,
 				live:
 					newest.get(groupKey({ service: row.serviceName, environment: row.environment })) ===
-					row.lastSeen,
+					DateTime.toEpochMillis(row.lastSeen),
 			}))
 
 			return {

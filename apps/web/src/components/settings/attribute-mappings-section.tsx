@@ -307,14 +307,14 @@ export function AttributeMappingsSection() {
 													onClick={() => openEditDialog(mapping)}
 													label="Edit mapping"
 												>
-													<PencilIcon size={14} />
+													<PencilIcon />
 												</IconButton>
 												<IconButton
 													className="text-muted-foreground hover:text-destructive"
 													onClick={() => setDeleteConfirm(mapping)}
 													label="Delete mapping"
 												>
-													<TrashIcon size={14} />
+													<TrashIcon />
 												</IconButton>
 											</div>
 											<Tooltip>

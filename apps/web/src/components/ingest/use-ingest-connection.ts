@@ -60,7 +60,7 @@ export function useIngestConnection({ poll = true }: UseIngestConnectionOptions 
 		(s) => !(typeof s.serviceName === "string" && s.serviceName.startsWith("demo-")),
 	)
 	const firstRealService =
-		typeof realServices[0]?.serviceName === "string" ? (realServices[0].serviceName as string) : undefined
+		typeof realServices[0]?.serviceName === "string" ? realServices[0].serviceName : undefined
 	const spansPerMinute = realServices.reduce((sum, s) => sum + (s.spanCount ?? 0), 0) / 60
 
 	return {

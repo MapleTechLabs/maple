@@ -12,12 +12,12 @@ import {
 	createIngestKeyId,
 	hashIngestKey,
 	inferIngestKeyType,
-	orgIngestKeys,
 	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
 } from "@maple/db"
-import { eq } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgIngestKeys, type OrgIngestKeyRow } from "@maple/db/tables"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
@@ -25,6 +25,7 @@ import {
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 
 const toPersistenceError = (error: unknown) =>
@@ -62,11 +63,7 @@ const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncrypt
 	)
 
 const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncryptionError> =>
-	Effect.try({
-		try: () => parseIngestKeyLookupHmacKey(raw),
-		catch: (error) =>
-			toEncryptionError(error instanceof Error ? error.message : "Invalid ingest key lookup HMAC key"),
-	})
+	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
 
 const encryptPrivateKey = (
 	plaintext: string,
@@ -92,11 +89,9 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "OrgIngestKeysService", toPersistenceError)
 			/** Holds the ENCRYPTED row exactly as stored — `toResponse` decrypts per request. */
-			const ingestKeysMemo = new Map<
-				string,
-				{ row: typeof orgIngestKeys.$inferSelect; expiresAt: number }
-			>()
+			const ingestKeysMemo = new Map<string, { row: OrgIngestKeyRow; expiresAt: number }>()
 			const env = yield* Env
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -117,17 +112,20 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			// byte-identical duration on a hot path — the exact noise CLAUDE.md warns
 			// against ("be careful adding spans to per-request hot paths").
 			const selectRow = Effect.fnUntraced(function* (orgId: OrgId) {
-				const rows = yield* database
-					.execute((db) =>
-						db.select().from(orgIngestKeys).where(eq(orgIngestKeys.orgId, orgId)).limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgIngestKeys)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
 
 				return Option.fromNullishOr(rows[0])
 			})
 
 			// Untraced: synchronous AES-GCM decrypt, ~0ms — never worth a span.
-			const toResponse = Effect.fnUntraced(function* (row: typeof orgIngestKeys.$inferSelect) {
+			const toResponse = Effect.fnUntraced(function* (row: OrgIngestKeyRow) {
 				const privateKey = yield* decryptPrivateKey(
 					{
 						ciphertext: row.privateKeyCiphertext,
@@ -140,8 +138,10 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				return new IngestKeysResponse({
 					publicKey: row.publicKey,
 					privateKey,
-					publicRotatedAt: decodeIsoDateTimeStringSync(row.publicRotatedAt.toISOString()),
-					privateRotatedAt: decodeIsoDateTimeStringSync(row.privateRotatedAt.toISOString()),
+					publicRotatedAt: decodeIsoDateTimeStringSync(new Date(row.publicRotatedAt).toISOString()),
+					privateRotatedAt: decodeIsoDateTimeStringSync(
+						new Date(row.privateRotatedAt).toISOString(),
+					),
 				})
 			})
 
@@ -151,10 +151,10 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const now = yield* Clock.currentTimeMillis
 				const memoized = ingestKeysMemo.get(orgId)
 				if (memoized !== undefined && memoized.expiresAt > now) {
-					yield* Effect.annotateCurrentSpan("ingestKeys.memoHit", true)
+					yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", true)
 					return memoized.row
 				}
-				yield* Effect.annotateCurrentSpan("ingestKeys.memoHit", false)
+				yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", false)
 
 				const existing = yield* selectRow(orgId)
 				if (Option.isSome(existing)) {
@@ -171,10 +171,9 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
 
-				yield* database
-					.execute((db) =>
-						db
-							.insert(orgIngestKeys)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgIngestKeys)
 							.values({
 								orgId,
 								publicKey,
@@ -183,16 +182,16 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 								privateKeyIv: encryptedPrivate.iv,
 								privateKeyTag: encryptedPrivate.tag,
 								privateKeyHash,
-								publicRotatedAt: new Date(now),
-								privateRotatedAt: new Date(now),
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
+								publicRotatedAt: now,
+								privateRotatedAt: now,
+								createdAt: now,
+								updatedAt: now,
 								createdBy: userId,
 								updatedBy: userId,
 							})
 							.onConflictDoNothing(),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 
 				const row = yield* selectRow(orgId)
 				if (Option.isNone(row)) {
@@ -218,6 +217,60 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				return yield* toResponse(row)
 			})
 
+			// Batch form for the scraper's target list: memo hits, then one SELECT for
+			// every missing org, then the per-org create path only for orgs with no row.
+			const getOrCreateMany = Effect.fn("OrgIngestKeysService.getOrCreateMany")(function* (
+				orgIds: ReadonlyArray<OrgId>,
+				userId: UserId,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const [memoHits, misses] = Arr.partition(Arr.dedupe(orgIds), (orgId) => {
+					const memoized = ingestKeysMemo.get(orgId)
+					return memoized !== undefined && memoized.expiresAt > now
+						? Result.succeed([orgId, memoized.row] as const)
+						: Result.fail(orgId)
+				})
+				yield* Effect.annotateCurrentSpan({
+					"maple.ingest_keys.requested": memoHits.length + misses.length,
+					"maple.ingest_keys.memo_misses": misses.length,
+				})
+
+				const selected = Arr.isArrayNonEmpty(misses)
+					? yield* dbExecute((db) =>
+							db.run(
+								PG.from(OrgIngestKeys)
+									.select()
+									.where(($) => [$.orgId.in_(...misses)]),
+							),
+						)
+					: []
+				yield* Effect.forEach(
+					selected,
+					(row) =>
+						Effect.sync(() =>
+							ingestKeysMemo.set(row.orgId, {
+								row,
+								expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS,
+							}),
+						),
+					{ discard: true },
+				)
+
+				const withoutRow = Arr.difference(
+					misses,
+					selected.map((row) => row.orgId),
+				)
+				const created = yield* Effect.forEach(withoutRow, (orgId) =>
+					ensureRow(orgId, userId).pipe(Effect.map((row) => [orgId, row] as const)),
+				)
+				const responses = yield* Effect.forEach(
+					[...memoHits, ...selected.map((row) => [row.orgId, row] as const), ...created],
+					([orgId, row]) =>
+						toResponse(row).pipe(Effect.map((response) => [orgId, response] as const)),
+				)
+				return new Map(responses)
+			})
+
 			const rerollPublic = Effect.fn("OrgIngestKeysService.rerollPublic")(function* (
 				orgId: OrgId,
 				userId: UserId,
@@ -228,20 +281,19 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const publicKey = generatePublicKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 
-				yield* database
-					.execute((db) =>
-						db
-							.update(orgIngestKeys)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgIngestKeys)
 							.set({
 								publicKey,
 								publicKeyHash,
-								publicRotatedAt: new Date(now),
-								updatedAt: new Date(now),
+								publicRotatedAt: now,
+								updatedAt: now,
 								updatedBy: userId,
 							})
-							.where(eq(orgIngestKeys.orgId, orgId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
 
 				// The memoized row is now stale in this isolate; others fall off within
 				// the TTL. Must come before the re-read so it repopulates with the new key.
@@ -271,22 +323,21 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
 
-				yield* database
-					.execute((db) =>
-						db
-							.update(orgIngestKeys)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgIngestKeys)
 							.set({
 								privateKeyCiphertext: encryptedPrivate.ciphertext,
 								privateKeyIv: encryptedPrivate.iv,
 								privateKeyTag: encryptedPrivate.tag,
 								privateKeyHash,
-								privateRotatedAt: new Date(now),
-								updatedAt: new Date(now),
+								privateRotatedAt: now,
+								updatedAt: now,
 								updatedBy: userId,
 							})
-							.where(eq(orgIngestKeys.orgId, orgId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
 
 				ingestKeysMemo.delete(orgId)
 
@@ -310,19 +361,18 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				if (!keyType) return Option.none()
 
 				const keyHash = hashIngestKey(rawKey, lookupHmacKey)
-				const rows = yield* database
-					.execute((db) =>
-						db
-							.select({ orgId: orgIngestKeys.orgId })
-							.from(orgIngestKeys)
-							.where(
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgIngestKeys)
+							.select("orgId")
+							.where(($) => [
 								keyType === "public"
-									? eq(orgIngestKeys.publicKeyHash, keyHash)
-									: eq(orgIngestKeys.privateKeyHash, keyHash),
-							)
+									? $.publicKeyHash.eq(keyHash)
+									: $.privateKeyHash.eq(keyHash),
+							])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none()
@@ -336,6 +386,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			return {
 				getOrCreate,
+				getOrCreateMany,
 				rerollPublic,
 				rerollPrivate,
 				resolveIngestKey,
@@ -344,16 +395,4 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly getOrCreate = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.getOrCreate(orgId, userId))
-
-	static readonly rerollPublic = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.rerollPublic(orgId, userId))
-
-	static readonly rerollPrivate = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.rerollPrivate(orgId, userId))
-
-	static readonly resolveIngestKey = (rawKey: string) =>
-		this.use((service) => service.resolveIngestKey(rawKey))
 }

@@ -10,7 +10,7 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
-import { buttonVariants } from "@maple/ui/components/ui/button"
+import { Button, buttonVariants } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -284,15 +284,16 @@ function Report({ audit, refreshing }: { audit: V2SetupAudit; refreshing: boolea
 				))
 			)}
 
-			<button
-				type="button"
+			<Button
+				variant="link"
+				size="xs"
 				onClick={() => setShowPassing((value) => !value)}
-				className="text-muted-foreground hover:text-foreground self-start text-xs transition-colors"
+				className="h-auto self-start p-0 text-muted-foreground hover:text-foreground"
 			>
 				{showPassing
 					? "Hide passing checks"
 					: `Show ${summary.pass + summary.skip} passing and skipped checks`}
-			</button>
+			</Button>
 		</div>
 	)
 }

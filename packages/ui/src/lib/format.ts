@@ -8,8 +8,10 @@ import { formatDuration, formatNumber } from "@maple/domain/format"
 
 export { formatDuration, formatNumber }
 
-/** The one placeholder for a missing or unrenderable value. Reference this, never the glyph. */
-export const EMPTY_VALUE = "—"
+// A leaf module so time-format can use it without an import cycle through this file.
+import { EMPTY_VALUE } from "./empty-value"
+
+export { EMPTY_VALUE }
 
 /**
  * Format a duration for an axis tick, at a precision derived from the tick spacing.

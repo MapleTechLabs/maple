@@ -230,7 +230,7 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 									<div className="flex min-w-0 items-center gap-2.5">
 										<DependencyTypeBadge kind={row.kind} />
 										<div className="flex min-w-0 flex-col leading-tight">
-											<span className="truncate text-[13px] text-foreground">
+											<span className="truncate text-ui text-foreground">
 												{row.name}
 											</span>
 											{row.subtitle ? (

@@ -1,6 +1,7 @@
 import type { ActorDocument } from "@maple/domain/http"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { Button } from "@maple/ui/components/ui/button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Kbd, KbdGroup } from "@maple/ui/components/ui/kbd"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 import { countLabel } from "@maple/ui/lib/format"
@@ -59,9 +60,10 @@ export function IssueCommentComposer({
 	return (
 		<div className={cn("space-y-2", className)}>
 			<ParticipantStrip directory={directory} participants={participants} />
-			<div
+			<Panel
+				padded="sm"
 				className={cn(
-					"flex gap-3 rounded-xl border bg-card p-3 transition-colors",
+					"flex-row gap-3 overflow-visible transition-colors",
 					"focus-within:border-ring/60 focus-within:ring-[3px] focus-within:ring-ring/20",
 					disabled && "opacity-60",
 				)}
@@ -89,12 +91,12 @@ export function IssueCommentComposer({
 							<Kbd>↵</Kbd>
 							<span className="ml-1">to comment</span>
 						</KbdGroup>
-						<Button disabled={!canSubmit} onClick={onSubmit} size="sm">
-							{disabled ? "Posting…" : "Comment"}
+						<Button disabled={!canSubmit} loading={disabled} onClick={onSubmit} size="sm">
+							Comment
 						</Button>
 					</div>
 				</div>
-			</div>
+			</Panel>
 		</div>
 	)
 }

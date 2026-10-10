@@ -8,7 +8,8 @@
  * is what makes it theirs.
  */
 import type { Buffer } from "node:buffer"
-import { chatWorkspaces } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ChatWorkspaces } from "@maple/db/tables"
 import {
 	ConnectorCredentials,
 	WORKSPACE_CREDENTIALS,
@@ -18,7 +19,6 @@ import {
 } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import { ChatWorkspaceId, type OrgId } from "@maple/domain/http"
-import { and, eq } from "drizzle-orm"
 import { Array as Arr, Context, Effect, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
@@ -62,7 +62,7 @@ export interface OwnedChatWorkspace {
  * The org's workspace by id, or `None` when the org has no such workspace — or links it through a
  * connector this build no longer ships, which is the same answer to a caller that wants to post.
  */
-export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(function* (
+export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorkspace")(function* (
 	database: DatabaseApi,
 	registry: ReadonlyArray<RegisteredChatConnector>,
 	orgId: OrgId,
@@ -70,17 +70,18 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 	encryptionKey: Buffer,
 ) {
 	const rows = yield* database.execute((db) =>
-		db
-			.select()
-			.from(chatWorkspaces)
-			.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-			.limit(1),
+		db.run(
+			PG.from(ChatWorkspaces)
+				.select()
+				.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+				.limit(1),
+		),
 	)
 	const row = rows[0]
 	if (row === undefined) return Option.none<OwnedChatWorkspace>()
 	const connector = Arr.findFirst(registry, (candidate) => candidate.id === row.connector)
 	if (Option.isNone(connector)) return Option.none<OwnedChatWorkspace>()
-	yield* Effect.annotateCurrentSpan({ "chat.connector": connector.value.id })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.value.id })
 	const sealed = storedCredentials(row)
 	const credentials =
 		sealed === null

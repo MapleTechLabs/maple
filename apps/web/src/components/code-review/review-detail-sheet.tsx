@@ -4,6 +4,7 @@ import {
 	type CodeReviewFinding,
 	type PrReviewFinding,
 	type PrReviewId,
+	type PrReviewMergeStep,
 	type PrReviewPostMerge,
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
@@ -17,7 +18,8 @@ import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
-import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatErrorRate } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { ErrorState } from "@/components/common/error-state"
@@ -25,9 +27,9 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { SectionHeading } from "@/components/common/section-heading"
 import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
-import { ExternalLinkIcon } from "@/components/icons"
+import { CheckIcon, ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { AuthorLabel } from "./author-avatar"
 import {
@@ -67,7 +69,7 @@ function ReviewDetailBody({
 	reviewId: PrReviewId
 	onSelect: (reviewId: PrReviewId) => void
 }) {
-	const query = retainedQuery("codeReview", "getReview", { params: { reviewId } })
+	const query = retainedInternalQuery("codeReview", "getReview", { params: { reviewId } })
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
 
@@ -192,6 +194,11 @@ function ReviewDetailContent({
 								<BulletList items={report.keyChanges} />
 							</Section>
 						) : null}
+						{report.beforeMerge && report.beforeMerge.length > 0 ? (
+							<Section title="Before merge">
+								<MergeStepList steps={report.beforeMerge} />
+							</Section>
+						) : null}
 						<Section title={`Issues (${report.findings.length})`}>
 							{report.findings.length === 0 ? (
 								<p className="text-sm text-muted-foreground">No issues filed on this head.</p>
@@ -283,29 +290,31 @@ function FindingCard({
 	tracked: CodeReviewFinding | undefined
 }) {
 	return (
-		<li className="flex flex-col gap-2 rounded-lg border px-3.5 py-3">
-			<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<span className={cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}>
-					{SEVERITY_LABELS[finding.severity]}
-				</span>
-				<span className="text-muted-foreground">{CATEGORY_LABELS[finding.category]}</span>
-				{finding.handle ? (
-					<span className="font-mono text-muted-foreground">{finding.handle}</span>
-				) : null}
-				{tracked ? (
-					<Badge variant="outline" size="sm" className="ml-auto">
-						{FINDING_STATUS_LABELS[tracked.status]}
-					</Badge>
-				) : null}
-			</div>
-			<p className="text-sm font-medium">{finding.title}</p>
-			<p className="font-mono text-xs break-all text-muted-foreground">
-				{finding.path}:{finding.line}
-				{finding.endLine && finding.endLine !== finding.line ? `-${finding.endLine}` : null}
-			</p>
-			<MessageResponse mode="static" lightweight className="text-sm text-muted-foreground">
-				{finding.body}
-			</MessageResponse>
+		<li>
+			<Panel padded="sm" className="gap-2">
+				<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+					<span className={cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}>
+						{SEVERITY_LABELS[finding.severity]}
+					</span>
+					<span className="text-muted-foreground">{CATEGORY_LABELS[finding.category]}</span>
+					{finding.handle ? (
+						<span className="font-mono text-muted-foreground">{finding.handle}</span>
+					) : null}
+					{tracked ? (
+						<Badge variant="outline" size="sm" className="ml-auto">
+							{FINDING_STATUS_LABELS[tracked.status]}
+						</Badge>
+					) : null}
+				</div>
+				<p className="text-sm font-medium">{finding.title}</p>
+				<p className="font-mono text-xs break-all text-muted-foreground">
+					{finding.path}:{finding.line}
+					{finding.endLine && finding.endLine !== finding.line ? `-${finding.endLine}` : null}
+				</p>
+				<MessageResponse mode="static" lightweight className="text-sm text-muted-foreground">
+					{finding.body}
+				</MessageResponse>
+			</Panel>
 		</li>
 	)
 }
@@ -395,7 +404,7 @@ function PostMergeSection({ postMerge }: { postMerge: PrReviewPostMerge }) {
 						.filter((operation) => operation.regressed)
 						.map(
 							(operation) =>
-								`${operation.spanName}: errors ${(operation.before.errorRate * 100).toFixed(1)}% → ${(operation.after.errorRate * 100).toFixed(1)}%, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
+								`${operation.spanName}: errors ${formatErrorRate(operation.before.errorRate)} → ${formatErrorRate(operation.after.errorRate)}, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
 						),
 				]}
 			/>
@@ -422,11 +431,45 @@ function BulletList({ items }: { items: ReadonlyArray<string> }) {
 	)
 }
 
+/** The "Before merge" steps, ticked ones struck through with who ticked them on the pull request. */
+function MergeStepList({ steps }: { steps: ReadonlyArray<PrReviewMergeStep> }) {
+	return (
+		<ul className="flex flex-col gap-1.5 text-sm">
+			{steps.map((step, index) => (
+				<li key={step.key ?? index} className="flex items-start gap-2">
+					<span
+						aria-label={step.done === true ? "Done" : "Open"}
+						className={
+							step.done === true
+								? "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground"
+								: "mt-0.5 size-4 shrink-0 rounded-sm border border-border"
+						}
+					>
+						{step.done === true ? <CheckIcon size={12} aria-hidden /> : null}
+					</span>
+					<span
+						className={
+							step.done === true ? "text-muted-foreground line-through" : "text-foreground"
+						}
+					>
+						{step.path === undefined || step.subject !== step.path
+							? step.title
+							: `${step.title} (${step.path})`}
+						{step.done === true && step.doneBy !== undefined ? (
+							<span className="ml-1.5 text-xs no-underline">@{step.doneBy}</span>
+						) : null}
+					</span>
+				</li>
+			))}
+		</ul>
+	)
+}
+
 function LinkButton({ href, children }: { href: string; children: React.ReactNode }) {
 	return (
 		<Button variant="outline" size="xs" render={<a href={href} target="_blank" rel="noreferrer" />}>
 			{children}
-			<ExternalLinkIcon size={12} aria-hidden />
+			<ExternalLinkIcon aria-hidden />
 		</Button>
 	)
 }

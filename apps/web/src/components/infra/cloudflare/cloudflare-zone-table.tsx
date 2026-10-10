@@ -12,13 +12,13 @@ import {
 	ROW_LINK_CLASS,
 	useTableSort,
 } from "@/components/common/data-table"
-import { formatBytes, formatErrorRate, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatBytes, formatErrorRate, formatPercent } from "@maple/ui/lib/format"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 // Zone latency percentiles are plan-dependent (the poller only gets quantiles
 // on zones whose Cloudflare plan exposes them); 0 means "not available", not
 // a zero-millisecond edge response.
-const formatOptionalLatency = (ms: number) => (ms > 0 ? formatLatency(ms) : "—")
+const formatOptionalLatency = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VALUE)
 
 type SortKey =
 	| "zoneName"

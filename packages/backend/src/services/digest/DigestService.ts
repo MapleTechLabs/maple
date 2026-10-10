@@ -1,4 +1,5 @@
-import { digestSubscriptions } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { DigestSubscriptions, type DigestSubscriptionRow } from "@maple/db/tables"
 import {
 	DigestNotConfiguredError,
 	DigestNotFoundError,
@@ -12,12 +13,22 @@ import {
 	OrgId,
 	UserId,
 	RoleName,
-	WarehouseQueryResponse,
 } from "@maple/domain/http"
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
-import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
+import {
+	Clock,
+	Array as Arr,
+	Cause,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Context,
+	Stream,
+} from "effect"
 import {
 	computeDelta,
 	deriveDigestStatus,
@@ -29,7 +40,7 @@ import {
 } from "@maple/email/weekly-digest-core"
 import { renderWeeklyDigest } from "@maple/email/weekly-digest"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -41,6 +52,7 @@ import {
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import * as CH from "@maple/query-engine/ch"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -49,7 +61,7 @@ const ROOT_ROLE = RoleName.make("root")
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
-		message: error instanceof Error ? `${error.message}` : `Digest persistence error: ${String(error)}`,
+		message: error instanceof Error ? error.message : `Digest persistence error: ${String(error)}`,
 	})
 
 /** Row shapes matching query engine output (camelCase from CH DSL) */
@@ -66,11 +78,7 @@ interface ServiceOverviewRow {
 	p95LatencyMs: number
 }
 
-interface ServiceOverviewCompareRow extends ServiceOverviewRow {
-	period: "current" | "previous"
-}
-
-/** `custom_traces_breakdown` with `group_by_all` — one row for the whole window. */
+/** `tracesBreakdownQuery` grouped by `"all"`: one row for the whole window. */
 interface TracesBreakdownRow {
 	name: string
 	count: number
@@ -93,26 +101,6 @@ interface ServiceUsageRow {
 	totalExpHistogramMetricCount: number
 	totalExpHistogramMetricSizeBytes: number
 	totalSizeBytes: number
-}
-
-interface ServiceUsageCompareRow extends ServiceUsageRow {
-	period: "current" | "previous"
-}
-
-interface ErrorsByTypeRow {
-	fingerprintHash: string
-	errorLabel: string
-	sampleMessage: string
-	count: number
-	affectedServicesCount: number
-	firstSeen: string
-	lastSeen: string
-}
-
-interface TracesTimeseriesRow {
-	bucket: string
-	count: number
-	errorRate: number
 }
 
 /** Empty arrays mean "the whole org", which is every pre-existing subscription. */
@@ -138,8 +126,10 @@ const decodeScopeColumn = Schema.decodeUnknownOption(StoredScopeColumn)
 const parseScopeColumn = (raw: string | null): ReadonlyArray<string> =>
 	raw == null || raw === "" ? [] : Option.getOrElse(decodeScopeColumn(raw), () => [])
 
-const csv = (values: ReadonlyArray<string>): string | undefined =>
-	values.length === 0 ? undefined : values.join(",")
+const nonEmpty = (values: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
+	const kept = values.filter((value) => value !== "")
+	return kept.length > 0 ? kept : undefined
+}
 
 /**
  * The grain `serviceOverviewQuery` actually returns: it groups by
@@ -168,8 +158,8 @@ const DIGEST_BREAKDOWN_LIMIT = 10
 function requestsByEnvironment(rows: ReadonlyArray<ServiceOverviewRow>): Map<string, number> {
 	const totals = new Map<string, number>()
 	for (const row of rows) {
-		const environment = String(row.environment ?? "")
-		totals.set(environment, (totals.get(environment) ?? 0) + (Number(row.estimatedSpanCount) || 0))
+		const environment = row.environment
+		totals.set(environment, (totals.get(environment) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 	return totals
 }
@@ -238,15 +228,15 @@ function buildBreakdown(
 	for (const row of current) {
 		const label = dimension(row)
 		const entry = totals.get(label) ?? { requests: 0, errors: 0 }
-		entry.requests += Number(row.estimatedSpanCount) || 0
-		entry.errors += Number(row.estimatedErrorCount) || 0
+		entry.requests += row.estimatedSpanCount || 0
+		entry.errors += row.estimatedErrorCount || 0
 		totals.set(label, entry)
 	}
 
 	const prevTotals = new Map<string, number>()
 	for (const row of previous) {
 		const label = dimension(row)
-		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (Number(row.estimatedSpanCount) || 0))
+		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 
 	return [...totals.entries()]
@@ -260,7 +250,7 @@ function buildBreakdown(
 }
 
 /**
- * Breakdown rows straight off a `custom_traces_breakdown` grouped by a real
+ * Breakdown rows straight off a `tracesBreakdownQuery` grouped by a real
  * dimension. `count` is the sample-weighted request count and `errorRate` a
  * fraction, matching the summary cards.
  */
@@ -268,15 +258,15 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(previous.map((row) => [String(row.name), Number(row.count) || 0] as const))
+	const previousByName = new Map(previous.map((row) => [row.name, row.count || 0] as const))
 	return current
 		.map((row) => {
-			const label = String(row.name)
-			const requests = Number(row.count) || 0
+			const label = row.name
+			const requests = row.count || 0
 			return {
 				label,
 				requests,
-				errorRate: (Number(row.errorRate) || 0) * 100,
+				errorRate: (row.errorRate || 0) * 100,
 				requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
 			}
 		})
@@ -286,6 +276,7 @@ function buildBreakdownFromRows(
 export class DigestService extends Context.Service<DigestService>()("@maple/api/services/DigestService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "DigestService", toPersistenceError)
 		const email = yield* EmailService
 		const env = yield* Env
 		const warehouse = yield* WarehouseQueryService
@@ -303,17 +294,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
 
-			const rows = yield* database
-				.execute((db) =>
-					db
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DigestSubscriptions)
 						.select()
-						.from(digestSubscriptions)
-						.where(
-							and(eq(digestSubscriptions.orgId, orgId), eq(digestSubscriptions.userId, userId)),
-						)
+						.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const row = rows[0]
 			if (!row) {
@@ -344,36 +332,34 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			const id = crypto.randomUUID()
 
-			yield* database
-				.execute((db) =>
-					db
-						.insert(digestSubscriptions)
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(DigestSubscriptions)
 						.values({
 							id,
 							orgId,
 							userId,
 							email: input.email,
 							enabled: input.enabled !== false,
-							optedOutAt: input.enabled === false ? msToDate(now) : null,
+							optedOutAt: input.enabled === false ? now : null,
 							dayOfWeek: input.dayOfWeek ?? 1,
 							timezone: input.timezone ?? "UTC",
 							namespacesJson: JSON.stringify(input.namespaces ?? []),
 							environmentsJson: JSON.stringify(input.environments ?? []),
 							webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
-							webAnalyticsOptedOutAt:
-								input.webAnalyticsEnabled === false ? msToDate(now) : null,
-							createdAt: msToDate(now),
-							updatedAt: msToDate(now),
+							webAnalyticsOptedOutAt: input.webAnalyticsEnabled === false ? now : null,
+							createdAt: now,
+							updatedAt: now,
 						})
 						.onConflictDoUpdate({
-							target: [digestSubscriptions.orgId, digestSubscriptions.userId],
+							target: ["orgId", "userId"],
 							set: {
 								email: input.email,
 								enabled: input.enabled !== false,
 								// The subscriber turning the digest off is the one signal the
 								// Clerk reconciliation must not overwrite; stamp it here so it
 								// can tell an opt-out from a member it disabled itself.
-								optedOutAt: input.enabled === false ? msToDate(now) : null,
+								optedOutAt: input.enabled === false ? now : null,
 								...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : undefined),
 								...(input.timezone != null ? { timezone: input.timezone } : undefined),
 								...(input.namespaces != null
@@ -386,16 +372,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 								...(input.webAnalyticsEnabled != null
 									? {
 											webAnalyticsEnabled: input.webAnalyticsEnabled,
-											webAnalyticsOptedOutAt: input.webAnalyticsEnabled
-												? null
-												: msToDate(now),
+											webAnalyticsOptedOutAt: input.webAnalyticsEnabled ? null : now,
 										}
 									: undefined),
-								updatedAt: msToDate(now),
+								updatedAt: now,
 							},
 						}),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			return yield* getSubscription(orgId, userId)
 		})
@@ -415,16 +399,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const now = yield* Clock.currentTimeMillis
 
-			yield* database
-				.execute((db) =>
-					db
-						.update(digestSubscriptions)
-						.set({ enabled: false, optedOutAt: msToDate(now), updatedAt: msToDate(now) })
-						.where(
-							and(eq(digestSubscriptions.orgId, orgId), eq(digestSubscriptions.userId, userId)),
-						),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(DigestSubscriptions)
+						.set({ enabled: false, optedOutAt: now, updatedAt: now })
+						.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
+				),
+			)
 		})
 
 		/**
@@ -443,20 +424,23 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			}
 			yield* Effect.annotateCurrentSpan("maple.email.unsubscribe_kind", verified.kind)
 
-			const now = msToDate(yield* Clock.currentTimeMillis)
+			const now = yield* Clock.currentTimeMillis
 			// Idempotent: a repeat click (or a deleted row) changes nothing and still succeeds.
-			yield* database
-				.execute((db) =>
-					db
-						.update(digestSubscriptions)
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(DigestSubscriptions)
 						.set(
 							verified.kind === "digest"
 								? { enabled: false, optedOutAt: now, updatedAt: now }
-								: { webAnalyticsEnabled: false, webAnalyticsOptedOutAt: now, updatedAt: now },
+								: {
+										webAnalyticsEnabled: false,
+										webAnalyticsOptedOutAt: now,
+										updatedAt: now,
+									},
 						)
-						.where(eq(digestSubscriptions.id, verified.subscriptionId)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+						.where(($) => [$.id.eq(verified.subscriptionId)]),
+				),
+			)
 
 			return new EmailUnsubscribeResponse({ kind: verified.kind })
 		})
@@ -466,8 +450,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			scope: DigestScope = UNSCOPED,
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* Effect.annotateCurrentSpan("digest.environments", scope.environments.join(","))
-			yield* Effect.annotateCurrentSpan("digest.namespaces", scope.namespaces.join(","))
+			yield* Effect.annotateCurrentSpan("maple.digest.environments", scope.environments.join(","))
+			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
 
 			const now = new Date(yield* Clock.currentTimeMillis)
 
@@ -494,22 +478,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				authMode: "self_hosted" as const,
 			}
 
-			// Filter params are omitted rather than sent empty: an empty string is a
-			// filter for the empty environment, not the absence of a filter.
-			const environmentsParam = csv(scope.environments)
-			const namespacesParam = csv(scope.namespaces)
-			const withScope = <T extends object>(params: T) => ({
-				...params,
-				...(environmentsParam === undefined ? undefined : { environments: environmentsParam }),
-				...(namespacesParam === undefined ? undefined : { namespaces: namespacesParam }),
-			})
-
-			/** `errors_by_type` scopes by environment only — `error_events` has no
-			 * `ServiceNamespace` column. */
-			const withErrorScope = <T extends object>(params: T) => ({
-				...params,
-				...(environmentsParam === undefined ? undefined : { deployment_envs: environmentsParam }),
-			})
+			// Filter lists are omitted rather than sent empty: an empty list would be
+			// a filter that matches nothing, not the absence of a filter.
+			const environments = nonEmpty(scope.environments)
+			const namespaces = nonEmpty(scope.namespaces)
+			const window = (startTime: string, endTime: string) => ({ orgId, startTime, endTime })
+			// A weekly background job over two 7-day windows: the aggregation budget.
+			const run = <T>(compiled: CH.CompiledQueryInput<T>, context: string) =>
+				warehouse.compiledQuery(systemTenant, compiled, { profile: "aggregation", context })
 
 			// Warm the route once before the fan-out, so the org-config read isn't
 			// racing concurrent warehouse fetches for a connection slot.
@@ -520,135 +496,146 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					message: `Failed to fetch digest data from the warehouse: ${error instanceof Error ? error.message : String(error)}`,
 				})
 
-			// `service_overview_compare` and `get_service_usage_compare` UNION ALL
-			// current + previous into one query, tagging rows with `period`. The two
-			// `custom_traces_breakdown` calls collapse to a single row each
-			// (`group_by_all`) so the P95 is a real merged quantile rather than a
-			// throughput-weighted mean of per-service P95s, which is not a quantile.
-			const namespaceBreakdownQuery = (start: string, end: string) =>
-				warehouse.query(systemTenant, {
-					pipeName: "custom_traces_breakdown",
-					params: withScope({
-						start_time: start,
-						end_time: end,
-						group_by_namespace: "1",
-						root_only: "1",
-						limit: DIGEST_BREAKDOWN_LIMIT,
-					}),
-				})
+			// The overview and usage compares UNION ALL current + previous into one
+			// query, tagging rows with `period`. The two summary breakdowns collapse
+			// to a single row each (`groupBy: "all"`) so the P95 is a real merged
+			// quantile rather than a throughput-weighted mean of per-service P95s.
+			const tracesBreakdown = (
+				groupBy: "all" | "namespace",
+				limit: number,
+				startTime: string,
+				endTime: string,
+				context: string,
+			) =>
+				run(
+					CH.compile(
+						CH.tracesBreakdownQuery({
+							metric: "count",
+							allMetrics: true,
+							groupBy,
+							limit,
+							rootOnly: true,
+							environments,
+							namespaces,
+						}),
+						window(startTime, endTime),
+					),
+					context,
+				)
 
-			const [overviewResponse, curSummary, prevSummary, seriesResponse, curNamespaces, prevNamespaces] =
+			const [overviewRows, curSummary, prevSummary, seriesRows, curNamespaces, prevNamespaces] =
 				yield* Effect.all(
 					[
-						warehouse.query(systemTenant, {
-							pipeName: "service_overview_compare",
-							params: withScope({
-								current_start_time: currentStart,
-								current_end_time: currentEnd,
-								previous_start_time: previousStart,
-								previous_end_time: previousEnd,
-							}),
-						}),
-						warehouse.query(systemTenant, {
-							pipeName: "custom_traces_breakdown",
-							params: withScope({
-								start_time: currentStart,
-								end_time: currentEnd,
-								group_by_all: "1",
-								root_only: "1",
-								limit: 1,
-							}),
-						}),
-						warehouse.query(systemTenant, {
-							pipeName: "custom_traces_breakdown",
-							params: withScope({
-								start_time: previousStart,
-								end_time: previousEnd,
-								group_by_all: "1",
-								root_only: "1",
-								limit: 1,
-							}),
-						}),
-						warehouse.query(systemTenant, {
-							pipeName: "custom_traces_timeseries",
-							params: withScope({
-								start_time: currentStart,
-								end_time: currentEnd,
-								bucket_seconds: 86_400,
-								root_only: "1",
-							}),
-						}),
-						namespaceBreakdownQuery(currentStart, currentEnd),
-						namespaceBreakdownQuery(previousStart, previousEnd),
+						run(
+							CH.compilePeriodCompare(
+								CH.serviceOverviewQuery({ environments, namespaces }),
+								{ orgId, currentStart, currentEnd, previousStart, previousEnd },
+								CH.serviceOverviewRowSchema,
+							),
+							"digestServiceOverviewCompare",
+						),
+						tracesBreakdown("all", 1, currentStart, currentEnd, "digestTracesSummary"),
+						tracesBreakdown("all", 1, previousStart, previousEnd, "digestTracesSummary"),
+						run(
+							CH.compile(
+								CH.tracesTimeseriesQuery({
+									metric: "count",
+									allMetrics: true,
+									needsSampling: true,
+									groupBy: [],
+									rootOnly: true,
+									environments,
+									namespaces,
+								}),
+								{ ...window(currentStart, currentEnd), bucketSeconds: 86_400 },
+							),
+							"digestDailySeries",
+						),
+						tracesBreakdown(
+							"namespace",
+							DIGEST_BREAKDOWN_LIMIT,
+							currentStart,
+							currentEnd,
+							"digestNamespaceBreakdown",
+						),
+						tracesBreakdown(
+							"namespace",
+							DIGEST_BREAKDOWN_LIMIT,
+							previousStart,
+							previousEnd,
+							"digestNamespaceBreakdown",
+						),
 					],
 					{ concurrency: 6 },
 				).pipe(Effect.mapError(warehouseFailure))
 
 			// Split UNION ALL'd rows by period discriminator
-			const overviewRows = overviewResponse.data as Array<ServiceOverviewCompareRow>
-			const curOverviewData: Array<ServiceOverviewRow> = overviewRows.filter(
-				(r) => r.period === "current",
-			)
-			const prevOverviewData: Array<ServiceOverviewRow> = overviewRows.filter(
-				(r) => r.period === "previous",
-			)
+			const curOverviewData = overviewRows.filter((r) => r.period === "current")
+			const prevOverviewData = overviewRows.filter((r) => r.period === "previous")
 
 			// Neither `service_usage` nor `error_events` carries an environment or
 			// namespace column, so a scoped digest narrows both by the service
 			// membership the scope resolved to — the same approximation the web app
 			// makes in `scopeServicesToNamespaces`. A service emitting under two
 			// namespaces stays counted in both.
-			const scopedServiceNames = [...new Set(curOverviewData.map((r) => String(r.serviceName)))]
 			const isScoped = scope.environments.length > 0 || scope.namespaces.length > 0
-			const membership = csv(scopedServiceNames)
+			const membership = nonEmpty([...new Set(curOverviewData.map((r) => r.serviceName))])
 
 			// A scope that matched no services means "no data", not "no filter".
 			// Falling through to an unfiltered query would have shown org-wide
 			// ingestion and org-wide errors inside a digest that claims to cover one
 			// namespace.
 			const scopeIsEmpty = isScoped && membership === undefined
+			const serviceFilter = isScoped ? membership : undefined
 
-			const withMembership = <T extends object>(params: T) => ({
-				...params,
-				...(isScoped && membership !== undefined ? { services: membership } : undefined),
-			})
+			const errorsByType = (
+				startTime: string,
+				endTime: string,
+				limit: number,
+				fingerprintHashes: ReadonlyArray<string> | undefined,
+				context: string,
+			) =>
+				run(
+					CH.compile(
+						CH.errorsByTypeQuery({
+							services: serviceFilter,
+							// `error_events` has no `ServiceNamespace` column, so errors scope
+							// by environment only (plus the service membership above).
+							deploymentEnvs: environments,
+							fingerprintHashes,
+							limit,
+						}),
+						window(startTime, endTime),
+					),
+					context,
+				)
 
-			const [usageResponse, topErrors] = yield* Effect.all(
+			const [usageRows, topErrors] = yield* Effect.all(
 				[
 					scopeIsEmpty
-						? Effect.succeed(new WarehouseQueryResponse({ data: [] }))
-						: warehouse.query(systemTenant, {
-								pipeName: "get_service_usage_compare",
-								params: withMembership({
-									current_start_time: currentStart,
-									current_end_time: currentEnd,
-									previous_start_time: previousStart,
-									previous_end_time: previousEnd,
-								}),
-							}),
-					scopeIsEmpty
-						? Effect.succeed(new WarehouseQueryResponse({ data: [] }))
-						: warehouse.query(systemTenant, {
-								pipeName: "errors_by_type",
-								params: withErrorScope(
-									withMembership({
-										start_time: currentStart,
-										end_time: currentEnd,
-										limit: 5,
-									}),
+						? Effect.succeed([])
+						: run(
+								CH.compilePeriodCompare(
+									CH.serviceUsageQuery({ serviceNames: serviceFilter }),
+									{ orgId, currentStart, currentEnd, previousStart, previousEnd },
+									CH.serviceUsageRowSchema,
 								),
-							}),
+								"digestServiceUsageCompare",
+							),
+					scopeIsEmpty
+						? Effect.succeed([])
+						: errorsByType(currentStart, currentEnd, 5, undefined, "digestTopErrors"),
 				],
 				{ concurrency: 2 },
 			).pipe(Effect.mapError(warehouseFailure))
 
-			const summaryRow = (response: { data: unknown }): TracesBreakdownRow => {
-				const row = (response.data as Array<TracesBreakdownRow>)[0]
+			const summaryRow = (rows: ReadonlyArray<TracesBreakdownRow>): TracesBreakdownRow => {
+				const row = rows[0]
 				return {
 					name: "all",
-					count: Number(row?.count) || 0,
-					errorRate: Number(row?.errorRate) || 0,
-					p95Duration: Number(row?.p95Duration) || 0,
+					count: row?.count || 0,
+					errorRate: row?.errorRate || 0,
+					p95Duration: row?.p95Duration || 0,
 				}
 			}
 			const cur = summaryRow(curSummary)
@@ -662,30 +649,29 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const prevTotalErrors = Math.round(prev.count * prev.errorRate)
 
 			// Data volume — split UNION ALL'd rows by period discriminator
-			const usageRows = usageResponse.data as Array<ServiceUsageCompareRow>
-			const curUsageData: Array<ServiceUsageRow> = usageRows.filter((r) => r.period === "current")
-			const prevUsageData: Array<ServiceUsageRow> = usageRows.filter((r) => r.period === "previous")
-			const sumUsage = (data: Array<ServiceUsageRow>) => ({
-				logs: data.reduce((s, r) => s + (Number(r.totalLogCount) || 0), 0),
-				traces: data.reduce((s, r) => s + (Number(r.totalTraceCount) || 0), 0),
+			const curUsageData = usageRows.filter((r) => r.period === "current")
+			const prevUsageData = usageRows.filter((r) => r.period === "previous")
+			const sumUsage = (data: ReadonlyArray<ServiceUsageRow>) => ({
+				logs: data.reduce((s, r) => s + (r.totalLogCount || 0), 0),
+				traces: data.reduce((s, r) => s + (r.totalTraceCount || 0), 0),
 				metrics: data.reduce(
 					(s, r) =>
 						s +
-						(Number(r.totalSumMetricCount) || 0) +
-						(Number(r.totalGaugeMetricCount) || 0) +
-						(Number(r.totalHistogramMetricCount) || 0) +
-						(Number(r.totalExpHistogramMetricCount) || 0),
+						(r.totalSumMetricCount || 0) +
+						(r.totalGaugeMetricCount || 0) +
+						(r.totalHistogramMetricCount || 0) +
+						(r.totalExpHistogramMetricCount || 0),
 					0,
 				),
 				totalBytes: data.reduce(
 					(s, r) =>
 						s +
-						(Number(r.totalLogSizeBytes) || 0) +
-						(Number(r.totalTraceSizeBytes) || 0) +
-						(Number(r.totalSumMetricSizeBytes) || 0) +
-						(Number(r.totalGaugeMetricSizeBytes) || 0) +
-						(Number(r.totalHistogramMetricSizeBytes) || 0) +
-						(Number(r.totalExpHistogramMetricSizeBytes) || 0),
+						(r.totalLogSizeBytes || 0) +
+						(r.totalTraceSizeBytes || 0) +
+						(r.totalSumMetricSizeBytes || 0) +
+						(r.totalGaugeMetricSizeBytes || 0) +
+						(r.totalHistogramMetricSizeBytes || 0) +
+						(r.totalExpHistogramMetricSizeBytes || 0),
 					0,
 				),
 			})
@@ -698,7 +684,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// returns rather than on the service name alone.
 			const prevRequestsByService = new Map<string, number>()
 			for (const s of prevOverviewData) {
-				prevRequestsByService.set(serviceKey(s), Number(s.estimatedSpanCount) || 0)
+				prevRequestsByService.set(serviceKey(s), s.estimatedSpanCount || 0)
 			}
 
 			const services: Array<DigestServiceRow> = curOverviewData
@@ -706,15 +692,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					// `estimatedSpanCount` is the sample-weighted count, matching the
 					// summary cards and the rest of the product; `throughput` is the raw
 					// stored-row count and disagrees with both under any sampling.
-					const requests = Number(s.estimatedSpanCount) || 0
-					const errors = Number(s.estimatedErrorCount) || 0
+					const requests = s.estimatedSpanCount || 0
+					const errors = s.estimatedErrorCount || 0
 					return {
-						name: String(s.serviceName),
-						environment: String(s.environment ?? ""),
-						namespace: String(s.serviceNamespace ?? ""),
+						name: s.serviceName,
+						environment: s.environment,
+						namespace: s.serviceNamespace,
 						requests,
 						errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-						p95Ms: Number(s.p95LatencyMs) || 0,
+						p95Ms: s.p95LatencyMs || 0,
 						requestsDelta: computeDelta(requests, prevRequestsByService.get(serviceKey(s)) ?? 0),
 					}
 				})
@@ -726,76 +712,56 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const environmentGroups = groupServicesByEnvironment(services, curOverviewData, prevOverviewData)
 			const breakdown = {
-				environments: buildBreakdown(curOverviewData, prevOverviewData, (r) =>
-					String(r.environment ?? ""),
-				),
-				namespaces: buildBreakdownFromRows(
-					curNamespaces.data as Array<TracesBreakdownRow>,
-					prevNamespaces.data as Array<TracesBreakdownRow>,
-				),
+				environments: buildBreakdown(curOverviewData, prevOverviewData, (r) => r.environment),
+				namespaces: buildBreakdownFromRows(curNamespaces, prevNamespaces),
 			}
 
-			// `errors_by_type` returns `min(Timestamp)` *within the window*, which is
+			// `errorsByTypeQuery` returns `min(Timestamp)` *within the window*, which is
 			// always inside it — so newness has to be asked of the previous window
 			// directly. Filtering to the five fingerprints we actually render makes
 			// that exact, unlike diffing against the previous week's top 100.
-			const currentErrors = (topErrors.data as Array<ErrorsByTypeRow>).slice(0, 5)
+			const currentErrors = topErrors.slice(0, 5)
 			const currentFingerprints = currentErrors
-				.map((e) => String(e.fingerprintHash))
+				.map((e) => e.fingerprintHash)
 				.filter((hash) => hash !== "")
 			const prevErrorFingerprints = yield* currentFingerprints.length === 0
 				? Effect.succeed(new Set<string>())
-				: warehouse
-						.query(systemTenant, {
-							pipeName: "errors_by_type",
-							params: withErrorScope(
-								withMembership({
-									start_time: previousStart,
-									end_time: previousEnd,
-									fingerprint_hashes: currentFingerprints.join(","),
-									limit: currentFingerprints.length,
-								}),
-							),
-						})
-						.pipe(
-							Effect.map(
-								(response) =>
-									new Set(
-										(response.data as Array<ErrorsByTypeRow>).map((e) =>
-											String(e.fingerprintHash),
-										),
-									),
-							),
-							// A failed lookup must not invent NEW badges: falling back to an
-							// empty set would mark every current error as first-seen during a
-							// warehouse blip. Assume all of them existed last week instead —
-							// the badge is lost, nothing is misreported.
-							Effect.orElseSucceed(() => new Set(currentFingerprints)),
-						)
+				: errorsByType(
+						previousStart,
+						previousEnd,
+						currentFingerprints.length,
+						currentFingerprints,
+						"digestPreviousErrors",
+					).pipe(
+						Effect.map((rows) => new Set(rows.map((e) => e.fingerprintHash))),
+						// A failed lookup must not invent NEW badges: falling back to an
+						// empty set would mark every current error as first-seen during a
+						// warehouse blip. Assume all of them existed last week instead —
+						// the badge is lost, nothing is misreported.
+						Effect.orElseSucceed(() => new Set(currentFingerprints)),
+					)
 
 			const errorsData = currentErrors.map((e) => ({
-				message: String(e.errorLabel || e.sampleMessage || "Unknown error"),
-				count: Number(e.count) || 0,
-				affectedServices: Number(e.affectedServicesCount) || 0,
-				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(String(e.fingerprintHash)) : false,
+				message: e.errorLabel || e.sampleMessage || "Unknown error",
+				count: e.count || 0,
+				affectedServices: e.affectedServicesCount || 0,
+				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(e.fingerprintHash) : false,
 			}))
 
 			// Daily request/error buckets (one row per UTC day) for the sparkline.
-			const weekdayInitial = (bucket: string) => {
-				const d = new Date(`${String(bucket).slice(0, 10)}T00:00:00Z`)
-				return Number.isNaN(d.getTime()) ? "" : ["S", "M", "T", "W", "T", "F", "S"][d.getUTCDay()]
-			}
-			const series = (seriesResponse.data as Array<TracesTimeseriesRow>)
+			const weekdayInitial = (bucket: DateTime.Utc) =>
+				["S", "M", "T", "W", "T", "F", "S"][DateTime.getPartUtc(bucket, "weekDay")] ?? ""
+			const series = seriesRows
 				.slice()
-				.sort((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
+				.sort((a, b) => DateTime.toEpochMillis(a.bucket) - DateTime.toEpochMillis(b.bucket))
 				// Guard against any boundary off-by-one — keep the 7 most recent days.
 				.slice(-7)
 				.map((r) => {
-					const requests = Number(r.count) || 0
+					const requests = r.count || 0
 					return {
 						label: weekdayInitial(r.bucket),
 						requests,
-						errors: Math.round(requests * (Number(r.errorRate) || 0)),
+						errors: Math.round(requests * (r.errorRate || 0)),
 					}
 				})
 
@@ -833,13 +799,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				topErrors: errorsData,
 				ingestion: { ...curUsage, approximate: isScoped },
 				baseUrl: env.MAPLE_APP_BASE_URL,
-				dashboardUrl: `${env.MAPLE_APP_BASE_URL}`,
+				dashboardUrl: env.MAPLE_APP_BASE_URL,
 				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
 			}
 
-			yield* Effect.annotateCurrentSpan("totalRequests", totalRequests)
-			yield* Effect.annotateCurrentSpan("totalErrors", totalErrors)
-			yield* Effect.annotateCurrentSpan("serviceCount", services.length)
+			yield* Effect.annotateCurrentSpan("maple.digest.total_requests", totalRequests)
+			yield* Effect.annotateCurrentSpan("maple.digest.total_errors", totalErrors)
+			yield* Effect.annotateCurrentSpan("maple.digest.service_count", services.length)
 			yield* Effect.logInfo("Digest data generated").pipe(
 				Effect.annotateLogs({
 					orgId,
@@ -898,6 +864,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		// this: the worker builds a fresh layer per cron invocation, so any Ref it
 		// holds starts empty on every tick.
 		const SYNC_WINDOW_MS = 15 * 60 * 1000
+		const CLERK_PAGE_SIZE = 100
 
 		const paginateClerk = <T>(
 			spanName: string,
@@ -908,27 +875,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			}) => Promise<{ data: T[]; totalCount: number }>,
 			errorMessage: string,
 		) =>
-			Effect.gen(function* () {
-				const PAGE_SIZE = 100
-				let offset = 0
-				const all: T[] = []
-
-				// Genuine cursor pagination: each page advances `offset` by the
-				// number of rows it returned, and the terminating condition depends
-				// on the just-fetched page (totalCount / empty page). Effect v4
-				// (beta) ships neither `iterate` nor `loop`, so an imperative
-				// while-loop driving sequential `yield*`s is the clearest form here.
-				while (true) {
-					const page = yield* clerkRequest(spanName, attributes, () =>
-						fetchPage({ limit: PAGE_SIZE, offset }),
-					).pipe(Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })))
-					all.push(...page.data)
-					offset += page.data.length
-					if (offset >= page.totalCount || page.data.length === 0) break
-				}
-
-				return all
-			})
+			Stream.paginate(0, (offset: number) =>
+				clerkRequest(spanName, attributes, () => fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
+					Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })),
+					Effect.map((page) => {
+						// Advance by the rows returned; stop on totalCount or an empty page.
+						const next = offset + page.data.length
+						const done = next >= page.totalCount || page.data.length === 0
+						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					}),
+				),
+			).pipe(Stream.runCollect)
 
 		const fetchAllClerkMemberships = Effect.fn("DigestService.fetchAllClerkMemberships")(function* (
 			clerk: ReturnType<typeof createClerkClient>,
@@ -983,10 +940,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			yield* Effect.forEach(
 				clerkMemberships,
 				(m) =>
-					database
-						.execute((db) =>
-							db
-								.insert(digestSubscriptions)
+					dbExecute((db) =>
+						db.run(
+							PG.insertInto(DigestSubscriptions)
 								.values({
 									id: crypto.randomUUID(),
 									orgId: m.orgId,
@@ -995,20 +951,20 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									enabled: true,
 									dayOfWeek: 1,
 									timezone: "UTC",
-									createdAt: msToDate(now),
-									updatedAt: msToDate(now),
+									createdAt: now,
+									updatedAt: now,
 								})
 								.onConflictDoUpdate({
-									target: [digestSubscriptions.orgId, digestSubscriptions.userId],
-									set: {
+									target: ["orgId", "userId"],
+									set: ($) => ({
 										email: m.email,
-										enabled: sql`${digestSubscriptions.optedOutAt} is null`,
-										webAnalyticsEnabled: sql`${digestSubscriptions.webAnalyticsOptedOutAt} is null`,
-										updatedAt: msToDate(now),
-									},
+										enabled: PG.asBoolean($.optedOutAt.isNull()),
+										webAnalyticsEnabled: PG.asBoolean($.webAnalyticsOptedOutAt.isNull()),
+										updatedAt: now,
+									}),
 								}),
-						)
-						.pipe(Effect.mapError(toPersistenceError)),
+						),
+					),
 				{ discard: true },
 			)
 
@@ -1016,18 +972,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const activeOrgIds = [...new Set(clerkMemberships.map((m) => m.orgId))]
 			if (activeOrgIds.length === 0) return
 
-			const existingSubs = yield* database
-				.execute((db) =>
-					db
-						.select({
-							id: digestSubscriptions.id,
-							orgId: digestSubscriptions.orgId,
-							userId: digestSubscriptions.userId,
-						})
-						.from(digestSubscriptions)
-						.where(inArray(digestSubscriptions.orgId, activeOrgIds)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const existingSubs = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DigestSubscriptions)
+						.select("id", "orgId", "userId")
+						.where(($) => [PG.inList($.orgId, activeOrgIds)]),
+				),
+			)
 
 			const activeKeys = new Set(clerkMemberships.map((m) => `${m.orgId}:${m.userId}`))
 			const staleIds = existingSubs
@@ -1035,14 +986,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				.map((s) => s.id)
 
 			if (staleIds.length > 0) {
-				yield* database
-					.execute((db) =>
-						db
-							.update(digestSubscriptions)
-							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: msToDate(now) })
-							.where(inArray(digestSubscriptions.id, staleIds)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(DigestSubscriptions)
+							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
+							.where(($) => [PG.inList($.id, staleIds)]),
+					),
+				)
 
 				yield* Effect.logInfo("Disabled stale digest subscriptions").pipe(
 					Effect.annotateLogs({ count: staleIds.length }),
@@ -1089,16 +1039,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const todayStartMs = now - (now % 86_400_000)
 			const currentDayOfWeek = new Date(now).getUTCDay()
 
-			const subs = yield* database
-				.execute((db) =>
-					db.select().from(digestSubscriptions).where(eq(digestSubscriptions.enabled, true)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const subs = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DigestSubscriptions)
+						.select()
+						.where(($) => [$.enabled.eq(true)]),
+				),
+			)
 
 			const dueSubs = subs.filter(
 				(s) =>
-					s.dayOfWeek === currentDayOfWeek &&
-					(s.lastSentAt == null || s.lastSentAt.getTime() < sevenDaysAgo),
+					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
 			)
 
 			if (dueSubs.length === 0) {
@@ -1141,26 +1092,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							return []
 						}
 
-						const claim = yield* database
-							.execute((db) =>
-								db
-									.update(digestSubscriptions)
-									.set({ lastAttemptedAt: new Date(now) })
-									.where(
-										and(
-											inArray(digestSubscriptions.id, orgSubIds),
-											or(
-												isNull(digestSubscriptions.lastAttemptedAt),
-												lt(
-													digestSubscriptions.lastAttemptedAt,
-													new Date(todayStartMs),
-												),
-											),
-										),
-									)
-									.returning({ id: digestSubscriptions.id }),
-							)
-							.pipe(Effect.mapError(toPersistenceError))
+						const claim = yield* dbExecute((db) =>
+							db.run(
+								PG.update(DigestSubscriptions)
+									.set({ lastAttemptedAt: now })
+									.where(($) => [
+										PG.inList($.id, orgSubIds),
+										PG.or($.lastAttemptedAt.isNull(), $.lastAttemptedAt.lt(todayStartMs)),
+									])
+									.returning("id"),
+							),
+						)
 
 						if (claim.length === 0) {
 							yield* Effect.logInfo("Skipping digest org already attempted today").pipe(
@@ -1215,10 +1157,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 										Effect.gen(function* () {
 											const lastSentAt = yield* Clock.currentTimeMillis
 											yield* database.execute((db) =>
-												db
-													.update(digestSubscriptions)
-													.set({ lastSentAt: new Date(lastSentAt) })
-													.where(eq(digestSubscriptions.id, sub.id)),
+												db.run(
+													PG.update(DigestSubscriptions)
+														.set({ lastSentAt })
+														.where(($) => [$.id.eq(sub.id)]),
+												),
 											)
 										}).pipe(
 											// The email is already sent — a failed bookkeeping write must
@@ -1288,9 +1231,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const sentCount = allResults.filter((r) => r.sent).length
 			const errorCount = allResults.filter((r) => !r.sent).length
 
-			yield* Effect.annotateCurrentSpan("sentCount", sentCount)
-			yield* Effect.annotateCurrentSpan("errorCount", errorCount)
-			yield* Effect.annotateCurrentSpan("scopeCount", Object.keys(byScope).length)
+			yield* Effect.annotateCurrentSpan("maple.digest.sent_count", sentCount)
+			yield* Effect.annotateCurrentSpan("maple.digest.error_count", errorCount)
+			yield* Effect.annotateCurrentSpan("maple.digest.scope_count", Object.keys(byScope).length)
 
 			return { sentCount, errorCount, skipped: false }
 		})
@@ -1316,7 +1259,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 	)
 }
 
-function rowToResponse(row: typeof digestSubscriptions.$inferSelect): DigestSubscriptionResponse {
+function rowToResponse(row: DigestSubscriptionRow): DigestSubscriptionResponse {
 	return new DigestSubscriptionResponse({
 		id: DigestSubscriptionId.make(row.id),
 		email: row.email,
@@ -1325,10 +1268,10 @@ function rowToResponse(row: typeof digestSubscriptions.$inferSelect): DigestSubs
 		timezone: row.timezone,
 		namespaces: parseScopeColumn(row.namespacesJson),
 		environments: parseScopeColumn(row.environmentsJson),
-		lastSentAt: dateToMs(row.lastSentAt),
+		lastSentAt: row.lastSentAt,
 		webAnalyticsEnabled: row.webAnalyticsEnabled,
-		createdAt: row.createdAt.getTime(),
-		updatedAt: row.updatedAt.getTime(),
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
 	})
 }
 

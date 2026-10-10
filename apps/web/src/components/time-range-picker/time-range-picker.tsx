@@ -147,7 +147,7 @@ export function TimeRangePicker({
 						className="gap-2"
 						title={hotkey ? "Time range (D)" : undefined}
 					>
-						<ClockIcon className="size-3.5" />
+						<ClockIcon />
 						<span>{displayText}</span>
 					</Button>
 				}

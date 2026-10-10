@@ -264,7 +264,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 	return (
 		<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
 			<IconButton label="Back to integrations" onClick={() => navigate({ search: {} })}>
-				<ArrowLeftIcon size={16} />
+				<ArrowLeftIcon />
 			</IconButton>
 			<IntegrationIconPlate
 				icon={entry.icon}
@@ -304,7 +304,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				{showConnect ? (
 					<Button size="sm" onClick={connectFlow.connect} loading={connectFlow.busy}>
 						{/* No iconClassName: the glyph inherits the button's text color, like the in-card buttons. */}
-						<EntryIcon size={14} />
+						<EntryIcon />
 						Connect {entry.name}
 					</Button>
 				) : null}

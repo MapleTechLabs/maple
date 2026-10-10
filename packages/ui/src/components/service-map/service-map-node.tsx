@@ -1,11 +1,13 @@
-import { formatErrorRate, formatLatency, formatRate } from "../../lib/format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency, formatRate } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
 import { cn } from "../../lib/utils"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
-import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
+import { TONE_FILL, TONE_TEXT, type Tone } from "../../lib/tone"
 import { type UtilizationLevel, utilizationLevel } from "../../lib/utilization"
 import { latencyToneClass } from "../../lib/latency-tone"
+import { Eyebrow } from "../ui/eyebrow"
+import { StatusDot } from "../ui/status-dot"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
 import { MiddleTruncate } from "../ui/middle-truncate"
 import {
@@ -48,11 +50,11 @@ const UTILIZATION_TEXT = {
 	ok: undefined,
 } satisfies Record<UtilizationLevel, string | undefined>
 
-const HEALTH_DOT_CLASS = {
-	crit: TONE_FILL.crit,
-	warn: TONE_FILL.warn,
-	neutral: TONE_FILL.ok,
-} satisfies Record<ErrorRateLevel, string>
+const HEALTH_TONE = {
+	crit: "crit",
+	warn: "warn",
+	neutral: "ok",
+} satisfies Record<ErrorRateLevel, Tone>
 
 const SELECTED_BORDER_CLASS = {
 	crit: "border-severity-error ring-[3px] ring-severity-error/15",
@@ -61,7 +63,7 @@ const SELECTED_BORDER_CLASS = {
 } satisfies Record<ErrorRateLevel, string>
 
 export function getHealthDotClass(errorRate: number): string {
-	return HEALTH_DOT_CLASS[errorRateLevel(errorRate)]
+	return TONE_FILL[HEALTH_TONE[errorRateLevel(errorRate)]]
 }
 
 function getSelectedBorderClass(errorRate: number): string {
@@ -79,9 +81,7 @@ function MetricCell({
 }) {
 	return (
 		<div className="flex flex-col gap-px">
-			<span className="text-4xs font-medium tracking-wide text-muted-foreground/60 uppercase">
-				{label}
-			</span>
+			<Eyebrow className="text-4xs text-muted-foreground/60">{label}</Eyebrow>
 			<span
 				className={cn(
 					"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
@@ -160,9 +160,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 				<div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
 					{/* Header — health dot + branded icon + name + category */}
 					<div className="flex items-center gap-1.5">
-						<div
-							className={cn("h-1.5 w-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))}
-						/>
+						<StatusDot tone={HEALTH_TONE[errorRateLevel(errorRate)]} />
 						<Tooltip>
 							<TooltipTrigger>
 								<Icon
@@ -285,9 +283,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 				<div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
 					{/* Service name + health dot + platform icon */}
 					<div className="flex items-center gap-1.5">
-						<div
-							className={cn("h-1.5 w-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))}
-						/>
+						<StatusDot tone={HEALTH_TONE[errorRateLevel(errorRate)]} />
 						<Tooltip>
 							<TooltipTrigger>
 								<Icon
@@ -323,9 +319,9 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="shrink-0 text-4xs font-medium uppercase tracking-wide text-muted-foreground/60">
+								<Eyebrow className="shrink-0 text-4xs text-muted-foreground/60">
 									{runtimeInfo.short}
-								</span>
+								</Eyebrow>
 							))}
 					</div>
 
@@ -341,7 +337,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 							{hasSampling && (
 								<TooltipContent side="bottom">
 									<p>
-										Estimated x{samplingWeight.toFixed(0)} from{" "}
+										Estimated ×{samplingWeight.toFixed(0)} from{" "}
 										{formatRate(tracedThroughput)} traced req/s
 									</p>
 								</TooltipContent>
@@ -362,9 +358,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						{/* Pods badge — empty placeholder when no infra so widths stay stable */}
 						<div className="ml-auto flex flex-col items-end gap-px">
-							<span className="text-4xs font-medium uppercase tracking-wide text-muted-foreground/60">
-								pods
-							</span>
+							<Eyebrow className="text-4xs text-muted-foreground/60">pods</Eyebrow>
 							{infra ? (
 								<Tooltip>
 									<TooltipTrigger>
@@ -385,7 +379,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 								</Tooltip>
 							) : (
 								<span className="font-mono text-2xs tabular-nums text-muted-foreground/30">
-									–
+									{EMPTY_VALUE}
 								</span>
 							)}
 						</div>
@@ -421,9 +415,7 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 
 				<div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
 					<div className="flex items-center gap-1.5">
-						<div
-							className={cn("h-1.5 w-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))}
-						/>
+						<StatusDot tone={HEALTH_TONE[errorRateLevel(errorRate)]} />
 						<span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
 							{label}
 						</span>

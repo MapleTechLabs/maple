@@ -9,7 +9,7 @@
 // DateTime string into an unambiguous UTC value. Already-zoned strings (with a
 // `Z` or numeric offset) and non-matching shapes are passed through untouched.
 
-import { Schema, SchemaGetter } from "effect"
+import { DateTime, Effect, Option, Schema, SchemaGetter, SchemaIssue } from "effect"
 
 const WAREHOUSE_DATETIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?$/
 
@@ -110,7 +110,7 @@ const hasRealCalendarFields = (value: string): boolean => {
 	const month = Number(mo)
 	if (month < 1 || month > 12) return false
 
-	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : (DAYS_IN_MONTH[month - 1] as number)
+	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : DAYS_IN_MONTH[month - 1]
 	const day = Number(d)
 	if (day < 1 || day > maxDay) return false
 
@@ -220,6 +220,70 @@ export const WarehouseTimeInput = Schema.String.pipe(
 export function warehouseDateTime(epochMs: number): WarehouseDateTime {
 	return WarehouseDateTime.make(formatWarehouseDateTime(epochMs))
 }
+
+// Warehouse time as a value
+//
+// Columns declared `T.dateTime` / `T.dateTime64` decode to `DateTime.Utc` in
+// effect-orm. These codecs put that value back on Maple's HTTP wire in exactly
+// the string ClickHouse would have sent, so clients see no change.
+
+/**
+ * A time input as a `DateTime.Utc`: the warehouse wire shape (tz-less, read as
+ * UTC) or ISO-8601 with `Z`/offset. `None` for anything else, including
+ * impossible calendar dates. The replacement for `parseWarehouseDateTime`.
+ */
+export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
+	const trimmed = value.trim()
+	return TIME_INPUT_PATTERN.test(trimmed) && hasRealCalendarFields(trimmed)
+		? Option.map(DateTime.make(warehouseDateTimeToIso(trimmed)), DateTime.toUtc)
+		: Option.none()
+}
+
+/** Parses the warehouse wire shape (tz-less = UTC), or ISO with `Z`/offset. */
+const warehouseWireToUtc = SchemaGetter.transformEffect<DateTime.Utc, string>((value, options) =>
+	Option.match(parseUtc(value), {
+		onNone: () =>
+			Effect.fail(
+				new SchemaIssue.InvalidValue(
+					{ message: `\`${value}\` is not a warehouse DateTime` },
+					value,
+					options,
+				),
+			),
+		onSome: Effect.succeed,
+	}),
+)
+
+/** `DateTime.Utc` -> `YYYY-MM-DD hh:mm:ss[.SSS]`; second precision floors. */
+const utcToWarehouseWire = (fractionDigits: 0 | 3) =>
+	SchemaGetter.transform<string, DateTime.Utc>((value) =>
+		DateTime.formatIso(value)
+			.slice(0, fractionDigits === 0 ? 19 : 23)
+			.replace("T", " "),
+	)
+
+/**
+ * A ClickHouse `DateTime` column on the wire: `YYYY-MM-DD hh:mm:ss` (UTC) <->
+ * `DateTime.Utc`. Encoding floors to whole seconds, as the column does.
+ */
+export const DateTimeUtcFromWarehouse = Schema.String.pipe(
+	Schema.decodeTo(Schema.DateTimeUtc, { decode: warehouseWireToUtc, encode: utcToWarehouseWire(0) }),
+).annotate({
+	title: "DateTimeUtcFromWarehouse",
+	description: "UTC timestamp, `YYYY-MM-DD HH:mm:ss` (e.g. `2026-08-25 08:47:52`).",
+})
+
+/**
+ * A ClickHouse `DateTime64(3)` column on the wire: `YYYY-MM-DD hh:mm:ss.SSS`.
+ * There is deliberately no `DateTime64(9)` sibling: `DateTime.Utc` holds
+ * milliseconds, so nanosecond columns cannot round-trip through it.
+ */
+export const DateTimeUtcFromWarehouse64 = Schema.String.pipe(
+	Schema.decodeTo(Schema.DateTimeUtc, { decode: warehouseWireToUtc, encode: utcToWarehouseWire(3) }),
+).annotate({
+	title: "DateTimeUtcFromWarehouse64",
+	description: "UTC timestamp, `YYYY-MM-DD HH:mm:ss.SSS` (e.g. `2026-08-25 08:47:52.041`).",
+})
 
 // Relative range shorthand — single source of truth
 //

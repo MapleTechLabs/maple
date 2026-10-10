@@ -6,7 +6,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -64,18 +64,13 @@ const make = Effect.gen(function* () {
 			)
 		}
 		const PAGE_SIZE = 100
-		let offset = 0
-		const all: Array<OrgMember> = []
-		while (true) {
-			const page = yield* clerkRequest(
-				"Clerk.organizations.getOrganizationMembershipList",
-				{ orgId },
-				() =>
-					clerk.organizations.getOrganizationMembershipList({
-						organizationId: orgId,
-						limit: PAGE_SIZE,
-						offset,
-					}),
+		return yield* Stream.paginate(0, (offset: number) =>
+			clerkRequest("Clerk.organizations.getOrganizationMembershipList", { orgId }, () =>
+				clerk.organizations.getOrganizationMembershipList({
+					organizationId: orgId,
+					limit: PAGE_SIZE,
+					offset,
+				}),
 			).pipe(
 				Effect.mapError(
 					(cause) =>
@@ -84,21 +79,23 @@ const make = Effect.gen(function* () {
 							cause,
 						}),
 				),
-			)
-			for (const member of page.data) {
-				const userId = member.publicUserData?.userId
-				const email = member.publicUserData?.identifier
-				if (!userId || !email) continue
-				const name =
-					[member.publicUserData?.firstName, member.publicUserData?.lastName]
-						.filter(Boolean)
-						.join(" ") || null
-				all.push({ userId, email, name, imageUrl: member.publicUserData?.imageUrl ?? null })
-			}
-			offset += page.data.length
-			if (offset >= page.totalCount || page.data.length === 0) break
-		}
-		return all
+				Effect.map((page) => {
+					const members = page.data.flatMap((member): Array<OrgMember> => {
+						const userId = member.publicUserData?.userId
+						const email = member.publicUserData?.identifier
+						if (!userId || !email) return []
+						const name =
+							[member.publicUserData?.firstName, member.publicUserData?.lastName]
+								.filter(Boolean)
+								.join(" ") || null
+						return [{ userId, email, name, imageUrl: member.publicUserData?.imageUrl ?? null }]
+					})
+					const next = offset + page.data.length
+					const done = next >= page.totalCount || page.data.length === 0
+					return [members, done ? Option.none<number>() : Option.some(next)] as const
+				}),
+			),
+		).pipe(Stream.runCollect)
 	})
 
 	const resolveMembers: OrgMembersServiceApi["resolveMembers"] = Effect.fn(

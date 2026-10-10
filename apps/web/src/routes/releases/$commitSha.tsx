@@ -352,7 +352,7 @@ function ReleaseBodyLoaded({
 				? derived.response.points
 				: derived.response.baselinePoints
 	const detailPoints = useMemo(() => points.map((point) => ({ ...point })), [points])
-	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
+	const chartBuckets = useMemo(() => detailPoints.map((point) => point.bucket), [detailPoints])
 	const commitMarkers = useCommitMarkers(derived?.releases ?? EMPTY_RELEASES, chartBuckets)
 	const isLoading = Result.isInitial(result)
 	const metrics = useMemo(
@@ -458,7 +458,7 @@ function ReleaseBodyLoaded({
 			</div>
 			<MetricsGrid
 				items={metrics}
-				waiting={!!waiting}
+				waiting={waiting}
 				syncId={`release-${commitSha}`}
 				overlay={commitMarkers}
 				yAxisWidth={72}

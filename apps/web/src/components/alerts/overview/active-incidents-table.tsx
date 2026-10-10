@@ -1,5 +1,7 @@
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { RelativeTime } from "@/components/common/relative-time"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { Fragment, useMemo } from "react"
 
 import type { AlertIncidentDocument, AlertIncidentHoldReason } from "@maple/domain/http"
@@ -10,7 +12,8 @@ import { sortIncidents, TagChips, TagGroupHeaderRow } from "@/components/alerts/
 import { formatSignalValue } from "@/lib/alerts/form-utils"
 import { groupByTag as groupItemsByTag } from "@/lib/alerts/tag-grouping"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { Badge } from "@maple/ui/components/ui/badge"
+import { cn } from "@maple/ui/lib/utils"
+import { SectionHeading } from "@/components/common/section-heading"
 import {
 	Table,
 	TableBody,
@@ -48,8 +51,6 @@ export function ActiveIncidentsTable({
 	tagsByRuleId: Map<string, readonly string[]>
 	grouped: boolean
 }) {
-	const navigate = useNavigate()
-
 	const sorted = useMemo(() => sortIncidents(incidents), [incidents])
 	const groups = useMemo(
 		() => (grouped ? groupItemsByTag(sorted, (i) => tagsByRuleId.get(i.ruleId) ?? []) : null),
@@ -59,11 +60,7 @@ export function ActiveIncidentsTable({
 	const renderRow = (incident: AlertIncidentDocument, key: string) => {
 		const tags = tagsByRuleId.get(incident.ruleId) ?? []
 		return (
-			<TableRow
-				key={key}
-				className="cursor-pointer"
-				onClick={() => navigate({ to: "/alerts/$ruleId", params: { ruleId: incident.ruleId } })}
-			>
+			<TableRow key={key}>
 				<TableCell>
 					<AlertSeverityBadge severity={incident.severity} />
 				</TableCell>
@@ -71,7 +68,7 @@ export function ActiveIncidentsTable({
 					<Link
 						to="/alerts/$ruleId"
 						params={{ ruleId: incident.ruleId }}
-						className="block truncate font-medium hover:underline"
+						className={cn("block truncate font-medium hover:underline", ROW_STRETCHED_LINK_CLASS)}
 						title={incident.ruleName}
 					>
 						{incident.ruleName}
@@ -88,7 +85,7 @@ export function ActiveIncidentsTable({
 				</TableCell>
 				<TableCell>
 					{incident.holdReason != null ? (
-						<span title={holdReasonTitle(incident.holdReason)}>
+						<span title={holdReasonTitle(incident.holdReason)} className={ROW_LINK_LIFT}>
 							<AlertStatusBadge state="held" />
 							{incident.heldSince ? (
 								<RelativeTime
@@ -129,12 +126,7 @@ export function ActiveIncidentsTable({
 
 	return (
 		<div className="space-y-3">
-			<div className="flex items-center gap-2">
-				<h2 className="text-lg font-semibold">Active incidents</h2>
-				<Badge variant="secondary" className="rounded-full tabular-nums">
-					{sorted.length}
-				</Badge>
-			</div>
+			<SectionHeading title="Active incidents" count={sorted.length.toLocaleString()} />
 
 			<Table>
 				<TableHeader>
@@ -150,8 +142,8 @@ export function ActiveIncidentsTable({
 				<TableBody>
 					{sorted.length === 0 ? (
 						<TableRow>
-							<TableCell colSpan={6} className="py-8 text-center text-muted-foreground text-sm">
-								No active incidents match the selected tags.
+							<TableCell colSpan={6} className="p-0">
+								<EmptyMessage>No active incidents match the selected tags.</EmptyMessage>
 							</TableCell>
 						</TableRow>
 					) : groups ? (

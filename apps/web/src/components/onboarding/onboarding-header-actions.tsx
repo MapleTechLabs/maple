@@ -41,7 +41,7 @@ function OnboardingOrgSwitcherInner() {
 					<span className="max-w-[10rem] truncate" title={orgName}>
 						{orgName}
 					</span>
-					<ChevronExpandYIcon size={12} className="ml-0.5 size-3 text-muted-foreground" />
+					<ChevronExpandYIcon className="ml-0.5 text-muted-foreground" />
 				</Button>
 			}
 		/>
@@ -105,7 +105,7 @@ function ClerkUserMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={() => signOut()}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
@@ -133,7 +133,7 @@ function SelfHostedUserMenu() {
 			<DropdownMenuContent side="bottom" align="end" sideOffset={4} className="min-w-44">
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={handleLogout}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>

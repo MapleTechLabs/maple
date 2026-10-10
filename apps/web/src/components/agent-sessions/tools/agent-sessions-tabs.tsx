@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { formatToolCount } from "@/lib/agent-sessions/tool-analytics"
 import { cn } from "@maple/ui/lib/utils"
 
-import { underlineTabClass } from "@/components/common/underline-link-tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
 import { GearIcon, LayersIcon } from "@/components/icons"
 import { pickTimeRangeSearch, type TimeRangeSearch } from "@/components/time-range-picker/search"
@@ -38,7 +38,13 @@ export function AgentSessionsTabs({
 }) {
 	const window = search === undefined ? {} : pickTimeRangeSearch(search)
 	return (
-		<nav className={cn("flex items-center", className)} aria-label="Agent sessions views">
+		<UnderlineTabStrip
+			navigation
+			label="Agent sessions views"
+			bleed={false}
+			divided={false}
+			className={cn("gap-0 overflow-visible", className)}
+		>
 			<TabLink
 				to="/agent-sessions"
 				search={{}}
@@ -57,7 +63,7 @@ export function AgentSessionsTabs({
 			>
 				Tools
 			</TabLink>
-		</nav>
+		</UnderlineTabStrip>
 	)
 }
 

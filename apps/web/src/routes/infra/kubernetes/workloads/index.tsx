@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
@@ -110,11 +110,11 @@ function WorkloadsPage() {
 		computeTypes: search.computeTypes,
 	}
 
-	const wlResult = useAtomValue(
-		listWorkloadsResultAtom({
-			data: { kind, startTime, endTime, ...filters, limit: WORKLOAD_LIST_LIMIT },
-		}),
-	)
+	const wlAtom = listWorkloadsResultAtom({
+		data: { kind, startTime, endTime, ...filters, limit: WORKLOAD_LIST_LIMIT },
+	})
+	const wlResult = useAtomValue(wlAtom)
+	const refreshWorkloads = useAtomRefresh(wlAtom)
 	const facetsResult = useAtomValue(workloadFacetsResultAtom({ data: { kind, startTime, endTime } }))
 
 	const onFilterChange = <K extends keyof WorkloadFilters>(key: K, value: WorkloadFilters[K]) => {
@@ -159,7 +159,9 @@ function WorkloadsPage() {
 		>
 			{Result.builder(wlResult)
 				.onInitial(() => <WorkloadTableLoading />)
-				.onError((err) => <ErrorState error={err} />)
+				.onError((err) => (
+					<ErrorState error={err} title="Failed to load workloads" onRetry={refreshWorkloads} />
+				))
 				.onSuccess((response, result) => {
 					const workloads = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
@@ -264,7 +266,7 @@ function WorkloadsPage() {
 								noun={kindOption.label.slice(0, -1).toLowerCase()}
 								caption="share of the fleet by average utilization"
 								segments={[
-									{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
 										key: "elevated",
 										count: elevated,

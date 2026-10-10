@@ -1,8 +1,9 @@
 import { OAuthStatePersistenceError } from "@maple/domain/http"
-import { oauthAuthStates, type OAuthAuthStateInsert, type OAuthAuthStateRow } from "@maple/db"
-import { eq, lt } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OAuthAuthStates, type OAuthAuthStateInsert, type OAuthAuthStateRow } from "@maple/db/tables"
 import { Context, Effect, Layer, Option } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
 // Generic, provider-agnostic repo over the shared `oauth_auth_states` table —
 // the short-lived CSRF nonce store for any OAuth / App-install redirect flow.
@@ -26,34 +27,34 @@ export class OAuthStateRepository extends Context.Service<OAuthStateRepository, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "OAuthStateRepository", toPersistenceError)
 
 			const purgeExpired = Effect.fn("OAuthStateRepository.purgeExpired")(function* (now: number) {
-				yield* database
-					.execute((db) =>
-						db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, new Date(now))),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(now)])),
+				)
 			})
 
 			const insert = Effect.fn("OAuthStateRepository.insert")(function* (row: OAuthAuthStateInsert) {
-				yield* database
-					.execute((db) => db.insert(oauthAuthStates).values(row))
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) => db.run(PG.insertInto(OAuthAuthStates).values(row)))
 			})
 
 			const findByState = Effect.fn("OAuthStateRepository.findByState")(function* (state: string) {
-				const rows = yield* database
-					.execute((db) =>
-						db.select().from(oauthAuthStates).where(eq(oauthAuthStates.state, state)).limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OAuthAuthStates)
+							.select()
+							.where(($) => [$.state.eq(state)])
+							.limit(1),
+					),
+				)
 				return Option.fromNullishOr(rows[0])
 			})
 
 			const deleteByState = Effect.fn("OAuthStateRepository.deleteByState")(function* (state: string) {
-				yield* database
-					.execute((db) => db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)))
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])),
+				)
 			})
 
 			return { purgeExpired, insert, findByState, deleteByState } satisfies OAuthStateRepositoryApi

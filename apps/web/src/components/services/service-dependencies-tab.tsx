@@ -94,9 +94,9 @@ export function ServiceDependenciesTab({
 			// Server-side filter on `SourceService = ?` already scopes the result;
 			// only need to guard against rows missing a target name.
 			if (!edge.targetService) continue
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.targetService)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
+			const target = edge.targetService
 			out.push({
 				id: `service:${target}`,
 				kind: "service",
@@ -105,11 +105,11 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause: dependencyDrillWhereClause("service", target, ""),
 			})
 		}
@@ -118,15 +118,15 @@ export function ServiceDependenciesTab({
 			// Server-side filter on `ServiceName = ?` already scopes the result;
 			// only need to guard against rows with no db system identified.
 			if (!edge.dbSystem) continue
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.dbSystem)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
+			const target = edge.dbSystem
 			// Edges are per database identity (db.namespace et al.) — surface it as
 			// the row name so two databases of the same system stay distinguishable.
 			// The drill-down stays scoped by system only: the identity can originate
 			// from any of four span attributes, so an exact-attribute predicate here
 			// could silently match nothing.
-			const namespace = String(edge.dbNamespace ?? "")
+			const namespace = edge.dbNamespace ?? ""
 			out.push({
 				id: `database:${target}:${namespace}`,
 				kind: "database",
@@ -135,23 +135,23 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause: dependencyDrillWhereClause("database", target, ""),
 			})
 		}
 
 		for (const edge of externalEdges) {
-			const target = String(edge.targetName ?? "")
+			const target = edge.targetName ?? ""
 			if (!target) continue
 			const kind: DependencyKind =
 				edge.targetType === "messaging" ? "messaging" : edge.targetType === "rpc" ? "rpc" : "http"
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const system = edge.targetSystem ? String(edge.targetSystem) : ""
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
+			const system = edge.targetSystem ? edge.targetSystem : ""
 			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({
@@ -163,11 +163,11 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause,
 			})
 		}

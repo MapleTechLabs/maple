@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router"
 import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
@@ -22,7 +23,7 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, toastExit } from "@/lib/error-toast"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { IntegrationIconPlate, RAILWAY_ACCENT } from "./integration-catalog"
 import {
 	IntegrationEmpty,
@@ -39,7 +40,7 @@ const TOKENS_URL = "https://railway.com/account/tokens"
 
 const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
 
-export const railwayStatusAtom = retainedQuery("integrations", "railwayStatus", {
+export const railwayStatusAtom = retainedInternalQuery("integrations", "railwayStatus", {
 	reactivityKeys: ["railwayIntegrationStatus"],
 })
 
@@ -82,7 +83,7 @@ function RailwayTokenForm({
 	onSaved?: () => void
 	onCancel?: () => void
 }) {
-	const connect = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwayConnect"), {
+	const connect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "railwayConnect"), {
 		mode: "promiseExit",
 	})
 	const [token, setToken] = useState("")
@@ -135,7 +136,7 @@ function RailwayTokenForm({
 						</Button>
 					) : null}
 					<Button type="submit" disabled={Option.isNone(request)} loading={submitting}>
-						<RailwayIcon size={14} />
+						<RailwayIcon />
 						{mode === "rotate" ? "Update token" : "Connect Railway"}
 					</Button>
 				</div>
@@ -158,10 +159,10 @@ function RailwayTokenForm({
 export function RailwayIntegrationCard() {
 	const statusResult = useAtomValue(railwayStatusAtom)
 	const refreshStatus = useAtomRefresh(railwayStatusAtom)
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwayDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "railwayDisconnect"), {
 		mode: "promiseExit",
 	})
-	const sync = useAtomSet(MapleApiAtomClient.mutation("integrations", "railwaySync"), {
+	const sync = useAtomSet(MapleInternalAtomClient.mutation("integrations", "railwaySync"), {
 		mode: "promiseExit",
 	})
 	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
@@ -174,6 +175,7 @@ export function RailwayIntegrationCard() {
 		toastExit(result, { error: "Failed to sync Railway" })
 	})
 	const [rotating, setRotating] = useState(false)
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	// Keep the last loaded status if a refetch fails.
 	const status = Option.getOrNull(AsyncResult.value(statusResult))
@@ -183,7 +185,7 @@ export function RailwayIntegrationCard() {
 	useIntervalRefresh(refreshStatus, { intervalMs: SETTLING_REFRESH_MS, enabled: queued > 0 })
 
 	if (Result.isInitial(statusResult) && status === null) {
-		return <Skeleton className="h-32 w-full rounded-lg" />
+		return <Skeleton className="h-32 w-full rounded-md" />
 	}
 	if (Result.isFailure(statusResult) && status === null) {
 		return (
@@ -308,13 +310,24 @@ export function RailwayIntegrationCard() {
 							<Button
 								size="sm"
 								variant="outline"
-								onClick={handleDisconnect}
+								onClick={() => setConfirmingDisconnect(true)}
 								loading={disconnectBusy}
 							>
 								Disconnect
 							</Button>
 						</div>
 					)}
+					<ConfirmDialog
+						open={confirmingDisconnect}
+						onOpenChange={setConfirmingDisconnect}
+						title="Disconnect Railway"
+						description="Maple stops collecting metrics from your Railway projects. You can reconnect later."
+						confirmLabel="Disconnect"
+						onConfirm={() => {
+							setConfirmingDisconnect(false)
+							void handleDisconnect()
+						}}
+					/>
 				</ItemContent>
 			</Item>
 

@@ -1,4 +1,4 @@
-import type { PullRequestCommentJob, PullRequestEventJob } from "@maple/domain/http"
+import type { PullRequestChecklistJob, PullRequestCommentJob, PullRequestEventJob } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { Context, Effect, Layer } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -83,3 +83,16 @@ export class PullRequestCommentSink extends Context.Service<
 	PullRequestCommentSink,
 	PullRequestCommentSinkApi
 >()("@maple/api/services/integrations/vcs/PullRequestCommentSink") {}
+
+/**
+ * Where a ticked "Before merge" step goes. Optional in `VcsSyncService`, like the comment sink: a
+ * root without reviews drops the edit.
+ */
+export interface PullRequestChecklistSinkApi {
+	readonly onMergeStepsTicked: (orgId: OrgId, job: PullRequestChecklistJob) => Effect.Effect<void>
+}
+
+export class PullRequestChecklistSink extends Context.Service<
+	PullRequestChecklistSink,
+	PullRequestChecklistSinkApi
+>()("@maple/api/services/integrations/vcs/PullRequestChecklistSink") {}

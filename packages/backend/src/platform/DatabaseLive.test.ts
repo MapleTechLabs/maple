@@ -1,7 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { orgOnboardingState } from "@maple/db"
-import { eq, sql } from "drizzle-orm"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgOnboardingState } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import { Cause, Effect, Exit, Schema, Tracer } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/sql/SqlError"
 import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
@@ -9,6 +10,12 @@ import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
 
 const trackedDbs: TestDb[] = []
+
+const orgId = (value: string) => Schema.decodeSync(OrgId)(value)
+const onboardingOf = (value: string) =>
+	PG.from(OrgOnboardingState)
+		.select()
+		.where(($) => [$.orgId.eq(orgId(value))])
 
 afterEach(() => cleanupTestDbs(trackedDbs))
 
@@ -50,9 +57,7 @@ describe("Database execute span instrumentation", () => {
 			const database = yield* Database
 
 			const rows = yield* database
-				.execute((db) =>
-					db.select().from(orgOnboardingState).where(eq(orgOnboardingState.orgId, "org_span_test")),
-				)
+				.execute((db) => db.run(onboardingOf("org_span_test")))
 				.pipe(Effect.withTracer(tracer))
 
 			assert.deepStrictEqual(rows, [])
@@ -90,7 +95,7 @@ describe("Database execute span instrumentation", () => {
 			const database = yield* Database
 
 			const exit = yield* database
-				.execute((db) => db.execute(sql`select broken from nowhere`))
+				.execute((db) => db.execute(Orm.sql`select broken from nowhere`))
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -118,10 +123,10 @@ describe("Database execute span instrumentation", () => {
 			const database = yield* Database
 
 			const error = yield* database
-				.execute((db) => db.execute(sql`select broken from nowhere`))
+				.execute((db) => db.execute(Orm.sql`select broken from nowhere`))
 				.pipe(Effect.flip)
 
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			// The Postgres diagnostic leads; the statement follows so a truncated
 			// log line still says what went wrong.
 			assert.match(
@@ -137,11 +142,10 @@ describe("Database execute span instrumentation", () => {
 			const database = yield* Database
 
 			const error = yield* database
-				.execute((db) => db.execute(sql`insert into nowhere values (${"sk_live_SECRET_HASH"})`))
+				.execute((db) => db.execute(Orm.sql`insert into nowhere values (${"sk_live_SECRET_HASH"})`))
 				.pipe(Effect.flip)
 
-			// drizzle's own error interpolates params into `message`, and
-			// `Schema.Defect` encodes `message` — so it must not be the stored cause.
+			// A bound param must never reach `message`, which `Schema.Defect` encodes.
 			const encoded = JSON.stringify(Schema.encodeSync(DatabaseError)(error))
 			assert.notInclude(encoded, "sk_live_SECRET_HASH")
 			assert.notInclude(error.message, "sk_live_SECRET_HASH")
@@ -155,7 +159,7 @@ describe("Database execute span instrumentation", () => {
 
 			const error = yield* database
 				.execute((db) =>
-					db.transaction((tx) => tx.execute(sql`select ${new Date(0)}::timestamptz as at`)),
+					db.transaction(db.execute(Orm.sql`select ${new Date(0)}::timestamptz as at`)),
 				)
 				.pipe(Effect.flip)
 
@@ -170,21 +174,19 @@ describe("Database execute span instrumentation", () => {
 			const { spans, tracer } = makeRecordingTracer()
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db.execute(sql`create table deferred_parent (id int primary key)`),
+				db.execute(Orm.sql`create table deferred_parent (id int primary key)`),
 			)
 			yield* database.execute((db) =>
 				db.execute(
-					sql`create table deferred_child (parent_id int references deferred_parent (id) deferrable initially deferred)`,
+					Orm.sql`create table deferred_child (parent_id int references deferred_parent (id) deferrable initially deferred)`,
 				),
 			)
 
 			// Every statement succeeds; the foreign key is only checked at COMMIT,
-			// which `@effect/sql`'s transaction wrapper runs under `orDie`.
+			// which effect-orm reports as `TransactionCommitFailed` rather than a defect.
 			const exit = yield* database
 				.execute((db) =>
-					db.transaction((tx) =>
-						tx.execute(sql`insert into deferred_child (parent_id) values (1)`),
-					),
+					db.transaction(db.execute(Orm.sql`insert into deferred_child (parent_id) values (1)`)),
 				)
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
@@ -204,19 +206,20 @@ describe("Database execute span instrumentation", () => {
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
 			const database = yield* Database
-			const now = new Date()
+			const now = Date.now()
 
 			yield* database
 				.execute((db) =>
-					db.transaction((tx) =>
+					db.transaction(
 						Effect.gen(function* () {
-							yield* tx
-								.insert(orgOnboardingState)
-								.values({ orgId: "org_tx_test", createdAt: now, updatedAt: now })
-							yield* tx
-								.select()
-								.from(orgOnboardingState)
-								.where(eq(orgOnboardingState.orgId, "org_tx_test"))
+							yield* db.run(
+								PG.insertInto(OrgOnboardingState).values({
+									orgId: orgId("org_tx_test"),
+									createdAt: now,
+									updatedAt: now,
+								}),
+							)
+							yield* db.run(onboardingOf("org_tx_test"))
 						}),
 					),
 				)
@@ -227,8 +230,8 @@ describe("Database execute span instrumentation", () => {
 			assert.deepStrictEqual(rest, [])
 			assert.strictEqual(span.attributes.get("db.statement_count"), 2)
 			const queryText = span.attributes.get("db.query.text") as string
-			assert.include(queryText, "insert into")
-			assert.include(queryText, "select")
+			assert.include(queryText, "INSERT INTO")
+			assert.include(queryText, "SELECT")
 			// A multi-statement call is summarized by the joined text — the same
 			// input the warehouse derives its fallback label from — so the leading
 			// statement names the span.
@@ -244,9 +247,9 @@ describe("Database execute span instrumentation", () => {
 
 			const error = yield* database
 				.execute((db) =>
-					db.transaction((tx) =>
+					db.transaction(
 						Effect.gen(function* () {
-							yield* tx.select().from(orgOnboardingState)
+							yield* db.run(PG.from(OrgOnboardingState).select())
 							return yield* Effect.fail(rollback)
 						}),
 					),
@@ -284,10 +287,8 @@ describe("Database execute span instrumentation", () => {
 
 			yield* Effect.all(
 				[
-					database.execute((db) =>
-						db.select().from(orgOnboardingState).where(eq(orgOnboardingState.orgId, "org_a")),
-					),
-					database.execute((db) => db.execute(sql`select 1 as concurrent_probe`)),
+					database.execute((db) => db.run(onboardingOf("org_a"))),
+					database.execute((db) => db.query(Orm.sql`select 1 as concurrent_probe`)),
 				],
 				{ concurrency: 2 },
 			).pipe(Effect.withTracer(tracer))
@@ -345,20 +346,20 @@ describe("Database execute failure classification", () => {
 	it.effect("classifies a statement failure separately, with its SQLSTATE", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
-			const failure = new EffectDrizzleQueryError({
-				query: 'insert into "api_keys" …',
-				params: [],
-				cause: Cause.fail(
-					new SqlError({
-						reason: new UniqueViolation({
-							cause: pgError(
-								"23505",
-								'duplicate key value violates unique constraint "api_keys_pkey"',
-							),
-							constraint: "api_keys_pkey",
-						}),
+			const failure = new Orm.DatabaseError({
+				message: 'duplicate key value violates unique constraint "api_keys_pkey"',
+				sql: 'INSERT INTO "api_keys" …',
+				reason: "UniqueViolation",
+				sqlState: "23505",
+				cause: new SqlError({
+					reason: new UniqueViolation({
+						cause: pgError(
+							"23505",
+							'duplicate key value violates unique constraint "api_keys_pkey"',
+						),
+						constraint: "api_keys_pkey",
 					}),
-				),
+				}),
 			})
 
 			const exit = yield* executeWithSpan(() => Effect.fail(failure)).pipe(

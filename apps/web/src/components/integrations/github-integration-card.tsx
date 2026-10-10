@@ -43,7 +43,7 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useRequiredIntegrationConnect, type IntegrationConnect } from "./integration-connect"
 import {
@@ -81,21 +81,21 @@ const SYNC_PRESENTATION: Record<
 
 export function GithubIntegrationCard() {
 	// Assigned once so the refresh hook targets the same memoized query atom.
-	const statusQuery = retainedQuery("integrations", "githubStatus", {
+	const statusQuery = retainedInternalQuery("integrations", "githubStatus", {
 		reactivityKeys: ["githubIntegrationStatus"],
 	})
 	const statusResult = useAtomValue(statusQuery)
 	const refreshStatus = useAtomRefresh(statusQuery)
 
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubDisconnect"), {
 		mode: "promiseExit",
 	})
 	const deleteRepository = useAtomSet(
-		MapleApiAtomClient.mutation("integrations", "githubDeleteRepository"),
+		MapleInternalAtomClient.mutation("integrations", "githubDeleteRepository"),
 		{ mode: "promiseExit" },
 	)
 	const setTrackedBranch = useAtomSet(
-		MapleApiAtomClient.mutation("integrations", "githubSetTrackedBranch"),
+		MapleInternalAtomClient.mutation("integrations", "githubSetTrackedBranch"),
 		{ mode: "promiseExit" },
 	)
 
@@ -252,7 +252,7 @@ export function GithubIntegrationCard() {
 function LoadingState() {
 	return (
 		<div className="space-y-4">
-			<Skeleton className="h-16 w-full rounded-lg" />
+			<Skeleton className="h-16 w-full rounded-md" />
 			<Panel className="overflow-hidden">
 				<Skeleton className="h-11 w-full rounded-none" />
 				<div className="divide-y">
@@ -292,7 +292,7 @@ function NotConnectedState({ connectFlow }: { connectFlow: IntegrationConnect })
 					Your repositories and commits will appear here after installing.
 				</IntegrationEmptyHint>
 				<Button onClick={connectFlow.connect} loading={connectFlow.busy}>
-					<GithubIcon size={16} />
+					<GithubIcon />
 					Connect GitHub
 				</Button>
 				<IntegrationEmptyFooter>
@@ -370,7 +370,7 @@ function DeactivatedState({
 
 			<div className="flex flex-col items-center gap-2">
 				<Button onClick={onReconnect} loading={busy}>
-					<ArrowRotateClockwiseIcon size={16} />
+					<ArrowRotateClockwiseIcon />
 					Reconnect GitHub
 				</Button>
 				<p className="text-xs text-muted-foreground">
@@ -594,7 +594,7 @@ function ConnectedView({
 									disabled={anyDeleting}
 									loading={isDeleting(repo.id)}
 								>
-									<TrashIcon size={13} />
+									<TrashIcon />
 									Delete
 								</Button>
 							</Item>
@@ -753,7 +753,7 @@ function BranchSelector({
 							<span className="max-w-[10rem] truncate font-medium">
 								{tracked ?? EMPTY_VALUE}
 							</span>
-							<ChevronDownIcon size={12} className="text-muted-foreground" />
+							<ChevronDownIcon className="text-muted-foreground" />
 						</Button>
 					}
 				/>

@@ -41,13 +41,15 @@ const DISMISSAL =
 const dismisses = (body: string) => !body.includes("?") && DISMISSAL.test(body)
 
 /**
- * Open findings a person has dismissed since the last review: their thread was resolved while the
- * finding was still open (the reviewer resolves only what it marked fixed), or someone replied
- * with a dismissal. Replies from the bot that posted the finding do not count.
+ * Open findings a person has dismissed since the last review: someone replied with a dismissal, or
+ * resolved the thread while its file stayed unchanged since then. Authors resolve a thread once
+ * they push the fix, so a resolved thread on a changed file (or unknown changes) is left open for
+ * the reviewer to judge. Replies from the bot that posted the finding do not count.
  */
 export const dismissedFindings = (
 	open: ReadonlyArray<TrackedFinding>,
 	threads: ReadonlyArray<PullRequestReviewThread>,
+	changedPaths: ReadonlySet<string> | undefined,
 ): ReadonlyArray<TrackedFinding> => {
 	const byComment = new Map<string, PullRequestReviewThread>()
 	for (const thread of threads) {
@@ -60,7 +62,7 @@ export const dismissedFindings = (
 		if (thread === undefined) return false
 		const poster = thread.comments[0]?.author
 		return (
-			thread.isResolved ||
+			(thread.isResolved && changedPaths !== undefined && !changedPaths.has(finding.path)) ||
 			thread.comments.slice(1).some((reply) => reply.author !== poster && dismisses(reply.body))
 		)
 	})

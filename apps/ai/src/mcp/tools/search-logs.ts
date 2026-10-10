@@ -77,10 +77,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				severity: params.severity ?? "all",
-				limit: params.limit,
-				offset: params.offset,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
+				"maple.ai.limit": params.limit,
+				"maple.ai.offset": params.offset,
 			})
 
 			const result = yield* searchLogs({

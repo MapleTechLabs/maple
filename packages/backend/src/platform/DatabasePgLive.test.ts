@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
-import { sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
 import { type DatabaseConnection, MapleDbConnection } from "./bindings"
 import { Database, executeWithSpan } from "./DatabaseLive"
-import { layerPg } from "./DatabasePgLive"
+import { DatabasePgLive } from "./DatabasePgLive"
 import { PgConnectionScope, type PgConnectionScopeApi } from "./pg-connection-scope"
 
 /**
@@ -20,7 +20,7 @@ const closedPortBinding: Option.Option<DatabaseConnection> = Option.some({
 })
 
 const databaseFor = (connection: Option.Option<DatabaseConnection>) =>
-	Effect.provide(Database, layerPg.pipe(Layer.provide(Layer.succeed(MapleDbConnection, connection))))
+	Effect.provide(Database, DatabasePgLive.pipe(Layer.provide(Layer.succeed(MapleDbConnection, connection))))
 
 const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []
@@ -40,7 +40,7 @@ const dbSpan = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
 const failureMessage = (exit: Exit.Exit<unknown, unknown>): string =>
 	Exit.isFailure(exit) ? String(Cause.squash(exit.cause)) : "<succeeded>"
 
-describe("layerPg", () => {
+describe("DatabasePgLive", () => {
 	it.effect("fails per execute when the stage has no MAPLE_DB binding", () =>
 		Effect.gen(function* () {
 			const database = yield* databaseFor(Option.none())
@@ -63,7 +63,7 @@ describe("layerPg", () => {
 			// The callback must issue a statement: the pool is lazy, so a callback
 			// that never queries would never reach the closed port and would succeed.
 			const exit = yield* Effect.exit(
-				database.execute((db) => db.execute(sql`select 1`)).pipe(Effect.withTracer(tracer)),
+				database.execute((db) => db.execute(Orm.sql`select 1`)).pipe(Effect.withTracer(tracer)),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))

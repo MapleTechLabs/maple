@@ -18,56 +18,58 @@ import {
 	organizationRegionMetadata,
 	organizationRegionOpen,
 } from "@maple/domain/organization-regions"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	actors,
-	agentFeedback,
-	alertDeliveryEvents,
-	alertDestinations,
-	alertIncidents,
-	alertRuleStates,
-	alertRules,
-	apiKeys,
-	cancellationReviews,
-	chatIdentities,
-	chatWorkspaces,
-	cliDeviceAuthorizations,
-	cloudflareLogpushConnectors,
-	dashboards,
-	dashboardShares,
-	dashboardVersions,
-	digestSubscriptions,
-	errorIncidents,
-	errorIssueEvents,
-	errorIssueStates,
-	errorIssues,
-	errorNotificationPolicies,
-	liveActivities,
-	orgSupportChannels,
-	mcpOAuthAuthorizations,
-	mcpOAuthRefreshTokens,
-	mobileDevices,
-	oauthAuthStates,
-	oauthConnections,
-	orgClickHouseSettings,
-	orgIngestKeys,
-	planetscaleConnections,
-	planetscaleIssueReceipts,
-	railwayConnections,
-	railwayEnvironments,
-	scrapeTargets,
-	vcsCommits,
-	prReviews,
-	prReviewSettings,
-	prReviewFindings,
-	prReviewFindingEmbeddings,
-	prReviewReplies,
-	prReviewEdits,
-	vcsInstallations,
-	vcsRepositories,
-} from "@maple/db"
-import { eq } from "drizzle-orm"
+	Actors,
+	AgentFeedback,
+	AlertDeliveryEvents,
+	AlertDestinations,
+	AlertIncidents,
+	AlertRuleStates,
+	AlertRules,
+	ApiKeys,
+	CancellationReviews,
+	ChatIdentities,
+	ChatWorkspaces,
+	CliDeviceAuthorizations,
+	CloudflareLogpushConnectors,
+	Dashboards,
+	DashboardShares,
+	DashboardVersions,
+	DigestSubscriptions,
+	ErrorIncidents,
+	ErrorIssueEvents,
+	ErrorIssueStates,
+	ErrorIssues,
+	ErrorNotificationPolicies,
+	LiveActivities,
+	OrgSupportChannels,
+	McpOAuthAuthorizations,
+	McpOAuthRefreshTokens,
+	MobileDevices,
+	OAuthAuthStates,
+	OAuthConnections,
+	OrgClickHouseSettings,
+	OrgIngestKeys,
+	PlanetscaleConnections,
+	PlanetscaleIssueReceipts,
+	RailwayConnections,
+	RailwayEnvironments,
+	ScrapeTargets,
+	VcsCommits,
+	PrReviews,
+	PrReviewSettings,
+	PrReviewFindings,
+	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
+	PrReviewReplies,
+	PrReviewEdits,
+	VcsInstallations,
+	VcsRepositories,
+} from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -89,76 +91,87 @@ const toProviderError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "Organization provider call failed",
 	})
 
-const ORG_SCOPED_TABLES = [
-	agentFeedback,
-	dashboardVersions,
-	dashboards,
-	alertDeliveryEvents,
-	alertIncidents,
-	alertRuleStates,
-	alertRules,
-	alertDestinations,
-	apiKeys,
-	cancellationReviews,
-	orgIngestKeys,
-	orgClickHouseSettings,
-	scrapeTargets,
-	oauthConnections,
-	oauthAuthStates,
+// A table with more columns satisfies these, so the lists hold the real tables.
+type OrgScopedTable = PG.Table<string, { readonly orgId: (typeof ApiKeys)["columns"]["orgId"] }>
+type ApprovedOrgScopedTable = PG.Table<
+	string,
+	{ readonly approvedOrgId: (typeof CliDeviceAuthorizations)["columns"]["approvedOrgId"] }
+>
+
+const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
+	AgentFeedback,
+	DashboardVersions,
+	Dashboards,
+	AlertDeliveryEvents,
+	AlertIncidents,
+	AlertRuleStates,
+	AlertRules,
+	AlertDestinations,
+	ApiKeys,
+	CancellationReviews,
+	OrgIngestKeys,
+	OrgClickHouseSettings,
+	ScrapeTargets,
+	OAuthConnections,
+	OAuthAuthStates,
 	// The binding that makes a chat workspace's members act as the org. Deleting
 	// the org must stop the bot answering there, and nothing else would.
-	chatWorkspaces,
+	ChatWorkspaces,
 	// Each row lets one chat account approve changes as one Maple user. Deleting the org must
 	// end that standing authority, not leave it pointed at an org that is gone.
-	chatIdentities,
-	digestSubscriptions,
-	cloudflareLogpushConnectors,
-	errorIssueEvents,
-	errorIssueStates,
-	errorIncidents,
-	errorIssues,
-	errorNotificationPolicies,
-	actors,
-	vcsInstallations,
-	vcsRepositories,
-	vcsCommits,
-	prReviews,
-	prReviewSettings,
-	prReviewFindings,
-	prReviewFindingEmbeddings,
-	prReviewReplies,
-	prReviewEdits,
+	ChatIdentities,
+	DigestSubscriptions,
+	CloudflareLogpushConnectors,
+	ErrorIssueEvents,
+	ErrorIssueStates,
+	ErrorIncidents,
+	ErrorIssues,
+	ErrorNotificationPolicies,
+	Actors,
+	VcsInstallations,
+	VcsRepositories,
+	VcsCommits,
+	PrReviews,
+	PrReviewSettings,
+	PrReviewFindings,
+	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
+	PrReviewReplies,
+	PrReviewEdits,
 	// Credentials that outlive the org unless they are purged here. `api_keys`
 	// alone was not enough: an MCP grant's refresh family re-mints its key
 	// hourly, so a deleted org's MCP client kept working for up to 30 days.
-	mcpOAuthRefreshTokens,
-	mobileDevices,
+	McpOAuthRefreshTokens,
+	MobileDevices,
 	// A share link is a public bearer credential: `resolveByToken` matches the
 	// token hash and `revoked_at is null` and nothing else, then queries the
 	// warehouse as the org. It only went dead on deletion by accident of a
 	// downstream `dashboards` lookup, which is not a guarantee.
-	dashboardShares,
+	DashboardShares,
 	// Holds the encrypted per-connection webhook HMAC secret — standing
 	// authority to have inbound writes attributed to an org that is gone.
-	planetscaleConnections,
+	PlanetscaleConnections,
 	// Dedupe receipts for the org's error issues, which are purged above; with the
 	// connection gone no redelivery can arrive for them to catch.
-	planetscaleIssueReceipts,
+	PlanetscaleIssueReceipts,
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
-	railwayConnections,
-	railwayEnvironments,
+	RailwayConnections,
+	RailwayEnvironments,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
-	liveActivities,
+	LiveActivities,
 	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
-	orgSupportChannels,
-] as const
+	OrgSupportChannels,
+]
 
 /**
  * Same purge, different column: these two record an *approval* rather than
  * ownership, so the org they belong to is `approved_org_id`.
  */
-const APPROVED_ORG_SCOPED_TABLES = [mcpOAuthAuthorizations, cliDeviceAuthorizations] as const
+const APPROVED_ORG_SCOPED_TABLES: ReadonlyArray<ApprovedOrgScopedTable> = [
+	McpOAuthAuthorizations,
+	CliDeviceAuthorizations,
+]
 
 /**
  * Org-scoped tables deliberately left behind by `delete`. Every table with an
@@ -174,31 +187,31 @@ const APPROVED_ORG_SCOPED_TABLES = [mcpOAuthAuthorizations, cliDeviceAuthorizati
  * `liveActivities`) were moved into the purge above rather than excused here.
  */
 export const UNPURGED_ORG_SCOPED_TABLES = [
-	"aiTriageSettings",
-	"alertRuleClaims",
-	"anomalyDetectorSettings",
-	"anomalyDetectorStates",
-	"anomalyIncidents",
-	"cloudflareAnalyticsState",
-	"cloudflareHyperdriveConfigs",
-	"errorFingerprintCandidates",
-	"errorIssuePullRequests",
-	"errorIssueVerifications",
-	"errorNotificationDeliveries",
-	"errorTickStates",
-	"investigations",
-	"issueEscalationPolicies",
-	"issueEscalations",
-	"orgClickHouseSchemaApplyRuns",
-	"orgIngestAttributeMappings",
-	"orgIngestSamplingPolicies",
-	"orgOnboardingState",
-	"orgRecommendationIssues",
-	"planetscaleDatabases",
-	"planetscaleEvents",
-	"planetscalePollState",
-	"scrapeTargetChecks",
-	"vcsRepositoryBranches",
+	"AiTriageSettings",
+	"AlertRuleClaims",
+	"AnomalyDetectorSettings",
+	"AnomalyDetectorStates",
+	"AnomalyIncidents",
+	"CloudflareAnalyticsState",
+	"CloudflareHyperdriveConfigs",
+	"ErrorFingerprintCandidates",
+	"ErrorIssuePullRequests",
+	"ErrorIssueVerifications",
+	"ErrorNotificationDeliveries",
+	"ErrorTickStates",
+	"Investigations",
+	"IssueEscalationPolicies",
+	"IssueEscalations",
+	"OrgClickHouseSchemaApplyRuns",
+	"OrgIngestAttributeMappings",
+	"OrgIngestSamplingPolicies",
+	"OrgOnboardingState",
+	"OrgRecommendationIssues",
+	"PlanetscaleDatabases",
+	"PlanetscaleEvents",
+	"PlanetscalePollState",
+	"ScrapeTargetChecks",
+	"VcsRepositoryBranches",
 ] as const
 
 export const ORG_DELETE_REGISTRY = {
@@ -255,6 +268,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "OrganizationService", toPersistenceError)
 			const env = yield* Env
 
 			const autumn = yield* AutumnClient
@@ -277,17 +291,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				yield* Effect.forEach(
 					ORG_SCOPED_TABLES,
 					(table) =>
-						database
-							.execute((db) => db.delete(table).where(eq(table.orgId, orgId)))
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)]))),
 					{ discard: true },
 				)
 				yield* Effect.forEach(
 					APPROVED_ORG_SCOPED_TABLES,
 					(table) =>
-						database
-							.execute((db) => db.delete(table).where(eq(table.approvedOrgId, orgId)))
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((db) =>
+							db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
+						),
 					{ discard: true },
 				)
 			})
@@ -346,7 +358,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				name: string,
 				region: MapleRegion,
 			) {
-				yield* Effect.annotateCurrentSpan({ userId, "maple.org_region": region })
+				yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "maple.org_region": region })
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({
@@ -467,9 +479,4 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
-
-	static readonly retrieve = (orgId: OrgId) => this.use((service) => service.retrieve(orgId))
-
-	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.delete(orgId, roles))
 }

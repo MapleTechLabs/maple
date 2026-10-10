@@ -10,21 +10,22 @@ import {
 	PlanetScaleQueryInsightRow,
 	PlanetScaleQueryInsightsResponse,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	planetscaleConnections,
-	planetscaleDatabases,
-	planetscaleEvents,
-	planetscalePollState,
+	PlanetscaleConnections,
+	PlanetscaleDatabases,
+	PlanetscaleEvents,
+	PlanetscalePollState,
 	type PlanetScaleBranchInfo,
 	type PlanetScaleConnectionRow,
 	type PlanetScaleDatabaseRow,
 	type PlanetScaleEventRow,
-} from "@maple/db"
-import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm"
+} from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import {
@@ -323,6 +324,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "PlanetScaleService", toPersistenceError)
 			const env = yield* Env
 			const psOAuth = yield* PlanetScaleOAuthService
 			const httpClient = yield* HttpClient.HttpClient
@@ -338,18 +340,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				operation: string,
 				effect: Effect.Effect<A, E, PlanetScale.PlanetScaleOpContext>,
 			) =>
-				Schema.decodeEffect(OrgId)(connection.orgId).pipe(
-					Effect.orDie,
-					Effect.flatMap((orgId) =>
-						psOAuth.withAccessToken(orgId, (accessToken) =>
-							runPlanetScale(
-								httpClient,
-								{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
-								operation,
-								effect,
-								{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
-							),
-						),
+				psOAuth.withAccessToken(connection.orgId, (accessToken) =>
+					runPlanetScale(
+						httpClient,
+						{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
+						operation,
+						effect,
+						{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
 					),
 				)
 
@@ -367,64 +364,55 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				ttlMs: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscalePollState)
 							.select()
-							.from(planetscalePollState)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-									eq(planetscalePollState.databaseId, databaseId),
-								),
-							)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+							])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 				const existing = rows[0]
 
 				if (existing === undefined) {
-					yield* database
-						.execute((db) =>
-							db.insert(planetscalePollState).values({
+					yield* dbExecute((db) =>
+						db.run(
+							PG.insertInto(PlanetscalePollState).values({
 								id: randomUUID(),
 								orgId,
 								dataset,
 								databaseId,
-								leaseUntil: new Date(now + LEASE_MS),
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
+								leaseUntil: now + LEASE_MS,
+								createdAt: now,
+								updatedAt: now,
 							}),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
+						),
+					)
 					return "claimed" as const
 				}
 
 				if (!existing.enabled) return "disabled" as const
-				if (existing.lastSuccessAt !== null && now - existing.lastSuccessAt.getTime() < ttlMs) {
+				if (existing.lastSuccessAt !== null && now - existing.lastSuccessAt < ttlMs) {
 					return "fresh" as const
 				}
 
 				// Lease claim: only wins if the previous lease expired. `.returning()`
 				// length is the claim signal (never read driver write-result shapes).
-				const claimed = yield* database
-					.execute((db) =>
-						db
-							.update(planetscalePollState)
-							.set({ leaseUntil: new Date(now + LEASE_MS), updatedAt: new Date(now) })
-							.where(
-								and(
-									eq(planetscalePollState.id, existing.id),
-									or(
-										isNull(planetscalePollState.leaseUntil),
-										lt(planetscalePollState.leaseUntil, new Date(now)),
-									),
-								),
-							)
-							.returning({ id: planetscalePollState.id }),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const claimed = yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscalePollState)
+							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
+							.where(($) => [
+								$.id.eq(existing.id),
+								PG.or($.leaseUntil.isNull(), $.leaseUntil.lt(now)),
+							])
+							.returning("id"),
+					),
+				)
 				return claimed.length > 0 ? ("claimed" as const) : ("lease_held" as const)
 			})
 
@@ -446,21 +434,18 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				dataset: string,
 				databaseId: string,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscalePollState)
 							.select()
-							.from(planetscalePollState)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-									eq(planetscalePollState.databaseId, databaseId),
-								),
-							)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+							])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 				return rows[0]
 			})
 
@@ -469,22 +454,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				orgId: OrgId,
 				dataset: string,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
-							.select({
-								databaseId: planetscalePollState.databaseId,
-								lastSuccessAt: planetscalePollState.lastSuccessAt,
-							})
-							.from(planetscalePollState)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscalePollState)
+							.select("databaseId", "lastSuccessAt")
+							.where(($) => [$.orgId.eq(orgId), $.dataset.eq(dataset)]),
+					),
+				)
 				return new Map(rows.map((row) => [row.databaseId, row.lastSuccessAt]))
 			})
 
@@ -497,39 +473,36 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				dataset: string,
 				databaseId: string,
 				error: string | null,
-				watermarkAt: Date | null,
+				watermarkAt: number | null,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* database
-					.execute((db) =>
-						db
-							.update(planetscalePollState)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscalePollState)
 							.set(
 								error === null
 									? {
-											lastSuccessAt: new Date(now),
+											lastSuccessAt: now,
 											lastError: null,
 											lastErrorAt: null,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 											...(!(watermarkAt === null) ? { watermarkAt } : undefined),
 										}
 									: {
 											lastError: error,
-											lastErrorAt: new Date(now),
+											lastErrorAt: now,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										},
 							)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-									eq(planetscalePollState.databaseId, databaseId),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+							]),
+					),
+				)
 			})
 
 			const recordInventoryResult = Effect.fn("PlanetScaleService.recordInventoryResult")(function* (
@@ -538,51 +511,47 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				error: string | null,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* database
-					.execute((db) =>
-						db
-							.update(planetscalePollState)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscalePollState)
 							.set(
 								error === null
 									? {
-											lastSuccessAt: new Date(now),
+											lastSuccessAt: now,
 											lastError: null,
 											lastErrorAt: null,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										}
 									: {
 											lastError: error,
-											lastErrorAt: new Date(now),
+											lastErrorAt: now,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										},
 							)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, INVENTORY_DATASET),
-									eq(planetscalePollState.databaseId, ""),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
-				yield* database
-					.execute((db) =>
-						db
-							.update(planetscaleConnections)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(INVENTORY_DATASET),
+								$.databaseId.eq(""),
+							]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscaleConnections)
 							.set(
 								error === null
 									? {
-											lastInventoryAt: new Date(now),
+											lastInventoryAt: now,
 											lastInventoryError: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										}
-									: { lastInventoryError: error, updatedAt: new Date(now) },
+									: { lastInventoryError: error, updatedAt: now },
 							)
-							.where(eq(planetscaleConnections.id, connectionId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.id.eq(connectionId)]),
+					),
+				)
 			})
 
 			const refreshInventory = Effect.fn("PlanetScaleService.refreshInventory")(function* (
@@ -637,14 +606,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				)
 
 				const now = yield* Clock.currentTimeMillis
-				const existingRows = yield* database
-					.execute((db) =>
-						db
+				const existingRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleDatabases)
 							.select()
-							.from(planetscaleDatabases)
-							.where(eq(planetscaleDatabases.orgId, connection.orgId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(connection.orgId)]),
+					),
+				)
 				const existingByDatabaseId = new Map(existingRows.map((row) => [row.databaseId, row]))
 				const upstreamIds = new Set(withBranches.map(({ db }) => db.id))
 
@@ -659,27 +627,28 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 							plan: db.plan ?? null,
 							branchesJson: branches,
 							deletedAt: null,
-							updatedAt: new Date(now),
+							updatedAt: now,
 						}
 						const existing = existingByDatabaseId.get(db.id)
-						return (
-							existing !== undefined
-								? database.execute((client) =>
-										client
-											.update(planetscaleDatabases)
+						return existing !== undefined
+							? dbExecute((client) =>
+									client.run(
+										PG.update(PlanetscaleDatabases)
 											.set(values)
-											.where(eq(planetscaleDatabases.id, existing.id)),
-									)
-								: database.execute((client) =>
-										client.insert(planetscaleDatabases).values({
+											.where(($) => [$.id.eq(existing.id)]),
+									),
+								)
+							: dbExecute((client) =>
+									client.run(
+										PG.insertInto(PlanetscaleDatabases).values({
 											id: randomUUID(),
 											orgId: connection.orgId,
 											databaseId: db.id,
-											createdAt: new Date(now),
+											createdAt: now,
 											...values,
 										}),
-									)
-						).pipe(Effect.mapError(toPersistenceError))
+									),
+								)
 					},
 					{ concurrency: INVENTORY_WRITE_CONCURRENCY, discard: true },
 				)
@@ -695,14 +664,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 							Predicate.isNull(row.deletedAt),
 					),
 					(row) =>
-						database
-							.execute((client) =>
-								client
-									.update(planetscaleDatabases)
-									.set({ deletedAt: new Date(now), updatedAt: new Date(now) })
-									.where(eq(planetscaleDatabases.id, row.id)),
-							)
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((client) =>
+							client.run(
+								PG.update(PlanetscaleDatabases)
+									.set({ deletedAt: now, updatedAt: now })
+									.where(($) => [$.id.eq(row.id)]),
+							),
+						),
 					{ concurrency: INVENTORY_WRITE_CONCURRENCY, discard: true },
 				)
 
@@ -728,7 +696,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
 						return 0
 					}
-					const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
 
 					const state = yield* readPollState(
 						connection.orgId,
@@ -738,7 +705,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					const now = yield* Clock.currentTimeMillis
 					// First backfill reaches 30 days; afterwards only what changed since
 					// the watermark, so a steady-state tick pages once and stops.
-					const floor = Math.max(state?.watermarkAt?.getTime() ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
+					const floor = Math.max(state?.watermarkAt ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
 
 					const organization = connection.psOrganization
 					const listing = yield* callApi(
@@ -756,50 +723,52 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						`deploy requests of ${database_.name}`,
 					)(listing.items)
 
-					let inserted = 0
-					let newestUpdate = state?.watermarkAt?.getTime() ?? 0
-					for (const request of requests) {
+					const newestUpdate = requests.reduce(
+						(newest, request) => Math.max(newest, parseTimestamp(request.updated_at) ?? 0),
+						state?.watermarkAt ?? 0,
+					)
+					const pending = requests.flatMap((request) => {
 						const updatedAt = parseTimestamp(request.updated_at) ?? 0
-						if (updatedAt > newestUpdate) newestUpdate = updatedAt
 						// Untouched since the watermark: its transitions are already stored.
-						if (updatedAt !== 0 && updatedAt <= floor) continue
-
+						if (updatedAt !== 0 && updatedAt <= floor) return []
 						const externalId =
 							request.number != null ? String(request.number) : (request.id ?? "")
 						const label = externalId === "" ? "Deploy request" : `Deploy request #${externalId}`
-						for (const row of deployRequestTimelineRows(request)) {
-							if (row.occurredAtMs < now - DEPLOY_REQUESTS_FLOOR_MS) continue
-							const result = yield* appendTimelineEvent({
-								orgId,
-								databaseName: database_.name,
-								// A deploy request spans two branches; pinning the marker to
-								// one of them would be a guess the payload doesn't support.
-								branchName: "",
-								category: "deploy_request",
-								eventType: row.eventType,
-								state: row.state,
-								externalId,
-								title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
-								source: "backfill",
-								actorLogin: request.actor?.display_name ?? null,
-								url: request.html_url ?? null,
-								payload: {
-									branch: request.branch ?? null,
-									intoBranch: request.into_branch ?? null,
-								},
-								occurredAtMs: row.occurredAtMs,
-								createdAtMs: now,
-							}).pipe(Effect.mapError(toPersistenceError))
-							if (result.inserted) inserted++
-						}
-					}
+						return deployRequestTimelineRows(request)
+							.filter((row) => row.occurredAtMs >= now - DEPLOY_REQUESTS_FLOOR_MS)
+							.map((row) => ({ request, row, externalId, label }))
+					})
+					const appended = yield* Effect.forEach(pending, ({ request, row, externalId, label }) =>
+						appendTimelineEvent({
+							orgId: connection.orgId,
+							databaseName: database_.name,
+							// A deploy request spans two branches; pinning the marker to
+							// one of them would be a guess the payload doesn't support.
+							branchName: "",
+							category: "deploy_request",
+							eventType: row.eventType,
+							state: row.state,
+							externalId,
+							title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
+							source: "backfill",
+							actorLogin: request.actor?.display_name ?? null,
+							url: request.html_url ?? null,
+							payload: {
+								branch: request.branch ?? null,
+								intoBranch: request.into_branch ?? null,
+							},
+							occurredAtMs: row.occurredAtMs,
+							createdAtMs: now,
+						}).pipe(Effect.mapError(toPersistenceError)),
+					)
+					const inserted = appended.filter((result) => result.inserted).length
 
 					// A truncated listing has unobserved requests beyond the ceiling:
 					// advancing the watermark past them would skip them forever. Keep the
 					// old watermark — inserts are idempotent, so re-scanning is safe.
 					const watermark = requestsComplete
 						? newestUpdate > 0
-							? new Date(newestUpdate)
+							? newestUpdate
 							: null
 						: (state?.watermarkAt ?? null)
 					yield* recordPollResult(
@@ -825,32 +794,27 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const refreshDeployRequests = Effect.fn("PlanetScaleService.refreshDeployRequests")(function* (
 				connection: PlanetScaleConnectionRow,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleDatabases)
 							.select()
-							.from(planetscaleDatabases)
-							.where(
-								and(
-									eq(planetscaleDatabases.orgId, connection.orgId),
-									isNull(planetscaleDatabases.deletedAt),
-									// Deploy requests are a MySQL/Vitess-only resource — Postgres
-									// databases answer 405 on this endpoint. Polling them anyway
-									// burned a slot in every tick's batch and buried the result
-									// in a logWarning, so it repeated forever.
-									eq(planetscaleDatabases.kind, "mysql"),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [
+								$.orgId.eq(connection.orgId),
+								$.deletedAt.isNull(),
+								// Deploy requests are a MySQL/Vitess-only resource — Postgres
+								// databases answer 405 on this endpoint. Polling them anyway
+								// burned a slot in every tick's batch and buried the result
+								// in a logWarning, so it repeated forever.
+								$.kind.eq("mysql"),
+							]),
+					),
+				)
 
 				// Round-robin by staleness so every database is reached eventually
 				// rather than the first 25 alphabetically being reached always.
 				const staleness = yield* pollStateByDatabaseId(connection.orgId, DEPLOY_REQUESTS_DATASET)
 				const ordered = [...rows].sort(
-					(a, b) =>
-						(staleness.get(a.databaseId)?.getTime() ?? 0) -
-						(staleness.get(b.databaseId)?.getTime() ?? 0),
+					(a, b) => (staleness.get(a.databaseId) ?? 0) - (staleness.get(b.databaseId) ?? 0),
 				)
 				const batch = ordered.slice(0, DEPLOY_REQUESTS_MAX_DATABASES_PER_TICK)
 				if (ordered.length > batch.length) {
@@ -894,8 +858,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
 				// A revoked grant fails every call until someone reconnects, so polling it only
 				// repeats the 401. Reconnecting clears the stamp and polling resumes.
-				const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
-				const grant = yield* psOAuth.grantStatus(orgId)
+				const grant = yield* psOAuth.grantStatus(connection.orgId)
 				if (grant.revokedAt !== null) {
 					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
 					return { outcome: "skipped" as const, deployEvents: 0 }
@@ -943,7 +906,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					return { outcome: "refreshed" as const, deployEvents }
 				}
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
-					Effect.ignore,
+					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				// Fail inside a span so poll failures surface in find_errors, mirroring
 				// the Cloudflare poller's observeDatasetFailure seam — EXCEPT an upstream
@@ -977,31 +940,20 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			})
 
 			const pollAllOrgs = Effect.fn("PlanetScaleService.pollAllOrgs")(function* () {
-				const connections = yield* database
-					.execute((db) => db.select().from(planetscaleConnections))
-					.pipe(
-						Effect.mapError(toPersistenceError),
-						Effect.tapError((error) =>
-							Effect.logWarning("PlanetScale poll could not list connections").pipe(
-								Effect.annotateLogs({ error: error.message }),
-							),
+				const connections = yield* dbExecute((db) =>
+					db.run(PG.from(PlanetscaleConnections).select()),
+				).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("PlanetScale poll could not list connections").pipe(
+							Effect.annotateLogs({ error: error.message }),
 						),
-					)
+					),
+				)
 
-				let refreshed = 0
-				let skipped = 0
-				let failures = 0
-				let deployEvents = 0
-				yield* Effect.forEach(
+				const results = yield* Effect.forEach(
 					connections,
 					(connection) =>
 						pollOrg(connection).pipe(
-							Effect.map((result) => {
-								deployEvents += result.deployEvents
-								if (result.outcome === "refreshed") refreshed++
-								else if (result.outcome === "skipped") skipped++
-								else failures++
-							}),
 							// A broken org must not stop the fleet.
 							Effect.catchCause((cause) =>
 								Cause.hasInterruptsOnly(cause)
@@ -1011,16 +963,22 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 												orgId: connection.orgId,
 												error: summarizeCause(cause),
 											}),
-											Effect.map(() => {
-												failures++
-											}),
+											Effect.as({ outcome: "failed" as const, deployEvents: 0 }),
 										),
 							),
 						),
-					{ concurrency: ORG_CONCURRENCY, discard: true },
+					{ concurrency: ORG_CONCURRENCY },
 				)
 
-				return { orgs: connections.length, refreshed, skipped, failures, deployEvents }
+				const countOutcome = (outcome: (typeof results)[number]["outcome"]) =>
+					results.filter((result) => result.outcome === outcome).length
+				return {
+					orgs: connections.length,
+					refreshed: countOutcome("refreshed"),
+					skipped: countOutcome("skipped"),
+					failures: countOutcome("failed"),
+					deployEvents: results.reduce((sum, result) => sum + result.deployEvents, 0),
+				}
 			})
 
 			const queryInsights = Effect.fn("PlanetScaleService.queryInsights")(function* (
@@ -1032,15 +990,14 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					"maple.planetscale.database": options.database,
 					"maple.planetscale.branch": options.branch ?? "",
 				})
-				const connections = yield* database
-					.execute((db) =>
-						db
+				const connections = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleConnections)
 							.select()
-							.from(planetscaleConnections)
-							.where(eq(planetscaleConnections.orgId, orgId))
+							.where(($) => [$.orgId.eq(orgId)])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 				const connection = connections[0]
 				if (connection === undefined) {
 					return yield* Effect.fail(
@@ -1053,20 +1010,14 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// Default to the database's production branch from the inventory.
 				let branch = options.branch
 				if (branch === undefined || branch.length === 0) {
-					const rows = yield* database
-						.execute((db) =>
-							db
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(PlanetscaleDatabases)
 								.select()
-								.from(planetscaleDatabases)
-								.where(
-									and(
-										eq(planetscaleDatabases.orgId, orgId),
-										eq(planetscaleDatabases.name, options.database),
-									),
-								)
+								.where(($) => [$.orgId.eq(orgId), $.name.eq(options.database)])
 								.limit(1),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
+						),
+					)
 					const branches = rows[0]?.branchesJson ?? []
 					branch = branches.find((entry) => entry.production)?.name ?? branches[0]?.name ?? "main"
 				}
@@ -1096,7 +1047,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					Effect.catchTags({
 						// Only a 403 from the insights endpoint itself: a revoked grant still fails, so
 						// the client sees the reconnect error rather than a scope hint.
-						"@maple/api/integrations/PlanetScaleForbiddenError": () =>
+						"@maple/backend/integrations/PlanetScaleForbiddenError": () =>
 							unavailable(
 								"The PlanetScale authorization lacks the read_databases scope needed for Query Insights.",
 							),
@@ -1145,19 +1096,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 
 			const listDatabases = Effect.fn("PlanetScaleService.listDatabases")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				return yield* database
-					.execute((db) =>
-						db
+				return yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleDatabases)
 							.select()
-							.from(planetscaleDatabases)
-							.where(
-								and(
-									eq(planetscaleDatabases.orgId, orgId),
-									isNull(planetscaleDatabases.deletedAt),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+					),
+				)
 			})
 
 			const listEvents = Effect.fn("PlanetScaleService.listEvents")(function* (
@@ -1169,64 +1114,43 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// Keyset pagination over (occurred_at DESC, id DESC): an offset would
 				// skip rows as live webhooks land at the head between pages.
 				const cursor = parseEventCursor(options.cursor)
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleEvents)
 							.select()
-							.from(planetscaleEvents)
-							.where(
-								and(
-									// OrgId first, always.
-									eq(planetscaleEvents.orgId, orgId),
-									gte(planetscaleEvents.occurredAt, new Date(options.startTime)),
-									lte(planetscaleEvents.occurredAt, new Date(options.endTime)),
-									...(options.database === undefined
-										? []
-										: [eq(planetscaleEvents.databaseName, options.database)]),
-									// A deploy request has no single branch, so a branch filter
-									// must not hide deploys — it narrows branch-scoped rows only.
-									...(options.branch === undefined
-										? []
-										: [
-												or(
-													eq(planetscaleEvents.branchName, options.branch),
-													eq(planetscaleEvents.branchName, ""),
-												)!,
-											]),
-									...(options.categories === undefined || options.categories.length === 0
-										? []
-										: [inArray(planetscaleEvents.category, [...options.categories])]),
-									...(cursor === null
-										? []
-										: [
-												or(
-													lt(
-														planetscaleEvents.occurredAt,
-														new Date(cursor.occurredAtMs),
-													),
-													and(
-														eq(
-															planetscaleEvents.occurredAt,
-															new Date(cursor.occurredAtMs),
-														),
-														lt(planetscaleEvents.id, cursor.id),
-													),
-												)!,
-											]),
-								),
-							)
-							.orderBy(desc(planetscaleEvents.occurredAt), desc(planetscaleEvents.id))
+							.where(($) => [
+								// OrgId first, always.
+								$.orgId.eq(orgId),
+								$.occurredAt.gte(options.startTime),
+								$.occurredAt.lte(options.endTime),
+								options.database === undefined
+									? undefined
+									: $.databaseName.eq(options.database),
+								// A deploy request has no single branch, so a branch filter
+								// must not hide deploys — it narrows branch-scoped rows only.
+								options.branch === undefined
+									? undefined
+									: PG.or($.branchName.eq(options.branch), $.branchName.eq("")),
+								options.categories === undefined || options.categories.length === 0
+									? undefined
+									: PG.inList($.category, options.categories),
+								cursor === null
+									? undefined
+									: PG.or(
+											$.occurredAt.lt(cursor.occurredAtMs),
+											PG.and($.occurredAt.eq(cursor.occurredAtMs), $.id.lt(cursor.id)),
+										),
+							])
+							.orderBy(["occurredAt", "desc"], ["id", "desc"])
 							// One extra row is how we know a next page exists without a count.
 							.limit(options.limit + 1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 
 				const events = rows.slice(0, options.limit)
 				const last = events[events.length - 1]
 				const nextCursor =
-					rows.length > options.limit && last !== undefined
-						? `${last.occurredAt.getTime()}:${last.id}`
-						: null
+					rows.length > options.limit && last !== undefined ? `${last.occurredAt}:${last.id}` : null
 				return { events, nextCursor }
 			})
 

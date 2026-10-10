@@ -11,6 +11,7 @@
 //
 // Host identity is carried on the ResourceAttributes map under `host.name`.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -67,7 +68,7 @@ export interface ListHostsOutput {
 	readonly osType: string
 	readonly hostArch: string
 	readonly cloudProvider: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
 	readonly memoryPct: number
 	readonly diskPct: number
@@ -92,8 +93,8 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").neq(""),
 			$.MetricName.in_(...HOSTMETRIC_NAMES),
 			CH.when(opts.search, (v: string) =>
@@ -119,8 +120,8 @@ export interface HostDetailSummaryOutput {
 	readonly hostArch: string
 	readonly cloudProvider: string
 	readonly cloudRegion: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
 	readonly memoryPct: number
 	readonly diskPct: number
@@ -147,8 +148,8 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.in_(...HOSTMETRIC_NAMES),
 		])
@@ -166,7 +167,7 @@ export interface HostGaugeTimeseriesOpts {
 }
 
 export interface HostGaugeTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
 	readonly avgValue: number
 }
@@ -182,8 +183,8 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq(opts.metricName),
 		])
@@ -204,7 +205,7 @@ export interface HostNetworkTimeseriesOpts {
 }
 
 export interface HostNetworkTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
 	readonly sumValue: number
 }
@@ -218,8 +219,8 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq("system.network.io"),
 		])
@@ -347,7 +348,7 @@ export interface ListPodsOutput {
 	// collector hasn't been told to extract the eks.amazonaws.com/compute-type
 	// label, in which case the UI should treat it as ec2).
 	readonly computeType: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	// Window averages.
 	readonly cpuUsage: number
 	readonly cpuLimitPct: number
@@ -376,8 +377,8 @@ const podBaseConditions = (
 	metricNames: ReadonlyArray<string> = POD_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
 	$.OrgId.eq(orgIdParam),
-	$.TimeUnix.gte(param.dateTimeString("startTime")),
-	$.TimeUnix.lte(param.dateTimeString("endTime")),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
 	$.ResourceAttributes.get("k8s.pod.name").neq(""),
 	$.MetricName.in_(...metricNames),
 ]
@@ -420,8 +421,8 @@ const podFilterConditions = (
 	),
 	...POD_FACETS.flatMap(({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
-		const included = opts[include] as ReadonlyArray<string> | undefined
-		const excluded = opts[exclude] as ReadonlyArray<string> | undefined
+		const included = opts[include]
+		const excluded = opts[exclude]
 		return [
 			included?.length ? CH.inList(expr, included) : undefined,
 			excluded?.length ? CH.notInList(expr, excluded) : undefined,
@@ -448,8 +449,8 @@ const ENDED_POD_SECONDS = 300
  * rides on `endTime` rather than wall-clock now, so a window that ended an hour
  * ago still reports who was live *then*.
  */
-type PodLifecycleColumns = { lastSeen: CH.Expr<string> }
-const endedCutoff = () => CH.intervalSub(param.dateTimeString("endTime"), ENDED_POD_SECONDS)
+type PodLifecycleColumns = { lastSeen: CH.Expr<DateTime.Utc> }
+const endedCutoff = () => CH.intervalSub(param.dateTime("endTime"), ENDED_POD_SECONDS)
 const podLiveCondition = ($: PodLifecycleColumns) => $.lastSeen.gte(endedCutoff())
 const podEndedCondition = ($: PodLifecycleColumns) => $.lastSeen.lt(endedCutoff())
 
@@ -648,8 +649,8 @@ export interface PodDetailSummaryOutput {
 	readonly podUid: string
 	readonly computeType: string
 	readonly podStartTime: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuUsage: number
 	readonly cpuLimitPct: number
 	readonly memoryLimitPct: number
@@ -680,8 +681,8 @@ export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.pod.name").eq(opts.podName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.in_(...POD_METRIC_NAMES),
@@ -711,8 +712,8 @@ export function podGaugeTimeseriesQuery(opts: PodGaugeTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.pod.name").eq(opts.podName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.eq(opts.metricName),
@@ -748,7 +749,7 @@ export interface ListNodesOutput {
 	readonly clusterName: string
 	readonly environment: string
 	readonly kubeletVersion: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	readonly cpuUsage: number
 	readonly uptime: number
 }
@@ -758,8 +759,8 @@ const nodeBaseConditions = (
 	metricNames: ReadonlyArray<string> = NODE_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
 	$.OrgId.eq(orgIdParam),
-	$.TimeUnix.gte(param.dateTimeString("startTime")),
-	$.TimeUnix.lte(param.dateTimeString("endTime")),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
 	$.ResourceAttributes.get("k8s.node.name").neq(""),
 	$.ResourceAttributes.get("k8s.pod.name").eq(""),
 	$.MetricName.in_(...metricNames),
@@ -810,8 +811,8 @@ export interface NodeDetailSummaryOutput {
 	readonly nodeUid: string
 	readonly kubeletVersion: string
 	readonly containerRuntime: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuUsage: number
 	readonly uptime: number
 }
@@ -830,8 +831,8 @@ export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
 			$.MetricName.in_(...NODE_METRIC_NAMES),
@@ -854,8 +855,8 @@ export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
 			$.MetricName.eq(opts.metricName),
@@ -888,7 +889,7 @@ export interface ListWorkloadsOutput {
 	readonly clusterName: string
 	readonly environment: string
 	readonly podCount: number
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	readonly avgCpuLimitPct: number
 	readonly avgMemoryLimitPct: number
 	readonly avgCpuUsage: number
@@ -934,8 +935,8 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).neq(""),
 			$.MetricName.in_(...POD_METRIC_NAMES),
 			...workloadFilterConditions($, opts, attrKey),
@@ -958,8 +959,8 @@ export interface WorkloadDetailSummaryOutput {
 	readonly kind: string
 	readonly namespace: string
 	readonly podCount: number
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly avgCpuLimitPct: number
 	readonly avgMemoryLimitPct: number
 	readonly avgCpuUsage: number
@@ -980,8 +981,8 @@ export function workloadDetailSummaryQuery(opts: WorkloadDetailSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).eq(opts.workloadName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.in_(...POD_METRIC_NAMES),
@@ -1008,8 +1009,8 @@ export function workloadGaugeTimeseriesQuery(opts: WorkloadGaugeTimeseriesOpts) 
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).eq(opts.workloadName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.eq(opts.metricName),
@@ -1102,8 +1103,8 @@ const makeWorkloadFacet = (
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(ownerKey).neq(""),
 			$.MetricName.in_(POD_FACET_PROBE_METRIC),
 			...workloadFilterConditions($, opts, ownerKey),
@@ -1170,8 +1171,8 @@ const presenceBranch = (
 		.select(() => ({ surface: CH.lit(surface) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.MetricName.eq(metricName),
 			identity($),
 		])

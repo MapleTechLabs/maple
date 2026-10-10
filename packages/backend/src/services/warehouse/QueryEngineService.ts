@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Context, Effect, Layer, Metric } from "effect"
+import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
@@ -86,6 +86,8 @@ export interface QueryEngineServiceApi {
 		payload: unknown,
 		effect: Effect.Effect<A, E>,
 		policy?: DirectRouteCachePolicyInput,
+		/** How the value crosses the cache's JSON round trip, when plain JSON would change it. */
+		schema?: Schema.Codec<A, unknown, never, never>,
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
 }
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceApi>()(
@@ -404,13 +406,17 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				payload: unknown,
 				effect: Effect.Effect<A, E>,
 				policyInput: DirectRouteCachePolicyInput = 15,
+				schema?: Schema.Codec<A, unknown, never, never>,
 			) {
 				// Attributes go on the `Effect.fn` span, not an inner `withSpan` of the
 				// same name. Wrapping the body in a second same-named span emitted two
 				// spans per call: the inner one closed interrupt-only as `Ok` while the
 				// outer recorded the real `Error`, so every timed-out request showed up
 				// twice — once at 30s `Ok`, once at 30s `Error`.
-				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, routeName })
+				yield* Effect.annotateCurrentSpan({
+					orgId: tenant.orgId,
+					"maple.query_engine.route_name": routeName,
+				})
 				return yield* withTimeout(
 					Effect.gen(function* () {
 						const startMs = yield* Clock.currentTimeMillis
@@ -439,7 +445,12 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						const policy = resolveDirectRouteCachePolicy(policyInput)
 						const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload, policy)
 						const { value, hit } = yield* edgeCache.getOrCompute(
-							{ bucket: "qe-direct", key, ttlSeconds: policy.ttlSeconds },
+							{
+								bucket: "qe-direct",
+								key,
+								ttlSeconds: policy.ttlSeconds,
+								...(schema === undefined ? undefined : { schema }),
+							},
 							effect,
 						)
 						yield* recordCacheOutcome(hit)

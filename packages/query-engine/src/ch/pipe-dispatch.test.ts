@@ -228,6 +228,27 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
+	it.effect("list_traces rejects an unparseable cursor instead of restarting at page one", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				lowerPipeQuery("list_traces", { ...baseParams(), cursor: "2026-02-30 10:00:00" })!,
+			)
+			expect(error._tag).toBe("@maple-dev/effect-orm/QueryBuilderError")
+			const paged = compilePipeQuery("list_traces", { ...baseParams(), cursor: "2026-01-01 10:00:00" })
+			expect(paged!.sql).toContain("2026-01-01 10:00:00")
+		}),
+	)
+
+	// Two root spans 400ns apart share a millisecond. A cursor truncated to ms
+	// would compare `< '...10:00:00.123'` and skip the second one on the next page.
+	it("list_traces keeps a wire cursor's nanoseconds", () => {
+		const paged = compilePipeQuery("list_traces", {
+			...baseParams(),
+			cursor: "2026-01-01 10:00:00.123456789",
+		})
+		expect(paged!.sql).toContain("Timestamp < '2026-01-01 10:00:00.123456789'")
+	})
+
 	it("injects OrgId into SQL", () => {
 		const result = compilePipeQuery("list_traces", baseParams())
 		expect(result!.sql).toContain("test-org")
@@ -238,6 +259,16 @@ describe("compilePipeQuery", () => {
 		expect(result!.sql).toContain("2024-01-01 00:00:00")
 		expect(result!.sql).toContain("2024-01-02 00:00:00")
 	})
+
+	// An absent required param fails the compile: any stand-in value would be an
+	// ordinary string, and `""` reads as "no filter" and returns every service.
+	it.effect("fails an absent required param before compiling", () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(lowerPipeQuery("service_releases_timeline", baseParams())!)
+			expect(failure.code).toBe("UnresolvedParam")
+			expect(failure.message).toContain("service_name")
+		}),
+	)
 
 	// `list_traces` derives its row schema from the SELECT, so `decodeRows`
 	// validates rather than casting: a row missing a selected column is a decode

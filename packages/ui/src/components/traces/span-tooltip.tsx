@@ -1,4 +1,4 @@
-import { formatDuration } from "../../lib/format"
+import { formatDuration, formatPercent } from "../../lib/format"
 import { getServiceColor, calculateSelfTime } from "../../lib/colors"
 import { getHttpInfo, httpStatusTone } from "../../lib/http"
 import { TONE_TEXT } from "../../lib/tone"
@@ -39,7 +39,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 					<div className="flex items-center justify-between text-3xs">
 						<span className="text-muted-foreground">Duration</span>
 						<span>
-							{formatDuration(span.durationMs)} ({durationPercent.toFixed(1)}%)
+							{formatDuration(span.durationMs)} ({formatPercent(durationPercent / 100)})
 						</span>
 					</div>
 					<div className="h-1.5 w-full bg-muted overflow-hidden">
@@ -55,7 +55,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 				<div className="flex items-center justify-between text-3xs">
 					<span className="text-muted-foreground">Self time</span>
 					<span>
-						{formatDuration(selfTime)} ({selfTimePercent.toFixed(0)}%)
+						{formatDuration(selfTime)} ({formatPercent(selfTimePercent / 100)})
 					</span>
 				</div>
 			)}

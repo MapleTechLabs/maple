@@ -2,7 +2,14 @@ import type { MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { AttributeKeysHourly, AttributeValuesHourly, MetricsSum, Traces, orgIdParam } from "../tables"
+import {
+	AttributeKeysHourly,
+	AttributeValuesHourly,
+	MetricsSum,
+	Traces,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { resolveMetricTable } from "./query-helpers"
 
 export interface AttributeKeysQueryOpts {
@@ -23,8 +30,8 @@ export function attributeKeysQuery(opts: AttributeKeysQueryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq(opts.scope),
 		])
 		.groupBy("attributeKey")
@@ -53,8 +60,8 @@ export function spanAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("span"),
 			$.AttributeKey.eq(opts.attributeKey),
 		])
@@ -72,8 +79,8 @@ export function resourceAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("resource"),
 			$.AttributeKey.eq(opts.attributeKey),
 		])
@@ -91,8 +98,8 @@ export function logAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("log"),
 			$.AttributeKey.eq(opts.attributeKey),
 		])
@@ -123,8 +130,8 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("attributeKey")
@@ -150,8 +157,8 @@ export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValu
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.eq(param.string("metricName")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.Attributes.get(opts.attributeKey).neq(""),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
@@ -169,8 +176,8 @@ export function metricAttributeValuesQuery(opts: AttributeValuesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("metric"),
 			$.AttributeKey.eq(opts.attributeKey),
 		])
@@ -199,8 +206,8 @@ const serviceSpanSample = (scope: "span" | "resource") =>
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.limit(SERVICE_SCOPED_SPAN_SAMPLE)
 

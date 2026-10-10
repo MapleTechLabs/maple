@@ -67,7 +67,7 @@ export const makeRateLimitCheck = (
 
 		return yield* limiter.value.limit(makeApiV2RateLimitKey(partition, key)).pipe(
 			Effect.map(({ success }) => (success ? ("allowed" as const) : ("limited" as const))),
-			Effect.catchTag("@maple/api/platform/RateLimitBindingError", (error) =>
+			Effect.catchTag("@maple/backend/platform/RateLimitBindingError", (error) =>
 				warnFailedOpen("binding_error", error.cause).pipe(Effect.as<RateLimitOutcome>("failed_open")),
 			),
 		)

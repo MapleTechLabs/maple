@@ -13,7 +13,7 @@ import { Context, type Effect, type Option, Schema } from "effect"
 // ── Queues ───────────────────────────────────────────────────────────────────
 
 export class QueueSendError extends Schema.TaggedError<QueueSendError>()(
-	"@maple/api/platform/QueueSendError",
+	"@maple/backend/platform/QueueSendError",
 	{
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -52,7 +52,7 @@ export class AuditEventsQueueProducer extends Context.Service<AuditEventsQueuePr
 // ── Rate limits ──────────────────────────────────────────────────────────────
 
 export class RateLimitBindingError extends Schema.TaggedError<RateLimitBindingError>()(
-	"@maple/api/platform/RateLimitBindingError",
+	"@maple/backend/platform/RateLimitBindingError",
 	{
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -80,7 +80,7 @@ export class McpToolsRateLimit extends Context.Service<McpToolsRateLimit, RateLi
 // ── Object store (R2) ────────────────────────────────────────────────────────
 
 export class ObjectStoreError extends Schema.TaggedError<ObjectStoreError>()(
-	"@maple/api/platform/ObjectStoreError",
+	"@maple/backend/platform/ObjectStoreError",
 	{
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -116,7 +116,7 @@ export class MapleDbConnection extends Context.Service<
 // ── Workflows ────────────────────────────────────────────────────────────────
 
 export class WorkflowStartError extends Schema.TaggedError<WorkflowStartError>()(
-	"@maple/api/platform/WorkflowStartError",
+	"@maple/backend/platform/WorkflowStartError",
 	{
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -137,7 +137,7 @@ export class SchemaApplyWorkflow extends Context.Service<
 // ── Email (send_email) ───────────────────────────────────────────────────────
 
 export class EmailSendError extends Schema.TaggedError<EmailSendError>()(
-	"@maple/api/platform/EmailSendError",
+	"@maple/backend/platform/EmailSendError",
 	{
 		message: Schema.String,
 		cause: Schema.Defect(),

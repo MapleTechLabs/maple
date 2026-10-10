@@ -316,13 +316,14 @@ describe("convertPersesDashboardToPortable", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
 			const converted = yield* convertPersesDashboardToPortable(persesDashboard())
-			const created = yield* DashboardPersistenceService.create(
+			const created = yield* persistence.create(
 				asOrgId("org_perses"),
 				asUserId("user_perses"),
 				converted.dashboard,
 			)
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_perses"))
+			const listed = yield* persistence.list(asOrgId("org_perses"))
 
 			assert.strictEqual(created.name, "System Overview")
 			assert.strictEqual(created.widgets.length, 1)

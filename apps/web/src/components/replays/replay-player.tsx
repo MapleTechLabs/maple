@@ -75,10 +75,10 @@ export function ReplaySurface({
 	useReplayKeyboardShortcuts()
 
 	return (
-		<figure
+		<Panel
 			ref={figureRef}
 			className={cn(
-				"m-0 overflow-hidden rounded-md border border-border bg-card shadow-sm",
+				"block shadow-sm",
 				docked && "rounded-b-none shadow-none",
 				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
 			)}
@@ -177,7 +177,7 @@ export function ReplaySurface({
 					)}
 				</>
 			)}
-		</figure>
+		</Panel>
 	)
 }
 
@@ -196,9 +196,9 @@ export function ReplayTransport({ docked = false }: { docked?: boolean }) {
 	if (status === "unrecorded") return null
 	if (docked) {
 		return (
-			<div className="overflow-hidden rounded-b-md border border-t-0 border-border bg-card">
+			<Panel className="rounded-t-none border-t-0">
 				<ReplayControls detached />
-			</div>
+			</Panel>
 		)
 	}
 	return (
@@ -252,11 +252,11 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 					className="rounded-full before:rounded-full"
 				>
 					{finished ? (
-						<ArrowPathIcon className="size-4" />
+						<ArrowPathIcon />
 					) : isPlaying ? (
-						<MediaPauseIcon className="size-4" />
+						<MediaPauseIcon />
 					) : (
-						<MediaPlayIcon className="size-4 translate-x-px" />
+						<MediaPlayIcon className="translate-x-px" />
 					)}
 				</IconButton>
 
@@ -308,7 +308,7 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 					size="icon"
 					className="text-muted-foreground hover:text-foreground max-sm:ml-auto"
 				>
-					{isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
+					{isFullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
 				</IconButton>
 			</div>
 		</div>

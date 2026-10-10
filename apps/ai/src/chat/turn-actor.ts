@@ -48,7 +48,7 @@ export const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurn
  * platform drove it, holding no Maple identity, so the connector acts and who asked is metadata.
  * Without the pin those paths would fall back to the placeholder user id the tenant carries.
  */
-export const withConnectorActor = Effect.fn("chat.connectorActor")(function* (
+export const withConnectorActor = Effect.fn("ChatTurnActor.withConnectorActor")(function* (
 	tenant: TenantContext,
 	origin: ChatTurnOrigin,
 ) {

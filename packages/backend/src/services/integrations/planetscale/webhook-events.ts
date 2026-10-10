@@ -11,18 +11,19 @@ import {
 } from "@maple/eventing-core"
 import type { IssueSeverity, OrgId, WorkflowState } from "@maple/domain/http"
 import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/domain/primitives"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	actors,
-	errorIssues,
-	errorIssueEvents,
-	planetscaleIssueReceipts,
-	planetscaleDatabases,
-	planetscaleEvents,
+	Actors,
+	ErrorIssues,
+	ErrorIssueEvents,
+	PlanetscaleIssueReceipts,
+	PlanetscaleDatabases,
+	PlanetscaleEvents,
 	type ErrorIssueRow,
-} from "@maple/db"
-import { and, eq, sql } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Clock, Effect, Result, Schema } from "effect"
-import { msToDate, dateToMs, timestampMs } from "@maple/backend/platform/time"
+import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 
 /**
@@ -82,7 +83,7 @@ const EpochMillisSchema = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(0),
 	Schema.isLessThanOrEqualTo(8_640_000_000_000_000),
 )
-const validDate = (epochMs: number): Date => msToDate(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
+const validDate = (epochMs: number): Date => new Date(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
 
 export const planetScaleWebhookTimestampMillis = (payload: PlanetScaleWebhookPayload): number | null => {
 	if (payload.timestamp == null || !Number.isFinite(payload.timestamp) || payload.timestamp <= 0)
@@ -220,12 +221,12 @@ const planetScaleRegistry = (
  * queue retries the delivery instead of acking a lost occurrence.
  */
 export class PlanetScaleIssueConflictUnresolved extends Schema.TaggedError<PlanetScaleIssueConflictUnresolved>()(
-	"@maple/api/planetscale/PlanetScaleIssueConflictUnresolved",
+	"@maple/backend/planetscale/PlanetScaleIssueConflictUnresolved",
 	{ message: Schema.String, orgId: Schema.String, fingerprintHash: Schema.String },
 ) {}
 
 export class PlanetScaleWebhookProjectionInvalid extends Schema.TaggedError<PlanetScaleWebhookProjectionInvalid>()(
-	"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+	"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 	{ message: Schema.String, orgId: Schema.String, connectionId: Schema.String, cause: Schema.Defect() },
 ) {}
 
@@ -251,7 +252,7 @@ export const projectPlanetScaleWebhookEvent = (
 		const decoded = yield* Schema.decodeUnknownResult(ProjectionInputSchema)(input).pipe(
 			Result.mapError(invalid),
 		)
-		const observedAt = msToDate(decoded.receivedAt).toISOString()
+		const observedAt = new Date(decoded.receivedAt).toISOString()
 		const signals = yield* Result.try({
 			try: () =>
 				PLANETSCALE_WEBHOOK_ADAPTER.normalize(
@@ -494,7 +495,7 @@ const BRANCH_STATE_VERB: Record<string, string> = {
  * backfill carries milliseconds. Both are truncated to the second so the same
  * transition from either source lands on one row under the dedupe index.
  */
-export const truncateToSecond = (epochMs: number): Date => msToDate(Math.floor(epochMs / 1000) * 1000)
+export const truncateToSecond = (epochMs: number): number => Math.floor(epochMs / 1000) * 1000
 
 export interface InsertPlanetScaleEventInput {
 	readonly orgId: OrgId
@@ -525,44 +526,41 @@ export interface InsertPlanetScaleEventInput {
 export const insertPlanetScaleEvent: (
 	input: InsertPlanetScaleEventInput,
 ) => Effect.Effect<{ readonly inserted: boolean }, DatabaseError, Database> = Effect.fn(
-	"planetscaleWebhook.insertEvent",
+	"PlanetScaleWebhookEvents.insertEvent",
 )(function* (input: InsertPlanetScaleEventInput) {
 	const database = yield* Database
 	return yield* database.execute((db) =>
 		Effect.gen(function* () {
-			const known = yield* db
-				.select({ databaseId: planetscaleDatabases.databaseId })
-				.from(planetscaleDatabases)
-				.where(
-					and(
-						eq(planetscaleDatabases.orgId, input.orgId),
-						eq(planetscaleDatabases.name, input.databaseName),
-					),
-				)
-				.limit(1)
+			const known = yield* db.run(
+				PG.from(PlanetscaleDatabases)
+					.select("databaseId")
+					.where(($) => [$.orgId.eq(input.orgId), $.name.eq(input.databaseName)])
+					.limit(1),
+			)
 
-			const rows = yield* db
-				.insert(planetscaleEvents)
-				.values({
-					id: randomUUID(),
-					orgId: input.orgId,
-					databaseId: known[0]?.databaseId ?? "",
-					databaseName: input.databaseName,
-					branchName: input.branchName,
-					category: input.category,
-					eventType: input.eventType,
-					state: input.state,
-					externalId: input.externalId,
-					title: input.title,
-					source: input.source,
-					actorLogin: input.actorLogin ?? null,
-					url: input.url ?? null,
-					payloadJson: input.payload ?? null,
-					occurredAt: truncateToSecond(input.occurredAtMs),
-					createdAt: msToDate(input.createdAtMs),
-				})
-				.onConflictDoNothing()
-				.returning({ id: planetscaleEvents.id })
+			const rows = yield* db.run(
+				PG.insertInto(PlanetscaleEvents)
+					.values({
+						id: randomUUID(),
+						orgId: input.orgId,
+						databaseId: known[0]?.databaseId ?? "",
+						databaseName: input.databaseName,
+						branchName: input.branchName,
+						category: input.category,
+						eventType: input.eventType,
+						state: input.state,
+						externalId: input.externalId,
+						title: input.title,
+						source: input.source,
+						actorLogin: input.actorLogin ?? null,
+						url: input.url ?? null,
+						payloadJson: input.payload ?? null,
+						occurredAt: truncateToSecond(input.occurredAtMs),
+						createdAt: input.createdAtMs,
+					})
+					.onConflictDoNothing()
+					.returning("id"),
+			)
 
 			return { inserted: rows.length > 0 }
 		}),
@@ -609,7 +607,7 @@ export interface UpsertPlanetScaleIssueResult {
 export const upsertPlanetScaleIssue: (
 	input: UpsertPlanetScaleIssueInput,
 ) => Effect.Effect<UpsertPlanetScaleIssueResult, DatabaseError, Database> = Effect.fn(
-	"planetscaleWebhook.upsertIssue",
+	"PlanetScaleWebhookEvents.upsertIssue",
 )(function* (input: UpsertPlanetScaleIssueInput) {
 	const database = yield* Database
 	const databaseName = input.payload.database ?? "unknown"
@@ -626,68 +624,68 @@ export const upsertPlanetScaleIssue: (
 
 	return yield* database
 		.execute((db) =>
-			db.transaction((tx) =>
+			db.transaction(
 				Effect.gen(function* () {
 					// Distinct source events can share one issue fingerprint and queue batches
 					// process concurrently. Serialize that aggregate before claiming a receipt
 					// so every committed receipt corresponds to exactly one applied occurrence.
-					yield* tx.execute(
-						sql`select pg_advisory_xact_lock(hashtext(${input.orgId}), hashtext(${fingerprintHash}))`,
+					yield* db.execute(
+						Orm.sql`select pg_advisory_xact_lock(hashtext(${input.orgId}), hashtext(${fingerprintHash}))`,
 					)
-					const receipt = yield* tx
-						.insert(planetscaleIssueReceipts)
-						.values({
-							orgId: input.orgId,
-							eventId: input.eventId,
-							processedAt: msToDate(actorTimestamp),
-						})
-						.onConflictDoNothing()
-						.returning({ eventId: planetscaleIssueReceipts.eventId })
+					const receipt = yield* db.run(
+						PG.insertInto(PlanetscaleIssueReceipts)
+							.values({
+								orgId: input.orgId,
+								eventId: input.eventId,
+								processedAt: actorTimestamp,
+							})
+							.onConflictDoNothing()
+							.returning("eventId"),
+					)
 					if (receipt.length === 0) {
-						const existing = (yield* tx
-							.select({ id: errorIssues.id })
-							.from(errorIssues)
-							.where(
-								and(
-									eq(errorIssues.orgId, input.orgId),
-									eq(errorIssues.fingerprintHash, fingerprintHash),
-								),
-							)
-							.limit(1))[0]
+						const [existing] = yield* db.run(
+							PG.from(ErrorIssues)
+								.select("id")
+								.where(($) => [
+									$.orgId.eq(input.orgId),
+									$.fingerprintHash.eq(fingerprintHash),
+								])
+								.limit(1),
+						)
 						// A receipt survives hard deletion of its issue; redelivery stays consumed.
 						return { issueId: existing?.id ?? null, action: "skipped" as const }
 					}
 
 					const ensureActor = Effect.gen(function* () {
 						const selectActor = () =>
-							tx
-								.select()
-								.from(actors)
-								.where(
-									and(
-										eq(actors.orgId, input.orgId),
-										eq(actors.type, "agent"),
-										eq(actors.agentName, SYSTEM_INTEGRATIONS_AGENT_NAME),
-									),
-								)
-								.limit(1)
+							db.run(
+								PG.from(Actors)
+									.select()
+									.where(($) => [
+										$.orgId.eq(input.orgId),
+										$.type.eq("agent"),
+										$.agentName.eq(SYSTEM_INTEGRATIONS_AGENT_NAME),
+									])
+									.limit(1),
+							)
 						const existing = yield* selectActor()
 						if (existing[0]) return existing[0].id
-						yield* tx
-							.insert(actors)
-							.values({
-								id: decodeActorId(randomUUID()),
-								orgId: input.orgId,
-								type: "agent",
-								userId: null,
-								agentName: SYSTEM_INTEGRATIONS_AGENT_NAME,
-								model: null,
-								capabilitiesJson: ["system", "integration-issues"],
-								createdBy: null,
-								createdAt: msToDate(actorTimestamp),
-								lastActiveAt: msToDate(actorTimestamp),
-							})
-							.onConflictDoNothing()
+						yield* db.run(
+							PG.insertInto(Actors)
+								.values({
+									id: decodeActorId(randomUUID()),
+									orgId: input.orgId,
+									type: "agent",
+									userId: null,
+									agentName: SYSTEM_INTEGRATIONS_AGENT_NAME,
+									model: null,
+									capabilitiesJson: ["system", "integration-issues"],
+									createdBy: null,
+									createdAt: actorTimestamp,
+									lastActiveAt: actorTimestamp,
+								})
+								.onConflictDoNothing(),
+						)
 						const row = (yield* selectActor())[0]
 						// The queue consumer retries on `DatabaseError`, so this unreachable
 						// state keeps the failure class it always surfaced as.
@@ -712,17 +710,19 @@ export const upsertPlanetScaleIssue: (
 							readonly payload?: Record<string, unknown>
 						},
 					) =>
-						tx.insert(errorIssueEvents).values({
-							id: decodeEventId(randomUUID()),
-							orgId: input.orgId,
-							issueId,
-							actorId,
-							type,
-							fromState: opts.fromState ?? null,
-							toState: opts.toState ?? null,
-							payloadJson: opts.payload ?? {},
-							createdAt: msToDate(input.timestamp),
-						})
+						db.run(
+							PG.insertInto(ErrorIssueEvents).values({
+								id: decodeEventId(randomUUID()),
+								orgId: input.orgId,
+								issueId,
+								actorId,
+								type,
+								fromState: opts.fromState ?? null,
+								toState: opts.toState ?? null,
+								payloadJson: opts.payload ?? {},
+								createdAt: input.timestamp,
+							}),
+						)
 
 					const applyExistingIssue = (prior: ErrorIssueRow) =>
 						Effect.gen(function* () {
@@ -730,19 +730,20 @@ export const upsertPlanetScaleIssue: (
 							// A wontfix issue with an active or indefinite snooze stays untouched.
 							const snoozeActive =
 								prior.workflowState === "wontfix" &&
-								(prior.snoozeUntil == null || dateToMs(prior.snoozeUntil) > input.timestamp)
+								(prior.snoozeUntil == null || prior.snoozeUntil > input.timestamp)
 							if (snoozeActive) return { issueId, action: "skipped" as const }
 
-							yield* tx
-								.update(errorIssues)
-								.set({
-									lastSeenAt: msToDate(input.timestamp),
-									occurrenceCount: sql`${errorIssues.occurrenceCount} + 1`,
-									exceptionMessage: input.description,
-									sourceRefJson,
-									updatedAt: msToDate(input.timestamp),
-								})
-								.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
+							yield* db.run(
+								PG.update(ErrorIssues)
+									.set(($) => ({
+										lastSeenAt: input.timestamp,
+										occurrenceCount: $.occurrenceCount.add(1),
+										exceptionMessage: input.description,
+										sourceRefJson,
+										updatedAt: input.timestamp,
+									}))
+									.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
+							)
 
 							const reopenFrom: WorkflowState | null =
 								prior.workflowState === "done" || prior.workflowState === "wontfix"
@@ -750,16 +751,17 @@ export const upsertPlanetScaleIssue: (
 									: null
 							if (reopenFrom === null) return { issueId, action: "refreshed" as const }
 
-							yield* tx
-								.update(errorIssues)
-								.set({
-									workflowState: "triage",
-									resolvedAt: null,
-									resolvedByActorId: null,
-									snoozeUntil: null,
-									updatedAt: msToDate(input.timestamp),
-								})
-								.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id)))
+							yield* db.run(
+								PG.update(ErrorIssues)
+									.set({
+										workflowState: "triage",
+										resolvedAt: null,
+										resolvedByActorId: null,
+										snoozeUntil: null,
+										updatedAt: input.timestamp,
+									})
+									.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
+							)
 							const actorId = yield* ensureActor
 							yield* recordEvent(issueId, actorId, "state_change", {
 								fromState: reopenFrom,
@@ -772,59 +774,54 @@ export const upsertPlanetScaleIssue: (
 							return { issueId, action: "reopened" as const }
 						})
 
-					const prior: ErrorIssueRow | undefined = (yield* tx
+					const lockIssue = PG.from(ErrorIssues)
 						.select()
-						.from(errorIssues)
-						.where(
-							and(
-								eq(errorIssues.orgId, input.orgId),
-								eq(errorIssues.fingerprintHash, fingerprintHash),
-							),
-						)
+						.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.eq(fingerprintHash)])
 						.limit(1)
-						.for("update"))[0]
+						.forUpdate()
+
+					const prior: ErrorIssueRow | undefined = (yield* db.run(lockIssue))[0]
 
 					if (prior !== undefined) return yield* applyExistingIssue(prior)
 
 					const candidateId = decodeIssueId(randomUUID())
 					// The transaction-scoped fingerprint lock protects the absent-row gap.
 					// Keep the conflict handling defensive for writers that predate the lock.
-					const claimed = yield* tx
-						.insert(errorIssues)
-						.values({
-							id: candidateId,
-							orgId: input.orgId,
-							kind: "integration",
-							sourceRefJson,
-							fingerprintHash,
-							serviceName,
-							exceptionType: input.title,
-							exceptionMessage: input.description,
-							errorLabel: input.title,
-							topFrame: "",
-							workflowState: "triage",
-							priority: 3,
-							severity: input.severity,
-							severitySource: "detector",
-							assignedActorId: null,
-							leaseHolderActorId: null,
-							leaseExpiresAt: null,
-							claimedAt: null,
-							notes: null,
-							firstSeenAt: msToDate(input.timestamp),
-							lastSeenAt: msToDate(input.timestamp),
-							occurrenceCount: 1,
-							resolvedAt: null,
-							resolvedByActorId: null,
-							snoozeUntil: null,
-							archivedAt: null,
-							createdAt: msToDate(input.timestamp),
-							updatedAt: msToDate(input.timestamp),
-						})
-						.onConflictDoNothing({
-							target: [errorIssues.orgId, errorIssues.fingerprintHash],
-						})
-						.returning({ id: errorIssues.id })
+					const claimed = yield* db.run(
+						PG.insertInto(ErrorIssues)
+							.values({
+								id: candidateId,
+								orgId: input.orgId,
+								kind: "integration",
+								sourceRefJson,
+								fingerprintHash,
+								serviceName,
+								exceptionType: input.title,
+								exceptionMessage: input.description,
+								errorLabel: input.title,
+								topFrame: "",
+								workflowState: "triage",
+								priority: 3,
+								severity: input.severity,
+								severitySource: "detector",
+								assignedActorId: null,
+								leaseHolderActorId: null,
+								leaseExpiresAt: null,
+								claimedAt: null,
+								notes: null,
+								firstSeenAt: input.timestamp,
+								lastSeenAt: input.timestamp,
+								occurrenceCount: 1,
+								resolvedAt: null,
+								resolvedByActorId: null,
+								snoozeUntil: null,
+								archivedAt: null,
+								createdAt: input.timestamp,
+								updatedAt: input.timestamp,
+							})
+							.onConflictDoNothing({ target: ["orgId", "fingerprintHash"] })
+							.returning("id"),
+					)
 
 					const insertedId = claimed[0]?.id
 					if (insertedId !== undefined) {
@@ -837,17 +834,7 @@ export const upsertPlanetScaleIssue: (
 					}
 					// A writer outside this lock won. Re-read it under a row lock and apply
 					// this distinct occurrence instead of committing a receipt-only skip.
-					const winner = (yield* tx
-						.select()
-						.from(errorIssues)
-						.where(
-							and(
-								eq(errorIssues.orgId, input.orgId),
-								eq(errorIssues.fingerprintHash, fingerprintHash),
-							),
-						)
-						.limit(1)
-						.for("update"))[0]
+					const winner = (yield* db.run(lockIssue))[0]
 					if (winner === undefined) {
 						return yield* Effect.fail(
 							new PlanetScaleIssueConflictUnresolved({
@@ -863,7 +850,7 @@ export const upsertPlanetScaleIssue: (
 			),
 		)
 		.pipe(
-			Effect.catchTag("@maple/api/planetscale/PlanetScaleIssueConflictUnresolved", (error) =>
+			Effect.catchTag("@maple/backend/planetscale/PlanetScaleIssueConflictUnresolved", (error) =>
 				Effect.fail(new DatabaseError({ message: error.message, cause: error })),
 			),
 		)

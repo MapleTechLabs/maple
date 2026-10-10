@@ -89,7 +89,7 @@ export class PgConnectionScope extends Context.Reference<PgConnectionScopeApi | 
  * a span can name it as something other than a driver fault.
  */
 export class PgConnectionScopeClosedError extends Schema.TaggedError<PgConnectionScopeClosedError>()(
-	"@maple/api/platform/PgConnectionScopeClosedError",
+	"@maple/backend/platform/PgConnectionScopeClosedError",
 	{ message: Schema.String },
 ) {}
 

@@ -15,11 +15,18 @@
 import { Schema, Effect } from "effect"
 import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
+import { utcAsWireString } from "./utc-bridge"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { ServiceAddressResolutionsHourly, ServiceMapEdgesHourly, Traces, orgIdParam } from "../tables"
+import {
+	ServiceAddressResolutionsHourly,
+	ServiceMapEdgesHourly,
+	Traces,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { serviceMapEdgeJoinQuery } from "./service-map"
 import { CHNumber } from "../schema"
@@ -46,7 +53,7 @@ export const serviceMapRollupCandidateHours = (
 
 /** Unix-second hour starts returned by an existing-hours probe. */
 export const serviceMapHourSet = (rows: ReadonlyArray<ServiceMapEdgesExistingHour>): ReadonlySet<number> =>
-	new Set(rows.map((row) => Number(row.hourTs)))
+	new Set(rows.map((row) => row.hourTs))
 
 const hasHour = (hours: ReadonlySet<number>, hourMs: number): boolean => hours.has(Math.floor(hourMs / 1000))
 
@@ -143,8 +150,8 @@ export function serviceMapEdgesExistingHoursSQL(params: {
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lt(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("hourTs")
 		.format("JSON")
@@ -181,8 +188,8 @@ export function serviceMapResolutionsExistingHoursSQL(params: {
 		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lt(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("hourTs")
 		.format("JSON")
@@ -207,8 +214,8 @@ export function serviceMapEdgesRollupSQL(
 	params: ServiceMapEdgesRollupParams,
 ): Effect.Effect<CompiledQuery<ServiceMapEdgesHourlyOutput>, QueryBuilderError> {
 	const query = serviceMapEdgeJoinQuery({
-		rangeStart: CH.toDateTime(param.dateTimeString("hourStart")),
-		rangeEnd: CH.toDateTime(param.dateTimeString("hourEnd")),
+		rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+		rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 	}).format("JSON")
 
 	// Scope is derived from both join sources filtering OrgId — see
@@ -265,8 +272,8 @@ export function serviceMapResolutionsRollupSQL(
 		}))
 		.where(($) => [
 			CH.inList($.SpanKind, ["Client", "Producer"]),
-			$.Timestamp.gte(param.dateTimeString("hourStart")),
-			$.Timestamp.lt(param.dateTimeString("hourEnd")),
+			$.Timestamp.gte(param.dateTime("hourStart")),
+			$.Timestamp.lt(param.dateTime("hourEnd")),
 			$.OrgId.eq(orgIdParam),
 			$.SpanAttributes.get("server.address").neq(""),
 		])
@@ -281,8 +288,8 @@ export function serviceMapResolutionsRollupSQL(
 		}))
 		.where(($) => [
 			CH.inList($.SpanKind, ["Server", "Consumer"]),
-			$.Timestamp.gte(param.dateTimeString("hourStart")),
-			$.Timestamp.lt(param.dateTimeString("hourEnd")),
+			$.Timestamp.gte(param.dateTime("hourStart")),
+			$.Timestamp.lt(param.dateTime("hourEnd")),
 			$.OrgId.eq(orgIdParam),
 		])
 
@@ -290,7 +297,8 @@ export function serviceMapResolutionsRollupSQL(
 		.innerJoinQuery(children, "c", (p, c) => p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)))
 		.select(($) => ({
 			OrgId: $.OrgId,
-			Hour: CH.toStartOfHour($.Timestamp),
+			// Rows go to `ingest` as they are, so `Hour` stays the wire string.
+			Hour: utcAsWireString(CH.toStartOfHour($.Timestamp)),
 			SourceService: $.ServiceName,
 			ParentServerAddress: $.ServerAddress,
 			ResolvedTargetService: $.c.ServiceName,

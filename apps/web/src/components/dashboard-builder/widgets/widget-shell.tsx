@@ -35,6 +35,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useWidgetActions } from "@/components/dashboard-builder/widgets/widget-actions-context"
 import { MoveWidgetToSectionMenu } from "@/components/dashboard-builder/sections/move-widget-to-section-menu"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
+import { useGridHandleDescription } from "@/components/dashboard-builder/canvas/grid-handle-context"
 import {
 	useWidgetTimeRangeOverride,
 	widgetTimeRangeLabel,
@@ -94,6 +95,7 @@ export function WidgetShell({
 	// the resolved value. Outside a dashboard (widget lab) this is a no-op.
 	const variablesContext = useDashboardVariablesOptional()
 	const displayTitle = variablesContext ? interpolateDisplayText(title, variablesContext.values) : title
+	const gridInstructionsId = useGridHandleDescription()
 
 	// A tile pinned to its own window says so in the header. Without the label a
 	// reader has no way to tell that one card on a 7-day board is showing the
@@ -114,12 +116,20 @@ export function WidgetShell({
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
 						// Hidden when the canvas is showing a generated (non-authored)
-						// layout — see `is-layout-locked` in dashboard-canvas. Outside a
+						// layout (`is-layout-locked` in dashboard-sections). Outside a
 						// canvas (widget lab, previews) the group never matches, so the
-						// grip renders as before.
-						<div className="widget-drag-handle cursor-grab text-muted-foreground group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:cursor-grabbing">
+						// grip renders as before. A button so the grid's keyboard
+						// rearranging can reach it; `touch-none` so a touch drag moves
+						// the tile instead of scrolling the page.
+						<button
+							type="button"
+							aria-label={`Move ${displayTitle}`}
+							aria-describedby={gridInstructionsId}
+							data-grid-label={displayTitle}
+							className="widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+						>
 							<GripDotsIcon size={14} />
-						</div>
+						</button>
 					)}
 					<Eyebrow
 						variant="label"
@@ -251,20 +261,20 @@ export function WidgetShell({
 							<DropdownMenuTrigger
 								render={
 									<Button variant="ghost" size="icon-xs" aria-label="Widget actions">
-										<DotsVerticalIcon size={14} />
+										<DotsVerticalIcon />
 									</Button>
 								}
 							/>
 							<DropdownMenuContent align="end" className="w-max">
 								{isEditable && configure && (
 									<DropdownMenuItem onClick={configure}>
-										<PencilIcon size={14} />
+										<PencilIcon />
 										Edit
 									</DropdownMenuItem>
 								)}
 								{isEditable && clone && (
 									<DropdownMenuItem onClick={clone}>
-										<CopyIcon size={14} />
+										<CopyIcon />
 										Clone
 									</DropdownMenuItem>
 								)}
@@ -277,7 +287,7 @@ export function WidgetShell({
 								)}
 								{createAlert && (
 									<DropdownMenuItem onClick={createAlert}>
-										<BellIcon size={14} />
+										<BellIcon />
 										Create alert
 									</DropdownMenuItem>
 								)}
@@ -288,7 +298,7 @@ export function WidgetShell({
 										<Tooltip>
 											<TooltipTrigger render={<div />}>
 												<DropdownMenuItem disabled>
-													<CodeIcon size={14} />
+													<CodeIcon />
 													Embed chart
 												</DropdownMenuItem>
 											</TooltipTrigger>
@@ -298,7 +308,7 @@ export function WidgetShell({
 										</Tooltip>
 									) : (
 										<DropdownMenuItem onClick={embed.open}>
-											<CodeIcon size={14} />
+											<CodeIcon />
 											Embed chart
 										</DropdownMenuItem>
 									))}
@@ -306,7 +316,7 @@ export function WidgetShell({
 									<>
 										<DropdownMenuSeparator />
 										<DropdownMenuItem variant="destructive" onClick={remove}>
-											<TrashIcon size={14} />
+											<TrashIcon />
 											Delete
 										</DropdownMenuItem>
 									</>
@@ -411,7 +421,7 @@ export function WidgetFrame({
 								onClick={narrowRange}
 								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<ClockIcon size={12} />
+								<ClockIcon />
 								{actions?.narrowRangeLabel ?? "Narrow range"}
 							</Button>
 						)}
@@ -422,7 +432,7 @@ export function WidgetFrame({
 								onClick={configure}
 								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<PencilIcon size={12} />
+								<PencilIcon />
 								Edit
 							</Button>
 						)}
@@ -451,7 +461,7 @@ export function WidgetFrame({
 								onClick={fix}
 								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<ChatBubbleSparkleIcon size={12} />
+								<ChatBubbleSparkleIcon />
 								Fix with AI
 							</Button>
 						)}

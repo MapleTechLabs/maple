@@ -5,9 +5,8 @@ import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from 
 import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
-import { warehouseDateTime64 } from "@maple/query-engine/datetime"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -25,7 +24,7 @@ import {
 const decodeAuditLogEntryIdSync = Schema.decodeUnknownSync(AuditLogEntryIdSchema)
 
 class AuditQueueSendError extends Schema.TaggedError<AuditQueueSendError>()(
-	"@maple/api/services/audit/AuditQueueSendError",
+	"@maple/backend/services/audit/AuditQueueSendError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
@@ -167,8 +166,8 @@ const neverFail = (action: string) => (write: Effect.Effect<void, unknown>) =>
 
 /** Which optional filters bind, and the parameter values behind them. */
 const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
-	const since = filters.sinceMs === undefined ? undefined : warehouseDateTime64(filters.sinceMs)
-	const until = filters.untilMs === undefined ? undefined : warehouseDateTime64(filters.untilMs)
+	const since = filters.sinceMs === undefined ? undefined : DateTime.makeUnsafe(filters.sinceMs)
+	const until = filters.untilMs === undefined ? undefined : DateTime.makeUnsafe(filters.untilMs)
 	const opts: CH.AuditLogEntriesOpts = {
 		actorType: filters.actorType !== undefined,
 		userId: filters.userId !== undefined,
@@ -277,7 +276,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						.compiledQuery(
 							systemTenant(orgId),
 							CH.compile(CH.auditLogEntriesQuery(opts), values),
-							{ profile: "list", context: "auditLog.list" },
+							{ profile: "list", context: "auditLogEntries" },
 						)
 						.pipe(Effect.mapError(toPersistenceError))
 					const entries = yield* Effect.forEach(rows, (row) =>

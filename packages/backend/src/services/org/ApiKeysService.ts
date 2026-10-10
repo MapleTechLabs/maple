@@ -13,13 +13,14 @@ import {
 	UserId,
 	RoleName,
 } from "@maple/domain/http"
-import { API_KEY_PREFIX, apiKeys, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
-import { and, desc, eq, getColumns, gt, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { API_KEY_PREFIX, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { ApiKeys, type ApiKeyRow } from "@maple/db/tables"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { revokeFamiliesForAccessKeys } from "@maple/backend/services/auth/mcp-oauth-family"
 
 export interface ResolvedApiKey {
@@ -61,7 +62,7 @@ const decodeMcpApiKeyMetadata = Schema.decodeUnknownOption(McpApiKeyMetadata)
  *
  * - `roles` pins the *minting user's* roles onto the key, so a credential that
  *   lives on a phone can never outrank the human who created it. Without it the
- *   key would resolve with the `root` default in `ApiAuthorizationV2Layer`,
+ *   key would resolve with the `root` default in `ApiAuthorizationV2Live`,
  *   fenced only by its scopes.
  * - `deviceId` is what makes the credential replaceable: minting is idempotent
  *   per device, so a reinstall or a roll retires the previous key instead of
@@ -139,7 +140,7 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "API key persistence failed",
 	})
 
-const rowToResponse = (row: typeof apiKeys.$inferSelect, txid?: PostgresTransactionId): ApiKeyResponse =>
+const rowToResponse = (row: ApiKeyRow, txid?: PostgresTransactionId): ApiKeyResponse =>
 	new ApiKeyResponse({
 		id: row.id,
 		name: row.name,
@@ -148,32 +149,45 @@ const rowToResponse = (row: typeof apiKeys.$inferSelect, txid?: PostgresTransact
 		kind: row.kind,
 		scopes: row.scopes ?? null,
 		revoked: row.revoked,
-		revokedAt: dateToMs(row.revokedAt),
-		lastUsedAt: dateToMs(row.lastUsedAt),
-		expiresAt: dateToMs(row.expiresAt),
-		createdAt: row.createdAt.getTime(),
+		revokedAt: row.revokedAt,
+		lastUsedAt: row.lastUsedAt,
+		expiresAt: row.expiresAt,
+		createdAt: row.createdAt,
 		createdBy: row.createdBy,
 		createdByEmail: row.createdByEmail ?? null,
 		...(txid !== undefined ? { txid } : undefined),
 	})
 
+/**
+ * Revoke a live key and return it whole, with the transaction id. The
+ * `revoked = false` predicate is the claim: of two racing writers, one matches.
+ */
+const claimLive = (keyId: ApiKeyId, orgId: OrgId, now: number) =>
+	PG.update(ApiKeys)
+		.set({ revoked: true, revokedAt: now })
+		.where(($) => [$.id.eq(keyId), $.orgId.eq(orgId), $.revoked.eq(false)])
+		.returning(($) => ({ ...$, txid: currentTxid }))
+
 export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/api/services/ApiKeysService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "ApiKeysService", toPersistenceError)
 		const env = yield* Env
-		const hmacKey = parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY))
+		const hmacKey = yield* parseIngestKeyLookupHmacKey(
+			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			(message) => new ApiKeyPersistenceError({ message }),
+		)
 
 		const selectById = Effect.fn("ApiKeysService.selectById")(function* (orgId: OrgId, keyId: ApiKeyId) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.id": keyId })
-			const rows = yield* database
-				.execute((db) =>
-					db
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ApiKeys)
 						.select()
-						.from(apiKeys)
-						.where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, orgId)))
+						.where(($) => [$.id.eq(keyId), $.orgId.eq(orgId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			return Option.fromNullishOr(rows[0])
 		})
@@ -207,23 +221,20 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.api_key.kind": kind })
 			// Same liveness rule as authentication: an expired key no longer connects anything.
 			const now = yield* Clock.currentTimeMillis
-			const rows = yield* database
-				.execute((db) =>
-					db
-						.select({ id: apiKeys.id })
-						.from(apiKeys)
-						.where(
-							and(
-								eq(apiKeys.orgId, orgId),
-								eq(apiKeys.kind, kind),
-								eq(apiKeys.revoked, false),
-								isNotNull(apiKeys.lastUsedAt),
-								or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date(now))),
-							),
-						)
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ApiKeys)
+						.select("id")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.kind.eq(kind),
+							$.revoked.eq(false),
+							$.lastUsedAt.isNotNull(),
+							PG.or($.expiresAt.isNull(), $.expiresAt.gt(now)),
+						])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 			return rows.length > 0
 		})
 
@@ -239,15 +250,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		 */
 		const list = Effect.fn("ApiKeysService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const rows = yield* database
-				.execute((db) =>
-					db
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ApiKeys)
 						.select()
-						.from(apiKeys)
-						.where(and(eq(apiKeys.orgId, orgId), ne(apiKeys.kind, "device")))
-						.orderBy(desc(apiKeys.createdAt)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+						.where(($) => [$.orgId.eq(orgId), $.kind.neq("device")])
+						.orderBy(["createdAt", "desc"]),
+				),
+			)
 
 			return new ApiKeysListResponse({
 				keys: rows.map((row) => rowToResponse(row)),
@@ -279,10 +289,9 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			const scopes = params.scopes == null ? null : [...params.scopes]
 			const createdByEmail = params.createdByEmail ?? null
 
-			const inserted = yield* database
-				.execute((db) =>
-					db
-						.insert(apiKeys)
+			const inserted = yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(ApiKeys)
 						.values({
 							id,
 							orgId,
@@ -292,15 +301,15 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 							keyPrefix,
 							kind,
 							scopes,
-							expiresAt: msToDate(expiresAt),
-							createdAt: new Date(now),
+							expiresAt: expiresAt ?? null,
+							createdAt: now,
 							createdBy: userId,
 							createdByEmail,
-							metadataJson: params.metadataJson,
+							metadataJson: params.metadataJson ?? null,
 						})
-						.returning(txidColumn),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+						.returning(() => ({ txid: currentTxid })),
+				),
+			)
 			const txid = readTxid(inserted)
 
 			return new ApiKeyCreatedResponse({
@@ -330,16 +339,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		 * future `kind: "device"` credential for something other than the widgets
 		 * cannot be caught by a widget revoke.
 		 */
-		const liveDeviceKeysFor = (orgId: OrgId, deviceId: string) =>
-			and(
-				eq(apiKeys.orgId, orgId),
-				eq(apiKeys.kind, "device"),
-				eq(apiKeys.revoked, false),
-				sql`${apiKeys.metadataJson} @> ${JSON.stringify({
-					source: WIDGET_DEVICE_KEY_SOURCE,
-					deviceId,
-				})}::jsonb`,
-			)
+		const liveDeviceKeysFor =
+			(orgId: OrgId, deviceId: string) => ($: PG.ColumnAccessor<typeof ApiKeys.columns>) => [
+				$.orgId.eq(orgId),
+				$.kind.eq("device"),
+				$.revoked.eq(false),
+				PG.sql
+					.cond`${$.metadataJson} @> ${JSON.stringify({ source: WIDGET_DEVICE_KEY_SOURCE, deviceId })}::jsonb`,
+			]
 
 		/**
 		 * Mint the widget credential for one device, retiring whatever it had.
@@ -381,16 +388,16 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			const scopes = [...params.scopes]
 			const createdByEmail = params.createdByEmail ?? null
 
-			const inserted = yield* database
-				.execute((db) =>
-					db.transaction((tx) =>
-						Effect.gen(function* () {
-							yield* tx
-								.update(apiKeys)
-								.set({ revoked: true, revokedAt: msToDate(now) })
-								.where(liveDeviceKeysFor(orgId, params.deviceId))
-							return yield* tx
-								.insert(apiKeys)
+			const inserted = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.update(ApiKeys)
+								.set({ revoked: true, revokedAt: now })
+								.where(liveDeviceKeysFor(orgId, params.deviceId)),
+						)
+						return yield* db.run(
+							PG.insertInto(ApiKeys)
 								.values({
 									id,
 									orgId,
@@ -400,8 +407,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 									keyPrefix,
 									kind: "device",
 									scopes,
-									expiresAt: msToDate(expiresAt),
-									createdAt: new Date(now),
+									expiresAt,
+									createdAt: now,
 									createdBy: userId,
 									createdByEmail,
 									metadataJson: {
@@ -412,11 +419,11 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 										deviceId: params.deviceId,
 									},
 								})
-								.returning(txidColumn)
-						}),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+								.returning(() => ({ txid: currentTxid })),
+						)
+					}),
+				),
+			)
 			const txid = readTxid(inserted)
 
 			return new ApiKeyCreatedResponse({
@@ -452,15 +459,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.device.id": deviceId })
 			const now = yield* Clock.currentTimeMillis
-			const revokedRows = yield* database
-				.execute((db) =>
-					db
-						.update(apiKeys)
-						.set({ revoked: true, revokedAt: msToDate(now) })
+			const revokedRows = yield* dbExecute((db) =>
+				db.run(
+					PG.update(ApiKeys)
+						.set({ revoked: true, revokedAt: now })
 						.where(liveDeviceKeysFor(orgId, deviceId))
-						.returning({ id: apiKeys.id }),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+						.returning("id"),
+				),
+			)
 			return revokedRows.length
 		})
 
@@ -491,25 +497,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// the transaction that actually claimed the source inserts a successor,
 			// so a roll/roll race can no longer mint two live keys and a
 			// revoke/roll race can no longer mint a successor for a dead one.
-			const rolled = yield* database
-				.execute((db) =>
-					db.transaction((tx) =>
-						Effect.gen(function* () {
-							const claimed = yield* tx
-								.update(apiKeys)
-								.set({ revoked: true, revokedAt: msToDate(now) })
-								.where(
-									and(
-										eq(apiKeys.id, keyId),
-										eq(apiKeys.orgId, orgId),
-										eq(apiKeys.revoked, false),
-									),
-								)
-								.returning({ ...getColumns(apiKeys), ...txidColumn })
-							if (claimed.length === 0) return undefined
-							const source = claimed[0]
+			const rolled = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const [source] = yield* db.run(claimLive(keyId, orgId, now))
+						if (source === undefined) return undefined
 
-							yield* tx.insert(apiKeys).values({
+						yield* db.run(
+							PG.insertInto(ApiKeys).values({
 								id,
 								orgId,
 								name: source.name,
@@ -523,15 +518,15 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 								// escalating a CLI/MCP key beyond its creator's roles.
 								metadataJson: source.metadataJson,
 								expiresAt: null,
-								createdAt: msToDate(now),
+								createdAt: now,
 								createdBy: userId,
 								createdByEmail,
-							})
-							return source
-						}),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+							}),
+						)
+						return source
+					}),
+				),
+			)
 
 			if (rolled === undefined) {
 				// Lost the claim (or never had one): distinguish a key that does not
@@ -571,32 +566,20 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			// must either claim the live row or observe that it is already dead —
 			// never re-stamp `revoked_at` on a row someone else already retired
 			// (which would also replicate a pointless row out through Electric).
-			const revokedRows = yield* database
-				.execute((db) =>
-					db.transaction((tx) =>
-						Effect.gen(function* () {
-							const claimed = yield* tx
-								.update(apiKeys)
-								.set({ revoked: true, revokedAt: msToDate(now) })
-								.where(
-									and(
-										eq(apiKeys.id, keyId),
-										eq(apiKeys.orgId, orgId),
-										eq(apiKeys.revoked, false),
-									),
-								)
-								.returning({ ...getColumns(apiKeys), ...txidColumn })
-							// An MCP key is the visible face of an OAuth grant whose refresh
-							// family re-mints it hourly. Flipping `revoked` here alone was a
-							// no-op the next rotation undid, so the family goes with it.
-							if (claimed[0]?.kind === "mcp") {
-								yield* revokeFamiliesForAccessKeys(tx, [claimed[0].id], msToDate(now))
-							}
-							return claimed
-						}),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const revokedRows = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const claimed = yield* db.run(claimLive(keyId, orgId, now))
+						// An MCP key is the visible face of an OAuth grant whose refresh
+						// family re-mints it hourly. Flipping `revoked` here alone was a
+						// no-op the next rotation undid, so the family goes with it.
+						if (claimed[0]?.kind === "mcp") {
+							yield* revokeFamiliesForAccessKeys(db, [claimed[0].id], now)
+						}
+						return claimed
+					}),
+				),
+			)
 
 			// Lost the claim: either the key never existed (404) or it was already
 			// revoked, in which case the stored row — not a freshly stamped copy —
@@ -610,16 +593,21 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			if (!rawKey.startsWith(API_KEY_PREFIX)) return Option.none()
 
 			const keyHash = hashApiKey(rawKey, hmacKey)
-			const rows = yield* database
-				.execute((db) => db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash)).limit(1))
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ApiKeys)
+						.select()
+						.where(($) => [$.keyHash.eq(keyHash)])
+						.limit(1),
+				),
+			)
 
 			const row = Option.fromNullishOr(rows[0])
 			if (Option.isNone(row)) return Option.none()
 			if (row.value.revoked) return Option.none()
-			if (row.value.expiresAt) {
+			if (row.value.expiresAt !== null) {
 				const now = yield* Clock.currentTimeMillis
-				if (row.value.expiresAt.getTime() < now) return Option.none()
+				if (row.value.expiresAt < now) return Option.none()
 			}
 
 			const roleMetadata = readKeyRoleMetadata(row.value.metadataJson)
@@ -674,22 +662,16 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			}
 			yield* Effect.annotateCurrentSpan("maple.api_key.last_used_memo_hit", false)
 
-			yield* database
-				.execute((db) =>
-					db
-						.update(apiKeys)
-						.set({ lastUsedAt: new Date(now) })
-						.where(
-							and(
-								eq(apiKeys.id, keyId),
-								or(
-									isNull(apiKeys.lastUsedAt),
-									lt(apiKeys.lastUsedAt, new Date(now - LAST_USED_HEARTBEAT_MS)),
-								),
-							),
-						),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(ApiKeys)
+						.set({ lastUsedAt: now })
+						.where(($) => [
+							$.id.eq(keyId),
+							PG.or($.lastUsedAt.isNull(), $.lastUsedAt.lt(now - LAST_USED_HEARTBEAT_MS)),
+						]),
+				),
+			)
 
 			lastUsedTouchMemo.set(keyId, now)
 		})

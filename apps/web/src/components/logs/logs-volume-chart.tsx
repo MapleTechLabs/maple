@@ -16,6 +16,7 @@ import {
 	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { ChartLoading } from "@maple/ui/components/charts"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
@@ -25,6 +26,7 @@ import { formatBucketLabel, formatNumber, inferBucketSeconds } from "@maple/ui/l
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { LogsSearchParams } from "@/routes/logs"
+import { logAttributeQueryFilters } from "@/lib/logs/log-attribute-filters"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 
 /**
@@ -64,7 +66,7 @@ function LogsVolumePlot({
 	onSelectCancel,
 	interactive,
 }: {
-	chartData: Array<Record<string, unknown>>
+	chartData: Array<{ bucket: string } & Record<string, unknown>>
 	seriesKeys: string[]
 	selecting: boolean
 	selection: { left: string; right: string } | null
@@ -96,7 +98,7 @@ function LogsVolumePlot({
 	const axis = useMemo(
 		() =>
 			makeBucketAxis(
-				chartData.map((row) => String(row.bucket)),
+				chartData.map((row) => row.bucket),
 				effectiveTimezone,
 			),
 		[chartData, effectiveTimezone],
@@ -115,8 +117,8 @@ function LogsVolumePlot({
 		const cells: SeverityCell[] = chartData.flatMap((row) =>
 			seriesKeys.map((severity) => ({
 				row,
-				bucket: String(row.bucket),
-				date: bucketDate(String(row.bucket)),
+				bucket: row.bucket,
+				date: bucketDate(row.bucket),
 				severity,
 				value: numberOrNull(row[severity]),
 			})),
@@ -292,7 +294,7 @@ function EmptyVolumeStrip({
 					</div>
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
 						<span className="text-xs">No log volume in this window</span>
-						<ul className="flex items-center gap-3 text-3xs uppercase tracking-wide opacity-60">
+						<Eyebrow render={<ul />} className="flex items-center gap-3 opacity-60">
 							{legend.map((severity) => (
 								<li key={severity} className="flex items-center gap-1.5">
 									<span
@@ -302,10 +304,10 @@ function EmptyVolumeStrip({
 									{severity}
 								</li>
 							))}
-						</ul>
+						</Eyebrow>
 					</div>
 				</div>
-				<div className="relative h-[18px] border-t border-border">
+				<div className="relative h-4.5 border-t border-border">
 					{ticks.map((tick, i) => (
 						<span
 							key={tick.label + i}
@@ -382,6 +384,7 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 							? [...filters.excludedNamespaces]
 							: undefined,
 					traceId: filters?.traceId,
+					...logAttributeQueryFilters(filters?.attrs),
 				},
 			},
 		}),

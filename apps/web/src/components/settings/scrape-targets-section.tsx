@@ -664,7 +664,7 @@ function ScrapeTargetRow({
 				}}
 				loading={probing}
 			>
-				<BoltIcon size={14} />
+				<BoltIcon />
 				Test
 			</Button>
 
@@ -675,7 +675,7 @@ function ScrapeTargetRow({
 				>
 					{/* Managed targets are edited/removed through the owning integration card. */}
 					<DropdownMenuItem disabled={target.managed_by != null} onClick={() => onEdit(target)}>
-						<PencilIcon size={14} />
+						<PencilIcon />
 						Edit
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
@@ -684,7 +684,7 @@ function ScrapeTargetRow({
 						disabled={target.managed_by != null}
 						onClick={() => onDelete(target)}
 					>
-						<TrashIcon size={14} />
+						<TrashIcon />
 						Delete
 					</DropdownMenuItem>
 				</RowActionsMenu>
@@ -752,7 +752,7 @@ function ScrapeTargetDetails({
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
 					<Button variant="outline" size="sm" onClick={() => onProbe(target)} loading={probing}>
-						<BoltIcon size={14} />
+						<BoltIcon />
 						Test
 					</Button>
 					{/* Managed targets are edited/removed through the owning integration card. */}
@@ -762,7 +762,7 @@ function ScrapeTargetDetails({
 						onClick={() => onEdit(target)}
 						disabled={target.managed_by != null}
 					>
-						<PencilIcon size={14} />
+						<PencilIcon />
 						Edit
 					</Button>
 					<Button variant="ghost" size="sm" onClick={() => onToggle(target)} disabled={toggling}>
@@ -775,7 +775,7 @@ function ScrapeTargetDetails({
 						onClick={() => onDelete(target)}
 						disabled={target.managed_by != null}
 					>
-						<TrashIcon size={14} />
+						<TrashIcon />
 						Delete
 					</Button>
 				</div>

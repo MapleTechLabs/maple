@@ -14,6 +14,8 @@ import type {
 	ProductEventsListQuery,
 	ProductEventsTimeseriesQuery,
 } from "@maple/domain/query-engine"
+import { Effect, Result } from "effect"
+import { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
 import { timeRangeCache } from "../runtime/query-engine"
 import { defineQuery, makeTimeBucketQueryCachePolicy } from "./query-definition"
@@ -21,10 +23,19 @@ import type { OrgId } from "@maple/domain"
 
 // Product-event funnels read `product_events` only — server and mobile rows have
 // no raw `session_events` counterpart, so unlike the web-analytics pairs there is
-// no `Raw` twin to fall back to. The builders validate the funnel definition
-// synchronously and throw `ProductEventsFunnelError`; the HTTP handler checks the
-// definition through `productEventsFunnelOpts` before `compile` runs here so a
-// bad definition is a 400 rather than a defect.
+// no `Raw` twin to fall back to. The builders return `ProductEventsFunnelError`
+// for a definition they cannot compile; the HTTP handler checks the definition
+// first, so a bad one is a 400 and a rejection here is a bug.
+
+/** A builder rejection past the handler's check is a defect, as any builder error is to the warehouse. */
+const builtFunnel = <Q>(
+	built: Result.Result<Q, CH.ProductEventsFunnelError>,
+): Effect.Effect<Q, QueryBuilderError> =>
+	Effect.fromResult(built).pipe(
+		Effect.mapError(
+			(error) => new QueryBuilderError({ code: "InvalidArguments", message: error.message }),
+		),
+	)
 
 /** The web-analytics filter surface, read off any funnel-family request. */
 const productEventsFilters = (payload: ProductEventNamesRequest): CH.ProductEventsFilters => ({
@@ -62,11 +73,15 @@ export const productEventsFunnel = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelRequest, orgId: OrgId) =>
-		CH.compile(CH.productEventsFunnelQuery(productEventsFunnelOpts(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		builtFunnel(CH.productEventsFunnelQuery(productEventsFunnelOpts(payload))).pipe(
+			Effect.flatMap((query) =>
+				CH.compile(query, {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				}),
+			),
+		),
 })
 
 export const productEventsFunnelBreakdown = defineQuery({
@@ -74,13 +89,16 @@ export const productEventsFunnelBreakdown = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelBreakdownRequest, orgId: OrgId) =>
-		CH.compile(
+		builtFunnel(
 			CH.productEventsFunnelBreakdownQuery({
 				...productEventsFunnelOpts(payload),
 				breakdownBy: payload.breakdownBy,
 				limit: payload.limit,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		).pipe(
+			Effect.flatMap((query) =>
+				CH.compile(query, { orgId, startTime: payload.startTime, endTime: payload.endTime }),
+			),
 		),
 })
 
@@ -89,11 +107,15 @@ export const productEventsFunnelTiming = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelTimingRequest, orgId: OrgId) =>
-		CH.compile(CH.productEventsFunnelTimingQuery(productEventsFunnelOpts(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		builtFunnel(CH.productEventsFunnelTimingQuery(productEventsFunnelOpts(payload))).pipe(
+			Effect.flatMap((query) =>
+				CH.compile(query, {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				}),
+			),
+		),
 })
 
 export const productEventsFunnelLeavers = defineQuery({
@@ -101,11 +123,15 @@ export const productEventsFunnelLeavers = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelLeaversRequest, orgId: OrgId) =>
-		CH.compile(CH.productEventsFunnelLeaversQuery(productEventsFunnelOpts(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		builtFunnel(CH.productEventsFunnelLeaversQuery(productEventsFunnelOpts(payload))).pipe(
+			Effect.flatMap((query) =>
+				CH.compile(query, {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				}),
+			),
+		),
 })
 
 /** The paths option bag; the same filter surface as a funnel. */
@@ -126,11 +152,15 @@ export const productEventsPaths = defineQuery({
 	profile: "aggregation",
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsPathsRequest, orgId: OrgId) =>
-		CH.compile(CH.productEventsPathsQuery(productEventsPathsOpts(payload)), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-		}),
+		builtFunnel(CH.productEventsPathsQuery(productEventsPathsOpts(payload))).pipe(
+			Effect.flatMap((query) =>
+				CH.compile(query, {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				}),
+			),
+		),
 })
 
 export const productEventNames = defineQuery({

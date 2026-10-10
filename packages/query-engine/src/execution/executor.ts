@@ -5,6 +5,7 @@ import {
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
 	type WarehouseQueryRequest,
+	WarehouseQueryError,
 	WarehouseQueryResponse,
 	WarehouseResultDecodeError,
 	WarehouseScopeError,
@@ -24,7 +25,6 @@ import {
 } from "../profiles"
 import {
 	mapWarehouseError,
-	toWarehouseQueryError,
 	warehouseFailureAttributes,
 	type WarehouseExecutionError,
 	type WarehouseReadExecutionError,
@@ -579,15 +579,13 @@ WHERE name = 'enable_full_text_index'`,
 						Effect.timeoutOrElse({
 							duration: Duration.millis(attemptTimeoutMs),
 							orElse: () =>
-								// Constructed directly via `toWarehouseQueryError` so a transient
-								// message matcher cannot feed this client timeout into the retry loop.
+								// Constructed directly so a transient message matcher cannot feed
+								// this client timeout into the retry loop.
 								Effect.fail(
-									toWarehouseQueryError(
-										pipe,
-										new Error(
-											`Warehouse query exceeded ${attemptTimeoutMs}ms client timeout`,
-										),
-									),
+									new WarehouseQueryError({
+										message: `Warehouse query exceeded ${attemptTimeoutMs}ms client timeout`,
+										pipeName: pipe,
+									}),
 								),
 						}),
 					)
@@ -881,8 +879,22 @@ WHERE name = 'enable_full_text_index'`,
 			),
 		)
 
+		// Pipes are a wire contract (`@maple/domain/tinybird` types, the CLI over
+		// HTTP), so rows go back out in their wire form: decoding validated them,
+		// and encoding turns a `DateTime.Utc` column back into the string it was.
+		const wireRows = yield* compiled.encodeRows(decodedRows).pipe(
+			Effect.mapError(
+				(error) =>
+					new WarehouseResultDecodeError({
+						pipeName: payload.pipeName,
+						message: error.message,
+						cause: error,
+					}),
+			),
+		)
+
 		return new WarehouseQueryResponse({
-			data: Array.from(decodedRows),
+			data: Array.from(wireRows),
 		})
 	})
 

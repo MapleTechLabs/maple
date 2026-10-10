@@ -24,18 +24,18 @@ import {
 	UserId as UserIdSchema,
 	type WarehouseReadError,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	anomalyDetectorSettings,
+	AnomalyDetectorSettings,
 	type AnomalyDetectorSettingsRow,
-	anomalyDetectorStates,
+	AnomalyDetectorStates,
 	type AnomalyDetectorStateRow,
-	anomalyIncidents,
+	AnomalyIncidents,
 	type AnomalyIncidentRow,
-	errorIssues,
-	orgClickHouseSettings,
-	orgIngestKeys,
-} from "@maple/db"
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm"
+	ErrorIssues,
+	OrgClickHouseSettings,
+	OrgIngestKeys,
+} from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/cache"
 import {
@@ -47,6 +47,7 @@ import {
 	Cause,
 	Clock,
 	Context,
+	DateTime,
 	Effect,
 	Layer,
 	MutableHashMap,
@@ -59,8 +60,7 @@ import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
+import { timestampMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	capBusiestLogSeries,
@@ -138,8 +138,8 @@ export const makePersistenceError = makePersistenceErrorMapper(
 )
 
 /**
- * Adapt a drizzle incident row (timestamptz → Date, jsonb → unknown[]) to the
- * ms-number/JSON-string shape the pure consolidation helpers operate on.
+ * Adapt an incident row (jsonb -> unknown[]) to the JSON-string shape the pure
+ * consolidation helpers operate on.
  */
 const parseRowFingerprints = (row: AnomalyIncidentRow): IncidentFingerprintEntry[] =>
 	parseFingerprints({
@@ -149,7 +149,7 @@ const parseRowFingerprints = (row: AnomalyIncidentRow): IncidentFingerprintEntry
 		severity: row.severity,
 		openedValue: row.openedValue,
 		lastObservedValue: row.lastObservedValue,
-		firstTriggeredAt: row.firstTriggeredAt.getTime(),
+		firstTriggeredAt: row.firstTriggeredAt,
 		fingerprintsJson: JSON.stringify(row.fingerprintsJson),
 	})
 
@@ -176,7 +176,7 @@ export interface AnomalyServiceCountRow {
 	readonly signalType: AnomalySignalType
 	readonly severity: AnomalyIncidentSeverity
 	readonly incidentCount: number
-	/** ISO-8601 UTC. Formatted in SQL — see the note on the query. */
+	/** ISO-8601 UTC, from the group's max epoch-ms. */
 	readonly lastTriggeredAt: string
 }
 
@@ -243,12 +243,11 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | EdgeCacheService | Env
+	Database | WarehouseQueryService | EdgeCacheService
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const edgeCache = yield* EdgeCacheService
-	const env = yield* Env
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
 	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
@@ -256,8 +255,6 @@ const make: Effect.Effect<
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
 	const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
-
-	const isoFromDate = (date: Date) => decodeIsoSync(date.toISOString())
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -279,14 +276,17 @@ const make: Effect.Effect<
 		knownOrgs: ReadonlyArray<OrgId>,
 		nowMs: number,
 	) {
-		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
+		yield* Effect.annotateCurrentSpan("maple.anomaly.known_orgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
-			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
-		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: string }>))
+			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
+		).pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []))
 		const byo = new Set<string>(byoRows.map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
-			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
+			yield* Effect.annotateCurrentSpan({
+				"maple.anomaly.active_orgs": byo.size,
+				"maple.anomaly.failed_closed": false,
+			})
 			return byo as ReadonlySet<string>
 		}
 
@@ -327,7 +327,10 @@ const make: Effect.Effect<
 				return active as ReadonlySet<string>
 			}),
 			Effect.tap((active) =>
-				Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
+				Effect.annotateCurrentSpan({
+					"maple.anomaly.active_orgs": active.size,
+					"maple.anomaly.failed_closed": false,
+				}),
 			),
 			// Cache the freshly-discovered set for reuse on a later discovery failure.
 			Effect.tap((active) =>
@@ -360,7 +363,10 @@ const make: Effect.Effect<
 							for (const orgId of Option.getOrElse(cached, () => [] as ReadonlyArray<string>)) {
 								active.add(orgId)
 							}
-							yield* Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: true })
+							yield* Effect.annotateCurrentSpan({
+								"maple.anomaly.active_orgs": active.size,
+								"maple.anomaly.failed_closed": true,
+							})
 							return active as ReadonlySet<string>
 						}),
 			),
@@ -375,17 +381,18 @@ const make: Effect.Effect<
 			enabled: row.enabled,
 			sensitivity: row.sensitivity,
 			mutedSignals: parseMutedSignals(row.mutedSignalsJson),
-			updatedAt: isoFromDate(row.updatedAt),
+			updatedAt: isoFromEpoch(row.updatedAt),
 			updatedBy: row.updatedBy ?? null,
 		})
 
 	const loadSettingsRow = Effect.fn("AnomalyDetectionService.loadSettingsRow")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(anomalyDetectorSettings)
-				.where(eq(anomalyDetectorSettings.orgId, orgId))
-				.limit(1),
+			db.run(
+				PG.from(AnomalyDetectorSettings)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)])
+					.limit(1),
+			),
 		)
 		return rows[0]
 	})
@@ -397,17 +404,18 @@ const make: Effect.Effect<
 		const existing = yield* loadSettingsRow(orgId)
 		if (existing) return existing
 		yield* dbExecute((db) =>
-			db
-				.insert(anomalyDetectorSettings)
-				.values({
-					orgId,
-					enabled: true,
-					sensitivity: "normal",
-					mutedSignalsJson: [],
-					createdAt: new Date(nowMs),
-					updatedAt: new Date(nowMs),
-				})
-				.onConflictDoNothing(),
+			db.run(
+				PG.insertInto(AnomalyDetectorSettings)
+					.values({
+						orgId,
+						enabled: true,
+						sensitivity: "normal",
+						mutedSignalsJson: [],
+						createdAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.onConflictDoNothing(),
+			),
 		)
 		const refreshed = yield* loadSettingsRow(orgId)
 		if (!refreshed) {
@@ -438,11 +446,15 @@ const make: Effect.Effect<
 			sensitivity: request.sensitivity ?? existing.sensitivity,
 			mutedSignalsJson:
 				request.mutedSignals === undefined ? existing.mutedSignalsJson : request.mutedSignals,
-			updatedAt: new Date(nowMs),
+			updatedAt: nowMs,
 			updatedBy: userId,
 		}
 		yield* dbExecute((db) =>
-			db.update(anomalyDetectorSettings).set(next).where(eq(anomalyDetectorSettings.orgId, orgId)),
+			db.run(
+				PG.update(AnomalyDetectorSettings)
+					.set(next)
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 		)
 		const refreshed = yield* loadSettingsRow(orgId)
 		return settingsToDocument(refreshed ?? { ...existing, ...next })
@@ -465,9 +477,9 @@ const make: Effect.Effect<
 			thresholdValue: row.thresholdValue,
 			lastObservedValue: row.lastObservedValue,
 			lastSampleCount: row.lastSampleCount,
-			firstTriggeredAt: isoFromDate(row.firstTriggeredAt),
-			lastTriggeredAt: isoFromDate(row.lastTriggeredAt),
-			resolvedAt: row.resolvedAt ? isoFromDate(row.resolvedAt) : null,
+			firstTriggeredAt: isoFromEpoch(row.firstTriggeredAt),
+			lastTriggeredAt: isoFromEpoch(row.lastTriggeredAt),
+			resolvedAt: row.resolvedAt === null ? null : isoFromEpoch(row.resolvedAt),
 			resolveReason: row.resolveReason ?? null,
 			triageStatus: row.triageStatus,
 			fingerprints:
@@ -490,39 +502,40 @@ const make: Effect.Effect<
 								}),
 						),
 			reopenCount: row.reopenCount,
-			lastReopenedAt: row.lastReopenedAt ? isoFromDate(row.lastReopenedAt) : null,
+			lastReopenedAt: row.lastReopenedAt === null ? null : isoFromEpoch(row.lastReopenedAt),
 		})
 
 	const listIncidents: AnomalyDetectionServiceApi["listIncidents"] = Effect.fn(
 		"AnomalyDetectionService.listIncidents",
 	)(function* (orgId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		const conditions = [
-			eq(anomalyIncidents.orgId, orgId),
-			opts.status ? eq(anomalyIncidents.status, opts.status) : undefined,
-			opts.signalType ? eq(anomalyIncidents.signalType, opts.signalType) : undefined,
-			opts.service ? eq(anomalyIncidents.serviceName, opts.service) : undefined,
-			opts.deploymentEnv ? eq(anomalyIncidents.deploymentEnv, opts.deploymentEnv) : undefined,
-			// Consolidated incidents carry secondary issue links inside
-			// fingerprintsJson; the issue page should surface those too.
-			opts.errorIssueId
-				? or(
-						eq(anomalyIncidents.errorIssueId, opts.errorIssueId),
-						// jsonb has no LIKE operator; substring-match its text form.
-						sql`${anomalyIncidents.fingerprintsJson}::text LIKE ${`%"${opts.errorIssueId}"%`}`,
-					)
-				: undefined,
-			opts.startTime ? gte(anomalyIncidents.lastTriggeredAt, new Date(opts.startTime)) : undefined,
-			opts.endTime ? lte(anomalyIncidents.firstTriggeredAt, new Date(opts.endTime)) : undefined,
-		].filter((c): c is NonNullable<typeof c> => c !== undefined)
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(anomalyIncidents)
-				.where(and(...conditions))
-				.orderBy(desc(anomalyIncidents.lastTriggeredAt), desc(anomalyIncidents.id))
-				.limit(opts.limit ?? 100)
-				.offset(opts.offset ?? 0),
+			db.run(
+				PG.from(AnomalyIncidents)
+					.select()
+					.where(($) => [
+						$.orgId.eq(orgId),
+						opts.status ? $.status.eq(opts.status) : undefined,
+						opts.signalType ? $.signalType.eq(opts.signalType) : undefined,
+						opts.service ? $.serviceName.eq(opts.service) : undefined,
+						opts.deploymentEnv ? $.deploymentEnv.eq(opts.deploymentEnv) : undefined,
+						// Consolidated incidents carry secondary issue links inside
+						// fingerprintsJson; the issue page should surface those too.
+						opts.errorIssueId
+							? PG.or(
+									$.errorIssueId.eq(opts.errorIssueId),
+									// jsonb has no LIKE operator; substring-match its text form.
+									PG.sql
+										.cond`${$.fingerprintsJson}::text LIKE ${`%"${opts.errorIssueId}"%`}`,
+								)
+							: undefined,
+						opts.startTime ? $.lastTriggeredAt.gte(timestampMs(opts.startTime)) : undefined,
+						opts.endTime ? $.firstTriggeredAt.lte(timestampMs(opts.endTime)) : undefined,
+					])
+					.orderBy(["lastTriggeredAt", "desc"], ["id", "desc"])
+					.limit(opts.limit ?? 100)
+					.offset(opts.offset ?? 0),
+			),
 		)
 		return new AnomalyIncidentsListResponse({ incidents: rows.map(incidentToDocument) })
 	})
@@ -533,41 +546,31 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const status = opts.status ?? "open"
 		const rows = yield* dbExecute((db) =>
-			db
-				.select({
-					serviceName: anomalyIncidents.serviceName,
-					deploymentEnv: anomalyIncidents.deploymentEnv,
-					signalType: anomalyIncidents.signalType,
-					// Severity is a two-value ladder, so a boolean rollup says
-					// exactly what the caller needs without ordering strings.
-					hasCritical: sql<boolean>`bool_or(${anomalyIncidents.severity} = 'critical')`,
-					incidentCount: sql<number>`count(*)::int`,
-					// Drizzle applies a column's codec to a column reference, not to
-					// an aggregate over it, so `max()` arrives as whatever the driver
-					// hands back — a Date under one, a Postgres datetime string under
-					// another. Formatting in SQL removes the guess: one ISO-8601 UTC
-					// string, identical under postgres.js and PGlite.
-					lastTriggeredAt: sql<string>`to_char(
-						max(${anomalyIncidents.lastTriggeredAt}) AT TIME ZONE 'UTC',
-						'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
-					)`,
-				})
-				.from(anomalyIncidents)
-				.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.status, status)))
-				.groupBy(
-					anomalyIncidents.serviceName,
-					anomalyIncidents.deploymentEnv,
-					anomalyIncidents.signalType,
-				),
+			db.run(
+				PG.from(AnomalyIncidents)
+					.select(($) => ({
+						serviceName: $.serviceName,
+						deploymentEnv: $.deploymentEnv,
+						signalType: $.signalType,
+						// Severity is a two-value ladder, so counting the critical rows
+						// says exactly what the caller needs without ordering strings.
+						criticalCount: PG.countIf($.severity.eq("critical")),
+						incidentCount: PG.count(),
+						lastTriggeredAt: PG.max($.lastTriggeredAt),
+					}))
+					.where(($) => [$.orgId.eq(orgId), $.status.eq(status)])
+					.groupBy("serviceName", "deploymentEnv", "signalType"),
+			),
 		)
-		yield* Effect.annotateCurrentSpan({ groupCount: rows.length })
+		yield* Effect.annotateCurrentSpan({ "result.groupCount": rows.length })
 		return rows.map((row) => ({
 			serviceName: row.serviceName,
 			deploymentEnv: row.deploymentEnv,
 			signalType: row.signalType,
-			severity: (row.hasCritical ? "critical" : "warning") satisfies AnomalyIncidentSeverity,
+			severity: (row.criticalCount > 0 ? "critical" : "warning") satisfies AnomalyIncidentSeverity,
 			incidentCount: row.incidentCount,
-			lastTriggeredAt: row.lastTriggeredAt,
+			// A group has at least one row, so max() is never null here.
+			lastTriggeredAt: new Date(row.lastTriggeredAt ?? 0).toISOString(),
 		}))
 	})
 
@@ -576,11 +579,12 @@ const make: Effect.Effect<
 		incidentId: AnomalyIncidentId,
 	) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(anomalyIncidents)
-				.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId)))
-				.limit(1),
+			db.run(
+				PG.from(AnomalyIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)])
+					.limit(1),
+			),
 		)
 		const row = rows[0]
 		if (!row) {
@@ -597,7 +601,7 @@ const make: Effect.Effect<
 	const getIncident: AnomalyDetectionServiceApi["getIncident"] = Effect.fn(
 		"AnomalyDetectionService.getIncident",
 	)(function* (orgId, incidentId) {
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.incident_id": incidentId })
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		return incidentToDocument(row)
 	})
@@ -605,27 +609,26 @@ const make: Effect.Effect<
 	const resolveIncidentManually: AnomalyDetectionServiceApi["resolveIncidentManually"] = Effect.fn(
 		"AnomalyDetectionService.resolveIncidentManually",
 	)(function* (orgId, incidentId) {
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.incident_id": incidentId })
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		if (row.status === "resolved") return incidentToDocument(row)
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* dbExecute((db) =>
-			db
-				.update(anomalyIncidents)
-				.set({
-					status: "resolved",
-					resolveReason: "manual",
-					resolvedAt: new Date(nowMs),
-					updatedAt: new Date(nowMs),
-				})
-				.where(
-					and(
-						eq(anomalyIncidents.orgId, orgId),
-						eq(anomalyIncidents.id, incidentId),
+			db.run(
+				PG.update(AnomalyIncidents)
+					.set({
+						status: "resolved",
+						resolveReason: "manual",
+						resolvedAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.id.eq(incidentId),
 						// Guard against a concurrent tick resolving first.
-						eq(anomalyIncidents.status, "open"),
-					),
-				),
+						$.status.eq("open"),
+					]),
+			),
 		)
 		// Detector-state consistency: clear the open pointer and start the
 		// cooldown so the next tick doesn't immediately re-open the series.
@@ -633,22 +636,18 @@ const make: Effect.Effect<
 		// a consolidated incident is cleared, and a newer incident's state is
 		// never clobbered.
 		yield* dbExecute((db) =>
-			db
-				.update(anomalyDetectorStates)
-				.set({
-					openIncidentId: null,
-					lastResolvedAt: new Date(nowMs),
-					lastIncidentId: incidentId,
-					consecutiveBreaches: 0,
-					consecutiveHealthy: 0,
-					updatedAt: new Date(nowMs),
-				})
-				.where(
-					and(
-						eq(anomalyDetectorStates.orgId, orgId),
-						eq(anomalyDetectorStates.openIncidentId, incidentId),
-					),
-				),
+			db.run(
+				PG.update(AnomalyDetectorStates)
+					.set({
+						openIncidentId: null,
+						lastResolvedAt: nowMs,
+						lastIncidentId: incidentId,
+						consecutiveBreaches: 0,
+						consecutiveHealthy: 0,
+						updatedAt: nowMs,
+					})
+					.where(($) => [$.orgId.eq(orgId), $.openIncidentId.eq(incidentId)]),
+			),
 		)
 		const refreshed = yield* requireIncidentRow(orgId, incidentId)
 		return incidentToDocument(refreshed)
@@ -657,15 +656,20 @@ const make: Effect.Effect<
 	const setIncidentIssue: AnomalyDetectionServiceApi["setIncidentIssue"] = Effect.fn(
 		"AnomalyDetectionService.setIncidentIssue",
 	)(function* (orgId, incidentId, issueId) {
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId, issueId: issueId ?? "(none)" })
+		yield* Effect.annotateCurrentSpan({
+			orgId,
+			"maple.anomaly.incident_id": incidentId,
+			"maple.issue.id": issueId ?? "(none)",
+		})
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		if (issueId !== null) {
 			const issueRows = yield* dbExecute((db) =>
-				db
-					.select({ id: errorIssues.id })
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssues)
+						.select("id")
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+						.limit(1),
+				),
 			)
 			if (issueRows.length === 0) {
 				return yield* Effect.fail(
@@ -678,10 +682,11 @@ const make: Effect.Effect<
 		}
 		const nowMs = yield* Clock.currentTimeMillis
 		yield* dbExecute((db) =>
-			db
-				.update(anomalyIncidents)
-				.set({ errorIssueId: issueId, updatedAt: new Date(nowMs) })
-				.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId))),
+			db.run(
+				PG.update(AnomalyIncidents)
+					.set({ errorIssueId: issueId, updatedAt: nowMs })
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
+			),
 		)
 		const refreshed = yield* requireIncidentRow(orgId, incidentId)
 		return {
@@ -699,12 +704,12 @@ const make: Effect.Effect<
 		"AnomalyDetectionService.getIncidentTimeseries",
 	)(function* (tenant, incidentId, opts) {
 		const orgId = tenant.orgId
-		yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.incident_id": incidentId })
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		const nowMs = yield* Clock.currentTimeMillis
 
-		const defaultStart = row.firstTriggeredAt.getTime() - 24 * HOUR_MS
-		const defaultEnd = Math.min(nowMs, (dateToMs(row.resolvedAt) ?? nowMs) + 2 * HOUR_MS)
+		const defaultStart = row.firstTriggeredAt - 24 * HOUR_MS
+		const defaultEnd = Math.min(nowMs, (row.resolvedAt ?? nowMs) + 2 * HOUR_MS)
 		const requestedStart =
 			opts.startTime !== undefined ? parseWarehouseDateTime(opts.startTime) : defaultStart
 		const requestedEnd = opts.endTime !== undefined ? parseWarehouseDateTime(opts.endTime) : defaultEnd
@@ -741,19 +746,19 @@ const make: Effect.Effect<
 				...queryWindow,
 				// Include the preceding window so the first displayed point has
 				// a complete rolling 30-minute value.
-				startTime: formatWarehouseDateTime(startMs - SPIKE_WINDOW_MS),
+				startTime: DateTime.makeUnsafe(startMs - SPIKE_WINDOW_MS),
 				fingerprintHash: row.fingerprintHash ?? "0",
 				deploymentEnv: row.deploymentEnv,
 				bucketSeconds,
 			})
 			const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 				profile: "list",
-				context: "anomalyIncidentTimeseries",
+				context: "anomalyErrorSpikeTimeseries",
 			})
 			buckets = rollingCountBuckets(
 				rows.map((r) => ({
-					bucketMs: parseWarehouseDateTime(String(r.bucket ?? "")),
-					count: Number(r.count ?? 0),
+					bucketMs: DateTime.toEpochMillis(r.bucket),
+					count: r.count,
 				})),
 				{
 					startMs,
@@ -779,11 +784,11 @@ const make: Effect.Effect<
 			})
 			const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 				profile: "list",
-				context: "anomalyIncidentTimeseries",
+				context: "anomalyLogVolumeTimeseries",
 			})
 			buckets = rows.map((r) => {
-				const hourMs = parseWarehouseDateTime(String(r.hour ?? ""))
-				const errorLogCount = Number(r.errorLogCount ?? 0)
+				const hourMs = DateTime.toEpochMillis(r.hour)
+				const errorLogCount = r.errorLogCount
 				return new AnomalyTimeseriesBucket({
 					bucket: isoFromEpoch(hourMs),
 					value: perMinute(errorLogCount, hourMs),
@@ -799,7 +804,7 @@ const make: Effect.Effect<
 			})
 			const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 				profile: "list",
-				context: "anomalyIncidentTimeseries",
+				context: "anomalyTraceSignalTimeseries",
 			})
 			const signalType = row.signalType
 			unit =
@@ -809,10 +814,10 @@ const make: Effect.Effect<
 						? "milliseconds"
 						: "per_minute"
 			buckets = rows.map((r) => {
-				const hourMs = parseWarehouseDateTime(String(r.hour ?? ""))
-				const requestCount = Number(r.requestCount ?? 0)
-				const errorCount = Number(r.errorCount ?? 0)
-				const p95Ms = Number(r.p95Ms ?? 0)
+				const hourMs = DateTime.toEpochMillis(r.hour)
+				const requestCount = r.requestCount
+				const errorCount = r.errorCount
+				const p95Ms = r.p95Ms
 				const value =
 					signalType === "error_rate"
 						? requestCount > 0
@@ -842,7 +847,8 @@ const make: Effect.Effect<
 	// Tick: data fetch
 
 	interface HourRow {
-		readonly hour: string
+		/** Epoch ms, not a `DateTime.Utc`: baseline rows are cached as JSON. */
+		readonly hourMs: number
 		readonly serviceName: string
 		readonly deploymentEnv: string
 	}
@@ -853,7 +859,7 @@ const make: Effect.Effect<
 		const baseline = new Map<string, R[]>()
 		for (const row of rows) {
 			const key = `${row.serviceName}\u0000${row.deploymentEnv}`
-			if (parseWarehouseDateTime(row.hour) >= currentHourStartMs) {
+			if (row.hourMs >= currentHourStartMs) {
 				current.set(key, row)
 			} else {
 				const list = baseline.get(key)
@@ -898,14 +904,14 @@ const make: Effect.Effect<
 				// the cached blob is purely sealed baseline.
 				return rows
 					.map((r) => ({
-						hour: String(r.hour ?? ""),
-						serviceName: String(r.serviceName ?? ""),
-						deploymentEnv: String(r.deploymentEnv ?? ""),
-						requestCount: Number(r.requestCount ?? 0),
-						errorCount: Number(r.errorCount ?? 0),
-						p95Ms: Number(r.p95Ms ?? 0),
+						hourMs: DateTime.toEpochMillis(r.hour),
+						serviceName: r.serviceName,
+						deploymentEnv: r.deploymentEnv,
+						requestCount: r.requestCount,
+						errorCount: r.errorCount,
+						p95Ms: r.p95Ms,
 					}))
-					.filter((r) => parseWarehouseDateTime(r.hour) < currentHourStartMs)
+					.filter((r) => r.hourMs < currentHourStartMs)
 			}),
 		)
 
@@ -921,12 +927,12 @@ const make: Effect.Effect<
 			})
 			.pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
-			hour: String(r.hour ?? ""),
-			serviceName: String(r.serviceName ?? ""),
-			deploymentEnv: String(r.deploymentEnv ?? ""),
-			requestCount: Number(r.requestCount ?? 0),
-			errorCount: Number(r.errorCount ?? 0),
-			p95Ms: Number(r.p95Ms ?? 0),
+			hourMs: DateTime.toEpochMillis(r.hour),
+			serviceName: r.serviceName,
+			deploymentEnv: r.deploymentEnv,
+			requestCount: r.requestCount,
+			errorCount: r.errorCount,
+			p95Ms: r.p95Ms,
 		}))
 
 		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
@@ -987,12 +993,12 @@ const make: Effect.Effect<
 					.pipe(Effect.mapError(makePersistenceError))
 				return rows
 					.map((r) => ({
-						hour: String(r.hour ?? ""),
-						serviceName: String(r.serviceName ?? ""),
-						deploymentEnv: String(r.deploymentEnv ?? ""),
-						errorLogCount: Number(r.errorLogCount ?? 0),
+						hourMs: DateTime.toEpochMillis(r.hour),
+						serviceName: r.serviceName,
+						deploymentEnv: r.deploymentEnv,
+						errorLogCount: r.errorLogCount,
 					}))
-					.filter((r) => parseWarehouseDateTime(r.hour) < currentHourStartMs)
+					.filter((r) => r.hourMs < currentHourStartMs)
 			}),
 		)
 
@@ -1008,10 +1014,10 @@ const make: Effect.Effect<
 			})
 			.pipe(Effect.mapError(makePersistenceError))
 		const currentNormalized = currentRows.map((r) => ({
-			hour: String(r.hour ?? ""),
-			serviceName: String(r.serviceName ?? ""),
-			deploymentEnv: String(r.deploymentEnv ?? ""),
-			errorLogCount: Number(r.errorLogCount ?? 0),
+			hourMs: DateTime.toEpochMillis(r.hour),
+			serviceName: r.serviceName,
+			deploymentEnv: r.deploymentEnv,
+			errorLogCount: r.errorLogCount,
 		}))
 
 		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
@@ -1035,8 +1041,8 @@ const make: Effect.Effect<
 	) {
 		const currentCompiled = CH.compile(CH.anomalyErrorSpikeCurrentQuery({}), {
 			orgId: tenant.orgId,
-			startTime: formatWarehouseDateTime(nowMs - SPIKE_WINDOW_MS),
-			endTime: formatWarehouseDateTime(nowMs),
+			startTime: DateTime.makeUnsafe(nowMs - SPIKE_WINDOW_MS),
+			endTime: DateTime.makeUnsafe(nowMs),
 		})
 		const currentRows = yield* warehouse
 			.compiledQuery(tenant, currentCompiled, {
@@ -1046,10 +1052,10 @@ const make: Effect.Effect<
 			.pipe(Effect.mapError(makePersistenceError))
 
 		const observations = currentRows.map((r) => ({
-			fingerprintHash: String(r.fingerprintHash ?? ""),
-			serviceName: String(r.serviceName ?? ""),
-			deploymentEnv: String(r.deploymentEnv ?? ""),
-			count: Number(r.count ?? 0),
+			fingerprintHash: r.fingerprintHash,
+			serviceName: r.serviceName,
+			deploymentEnv: r.deploymentEnv,
+			count: r.count,
 		}))
 
 		if (observations.length === 0) {
@@ -1069,8 +1075,8 @@ const make: Effect.Effect<
 			Effect.gen(function* () {
 				const baselineCompiled = CH.compile(CH.anomalyErrorSpikeBaselineQuery({}), {
 					orgId: tenant.orgId,
-					startTime: formatWarehouseDateTime(nowMs - BASELINE_WINDOW_MS),
-					endTime: formatWarehouseDateTime(Math.floor(nowMs / HOUR_MS) * HOUR_MS),
+					startTime: DateTime.makeUnsafe(nowMs - BASELINE_WINDOW_MS),
+					endTime: DateTime.makeUnsafe(Math.floor(nowMs / HOUR_MS) * HOUR_MS),
 				})
 				const rows = yield* warehouse
 					.compiledQuery(tenant, baselineCompiled, {
@@ -1079,9 +1085,9 @@ const make: Effect.Effect<
 					})
 					.pipe(Effect.mapError(makePersistenceError))
 				return rows.map((r): ErrorSpikeBaselineEntry => ({
-					fingerprintHash: String(r.fingerprintHash ?? ""),
-					deploymentEnv: String(r.deploymentEnv ?? ""),
-					totalCount: Number(r.totalCount ?? 0),
+					fingerprintHash: r.fingerprintHash,
+					deploymentEnv: r.deploymentEnv,
+					totalCount: r.totalCount,
 				}))
 			}),
 		)
@@ -1097,20 +1103,16 @@ const make: Effect.Effect<
 
 	const claimOrg = (orgId: OrgId, nowMs: number) =>
 		dbExecute((db) =>
-			db
-				.update(anomalyDetectorSettings)
-				.set({ lastTickAt: new Date(nowMs) })
-				.where(
-					and(
-						eq(anomalyDetectorSettings.orgId, orgId),
-						or(
-							isNull(anomalyDetectorSettings.lastTickAt),
-							lt(anomalyDetectorSettings.lastTickAt, new Date(nowMs - ORG_LOCK_TTL_MS)),
-						),
-					),
-				)
-				// The returned row is the claim: empty means another tick holds the lock.
-				.returning({ orgId: anomalyDetectorSettings.orgId }),
+			db.run(
+				PG.update(AnomalyDetectorSettings)
+					.set({ lastTickAt: nowMs })
+					.where(($) => [
+						$.orgId.eq(orgId),
+						PG.or($.lastTickAt.isNull(), $.lastTickAt.lt(nowMs - ORG_LOCK_TTL_MS)),
+					])
+					// The returned row is the claim: empty means another tick holds the lock.
+					.returning("orgId"),
+			),
 		)
 
 	/**
@@ -1130,31 +1132,32 @@ const make: Effect.Effect<
 	 * on connections to the same origin pool, not on this loop in isolation.
 	 */
 	const flushDetectorStates = Effect.fnUntraced(function* (
-		writes: MutableHashMap.MutableHashMap<string, typeof anomalyDetectorStates.$inferInsert>,
+		writes: MutableHashMap.MutableHashMap<string, AnomalyDetectorStateRow>,
 	) {
 		yield* Effect.forEach(
 			batchDetectorStates(Arr.map(Arr.fromIterable(writes), ([, row]) => row)),
 			(chunk) =>
 				dbExecute((db) =>
-					db
-						.insert(anomalyDetectorStates)
-						.values(chunk)
-						.onConflictDoUpdate({
-							target: [anomalyDetectorStates.orgId, anomalyDetectorStates.detectorKey],
-							set: {
-								consecutiveBreaches: sql`excluded.consecutive_breaches`,
-								consecutiveHealthy: sql`excluded.consecutive_healthy`,
-								lastStatus: sql`excluded.last_status`,
-								lastValue: sql`excluded.last_value`,
-								baselineMedian: sql`excluded.baseline_median`,
-								lastSampleCount: sql`excluded.last_sample_count`,
-								lastEvaluatedAt: sql`excluded.last_evaluated_at`,
-								openIncidentId: sql`excluded.open_incident_id`,
-								lastResolvedAt: sql`excluded.last_resolved_at`,
-								lastIncidentId: sql`excluded.last_incident_id`,
-								updatedAt: sql`excluded.updated_at`,
-							},
-						}),
+					db.run(
+						PG.insertInto(AnomalyDetectorStates)
+							.values(chunk)
+							.onConflictDoUpdate({
+								target: ["orgId", "detectorKey"],
+								set: (_, excluded) => ({
+									consecutiveBreaches: excluded.consecutiveBreaches,
+									consecutiveHealthy: excluded.consecutiveHealthy,
+									lastStatus: excluded.lastStatus,
+									lastValue: excluded.lastValue,
+									baselineMedian: excluded.baselineMedian,
+									lastSampleCount: excluded.lastSampleCount,
+									lastEvaluatedAt: excluded.lastEvaluatedAt,
+									openIncidentId: excluded.openIncidentId,
+									lastResolvedAt: excluded.lastResolvedAt,
+									lastIncidentId: excluded.lastIncidentId,
+									updatedAt: excluded.updatedAt,
+								}),
+							}),
+					),
 				),
 			{ concurrency: DETECTOR_STATE_FLUSH_CONCURRENCY, discard: true },
 		)
@@ -1176,7 +1179,7 @@ const make: Effect.Effect<
 		nowMs: number,
 		runRetention: boolean,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.anomaly.run_retention": runRetention })
 		const stats: OrgTickStats = {
 			seriesEvaluated: 0,
 			incidentsOpened: 0,
@@ -1221,15 +1224,11 @@ const make: Effect.Effect<
 		// rows per tick to use one; the rest is fetched by key once the evaluated
 		// set is known.
 		const openStateRows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(anomalyDetectorStates)
-				.where(
-					and(
-						eq(anomalyDetectorStates.orgId, orgId),
-						isNotNull(anomalyDetectorStates.openIncidentId),
-					),
-				),
+			db.run(
+				PG.from(AnomalyDetectorStates)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.openIncidentId.isNotNull()]),
+			),
 		)
 		const stateByKey = new Map<string, AnomalyDetectorStateRow>(
 			openStateRows.map((row) => [row.detectorKey, row]),
@@ -1241,21 +1240,20 @@ const make: Effect.Effect<
 			fingerprints.length === 0
 				? []
 				: yield* dbExecute((db) =>
-						db
-							.select({
-								fingerprintHash: errorIssues.fingerprintHash,
-								issueId: errorIssues.id,
-								firstSeenAt: errorIssues.firstSeenAt,
-							})
-							.from(errorIssues)
-							.where(
-								and(
-									eq(errorIssues.orgId, orgId),
-									inArray(errorIssues.fingerprintHash, fingerprints),
-								),
-							),
+						db.run(
+							PG.from(ErrorIssues)
+								.select(($) => ({
+									fingerprintHash: $.fingerprintHash,
+									issueId: $.id,
+									firstSeenAt: $.firstSeenAt,
+								}))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.inList($.fingerprintHash, fingerprints),
+								]),
+						),
 					)
-		const issueFirstSeenAt = new Map(issueRows.map((r) => [r.fingerprintHash, r.firstSeenAt.getTime()]))
+		const issueFirstSeenAt = new Map(issueRows.map((r) => [r.fingerprintHash, r.firstSeenAt]))
 		const issueIdByFingerprint = new Map(issueRows.map((r) => [r.fingerprintHash, r.issueId]))
 
 		const evaluations: AnomalyEvaluation[] = []
@@ -1325,15 +1323,11 @@ const make: Effect.Effect<
 			Arr.chunksOf(missingKeys, DETECTOR_STATE_FETCH_CHUNK),
 			(chunk) =>
 				dbExecute((db) =>
-					db
-						.select()
-						.from(anomalyDetectorStates)
-						.where(
-							and(
-								eq(anomalyDetectorStates.orgId, orgId),
-								inArray(anomalyDetectorStates.detectorKey, chunk),
-							),
-						),
+					db.run(
+						PG.from(AnomalyDetectorStates)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), PG.inList($.detectorKey, chunk)]),
+					),
 				).pipe(
 					Effect.map((rows) => {
 						for (const row of rows) stateByKey.set(row.detectorKey, row)
@@ -1349,16 +1343,17 @@ const make: Effect.Effect<
 			entries: IncidentFingerprintEntry[]
 		}
 		const openIncidentRows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(anomalyIncidents)
-				.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.status, "open"))),
+			db.run(
+				PG.from(AnomalyIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
+			),
 		)
 		const incidentById = new Map<string, IncidentRuntime>(
 			openIncidentRows.map((r) => [r.id, { row: r, entries: parseRowFingerprints(r) }]),
 		)
 		const incidentOnset = (row: AnomalyIncidentRow) =>
-			Math.max(row.firstTriggeredAt.getTime(), dateToMs(row.lastReopenedAt) ?? 0)
+			Math.max(row.firstTriggeredAt, row.lastReopenedAt ?? 0)
 		// Attach target per service+env: the most recently onset open spike incident.
 		const openSpikeByServiceEnv = new Map<string, IncidentRuntime>()
 		for (const runtime of incidentById.values()) {
@@ -1385,7 +1380,7 @@ const make: Effect.Effect<
 					consecutiveBreaches: state?.consecutiveBreaches ?? 0,
 					consecutiveHealthy: state?.consecutiveHealthy ?? 0,
 					incidentOpen: (state?.openIncidentId ?? null) !== null,
-					lastResolvedAtMs: dateToMs(state?.lastResolvedAt ?? null),
+					lastResolvedAtMs: state?.lastResolvedAt ?? null,
 				},
 				evaluation.status,
 				hysteresisConfigFor(evaluation.signalType),
@@ -1423,7 +1418,7 @@ const make: Effect.Effect<
 		// on a repeated key is what the sequential per-row loop did anyway. Safe to
 		// mutate directly — the `Effect.forEach` below is sequential (no
 		// `concurrency` option), so writes cannot interleave.
-		const detectorStateWrites = MutableHashMap.empty<string, typeof anomalyDetectorStates.$inferInsert>()
+		const detectorStateWrites = MutableHashMap.empty<string, AnomalyDetectorStateRow>()
 
 		yield* Effect.forEach(
 			orderedDecisions,
@@ -1432,9 +1427,8 @@ const make: Effect.Effect<
 				const transition = decision.transition
 
 				let openIncidentId = decision.state?.openIncidentId ?? null
-				// Kept in ms-number space for the reopen-window arithmetic below;
-				// converted back to Date at the detector-state write.
-				let lastResolvedAt = dateToMs(decision.state?.lastResolvedAt ?? null)
+				// Epoch ms, as stored; the reopen-window arithmetic below reads it directly.
+				let lastResolvedAt = decision.state?.lastResolvedAt ?? null
 				let lastIncidentId = decision.state?.lastIncidentId ?? null
 
 				if (transition === "open") {
@@ -1454,8 +1448,8 @@ const make: Effect.Effect<
 							target !== undefined &&
 							canAttach(
 								{
-									firstTriggeredAt: target.row.firstTriggeredAt.getTime(),
-									lastReopenedAt: dateToMs(target.row.lastReopenedAt),
+									firstTriggeredAt: target.row.firstTriggeredAt,
+									lastReopenedAt: target.row.lastReopenedAt,
 								},
 								nowMs,
 							)
@@ -1473,24 +1467,23 @@ const make: Effect.Effect<
 							const severity = headlineSeverity(target.entries, target.row.severity)
 							const fingerprintsJson = target.entries
 							const updated = yield* dbExecute((db) =>
-								db
-									.update(anomalyIncidents)
-									.set({
-										fingerprintsJson,
-										severity,
-										lastTriggeredAt: new Date(nowMs),
-										updatedAt: new Date(nowMs),
-									})
-									.where(
-										and(
-											eq(anomalyIncidents.orgId, orgId),
-											eq(anomalyIncidents.id, target.row.id),
+								db.run(
+									PG.update(AnomalyIncidents)
+										.set({
+											fingerprintsJson,
+											severity,
+											lastTriggeredAt: nowMs,
+											updatedAt: nowMs,
+										})
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(target.row.id),
 											// A manual resolve may race the tick; never attach to
 											// a resolved incident.
-											eq(anomalyIncidents.status, "open"),
-										),
-									)
-									.returning({ id: anomalyIncidents.id }),
+											$.status.eq("open"),
+										])
+										.returning("id"),
+								),
 							)
 							if (updated.length === 0) {
 								incidentById.delete(target.row.id)
@@ -1500,7 +1493,7 @@ const make: Effect.Effect<
 									...target.row,
 									fingerprintsJson,
 									severity,
-									lastTriggeredAt: new Date(nowMs),
+									lastTriggeredAt: nowMs,
 								}
 								openIncidentId = target.row.id
 								lastIncidentId = target.row.id
@@ -1522,16 +1515,12 @@ const make: Effect.Effect<
 					) {
 						const reopenTargetId = lastIncidentId
 						const priorRows = yield* dbExecute((db) =>
-							db
-								.select()
-								.from(anomalyIncidents)
-								.where(
-									and(
-										eq(anomalyIncidents.orgId, orgId),
-										eq(anomalyIncidents.id, reopenTargetId),
-									),
-								)
-								.limit(1),
+							db.run(
+								PG.from(AnomalyIncidents)
+									.select()
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(reopenTargetId)])
+									.limit(1),
+							),
 						)
 						const prior = priorRows[0]
 						if (prior !== undefined && shouldReopen(prior, lastResolvedAt, nowMs)) {
@@ -1561,28 +1550,27 @@ const make: Effect.Effect<
 								resolveReason: null,
 								resolvedAt: null,
 								reopenCount: prior.reopenCount + 1,
-								lastReopenedAt: new Date(nowMs),
+								lastReopenedAt: nowMs,
 								severity,
 								lastObservedValue: evaluation.value,
 								lastSampleCount: evaluation.sampleCount,
-								lastTriggeredAt: new Date(nowMs),
+								lastTriggeredAt: nowMs,
 								detectorKey: evaluation.detectorKey,
 								fingerprintHash: evaluation.fingerprintHash,
 								fingerprintsJson,
-								updatedAt: new Date(nowMs),
+								updatedAt: nowMs,
 							}
 							const updated = yield* dbExecute((db) =>
-								db
-									.update(anomalyIncidents)
-									.set(reopenSet)
-									.where(
-										and(
-											eq(anomalyIncidents.orgId, orgId),
-											eq(anomalyIncidents.id, prior.id),
-											eq(anomalyIncidents.status, "resolved"),
-										),
-									)
-									.returning({ id: anomalyIncidents.id }),
+								db.run(
+									PG.update(AnomalyIncidents)
+										.set(reopenSet)
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(prior.id),
+											$.status.eq("resolved"),
+										])
+										.returning("id"),
+								),
 							)
 							if (updated.length !== 0) {
 								const runtime: IncidentRuntime = { row: { ...prior, ...reopenSet }, entries }
@@ -1637,15 +1625,15 @@ const make: Effect.Effect<
 							thresholdValue: evaluation.threshold,
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
-							firstTriggeredAt: new Date(nowMs),
-							lastTriggeredAt: new Date(nowMs),
+							firstTriggeredAt: nowMs,
+							lastTriggeredAt: nowMs,
 							triageStatus: "none" as const,
 							dedupeKey: `${orgId}:${evaluation.detectorKey}`,
 							fingerprintsJson: entries,
 							reopenCount: 0,
 							lastReopenedAt: null,
-							createdAt: new Date(nowMs),
-							updatedAt: new Date(nowMs),
+							createdAt: nowMs,
+							updatedAt: nowMs,
 						}
 						// `anomaly_incidents_open_detector_idx` allows one open incident
 						// per detector. The org claim is a bare TTL CAS, so a tick that
@@ -1653,9 +1641,12 @@ const make: Effect.Effect<
 						// reach here for the same detector; the loser must not create a
 						// second incident or enqueue a second triage.
 						const insertedIncident = yield* dbExecute((db) =>
-							db.insert(anomalyIncidents).values(insertValues).onConflictDoNothing().returning({
-								id: anomalyIncidents.id,
-							}),
+							db.run(
+								PG.insertInto(AnomalyIncidents)
+									.values(insertValues)
+									.onConflictDoNothing()
+									.returning("id"),
+							),
 						)
 						if (insertedIncident.length === 0) {
 							yield* Effect.logWarning(
@@ -1715,15 +1706,11 @@ const make: Effect.Effect<
 								: null
 						if (triageStatus !== null) {
 							yield* dbExecute((db) =>
-								db
-									.update(anomalyIncidents)
-									.set({ triageStatus, updatedAt: new Date(nowMs) })
-									.where(
-										and(
-											eq(anomalyIncidents.orgId, orgId),
-											eq(anomalyIncidents.id, incidentId),
-										),
-									),
+								db.run(
+									PG.update(AnomalyIncidents)
+										.set({ triageStatus, updatedAt: nowMs })
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
+								),
 							)
 						}
 					}
@@ -1763,31 +1750,30 @@ const make: Effect.Effect<
 								lastObservedValue: evaluation.value,
 								lastSampleCount: evaluation.sampleCount,
 								severity,
-								lastTriggeredAt: new Date(nowMs),
-								updatedAt: new Date(nowMs),
+								lastTriggeredAt: nowMs,
+								updatedAt: nowMs,
 								...(fingerprintsJson !== undefined ? { fingerprintsJson } : undefined),
 							}
 						: {
 								severity,
-								lastTriggeredAt: new Date(nowMs),
-								updatedAt: new Date(nowMs),
+								lastTriggeredAt: nowMs,
+								updatedAt: nowMs,
 								...(fingerprintsJson !== undefined ? { fingerprintsJson } : undefined),
 							}
 					const updated = yield* dbExecute((db) =>
-						db
-							.update(anomalyIncidents)
-							.set(continueSet)
-							.where(
-								and(
-									eq(anomalyIncidents.orgId, orgId),
-									eq(anomalyIncidents.id, incidentId),
+						db.run(
+							PG.update(AnomalyIncidents)
+								.set(continueSet)
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(incidentId),
 									// Guard against a manual resolve landing between the
 									// state read and this update — never "continue" a
 									// resolved incident.
-									eq(anomalyIncidents.status, "open"),
-								),
-							)
-							.returning({ id: anomalyIncidents.id }),
+									$.status.eq("open"),
+								])
+								.returning("id"),
+						),
 					)
 					if (updated.length === 0) {
 						// Externally resolved (manual resolve raced the tick): drop the
@@ -1825,7 +1811,7 @@ const make: Effect.Effect<
 					const isPrimary =
 						runtime === undefined || runtime.row.detectorKey === evaluation.detectorKey
 					const recoverySet = {
-						updatedAt: new Date(nowMs),
+						updatedAt: nowMs,
 						...(isPrimary
 							? {
 									lastObservedValue: evaluation.value,
@@ -1837,17 +1823,12 @@ const make: Effect.Effect<
 							: undefined),
 					}
 					const updated = yield* dbExecute((db) =>
-						db
-							.update(anomalyIncidents)
-							.set(recoverySet)
-							.where(
-								and(
-									eq(anomalyIncidents.orgId, orgId),
-									eq(anomalyIncidents.id, incidentId),
-									eq(anomalyIncidents.status, "open"),
-								),
-							)
-							.returning({ id: anomalyIncidents.id }),
+						db.run(
+							PG.update(AnomalyIncidents)
+								.set(recoverySet)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId), $.status.eq("open")])
+								.returning("id"),
+						),
 					)
 					if (updated.length === 0) {
 						openIncidentId = null
@@ -1890,22 +1871,17 @@ const make: Effect.Effect<
 					// no `LIMIT 1`: the one row it returned could be the very row the
 					// overlay removes, hiding a genuinely live sibling behind it.
 					const persistedOtherStates = yield* dbExecute((db) =>
-						db
-							.select({
-								detectorKey: anomalyDetectorStates.detectorKey,
-								fingerprintHash: anomalyDetectorStates.fingerprintHash,
-								// Carried so the promotion below can write the incident's
-								// `last_sample_count` from the promoted series' own count.
-								lastSampleCount: anomalyDetectorStates.lastSampleCount,
-							})
-							.from(anomalyDetectorStates)
-							.where(
-								and(
-									eq(anomalyDetectorStates.orgId, orgId),
-									eq(anomalyDetectorStates.openIncidentId, incidentId),
-									ne(anomalyDetectorStates.detectorKey, evaluation.detectorKey),
-								),
-							),
+						db.run(
+							PG.from(AnomalyDetectorStates)
+								// lastSampleCount is carried so the promotion below can write the
+								// incident's `last_sample_count` from the promoted series' own count.
+								.select("detectorKey", "fingerprintHash", "lastSampleCount")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.openIncidentId.eq(incidentId),
+									$.detectorKey.neq(evaluation.detectorKey),
+								]),
+						),
 					)
 					const otherStates = effectiveOtherStates({
 						persisted: persistedOtherStates,
@@ -1915,29 +1891,25 @@ const make: Effect.Effect<
 					})
 					if (otherStates.length === 0) {
 						yield* dbExecute((db) =>
-							db
-								.update(anomalyIncidents)
-								.set({
-									status: "resolved",
-									resolveReason: "returned_to_baseline",
-									resolvedAt: new Date(nowMs),
-									...(isPrimary
-										? {
-												lastObservedValue: evaluation.value,
-												lastSampleCount: evaluation.sampleCount,
-											}
-										: undefined),
-									updatedAt: new Date(nowMs),
-									...(runtime !== undefined && runtime.entries.length > 0
-										? { fingerprintsJson: runtime.entries }
-										: undefined),
-								})
-								.where(
-									and(
-										eq(anomalyIncidents.orgId, orgId),
-										eq(anomalyIncidents.id, incidentId),
-									),
-								),
+							db.run(
+								PG.update(AnomalyIncidents)
+									.set({
+										status: "resolved",
+										resolveReason: "returned_to_baseline",
+										resolvedAt: nowMs,
+										...(isPrimary
+											? {
+													lastObservedValue: evaluation.value,
+													lastSampleCount: evaluation.sampleCount,
+												}
+											: undefined),
+										updatedAt: nowMs,
+										...(runtime !== undefined && runtime.entries.length > 0
+											? { fingerprintsJson: runtime.entries }
+											: undefined),
+									})
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
+							),
 						)
 						incidentById.delete(incidentId)
 						if (runtime !== undefined && runtime.row.signalType === "error_spike") {
@@ -1960,7 +1932,7 @@ const make: Effect.Effect<
 										(entry) => entry.fingerprintHash === next.fingerprintHash,
 									)
 						const detachSet = {
-							updatedAt: new Date(nowMs),
+							updatedAt: nowMs,
 							...(runtime !== undefined && runtime.entries.length > 0
 								? {
 										fingerprintsJson: runtime.entries,
@@ -1987,15 +1959,11 @@ const make: Effect.Effect<
 								: undefined),
 						}
 						yield* dbExecute((db) =>
-							db
-								.update(anomalyIncidents)
-								.set(detachSet)
-								.where(
-									and(
-										eq(anomalyIncidents.orgId, orgId),
-										eq(anomalyIncidents.id, incidentId),
-									),
-								),
+							db.run(
+								PG.update(AnomalyIncidents)
+									.set(detachSet)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
+							),
 						)
 						if (runtime !== undefined) {
 							runtime.row = { ...runtime.row, ...detachSet }
@@ -2019,11 +1987,11 @@ const make: Effect.Effect<
 					lastValue: evaluation.value,
 					baselineMedian: evaluation.baselineMedian,
 					lastSampleCount: evaluation.sampleCount,
-					lastEvaluatedAt: new Date(nowMs),
+					lastEvaluatedAt: nowMs,
 					openIncidentId,
-					lastResolvedAt: msToDate(lastResolvedAt),
+					lastResolvedAt,
 					lastIncidentId,
-					updatedAt: new Date(nowMs),
+					updatedAt: nowMs,
 				})
 			}),
 			{ discard: true },
@@ -2034,50 +2002,46 @@ const make: Effect.Effect<
 		// No-data sweep: open incidents whose series stopped reporting entirely
 		// resolve after an hour of silence (mirrors ErrorsService auto-resolve).
 		const staleIncidents = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(anomalyIncidents)
-				.where(
-					and(
-						eq(anomalyIncidents.orgId, orgId),
-						eq(anomalyIncidents.status, "open"),
-						lt(anomalyIncidents.lastTriggeredAt, new Date(nowMs - NO_DATA_RESOLVE_MS)),
-					),
-				),
+			db.run(
+				PG.from(AnomalyIncidents)
+					.select()
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.status.eq("open"),
+						$.lastTriggeredAt.lt(nowMs - NO_DATA_RESOLVE_MS),
+					]),
+			),
 		)
 		yield* Effect.forEach(
 			staleIncidents,
 			Effect.fnUntraced(function* (incident) {
 				yield* dbExecute((db) =>
-					db
-						.update(anomalyIncidents)
-						.set({
-							status: "resolved",
-							resolveReason: "no_data",
-							resolvedAt: new Date(nowMs),
-							updatedAt: new Date(nowMs),
-						})
-						.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incident.id))),
+					db.run(
+						PG.update(AnomalyIncidents)
+							.set({
+								status: "resolved",
+								resolveReason: "no_data",
+								resolvedAt: nowMs,
+								updatedAt: nowMs,
+							})
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(incident.id)]),
+					),
 				)
 				// Matched on openIncidentId so every series feeding a consolidated
 				// incident is cleared, not just the primary.
 				yield* dbExecute((db) =>
-					db
-						.update(anomalyDetectorStates)
-						.set({
-							openIncidentId: null,
-							lastResolvedAt: new Date(nowMs),
-							lastIncidentId: incident.id,
-							consecutiveBreaches: 0,
-							consecutiveHealthy: 0,
-							updatedAt: new Date(nowMs),
-						})
-						.where(
-							and(
-								eq(anomalyDetectorStates.orgId, orgId),
-								eq(anomalyDetectorStates.openIncidentId, incident.id),
-							),
-						),
+					db.run(
+						PG.update(AnomalyDetectorStates)
+							.set({
+								openIncidentId: null,
+								lastResolvedAt: nowMs,
+								lastIncidentId: incident.id,
+								consecutiveBreaches: 0,
+								consecutiveHealthy: 0,
+								updatedAt: nowMs,
+							})
+							.where(($) => [$.orgId.eq(orgId), $.openIncidentId.eq(incident.id)]),
+					),
 				)
 				stats.incidentsResolved += 1
 			}),
@@ -2086,14 +2050,12 @@ const make: Effect.Effect<
 
 		if (runRetention) {
 			yield* dbExecute((db) =>
-				db
-					.delete(anomalyDetectorStates)
-					.where(
-						and(
-							eq(anomalyDetectorStates.orgId, orgId),
-							lt(anomalyDetectorStates.lastEvaluatedAt, new Date(nowMs - STATE_RETENTION_MS)),
-						),
-					),
+				db.run(
+					PG.deleteFrom(AnomalyDetectorStates).where(($) => [
+						$.orgId.eq(orgId),
+						$.lastEvaluatedAt.lt(nowMs - STATE_RETENTION_MS),
+					]),
+				),
 			)
 		}
 
@@ -2106,10 +2068,10 @@ const make: Effect.Effect<
 			const runRetention = Math.floor(nowMs / TICK_CADENCE_MS) % RETENTION_PHASE_EVERY_N_TICKS === 0
 
 			const ingestOrgs = yield* dbExecute((db) =>
-				db.selectDistinct({ orgId: orgIngestKeys.orgId }).from(orgIngestKeys),
+				db.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
 			)
 			const settingsOrgs = yield* dbExecute((db) =>
-				db.selectDistinct({ orgId: anomalyDetectorSettings.orgId }).from(anomalyDetectorSettings),
+				db.run(PG.from(AnomalyDetectorSettings).select("orgId").distinct()),
 			)
 			const knownOrgs = new Set<OrgId>(
 				[...ingestOrgs, ...settingsOrgs].map((r) => decodeOrgIdSync(r.orgId)),
@@ -2119,10 +2081,12 @@ const make: Effect.Effect<
 			// no-data sweep (NO_DATA_RESOLVE_MS) can resolve incidents whose series
 			// went silent.
 			const openIncidentRows = yield* dbExecute((db) =>
-				db
-					.selectDistinct({ orgId: anomalyIncidents.orgId })
-					.from(anomalyIncidents)
-					.where(eq(anomalyIncidents.status, "open")),
+				db.run(
+					PG.from(AnomalyIncidents)
+						.select("orgId")
+						.distinct()
+						.where(($) => [$.status.eq("open")]),
+				),
 			)
 			const mustProcess = new Set<OrgId>(openIncidentRows.map((r) => decodeOrgIdSync(r.orgId)))
 			const candidates = new Set<OrgId>([...knownOrgs, ...mustProcess])
@@ -2206,9 +2170,9 @@ const make: Effect.Effect<
 
 			const failureCount = yield* Ref.get(orgFailures)
 			yield* Effect.annotateCurrentSpan({
-				orgsKnown: knownOrgs.size,
-				orgsProcessed: orgsToProcess.length,
-				orgFailures: failureCount,
+				"maple.anomaly.known_orgs": knownOrgs.size,
+				"maple.anomaly.orgs_processed": orgsToProcess.length,
+				"maple.anomaly.org_failures": failureCount,
 				...totals,
 			})
 

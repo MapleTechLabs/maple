@@ -51,7 +51,7 @@ export function InlineEditableTitle({
 							setIsEditing(false)
 						}
 					}}
-					className="text-2xl font-bold tracking-tight bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full"
+					className="font-display text-2xl font-semibold tracking-tight leading-[1.1] bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full"
 				/>
 			</form>
 		)
@@ -70,7 +70,7 @@ export function InlineEditableTitle({
 			}}
 			aria-disabled={readOnly}
 			className={cn(
-				"text-2xl font-bold tracking-tight break-words",
+				"font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]",
 				!readOnly && "cursor-pointer hover:text-foreground/80",
 				isBlank && "text-muted-foreground",
 			)}

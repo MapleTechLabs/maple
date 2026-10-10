@@ -1,6 +1,6 @@
 import { DailySpendResponse, DailyVolume, WarehouseQueryError } from "@maple/domain/http"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, Effect, Layer } from "effect"
+import { Context, DateTime, Effect, Layer } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -87,7 +87,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				const byDay = new Map<string, { logsGB: number; tracesGB: number; metricsGB: number }>()
 				for (const row of signalRows) {
-					byDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), {
+					byDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), {
 						logsGB: row.logBytes / BYTES_PER_BILLED_GB,
 						tracesGB: row.traceBytes / BYTES_PER_BILLED_GB,
 						metricsGB: row.metricBytes / BYTES_PER_BILLED_GB,
@@ -108,12 +108,12 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				const sessionsByDay = new Map<string, number>()
 				for (const row of sessionRows) {
-					sessionsByDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), row.sessions)
+					sessionsByDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), row.sessions)
 				}
 
 				const eventsByDay = new Map<string, number>()
 				for (const row of eventRows) {
-					eventsByDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), row.events)
+					eventsByDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), row.events)
 				}
 
 				const days: DailyVolume[] = []
@@ -136,7 +136,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"billing.days": days.length,
+					"maple.billing.days": days.length,
 				})
 
 				return new DailySpendResponse({

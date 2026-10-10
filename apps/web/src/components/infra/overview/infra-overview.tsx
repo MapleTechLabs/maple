@@ -86,9 +86,9 @@ const SOURCE_ICON: Record<SourceId, IconComponent> = {
 	planetscale: PlanetScaleIcon,
 } satisfies Record<SourceId, IconComponent>
 
-function SourceMark({ id, size }: { id: SourceId; size: number }) {
+export function SourceMark({ id, size, className }: { id: SourceId; size: number; className?: string }) {
 	const Icon = SOURCE_ICON[id]
-	return <Icon size={size} className="shrink-0 text-foreground" />
+	return <Icon size={size} className={cn("shrink-0 text-foreground", className)} />
 }
 
 const SOURCE_SURFACES: Record<SourceId, ReadonlyArray<NavSurface>> = {
@@ -403,7 +403,7 @@ export function NeedsAttention({
  * ----------------------------------------------------------------------------------------------*/
 
 const SEGMENT_CLASS: Record<HealthSegment["key"], string> = {
-	ok: "bg-muted-foreground/35",
+	ok: TONE_FILL.ok,
 	elevated: TONE_FILL.warn,
 	saturated: TONE_FILL.crit,
 	// Hatched, not a fill: there is no limit to measure against, and a plain

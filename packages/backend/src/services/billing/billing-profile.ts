@@ -89,7 +89,7 @@ export const ensureStripeCustomerId = (
 		// (and the next call here) sees the Stripe id.
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 		const linked = stripeCustomerIdOf(response)
-		yield* Effect.annotateCurrentSpan({ "billing.stripe_customer_created": Option.isSome(linked) })
+		yield* Effect.annotateCurrentSpan({ "maple.billing.stripe_customer_created": Option.isSome(linked) })
 		if (Option.isSome(linked)) return linked.value
 		return yield* new BillingProfileUnavailableError({
 			message: "Autumn returned no Stripe customer id after create_in_stripe",

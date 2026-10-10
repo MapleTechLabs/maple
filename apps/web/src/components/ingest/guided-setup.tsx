@@ -1,5 +1,6 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { useAuth } from "@clerk/clerk-react"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
@@ -187,54 +188,53 @@ export function ConnectInstructions({
 			.replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
 	}
 
-	const tabs = (
-		<div className={variant === "boxed" ? "rounded-md border bg-card overflow-hidden" : undefined}>
-			<Tabs defaultValue="install" className="flex flex-col">
-				<div className={cn("border-b", variant === "boxed" ? "px-3" : "px-4")}>
-					<TabsList variant="underline" className="h-9">
-						<TabsTrigger value="install">Install</TabsTrigger>
-						<TabsTrigger value="instrument">Instrument</TabsTrigger>
-						<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
-					</TabsList>
-				</div>
+	const tabsBody = (
+		<Tabs defaultValue="install" className="flex flex-col">
+			<div className={cn("border-b", variant === "boxed" ? "px-3" : "px-4")}>
+				<TabsList variant="underline" className="h-9">
+					<TabsTrigger value="install">Install</TabsTrigger>
+					<TabsTrigger value="instrument">Instrument</TabsTrigger>
+					<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
+				</TabsList>
+			</div>
 
-				<TabsContent value="install" className={cn("overflow-auto mt-0", contentPadding)}>
-					{typeof snippet.install === "string" ? (
-						<CodeBlock code={snippet.install} language="shell" />
-					) : (
-						<PackageManagerCodeBlock packages={snippet.install.packages} />
-					)}
-				</TabsContent>
+			<TabsContent value="install" className={cn("overflow-auto mt-0", contentPadding)}>
+				{typeof snippet.install === "string" ? (
+					<CodeBlock code={snippet.install} language="shell" />
+				) : (
+					<PackageManagerCodeBlock packages={snippet.install.packages} />
+				)}
+			</TabsContent>
 
-				<TabsContent value="instrument" className={cn("overflow-auto mt-0", contentPadding)}>
-					{/* The snippet carries the org's ingest key in plain text and the dashboard
-					    records itself with rrweb — block the block, not just the key. */}
-					<CodeBlock
-						code={interpolate(snippet.instrument)}
-						language={snippet.label.toLowerCase()}
-						className={REPLAY_BLOCK_CLASS}
-					/>
-				</TabsContent>
+			<TabsContent value="instrument" className={cn("overflow-auto mt-0", contentPadding)}>
+				{/* The snippet carries the org's ingest key in plain text and the dashboard
+				    records itself with rrweb — block the block, not just the key. */}
+				<CodeBlock
+					code={interpolate(snippet.instrument)}
+					language={snippet.label.toLowerCase()}
+					className={REPLAY_BLOCK_CLASS}
+				/>
+			</TabsContent>
 
-				<TabsContent
-					value="claude-code"
-					className={cn("overflow-auto mt-0 space-y-2", contentPadding)}
-				>
-					<p className="text-xs text-muted-foreground">
-						Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
-						<InlineCode>maple-onboard</InlineCode> skill walks every service in the repo, installs
-						OpenTelemetry, wires traces / logs / metrics, and verifies the bootstrap end-to-end.
-					</p>
-					<CodeBlock code={ONBOARD_SKILL_COMMAND} language="shell" />
-					<CodeBlock
-						code={onboardSkillPrompt(ingestUrl, apiKey)}
-						language="shell"
-						className={REPLAY_BLOCK_CLASS}
-					/>
-				</TabsContent>
-			</Tabs>
-		</div>
+			<TabsContent
+				value="claude-code"
+				className={cn("overflow-auto mt-0 space-y-2", contentPadding)}
+			>
+				<p className="text-xs text-muted-foreground">
+					Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
+					<InlineCode>maple-onboard</InlineCode> skill walks every service in the repo, installs
+					OpenTelemetry, wires traces / logs / metrics, and verifies the bootstrap end-to-end.
+				</p>
+				<CodeBlock code={ONBOARD_SKILL_COMMAND} language="shell" />
+				<CodeBlock
+					code={onboardSkillPrompt(ingestUrl, apiKey)}
+					language="shell"
+					className={REPLAY_BLOCK_CLASS}
+				/>
+			</TabsContent>
+		</Tabs>
 	)
+	const tabs = variant === "boxed" ? <Panel>{tabsBody}</Panel> : <div>{tabsBody}</div>
 
 	if (!showCredentials) return tabs
 

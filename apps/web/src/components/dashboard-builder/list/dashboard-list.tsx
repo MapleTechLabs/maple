@@ -6,6 +6,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
@@ -205,7 +206,7 @@ function DashboardRow({
 					onClick={() => onToggleFavorite(dashboard.id)}
 					className={isFavorite ? "text-primary" : "text-muted-foreground/40"}
 				>
-					{isFavorite ? <StarFilledIcon size={14} /> : <StarIcon size={14} />}
+					{isFavorite ? <StarFilledIcon /> : <StarIcon />}
 				</IconButton>
 				<DashboardRowMenu
 					dashboard={dashboard}
@@ -383,7 +384,6 @@ export function DashboardList({
 					options={SCOPE_OPTIONS}
 					value={scope}
 					onChange={onScopeChange}
-					size="sm"
 					aria-label="Filter dashboards by favorite"
 					className="shrink-0"
 				/>
@@ -411,35 +411,35 @@ export function DashboardList({
 			{nothingAtAll ? (
 				<FirstRunEmpty readOnly={readOnly} onCreate={onCreate} />
 			) : nothingMatched ? (
-				<Empty className="py-14">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<MagnifierIcon size={17} />
-						</EmptyMedia>
-						<EmptyTitle>
-							{searching
-								? `No dashboard matches “${query.trim()}”`
-								: "No dashboard carries every selected tag"}
-						</EmptyTitle>
-						<EmptyDescription>
-							{searching
-								? "Search covers name, description and tags. A template might mention it."
-								: "Tags combine with AND. Drop one to widen the list."}
-						</EmptyDescription>
-					</EmptyHeader>
-					<div className="flex items-center gap-2">
-						{searching && (
-							<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
-								Clear search
-							</Button>
-						)}
-						{tags.length > 0 && (
-							<Button variant="outline" size="sm" onClick={() => onTagsChange([])}>
-								Show all
-							</Button>
-						)}
-					</div>
-				</Empty>
+				<FilteredEmpty
+					noun="dashboards"
+					className="py-14"
+					icon={<MagnifierIcon size={17} />}
+					title={
+						searching
+							? `No dashboard matches “${query.trim()}”`
+							: "No dashboard carries every selected tag"
+					}
+					description={
+						searching
+							? "Search covers name, description and tags. A template might mention it."
+							: "Tags combine with AND. Drop one to widen the list."
+					}
+					detail={
+						<div className="flex items-center gap-2">
+							{searching && (
+								<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
+									Clear search
+								</Button>
+							)}
+							{tags.length > 0 && (
+								<Button variant="outline" size="sm" onClick={() => onTagsChange([])}>
+									Show all
+								</Button>
+							)}
+						</div>
+					}
+				/>
 			) : scopeHidEverything ? (
 				<Empty className="py-14">
 					<EmptyHeader>
@@ -547,7 +547,7 @@ function SortMenu({
 }) {
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button variant="outline" size="sm" className="shrink-0" />}>
+			<DropdownMenuTrigger render={<Button variant="outline" className="shrink-0" />}>
 				{SORT_LABELS[sort]}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start">
@@ -589,7 +589,7 @@ function TagFilterMenu({
 	if (allTags.length === 0) {
 		return (
 			<DisabledReason reason="No dashboard carries a tag yet">
-				<Button variant="outline" size="sm" disabled className="shrink-0">
+				<Button variant="outline" disabled className="shrink-0">
 					Tags
 				</Button>
 			</DisabledReason>
@@ -601,6 +601,7 @@ function TagFilterMenu({
 			clearLabel={() => "Clear tags"}
 			emptyMessage="No matching tags"
 			mode="trigger"
+			triggerSize="default"
 			onChange={onChange}
 			options={allTags.map((tag) => ({ value: tag }))}
 			searchPlaceholder="Filter tags…"

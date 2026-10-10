@@ -64,7 +64,7 @@ const connection = (
 					// A connection that drops part-way through is what the reconnect below is for: the
 					// turn is still running and the events already have their seq. A session that is
 					// actually gone fails the SUBSCRIPTION instead, which is terminal.
-					Stream.catchCause(() => Stream.empty),
+					Stream.ignoreCause({ log: "Debug" }),
 					Stream.decodeText(),
 					// The buffer is the tail of a frame that spanned two chunks; whole frames go on.
 					Stream.mapAccumArray(

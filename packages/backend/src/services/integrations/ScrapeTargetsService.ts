@@ -20,9 +20,15 @@ import {
 	type CreateScrapeTargetRequest,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
-import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
-import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	ScrapeTargetChecks,
+	ScrapeTargets,
+	type ScrapeTargetCheckRow,
+	type ScrapeTargetRow,
+} from "@maple/db/tables"
+import { Array as Arr, Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
@@ -31,7 +37,8 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	BasicCredentialsSchema,
@@ -50,18 +57,71 @@ import {
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
-type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
+type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
+type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
+
+/** One scrape attempt as reported by the scraper loop or a manual probe. */
+export interface ScrapeResultReport {
+	readonly targetId: ScrapeTargetId
+	readonly scrapedAt: number
+	readonly error: string | null
+	readonly subTargetKey?: string | null
+}
 
 /**
- * Accumulated row state for one target across a batch of scrape results — the
- * value a sequence of per-result UPDATEs would have converged on. `lastScrapeAt`
- * is absent when the batch held no success, leaving the stored value untouched.
+ * Row state one target converges on after applying its results in order.
+ * `lastScrapeAt` is null when no result succeeded, leaving the stored value untouched.
  */
-interface ScrapeTargetOutcome {
-	lastScrapeAt?: Date
-	lastScrapeError?: string | null
-	updatedAt: Date
+export interface ScrapeTargetSummary {
+	readonly lastScrapeAt: number | null
+	readonly lastScrapeError: string | null
+	readonly updatedAt: number
+	/** Newest `scrapedAt`, the furthest the write may advance the row to. */
+	readonly reportedAt: number
 }
+
+const applyScrapeResult = (
+	previous: ScrapeTargetSummary | undefined,
+	result: ScrapeResultReport,
+): ScrapeTargetSummary => {
+	// Discovered sub-targets roll up: any branch failure surfaces branch-prefixed.
+	// Per-branch health stays visible in check history via the per-branch `instance`.
+	const error =
+		result.error !== null && result.subTargetKey
+			? `[branch:${result.subTargetKey}] ${result.error}`
+			: result.error
+	const scrapedAt = result.scrapedAt
+	return {
+		// Failure keeps lastScrapeAt at the last good scrape so data gaps stay visible.
+		lastScrapeAt: error === null ? scrapedAt : (previous?.lastScrapeAt ?? null),
+		lastScrapeError: error,
+		updatedAt: scrapedAt,
+		reportedAt:
+			previous !== undefined && previous.reportedAt > scrapedAt ? previous.reportedAt : scrapedAt,
+	}
+}
+
+/**
+ * Folds a report into the row state per target that one UPDATE per result, in
+ * order, would have left behind. Only that final state was ever durable, so the
+ * old per-result writes cost ~95k UPDATEs a day to persist ~8k outcomes.
+ */
+export const summarizeScrapeResults = (
+	results: ReadonlyArray<ScrapeResultReport>,
+): ReadonlyMap<ScrapeTargetId, ScrapeTargetSummary> =>
+	new Map(
+		Object.values(Arr.groupBy(results, (result) => result.targetId)).map(
+			(group) =>
+				[
+					Arr.headNonEmpty(group).targetId,
+					Arr.reduce(
+						Arr.tailNonEmpty(group),
+						applyScrapeResult(undefined, Arr.headNonEmpty(group)),
+						applyScrapeResult,
+					),
+				] as const,
+		),
+	)
 
 /**
  * Mutation options for the scrape-target write paths. Integration-owned rows
@@ -130,7 +190,7 @@ export interface ScrapeTargetsServiceApi {
 	) => Effect.Effect<ScrapeTargetDeleteResponse, ScrapeTargetNotFoundError | ScrapeTargetPersistenceError>
 	readonly listAllEnabled: (
 		interval?: ScrapeIntervalSeconds,
-	) => Effect.Effect<ReadonlyArray<ScrapeTargetRow>, ScrapeTargetPersistenceError>
+	) => Effect.Effect<ReadonlyArray<EnabledScrapeTarget>, ScrapeTargetPersistenceError>
 	/**
 	 * The request headers a target's stored credential decrypts to (an
 	 * `Authorization` entry, or `{}` for `none`). For managed PlanetScale rows
@@ -139,7 +199,7 @@ export interface ScrapeTargetsServiceApi {
 	 * for it (branch scrapes carry a signed URL).
 	 */
 	readonly authHeaders: (
-		row: ScrapeTargetRow,
+		row: ScrapeTargetCredentials,
 	) => Effect.Effect<Record<string, string>, ScrapeTargetEncryptionError | PlanetScaleAccessTokenError>
 	readonly recordScrapeResults: (
 		results: ReadonlyArray<{
@@ -279,8 +339,13 @@ const validateAuthCredentials = (authType: string, authCredentials: string | nul
 	)
 }
 
+/** A row the scraper lists, its labels as stored. */
+export type EnabledScrapeTarget = Omit<ScrapeTargetRow, "labelsJson"> & { readonly labelsJson: unknown }
+/** What resolving a target's credential reads: everything but its labels. */
+type ScrapeTargetCredentials = Omit<ScrapeTargetRow, "labelsJson">
+
 const storedConfigInvalid = (
-	row: ScrapeTargetRow,
+	row: ScrapeTargetCredentials,
 	component: ScrapeTargetStoredConfigInvalidError["component"],
 	cause: unknown,
 ) =>
@@ -292,7 +357,7 @@ const storedConfigInvalid = (
 	})
 
 const decodeStored = <A, E>(
-	row: ScrapeTargetRow,
+	row: ScrapeTargetCredentials,
 	component: ScrapeTargetStoredConfigInvalidError["component"],
 	decode: (value: unknown) => Effect.Effect<A, E>,
 	value: unknown,
@@ -332,22 +397,23 @@ const rowToResponse = Effect.fn("ScrapeTargetsService.rowToResponse")(function* 
 		row,
 		"created_at",
 		Schema.decodeUnknownEffect(IsoDateTimeString),
-		row.createdAt.toISOString(),
+		new Date(row.createdAt).toISOString(),
 	)
 	const updatedAt = yield* decodeStored(
 		row,
 		"updated_at",
 		Schema.decodeUnknownEffect(IsoDateTimeString),
-		row.updatedAt.toISOString(),
+		new Date(row.updatedAt).toISOString(),
 	)
-	const lastScrapeAt = row.lastScrapeAt
-		? yield* decodeStored(
-				row,
-				"last_scrape_at",
-				Schema.decodeUnknownEffect(IsoDateTimeString),
-				row.lastScrapeAt.toISOString(),
-			)
-		: null
+	const lastScrapeAt =
+		row.lastScrapeAt !== null
+			? yield* decodeStored(
+					row,
+					"last_scrape_at",
+					Schema.decodeUnknownEffect(IsoDateTimeString),
+					new Date(row.lastScrapeAt).toISOString(),
+				)
+			: null
 	return new ScrapeTargetResponse({
 		id,
 		name: row.name,
@@ -507,6 +573,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "ScrapeTargetsService", toPersistenceError)
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
@@ -520,15 +587,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
 							.select()
-							.from(scrapeTargets)
-							.where(and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, targetId)))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 
 				return Option.fromNullishOr(rows[0])
 			})
@@ -552,27 +618,25 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			// is resolved (and refreshed) at scrape time. Everything else decrypts the
 			// row's stored credentials.
 			const authHeadersForRow = Effect.fn("ScrapeTargetsService.authHeadersForRow")(function* (
-				row: ScrapeTargetRow,
+				row: ScrapeTargetCredentials,
 			) {
 				if (row.authType !== "planetscale_oauth") {
 					return yield* buildScrapeAuthHeaders(row, encryptionKey)
 				}
-				const orgId = yield* Schema.decodeEffect(OrgId)(row.orgId).pipe(Effect.orDie)
-				const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
+				const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 				return { Authorization: planetScaleBearerHeader(accessToken) }
 			})
 
 			const list = Effect.fn("ScrapeTargetsService.list")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
 							.select()
-							.from(scrapeTargets)
-							.where(eq(scrapeTargets.orgId, orgId))
-							.orderBy(desc(scrapeTargets.createdAt), desc(scrapeTargets.id)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(["createdAt", "desc"], ["id", "desc"]),
+					),
+				)
 
 				return new ScrapeTargetsListResponse({
 					targets: yield* Effect.forEach(rows, rowToResponse),
@@ -583,7 +647,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const row = yield* requireTarget(orgId, targetId)
 				return yield* rowToResponse(row)
 			})
@@ -699,10 +763,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const now = yield* Clock.currentTimeMillis
 				const id = decodeTargetIdSync(randomUUID())
 
-				const inserted = yield* database
-					.execute((db) =>
-						db
-							.insert(scrapeTargets)
+				const inserted = yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(ScrapeTargets)
 							.values({
 								id,
 								orgId,
@@ -717,12 +780,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 								authType,
 								...credentialFields,
 								enabled: request.enabled !== false,
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
+								createdAt: now,
+								updatedAt: now,
 							})
-							.returning({ id: scrapeTargets.id }),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.returning("id"),
+					),
+				)
 				if (inserted.length !== 1) {
 					return yield* Effect.fail(
 						new ScrapeTargetPersistenceError({
@@ -785,7 +848,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				request: UpdateScrapeTargetRequest,
 				options?: ScrapeTargetMutationOptions,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const existing = yield* requireTarget(orgId, targetId)
 				yield* rejectManaged(existing, options, "edit")
 				const isPlanetScale = existing.targetType === "planetscale"
@@ -843,7 +906,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const labels = yield* validateLabelsJson(request.labelsJson)
 
 				const now = yield* Clock.currentTimeMillis
-				const updates: Partial<typeof scrapeTargets.$inferInsert> = { updatedAt: msToDate(now) }
+				const updates: MutableScrapeTargetSet = {
+					updatedAt: now,
+				}
 
 				// Track URL changes separately for the credential-origin check below.
 				let nextUrl: string | null = null
@@ -945,14 +1010,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					)
 				}
 
-				yield* database
-					.execute((db) =>
-						db
-							.update(scrapeTargets)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(ScrapeTargets)
 							.set(updates)
-							.where(and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, targetId))),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)]),
+					),
+				)
 
 				const row = yield* selectById(orgId, targetId)
 				if (Option.isNone(row)) {
@@ -982,14 +1046,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
-							.delete(scrapeTargets)
-							.where(and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, targetId)))
-							.returning({ id: scrapeTargets.id }),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ScrapeTargets)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+							.returning("id"),
+					),
+				)
 
 				const deleted = Option.fromNullishOr(rows[0])
 				if (Option.isNone(deleted)) {
@@ -1013,7 +1076,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				targetId: ScrapeTargetId,
 				options?: ScrapeTargetMutationOptions,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				yield* rejectManaged(yield* requireTarget(orgId, targetId), options, "remove")
 				return yield* removeRow(orgId, targetId)
 			})
@@ -1022,28 +1085,25 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				return yield* removeRow(orgId, targetId)
 			})
 
 			const listAllEnabled = Effect.fn("ScrapeTargetsService.listAllEnabled")(function* (
 				interval?: ScrapeIntervalSeconds,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
-							.select()
-							.from(scrapeTargets)
-							.where(
-								interval === undefined
-									? eq(scrapeTargets.enabled, true)
-									: and(
-											eq(scrapeTargets.enabled, true),
-											eq(scrapeTargets.scrapeIntervalSeconds, interval),
-										),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
+							// Labels as stored: the scraper reads a malformed document as no labels
+							// rather than failing every org's target list.
+							.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
+							.where(($) => [
+								$.enabled.eq(true),
+								interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
+							]),
+					),
+				)
 
 				return rows
 			})
@@ -1062,42 +1122,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			) {
 				if (results.length === 0) return
 
-				// Fold each target's results into the single row state that applying
-				// them in order would have left behind. The previous implementation
-				// issued one UPDATE per result, but each overwrote the previous one, so
-				// only this accumulated value was ever durable — ~95k writes a day to
-				// persist ~8k outcomes.
-				const outcomeByTarget = new Map<ScrapeTargetId, ScrapeTargetOutcome>()
-				// Newest `scrapedAt` per target, which is what the write below is
-				// allowed to advance the row to. Kept separate from the outcome
-				// because that object is handed straight to drizzle as the SET clause.
-				const reportedAtByTarget = new Map<ScrapeTargetId, Date>()
-				for (const result of results) {
-					// Rollup for discovered sub-targets: any branch success advances
-					// lastScrapeAt; any branch failure surfaces (branch-prefixed) as
-					// lastScrapeError. Per-branch health stays visible in check history
-					// via the per-branch `instance`.
-					const error =
-						result.error !== null && result.subTargetKey
-							? `[branch:${result.subTargetKey}] ${result.error}`
-							: result.error
-					const scrapedAt = new Date(result.scrapedAt)
-					const outcome = outcomeByTarget.get(result.targetId) ?? { updatedAt: scrapedAt }
-					if (error === null) {
-						outcome.lastScrapeAt = scrapedAt
-						outcome.lastScrapeError = null
-					} else {
-						// Failure keeps lastScrapeAt at the last good scrape so data gaps
-						// stay visible alongside the error.
-						outcome.lastScrapeError = error
-					}
-					outcome.updatedAt = scrapedAt
-					outcomeByTarget.set(result.targetId, outcome)
-					const reportedAt = reportedAtByTarget.get(result.targetId)
-					if (reportedAt === undefined || scrapedAt > reportedAt) {
-						reportedAtByTarget.set(result.targetId, scrapedAt)
-					}
-				}
+				const summaryByTarget = summarizeScrapeResults(results)
 
 				const recordChecks = options?.recordChecks !== false
 
@@ -1108,39 +1133,39 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* database
 					.execute((db) =>
 						Effect.gen(function* () {
-							for (const [targetId, outcome] of outcomeByTarget) {
-								const reportedAt = reportedAtByTarget.get(targetId) ?? outcome.updatedAt
-								// Apply only if nothing newer has touched the row. Results reach
-								// this method from two independent producers — the scraper loop,
-								// and the probe `create()` forks in the background — so a batch
-								// can land after a newer one has already been recorded. Without
-								// the guard the late writer wins: the target reports a stale
-								// `lastScrapeAt`, or resurrects an error a newer scrape cleared.
-								// `updatedAt` (not `lastScrapeAt`) is the comparison because a
-								// failing batch leaves `lastScrapeAt` untouched and so cannot
-								// order itself. Equal timestamps still apply, so re-reporting a
-								// batch stays a no-op rather than a drop, and a config edit at
-								// most costs the one in-flight scrape reported before it.
-								yield* db
-									.update(scrapeTargets)
-									.set(outcome)
-									.where(
-										and(
-											eq(scrapeTargets.id, targetId),
-											lte(scrapeTargets.updatedAt, reportedAt),
-										),
-									)
-							}
+							const values = Orm.sql.join(
+								[...summaryByTarget].map(([targetId, summary]) => {
+									const scrapeAt =
+										summary.lastScrapeAt === null
+											? null
+											: msToSqlTimestamp(summary.lastScrapeAt)
+									return Orm.sql`(${targetId}::text, ${scrapeAt}::timestamptz, ${scrapeAt !== null}::boolean, ${summary.lastScrapeError}::text, ${msToSqlTimestamp(summary.updatedAt)}::timestamptz, ${msToSqlTimestamp(summary.reportedAt)}::timestamptz)`
+								}),
+								Orm.sql`, `,
+							)
+							// One UPDATE for the report, skipping rows something newer already wrote
+							// (the scraper loop and create()'s probe both report). Compares `updated_at`:
+							// a failing batch never moves `last_scrape_at`. Equal timestamps still apply.
+							yield* db.execute(Orm.sql`
+								UPDATE scrape_targets AS t SET
+									last_scrape_at = CASE WHEN v.set_scrape_at THEN v.last_scrape_at ELSE t.last_scrape_at END,
+									last_scrape_error = v.last_scrape_error,
+									updated_at = v.updated_at
+								FROM (VALUES ${values}) AS v(id, last_scrape_at, set_scrape_at, last_scrape_error, updated_at, reported_at)
+								WHERE t.id = v.id AND t.updated_at <= v.reported_at`)
 
 							if (!recordChecks) return
 
 							// Durable check history: one row per scheduled scrape attempt.
 							// Results for deleted targets are skipped (the FK would reject
 							// them anyway).
-							const targetRows = yield* db
-								.select({ id: scrapeTargets.id, orgId: scrapeTargets.orgId })
-								.from(scrapeTargets)
-								.where(inArray(scrapeTargets.id, [...outcomeByTarget.keys()]))
+							const [firstTargetId, ...restTargetIds] = [...summaryByTarget.keys()]
+							if (firstTargetId === undefined) return
+							const targetRows = yield* db.run(
+								PG.from(ScrapeTargets)
+									.select("id", "orgId")
+									.where(($) => [$.id.in_(firstTargetId, ...restTargetIds)]),
+							)
 							const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
 
 							const checkRows = results.flatMap((result) => {
@@ -1151,7 +1176,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 										targetId: result.targetId,
 										orgId,
 										subTargetKey: result.subTargetKey ?? "",
-										checkedAt: new Date(result.scrapedAt),
+										checkedAt: result.scrapedAt,
 										error: result.error,
 										durationMs: result.durationMs ?? null,
 										samplesScraped: result.samplesScraped ?? null,
@@ -1161,7 +1186,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							})
 
 							if (checkRows.length > 0) {
-								yield* db.insert(scrapeTargetChecks).values(checkRows)
+								yield* db.run(PG.insertInto(ScrapeTargetChecks).values(checkRows))
 							}
 						}),
 					)
@@ -1181,34 +1206,28 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* requireTarget(orgId, targetId)
 				const limit = Math.min(Math.max(query.limit ?? 50, 1), 500)
 				const offset = Math.max(Math.trunc(query.offset ?? 0), 0)
-				const conditions = [
-					eq(scrapeTargetChecks.targetId, targetId),
-					eq(scrapeTargetChecks.orgId, orgId),
-					...(query.startTime !== undefined
-						? [gte(scrapeTargetChecks.checkedAt, new Date(query.startTime))]
-						: []),
-					...(query.endTime !== undefined
-						? [lte(scrapeTargetChecks.checkedAt, new Date(query.endTime))]
-						: []),
-				]
-				return yield* database
-					.execute((db) =>
-						db
+				return yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargetChecks)
 							.select()
-							.from(scrapeTargetChecks)
-							.where(and(...conditions))
-							.orderBy(desc(scrapeTargetChecks.checkedAt), desc(scrapeTargetChecks.id))
+							.where(($) => [
+								$.targetId.eq(targetId),
+								$.orgId.eq(orgId),
+								query.startTime !== undefined ? $.checkedAt.gte(query.startTime) : undefined,
+								query.endTime !== undefined ? $.checkedAt.lte(query.endTime) : undefined,
+							])
+							.orderBy(["checkedAt", "desc"], ["id", "desc"])
 							.limit(limit)
 							.offset(offset),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 			})
 
 			const probe = Effect.fn("ScrapeTargetsService.probe")(function* (
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, scrapeTargetId: targetId })
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.scrape_target.id": targetId })
 				const row = yield* requireTarget(orgId, targetId)
 				const headers = yield* authHeadersForRow(row)
 
@@ -1286,11 +1305,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					{ recordChecks: false },
 				)
 
-				const updatedRows = yield* database
-					.execute((db) =>
-						db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const updatedRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+							.limit(1),
+					),
+				)
 
 				const updated = Option.fromNullishOr(updatedRows[0])
 				if (Option.isNone(updated)) {
@@ -1303,9 +1325,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				return new ScrapeTargetProbeResponse({
 					success: Exit.isSuccess(requestExit),
-					lastScrapeAt: updated.value.lastScrapeAt
-						? decodeIsoDateTimeStringSync(updated.value.lastScrapeAt.toISOString())
-						: null,
+					lastScrapeAt:
+						updated.value.lastScrapeAt !== null
+							? decodeIsoDateTimeStringSync(new Date(updated.value.lastScrapeAt).toISOString())
+							: null,
 					lastScrapeError: updated.value.lastScrapeError ?? null,
 				})
 			})

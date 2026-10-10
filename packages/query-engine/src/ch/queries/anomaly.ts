@@ -11,10 +11,17 @@
 // observation) and ≤21 sealed same-hour-of-day samples (the baseline) in ONE
 // query; the caller splits rows on `hour === currentHourStart`.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly, orgIdParam } from "../tables"
+import {
+	ErrorEventsByTime,
+	LogsAggregatesHourly,
+	TracesAggregatesHourly,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
@@ -32,7 +39,7 @@ export interface AnomalyTraceSignalsOpts {
 export interface AnomalyTraceSignalsOutput {
 	readonly serviceName: string
 	readonly deploymentEnv: string
-	readonly hour: string
+	readonly hour: DateTime.Utc
 	readonly requestCount: number
 	readonly errorCount: number
 	readonly p95Ms: number
@@ -56,8 +63,8 @@ export function anomalyTraceSignalsQuery(opts: AnomalyTraceSignalsOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.IsEntryPoint.eq(1),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.toHour($.Hour).in_(...opts.hoursOfDay),
 		])
 		.groupBy("serviceName", "deploymentEnv", "hour")
@@ -73,7 +80,7 @@ const WARN_SEVERITIES = ["warn", "warning"] as const
 export interface AnomalyLogVolumeOutput {
 	readonly serviceName: string
 	readonly deploymentEnv: string
-	readonly hour: string
+	readonly hour: DateTime.Utc
 	readonly errorLogCount: number
 	readonly warnLogCount: number
 }
@@ -89,8 +96,8 @@ export function anomalyLogVolumeQuery(opts: AnomalyTraceSignalsOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.toHour($.Hour).in_(...opts.hoursOfDay),
 		])
 		.groupBy("serviceName", "deploymentEnv", "hour")
@@ -121,8 +128,8 @@ export function anomalyErrorSpikeCurrentQuery(opts: { limit?: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash", "deploymentEnv")
 		.orderBy(["count", "desc"])
@@ -151,8 +158,8 @@ export function anomalyErrorSpikeBaselineQuery(opts: { limit?: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lt(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lt(utcSecondsParam("endTime")),
 		])
 		.groupBy("fingerprintHash", "deploymentEnv", "h")
 
@@ -176,7 +183,7 @@ export function anomalyErrorSpikeBaselineQuery(opts: { limit?: number }) {
 // in the window for a single (service, env) or (fingerprint, env) series.
 
 export interface AnomalyTraceSignalTimeseriesOutput {
-	readonly hour: string
+	readonly hour: DateTime.Utc
 	readonly requestCount: number
 	readonly errorCount: number
 	readonly p95Ms: number
@@ -200,8 +207,8 @@ export function anomalyTraceSignalTimeseriesQuery() {
 			$.IsEntryPoint.eq(1),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("hour")
 		.orderBy(["hour", "asc"])
@@ -210,7 +217,7 @@ export function anomalyTraceSignalTimeseriesQuery() {
 }
 
 export interface AnomalyLogVolumeTimeseriesOutput {
-	readonly hour: string
+	readonly hour: DateTime.Utc
 	readonly errorLogCount: number
 }
 
@@ -225,8 +232,8 @@ export function anomalyLogVolumeTimeseriesQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("hour")
 		.orderBy(["hour", "asc"])
@@ -235,7 +242,7 @@ export function anomalyLogVolumeTimeseriesQuery() {
 }
 
 export interface AnomalyErrorSpikeTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 
@@ -255,8 +262,8 @@ export function anomalyErrorSpikeTimeseriesQuery() {
 				$.OrgId.eq(orgIdParam),
 				$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 				$.DeploymentEnv.eq(param.string("deploymentEnv")),
-				$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-				$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+				$.Timestamp.gte(utcSecondsParam("startTime")),
+				$.Timestamp.lte(utcSecondsParam("endTime")),
 			])
 			.groupBy("bucket")
 			.orderBy(["bucket", "asc"])
@@ -283,8 +290,8 @@ export function anomalyErrorSpikeServiceTimeseriesQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])

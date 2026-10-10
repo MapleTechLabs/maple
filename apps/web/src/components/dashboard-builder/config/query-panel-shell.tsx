@@ -34,7 +34,7 @@ export function CollapseToggle({
 			onClick={onToggle}
 			className="text-muted-foreground hover:text-foreground"
 		>
-			{collapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}
+			{collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
 		</IconButton>
 	)
 }

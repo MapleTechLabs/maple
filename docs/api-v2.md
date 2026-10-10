@@ -6,18 +6,18 @@ The **executable contract is the spec**: `MapleApiV2` in `packages/domain/src/ht
 
 ## Architecture: two tiers
 
-| Tier             | Transport                                                       | Consumers                            | Docs                        | Stability                                    |
-| ---------------- | --------------------------------------------------------------- | ------------------------------------ | --------------------------- | -------------------------------------------- |
-| **Public API**   | `MapleApiV2` HttpApi at `/v2/...`                               | Customers, agents/MCP, the dashboard | `/v2/docs` (OpenAPI/Scalar) | Committed; changes are additive or versioned |
-| **Internal RPC** | Effect RPC (`effect/rpc`) `RpcGroup`s served at `/rpc` | The dashboard only                   | none (private)              | None; changes freely                         |
+| Tier             | Transport                                          | Consumers                            | Docs                                  | Stability                                    |
+| ---------------- | -------------------------------------------------- | ------------------------------------ | ------------------------------------- | -------------------------------------------- |
+| **Public API**   | `MapleApiV2` HttpApi at `/v2/...`                  | Customers, agents/MCP, the dashboard | `/docs`, `/v2/docs` (OpenAPI/Scalar)  | Committed; changes are additive or versioned |
+| **Internal**     | `MapleInternalApi` HttpApi at `/internal/...`      | The dashboard only                   | none (private)                        | None; changes freely                         |
 
-Dashboard-only operations belong in the internal RPC tier: billing checkout/portal, onboarding state, demo seeding, AI chat apply, digest subscription, AI-triage settings, raw warehouse queries, and the error-agent claim/heartbeat/release loop. They use the same tenant resolution and org scoping but are **not** HTTP API groups and never appear in the public OpenAPI. Everything else is public API, and the dashboard consumes the same `/v2` endpoints customers do.
+Dashboard-only operations belong in the internal tier: billing checkout/portal, demo seeding, AI chat apply, digest subscription, AI-triage settings, raw warehouse queries, the error-issue workflow (transitions, comments, leases, escalation policy), integration and code-review settings, organization setup, and BYO ClickHouse configuration. Its groups use `SessionAuthorization`, which refuses API keys, and never appear in the public OpenAPI. Everything else is public API, and the dashboard consumes the same `/v2` endpoints customers do.
 
-The v1 API (`/api/...`) stays mounted while the dashboard migrates group-by-group; each v1 group is deleted once nothing consumes it. The audited group-by-group destination and removal gate live in [`http-api-migration.md`](http-api-migration.md). **The RPC tier is Phase 3 and not built yet**: no `RpcGroup` exists in the repo. Until it does, a new operation goes either to v2 or to the legacy v1 group it would extend. New surface goes to v2; v1 only grows where an existing v1 group already owns the resource.
+There is no v1 API. What remains under `/api/...` is version-neutral and never moves: the `MapleApi` HttpApi (CLI device login and session, MCP OAuth consent, password login, the unauthenticated plan catalog, email unsubscribe), which installed CLIs and other clients we cannot redeploy call by URL, plus raw `HttpRouter` routes for OAuth callbacks, webhook receivers, and worker-to-worker endpoints. New surface goes to v2 or `/internal`, never to `/api`. The retirement history is in [`http-api-migration.md`](http-api-migration.md).
 
 ### Integration endpoints: which tier
 
-Integrations are the one family split across tiers, so the rule is explicit. **The OAuth handshake itself is never an API group in either tier**: the provider redirects a _browser_, so the callback is a raw `HttpRouter` route in `apps/api/src/routes/` that ends in a 302 back to the web app (see `apps/api/src/routes/v1/chat-integration.http.ts`). What lands in an API group is the surrounding control surface: status, begin-install, uninstall, and provider resource lookups.
+Integrations are the one family split across tiers, so the rule is explicit. **The OAuth handshake itself is never an API group in either tier**: the provider redirects a _browser_, so the callback is a raw `HttpRouter` route in `apps/api/src/routes/` that ends in a 302 back to the web app (see `apps/api/src/routes/chat-integration.http.ts`). What lands in an API group is the surrounding control surface: status, begin-install, uninstall, and provider resource lookups.
 
 That control surface is public v2 when a **public v2 resource depends on it**, and internal otherwise. Chat connectors qualify: `/v2/alerts/destinations` accepts `type: "chat"` with a `workspace_id` and a `channel_id`, and the connector's credential never leaves the server, so `GET /v2/integrations/chat_workspaces/{id}/destinations` is the only way any caller (customer, agent, or the dashboard) can discover a valid channel id. Withholding it would ship a public destination type nobody outside the dashboard could construct. The rest of the chat group comes along because splitting one provider across two tiers costs more than it buys; `install` is documented as browser-oriented since a headless caller cannot finish the redirect.
 
@@ -25,11 +25,9 @@ Within that group the role requirement is not uniform. Install, settings, unlink
 
 PlanetScale was the first promotion under that rule, and it shows what "a public dependency" means in practice: infrastructure-as-code setups drive `POST /v2/integrations/planetscale/metrics_token`, and a scripted caller needs a scoped API key, which only v2 has. That is the one step the OAuth flow cannot cover, because PlanetScale's metrics endpoints authenticate with service tokens instead of OAuth bearers. Once one operation of a provider is public the rest follows: splitting one provider across two tiers costs more than it buys, so the whole surface moved (status, connect, organization binding, disconnect, inventory, webhook config, query insights, events). The role split matches the chat group's: `status`, `databases`, `query_insights`, and `events` are ungated because the dashboard and service map render them for every member; everything that writes, plus `organizations` and `webhook_config` (it carries the signing secret), requires org-admin.
 
-Promotion does not imply deletion. PlanetScale's v1 endpoints stay mounted and are marked `deprecated` in the v1 OpenAPI: the dashboard is off them, so nothing in this repo would notice if they broke, but customers may still be calling them. The general rule above ("each v1 group is deleted once nothing consumes it") means _nothing_, including callers outside this repo, so a promoted provider's v1 surface is removed only once its access logs go quiet. Until then both surfaces are live over the same services, and only v2 gets new work.
+Cloudflare, GitHub, Hazel, and Railway live on the internal `integrations` group (`/internal/integrations`) with no v2 counterpart. They predate v2 and nothing public depends on them. Per the rule above, each gets promoted individually if something does. Scope families are derived mechanically from the first path segment under `/v2`, so every provider mounted at `/v2/integrations/<provider>` shares the `integrations:read` / `integrations:write` family.
 
-Cloudflare, GitHub, and Hazel stay on the v1 `integrations` group (`/api/integrations`) with no v2 counterpart. They predate v2 and nothing public depends on them. Per the rule above, each gets promoted individually if something does. Scope families are derived mechanically from the first path segment under `/v2`, so every provider mounted at `/v2/integrations/<provider>` shares the `integrations:read` / `integrations:write` family.
-
-Two things never move with a provider, no matter how much of it is promoted: the OAuth **callback** and any webhook **receiver**. Both are raw `HttpRouter` routes under `/api/…` serving a browser redirect or a provider POST, and a receiver URL is already registered in the provider's settings. So `POST /v2/integrations/planetscale/connect` still mints a `/api/integrations/planetscale/callback` URL, and `webhook_config` still reports a `/api/…` receiver. That is the intended end state, not leftover v1.
+Two things never move with a provider, no matter how much of it is promoted: the OAuth **callback** and any webhook **receiver**. Both are raw `HttpRouter` routes under `/api/…` serving a browser redirect or a provider POST, and a receiver URL is already registered in the provider's settings. So `POST /v2/integrations/planetscale/connect` still mints a `/api/integrations/planetscale/callback` URL, and `webhook_config` still reports a `/api/…` receiver. That is the intended end state.
 
 ## Conventions
 
@@ -118,14 +116,14 @@ Each expected domain error class is created with `HttpTaggedError` and owns its 
 Authorization: Bearer maple_ak_…
 ```
 
-v2 accepts the same credentials as v1: API keys (`maple_ak_…`) and dashboard session tokens (Clerk or self-hosted JWT). API keys can be **restricted with scopes** at creation:
+v2 accepts API keys (`maple_ak_…`) and dashboard session tokens (Clerk or self-hosted JWT). API keys can be **restricted with scopes** at creation:
 
 - Grammar: `<family>:read`, `<family>:write`, or `*`. The family is the first path segment under `/v2` (`api_keys`, `dashboards`, `alerts`, `error_issues`, `traces`, …).
 - Enforcement is mechanical: `GET`/`HEAD` and explicitly declared read-only query POSTs (such as session-replay search, trace lookup, and alert preview) require `<family>:read`; mutations require `<family>:write`. `write` implies `read`.
 - Keys with no scopes (all pre-v2 keys) have full access. `POST` and `GET /v2/agent_feedback` are scope-exempt: any key of the org can send and list feedback (`isScopeExemptRoute` in `auth.ts`). Session tokens are never scope-checked. The dashboard's authorization comes from org roles, like Stripe's own dashboard.
 - Failing the check returns `permission_error` / `insufficient_scope`.
 
-Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Layer.ts`; scopes are stored on `api_keys.scopes` (jsonb).
+Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Live.ts`; scopes are stored on `api_keys.scopes` (jsonb).
 
 ### Versioning
 
@@ -209,7 +207,7 @@ The dashboard can reconcile optimistic writes against ElectricSQL synced shapes 
 - **Phase 0 ✅**: conventions doc, v2 primitives (`public-id`, `envelopes`, `errors`, `auth`), scoped API keys (schema + service + enforcement), `MapleApiV2` shell mounted at `/v2` with Scalar docs at `/v2/docs`, pilot resource `api_keys` end-to-end with tests.
 - **Phase 1, core resources**: dashboards, alerts, error issues, scrape targets, ingest keys, attribute mappings, investigations, anomalies, recommendations, organization, session replays. Thin handler adapters over existing services; `txid` preserved.
 - **Phase 2 ✅, telemetry reads**: signal-scoped traces/logs/metrics query operations plus services/service_map over `QueryEngineService`.
-- **Phase 3, internal RPC tier + dashboard migration**: `RpcGroup` contracts (planned home `packages/domain/src/rpc/`, not created yet) served at `/rpc`; dashboard gets a `MapleApiV2AtomClient` (same wiring as `apps/web/src/lib/services/common/atom-client.ts`, pointed at `MapleApiV2`) plus an `RpcClient`; migrate group-by-group, deleting v1 groups as they empty. (Note: the billing-scoped 401 retry in `atom-client.ts` must follow billing to its RPC home.)
+- **Phase 3 ✅, internal tier + dashboard migration**: `MapleInternalApi` at `/internal` (session-only); the dashboard uses `MapleApiV2AtomClient` and `MapleInternalAtomClient`. The v1 API is retired (2026-10-08).
 - **Phase 4, hardening**: `Idempotency-Key`, `Maple-Version` header enforcement. Per-key rate limiting is implemented.
 - **Phase 5, events & webhooks**: `evt_` event objects, `GET /v2/events`, `/v2/webhook_endpoints` CRUD, HMAC-signed deliveries (`Maple-Signature`) via an outbox drained by the alerting worker.
 

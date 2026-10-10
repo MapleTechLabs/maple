@@ -205,7 +205,7 @@ export function CloudflareBreakdownPanel({
 							className="bg-background/60 font-normal transition-colors hover:text-foreground"
 						>
 							live
-							<XmarkIcon size={9} />
+							<XmarkIcon />
 						</Badge>
 					) : (
 						<PanelScope
