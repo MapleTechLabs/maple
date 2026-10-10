@@ -22,6 +22,7 @@ import { evalModel, hasEvalCredentials } from "../model"
 import { renderSummary, runSettings, runSuite, selectTasks } from "../runner"
 import { grade } from "../targets"
 import { seedWorld, worldRules } from "../world"
+import { infraFixtureRules } from "../../mcp/__evals__/infra-world"
 import { TOOL_TASKS } from "./tasks"
 
 const DEFAULT_MAX_TOOL_CALLS = 6
@@ -32,7 +33,11 @@ let executor: McpToolExecutorApi | undefined
 beforeAll(async () => {
 	if (!hasEvalCredentials()) return
 	// The world answers the probes; the trace fixtures answer the trace tasks; anything else is empty.
-	installFakeWarehouse([...worldRules(), ...defaultTraceFixtures()], undefined, "empty")
+	installFakeWarehouse(
+		[...worldRules(), ...defaultTraceFixtures(), ...infraFixtureRules()],
+		undefined,
+		"empty",
+	)
 	rt = makeEvalRuntime()
 	await seedWorld(rt)
 	executor = await rt.runtime.runPromise(Effect.service(McpToolExecutor))

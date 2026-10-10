@@ -26,6 +26,8 @@ import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
 import { registerIngestFreshnessTool } from "./ingest-freshness"
 import { registerDbQueryVolumeTool } from "./db-query-volume"
+import { registerListInfraTool } from "./list-infra"
+import { registerInspectInfraTool } from "./inspect-infra"
 import { registerIngestUsageTool } from "./ingest-usage"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
@@ -408,6 +410,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRouteUsageTool(registrar)
 	registerIngestFreshnessTool(registrar)
 	registerDbQueryVolumeTool(registrar)
+	registerListInfraTool(registrar)
+	registerInspectInfraTool(registrar)
 	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)

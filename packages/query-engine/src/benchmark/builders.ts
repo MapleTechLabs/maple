@@ -1228,6 +1228,26 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	// Infra gauge timeseries and facet unions.
 	{
 		module: "infra",
+		name: "hostFilesystemsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.hostFilesystemsQuery({ hostName: "ip-10-0-1-42" }), window),
+	},
+	{
+		module: "infra",
+		name: "podRestartsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.podRestartsQuery({
+					workloadKind: "deployment",
+					workloadName: "api",
+					namespace: "backend",
+				}),
+				window,
+			),
+	},
+	{
+		module: "infra",
 		name: "hostGaugeTimeseriesQuery",
 		label: "default",
 		compile: () =>
