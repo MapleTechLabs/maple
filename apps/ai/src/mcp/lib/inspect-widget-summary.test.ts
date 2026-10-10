@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest"
+import {
+	makeQueryBuilderBreakdownDataSource,
+	makeQueryBuilderTimeseriesDataSource,
+	makeQueryDraft,
+} from "@maple/backend/dashboard-templates/helpers"
 import { summarizeOutcome, SLOW_RAW_SQL_MS, type InspectionOutcome } from "./inspect-widget"
 
 const widget = {
@@ -37,15 +42,16 @@ describe("summarizeOutcome", () => {
 		expect(slow.note).toContain("may time out")
 	})
 
-	it("reports how many series a query-builder widget returned", () => {
-		const query = (queryId: string, status: "ok" | "error", seriesCount: number) => ({
-			queryId,
-			queryName: queryId,
+	describe("seriesCount", () => {
+		const draft = makeQueryDraft({ id: "q-a", name: "A", dataSource: "metrics", aggregation: "avg" })
+		const query = (status: "ok" | "error", rowCount: number, seriesCount: number) => ({
+			queryId: "q",
+			queryName: "q",
 			status,
-			stats: { rowCount: 10, seriesCount, seriesStats: [] },
+			stats: { rowCount, seriesCount, seriesStats: [] },
 			flags: [],
 		})
-		const entry = summarizeOutcome(widget, {
+		const supported = (queries: ReadonlyArray<ReturnType<typeof query>>): InspectionOutcome => ({
 			kind: "supported",
 			data: {
 				widget: {
@@ -56,13 +62,23 @@ describe("summarizeOutcome", () => {
 					hasUnsupportedTransform: false,
 				},
 				timeRange,
-				queries: [query("A", "ok", 4), query("B", "ok", 2), query("C", "error", 9)],
+				queries: [...queries],
 				verdict: "looks_healthy",
 				flags: [],
 				notes: [],
 			},
 		})
-		expect(entry.seriesCount).toBe(6)
+
+		it("takes the largest chart query, so a formula over its operands is not counted twice", () => {
+			const chart = { ...widget, dataSource: makeQueryBuilderTimeseriesDataSource([draft]) }
+			const outcome = supported([query("ok", 60, 4), query("ok", 60, 4), query("error", 0, 9)])
+			expect(summarizeOutcome(chart, outcome).seriesCount).toBe(4)
+		})
+
+		it("counts a breakdown's groups, which are its rows", () => {
+			const table = { ...widget, dataSource: makeQueryBuilderBreakdownDataSource([draft]) }
+			expect(summarizeOutcome(table, supported([query("ok", 12, 1)])).seriesCount).toBe(12)
+		})
 	})
 
 	it("scores a funnel widget from its query instead of skipping it", () => {

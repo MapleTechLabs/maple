@@ -842,8 +842,14 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
 		const actionableNote = outcome.data.notes.find((note) => note.startsWith('unit "percent'))
+		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
+		// operands and the formula built from them are not counted twice.
+		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
 		const seriesCount = outcome.data.queries.reduce(
-			(total, query) => total + (query.status === "ok" ? query.stats.seriesCount : 0),
+			(largest, query) =>
+				query.status === "ok"
+					? Math.max(largest, isBreakdown ? query.stats.rowCount : query.stats.seriesCount)
+					: largest,
 			0,
 		)
 		return {

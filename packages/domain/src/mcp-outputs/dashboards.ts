@@ -57,7 +57,7 @@ export const WidgetInspectionEntry = Schema.Struct({
 	verdict: WidgetInspectionVerdict,
 	flags: Schema.Array(InspectChartFlag),
 	note: Schema.optionalKey(Schema.String),
-	/** Series (or breakdown groups) the widget's queries returned, so a `group_by` split is visible. */
+	/** Series (groups, for a breakdown) in the widget's largest query, so a `group_by` split is visible. */
 	seriesCount: Schema.optionalKey(Schema.Number),
 })
 

@@ -102,11 +102,10 @@ describe("metricsTimeseriesQuery", () => {
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
-	it("applies attribute key/value filter", () => {
+	it("applies an attribute filter", () => {
 		const q = metricsTimeseriesQuery({
 			metricType: "sum",
-			attributeKey: "region",
-			attributeValue: "us-east-1",
+			attributeFilters: [{ key: "region", mode: "equals", value: "us-east-1" }],
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
@@ -213,10 +212,10 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("- INTERVAL 600 SECOND")
 	})
 
-	it("treats an attribute key with no value as 'has the label'", () => {
-		const q = metricsTimeseriesRateQuery({ attributeKey: "worker" })
+	it("reads an exists filter as 'has a non-empty label'", () => {
+		const q = metricsTimeseriesRateQuery({ attributeFilters: [{ key: "worker", mode: "exists" }] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("metrics_sum.Attributes['worker'] != ''")
+		expect(sql).toContain("Attributes['worker'] != ''")
 	})
 
 	it("applies serviceName filter in CTE", () => {
@@ -225,10 +224,9 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
-	it("applies attributeKey filter", () => {
+	it("applies an attribute filter in the CTE", () => {
 		const q = metricsTimeseriesRateQuery({
-			attributeKey: "region",
-			attributeValue: "us-east-1",
+			attributeFilters: [{ key: "region", mode: "equals", value: "us-east-1" }],
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
@@ -296,11 +294,11 @@ describe("metricsTimeseriesRateQuery", () => {
 		const q = metricsTimeseriesRateQuery({
 			metricName: "span.metrics.calls",
 			bucketSeconds: 3600,
-			attributeKey: "span.kind",
-			attributeValue: "SPAN_KIND_SERVER",
+			attributeFilters: [{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER" }],
 			groupByAttributeKey: "span.kind",
 		})
 		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("span_metrics_calls_hourly")
 		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
 		expect(sql).toContain("SpanKind AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
@@ -327,17 +325,6 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
 
-	it("serves a lone span.kind attribute filter from the hourly rollup", () => {
-		const q = metricsTimeseriesRateQuery({
-			metricName: "span.metrics.calls",
-			bucketSeconds: 3600,
-			attributeFilters: [{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER" }],
-		})
-		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
-		expect(sql).toContain("span_metrics_calls_hourly")
-		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
-	})
-
 	it("falls back to raw metrics_sum for a negated attribute filter", () => {
 		const q = metricsTimeseriesRateQuery({
 			metricName: "span.metrics.calls",
@@ -351,11 +338,11 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("NOT (Attributes['span.kind'] = 'SPAN_KIND_SERVER')")
 	})
 
-	it("falls back to raw metrics_sum when attributeValue has no attributeKey", () => {
+	it("falls back to raw metrics_sum for a label the rollup does not keep", () => {
 		const q = metricsTimeseriesRateQuery({
 			metricName: "span.metrics.calls",
 			bucketSeconds: 3600,
-			attributeValue: "SPAN_KIND_SERVER",
+			attributeFilters: [{ key: "http.route", mode: "equals", value: "/api" }],
 		})
 		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("FROM metrics_sum")
@@ -478,13 +465,12 @@ describe("metricsBreakdownQuery", () => {
 			metricType: "sum",
 			serviceName: "api",
 			environments: ["production"],
-			attributeKey: "state",
-			attributeValue: "idle",
+			attributeFilters: [{ key: "state", mode: "equals", value: "idle" }],
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("metrics_sum.ServiceName = 'api'")
 		expect(sql).toContain("'production'")
-		expect(sql).toContain("metrics_sum.Attributes['state'] = 'idle'")
+		expect(sql).toContain("Attributes['state'] = 'idle'")
 	})
 
 	it("applies negated and IN attribute filters on the datapoint labels", () => {

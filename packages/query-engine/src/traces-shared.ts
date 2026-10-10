@@ -131,7 +131,7 @@ export function buildAttrFilterCondition(
 			.map((member) => buildAttrFilterCondition(member, mapName, "none"))
 			.reduce((acc, cond) => acc.or(cond))
 	}
-	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
+	// `Attributes` (product events, metric datapoints) carries no skip index, so the exact predicate stands alone.
 	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)
 	// Attributes renamed across OTel semconv versions match either spelling,

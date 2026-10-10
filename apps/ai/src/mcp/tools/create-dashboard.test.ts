@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { dataSourceQuerySet } from "@maple/widgets/dashboard"
 import { buildSimpleWidgets, normalizeGroupBy } from "./create-dashboard"
 
 describe("normalizeGroupBy", () => {
@@ -34,16 +35,15 @@ describe("buildSimpleWidgets", () => {
 	})
 
 	it("AND-s a where clause with service_name into the query draft", () => {
-		const widgets = buildSimpleWidgets([{ ...cpu, group_by: "attr.cpu", service_name: "node" }])
-		expect(typeof widgets).not.toBe("string")
-		expect(JSON.stringify(widgets)).toContain(
-			JSON.stringify('service.name = "node" AND attr.state = "idle"'),
-		)
+		const widgets = buildSimpleWidgets([{ ...cpu, service_name: "node" }])
+		const draft = typeof widgets === "string" ? undefined : dataSourceQuerySet(widgets[0]?.dataSource)
+		expect(draft?.queries[0]?.whereClause).toBe('service.name = "node" AND attr.state = "idle"')
 	})
 
 	it("rejects a where clause on a list widget instead of dropping it", () => {
-		const { group_by: _groupBy, ...rest } = cpu
-		const result = buildSimpleWidgets([{ ...rest, source: "logs", visualization: "list" }])
+		const result = buildSimpleWidgets([
+			{ title: "Recent logs", source: "logs", visualization: "list", where: 'attr.a = "1"' },
+		])
 		expect(result).toContain("where is not supported on list widgets")
 	})
 })

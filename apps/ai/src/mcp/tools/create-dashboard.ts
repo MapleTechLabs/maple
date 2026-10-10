@@ -144,7 +144,8 @@ function simpleSpecToWidget(
 	const metricType = spec.metric_type
 
 	const metric = spec.metric ?? (source === "metrics" ? "avg" : "count")
-	const where = [spec.service_name ? `service.name = "${spec.service_name}"` : "", spec.where?.trim() ?? ""]
+	const extraWhere = spec.where?.trim() ?? ""
+	const where = [spec.service_name ? `service.name = "${spec.service_name}"` : "", extraWhere]
 		.filter((clause) => clause !== "")
 		.join(" AND ")
 
@@ -198,7 +199,7 @@ function simpleSpecToWidget(
 	}
 
 	if (viz === "list") {
-		if (spec.where?.trim()) {
+		if (extraWhere !== "") {
 			return `Widget "${spec.title}": where is not supported on list widgets; use service_name, or a chart/table.`
 		}
 		if (source === "logs") {

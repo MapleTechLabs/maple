@@ -36,11 +36,6 @@ function resourceFilterConditions(
 	return (filters ?? []).map((rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
 }
 
-// A key with no value means "has the label": `.eq("")` would match its absence.
-function datapointAttrCondition(column: CH.Expr<string>, value: string | undefined): CH.Condition {
-	return value === undefined ? column.neq("") : column.eq(value)
-}
-
 /** WHERE conditions for `attributeFilters`: any mode or negation on the datapoint Attributes map. */
 function datapointFilterConditions(
 	filters: readonly AttributeFilter[] | undefined,
@@ -58,9 +53,7 @@ interface MetricsQueryOpts {
 	groupByAttributeKey?: string
 	/** Group by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
-	attributeKey?: string
-	attributeValue?: string
-	/** Datapoint Attributes predicates, AND-ed with `attributeKey`/`attributeValue`. */
+	/** Predicates on the datapoint Attributes map (metric labels). */
 	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
@@ -123,9 +116,6 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) =>
-				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
-			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
@@ -161,9 +151,7 @@ export interface MetricsRateTimeseriesOpts {
 	groupByAttributeKey?: string
 	/** Group by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
-	attributeKey?: string
-	attributeValue?: string
-	/** Datapoint Attributes predicates, AND-ed with `attributeKey`/`attributeValue`. */
+	/** Predicates on the datapoint Attributes map (metric labels). */
 	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
@@ -216,8 +204,6 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 		opts.bucketSeconds !== undefined &&
 		opts.bucketSeconds >= 3600 &&
 		opts.bucketSeconds % 3600 === 0 &&
-		(opts.attributeValue === undefined || opts.attributeKey !== undefined) &&
-		(opts.attributeKey === undefined || opts.attributeKey === "span.kind") &&
 		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind") &&
 		// The hourly MV keeps only SpanKind of the datapoint labels.
 		((opts.attributeFilters?.length ?? 0) === 0 ||
@@ -270,9 +256,6 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			$.Hour.gte(previousBucket),
 			$.Hour.lte(endBucket),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey === "span.kind" ? opts.attributeValue : undefined, (v: string) =>
-				$.SpanKind.eq(v),
-			),
 			CH.when(spanKindEqualsValue(opts.attributeFilters), (v: string) => $.SpanKind.eq(v)),
 		])
 		.groupBy(
@@ -446,9 +429,6 @@ export function metricsTimeseriesRateQuery(
 			),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) =>
-				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
-			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
@@ -567,8 +547,7 @@ export interface MetricsBreakdownOpts {
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	serviceName?: string
 	environments?: readonly string[]
-	attributeKey?: string
-	attributeValue?: string
+	/** Predicates on the datapoint Attributes map (metric labels). */
 	attributeFilters?: readonly AttributeFilter[]
 	/** Aggregate that ranks groups before `limit` applies. Default: count. */
 	rankBy?: "avg" | "sum" | "min" | "max" | "count"
@@ -625,9 +604,6 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
 			CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) =>
-				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
-			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
