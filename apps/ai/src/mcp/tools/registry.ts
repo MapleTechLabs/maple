@@ -82,7 +82,7 @@ import {
 	type McpToolResult,
 } from "./types"
 import {
-	argumentNotices,
+	argumentWarnings,
 	enumValues,
 	formatDecodeFailure,
 	normalizeArguments,
@@ -530,7 +530,7 @@ const isValidNextCall = (call: NextCall, surface: McpToolSurface): boolean => {
 const finish = Effect.fnUntraced(function* (
 	definition: MapleToolDefinition,
 	run: ToolRun,
-	notices: ReadonlyArray<string>,
+	warnings: ReadonlyArray<string>,
 	surface: McpToolSurface,
 ) {
 	const invalid = nextCallsOf(run.doc).filter((call) => !isValidNextCall(call, surface))
@@ -544,7 +544,7 @@ const finish = Effect.fnUntraced(function* (
 	}
 	const doc = invalid.length === 0 ? run.doc : filterNextCalls(run.doc, (call) => !invalid.includes(call))
 	const text = renderToolDocWithinBudget(
-		notices.length === 0 ? doc : { ...doc, notices: [...notices, ...(doc.notices ?? [])] },
+		warnings.length === 0 ? doc : { ...doc, warnings: [...warnings, ...(doc.warnings ?? [])] },
 	)
 	const result: McpToolResult = {
 		content: [{ type: "text", text }],
@@ -607,7 +607,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 	return yield* finish(
 		definition,
 		{ ...run, doc: windowNotes.decorate(run.doc) },
-		argumentNotices(normalized, definition.name),
+		argumentWarnings(normalized, definition.name),
 		surface,
 	)
 })
