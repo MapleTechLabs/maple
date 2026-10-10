@@ -17,7 +17,7 @@ afterEach(cleanup)
 
 // One card per section shape: a chart style (built here from a fresh query
 // draft) and a preset (taken from a widget type's `presets`).
-const CARDS = ["Bar Chart", "Total Traces"]
+const CARDS = ["Bar chart", "Total Traces"]
 
 /**
  * Cards are matched by button role, not by text.
@@ -47,7 +47,7 @@ describe("WidgetPicker", () => {
 		const onOpenChange = vi.fn()
 		render(<WidgetPicker open onOpenChange={onOpenChange} onSelect={() => ({ id: "widget-1" })} />)
 
-		fireEvent.click(card("Bar Chart"))
+		fireEvent.click(card("Bar chart"))
 
 		expect(onOpenChange).toHaveBeenCalledWith(false)
 	})
@@ -59,7 +59,7 @@ describe("WidgetPicker", () => {
 		const onOpenChange = vi.fn()
 		render(<WidgetPicker open onOpenChange={onOpenChange} onSelect={() => undefined} />)
 
-		fireEvent.click(card("Bar Chart"))
+		fireEvent.click(card("Bar chart"))
 
 		expect(onOpenChange).not.toHaveBeenCalled()
 	})

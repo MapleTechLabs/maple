@@ -60,7 +60,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/effect-orm": "0.4.0",
+		"@maple-dev/effect-orm": "0.5.0",
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",

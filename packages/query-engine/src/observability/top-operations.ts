@@ -36,6 +36,6 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 	yield* Effect.annotateCurrentSpan("operationCount", result.data.length)
 	return pipe(
 		result.data,
-		Arr.map((r): TopOperation => ({ name: r.name, value: Number(r.value) })),
+		Arr.map((r): TopOperation => ({ name: r.name, value: r.value })),
 	)
 })

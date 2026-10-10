@@ -291,6 +291,32 @@ export const mergePrReviewConfig = (
 	)
 }
 
+/** What a step before merge is about; the comment groups and labels by it. */
+export const PrReviewMergeStepKind = Schema.Literals([
+	"secret",
+	"env",
+	"migration",
+	"warehouse",
+	"infra",
+	"manual",
+]).annotate({ identifier: "PrReviewMergeStepKind" })
+export type PrReviewMergeStepKind = Schema.Schema.Type<typeof PrReviewMergeStepKind>
+
+/**
+ * Something a person has to do outside the diff before the change can ship: a secret to add, a
+ * migration to check, a schema to deploy. `diff` steps are read off the diff by the service;
+ * `reviewer` steps are ones the agent named from what it read.
+ */
+export class PrReviewMergeStep extends Schema.Class<PrReviewMergeStep>("PrReviewMergeStep")({
+	kind: PrReviewMergeStepKind,
+	title: Schema.String,
+	/** The secret, variable or file the step is about; what a reviewer step must name to replace it. */
+	subject: Schema.optionalKey(Schema.String),
+	path: Schema.optionalKey(Schema.String),
+	line: Schema.optionalKey(Schema.Number),
+	source: Schema.Literals(["diff", "reviewer"]),
+}) {}
+
 /** The stored review: the shape a reader can rely on. */
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({
 	verdict: PrReviewVerdict,
@@ -316,6 +342,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** What production telemetry says about the change; set by the service, never by the model. */
 	telemetry: Schema.optionalKey(PrReviewTelemetry),
+	/** What has to happen outside the diff before merge; diff steps are set by the service. */
+	beforeMerge: Schema.optionalKey(Schema.Array(PrReviewMergeStep)),
 }) {}
 
 /**
@@ -366,6 +394,7 @@ export const PrReviewSubmission = Schema.Struct({
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	keyChanges: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	beforeMerge: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	checked: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	tests: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewTestSignal, Schema.String]))),
 	risk: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewRisk, Schema.String]))),
@@ -392,6 +421,7 @@ const MAX_TEXT = 4_000
 const MAX_SUMMARY = 800
 const MAX_KEY_CHANGES = 4
 const MAX_CHECKED = 3
+const MAX_BEFORE_MERGE = 6
 const MAX_BULLET = 200
 /** Removed names the reviewer may claim are still emitted; one per contract break is plenty. */
 const MAX_DISMISSALS = 20
@@ -542,6 +572,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			: submittedVerdict
 	const keyChanges = bulletsOf(submission.keyChanges, MAX_KEY_CHANGES)
 	const checked = bulletsOf(submission.checked, MAX_CHECKED)
+	const beforeMerge = bulletsOf(submission.beforeMerge, MAX_BEFORE_MERGE).map(
+		(title) => new PrReviewMergeStep({ kind: "manual", title, source: "reviewer" }),
+	)
 	const tests = typeof submission.tests === "string" ? submission.tests.trim().toLowerCase() : undefined
 	const risk = typeof submission.risk === "string" ? submission.risk.trim().toLowerCase() : undefined
 	const rawConfidence = toNumber(submission.confidence)
@@ -556,6 +589,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			summary: clip(submission.summary?.trim() || "", MAX_SUMMARY),
 			...(keyChanges.length > 0 ? { keyChanges } : undefined),
 			...(checked.length > 0 ? { checked } : undefined),
+			...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 			...(isTestSignal(tests) ? { tests } : undefined),
 			...(isRisk(risk) ? { risk } : undefined),
 			...(confidence === undefined ? undefined : { confidence }),
@@ -653,8 +687,11 @@ export interface PrReviewConfidenceResult {
 	/** A finding or an early end held the number below what the other signals gave. */
 	readonly capped: boolean
 	/** What held it down, when something did. */
-	readonly cappedBy?: "critical" | "warn" | "partial"
+	readonly cappedBy?: "critical" | "warn" | "partial" | "unread"
 }
+
+/** Unread reviewed files at which a review reads as "needs attention"; fewer hold it at 8. */
+export const PR_REVIEW_UNREAD_CAP_FILES = 3
 
 /**
  * What each signal takes off a 10. Whole points, so one soft signal (partial tests, a medium-risk
@@ -699,7 +736,8 @@ const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? ""
  *
  * It starts from the findings' quality score, then takes whole points off for untested behavior, a
  * risky area and new work that cannot be observed. Findings cap it: a critical at 4 (2 with more
- * than one), a security warning at 6, any warning at 8, and a review that ended early at 6. The
+ * than one), a security warning at 6, any warning at 8, a review that ended early at 6, and
+ * reviewed files left unread at 8 (6 from three files). The
  * reviewer's own number can lower the result by up to two points or raise it by one, never past a
  * cap. `undefined` for a pull request with nothing to review.
  */
@@ -719,6 +757,7 @@ export const confidencePrReview = (
 	const securityWarn = all.some((finding) => finding.severity === "warn" && finding.category === "security")
 	const { score } = scorePrReview(report, carriedOpen)
 	const unobservable = report.coverage.filter((unit) => !unit.instrumented).length
+	const unread = report.unreviewed?.length ?? 0
 
 	const factors: Array<string> = []
 	if (criticals > 0) factors.push(findingPhrase(criticals, "critical"))
@@ -732,6 +771,7 @@ export const confidencePrReview = (
 			`${report.coverage.length - unobservable}/${report.coverage.length} new units observable`,
 		)
 	}
+	if (unread > 0) factors.push(`${unread} ${unread === 1 ? "file" : "files"} not read`)
 
 	const deduction =
 		(report.tests === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.tests[report.tests]) +
@@ -746,45 +786,43 @@ export const confidencePrReview = (
 					Math.min(signals + PR_REVIEW_CONFIDENCE_JUDGEMENT.raise, Math.round(report.confidence)),
 				)
 
-	// In the order the caps bind: a security warning holds at 6 like an early end, any other at 8.
-	const cappedBy =
-		criticals > 0
-			? "critical"
-			: securityWarn
-				? "warn"
-				: partial
-					? "partial"
-					: warns > 0
-						? "warn"
-						: undefined
-	const cap =
-		criticals > 1
-			? 2
-			: criticals === 1
-				? 4
-				: securityWarn || partial
-					? 6
-					: warns > 0
-						? 8
-						: PR_REVIEW_CONFIDENCE_MAX
+	// Every cap that applies, tightest first; the first one is what the comment says held it down.
+	// A security warning holds at 6 like an early end or a pass that left 3+ files unread.
+	const caps: ReadonlyArray<{
+		readonly at: number
+		readonly by: NonNullable<PrReviewConfidenceResult["cappedBy"]>
+		readonly why: string
+	}> = [
+		...(criticals > 1
+			? [{ at: 2, by: "critical" as const, why: `${criticals} critical findings are open` }]
+			: []),
+		...(criticals === 1 ? [{ at: 4, by: "critical" as const, why: "a critical finding is open" }] : []),
+		...(securityWarn ? [{ at: 6, by: "warn" as const, why: "a security warning is open" }] : []),
+		...(partial ? [{ at: 6, by: "partial" as const, why: "the review ended early" }] : []),
+		...(unread > 0
+			? [
+					{
+						at: unread >= PR_REVIEW_UNREAD_CAP_FILES ? 6 : 8,
+						by: "unread" as const,
+						why: `${unread} reviewed ${unread === 1 ? "file was" : "files were"} not read`,
+					},
+				]
+			: []),
+		...(warns > 0 ? [{ at: 8, by: "warn" as const, why: "a warning is open" }] : []),
+	]
+	const binding = caps.reduce<(typeof caps)[number] | undefined>(
+		(tightest, cap) => (tightest === undefined || cap.at < tightest.at ? cap : tightest),
+		undefined,
+	)
+	const cap = binding?.at ?? PR_REVIEW_CONFIDENCE_MAX
 	const confidence = toConfidence(Math.min(cap, judged))
-	if (judged > cap) {
-		const why =
-			criticals > 1
-				? `${criticals} critical findings are open`
-				: criticals === 1
-					? "a critical finding is open"
-					: cappedBy === "warn"
-						? securityWarn
-							? "a security warning is open"
-							: "a warning is open"
-						: "the review ended early"
+	if (binding !== undefined && judged > cap) {
 		return {
 			confidence,
-			reason: `Held at ${cap} because ${why}.`,
+			reason: `Held at ${cap} because ${binding.why}.`,
 			factors,
 			capped: true,
-			...(cappedBy === undefined ? undefined : { cappedBy }),
+			cappedBy: binding.by,
 		}
 	}
 	return { confidence, reason: report.confidenceReason, factors, capped: false }

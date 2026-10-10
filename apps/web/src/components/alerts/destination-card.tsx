@@ -124,13 +124,13 @@ export function DestinationCard({
 						disabled={!isAdmin}
 						loading={isTesting}
 					>
-						<CheckIcon size={14} />
+						<CheckIcon />
 						Send test
 					</Button>
 					{isAdmin && (
 						<RowActionsMenu label="Destination actions">
 							<DropdownMenuItem onClick={() => onEdit(destination)}>
-								<PencilIcon size={14} />
+								<PencilIcon />
 								Edit
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
@@ -139,7 +139,7 @@ export function DestinationCard({
 								onClick={() => setConfirmDelete(true)}
 								disabled={isDeleting}
 							>
-								<TrashIcon size={14} />
+								<TrashIcon />
 								Delete
 							</DropdownMenuItem>
 						</RowActionsMenu>

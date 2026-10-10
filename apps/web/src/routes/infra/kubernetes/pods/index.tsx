@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatNumber } from "@maple/ui/lib/format"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
@@ -142,21 +142,21 @@ function PodsPage() {
 
 	// "Ended" is the lifecycle dial, not a saturation bucket: the other three
 	// scopes narrow the live fleet, this one swaps which fleet is on screen.
-	const podsResult = useAtomValue(
-		listPodsResultAtom({
-			data: {
-				startTime,
-				endTime,
-				...filters,
-				search: debouncedSearch.trim() || undefined,
-				scope: scope === "ended" ? undefined : scope,
-				lifecycle: scope === "ended" ? "ended" : "live",
-				sortBy,
-				sortDir,
-				limit: PAGE_SIZE,
-			},
-		}),
-	)
+	const podsAtom = listPodsResultAtom({
+		data: {
+			startTime,
+			endTime,
+			...filters,
+			search: debouncedSearch.trim() || undefined,
+			scope: scope === "ended" ? undefined : scope,
+			lifecycle: scope === "ended" ? "ended" : "live",
+			sortBy,
+			sortDir,
+			limit: PAGE_SIZE,
+		},
+	})
+	const podsResult = useAtomValue(podsAtom)
+	const refreshPods = useAtomRefresh(podsAtom)
 
 	// Scope-only: the band is what tells you how much of the fleet the filters
 	// hid, so narrowing it by those same filters would defeat the point.
@@ -293,7 +293,7 @@ function PodsPage() {
 								noun="live pod"
 								caption="share of the live fleet by peak utilization"
 								segments={[
-									{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
 										key: "elevated",
 										count: counts.elevatedPods,
@@ -316,7 +316,9 @@ function PodsPage() {
 
 				{Result.builder(podsResult)
 					.onInitial(() => <PodTableLoading />)
-					.onError((err) => <ErrorState error={err} />)
+					.onError((err) => (
+						<ErrorState error={err} title="Failed to load pods" onRetry={refreshPods} />
+					))
 					.onSuccess((response, result) => {
 						const page = response.data
 						const total = response.totalCount

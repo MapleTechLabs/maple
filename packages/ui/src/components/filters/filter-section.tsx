@@ -2,7 +2,9 @@ import * as React from "react"
 
 import { ChevronDownIcon, CircleInfoIcon, type IconComponent, MagnifierIcon, XmarkIcon } from "../icons"
 import { Badge } from "../ui/badge"
+import { Button } from "../ui/button"
 import { Checkbox } from "../ui/checkbox"
+import { EmptyMessage } from "../ui/empty"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "../ui/input-group"
@@ -262,16 +264,16 @@ function FilterSectionBase({
 				</span>
 				<span className="flex items-center gap-1.5">
 					{!isOpen && selected.length > 0 && (
-						<span className="rounded-sm bg-muted px-1.5 py-0.5 text-3xs tabular-nums tracking-normal text-foreground">
+						<Badge variant="muted" size="xs" mono className="tracking-normal">
 							{selected.length}
-						</span>
+						</Badge>
 					)}
 					{/* Its own badge, not folded into the count above: a collapsed section hiding an
 					    exclusion is exactly the state that reads as "my data is missing". */}
 					{!isOpen && excluded.length > 0 && (
-						<span className="rounded-sm bg-destructive/10 px-1.5 py-0.5 text-3xs tabular-nums tracking-normal text-destructive">
+						<Badge variant="crit" size="xs" mono className="tracking-normal">
 							−{excluded.length}
-						</span>
+						</Badge>
 					)}
 					<ChevronDownIcon
 						className={cn(
@@ -316,7 +318,7 @@ function FilterSectionBase({
 				)}
 				<div className="space-y-2">
 					{visibleOptions.length === 0 ? (
-						<p className="text-xs text-muted-foreground py-1">No matches found</p>
+						<EmptyMessage className="py-2">No matches found</EmptyMessage>
 					) : (
 						visibleOptions.map((option) => {
 							const OptionIcon = getOptionIcon?.(option.name)
@@ -457,13 +459,14 @@ function FilterSectionBase({
 						</p>
 					)}
 					{hasMore > 0 && (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setShowAll(!showAll)}
-							className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+							className="px-0 text-muted-foreground hover:text-foreground"
 						>
 							{showAll ? "Show less" : `Show ${hasMore} more`}
-						</button>
+						</Button>
 					)}
 				</div>
 			</CollapsibleContent>

@@ -99,7 +99,7 @@ export function useLocalServiceOperationsTimeseries(
 						return rows.map((r) => ({
 							bucket: DateTime.formatIso(r.bucket),
 							series: r.spanName,
-							value: Number(r.count),
+							value: r.count,
 						}))
 					},
 	})

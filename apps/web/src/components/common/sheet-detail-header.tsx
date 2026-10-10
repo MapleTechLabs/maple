@@ -36,7 +36,7 @@ export function SheetDetailHeader({
 			{kind !== undefined ? <DetailEyebrow kind={kind} /> : null}
 			<SheetTitle
 				className={cn(
-					"flex flex-wrap items-center gap-2 text-[15px] leading-tight",
+					"flex flex-wrap items-center gap-2 text-title leading-tight",
 					mono && "font-mono",
 				)}
 			>

@@ -36,6 +36,7 @@ import {
 	type PullRequestContext,
 	type PullRequestFile,
 	PrReviewId,
+	PrReviewReport,
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
@@ -46,6 +47,11 @@ import {
 	PR_REVIEW_RULE_FILES,
 	type RepositoryRuleFile,
 } from "@maple/backend/services/pr-review/PrReviewService"
+import {
+	buildChecklist,
+	detectMergeSteps,
+	type NameVerdict,
+} from "@maple/backend/services/pr-review/merge-checklist"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -153,7 +159,7 @@ const readRules = (dir: string, baseSha: string): ReadonlyArray<RepositoryRuleFi
 	return files
 }
 
-const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
+export const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 	const [bin = "", ...rest] = cmd
 	const proc = spawnSync(bin, rest, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
 	return {
@@ -162,6 +168,19 @@ const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 		stdout: proc.stdout ?? "",
 		stderr: proc.stderr ?? "",
 	}
+}
+
+/**
+ * A name's verdict from the clone at the base commit, as a whole word: `git grep` exits 0 on a
+ * match and 1 on none; anything else (a missing commit) leaves the name unverified, as a failed
+ * search does in the service.
+ */
+const nameAtBase = (dir: string, baseSha: string, name: string): NameVerdict => {
+	const result = run(
+		["git", "grep", "-I", "-q", "-E", "-e", `(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`, baseSha, "--"],
+		dir,
+	)
+	return result.code === 0 ? "exists" : result.code === 1 ? "new" : "unverified"
 }
 
 /** A model-written script: no inherited secrets, a wall-clock limit like the sandbox's. */
@@ -177,7 +196,7 @@ const runScript = (cmd: ReadonlyArray<string>, cwd: string) => {
 	return { code: proc.status, stdout: proc.stdout ?? "", stderr: proc.stderr ?? "" }
 }
 
-const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
+export const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
 	const result = run(cmd, cwd)
 	if (!result.ok) {
 		console.error(`\n${cmd.join(" ")} failed:\n${result.stderr.trim()}`)
@@ -246,7 +265,7 @@ const orExit = <A>(value: Option.Option<A>, what: string): A =>
 
 const isFileStatus = Schema.is(PullRequestFileStatus)
 
-const fetchPullRequest = (args: Args) => {
+export const fetchPullRequest = (args: Pick<Args, "owner" | "repo" | "number">) => {
 	const slug = `repos/${args.owner}/${args.repo}/pulls/${args.number}`
 	const pr = orExit(decodePullRequestJson(must(["gh", "api", slug])), "pull request")
 	const pages = orExit(
@@ -1112,7 +1131,22 @@ export const reviewLocally = async (
 		return dir
 	}
 
-	const report = submitted.report
+	// The clone answers what the service asks code search: is the name already read at the base?
+	const detected = detectMergeSteps(files)
+	const verdicts = new Map(
+		detected.names.map(({ name }) => [name, nameAtBase(clone.dir, pr.base.sha, name)]),
+	)
+	const { beforeMerge: reviewerSteps, ...submittedReport } = submitted.report
+	const { steps: beforeMerge } = buildChecklist({
+		detected,
+		verdicts,
+		reviewer: reviewerSteps ?? [],
+		isIgnored: () => false,
+	})
+	const report = new PrReviewReport({
+		...submittedReport,
+		...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
+	})
 	const publication = buildPublication({
 		// Each run is its own review, so a posted run gets a comment of its own.
 		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),

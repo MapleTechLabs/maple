@@ -162,6 +162,7 @@ function CodeReviewIssuesPage() {
 									<FindingRow
 										key={finding.id}
 										finding={finding}
+										selected={finding.reviewId === search.review}
 										onOpen={() => onChange({ review: finding.reviewId })}
 									/>
 								))}
@@ -225,11 +226,20 @@ function FilterSelect<T extends string>({
 	)
 }
 
-function FindingRow({ finding, onOpen }: { finding: CodeReviewFinding; onOpen: () => void }) {
+function FindingRow({
+	finding,
+	selected,
+	onOpen,
+}: {
+	finding: CodeReviewFinding
+	selected: boolean
+	onOpen: () => void
+}) {
 	return (
 		<li>
 			<ListRow
 				render={<button type="button" onClick={onOpen} />}
+				selected={selected}
 				leading={
 					<span
 						className={cn("w-16 text-xs font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}

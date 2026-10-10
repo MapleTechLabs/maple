@@ -67,7 +67,7 @@ function AlertIncidentPage() {
 	if (loading && !alertContext) {
 		return (
 			<DashboardPage
-				breadcrumbs={[{ label: "Alerts", href: "/alerts" }, { label: "…" }]}
+				breadcrumbs={[{ label: "Alerts", href: "/alerts" }, { label: "Loading…" }]}
 				header={<DetailHeaderSkeleton meta={false} />}
 				width="narrow"
 				gap="md"

@@ -35,7 +35,7 @@ export function useSignalPresence(signal: TelemetrySignal): SignalPresence {
 			return new Map(
 				rows.map((row): [string, SignalPresence] => [
 					row.signal,
-					Number(row.count) > 0
+					row.count > 0
 						? { status: "present", lastSeenMs: parseClickHouseDateTime(row.lastSeen) }
 						: { status: "absent", lastSeenMs: null },
 				]),

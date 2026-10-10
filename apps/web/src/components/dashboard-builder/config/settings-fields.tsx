@@ -344,7 +344,7 @@ function Unit({ label = "Unit" }: { label?: string }) {
 			</Select>
 			{isDuration && (
 				<Segments
-					value={state.unit as ValueUnit}
+					value={state.unit}
 					onSelect={(unit) => set({ unit })}
 					options={DURATION_SCALE_OPTIONS}
 				/>
@@ -425,7 +425,7 @@ function ScalarReduction() {
 					</SelectContent>
 				</Select>
 			</RailSetting>
-			<RailSetting label="Value Field">
+			<RailSetting label="Value field">
 				<Select
 					value={valueField || seriesFieldOptions[0]}
 					onValueChange={(value) => set({ statValueField: value ?? "" })}
@@ -534,7 +534,7 @@ function Thresholds() {
 							onClick={() => replace(thresholds.filter((_, i) => i !== index))}
 							className="text-muted-foreground hover:text-foreground"
 						>
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				))}
@@ -553,7 +553,7 @@ function Thresholds() {
 function RowLimit() {
 	const { state, set } = useSettings()
 	return (
-		<RailSetting label="Row Limit">
+		<RailSetting label="Row limit">
 			<Input
 				value={state.tableLimit}
 				onChange={(event) => set({ tableLimit: event.target.value })}

@@ -84,7 +84,7 @@ export interface DetectorRefcountRow {
 export function effectiveOtherStates<
 	P extends {
 		readonly detectorKey: string
-		// Optional because drizzle's insert shape makes nullable columns optional.
+		// Optional because an insert row leaves nullable columns optional.
 		// An absent value means "not pointing at this incident", same as null.
 		readonly openIncidentId?: string | null
 		readonly fingerprintHash?: string | null

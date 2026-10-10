@@ -1,7 +1,7 @@
 import type { RendererComponentProps } from "./types"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 
 interface MetricsListProps {
 	summary: ReadonlyArray<{
@@ -45,21 +45,25 @@ export function MetricsList({ props }: RendererComponentProps<MetricsListProps>)
 							<TableHead>Type</TableHead>
 							<TableHead>Service</TableHead>
 							<TableHead>Unit</TableHead>
-							<TableHead className="pr-0 text-right">Data Points</TableHead>
+							<TableHead className="pr-0 text-right">Data points</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{metrics.map((m) => (
 							<TableRow key={`${m.metricName}-${m.metricType}`}>
-								<TableCell className="max-w-[180px] truncate py-1 font-mono">{m.metricName}</TableCell>
+								<TableCell className="max-w-[180px] truncate py-1 font-mono">
+									{m.metricName}
+								</TableCell>
 								<TableCell className="py-1">
 									<Badge variant="secondary" size="xs">
 										{m.metricType}
 									</Badge>
 								</TableCell>
 								<TableCell className="py-1 text-muted-foreground">{m.serviceName}</TableCell>
-								<TableCell className="py-1 text-muted-foreground">{m.metricUnit || "-"}</TableCell>
-								<TableCell className="py-1 pr-0 text-right font-mono text-muted-foreground">
+								<TableCell className="py-1 text-muted-foreground">
+									{m.metricUnit || EMPTY_VALUE}
+								</TableCell>
+								<TableCell className="py-1 pr-0 text-right font-mono text-muted-foreground tabular-nums">
 									{formatNumber(m.dataPointCount)}
 								</TableCell>
 							</TableRow>

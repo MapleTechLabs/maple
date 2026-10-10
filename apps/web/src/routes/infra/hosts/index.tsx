@@ -76,7 +76,7 @@ function HostsPage() {
 	return (
 		<DashboardPage
 			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Hosts" }]}
-			titleContent={<HostsViewTabs view="hosts" timeSearch={search} />}
+			tabs={<HostsViewTabs view="hosts" timeSearch={search} />}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
 			gap="lg"
 		>
@@ -85,7 +85,7 @@ function HostsPage() {
 				description="Every machine sending CPU, memory, disk and network metrics, busiest first."
 				actions={
 					<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add host
 					</Button>
 				}

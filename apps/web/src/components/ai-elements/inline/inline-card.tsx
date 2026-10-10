@@ -21,7 +21,7 @@ import { ChevronRightIcon } from "@/components/icons"
  * list gap and against each other.
  */
 const SHELL =
-	"@container/inline flex w-full flex-col gap-1 rounded-lg border border-border bg-muted px-3 py-2"
+	"@container/inline flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-3 py-2"
 
 const LINK_SHELL =
 	"transition-colors hover:border-ring/40 hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"

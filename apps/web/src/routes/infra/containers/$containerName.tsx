@@ -1,12 +1,11 @@
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import {
 	ResourceAttributesCard,
 	ResourceAttributesCardSkeleton,
@@ -20,22 +19,34 @@ import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { containerDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
+import { bucketSecondsForRange } from "@/components/infra/constants"
 import { formatSeconds } from "@/components/infra/chart-utils"
 import { severityLevel } from "@/components/infra/format"
 import { formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import type { ContainerInfraMetric } from "@/api/warehouse/infra"
+import type { TimeRange } from "@/components/time-range-picker/types"
+import {
+	TimeRangeSearchFields,
+	WIDEN_TIME_PRESET,
+	applyTimeRangeSearch,
+	canWidenTimeRange,
+} from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+
+const DEFAULT_PRESET = "1h"
 
 const containerDetailSearchSchema = Schema.Struct({
 	// Docker container names are unique per host only — the list link carries the
 	// host so a fleet-wide name like `redis` resolves to one container.
 	host: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
 })
 
 export const Route = createFileRoute("/infra/containers/$containerName")({
 	component: ContainerDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(containerDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 const METRIC_TABS = [
@@ -50,11 +61,19 @@ function ContainerDetailPage() {
 	const { containerName } = Route.useParams()
 	const search = Route.useSearch()
 	const hostName = search.host
-	const [preset, setPreset] = useState("1h")
+	const navigate = useNavigate({ from: Route.fullPath })
+	const preset = search.timePreset ?? DEFAULT_PRESET
 	const [metric, setMetric] = useState<ContainerInfraMetric>("cpu")
 
-	const { startTime, endTime } = useEffectiveTimeRange(undefined, undefined, preset)
-	const bucketSeconds = bucketSecondsFor(preset)
+	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
+	const bucketSeconds = bucketSecondsForRange(startTime, endTime)
+
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
+		navigate({
+			replace: options?.replace,
+			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
+		})
+	}
 
 	const summaryAtom = containerDetailSummaryResultAtom({
 		data: { containerName, hostName, startTime, endTime },
@@ -65,21 +84,6 @@ function ContainerDetailPage() {
 	const summary = Result.builder(summaryResult)
 		.onSuccess((r) => r.data)
 		.orElse(() => null)
-
-	const toolbar = (
-		<Select value={preset} onValueChange={(v) => v && setPreset(v)}>
-			<SelectTrigger className="w-[180px]">
-				<SelectValue />
-			</SelectTrigger>
-			<SelectContent>
-				{TIME_PRESETS.map((p) => (
-					<SelectItem key={p.value} value={p.value}>
-						{p.label}
-					</SelectItem>
-				))}
-			</SelectContent>
-		</Select>
-	)
 
 	const rightSidebar = summary ? (
 		<ResourceAttributesCard icon={DockerIcon}>
@@ -102,7 +106,7 @@ function ContainerDetailPage() {
 				{ label: "Containers", href: "/infra/containers" },
 				{ label: containerName },
 			]}
-			headerActions={toolbar}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
 			rightPanel={rightSidebar}
 			gap="lg"
 		>
@@ -156,11 +160,15 @@ function ContainerDetailPage() {
 						try a wider range, or go back to the containers list.
 					</p>
 					<div className="flex flex-wrap items-center justify-center gap-2">
-						{preset === "7d" ? null : (
-							<Button variant="outline" size="sm" onClick={() => setPreset("7d")}>
+						{canWidenTimeRange(search, DEFAULT_PRESET) ? (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => handleTimeChange({ presetValue: WIDEN_TIME_PRESET })}
+							>
 								Show last 7 days
 							</Button>
-						)}
+						) : null}
 						<Button variant="outline" size="sm" render={<Link to="/infra/containers" />}>
 							Back to containers
 						</Button>
