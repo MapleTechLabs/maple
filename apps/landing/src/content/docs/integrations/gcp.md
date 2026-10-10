@@ -142,19 +142,22 @@ A connection collects at least one of the two: the last one that is on can't be 
 
 ### Log filter
 
-**Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked. To change it on a connection, click **Configure**, choose a filter, click **Continue to the script** and run the script again.
+**Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked.
 
-| Log filter                     | The script                                                                                                                                                                                              |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Recommended**                | Sets the [recommended filter](#logs). Preselected for a connection that has no sink yet.                                                                                                                |
-| **Include GKE container logs** | Sets the recommended filter without its GKE container clause. Maple asks you to confirm before you continue.                                                                                            |
-| **Keep current filter**        | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: **Current filter in Log Router** opens it in the console. |
+Platform, request and audit logs are always forwarded. The ticks choose whose application output comes with them: what the code of a runtime writes to stdout and stderr.
 
-Include GKE container logs only for workloads that don't send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [GKE container logs](/docs/integrations/gcp-opentelemetry#gke-container-logs).
+| Runtime             | Ticked by default | Covers                                              |
+| ------------------- | ----------------- | --------------------------------------------------- |
+| **Cloud Run**       | Yes               | Services, jobs, worker pools and 2nd gen functions. |
+| **Cloud Functions** | Yes               | 1st gen functions.                                  |
+| **App Engine**      | Yes               | Standard and flexible.                              |
+| **GKE containers**  | No                | Every container of a cluster.                       |
 
-Choosing **Include GKE container logs** shows the notice **Not recommended if your GKE workloads already send logs to Maple**. Maple does not check whether they do. The button that continues stays disabled until you tick **Include GKE container logs anyway**. To back out, choose another filter.
+Untick a runtime whose workloads already send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [Application output](/docs/integrations/gcp-opentelemetry#application-output). Maple does not check which workloads do.
 
-For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while the other two options replace it.
+On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the ticks, click **Continue to the script** and run the script again.
+
+For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while **Replace filter** replaces it.
 
 ## Verify
 
@@ -251,15 +254,15 @@ Before it changes anything, the script asks Google which permissions the signed-
 
 ### Logs
 
-Maple receives every entry the sink's filter lets through. The recommended filter excludes:
+Maple receives every entry the sink's filter lets through. The default filter excludes:
 
-| Excluded                    | Reason                                                                                                                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data Access audit logs      | They record every API read.                                                                                                                                                                       |
-| Load balancer health checks | Probes hit each backend every few seconds.                                                                                                                                                        |
-| Kubernetes lease renewals   | A GKE cluster renews its leader-election leases all day: hundreds of audit entries a minute for an idle node.                                                                                     |
-| VM serial console output    | A VM writes thousands of lines of raw terminal output at boot.                                                                                                                                    |
-| GKE container logs          | Workloads that send logs over OpenTelemetry already deliver them to Maple, so each line would be stored twice. See [GKE container logs](/docs/integrations/gcp-opentelemetry#gke-container-logs). |
+| Excluded                                | Reason                                                                                                                                                                                                                      |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data Access audit logs                  | They record every API read.                                                                                                                                                                                                 |
+| Load balancer health checks             | Probes hit each backend every few seconds.                                                                                                                                                                                  |
+| Kubernetes lease renewals               | A GKE cluster renews its leader-election leases all day: hundreds of audit entries a minute for an idle node.                                                                                                               |
+| VM serial console output                | A VM writes thousands of lines of raw terminal output at boot.                                                                                                                                                              |
+| Application output of unticked runtimes | By default GKE containers: a cluster's workloads usually send their logs over OpenTelemetry already, so each line would be stored twice. See [Application output](/docs/integrations/gcp-opentelemetry#application-output). |
 
 The filter, one clause per line in the same order:
 
@@ -271,7 +274,13 @@ AND NOT logName:"serialconsole.googleapis.com"
 AND NOT resource.type="k8s_container"
 ```
 
-**Include GKE container logs** sets the filter without the last clause. To forward different logs, see [Log filter](#log-filter).
+The last clause is the unticked **GKE containers**: ticking it under [Log filter](#log-filter) removes the clause. Unticking another runtime adds its own:
+
+```text
+AND NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr"))
+AND NOT log_id("cloudfunctions.googleapis.com/cloud-functions")
+AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))
+```
 
 The script reports to Maple through a log named `maple-setup`. Maple reads that entry as the report and does not store it, so don't write your own logs under that name.
 
@@ -461,8 +470,8 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 | **Rejected**: "The Pub/Sub subscription wraps each entry in an envelope Maple can't read." | The subscription was changed to deliver wrapped messages. Run the setup script again: it resets the subscription. Entries sent meanwhile are lost.                                                                                   |
 | **Rejected**: "Maple could not store an entry just now."                                   | Nothing to do. Pub/Sub retries the entry for up to a day, and the status returns to **Receiving** with the next accepted entry.                                                                                                      |
 | **Rejected**: "This Maple organization is over its plan limit, so Maple refuses new logs." | Raise the plan limit under **Settings → Billing**. Pub/Sub retries refused entries for up to a day.                                                                                                                                  |
-| GKE container logs appear twice                                                            | The sink forwards GKE container logs and the workloads also send them over OpenTelemetry. In **Configure**, choose **Recommended** as the [log filter](#log-filter) and run the script again.                                        |
-| GKE container logs are missing                                                             | The recommended filter leaves them out. If the workloads don't send their logs over OpenTelemetry, choose **Include GKE container logs** as the [log filter](#log-filter) in **Configure** and run the script again.                 |
+| A workload's logs appear twice                                                             | The sink forwards its application output and the workload also sends its logs over OpenTelemetry. In **Configure**, choose **Replace filter**, untick its runtime under [Log filter](#log-filter) and run the script again.          |
+| GKE container logs are missing                                                             | **GKE containers** is unticked by default. If the workloads don't send their logs over OpenTelemetry, tick it under [Log filter](#log-filter) in **Configure** and run the script again.                                             |
 
 ### Metrics and resources
 

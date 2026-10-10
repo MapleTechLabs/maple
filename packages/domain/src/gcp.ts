@@ -1,4 +1,4 @@
-import type { GcpConnectorId } from "./primitives"
+import type { GcpConnectorId, GcpLogRuntime } from "./primitives"
 
 /**
  * Names of what a connector's setup script creates in the customer's Google Cloud project.
@@ -10,3 +10,14 @@ export const gcpConnectorResourceNames = (connectorId: GcpConnectorId) => {
 	const name = `maple-${connectorId.replaceAll("-", "").slice(0, 24)}`
 	return { serviceAccountId: name, topic: name, subscription: name, sink: name }
 }
+
+/**
+ * The runtimes whose application output a new log sink forwards. GKE containers are left out: a
+ * cluster's workloads usually reach Maple through OpenTelemetry or a collector that reads pod
+ * logs, and each line would then be stored twice.
+ */
+export const GCP_DEFAULT_APPLICATION_LOGS: ReadonlyArray<GcpLogRuntime> = [
+	"cloud_run",
+	"cloud_functions",
+	"app_engine",
+]

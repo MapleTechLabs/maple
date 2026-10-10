@@ -103,7 +103,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
 					const scripts = yield* gcp.scripts(tenant.orgId, params.id, {
-						logFilter: payload.log_filter ?? "keep",
+						applicationLogs: payload.application_logs ?? null,
 					})
 					return {
 						object: "gcp_connector.setup_scripts" as const,

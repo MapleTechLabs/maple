@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest"
 
 import { Option } from "effect"
+import { GcpLogRuntime } from "@maple/domain/primitives"
 import {
+	GCP_LOG_RUNTIMES,
 	cloudShellUrl,
 	gcpApplyLine,
 	gcpCollectLock,
 	gcpConnectionState,
 	gcpCreateRequest,
 	gcpDraftEffect,
+	gcpApplicationLogsLine,
 	gcpLogFilterChoice,
-	gcpLogFilters,
 	gcpLogState,
 	gcpMessageParts,
 	gcpMetricsState,
@@ -666,53 +668,44 @@ describe("gcpCreateRequest opt-ins", () => {
 	})
 })
 
-describe("gcpLogFilters", () => {
-	it("lists the recommended filter first, and keeping a filter only when a sink exists", () => {
-		expect(gcpLogFilters(false).map((filter) => filter.value)).toEqual([
-			"default",
-			"include_gke_container_logs",
-		])
-		expect(gcpLogFilters(true).map((filter) => filter.value)).toEqual([
-			"default",
-			"include_gke_container_logs",
-			"keep",
-		])
-		expect(gcpLogFilters(false)[0].label).toBe("Recommended")
+describe("gcpLogFilterChoice", () => {
+	const untouched = { keep: null, runtimes: null }
+
+	it("starts a new sink on the default runtimes and leaves an existing sink's filter alone", () => {
+		expect(gcpLogFilterChoice(untouched, false)).toEqual({
+			keep: false,
+			runtimes: ["cloud_run", "cloud_functions", "app_engine"],
+			applicationLogs: ["cloud_run", "cloud_functions", "app_engine"],
+		})
+		expect(gcpLogFilterChoice(untouched, true).applicationLogs).toBeUndefined()
+	})
+
+	it("has no filter to keep before a sink exists", () => {
+		expect(gcpLogFilterChoice({ keep: true, runtimes: null }, false).keep).toBe(false)
+	})
+
+	it("asks for exactly the ticked runtimes once the filter is replaced", () => {
+		expect(gcpLogFilterChoice({ keep: false, runtimes: ["gke"] }, true).applicationLogs).toEqual(["gke"])
+		expect(gcpLogFilterChoice({ keep: false, runtimes: [] }, true).applicationLogs).toEqual([])
+		// The ticks are remembered while the filter is kept, and not asked for.
+		expect(gcpLogFilterChoice({ keep: true, runtimes: ["gke"] }, true)).toEqual({
+			keep: true,
+			runtimes: ["gke"],
+			applicationLogs: undefined,
+		})
 	})
 })
 
-describe("gcpLogFilterChoice", () => {
-	it("starts a new sink on the recommended filter and leaves an existing sink's filter alone", () => {
-		expect(gcpLogFilterChoice(null, false, false)).toEqual({
-			selected: "default",
-			unacknowledged: false,
-			scriptFilter: "default",
-		})
-		expect(gcpLogFilterChoice(null, false, true)).toEqual({
-			selected: "keep",
-			unacknowledged: false,
-			scriptFilter: "keep",
-		})
+describe("gcpApplicationLogsLine", () => {
+	it("names the runtimes in display order, whatever order they were ticked in", () => {
+		expect(gcpApplicationLogsLine(["gke", "cloud_run"])).toBe(
+			"Platform logs and the output of Cloud Run, GKE containers",
+		)
+		expect(gcpApplicationLogsLine([])).toBe("Platform logs only, no application output")
 	})
 
-	it("includes GKE container logs only once acknowledged", () => {
-		expect(gcpLogFilterChoice("include_gke_container_logs", false, false)).toEqual({
-			selected: "include_gke_container_logs",
-			unacknowledged: true,
-			scriptFilter: "default",
-		})
-		// An existing sink's filter is not replaced by a choice that was never confirmed.
-		expect(gcpLogFilterChoice("include_gke_container_logs", false, true).scriptFilter).toBe("keep")
-		expect(gcpLogFilterChoice("include_gke_container_logs", true, true)).toEqual({
-			selected: "include_gke_container_logs",
-			unacknowledged: false,
-			scriptFilter: "include_gke_container_logs",
-		})
-	})
-
-	it("applies the other filters as chosen", () => {
-		expect(gcpLogFilterChoice("default", false, true).scriptFilter).toBe("default")
-		expect(gcpLogFilterChoice("keep", false, true).scriptFilter).toBe("keep")
+	it("has a name for every runtime the API takes", () => {
+		expect(GCP_LOG_RUNTIMES.map(({ value }) => value)).toEqual([...GcpLogRuntime.literals])
 	})
 })
 

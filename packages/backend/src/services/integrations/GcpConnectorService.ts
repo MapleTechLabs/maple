@@ -14,7 +14,7 @@ import {
 } from "@maple/domain/http"
 import {
 	GcpConnectorId,
-	type GcpLogFilter,
+	type GcpLogRuntime,
 	type GcpProjectId,
 	type GcpResourceNumber,
 	type GcpScopeType,
@@ -108,7 +108,7 @@ export interface GcpConnectorServiceApi {
 	readonly scripts: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
-		options: { readonly logFilter: GcpLogFilter },
+		options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 	) => Effect.Effect<
 		{ readonly setupScript: string; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
@@ -430,7 +430,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const scripts = Effect.fn("GcpConnectorService.scripts")(function* (
 				orgId: OrgId,
 				connectorId: GcpConnectorId,
-				options: { readonly logFilter: GcpLogFilter },
+				options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const row = yield* selectRow(orgId, connectorId)
@@ -457,7 +457,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						mapleServiceAccountEmail,
 						logsEnabled: row.logsEnabled,
 						metricsEnabled: row.metricsEnabled,
-						logFilter: options.logFilter,
+						applicationLogs: options.applicationLogs,
 					}),
 					cleanupScript: yield* renderGcpCleanupScript(target),
 				}

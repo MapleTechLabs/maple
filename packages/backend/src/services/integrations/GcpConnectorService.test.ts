@@ -68,7 +68,7 @@ const organizationScope: CreateGcpConnectorInput = {
 	metricsEnabled: true,
 }
 
-const scriptOptions = { logFilter: "keep" } as const
+const scriptOptions = { applicationLogs: null }
 
 interface StoredConnector {
 	readonly secret_ciphertext: string
@@ -161,7 +161,7 @@ describe("GcpConnectorService", () => {
 			assert.isTrue((yield* gcp.status(orgId)).metricsAvailable)
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
 			const both = yield* gcp.scripts(orgId, connector.id, {
-				logFilter: "include_gke_container_logs",
+				applicationLogs: ["cloud_run", "cloud_functions", "app_engine", "gke"],
 			})
 			assert.include(both.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
 			assert.notInclude(both.setupScript, "k8s_container")

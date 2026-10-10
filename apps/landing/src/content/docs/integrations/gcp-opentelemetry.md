@@ -20,7 +20,7 @@ Your workloads send traces, logs and metrics straight to Maple over OpenTelemetr
 ### GKE
 
 1. Instrument each service with an OpenTelemetry SDK. Export to Maple, or to the [Maple Kubernetes collector](/docs/infrastructure/kubernetes) in the cluster.
-2. [Connect Google Cloud](/docs/integrations/gcp#connect) and keep the log filter on **Recommended**.
+2. [Connect Google Cloud](/docs/integrations/gcp#connect) and leave **GKE containers** unticked under **Log filter**.
 
 The connection then adds node and cluster logs, audit logs and the `gcp.kubernetes.*` metrics.
 
@@ -28,7 +28,7 @@ The connection then adds node and cluster logs, audit logs and the `gcp.kubernet
 
 1. Instrument the service with an OpenTelemetry SDK that exports to Maple, with the settings under [Instrument a Cloud Run service](#instrument-a-cloud-run-service).
 2. [Connect Google Cloud](/docs/integrations/gcp#connect).
-3. If the service exports logs over OpenTelemetry, [leave out its container output](#change-the-filter) too: the recommended filter forwards what a Cloud Run container writes to stdout and stderr.
+3. If the service exports logs over OpenTelemetry, untick **Cloud Run** under [**Log filter**](#change-the-filter): by default the connection forwards what a Cloud Run container writes to stdout and stderr.
 
 The connection adds Cloud Run's request logs and the `gcp.run.*` metrics. Cloud Run sends a `traceparent` header with every request. An SDK that continues it gives the server span the trace ID of Google's request log for that request, so the request log, your spans and your log lines join on one trace.
 
@@ -40,35 +40,41 @@ The connection adds Cloud Run's request logs and the `gcp.run.*` metrics. Cloud 
 
 The connection adds audit logs and the `gcp.compute.*` metrics.
 
-## GKE container logs
+## Application output
 
-The recommended filter leaves out `resource.type="k8s_container"`: what the containers of a GKE cluster write to stdout and stderr.
+Application output is what the code of a runtime writes to stdout and stderr. The connection forwards it per runtime, and you choose the runtimes under **Log filter**. Platform, request and audit logs are forwarded either way.
 
-| Reason        | Detail                                                                                                                                                                       |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Duplicates    | A workload that sends its logs over OpenTelemetry, or a collector that reads pod logs, already delivers each line to Maple. Forwarding it from Google Cloud stores it twice. |
-| No trace link | The OpenTelemetry copy carries the trace and span ID of the request that wrote it. The copy from Google Cloud has neither.                                                   |
-| Volume        | Container output grows with traffic. Every forwarded line counts toward your Maple plan and toward the Pub/Sub usage Google bills to your account.                           |
+| Runtime             | Forwarded by default | Left out when unticked                                                                                | Still forwarded                          |
+| ------------------- | -------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **Cloud Run**       | Yes                  | `run.googleapis.com/stdout` and `stderr` of services, jobs, worker pools and 2nd gen functions        | Request logs, system logs, audit logs    |
+| **Cloud Functions** | Yes                  | `cloudfunctions.googleapis.com/cloud-functions` of 1st gen functions, with its start and finish lines | Audit logs                               |
+| **App Engine**      | Yes                  | `stdout` and `stderr` of `gae_app`                                                                    | Request logs, audit logs                 |
+| **GKE containers**  | No                   | Everything of `resource.type="k8s_container"`                                                         | Node, pod and cluster events, audit logs |
 
-Include GKE container logs when the workloads don't send their logs over OpenTelemetry and no collector reads them. Cloud Logging is then the only place those lines exist.
+Untick a runtime when its workloads already send their logs to Maple:
+
+| Reason        | Detail                                                                                                                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicates    | A workload that exports logs over OpenTelemetry and also prints them, or a collector that reads pod logs, already delivers each line. Forwarding it from Google Cloud stores it twice. |
+| No trace link | The OpenTelemetry copy carries the trace and span ID of the request that wrote it. The copy from Google Cloud has neither.                                                             |
+| Volume        | Application output grows with traffic. Every forwarded line counts toward your Maple plan and toward the Pub/Sub usage Google bills to your account.                                   |
+
+Maple does not check which workloads send their logs another way. A runtime with both kinds of workloads is one tick: tick it when the uninstrumented ones matter more, since Cloud Logging is the only place their lines exist.
+
+GKE containers are unticked by default because a cluster's logs usually reach Maple through OpenTelemetry or the [Maple Kubernetes collector](/docs/infrastructure/kubernetes).
+
+Other places your code runs have no tick and are always forwarded: Compute Engine logs collected by the Ops Agent, and the job output of Batch, Dataflow, Dataproc, Cloud Composer and Vertex AI. Leave them out with a filter of your own.
 
 ## Change the filter
 
-On the connection's row, click **Configure** and choose a filter under **Log filter**. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
+On the connection's row, click **Configure**. Under **Log filter**, choose **Replace filter** and tick the runtimes whose application output to forward. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
 
-| Log filter                     | The sink forwards                                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| **Recommended**                | Platform logs. Leaves out GKE container logs and the [other exclusions](/docs/integrations/gcp#logs). |
-| **Include GKE container logs** | The same, plus GKE container logs. Maple asks you to confirm before you continue.                     |
-| **Keep current filter**        | What it forwards now. Offered, and preselected, once a run has set log forwarding up.                 |
+| Log filter              | The sink forwards                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| **Keep current filter** | What it forwards now. Preselected once a run has set log forwarding up.               |
+| **Replace filter**      | Platform, request and audit logs, plus the application output of the ticked runtimes. |
 
-For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top, set `LOG_FILTER_MODE` to `set` and run it. To also leave out Cloud Run container output, for services that send their logs over OpenTelemetry, add this at the end of `LOG_FILTER`, inside the quotes:
-
-```text
-AND NOT log_id("run.googleapis.com/stdout") AND NOT log_id("run.googleapis.com/stderr")
-```
-
-Cloud Run's request logs are in `run.googleapis.com/requests` and still pass. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language).
+For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top, set `LOG_FILTER_MODE` to `set` and run it. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language).
 
 ## Instrument a Cloud Run service
 
