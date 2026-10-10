@@ -1,6 +1,6 @@
 // Google Cloud connector rules shared by the card, the hub and the Infrastructure page: what
-// each capability is doing, what a connection asks of its owner, the switch rules, and the add
-// form's validation. Pure (no React, no atoms), like planetscale-setup-steps.ts.
+// each capability is doing, what a connection asks of its owner, what a change to its configuration
+// does and when, and the add form's validation. Pure (no React, no atoms), like planetscale-setup-steps.ts.
 
 import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
@@ -155,10 +155,10 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	}
 }
 
-/** The card's dot and label for each state a switched-on capability can be in. */
+/** The card's dot and label for each state a capability that is on can be in. */
 export const GCP_LOG_STATUS = {
 	failing: { tone: "crit", label: "Rejecting logs" },
-	"setup-pending": { tone: "neutral", label: "Setup pending" },
+	"setup-pending": { tone: "neutral", label: "Not set up" },
 	"setup-running": { tone: "neutral", label: "Setup running" },
 	waiting: { tone: "neutral", label: "Waiting for first logs" },
 	idle: { tone: "neutral", label: "No logs in 24 hours" },
@@ -166,7 +166,7 @@ export const GCP_LOG_STATUS = {
 } as const satisfies Record<Exclude<GcpLogState["kind"], "off">, { tone: Tone; label: string }>
 
 export const GCP_METRICS_STATUS = {
-	"setup-pending": { tone: "neutral", label: "Setup pending" },
+	"setup-pending": { tone: "neutral", label: "Not set up" },
 	"setup-running": { tone: "neutral", label: "Setup running" },
 	waiting: { tone: "neutral", label: "Waiting for first metrics" },
 	failing: { tone: "crit", label: "Can't read metrics" },
@@ -178,23 +178,26 @@ export const GCP_METRICS_STATUS = {
 type ConnectorFields = LogFields & MetricsFields
 
 /**
- * What a re-run of the setup script would change, for a connection whose switches disagree with
- * what a run reported. A capability no run has reported on is not in the list: that is setup,
- * and while a first run is under way its sections report one after the other.
+ * What still waits on a re-run of the setup script, for a connection whose configuration disagrees
+ * with what a run reported: a sentence per capability, saying what goes on until then. A capability
+ * no run has reported on is not in the list: that is setup, and while a first run is under way its
+ * sections report one after the other.
  */
 export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): ReadonlyArray<string> => {
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
 	return [
 		log.kind === "setup-pending" && connector.applied_logs_enabled === false
-			? "create the log sink, topic and subscription"
+			? "Log forwarding starts once the script has created the log sink."
 			: null,
-		log.kind === "off" && log.stillSetUp ? "remove the log sink, topic and subscription" : null,
+		log.kind === "off" && log.stillSetUp
+			? "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
+			: null,
 		metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
-			? "create the read-only service account and grant its roles"
+			? "Metrics and resources start once the script has created the read-only service account."
 			: null,
 		metrics.kind === "off" && metrics.stillSetUp
-			? "remove the read-only service account and its roles"
+			? "The read-only service account stays in Google Cloud until the script has removed it."
 			: null,
 	].filter((line) => line !== null)
 }
@@ -204,7 +207,7 @@ type GcpConnectionState = "attention" | "changes-pending" | "setup-pending" | "w
 
 /**
  * Whether Google Cloud waits on the setup script, and for what: a change to what a run set up, or
- * the setup itself. Null when the switches match what the runs reported.
+ * the setup itself. Null when the configuration matches what the runs reported.
  */
 export function gcpScriptNeeded(
 	connector: ConnectorFields,
@@ -239,7 +242,7 @@ export function gcpConnectionState(connector: ConnectorFields, nowMs: number): G
 /**
  * Whether the setup panel's confirm step has waited long enough to say what to check. A connection
  * no run has reported on counts from its creation, so a reload does not start the wait over. After
- * a report the API has no time for the switch change, and the panel's opening stands in.
+ * a report the API has no time for the change, and the opening of the apply step stands in.
  */
 export const gcpScriptOverdue = (
 	connector: Pick<V2GcpConnector, "created_at" | "setup_reported_at">,
@@ -258,27 +261,101 @@ export const GCP_CONNECTION_LABEL = {
 	healthy: "Healthy",
 } as const satisfies Record<GcpConnectionState, string>
 
+/** The states worst first: the order of a list of connections, and of what the page header names. */
+export const GCP_STATE_ORDER = [
+	"attention",
+	"setup-pending",
+	"changes-pending",
+	"waiting",
+	"healthy",
+] as const satisfies ReadonlyArray<GcpConnectionState>
+
 /** The worst state among several connections; healthy when there are none. */
 export const gcpWorstState = (states: ReadonlyArray<GcpConnectionState>): GcpConnectionState =>
-	(["attention", "setup-pending", "changes-pending", "waiting"] as const).find((state) =>
-		states.includes(state),
-	) ?? "healthy"
+	GCP_STATE_ORDER.find((state) => states.includes(state)) ?? "healthy"
+
+/**
+ * The capabilities whose failure asks, in the API's words, for another run of the setup script.
+ * The connection then offers that run once, however many failures ask for it.
+ */
+export function gcpRunAsked(connector: ConnectorFields, nowMs: number): ReadonlyArray<GcpCapability> {
+	const log = gcpLogState(connector, nowMs)
+	const metrics = gcpMetricsState(connector, nowMs)
+	const asked: Array<GcpCapability> = []
+	if (log.kind === "failing" && log.error.includes("setup script")) asked.push("logs")
+	if (
+		(metrics.kind === "failing" || metrics.kind === "incomplete") &&
+		metrics.error.includes("setup script")
+	) {
+		asked.push("metrics")
+	}
+	return asked
+}
 
 export type GcpFlags = Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled">
 
-/** Why a switch cannot be flipped: it is the last one on, or the deployment cannot read metrics. */
-export type GcpSwitchLock = "last-on" | "metrics-unavailable"
+export type GcpCapability = "logs" | "metrics"
 
-/** The API refuses both of these, so the card disables the switch and says why. */
-export function gcpSwitchLock(
+/** Why a capability cannot be changed: it is the last one on, or the deployment cannot read metrics. */
+export type GcpCollectLock = "last-on" | "metrics-unavailable"
+
+/** The API refuses both of these, so the configuration disables the choice and says why. */
+export function gcpCollectLock(
 	flags: GcpFlags,
-	capability: "logs" | "metrics",
+	capability: GcpCapability,
 	metricsAvailable: boolean,
-): GcpSwitchLock | null {
+): GcpCollectLock | null {
 	const on = capability === "logs" ? flags.logs_enabled : flags.metrics_enabled
 	const otherOn = capability === "logs" ? flags.metrics_enabled : flags.logs_enabled
 	if (on) return otherOn ? null : "last-on"
 	return capability === "metrics" && !metricsAvailable ? "metrics-unavailable" : null
+}
+
+/**
+ * What saving a choice does, and when. Turning a capability off acts in Maple at once and in
+ * Google Cloud when the script runs; turning it on does nothing until the script has run, unless
+ * what it needs is still there from before.
+ */
+export type GcpDraftEffect = "starts-after-script" | "resumes-now" | "stops-now" | "removed-by-script"
+
+export function gcpDraftEffect(
+	connector: ConnectorFields,
+	capability: GcpCapability,
+	draft: boolean,
+): GcpDraftEffect | null {
+	const logs = capability === "logs"
+	const wanted = logs ? connector.logs_enabled : connector.metrics_enabled
+	const applied = logs ? connector.applied_logs_enabled : connector.applied_metrics_enabled
+	const lastAt = logs ? connector.last_log_received_at : connector.last_metrics_received_at
+	// Data that arrived stands in for a report that never reached Maple.
+	const setUp = applied === true || (applied === null && lastAt !== null)
+	if (draft) return setUp ? (wanted ? null : "resumes-now") : "starts-after-script"
+	return setUp ? (wanted ? "stops-now" : "removed-by-script") : null
+}
+
+/** One line of the apply step's recap: what the script does about a capability. */
+export const gcpApplyLine = (wanted: boolean, applied: boolean | null): string =>
+	wanted
+		? applied === true
+			? "On"
+			: "On after this run"
+		: applied === true
+			? "Off in Maple. This run removes it from Google Cloud."
+			: "Off"
+
+/**
+ * A failure in the API's words, cut for display and not reworded: the first sentence, the
+ * sentences that say what to do, and what Google answered, which closes the message in brackets.
+ */
+export function gcpMessageParts(text: string): {
+	readonly headline: string
+	readonly body: ReadonlyArray<string>
+	readonly answer: string | null
+} {
+	const [, message = text, answer] = /^(.*?)\s*(\([^()]*\))?$/s.exec(text.trim()) ?? []
+	// A sentence ends at a full stop before a space. An address ends before one too, without a stop.
+	const [headline = "", ...body] = message.split(/(?<=\.)\s+|(?<=https:\/\/\S+)\s+(?=[A-Z])/)
+	return { headline: headline.replace(/\.$/, ""), body, answer: answer?.slice(1, -1) ?? null }
 }
 
 export const GCP_SCOPE_NAMES = {
@@ -364,15 +441,16 @@ const LOG_FILTERS = [
 	{ value: "keep", label: "Keep the sink's current filter" },
 ] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string }>
 
-/** The setup panel's log filters in display order. Keeping a filter needs a sink that has one. */
+/** The configuration's log filters in display order. Keeping a filter needs a sink that has one. */
 export const gcpLogFilters = (sinkExists: boolean) =>
 	LOG_FILTERS.filter((filter) => filter.value !== "keep" || sinkExists)
 
 /**
- * What the setup panel's log filter stands on. Nothing chosen: an existing sink keeps its filter,
- * so copying the script again for a switch change never resets it, and a new sink gets the
+ * What the configuration's log filter stands on. Nothing chosen: an existing sink keeps its filter,
+ * so running the script again for another change never resets it, and a new sink gets the
  * recommended one. Including GKE container logs counts once it is acknowledged: until then the
- * script stays on the filter the panel started with, which is also where backing out returns to.
+ * script stays on the filter the configuration started with, which is also where backing out
+ * returns to.
  */
 export const gcpLogFilterChoice = (
 	chosen: GcpLogFilter | null,
