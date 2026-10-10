@@ -5,7 +5,8 @@ import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Badge, badgeVariants } from "@maple/ui/components/ui/badge"
-import { ListFooter, LoadMoreButton, LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
+import { ListFooter, LoadingMoreRow } from "@maple/ui/components/ui/list-footer"
+import { useMountEffect } from "@/hooks/use-mount-effect"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { countLabel, EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
@@ -78,9 +79,41 @@ const COLUMNS = {
 	time: "hidden w-24 shrink-0 justify-end @2xl:flex",
 } as const
 
-/** Rendered rows (~65px each) past which the sentinel sits below any viewport plus
- *  its 400px root margin, so it only fires once the user scrolls. */
-const AUTO_LOAD_MIN_ROWS = 25
+/** Consecutive pages that may add no visible row before auto-loading waits for a scroll. */
+const MAX_STALLED_PAGES = 3
+
+const RESUME_EVENTS = ["scroll", "wheel", "touchmove", "keydown"] as const
+
+/**
+ * A page that only extends a folded run adds no row, so the sentinel stays in
+ * view and would pull every remaining page with no scrolling. Pause after a few
+ * such pages in a row and pick up again the next time the user scrolls.
+ */
+function useAutoLoadPause(sessionCount: number, rowCount: number) {
+	const [progress, setProgress] = useState({ sessionCount, rowCount, stalledPages: 0 })
+	if (progress.sessionCount !== sessionCount) {
+		const stalled = sessionCount > progress.sessionCount && rowCount <= progress.rowCount
+		setProgress({ sessionCount, rowCount, stalledPages: stalled ? progress.stalledPages + 1 : 0 })
+	} else if (progress.rowCount !== rowCount) {
+		setProgress({ ...progress, rowCount })
+	}
+	return {
+		paused: progress.stalledPages >= MAX_STALLED_PAGES,
+		resume: () => setProgress((current) => ({ ...current, stalledPages: 0 })),
+	}
+}
+
+/** Mounted while auto-loading is paused. `wheel`, `touchmove` and `keydown` cover a list too short to scroll. */
+function ResumeOnScroll({ onResume }: { onResume: () => void }) {
+	useMountEffect(() => {
+		const options = { capture: true, passive: true }
+		for (const event of RESUME_EVENTS) window.addEventListener(event, onResume, options)
+		return () => {
+			for (const event of RESUME_EVENTS) window.removeEventListener(event, onResume, options)
+		}
+	})
+	return null
+}
 
 interface SessionsListProps {
 	sessions: ReadonlyArray<SessionRow>
@@ -140,15 +173,7 @@ export function SessionsList({
 		expanded,
 		nowMs: effectiveNowMs,
 	})
-	// Folded runs can leave a page of sessions only a few rows tall, which keeps the
-	// auto-loading sentinel in view and pulls every page with no scrolling. Ask
-	// instead until the rows are tall enough that reaching the end takes a scroll,
-	// and whenever the list ends in a folded run: the next page may only extend
-	// that run, leaving the sentinel exactly where it was.
-	const hidesSessions = items.some((item) => item.kind === "quiet" && !item.expanded)
-	const lastItem = items.at(-1)
-	const endsInFoldedRun = lastItem?.kind === "quiet" && !lastItem.expanded
-	const manualLoadMore = hidesSessions && (items.length < AUTO_LOAD_MIN_ROWS || endsInFoldedRun)
+	const autoLoad = useAutoLoadPause(sessions.length, items.length)
 	const toggleRun = (key: string) =>
 		setExpanded((previous) => {
 			const next = new Set(previous)
@@ -230,14 +255,8 @@ export function SessionsList({
 			</div>
 
 			{hasMore &&
-				(manualLoadMore ? (
-					<div className="flex justify-center py-3">
-						<LoadMoreButton
-							label="Load more sessions"
-							loading={loadingMore}
-							onClick={() => onReachEnd?.()}
-						/>
-					</div>
+				(autoLoad.paused ? (
+					<ResumeOnScroll onResume={autoLoad.resume} />
 				) : (
 					<ReachEndSentinel onReachEnd={onReachEnd} loading={loadingMore} />
 				))}

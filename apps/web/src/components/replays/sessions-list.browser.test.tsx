@@ -74,6 +74,57 @@ describe("SessionsList pagination observer", () => {
 		view.unmount()
 		expect(second.disconnect).toHaveBeenCalledOnce()
 	})
+
+	const bots = (count: number): SessionRow[] =>
+		Array.from({ length: count }, (_, index) => ({
+			...session,
+			sessionId: `bot-${index}`,
+			tags: ["bot"],
+			traceCount: 0,
+		}))
+	const onReachEnd = vi.fn()
+	const list = (sessions: SessionRow[]) => (
+		<SessionsList sessions={sessions} collapseLowSignal hasMore onReachEnd={onReachEnd} />
+	)
+
+	// A page that only extends a folded run leaves the sentinel where it was, so
+	// it would pull every remaining page without the user scrolling.
+	it("pauses after pages that add no row and resumes on scroll", () => {
+		const view = render(list([session, ...bots(2)]))
+		const first = MockIntersectionObserver.instances[0]!
+
+		view.rerender(list([session, ...bots(4)]))
+		view.rerender(list([session, ...bots(6)]))
+		expect(first.disconnect).not.toHaveBeenCalled()
+
+		view.rerender(list([session, ...bots(8)]))
+		expect(first.disconnect).toHaveBeenCalledOnce()
+		expect(MockIntersectionObserver.instances).toHaveLength(1)
+		expect(view.queryByRole("button", { name: /load more/i })).toBeNull()
+
+		fireEvent.scroll(window)
+		expect(MockIntersectionObserver.instances).toHaveLength(2)
+	})
+
+	// A list too short to scroll gives a keyboard no `scroll` event to resume on.
+	it("resumes a paused list on a key press", () => {
+		const view = render(list([session, ...bots(2)]))
+		for (const count of [4, 6, 8]) view.rerender(list([session, ...bots(count)]))
+		expect(MockIntersectionObserver.instances).toHaveLength(1)
+
+		fireEvent.keyDown(window, { key: "PageDown" })
+		expect(MockIntersectionObserver.instances).toHaveLength(2)
+	})
+
+	it("keeps auto-loading while pages add rows", () => {
+		const engaged = (count: number) =>
+			Array.from({ length: count }, (_, index) => ({ ...session, sessionId: `s-${index}` }))
+		const view = render(list([...bots(2), ...engaged(1)]))
+		for (const count of [2, 3, 4, 5]) view.rerender(list([...bots(2), ...engaged(count)]))
+
+		expect(MockIntersectionObserver.instances).toHaveLength(1)
+		expect(MockIntersectionObserver.instances[0]!.disconnect).not.toHaveBeenCalled()
+	})
 })
 
 // The list is virtualized against a scroll ancestor that jsdom gives zero
@@ -246,58 +297,6 @@ describe("SessionsList low-signal runs", () => {
 		expect(run.getAttribute("aria-expanded")).toBe("true")
 		// Each row renders its tags twice: stacked (narrow) and in the Tags column.
 		expect(view.getAllByText("Bot")).toHaveLength(4)
-	})
-
-	// A folded run is one short row, so an auto-loading sentinel after it would
-	// stay in view and pull every page without the user scrolling.
-	it("asks before loading more when the list ends in a folded run", () => {
-		const onReachEnd = vi.fn()
-		const view = render(
-			<SessionsList
-				sessions={[session, bot("bot-1"), bot("bot-2")]}
-				collapseLowSignal
-				hasMore
-				onReachEnd={onReachEnd}
-			/>,
-		)
-		fireEvent.click(view.getByRole("button", { name: "Load more sessions" }))
-		expect(onReachEnd).toHaveBeenCalledOnce()
-	})
-
-	it("asks before loading more when folding leaves the list short, whatever the last row", () => {
-		const onReachEnd = vi.fn()
-		const noise = Array.from({ length: 49 }, (_, index) => bot(`bot-${index}`))
-		const view = render(
-			<SessionsList sessions={[...noise, session]} collapseLowSignal hasMore onReachEnd={onReachEnd} />,
-		)
-		expect(view.getByRole("button", { name: "Load more sessions" })).toBeTruthy()
-		expect(onReachEnd).not.toHaveBeenCalled()
-	})
-
-	it("asks before loading more when a long list ends in a folded run", () => {
-		const engaged = Array.from({ length: 30 }, (_, index) => ({ ...session, sessionId: `s-${index}` }))
-		const view = render(
-			<SessionsList
-				sessions={[...engaged, bot("bot-1"), bot("bot-2")]}
-				collapseLowSignal
-				hasMore
-				onReachEnd={vi.fn()}
-			/>,
-		)
-		expect(view.getByRole("button", { name: "Load more sessions" })).toBeTruthy()
-	})
-
-	it("keeps auto-loading a long list that ends in a session", () => {
-		const engaged = Array.from({ length: 30 }, (_, index) => ({ ...session, sessionId: `s-${index}` }))
-		const view = render(
-			<SessionsList
-				sessions={[bot("bot-1"), bot("bot-2"), ...engaged]}
-				collapseLowSignal
-				hasMore
-				onReachEnd={vi.fn()}
-			/>,
-		)
-		expect(view.queryByRole("button", { name: "Load more sessions" })).toBeNull()
 	})
 
 	it("shows every row when collapsing is off", () => {
