@@ -622,6 +622,7 @@ export {
 	type PodFacetsOutput,
 	type ListNodesOpts,
 	type ListNodesOutput,
+	type NodeCapacityOutput,
 	type NodeDetailSummaryOpts,
 	type NodeDetailSummaryOutput,
 	type NodeGaugeTimeseriesOpts,

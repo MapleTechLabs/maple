@@ -297,6 +297,16 @@ const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
 	count: row.count,
 })
 
+const nodeCapacity = (row: CH.NodeCapacityOutput) => ({
+	cpuUsage: row.cpuUsage || 0,
+	cpuAllocatable: row.cpuAllocatable || 0,
+	cpuUtilization: row.cpuUtilization || 0,
+	memoryUsage: row.memoryUsage || 0,
+	memoryAllocatable: row.memoryAllocatable || 0,
+	memoryUtilization: row.memoryUtilization || 0,
+	uptime: row.uptime || 0,
+})
+
 const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	serviceName: decodeServiceName(row.serviceName),
 	workloadKind: row.workloadKind,
@@ -1741,8 +1751,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								environment: row.environment,
 								kubeletVersion: row.kubeletVersion,
 								lastSeen: DateTime.formatIso(row.lastSeen),
-								cpuUsage: row.cpuUsage || 0,
-								uptime: row.uptime || 0,
+								...nodeCapacity(row),
 							})),
 						})
 					}),
@@ -1760,8 +1769,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										containerRuntime: row.containerRuntime,
 										firstSeen: DateTime.formatIso(row.firstSeen),
 										lastSeen: DateTime.formatIso(row.lastSeen),
-										cpuUsage: row.cpuUsage || 0,
-										uptime: row.uptime || 0,
+										...nodeCapacity(row),
 									}
 								: null,
 						})

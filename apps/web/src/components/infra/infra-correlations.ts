@@ -74,7 +74,8 @@ const POD_CHARTS: ReadonlyArray<{ label: string; metric: PodInfraMetric }> = [
 
 const NODE_CHARTS: ReadonlyArray<{ label: string; metric: NodeInfraMetric }> = [
 	{ label: "CPU cores", metric: "cpu_usage" },
-	{ label: "Uptime", metric: "uptime" },
+	{ label: "CPU / allocatable", metric: "cpu_utilization" },
+	{ label: "Memory / allocatable", metric: "memory_utilization" },
 ]
 
 const HOST_CHARTS: ReadonlyArray<{ label: string; metric: HostInfraMetric }> = [

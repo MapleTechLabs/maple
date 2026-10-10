@@ -651,7 +651,7 @@ export const Queries = {
 			CH.compile(
 				CH.nodeGaugeTimeseriesQuery({
 					nodeName: payload.nodeName,
-					metricName: nodeMetricSpec(payload.metric).metricName,
+					...nodeMetricSpec(payload.metric),
 				}),
 				{
 					orgId,
