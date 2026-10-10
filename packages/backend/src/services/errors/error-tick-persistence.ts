@@ -300,7 +300,7 @@ const mergeVersions = (
  * Failing the transaction's Effect with it is what rolls the window back.
  */
 export class ErrorTickClaimLost extends Schema.TaggedError<ErrorTickClaimLost>()(
-	"@maple/api/services/ErrorTickClaimLostError",
+	"@maple/backend/services/ErrorTickClaimLostError",
 	{
 		message: Schema.String,
 		orgId: Schema.String,
@@ -316,7 +316,7 @@ export const isErrorTickClaimLost = (error: unknown): error is ErrorTickClaimLos
 
 /** The batched issue upsert's RETURNING omitted a fingerprint it was handed. */
 export class ErrorTickUpsertMissingRow extends Schema.TaggedError<ErrorTickUpsertMissingRow>()(
-	"@maple/api/services/ErrorTickUpsertMissingRowError",
+	"@maple/backend/services/ErrorTickUpsertMissingRowError",
 	{ message: Schema.String, fingerprintHash: Schema.String },
 ) {}
 

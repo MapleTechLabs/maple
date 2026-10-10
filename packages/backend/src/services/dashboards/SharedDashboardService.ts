@@ -101,7 +101,7 @@ const toDashboardShare = (row: DashboardShareRow, token: string) => {
 }
 
 class ShareEncryptionKeyConfigError extends Schema.TaggedError<ShareEncryptionKeyConfigError>()(
-	"@maple/api/services/ShareEncryptionKeyConfigError",
+	"@maple/backend/services/ShareEncryptionKeyConfigError",
 	{ message: Schema.String },
 ) {}
 
@@ -228,8 +228,8 @@ export class SharedDashboardService extends Context.Service<
 		/*
 		 * Unlike the HMAC key this one is required in `Env` and already carries
 		 * every other secret this app stores at rest, so there is no "not
-		 * configured" case to model — a value that is not base64 for 32 bytes is a
-		 * broken deployment, which is a defect rather than an expected failure.
+		 * configured" case to model: a value that is not base64 for 32 bytes is a
+		 * broken deployment, so it fails the layer build with a typed config error.
 		 */
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -237,7 +237,7 @@ export class SharedDashboardService extends Context.Service<
 				new ShareEncryptionKeyConfigError({
 					message: `MAPLE_INGEST_KEY_ENCRYPTION_KEY: ${message}`,
 				}),
-		).pipe(Effect.orDie)
+		)
 
 		/**
 		 * A row whose token will not decrypt is a storage-integrity failure, not a

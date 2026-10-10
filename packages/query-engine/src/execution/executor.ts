@@ -5,6 +5,7 @@ import {
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
 	type WarehouseQueryRequest,
+	WarehouseQueryError,
 	WarehouseQueryResponse,
 	WarehouseResultDecodeError,
 	WarehouseScopeError,
@@ -24,7 +25,6 @@ import {
 } from "../profiles"
 import {
 	mapWarehouseError,
-	toWarehouseQueryError,
 	warehouseFailureAttributes,
 	type WarehouseExecutionError,
 	type WarehouseReadExecutionError,
@@ -579,15 +579,13 @@ WHERE name = 'enable_full_text_index'`,
 						Effect.timeoutOrElse({
 							duration: Duration.millis(attemptTimeoutMs),
 							orElse: () =>
-								// Constructed directly via `toWarehouseQueryError` so a transient
-								// message matcher cannot feed this client timeout into the retry loop.
+								// Constructed directly so a transient message matcher cannot feed
+								// this client timeout into the retry loop.
 								Effect.fail(
-									toWarehouseQueryError(
-										pipe,
-										new Error(
-											`Warehouse query exceeded ${attemptTimeoutMs}ms client timeout`,
-										),
-									),
+									new WarehouseQueryError({
+										message: `Warehouse query exceeded ${attemptTimeoutMs}ms client timeout`,
+										pipeName: pipe,
+									}),
 								),
 						}),
 					)

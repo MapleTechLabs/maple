@@ -119,17 +119,14 @@ export class CliDeviceAuthService extends Context.Service<
 		const env = yield* Env
 		// Absent outside the api Worker (tests, the CLI): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(CliAuthRateLimit)
-		const apiKeyHmacKey = yield* Effect.try({
-			try: () => parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY)),
-			catch: (error) =>
-				new CliDevicePersistenceError({
-					message: error instanceof Error ? error.message : "Invalid API key lookup HMAC key",
-				}),
-		}).pipe(Effect.orDie)
+		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
+			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			(message) => new CliDevicePersistenceError({ message }),
+		)
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			(message) => new CliDevicePersistenceError({ message }),
-		).pipe(Effect.orDie)
+		)
 
 		const purgeExpired = Effect.fn("CliDeviceAuthService.purgeExpired")(function* (now: number) {
 			yield* dbExecute((db) =>

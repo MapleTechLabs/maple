@@ -9,9 +9,8 @@ export type {
 } from "../ch/queries/product-events"
 
 // Product-event funnels for the MCP tools. Thin wrappers over the CH builders in
-// `../ch/queries/product-events.ts`; the builders validate the definition
-// synchronously and throw `ProductEventsFunnelError`, which these surface as a
-// typed failure so a tool can print the reason instead of dying.
+// `../ch/queries/product-events.ts`; a definition the builder rejects surfaces as
+// a typed `ProductEventsFunnelError` so a tool can print the reason instead of dying.
 
 export interface ProductEventsFunnelInput extends CH.ProductEventsFunnelOpts {
 	readonly startTime: string
@@ -28,17 +27,6 @@ export interface ProductEventNamesInput extends CH.ProductEventNamesOpts {
 	readonly endTime: string
 }
 
-const build = <A>(make: () => A): Effect.Effect<A, CH.ProductEventsFunnelError> =>
-	Effect.try({ try: make, catch: (error) => error }).pipe(
-		Effect.catch((error) =>
-			// Anything other than the builder's own tagged error is a bug in the builder.
-			error instanceof CH.ProductEventsFunnelError
-				? Effect.fail(error)
-				: // oxlint-disable-next-line maple/no-effect-die
-					Effect.die(error),
-		),
-	)
-
 /** Run a funnel: exactly one `{ step, count }` row per step, in step order. */
 export const productEventsFunnel = Effect.fn("Observability.productEventsFunnel")(function* (
 	input: ProductEventsFunnelInput,
@@ -50,7 +38,7 @@ export const productEventsFunnel = Effect.fn("Observability.productEventsFunnel"
 		"maple.funnel.key_by": input.keyBy,
 	})
 	const { startTime, endTime, ...opts } = input
-	const query = yield* build(() => CH.productEventsFunnelQuery(opts))
+	const query = yield* Effect.fromResult(CH.productEventsFunnelQuery(opts))
 	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
 	return yield* executor.compiledQuery(compiled, { profile: "aggregation", context: "productEventsFunnel" })
 })
@@ -66,7 +54,7 @@ export const productEventsFunnelBreakdown = Effect.fn("Observability.productEven
 			"maple.funnel.breakdown_by": input.breakdownBy,
 		})
 		const { startTime, endTime, ...opts } = input
-		const query = yield* build(() => CH.productEventsFunnelBreakdownQuery(opts))
+		const query = yield* Effect.fromResult(CH.productEventsFunnelBreakdownQuery(opts))
 		const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
 		return yield* executor.compiledQuery(compiled, {
 			profile: "aggregation",

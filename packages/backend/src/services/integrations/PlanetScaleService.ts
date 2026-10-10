@@ -340,18 +340,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				operation: string,
 				effect: Effect.Effect<A, E, PlanetScale.PlanetScaleOpContext>,
 			) =>
-				Schema.decodeEffect(OrgId)(connection.orgId).pipe(
-					Effect.orDie,
-					Effect.flatMap((orgId) =>
-						psOAuth.withAccessToken(orgId, (accessToken) =>
-							runPlanetScale(
-								httpClient,
-								{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
-								operation,
-								effect,
-								{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
-							),
-						),
+				psOAuth.withAccessToken(connection.orgId, (accessToken) =>
+					runPlanetScale(
+						httpClient,
+						{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
+						operation,
+						effect,
+						{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
 					),
 				)
 
@@ -701,7 +696,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
 						return 0
 					}
-					const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
 
 					const state = yield* readPollState(
 						connection.orgId,
@@ -743,7 +737,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						for (const row of deployRequestTimelineRows(request)) {
 							if (row.occurredAtMs < now - DEPLOY_REQUESTS_FLOOR_MS) continue
 							const result = yield* appendTimelineEvent({
-								orgId,
+								orgId: connection.orgId,
 								databaseName: database_.name,
 								// A deploy request spans two branches; pinning the marker to
 								// one of them would be a guess the payload doesn't support.
@@ -862,8 +856,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
 				// A revoked grant fails every call until someone reconnects, so polling it only
 				// repeats the 401. Reconnecting clears the stamp and polling resumes.
-				const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
-				const grant = yield* psOAuth.grantStatus(orgId)
+				const grant = yield* psOAuth.grantStatus(connection.orgId)
 				if (grant.revokedAt !== null) {
 					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
 					return { outcome: "skipped" as const, deployEvents: 0 }
@@ -911,7 +904,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					return { outcome: "refreshed" as const, deployEvents }
 				}
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
-					Effect.ignore,
+					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				// Fail inside a span so poll failures surface in find_errors, mirroring
 				// the Cloudflare poller's observeDatasetFailure seam — EXCEPT an upstream
@@ -1056,7 +1049,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					Effect.catchTags({
 						// Only a 403 from the insights endpoint itself: a revoked grant still fails, so
 						// the client sees the reconnect error rather than a scope hint.
-						"@maple/api/integrations/PlanetScaleForbiddenError": () =>
+						"@maple/backend/integrations/PlanetScaleForbiddenError": () =>
 							unavailable(
 								"The PlanetScale authorization lacks the read_databases scope needed for Query Insights.",
 							),

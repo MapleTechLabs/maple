@@ -3,7 +3,7 @@ import { EmailSender } from "./bindings"
 import { Env } from "./Env"
 
 class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
-	"@maple/api/platform/EmailDeliveryError",
+	"@maple/backend/platform/EmailDeliveryError",
 	{ message: Schema.String },
 ) {}
 

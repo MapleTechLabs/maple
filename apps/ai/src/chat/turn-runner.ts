@@ -346,7 +346,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// An unreadable row reviews anyway: the row's own guards still refuse a second report.
 			const current = yield* reviews
 				.getReview(tenant.orgId, prReviewId)
-				.pipe(Effect.catchCause(() => Effect.succeed(Option.none())))
+				.pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"Could not read the review being resumed; reviewing anyway",
+							cause,
+						).pipe(Effect.as(Option.none())),
+					),
+				)
 			const settled = Option.match(current, {
 				onNone: () => false,
 				onSome: (review) => review.status !== "queued" && review.status !== "running",

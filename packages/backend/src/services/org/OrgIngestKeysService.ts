@@ -63,11 +63,7 @@ const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncrypt
 	)
 
 const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncryptionError> =>
-	Effect.try({
-		try: () => parseIngestKeyLookupHmacKey(raw),
-		catch: (error) =>
-			toEncryptionError(error instanceof Error ? error.message : "Invalid ingest key lookup HMAC key"),
-	})
+	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
 
 const encryptPrivateKey = (
 	plaintext: string,

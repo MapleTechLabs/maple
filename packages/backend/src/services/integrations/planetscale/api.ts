@@ -21,7 +21,7 @@ export const PLANETSCALE_TIMEOUT_STATUS = 504
 
 /** PlanetScale answered 401 for this access token. Never leaves the PlanetScale services. */
 export class PlanetScaleTokenRejectedError extends Schema.TaggedError<PlanetScaleTokenRejectedError>()(
-	"@maple/api/integrations/PlanetScaleTokenRejectedError",
+	"@maple/backend/integrations/PlanetScaleTokenRejectedError",
 	{ message: Schema.String },
 ) {}
 
@@ -71,7 +71,7 @@ const withRequestTimeout = (httpClient: HttpClient.HttpClient, timeoutRetries: n
  * an org it was not granted). Callers decide whether that means reconnect or a soft empty state.
  */
 export class PlanetScaleForbiddenError extends Schema.TaggedError<PlanetScaleForbiddenError>()(
-	"@maple/api/integrations/PlanetScaleForbiddenError",
+	"@maple/backend/integrations/PlanetScaleForbiddenError",
 	{ message: Schema.String },
 ) {}
 

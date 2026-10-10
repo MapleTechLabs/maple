@@ -1298,9 +1298,9 @@ const make: Effect.Effect<
 			// The window's own failures reach here as themselves; the tick's contract
 			// is the persistence error, which is what they rolled the window back as before.
 			Effect.catchTags({
-				"@maple/api/services/ErrorTickClaimLostError": (error) =>
+				"@maple/backend/services/ErrorTickClaimLostError": (error) =>
 					Effect.fail(makePersistenceError(error)),
-				"@maple/api/services/ErrorTickUpsertMissingRowError": (error) =>
+				"@maple/backend/services/ErrorTickUpsertMissingRowError": (error) =>
 					Effect.fail(makePersistenceError(error)),
 			}),
 		)

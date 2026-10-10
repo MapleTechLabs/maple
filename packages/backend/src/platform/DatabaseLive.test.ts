@@ -126,7 +126,7 @@ describe("Database execute span instrumentation", () => {
 				.execute((db) => db.execute(Orm.sql`select broken from nowhere`))
 				.pipe(Effect.flip)
 
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			// The Postgres diagnostic leads; the statement follows so a truncated
 			// log line still says what went wrong.
 			assert.match(

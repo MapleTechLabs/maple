@@ -5,10 +5,9 @@ import { isAdmin, requireAdmin } from "./auth"
 
 const role = (raw: string) => Schema.decodeSync(RoleName)(raw)
 
-class TestForbiddenError extends Schema.TaggedError<TestForbiddenError>()(
-	"@maple/api/test/TestForbiddenError",
-	{ message: Schema.String },
-) {}
+class TestForbiddenError extends Schema.TaggedError<TestForbiddenError>()("@maple/test/TestForbiddenError", {
+	message: Schema.String,
+}) {}
 
 describe("isAdmin", () => {
 	it("returns true for root", () => {

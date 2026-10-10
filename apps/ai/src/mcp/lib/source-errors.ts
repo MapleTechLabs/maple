@@ -61,11 +61,11 @@ export const fromVcsLookupError =
 	(operation: string) =>
 	(error: VcsLookupError): SourceToolError => {
 		switch (error._tag) {
-			case "@maple/api/vcs/VcsSourceRepositoryNotFoundError":
+			case "@maple/backend/vcs/VcsSourceRepositoryNotFoundError":
 				return new McpInvalidInputError({ message: error.message, parameter: "repository" })
-			case "@maple/api/vcs/VcsSourceRefNotFoundError":
+			case "@maple/backend/vcs/VcsSourceRefNotFoundError":
 				return new McpInvalidInputError({ message: error.message, parameter: "ref" })
-			case "@maple/api/vcs/VcsSourceFileNotFoundError":
+			case "@maple/backend/vcs/VcsSourceFileNotFoundError":
 				return new McpInvalidInputError({ message: error.message, parameter: "path" })
 			case "@maple/http/errors/IntegrationsNotConnectedError":
 				return new McpUnavailableError({

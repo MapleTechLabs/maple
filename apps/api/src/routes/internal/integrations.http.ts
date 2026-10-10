@@ -633,7 +633,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								// reaching here means a hand-built request or a repo disconnected
 								// mid-session.
 								Effect.catchTag(
-									"@maple/api/vcs/VcsSourceRepositoryNotFoundError",
+									"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
 									(error) => new IntegrationsValidationError({ message: error.message }),
 								),
 							)

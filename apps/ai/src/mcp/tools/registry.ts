@@ -117,13 +117,9 @@ export interface MapleToolCatalogEntry {
 	readonly phrases: McpToolPhrases
 }
 
-class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/decode-error", {
-	errorMessage: Schema.String,
-}) {
-	override get message(): string {
-		return this.errorMessage
-	}
-}
+class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/errors/McpDecodeError", {
+	message: Schema.String,
+}) {}
 
 /**
  * The output schema's JSON Schema. MCP requires an object root, as for inputs. Unlike inputs, a
@@ -600,7 +596,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		Effect.mapError(
 			(error) =>
 				new McpDecodeError({
-					errorMessage: toDecodeErrorMessage(definition, error, normalized),
+					message: toDecodeErrorMessage(definition, error, normalized),
 				}),
 		),
 	)

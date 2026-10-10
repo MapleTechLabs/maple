@@ -193,7 +193,7 @@ export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 							)
 						}).pipe(
 							Effect.catchTag(
-								"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+								"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 								(error) =>
 									Effect.logWarning(error.message).pipe(
 										Effect.annotateLogs({

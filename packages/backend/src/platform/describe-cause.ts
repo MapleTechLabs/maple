@@ -30,7 +30,7 @@ const cap = (message: string): string =>
  *
  * `Cause.prettyErrors` is the same normalizer `Cause.pretty` builds on, stopped
  * one step earlier: it hands back an `Error` per reason with `name` resolved to
- * the tag (`@maple/api/lib/DatabaseError`) and `message` resolved through the
+ * the tag (`@maple/backend/lib/DatabaseError`) and `message` resolved through the
  * same fallbacks — `toString`, then JSON — that make a thrown string, number or
  * bare object legible. Reading only those two leaves the stack and the nested
  * cause behind. The SDK's tracer builds its `exception` events off the same

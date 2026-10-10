@@ -887,7 +887,7 @@ interface DatasetPollFailure {
  * buried in `cloudflare_analytics_state.lastError` where nothing watches it.
  */
 class CloudflareAnalyticsPollError extends Schema.TaggedError<CloudflareAnalyticsPollError>()(
-	"@maple/api/integrations/CloudflareAnalyticsPollError",
+	"@maple/backend/integrations/CloudflareAnalyticsPollError",
 	{
 		message: Schema.String,
 		orgId: OrgId,

@@ -36,7 +36,7 @@ import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./m
  */
 
 export class MembershipRevocationError extends Schema.TaggedError<MembershipRevocationError>()(
-	"@maple/api/errors/MembershipRevocationError",
+	"@maple/backend/errors/MembershipRevocationError",
 	{
 		message: Schema.String,
 		orgId: Schema.optionalKey(Schema.String),

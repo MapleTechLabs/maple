@@ -686,7 +686,7 @@ const make: Effect.Effect<
 		const key = yield* credentialKey
 		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key).pipe(
 			Effect.catchTags({
-				"@maple/api/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
+				"@maple/backend/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
 				"@maple/backend/ChatWorkspaceCredentialsUnreadable": () =>
 					Effect.fail(
 						new IntegrationsNotConnectedError({

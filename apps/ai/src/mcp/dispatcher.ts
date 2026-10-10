@@ -124,9 +124,9 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	// — every usage query had to reconstruct it with `substring(SpanName, 9)`.
 	yield* Effect.annotateCurrentSpan("maple.mcp.tool", name)
 	return yield* executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
-		Effect.catchTag("@maple/mcp/decode-error", (error) =>
+		Effect.catchTag("@maple/mcp/errors/McpDecodeError", (error) =>
 			recordExpectedMcpFailure(error, "Invalid parameters").pipe(
-				Effect.as(failureResult(error.errorMessage, "invalid_parameters")),
+				Effect.as(failureResult(error.message, "invalid_parameters")),
 			),
 		),
 		Effect.catchTags({
