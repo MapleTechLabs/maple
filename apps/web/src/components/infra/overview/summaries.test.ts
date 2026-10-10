@@ -220,7 +220,7 @@ describe("summarizeGcp", () => {
 		key: `gcp:${service}:unread`,
 		source: "gcp",
 		tone: "warn",
-		title: `Maple could not read the ${title} metrics`,
+		title: `${title} metrics could not be read`,
 		detail: "Reload to try again",
 		target: { kind: "gcpService", service },
 	})
@@ -234,7 +234,7 @@ describe("summarizeGcp", () => {
 				{ key: "elevated", count: 0 },
 				{ key: "saturated", count: 0 },
 			],
-			headline: "could not read Cloud SQL, Pub/Sub",
+			headline: "Cloud SQL, Pub/Sub not read",
 			headlineTone: "warn",
 			findings: [unreadFinding("cloudSql", "Cloud SQL"), unreadFinding("pubsub", "Pub/Sub")],
 		})
@@ -243,7 +243,7 @@ describe("summarizeGcp", () => {
 	it("keeps the workloads it did read beside the service it could not", () => {
 		const [cloudRun] = fleet(80, 0.4)
 		const summary = summarizeGcp([cloudRun!, ...gcpFleet([unread("cloudSql")])])
-		expect(summary?.headline).toBe("could not read Cloud SQL, 1 workload elevated or erroring")
+		expect(summary?.headline).toBe("Cloud SQL not read, 1 workload elevated or erroring")
 		expect(summary?.headlineTone).toBe("crit")
 		expect(summary?.findings.map((finding) => finding.key)).toEqual([
 			"gcp:cloudRun:api/acme-prod/europe-west1",

@@ -332,7 +332,8 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 			key: `gcp:${service}:unread`,
 			source: "gcp",
 			tone: "warn",
-			title: `Maple could not read the ${GCP_INFRA_SERVICES[service].title} metrics`,
+			// The service first: a phone shows only the start of a title.
+			title: `${GCP_INFRA_SERVICES[service].title} metrics could not be read`,
 			detail: "Reload to try again",
 			target: { kind: "gcpService", service },
 		})),
@@ -348,7 +349,7 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 		],
 		headline:
 			[
-				...(unread.length > 0 ? [`could not read ${gcpTitles(unread)}`] : []),
+				...(unread.length > 0 ? [`${gcpTitles(unread)} not read`] : []),
 				...(flagged.length > 0
 					? [`${countLabel(flagged.length, "workload")} elevated or erroring`]
 					: []),
