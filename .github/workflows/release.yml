@@ -1,0 +1,59 @@
+name: Release
+
+# Keeps a "Version Packages" PR open on main while changesets are pending. Merging it bumps
+# the public npm packages, so the next run finds unpublished versions and publishes them
+# (scripts/publish-packages.ts), then pushes the tags and cuts GitHub releases.
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - ".changeset/**"
+            - "packages/effect-sdk/package.json"
+            - "packages/browser/package.json"
+            - "packages/alchemy-maple/package.json"
+            - "scripts/publish-packages.ts"
+            - ".github/workflows/release.yml"
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ github.workflow }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+jobs:
+    release:
+        name: Version or publish
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        environment: npm-publish
+        permissions:
+            contents: write # version commit, tags, GitHub releases
+            pull-requests: write # the Version Packages PR
+            id-token: write # npm trusted publishing + provenance
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - run: bun install --frozen-lockfile
+            - name: Configure npm token fallback
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: |
+                  if [ -n "$NODE_AUTH_TOKEN" ]; then
+                    echo '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > "$HOME/.npmrc"
+                  fi
+
+            - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+              with:
+                  version-script: bun run changeset:version
+                  publish-script: bun run changeset:publish
+                  commit-message: "chore(release): version packages"
+                  pr-title: "chore(release): version packages"
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  # Fallback until each package has npm trusted publishing configured
+                  # (a brand-new package needs its first publish before that is possible).
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+                  NPM_CONFIG_PROVENANCE: "true"
