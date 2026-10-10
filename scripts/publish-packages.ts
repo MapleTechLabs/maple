@@ -37,7 +37,11 @@ const run = (cmd: ReadonlyArray<string>, cwd = root, quiet = false) => {
 		stdout: quiet ? "pipe" : "inherit",
 		stderr: quiet ? "pipe" : "inherit",
 	})
-	return { ok: result.exitCode === 0, stdout: result.stdout?.toString() ?? "" }
+	return {
+		ok: result.exitCode === 0,
+		stdout: result.stdout?.toString() ?? "",
+		stderr: result.stderr?.toString() ?? "",
+	}
 }
 
 const fail = (message: string): never => {
@@ -130,8 +134,14 @@ for (const { dir, manifest } of ordered) {
 	)
 	if (!run(["bun", "pm", "pack", "--filename", tarball], dir).ok) fail(`bun pm pack failed for ${tag}`)
 	const publishArgs = ["npm", "publish", tarball, "--access", "public"]
-	if (!run(dryRun ? [...publishArgs, "--dry-run"] : [...publishArgs, "--provenance"]).ok) {
+	const publish = run(dryRun ? [...publishArgs, "--dry-run"] : [...publishArgs, "--provenance"], root, true)
+	process.stdout.write(publish.stdout)
+	process.stderr.write(publish.stderr)
+	// `npm view` can serve a stale miss for a package created minutes ago, so a version published
+	// out of band still lands here; npm rejecting it as a duplicate means it only needs its tag.
+	if (!publish.ok && !publish.stderr.includes("cannot publish over the previously published versions")) {
 		fail(`npm publish failed for ${tag}`)
 	}
+	if (!publish.ok) console.log(`${tag} is already on npm, tagging only.`)
 	if (!dryRun) reportRelease(manifest)
 }
