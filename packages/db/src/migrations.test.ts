@@ -1,14 +1,10 @@
-// SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { createHash } from "node:crypto"
-import { cpSync, mkdtempSync, rmSync } from "node:fs"
 import { readFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, resolve } from "node:path"
+import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
-import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import * as Migrate from "@maple-dev/effect-orm/migrate"
+import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { listBundledMigrations, readBundledMigrationsSql } from "./migrate"
+import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
 /** The folder for a migration by its name (the part after the kit's timestamp prefix). */
 const migrationNamed = (name: string) => {
@@ -28,16 +24,16 @@ const readMigrationSqlBefore = (name: string): string => {
 		.join("\n")
 }
 
-describe("drizzle migrations", () => {
+describe("migrations", () => {
 	it("keeps migration folders in a strictly increasing timestamp order", () => {
 		const migrations = listBundledMigrations()
 		expect(migrations.length).toBeGreaterThan(0)
 
 		for (let i = 1; i < migrations.length; i++) {
-			// The v1 migrator orders folders by name, and the kit derives the
+			// The deploy orders folders by name, and both kits derive the
 			// 14-digit prefix from the migration timestamp. A folder that sorts
-			// before an already-deployed one still applies (v1 applies every missing
-			// migration), but the replay order in fresh databases would differ from
+			// before an already-deployed one still applies (every missing migration
+			// applies), but the replay order in fresh databases would differ from
 			// production's, which is how a dependency between two migrations hides.
 			expect(
 				migrations[i]!.name.slice(0, 14) >= migrations[i - 1]!.name.slice(0, 14),
@@ -46,137 +42,81 @@ describe("drizzle migrations", () => {
 		}
 	})
 
-	/**
-	 * Production's first v1 run: the table is still on the 0.x shape. The upgrade
-	 * must match every row by its second (0.x stored the journal's millis) or, for
-	 * a same-second pair, by hash, and apply nothing. The last rows use the
-	 * preflight's pre-upgrade INSERT, which has no `name` column to fill.
-	 */
-	const legacyTable = async (pg: PGlite) => {
-		await pg.exec(`
-			CREATE SCHEMA drizzle;
-			CREATE TABLE drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint);
-		`)
-		return listBundledMigrations().map((migration) => {
-			const stamp = migration.name.slice(0, 14)
-			return {
-				name: migration.name,
-				hash: createHash("sha256").update(readFileSync(migration.sqlPath)).digest("hex"),
-				millis: Date.UTC(
-					Number(stamp.slice(0, 4)),
-					Number(stamp.slice(4, 6)) - 1,
-					Number(stamp.slice(6, 8)),
-					Number(stamp.slice(8, 10)),
-					Number(stamp.slice(10, 12)),
-					Number(stamp.slice(12, 14)),
+	const migrateWith = <A, E>(pg: PGlite, effect: Effect.Effect<A, E, Migrate.MigrationDriver>) =>
+		Effect.runPromise(
+			effect.pipe(
+				Effect.provide(
+					Migrate.layerSqlClient().pipe(Layer.provide(PgliteClient.layer({ liveClient: pg }))),
 				),
-			}
-		})
-	}
+			),
+		)
 
-	it("upgrades a 0.x migrations table in place without replaying anything", async () => {
-		const pg = new PGlite()
-		try {
-			const locals = await legacyTable(pg)
-			const preflightRecorded = 3
-			for (const [index, local] of locals.entries()) {
-				const createdAt =
-					index < locals.length - preflightRecorded ? local.millis + 437 : local.millis
-				await pg.query(
-					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-					[local.hash, createdAt],
-				)
-			}
-			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
-			// No schema exists, so replaying any migration would fail on a missing table.
-			await migrate(drizzle({ client: pg }), { migrationsFolder: full })
-
-			const rows = await pg.query<{ name: string | null }>(
-				"SELECT name FROM drizzle.__drizzle_migrations ORDER BY id",
+	const ledgerCount = async (pg: PGlite) =>
+		(
+			await pg.query<{ count: number }>(
+				`SELECT count(*)::int AS count FROM "${Migrate.LEDGER_TABLES.migrations}"`,
 			)
-			expect(rows.rows.map((row) => row.name)).toEqual(locals.map((local) => local.name))
-			const tables = await pg.query<{ count: number }>(
-				"SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public'",
-			)
-			expect(tables.rows[0]?.count).toBe(0)
-		} finally {
-			await pg.close()
-		}
-	}, 30_000)
-
-	it("refuses a 0.x table with a row no folder matches and leaves it untouched", async () => {
-		const pg = new PGlite()
-		try {
-			const locals = await legacyTable(pg)
-			for (const local of locals)
-				await pg.query(
-					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-					[local.hash, local.millis],
-				)
-			await pg.query("INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)", [
-				"0".repeat(64),
-				Date.UTC(2026, 0, 1),
-			])
-			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
-			await expect(migrate(drizzle({ client: pg }), { migrationsFolder: full })).rejects.toThrow()
-
-			const columns = await pg.query<{ column_name: string }>(
-				"SELECT column_name FROM information_schema.columns WHERE table_schema = 'drizzle' AND table_name = '__drizzle_migrations' ORDER BY ordinal_position",
-			)
-			expect(columns.rows.map((row) => row.column_name)).toEqual(["id", "hash", "created_at"])
-		} finally {
-			await pg.close()
-		}
-	}, 30_000)
+		).rows[0]?.count
 
 	it("upgrades a database at the incident-hold head to receipts and safely re-runs", async () => {
-		// A database migrated up to `alert_incident_hold` (production's head before
-		// this line of work), then migrated with the full folder: the receipts table
-		// and its predecessors land, a row written between the two runs survives a
-		// third run, and the migrations table ends up with one row per folder.
-		const directory = mkdtempSync(resolve(tmpdir(), "maple-receipts-upgrade-"))
+		// A database migrated up to `alert_incident_hold`, then with the full folder: the
+		// receipts table and its predecessors land, a row written between the two runs
+		// survives a third run, and the ledger ends up with one row per folder.
 		const pg = new PGlite()
 		try {
 			const head = migrationNamed("alert_incident_hold").name
-			const migrations = listBundledMigrations()
+			const migrations = await Effect.runPromise(bundledMigrations)
 			const upTo = migrations.filter((migration) => migration.name <= head)
-			for (const migration of upTo) {
-				cpSync(dirname(migration.sqlPath), resolve(directory, migration.name), { recursive: true })
-			}
-			const db = drizzle({ client: pg })
-			await migrate(db, { migrationsFolder: directory })
-			const before = await pg.query<{ count: number }>(
-				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
-			)
-			expect(before.rows[0]?.count).toBe(upTo.length)
+			await migrateWith(pg, Migrate.run({ migrations: upTo, strict: true }))
+			expect(await ledgerCount(pg)).toBe(upTo.length)
 
-			const full = dirname(dirname(migrations[0]!.sqlPath))
-			await migrate(db, { migrationsFolder: full })
+			await migrateWith(pg, migrateBundled)
 			await pg.exec(
 				"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org-upgrade', 'event-upgrade', now())",
 			)
-			await migrate(db, { migrationsFolder: full })
+			expect(await migrateWith(pg, migrateBundled)).toEqual([])
 			const receipts = await pg.query<{ event_id: string }>(
 				"SELECT event_id FROM planetscale_issue_receipts",
 			)
 			expect(receipts.rows).toEqual([{ event_id: "event-upgrade" }])
-			const after = await pg.query<{ count: number }>(
-				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
-			)
-			expect(after.rows[0]?.count).toBe(migrations.length)
+			expect(await ledgerCount(pg)).toBe(migrations.length)
 			const holdColumns = await pg.query<{ column_name: string }>(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
 			)
 			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
 		} finally {
 			await pg.close()
-			rmSync(directory, { recursive: true, force: true })
+		}
+	}, 30_000)
+
+	it("adopts a database another tool migrated: baseline records, then only what is newer runs", async () => {
+		// A local database drizzle-kit migrated up to `cancellation_reviews` and that
+		// has no effect-orm ledger: replaying anything would fail on existing tables.
+		const pg = new PGlite()
+		try {
+			await pg.exec(readMigrationSqlBefore("effect_orm_baseline"))
+			const migrations = await Effect.runPromise(bundledMigrations)
+			const recorded = await migrateWith(
+				pg,
+				Migrate.baseline({ migrations, upTo: migrationNamed("cancellation_reviews").name }),
+			)
+			const baseline = migrationNamed("effect_orm_baseline").name
+			expect(recorded).toHaveLength(migrations.findIndex((migration) => migration.name === baseline))
+			const ran = await migrateWith(pg, migrateBundled)
+			expect(ran.map((migration) => migration.name)).toEqual(
+				migrations
+					.filter((migration) => migration.name >= baseline)
+					.map((migration) => migration.name),
+			)
+			expect(await ledgerCount(pg)).toBe(migrations.length)
+		} finally {
+			await pg.close()
 		}
 	}, 30_000)
 
 	/**
-	 * A migration is only recorded in `drizzle.__drizzle_migrations` after the
-	 * whole file succeeds, so one that dies halfway leaves the branch with some of
+	 * A migration is only recorded in the deploy's ledger after the whole file
+	 * succeeds, so one that dies halfway leaves the branch with some of
 	 * its DDL applied and no record of it — and every retry replays from the top
 	 * and fails on what it already created. `planned_investigations` (0035) hit exactly that on `main`
 	 * (`42701 duplicate_column` on `lens_name`), and the only fixes that do not

@@ -118,11 +118,11 @@ function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
 	// A dollar allowance of model usage, priced per model, not a volume.
 	if (item.featureId === "ai_credits" && item.included != null) {
-		return `${formatCurrency(Number(item.included), "usd")} included`
+		return `${formatCurrency(item.included, "usd")} included`
 	}
 	if (item.included != null) {
 		const unit = (item.featureId ? COUNT_UNITS[item.featureId] : undefined) ?? "GB"
-		return `${formatCount(Number(item.included))} ${unit}`
+		return `${formatCount(item.included)} ${unit}`
 	}
 	return ""
 }
@@ -293,7 +293,7 @@ export function PricingCards() {
 								}
 							: undefined,
 					}),
-				(error: unknown) => showErrorToast(error, { title: "Couldn't preview the plan change" }),
+				(error: unknown) => showErrorToast(error, { title: "Failed to preview the plan change" }),
 			)
 			setLoadingPlanId(null)
 			return
@@ -313,12 +313,12 @@ export function PricingCards() {
 					return
 				}
 
-				toastManager.add({ title: "Plan updated successfully.", type: "success" })
+				toastManager.add({ title: "Plan updated successfully", type: "success" })
 				refreshCustomer()
 				setLoadingPlanId(null)
 			},
 			(error: unknown) => {
-				showErrorToast(error, { title: "Couldn't update your plan" })
+				showErrorToast(error, { title: "Failed to update your plan" })
 				setLoadingPlanId(null)
 			},
 		)
@@ -336,13 +336,13 @@ export function PricingCards() {
 					window.location.href = result.paymentUrl
 					return
 				}
-				toastManager.add({ title: "Plan updated successfully.", type: "success" })
+				toastManager.add({ title: "Plan updated successfully", type: "success" })
 				refreshCustomer()
 				setConfirmDialog(null)
 				setIsAttaching(false)
 			},
 			(error: unknown) => {
-				showErrorToast(error, { title: "Couldn't update your plan" })
+				showErrorToast(error, { title: "Failed to update your plan" })
 				setIsAttaching(false)
 			},
 		)
@@ -382,7 +382,7 @@ export function PricingCards() {
 						<span className="text-foreground font-medium">{confirmDialog?.planName}</span>.
 					</>
 				}
-				confirmLabel="Confirm"
+				confirmLabel="Switch plan"
 				pending={isAttaching}
 				onConfirm={() => void handleConfirmAttach()}
 			>

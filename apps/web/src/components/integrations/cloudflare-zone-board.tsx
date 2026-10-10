@@ -1,4 +1,5 @@
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useMemo, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
@@ -185,7 +186,7 @@ export interface ZoneStatusInfo {
 export const STATUS_META: Record<ZoneStatusKind, { label: string; order: number; tone: Tone }> = {
 	live: { label: "Live", order: 0, tone: "ok" },
 	issue: { label: "Issues", order: 1, tone: "crit" },
-	"no-data": { label: "No data", order: 2, tone: "warn" },
+	"no-data": { label: "No data", order: 2, tone: "neutral" },
 	paused: { label: "Paused", order: 3, tone: "neutral" },
 	disabled: { label: "Disabled", order: 4, tone: "neutral" },
 } satisfies Record<ZoneStatusKind, { label: string; order: number; tone: Tone }>
@@ -243,9 +244,9 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	if (usageLoaded && lastSyncedAt) {
 		return {
 			kind: "no-data",
-			tone: "warn",
+			tone: "neutral",
 			detail: "No data in last 24h",
-			detailClass: TONE_TEXT.warn,
+			detailClass: TONE_TEXT.neutral,
 		}
 	}
 	if (lastSyncedAt) {
@@ -258,9 +259,9 @@ export function zoneStatus(entry: ZoneEntry, usageLoaded: boolean): ZoneStatusIn
 	}
 	return {
 		kind: "no-data",
-		tone: "warn",
+		tone: "neutral",
 		detail: "Waiting for first data",
-		detailClass: TONE_TEXT.warn,
+		detailClass: TONE_TEXT.neutral,
 	}
 }
 
@@ -623,15 +624,16 @@ export function CloudflareWorkersCard({
 						</div>
 					))}
 					{scripts.length > WORKERS_COLLAPSED_COUNT ? (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setExpanded((current) => !current)}
-							className="pb-1 pt-2.5 text-left text-2xs text-muted-foreground transition-colors hover:text-foreground"
+							className="h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground"
 						>
 							{expanded
 								? "Show fewer"
 								: `Showing ${visible.length} of ${scripts.length} · View all →`}
-						</button>
+						</Button>
 					) : null}
 				</div>
 			)}

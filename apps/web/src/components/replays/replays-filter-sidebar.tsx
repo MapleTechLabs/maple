@@ -20,7 +20,7 @@ import {
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Separator } from "@maple/ui/components/ui/separator"
-import { cn } from "@maple/ui/lib/utils"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	RangeFilterSection,
 	type RangeBucket,
@@ -117,7 +117,7 @@ const tagLabel = (name: string) => {
 const tagDot = (name: string) => {
 	const tag = asSessionTag(name)
 	if (tag === undefined) return undefined
-	return <span aria-hidden className={cn("size-2 shrink-0 rounded-full", SESSION_TAG_DOTS[tag])} />
+	return <StatusDot tone="custom" size="lg" className={SESSION_TAG_DOTS[tag]} />
 }
 
 const tagDescription = (name: string) => {

@@ -1,3 +1,4 @@
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import * as React from "react"
 import { areaY, d3Curve, defineChart, lineY, rect, ruleY } from "@tanstack/charts"
@@ -745,9 +746,9 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 						{SIGNAL_SOURCE_LABEL[otherSource]}
 					</span>
 					{divergence != null && divergence > Math.abs(threshold) * 0.05 && (
-						<span className="rounded border border-severity-warn/50 px-1.5 py-px text-severity-warn">
+						<Badge variant="warn" size="xs">
 							Sources differ by up to {formatSignalValue(signalType, divergence)}
-						</span>
+						</Badge>
 					)}
 				</div>
 			)}

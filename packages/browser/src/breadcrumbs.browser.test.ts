@@ -18,8 +18,16 @@ const exporter = <T>(sink: T[]) =>
 			return Promise.resolve()
 		}
 	}
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({ OTLPTraceExporter: exporter(exportedSpans) }))
-vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({ OTLPLogExporter: exporter(exportedLogs) }))
+vi.mock("./otlp", async (original) => {
+	const Spans = exporter(exportedSpans)
+	const Logs = exporter(exportedLogs)
+	return {
+		...(await original<typeof import("./otlp")>()),
+		OtlpExporter: function (url: string) {
+			return url.endsWith("/v1/logs") ? new Logs() : new Spans()
+		},
+	}
+})
 
 const { MapleBrowser } = await import("./index")
 const { resetReportedErrorsForTests } = await import("./errors")

@@ -63,7 +63,7 @@ export function LogMetaStrip({ log, timeZone, showOpenFullPage = true }: LogMeta
 						className="text-muted-foreground"
 						render={<Link to="/logs/$logId" params={{ logId: encodeLogKey(log) }} />}
 					>
-						<ExternalLinkIcon size={13} />
+						<ExternalLinkIcon />
 					</IconButton>
 				)}
 

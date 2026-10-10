@@ -27,6 +27,7 @@ import { Button } from "../ui/button"
 import { Eyebrow } from "../ui/eyebrow"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable"
+import { StatusDot } from "../ui/status-dot"
 import { ServiceMapBackground } from "./service-map-background"
 import { ServiceMapControls } from "./service-map-controls"
 import { applyDeclutter, type DeclutterFocus, type DeclutterState } from "./service-map-declutter"
@@ -166,24 +167,21 @@ function LayoutDebugPanel({
 
 	return (
 		<div className="absolute top-2 right-2 z-50">
-			<button
-				type="button"
-				onClick={() => setOpen(!open)}
-				className="px-2 py-1 text-3xs font-mono bg-card/90 backdrop-blur-sm border border-border rounded text-muted-foreground hover:text-foreground transition-colors"
-			>
+			<Button variant="outline" size="xs" onClick={() => setOpen(!open)} className="font-mono">
 				{open ? "Close" : "Debug"}
-			</button>
+			</Button>
 			{open && (
 				<div className="absolute top-8 right-0 w-64 bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 space-y-3 shadow-lg">
 					<div className="flex items-center justify-between">
-						<Eyebrow>Layout Config</Eyebrow>
-						<button
-							type="button"
+						<Eyebrow>Layout config</Eyebrow>
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => onChange({ ...DEFAULT_LAYOUT_CONFIG })}
-							className="text-3xs text-primary hover:text-primary/80 transition-colors"
+							className="text-primary"
 						>
 							Reset
-						</button>
+						</Button>
 					</div>
 					{SLIDER_DEFS.map(({ key, label, min, max, step }) => (
 						<div key={key} className="space-y-1">
@@ -1041,15 +1039,15 @@ function ServiceMapLegend({ colorMode, services }: { colorMode: ServiceMapColorM
 			<span className="flex-1" />
 			<div className="flex items-center gap-3">
 				<div className="flex items-center gap-1.5">
-					<div className="size-2 rounded-full bg-severity-info" />
+					<StatusDot tone="ok" size="lg" />
 					<span>Healthy</span>
 				</div>
 				<div className="flex items-center gap-1.5">
-					<div className="size-2 rounded-full bg-severity-warn" />
+					<StatusDot tone="warn" size="lg" />
 					<span>Degraded</span>
 				</div>
 				<div className="flex items-center gap-1.5">
-					<div className="size-2 rounded-full bg-severity-error" />
+					<StatusDot tone="crit" size="lg" />
 					<span>Error</span>
 				</div>
 			</div>

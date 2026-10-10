@@ -11,6 +11,7 @@ import { useMemo, useState } from "react"
 
 import { BracketsCurlyIcon, CircleWarningIcon, SparkleIcon } from "./icons"
 import { CopyButton } from "./ui/copy-button"
+import { Eyebrow } from "./ui/eyebrow"
 import { useCopy } from "../hooks/use-copy"
 import { JSON_TOKEN_COLOR, parseErrorBody, splitErrorText, tokenizeJson } from "../lib/error-body"
 import { formatErrorPrompt } from "../lib/error-prompt"
@@ -96,9 +97,9 @@ export function ErrorSection({ message, title = "Error", badge, prompt, classNam
 			<div className="flex min-w-0 items-center gap-2">
 				<CircleWarningIcon size={14} className="shrink-0 text-severity-error" />
 
-				<span className="shrink-0 font-medium text-2xs text-severity-error uppercase tracking-wide">
+				<Eyebrow variant="label" className="shrink-0 text-severity-error">
 					{title}
-				</span>
+				</Eyebrow>
 
 				{badge && (
 					<span className="min-w-0 truncate font-mono text-2xs text-foreground/80" title={badge}>

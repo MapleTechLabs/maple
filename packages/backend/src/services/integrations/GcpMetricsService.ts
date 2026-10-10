@@ -12,15 +12,14 @@
 import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
-import { gcpConnectors, gcpResources, type GcpConnectorRow } from "@maple/db"
-import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
@@ -138,9 +137,9 @@ class GcpMetricsIngestError extends Schema.TaggedError<GcpMetricsIngestError>()(
  * The connector's next window, on minute boundaries, or null when it is caught up. It never
  * starts more than an hour back: after a long pause the gap is skipped, not replayed.
  */
-export const nextWindow = (watermarkAt: Date | null, now: number) => {
+export const nextWindow = (watermarkAt: number | null, now: number) => {
 	const endMs = now - INGESTION_LAG_MS - ((now - INGESTION_LAG_MS) % MINUTE_MS)
-	const startMs = Math.max(dateToMs(watermarkAt) ?? 0, endMs - MAX_WINDOW_MS)
+	const startMs = Math.max(watermarkAt ?? 0, endMs - MAX_WINDOW_MS)
 	return startMs < endMs ? { startMs, endMs } : null
 }
 
@@ -197,10 +196,14 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 			const ingestMetricsUrl = `${env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")}/v1/metrics`
 			const dbExecute = makeDbExecute(database, "GcpMetricsService", toPersistenceError)
 
-			const updateConnector = (
-				id: GcpConnectorRow["id"],
-				set: Partial<typeof gcpConnectors.$inferInsert>,
-			) => dbExecute((db) => db.update(gcpConnectors).set(set).where(eq(gcpConnectors.id, id)))
+			const updateConnector = (id: GcpConnectorRow["id"], set: PG.UpdateSetOf<typeof GcpConnectors>) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(GcpConnectors)
+							.set(set)
+							.where(($) => [$.id.eq(id)]),
+					),
+				)
 
 			/**
 			 * A failed poll leaves the watermark alone and says why. With `holdUntilMs` the whole
@@ -217,22 +220,15 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					connectorId: connector.id,
 					error: message,
 				})
-				yield* dbExecute((db) =>
-					holdUntilMs === undefined
-						? db
-								.update(gcpConnectors)
-								.set({ lastMetricsError: message })
-								.where(eq(gcpConnectors.id, connector.id))
-						: db
-								.update(gcpConnectors)
-								.set({ lastMetricsError: message, metricsLeaseUntil: msToDate(holdUntilMs) })
-								.where(
-									and(
-										eq(gcpConnectors.orgId, connector.orgId),
-										eq(gcpConnectors.metricsEnabled, true),
-									),
-								),
-				)
+				yield* holdUntilMs === undefined
+					? updateConnector(connector.id, { lastMetricsError: message })
+					: dbExecute((db) =>
+							db.run(
+								PG.update(GcpConnectors)
+									.set({ lastMetricsError: message, metricsLeaseUntil: holdUntilMs })
+									.where(($) => [$.orgId.eq(connector.orgId), $.metricsEnabled.eq(true)]),
+							),
+						)
 				return FAILED
 			})
 
@@ -281,7 +277,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				scope: string,
 				reader: GcpReader,
 			) {
-				const lastSeenAt = msToDate(tick.now)
+				const lastSeenAt = tick.now
 				let pageToken: string | undefined
 				for (let page = 0; page < MAX_RESOURCE_PAGES; page++) {
 					const body = yield* searchResourcesPage(tick.httpClient, reader, scope, pageToken)
@@ -294,43 +290,42 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					)
 					if (rows.size > 0) {
 						yield* dbExecute((db) =>
-							db
-								.insert(gcpResources)
-								.values(
-									[...rows.values()].map((resource) => ({
-										...resource,
-										connectorId: connector.id,
-										orgId: connector.orgId,
-										lastSeenAt,
-									})),
-								)
-								.onConflictDoUpdate({
-									target: [gcpResources.connectorId, gcpResources.name],
-									set: {
-										assetType: sql`excluded.asset_type`,
-										projectId: sql`excluded.project_id`,
-										location: sql`excluded.location`,
-										displayName: sql`excluded.display_name`,
-										state: sql`excluded.state`,
-										labels: sql`excluded.labels`,
-										resourceCreatedAt: sql`excluded.resource_created_at`,
-										resourceUpdatedAt: sql`excluded.resource_updated_at`,
-										lastSeenAt: sql`excluded.last_seen_at`,
-									},
-								}),
+							db.run(
+								PG.insertInto(GcpResources)
+									.values(
+										[...rows.values()].map((resource) => ({
+											...resource,
+											connectorId: connector.id,
+											orgId: connector.orgId,
+											lastSeenAt,
+										})),
+									)
+									.onConflictDoUpdate({
+										target: ["connectorId", "name"],
+										set: (_, excluded) => ({
+											assetType: excluded.assetType,
+											projectId: excluded.projectId,
+											location: excluded.location,
+											displayName: excluded.displayName,
+											state: excluded.state,
+											labels: excluded.labels,
+											resourceCreatedAt: excluded.resourceCreatedAt,
+											resourceUpdatedAt: excluded.resourceUpdatedAt,
+											lastSeenAt: excluded.lastSeenAt,
+										}),
+									}),
+							),
 						)
 					}
 					pageToken = body.nextPageToken
 					if (pageToken === undefined) {
 						yield* dbExecute((db) =>
-							db
-								.delete(gcpResources)
-								.where(
-									and(
-										eq(gcpResources.connectorId, connector.id),
-										lt(gcpResources.lastSeenAt, lastSeenAt),
-									),
-								),
+							db.run(
+								PG.deleteFrom(GcpResources).where(($) => [
+									$.connectorId.eq(connector.id),
+									$.lastSeenAt.lt(lastSeenAt),
+								]),
+							),
 						)
 						return null
 					}
@@ -359,7 +354,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					}),
 					Effect.map((note) => ({
 						lastResourcesError: note,
-						resourcesSyncedAt: msToDate(tick.now),
+						resourcesSyncedAt: tick.now,
 					})),
 					Effect.catchTags({
 						"@maple/api/integrations/GcpApiError": (error) =>
@@ -388,7 +383,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					const reader = yield* impersonateReader(tick.httpClient, tick.mapleToken, connector)
 					if (
 						connector.resourcesSyncedAt === null ||
-						tick.now - dateToMs(connector.resourcesSyncedAt) >= RESOURCE_SYNC_INTERVAL_MS
+						tick.now - connector.resourcesSyncedAt >= RESOURCE_SYNC_INTERVAL_MS
 					) {
 						yield* updateConnector(
 							connector.id,
@@ -488,8 +483,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								]),
 					]
 					yield* updateConnector(connector.id, {
-						metricsWatermarkAt: msToDate(window.endMs),
-						lastMetricsReceivedAt: msToDate(tick.now),
+						metricsWatermarkAt: window.endMs,
+						lastMetricsReceivedAt: tick.now,
 						lastMetricsError: notes.length === 0 ? null : notes.join(" "),
 					})
 					yield* Effect.annotateCurrentSpan({
@@ -537,22 +532,22 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				const encodedKey = env.MAPLE_GCP_SERVICE_ACCOUNT_KEY
 				if (Option.isNone(encodedKey)) return IDLE
 				const now = yield* Clock.currentTimeMillis
-				const isDue = and(
-					eq(gcpConnectors.metricsEnabled, true),
-					or(
-						isNull(gcpConnectors.metricsLeaseUntil),
-						lt(gcpConnectors.metricsLeaseUntil, msToDate(now)),
-					),
-				)
+				const isDue = ($: PG.ColumnAccessor<typeof GcpConnectors.columns>) => [
+					$.metricsEnabled.eq(true),
+					PG.or($.metricsLeaseUntil.isNull(), $.metricsLeaseUntil.lt(now)),
+				]
 				const due = yield* dbExecute((db) =>
-					db
-						.select({ id: gcpConnectors.id, orgId: gcpConnectors.orgId })
-						.from(gcpConnectors)
-						.where(isDue)
-						.orderBy(
-							sql`${gcpConnectors.metricsLeaseUntil} asc nulls first`,
-							asc(gcpConnectors.id),
-						),
+					db.run(
+						PG.from(GcpConnectors)
+							.select("id", "orgId")
+							.where(isDue)
+							// Never polled first, then least recently polled.
+							.orderBy(($) => [
+								[PG.asBoolean($.metricsLeaseUntil.isNull()), "desc"],
+								[$.metricsLeaseUntil, "asc"],
+								[$.id, "asc"],
+							]),
+					),
 				)
 				const takenPerOrg = new Map<OrgId, number>()
 				const candidates = due.filter((row) => {
@@ -589,11 +584,12 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								return null
 							}
 							const [connector] = yield* dbExecute((db) =>
-								db
-									.update(gcpConnectors)
-									.set({ metricsLeaseUntil: msToDate(now + LEASE_MS) })
-									.where(and(eq(gcpConnectors.id, candidate.id), isDue))
-									.returning(),
+								db.run(
+									PG.update(GcpConnectors)
+										.set({ metricsLeaseUntil: now + LEASE_MS })
+										.where(($) => [$.id.eq(candidate.id), ...isDue($)])
+										.returning(),
+								),
 							)
 							return connector === undefined ? null : yield* pollConnector(connector, tick)
 						}).pipe(

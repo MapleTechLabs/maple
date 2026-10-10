@@ -496,7 +496,7 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 		),
 		rangeDate: validateRangeDate(requiredString(value, "rangeDate", "archive expiration journal")),
 		completedSignals,
-		removingSignal: removingSignal as ArchiveSignalName | null,
+		removingSignal: removingSignal,
 		archivedGenerations,
 	}
 }

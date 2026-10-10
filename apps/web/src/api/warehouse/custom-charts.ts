@@ -762,7 +762,7 @@ function extractGroupedAllMetricsSeries(
 				point = emptyAllMetricsPoint()
 				buckets.set(bucket, point)
 			}
-			assignAllMetric(point, metric, Number(rawValue))
+			assignAllMetric(point, metric, rawValue)
 		}
 	}
 
@@ -906,9 +906,9 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 		releases: result.releases.map((r) => ({
 			bucket: toIsoBucket(r.bucket),
 			commitSha: r.commitSha,
-			count: Number(r.count),
+			count: r.count,
 			// Optional in the response schema (API/web version-skew tolerance).
-			errorCount: Number(r.errorCount ?? 0),
+			errorCount: r.errorCount ?? 0,
 		})),
 		environments: [...result.environments],
 	} satisfies ServiceDetailOverviewResult

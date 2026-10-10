@@ -15,6 +15,7 @@ export function TruncatedText({
 	mono = false,
 	tooltip = "title",
 	className,
+	style,
 }: {
 	children?: React.ReactNode
 	/** The full string for the hover text; defaults to `children` when it is a string. */
@@ -22,6 +23,7 @@ export function TruncatedText({
 	mono?: boolean
 	tooltip?: "title" | "overflow" | "none"
 	className?: string
+	style?: React.CSSProperties
 }): React.ReactElement {
 	const full = text ?? (typeof children === "string" ? children : undefined)
 	const [clipped, setClipped] = React.useState(false)
@@ -29,7 +31,7 @@ export function TruncatedText({
 
 	if (tooltip !== "overflow" || !full) {
 		return (
-			<span className={classes} title={tooltip === "title" ? full : undefined}>
+			<span className={classes} style={style} title={tooltip === "title" ? full : undefined}>
 				{children ?? full}
 			</span>
 		)
@@ -40,6 +42,7 @@ export function TruncatedText({
 			<TooltipTrigger
 				render={<span />}
 				className={classes}
+				style={style}
 				onPointerEnter={(event) =>
 					setClipped(event.currentTarget.scrollWidth > event.currentTarget.clientWidth)
 				}

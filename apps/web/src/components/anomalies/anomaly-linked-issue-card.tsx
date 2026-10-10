@@ -47,7 +47,7 @@ export function AnomalyLinkedIssueCard({
 						) : null}
 					</div>
 					<Button size="sm" variant="outline" onClick={onOpenLinkDialog} disabled={busy}>
-						<LinkIcon size={13} />
+						<LinkIcon />
 						Link issue
 					</Button>
 				</div>
@@ -172,13 +172,13 @@ function IssueCardActions({
 				render={<Link to="/errors/issues/$issueId" params={{ issueId }} />}
 			>
 				Open issue
-				<ArrowRightIcon size={13} />
+				<ArrowRightIcon />
 			</Button>
 			<IconButton onClick={onOpenLinkDialog} disabled={busy} label="Link a different issue">
-				<LinkIcon size={13} />
+				<LinkIcon />
 			</IconButton>
 			<IconButton onClick={onUnlink} disabled={busy} label="Unlink issue">
-				<XmarkIcon size={13} />
+				<XmarkIcon />
 			</IconButton>
 		</div>
 	)

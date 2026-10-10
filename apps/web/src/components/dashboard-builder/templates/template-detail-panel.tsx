@@ -145,7 +145,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 
 			<div className="flex flex-col gap-2">
 				<TemplateLivePreview template={template} parameters={values} />
-				<p className="text-muted-foreground/85 text-2xs">That's the dashboard you'd get right now.</p>
+				<p className="text-muted-foreground/80 text-2xs">That's the dashboard you'd get right now.</p>
 			</div>
 
 			<RequirementBlock template={template} readiness={readiness} />
@@ -213,13 +213,13 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 					{ready ? (
 						<Button onClick={submit} disabled={missingRequired.length > 0} loading={creating}>
 							Create dashboard
-							<ArrowRightIcon size={13} data-icon="inline-end" />
+							<ArrowRightIcon data-icon="inline-end" />
 						</Button>
 					) : (
 						<>
 							<Button render={<Link to={destination.to} search={destination.search} />}>
 								Set up {template.requirement?.setupLabel ?? "the collector"}
-								<ExternalLinkIcon size={13} data-icon="inline-end" />
+								<ExternalLinkIcon data-icon="inline-end" />
 							</Button>
 							<Button
 								variant="outline"

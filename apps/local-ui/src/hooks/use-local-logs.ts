@@ -85,7 +85,7 @@ export function useLocalLogSeverities(filters: LogFilters, bounds: TimeBounds) {
 			const rows = await executeLocalCompiledQuery(compiled, signal)
 			return rows
 				.filter((row) => row.name)
-				.map((row) => ({ name: row.name, count: Number(row.count) }))
+				.map((row) => ({ name: row.name, count: row.count }))
 				.sort((a, b) => compareSeverity(a.name, b.name))
 		},
 	})

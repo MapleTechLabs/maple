@@ -1,4 +1,5 @@
-import { orgSupportChannels, type OrgSupportChannelRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgSupportChannels, type OrgSupportChannelRow } from "@maple/db/tables"
 import type { OrgId, UserId } from "@maple/domain/http"
 import {
 	SupportChannelBusyError,
@@ -7,7 +8,6 @@ import {
 	supportChannelName,
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schedule } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -89,7 +89,7 @@ const toActive = (row: OrgSupportChannelRow): SupportChannelView =>
 				status: "active",
 				channelId: row.slackChannelId,
 				channelName: row.slackChannelName,
-				createdAtMs: row.createdAt.getTime(),
+				createdAtMs: row.createdAt,
 			}
 		: { status: "not_created" }
 
@@ -108,7 +108,13 @@ const make = Effect.gen(function* () {
 
 	const findRow = (orgId: OrgId) =>
 		database
-			.execute((db) => db.select().from(orgSupportChannels).where(eq(orgSupportChannels.orgId, orgId)))
+			.execute((db) =>
+				db.run(
+					PG.from(OrgSupportChannels)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			)
 			.pipe(
 				Effect.map((rows) => Option.fromNullishOr(rows[0])),
 				Effect.mapError(persistenceError("find")),
@@ -132,62 +138,61 @@ const make = Effect.gen(function* () {
 		const reservationId = crypto.randomUUID()
 		const inserted = yield* database
 			.execute((db) =>
-				db
-					.insert(orgSupportChannels)
-					.values({
-						orgId,
-						reservationId,
-						reservedAt: new Date(now),
-						createdByUserId: userId,
-						createdAt: new Date(now),
-						updatedAt: new Date(now),
-					})
-					.onConflictDoNothing()
-					.returning({ orgId: orgSupportChannels.orgId }),
+				db.run(
+					PG.insertInto(OrgSupportChannels)
+						.values({
+							orgId,
+							reservationId,
+							reservedAt: now,
+							createdByUserId: userId,
+							createdAt: now,
+							updatedAt: now,
+						})
+						.onConflictDoNothing()
+						.returning("orgId"),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError("reserve")))
 		if (inserted.length > 0) return Option.some(reservationId)
 		const takenOver = yield* database
 			.execute((db) =>
-				db
-					.update(orgSupportChannels)
-					.set({
-						reservationId,
-						reservedAt: new Date(now),
-						createdByUserId: userId,
-						updatedAt: new Date(now),
-					})
-					.where(
-						and(
-							eq(orgSupportChannels.orgId, orgId),
-							isNull(orgSupportChannels.slackChannelId),
-							or(
-								isNull(orgSupportChannels.reservedAt),
-								lt(orgSupportChannels.reservedAt, new Date(now - CREATE_LEASE_MS)),
-							),
-						),
-					)
-					.returning({ orgId: orgSupportChannels.orgId }),
+				db.run(
+					PG.update(OrgSupportChannels)
+						.set({
+							reservationId,
+							reservedAt: now,
+							createdByUserId: userId,
+							updatedAt: now,
+						})
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.slackChannelId.isNull(),
+							PG.or($.reservedAt.isNull(), $.reservedAt.lt(now - CREATE_LEASE_MS)),
+						])
+						.returning("orgId"),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError("reserve")))
 		return takenOver.length > 0 ? Option.some(reservationId) : Option.none()
 	})
 
 	/** Rows this reservation still owns and that have no channel yet. */
-	const ownedBy = (orgId: OrgId, reservationId: string) =>
-		and(
-			eq(orgSupportChannels.orgId, orgId),
-			eq(orgSupportChannels.reservationId, reservationId),
-			isNull(orgSupportChannels.slackChannelId),
-		)
+	const ownedBy =
+		(orgId: OrgId, reservationId: string) =>
+		($: PG.ColumnAccessor<typeof OrgSupportChannels.columns>) => [
+			$.orgId.eq(orgId),
+			$.reservationId.eq(reservationId),
+			$.slackChannelId.isNull(),
+		]
 
 	const releaseReservation = (orgId: OrgId, reservationId: string) =>
 		database
 			.execute((db) =>
-				db
-					.update(orgSupportChannels)
-					.set({ reservedAt: null, reservationId: null })
-					.where(ownedBy(orgId, reservationId)),
+				db.run(
+					PG.update(OrgSupportChannels)
+						.set({ reservedAt: null, reservationId: null })
+						.where(ownedBy(orgId, reservationId)),
+				),
 			)
 			.pipe(Effect.ignore)
 
@@ -218,10 +223,11 @@ const make = Effect.gen(function* () {
 			if (match !== undefined) {
 				const recorded = yield* database
 					.execute((db) =>
-						db
-							.select({ orgId: orgSupportChannels.orgId })
-							.from(orgSupportChannels)
-							.where(eq(orgSupportChannels.slackChannelId, match.id)),
+						db.run(
+							PG.from(OrgSupportChannels)
+								.select("orgId")
+								.where(($) => [$.slackChannelId.eq(match.id)]),
+						),
 					)
 					.pipe(Effect.mapError(persistenceError("findUnrecordedChannel")))
 				return recorded.length === 0
@@ -348,18 +354,19 @@ const make = Effect.gen(function* () {
 				const now = yield* Clock.currentTimeMillis
 				const [row] = yield* database
 					.execute((db) =>
-						db
-							.update(orgSupportChannels)
-							.set({
-								slackChannelId: channel.id,
-								slackChannelName: channel.name,
-								reservedAt: null,
-								reservationId: null,
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
-							})
-							.where(ownedBy(orgId, reservationId))
-							.returning(),
+						db.run(
+							PG.update(OrgSupportChannels)
+								.set({
+									slackChannelId: channel.id,
+									slackChannelName: channel.name,
+									reservedAt: null,
+									reservationId: null,
+									createdAt: now,
+									updatedAt: now,
+								})
+								.where(ownedBy(orgId, reservationId))
+								.returning(),
+						),
 					)
 					.pipe(
 						Effect.mapError(persistenceError("finalize")),

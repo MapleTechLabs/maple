@@ -1,10 +1,14 @@
 import * as React from "react"
 import { errorMessage } from "@/lib/error-toast"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router"
+import { createFileRoute, Link, Navigate, useNavigate, useBlocker } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
+import { CRUMB_ERROR, CRUMB_LOADING, CRUMB_NOT_FOUND } from "@/components/layout/result-page"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { SyncUnavailable } from "@/components/common/sync-unavailable"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import {
 	WidgetQueryBuilderPage,
 	type WidgetQueryBuilderPageHandle,
@@ -46,7 +50,8 @@ function WidgetConfigurePage() {
 	const { dashboardId, widgetId } = Route.useParams()
 	const navigate = useNavigate()
 
-	const { dashboards, readOnly, updateWidget, updateDashboardTimeRange } = useDashboardStore()
+	const { dashboards, isLoading, isError, retry, readOnly, updateWidget, updateDashboardTimeRange } =
+		useDashboardStore()
 
 	const builderRef = React.useRef<WidgetQueryBuilderPageHandle>(null)
 	// Stabilize time range value — only update when the value actually changes,
@@ -77,7 +82,7 @@ function WidgetConfigurePage() {
 				// `onApply` is a fire-and-forget callback, so an uncaught rejection here
 				// would strand the user on the editor with no idea the save failed.
 				toastManager.add({
-					title: errorMessage(cause, "Couldn’t save this widget"),
+					title: errorMessage(cause, "Failed to save this widget"),
 					type: "error",
 				})
 			}),
@@ -94,16 +99,49 @@ function WidgetConfigurePage() {
 	})
 
 	if (!activeDashboard || !configureWidget) {
+		// Same triage as the dashboard page: a dead sync stream is not a missing widget.
+		const [crumb, body] =
+			isLoading && !activeDashboard
+				? [CRUMB_LOADING, <WidgetEditorSkeleton />]
+				: isError && !activeDashboard
+					? [
+							CRUMB_ERROR,
+							<SyncUnavailable
+								title="Failed to load this dashboard"
+								description="The sync stream isn’t reachable, so the dashboard couldn’t be read. Nothing has been lost; this is a read problem."
+								onRetry={retry}
+							/>,
+						]
+					: [
+							CRUMB_NOT_FOUND,
+							<ResourceNotFound
+								title="Widget not found"
+								description={
+									<>
+										No widget with id{" "}
+										<InlineCode className="break-all px-1.5 py-0.5">{widgetId}</InlineCode>
+									</>
+								}
+								backLink={<Link to="/dashboards/$dashboardId" params={{ dashboardId }} />}
+								backLabel="Back to dashboard"
+								className="py-24"
+							/>,
+						]
 		return (
-			<DashboardPage breadcrumbs={[{ label: "Dashboards", href: "/dashboards" }, { label: "..." }]}>
-				<WidgetEditorSkeleton />
+			<DashboardPage breadcrumbs={[{ label: "Dashboards", href: "/dashboards" }, { label: crumb }]}>
+				{body}
 			</DashboardPage>
 		)
 	}
 
 	if (readOnly) {
-		navigateBack()
-		return null
+		return (
+			<Navigate
+				to="/dashboards/$dashboardId"
+				params={{ dashboardId }}
+				search={(prev) => ({ ...pickDashboardControlParams(prev), mode: "edit" as const })}
+			/>
+		)
 	}
 
 	let initialTimeRange = stableTimeRange
@@ -134,13 +172,10 @@ function WidgetConfigurePage() {
 							label: activeDashboard.name,
 							href: `/dashboards/${activeDashboard.id}`,
 						},
-						{ label: "Configure Widget" },
+						{ label: "Configure widget" },
 					]}
 					topbarActions={
 						<div className="flex items-center gap-2">
-							<Button variant="ghost" size="sm" onClick={navigateBack} disabled={isSaving}>
-								&larr; Back
-							</Button>
 							<Button variant="outline" size="sm" onClick={navigateBack} disabled={isSaving}>
 								Cancel
 							</Button>

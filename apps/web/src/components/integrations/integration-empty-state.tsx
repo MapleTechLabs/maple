@@ -1,4 +1,6 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Children, createContext, isValidElement, use } from "react"
 import type React from "react"
 
@@ -97,10 +99,10 @@ export function IntegrationEmptyFeatures({ children }: { children: React.ReactNo
 				<li
 					// Children.toArray prefixes existing keys; tiles are a static list, so this is stable.
 					key={isValidElement(child) ? child.key : index}
-					className="flex flex-col gap-2 rounded-md border border-border/60 bg-card px-4 py-3.5 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none"
+					className="flex animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none"
 					style={{ animationDelay: `${50 + index * 50}ms`, animationFillMode: "backwards" }}
 				>
-					{child}
+					<Panel className="flex-1 gap-2 border-border/60 px-4 py-3.5">{child}</Panel>
 				</li>
 			))}
 		</ul>
@@ -131,14 +133,15 @@ export function IntegrationEmptyCard({
 	children: React.ReactNode
 }) {
 	return (
-		<div
+		<EmptyMessage
+			dashed
 			className={cn(
-				"flex min-h-70 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-input px-6 py-10 text-center",
+				"flex min-h-70 flex-col items-center justify-center gap-4 border-input px-6 py-10",
 				className,
 			)}
 		>
 			{children}
-		</div>
+		</EmptyMessage>
 	)
 }
 

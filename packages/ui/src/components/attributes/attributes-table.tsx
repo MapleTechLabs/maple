@@ -234,9 +234,9 @@ export function AttributesTable({ attributes, title, searchQuery, groupByNamespa
 								<span className="font-mono font-semibold text-foreground/80">
 									{group.namespace}
 								</span>
-								<span className="ml-auto rounded-full bg-muted px-1.5 text-3xs tabular-nums text-muted-foreground">
+								<Badge variant="muted" size="xs" mono className="ml-auto">
 									{group.entries.length}
-								</span>
+								</Badge>
 							</CollapsibleTrigger>
 							<CollapsibleContent>
 								<div className="divide-y divide-border/40 border-t border-border/60 bg-muted/15">
@@ -304,7 +304,7 @@ function partitionInternalAttributes(attrs: Record<string, string>) {
 /**
  * An `AttributesTable` with the two namespaces that read better on their own
  * lifted out: `gen_ai.*` into a labelled AI block above it, and `maple_` into a
- * collapsed "Maple Internal" table beneath it. Use this anywhere a raw
+ * collapsed "Maple internal" table beneath it. Use this anywhere a raw
  * attribute map from the pipeline is shown — span, resource, or log — since any
  * of them can carry either.
  */
@@ -342,13 +342,13 @@ export function AttributesSection({
 							size={10}
 							className="transition-transform group-data-[panel-open]:rotate-90"
 						/>
-						Maple Internal ({internalCount})
+						Maple internal ({internalCount})
 					</CollapsibleTrigger>
 					<CollapsibleContent>
 						<div className="mt-1">
 							<AttributesTable
 								attributes={internal}
-								title="Maple Internal"
+								title="Maple internal"
 								searchQuery={searchQuery}
 							/>
 						</div>
@@ -367,7 +367,7 @@ export function ResourceAttributesSection({
 	return (
 		<AttributesSection
 			attributes={attributes}
-			title="Resource Attributes"
+			title="Resource attributes"
 			searchQuery={searchQuery}
 			groupByNamespace={groupByNamespace}
 		/>

@@ -1,8 +1,9 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { countLabel } from "@maple/ui/lib/format"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -226,7 +227,7 @@ export function CloudflareAccountCard() {
 
 	// Guard the first fetch so a connected org doesn't flash the "Connect" empty state.
 	if (Result.isInitial(statusResult)) {
-		return <Skeleton className="h-40 w-full rounded-lg" />
+		return <Skeleton className="h-40 w-full rounded-md" />
 	}
 
 	// A failed status fetch is not "not connected" — don't offer the connect CTA
@@ -271,7 +272,7 @@ export function CloudflareAccountCard() {
 						Your zones and Workers will appear here after connecting.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
-						<CloudflareIcon size={16} />
+						<CloudflareIcon />
 						Connect Cloudflare
 					</Button>
 					<IntegrationEmptyFooter>
@@ -410,6 +411,7 @@ export function CloudflareHeaderActions() {
 		},
 	)
 	const actionBusy = connectFlow.busy || disconnectBusy
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	return (
 		<div className="flex items-center gap-2">
@@ -425,12 +427,27 @@ export function CloudflareHeaderActions() {
 			<Button
 				size="sm"
 				variant="destructive-outline"
-				onClick={handleDisconnect}
+				onClick={() => setConfirmingDisconnect(true)}
 				disabled={actionBusy}
 				loading={disconnectBusy}
 			>
 				{multiAccount ? "Disconnect all" : "Disconnect"}
 			</Button>
+			<ConfirmDialog
+				open={confirmingDisconnect}
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect Cloudflare"
+				description={
+					multiAccount
+						? "Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later."
+						: "Maple stops collecting data from this Cloudflare account. You can reconnect later."
+				}
+				confirmLabel="Disconnect"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
+				}}
+			/>
 		</div>
 	)
 }

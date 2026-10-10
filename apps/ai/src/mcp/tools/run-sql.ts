@@ -263,6 +263,19 @@ export const withRollupHintOnBudget = (
 			})
 		: error
 
+/**
+ * SQL the database rejected as written (a typo, `StatusCode = 2` on a String column) is the
+ * caller's to fix: an expected 400, not a query failure that opens an error issue.
+ */
+export const callerSqlAsInvalidInput = (
+	cause: { readonly _tag: string },
+	error: McpQueryError | McpQueryBudgetError,
+): McpQueryError | McpQueryBudgetError | McpInvalidInputError =>
+	cause._tag === "@maple/http/errors/WarehouseInvalidSqlError" &&
+	error._tag === "@maple/mcp/errors/McpQueryError"
+		? new McpInvalidInputError({ message: error.message, parameter: "sql" })
+		: error
+
 export function registerRunSqlTool(server: McpToolRegistrar) {
 	server.define({
 		name: "run_sql",
@@ -292,14 +305,17 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 								parameter: "sql",
 								example: RUN_SQL_EXAMPLE,
 							})
-						: // Execution failures surface the warehouse message so the agent can fix the SQL,
-							// plus the real table (or column) names when the one it named does not exist:
-							// the warehouse message never says what they are.
-							withRollupHintOnBudget(
-								withColumnListOnUnknownColumn(params.sql)(
-									withTableListOnUnknownTable(
-										toMcpQueryError("run_sql")(error),
-										params.sql,
+						: callerSqlAsInvalidInput(
+								error,
+								// Execution failures surface the warehouse message so the agent can fix the SQL,
+								// plus the real table (or column) names when the one it named does not exist:
+								// the warehouse message never says what they are.
+								withRollupHintOnBudget(
+									withColumnListOnUnknownColumn(params.sql)(
+										withTableListOnUnknownTable(
+											toMcpQueryError("run_sql")(error),
+											params.sql,
+										),
 									),
 								),
 							),

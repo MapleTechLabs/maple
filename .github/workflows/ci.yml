@@ -817,7 +817,9 @@ jobs:
             #
             # The apt mirror sometimes stalls a connection instead of failing it, which
             # hung apt for 11 minutes and timed the job out. Cap each read and each
-            # attempt so a stalled mirror costs a retry, not the run.
+            # attempt so a stalled mirror costs a retry, not the run. `timeout` only
+            # kills playwright: the root apt-get it started through sudo survives and
+            # holds the dpkg lock, so stop it and wait for the lock before retrying.
             - name: Install Playwright system deps
               if: ${{ matrix.browser != 'chromium' }}
               env:
@@ -828,6 +830,12 @@ jobs:
                   for attempt in 1 2 3; do
                       timeout 180 bunx playwright install-deps "$PW_BROWSER" && exit 0
                       echo "::warning::playwright install-deps attempt $attempt failed"
+                      sudo pkill -x apt-get || true
+                      if ! sudo timeout 60 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done'; then
+                          echo "::error::dpkg lock still held 60s after stopping apt-get"
+                          exit 1
+                      fi
+                      sudo dpkg --configure -a || true
                   done
                   exit 1
               working-directory: apps/web

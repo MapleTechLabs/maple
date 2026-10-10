@@ -42,6 +42,7 @@ import { DashboardHistoryPanel, PreviewedCanvas } from "@/components/dashboard-b
 import { DashboardViewSkeleton } from "@/components/dashboard-builder/loading-skeletons"
 import { SyncDegradedBanner, SyncUnavailable } from "@/components/common/sync-unavailable"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { CRUMB_ERROR, CRUMB_LOADING } from "@/components/layout/result-page"
 import { historyPanelOpenAtom, previewedVersionAtom } from "@/atoms/dashboard-history-atoms"
 import { useDashboardVersions } from "@/components/dashboard-builder/history/use-dashboard-history"
 import { Result } from "@/lib/effect-atom"
@@ -241,10 +242,10 @@ function DashboardViewPage() {
 		// A dead sync stream must not masquerade as a missing dashboard: the row may
 		// exist and simply never have arrived.
 		const [crumb, body] = isLoading
-			? ["...", <DashboardViewSkeleton />]
+			? [CRUMB_LOADING, <DashboardViewSkeleton />]
 			: isError
 				? [
-						"Unavailable",
+						CRUMB_ERROR,
 						<SyncUnavailable
 							title="Couldn’t load this dashboard"
 							description="The sync stream isn’t reachable, so the dashboard couldn’t be read. Nothing has been lost — this is a read problem."

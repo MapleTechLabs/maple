@@ -13,7 +13,7 @@ import {
 	type MetricGaugeRow,
 	type MetricSumRow,
 } from "@maple/backend/services/warehouse/metric-rows"
-import { msToDate, timestampMs } from "@maple/backend/platform/time"
+import { timestampMs } from "@maple/backend/platform/time"
 import { Predicate } from "effect"
 import type { GcpBucketOptions, GcpResourceSearchResult, GcpTimeSeries } from "./api"
 
@@ -118,9 +118,9 @@ export const distributionQuantile = (distribution: GcpDistribution, q: number): 
 	return undefined
 }
 
-const toDate = (value: string | undefined): Date | null => {
+const toMs = (value: string | undefined): number | null => {
 	const ms = value === undefined ? Number.NaN : timestampMs(value)
-	return msToDate(Number.isNaN(ms) ? null : ms)
+	return Number.isNaN(ms) ? null : ms
 }
 
 /** The `gcp_resources` columns of a search result, or undefined when it names no project. */
@@ -141,8 +141,8 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 		displayName: displayName ?? null,
 		state: result.state ?? null,
 		labels: result.labels ?? {},
-		resourceCreatedAt: toDate(result.createTime),
-		resourceUpdatedAt: toDate(result.updateTime),
+		resourceCreatedAt: toMs(result.createTime),
+		resourceUpdatedAt: toMs(result.updateTime),
 	}
 }
 

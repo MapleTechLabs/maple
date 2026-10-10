@@ -9,9 +9,16 @@ export type SegmentedOption<T extends string> = {
 	label: ReactNode
 	icon?: ReactNode
 	disabled?: boolean
+	/** Accessible name when `label` is not a string (icon-only options). */
+	ariaLabel?: string
 }
 
-type Size = "sm" | "default"
+type Size = "xs" | "sm" | "default"
+
+const optionAriaLabel = <T extends string>(option: SegmentedOption<T>) =>
+	option.ariaLabel ?? (typeof option.label === "string" ? option.label : option.value)
+
+const XS_ITEM = "h-6 text-2xs sm:h-6 sm:text-2xs"
 
 /* The shared segmented control (a recessed track with one raised pill — see
    packages/ui toggle-group.tsx) plus a sliding shared-layout indicator. */
@@ -40,7 +47,7 @@ export function SegmentedSelect<T extends string>({
 				if (next && next !== value) onChange(next)
 			}}
 			variant="outline"
-			size={size}
+			size={size === "xs" ? "sm" : size}
 			aria-label={ariaLabel}
 			className={className}
 		>
@@ -51,12 +58,13 @@ export function SegmentedSelect<T extends string>({
 						key={option.value}
 						value={option.value}
 						disabled={option.disabled}
-						aria-label={typeof option.label === "string" ? option.label : option.value}
+						aria-label={optionAriaLabel(option)}
 						// The shared segment already paints a static pill on the
 						// pressed item; suppress it so the sliding one below is the
 						// only selection indicator.
 						className={cn(
 							"relative",
+							size === "xs" && XS_ITEM,
 							"data-pressed:border-transparent data-pressed:bg-transparent data-pressed:shadow-none dark:data-pressed:bg-transparent",
 						)}
 					>
@@ -103,7 +111,7 @@ export function MultiSegmentedSelect<T extends string>({
 			value={value}
 			onValueChange={(next) => onChange(next as T[])}
 			variant="outline"
-			size={size}
+			size={size === "xs" ? "sm" : size}
 			aria-label={ariaLabel}
 			className={className}
 		>
@@ -114,9 +122,10 @@ export function MultiSegmentedSelect<T extends string>({
 						key={option.value}
 						value={option.value}
 						disabled={option.disabled}
-						aria-label={typeof option.label === "string" ? option.label : option.value}
+						aria-label={optionAriaLabel(option)}
 						className={cn(
 							"transition-colors",
+							size === "xs" && XS_ITEM,
 							selected &&
 								"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary/10 data-pressed:text-foreground hover:bg-primary/15 dark:hover:bg-primary/15",
 						)}

@@ -82,7 +82,7 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 			result.data,
 			Arr.map((d): AttributeKeyResult => ({
 				key: `${d.facetType}:${d.name}`,
-				count: Number(d.count),
+				count: d.count,
 				facetType: d.facetType,
 			})),
 			Arr.sort(byCountDesc),
@@ -106,7 +106,7 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 
 	return pipe(
 		result.data,
-		Arr.map((d): AttributeKeyResult => ({ key: d.attributeKey, count: Number(d.usageCount) })),
+		Arr.map((d): AttributeKeyResult => ({ key: d.attributeKey, count: d.usageCount })),
 	)
 })
 
@@ -149,6 +149,6 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 
 	return pipe(
 		result.data,
-		Arr.map((d): AttributeValueResult => ({ value: d.attributeValue, count: Number(d.usageCount) })),
+		Arr.map((d): AttributeValueResult => ({ value: d.attributeValue, count: d.usageCount })),
 	)
 })
