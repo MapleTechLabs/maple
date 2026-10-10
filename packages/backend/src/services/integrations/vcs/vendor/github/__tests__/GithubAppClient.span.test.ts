@@ -4,10 +4,7 @@ import { ConfigProvider, Effect, Layer, Tracer } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 
 // The GitHub REST call must be a Client-kind span carrying `peer.service` —
 // that pair is what draws the GitHub node and its edge on the service map. An
@@ -44,8 +41,7 @@ const requestSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) => spansNamed(spa
 const jsonResponse = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-const stubHttp = (respond: () => Response) =>
-	Layer.succeed(GithubHttp, { fetch: async () => respond() } satisfies GithubHttpApi)
+const stubHttp = (respond: () => Response) => fakeGithubHttp(() => respond())
 
 describe("GithubAppClient request span", () => {
 	it.effect("emits a Client-kind span with peer.service and HTTP attributes", () => {
@@ -132,6 +128,11 @@ describe("GithubAppClient request span", () => {
 			for (const value of searchSpan?.attributes.values() ?? []) {
 				assert.notInclude(String(value), "card declined")
 			}
+			// HttpClient's own `http.client` span records `url.full` with the encoded query; it must stay suppressed.
+			assert.deepStrictEqual(
+				spans.filter((span) => span.name.startsWith("http.client")).map((span) => span.name),
+				[],
+			)
 		}).pipe(Effect.provide(layer))
 	})
 })

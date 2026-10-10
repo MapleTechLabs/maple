@@ -25,7 +25,7 @@ import {
 	COMMIT_PAGES_PER_INVOCATION,
 	GithubAppClient,
 } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import { GithubHttp } from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { FetchHttpClient } from "effect/http"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 import type { VcsProviderClient } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import {
@@ -72,12 +72,12 @@ const SHA = "abc1230000000000000000000000000000000def"
 
 const repoLayer = (testDb: TestDb) => testRepoLayer(testDb)
 
-// GithubProvider over the real GithubHttp; only the webhook-parse path (no HTTP)
+// GithubProvider over the real HttpClient; only the webhook-parse path (no HTTP)
 // is exercised through it, so the live fetch layer is never actually invoked.
 const providerLayer = () => {
 	const env = testEnv({ GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET })
 	const client = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
-		Layer.provide(Layer.mergeAll(env, GithubHttp.layer)),
+		Layer.provide(Layer.mergeAll(env, FetchHttpClient.layer)),
 	)
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
@@ -87,7 +87,7 @@ const providerLayer = () => {
 const providerLayerNoSecret = () => {
 	const env = testEnv()
 	const client = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
-		Layer.provide(Layer.mergeAll(env, GithubHttp.layer)),
+		Layer.provide(Layer.mergeAll(env, FetchHttpClient.layer)),
 	)
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
