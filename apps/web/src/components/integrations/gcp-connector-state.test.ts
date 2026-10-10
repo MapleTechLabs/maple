@@ -3,20 +3,24 @@ import { describe, expect, it } from "vitest"
 import { Option } from "effect"
 import {
 	cloudShellUrl,
+	gcpApplyLine,
+	gcpCollectLock,
 	gcpConnectionState,
 	gcpCreateRequest,
+	gcpDraftEffect,
 	gcpLogFilterChoice,
 	gcpLogFilters,
 	gcpLogState,
+	gcpMessageParts,
 	gcpMetricsState,
 	gcpOverlapNote,
 	gcpPendingChanges,
+	gcpRunAsked,
 	gcpScopeLabel,
 	gcpScopeRoles,
 	gcpScriptNeeded,
 	gcpScriptOverdue,
 	gcpSetupRunning,
-	gcpSwitchLock,
 	gcpWorstState,
 	logRouterUrl,
 	type GcpConnectorDraft,
@@ -262,7 +266,7 @@ describe("gcpConnectionState", () => {
 		expect(state({ ...fresh, ...NEVER })).toBe("setup-pending")
 	})
 
-	it("has changes pending when a switch and the last report disagree", () => {
+	it("has changes pending when the configuration and the last report disagree", () => {
 		expect(state({ logs_enabled: false })).toBe("changes-pending")
 		expect(state({ applied_metrics_enabled: false, last_metrics_received_at: ago(90) })).toBe(
 			"changes-pending",
@@ -297,36 +301,38 @@ describe("gcpConnectionState", () => {
 describe("gcpPendingChanges", () => {
 	const changes = (over: Parameters<typeof connector>[0]) => gcpPendingChanges(connector(over), NOW)
 
-	it("lists nothing while the switches match the last report, or before the first run", () => {
+	it("lists nothing while the configuration matches the last report, or before the first run", () => {
 		expect(changes({})).toEqual([])
 		expect(changes({ ...fresh, ...NEVER })).toEqual([])
 	})
 
-	it("lists what a re-run removes and creates", () => {
-		expect(changes({ logs_enabled: false })).toEqual(["remove the log sink, topic and subscription"])
+	const LOGS_START = "Log forwarding starts once the script has created the log sink."
+	const LOGS_STOP =
+		"Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
+	const METRICS_START =
+		"Metrics and resources start once the script has created the read-only service account."
+	const METRICS_STOP =
+		"The read-only service account stays in Google Cloud until the script has removed it."
+
+	it("says what goes on until a re-run removes and creates", () => {
+		expect(changes({ logs_enabled: false })).toEqual([LOGS_STOP])
 		expect(
 			changes({
 				logs_enabled: false,
 				applied_metrics_enabled: false,
 				last_metrics_received_at: ago(90),
 			}),
-		).toEqual([
-			"remove the log sink, topic and subscription",
-			"create the read-only service account and grant its roles",
-		])
+		).toEqual([LOGS_STOP, METRICS_START])
 		expect(
 			changes({ metrics_enabled: false, applied_logs_enabled: false, last_log_received_at: null }),
-		).toEqual([
-			"create the log sink, topic and subscription",
-			"remove the read-only service account and its roles",
-		])
+		).toEqual([LOGS_START, METRICS_STOP])
 	})
 })
 
 describe("gcpScriptNeeded", () => {
 	const needed = (over: Parameters<typeof connector>[0]) => gcpScriptNeeded(connector(over), NOW)
 
-	it("is null while the switches match what the runs reported", () => {
+	it("is null while the configuration matches what the runs reported", () => {
 		expect(needed({})).toBeNull()
 		expect(needed({ ...NEVER, setup_reported_at: ago(1) })).toBeNull()
 	})
@@ -406,32 +412,169 @@ describe("gcpOverlapNote", () => {
 	})
 })
 
-describe("gcpSwitchLock", () => {
+describe("gcpCollectLock", () => {
 	const both = { logs_enabled: true, metrics_enabled: true }
 	const logsOnly = { logs_enabled: true, metrics_enabled: false }
 	const metricsOnly = { logs_enabled: false, metrics_enabled: true }
 
-	it("leaves both switches free while both are on", () => {
-		expect(gcpSwitchLock(both, "logs", true)).toBeNull()
-		expect(gcpSwitchLock(both, "metrics", true)).toBeNull()
+	it("leaves both free while both are on", () => {
+		expect(gcpCollectLock(both, "logs", true)).toBeNull()
+		expect(gcpCollectLock(both, "metrics", true)).toBeNull()
 	})
 
-	it("locks the last switch that is on", () => {
-		expect(gcpSwitchLock(logsOnly, "logs", true)).toBe("last-on")
-		expect(gcpSwitchLock(metricsOnly, "metrics", true)).toBe("last-on")
+	it("locks the last one that is on", () => {
+		expect(gcpCollectLock(logsOnly, "logs", true)).toBe("last-on")
+		expect(gcpCollectLock(metricsOnly, "metrics", true)).toBe("last-on")
 	})
 
-	it("lets the other switch be turned on", () => {
-		expect(gcpSwitchLock(logsOnly, "metrics", true)).toBeNull()
-		expect(gcpSwitchLock(metricsOnly, "logs", true)).toBeNull()
+	it("lets the other be turned on", () => {
+		expect(gcpCollectLock(logsOnly, "metrics", true)).toBeNull()
+		expect(gcpCollectLock(metricsOnly, "logs", true)).toBeNull()
 	})
 
 	it("locks metrics off when the deployment cannot read them", () => {
-		expect(gcpSwitchLock(logsOnly, "metrics", false)).toBe("metrics-unavailable")
+		expect(gcpCollectLock(logsOnly, "metrics", false)).toBe("metrics-unavailable")
 	})
 
 	it("still lets metrics be turned off on such a deployment", () => {
-		expect(gcpSwitchLock(both, "metrics", false)).toBeNull()
+		expect(gcpCollectLock(both, "metrics", false)).toBeNull()
+	})
+})
+
+describe("gcpDraftEffect", () => {
+	it("starts a capability only once the script has run", () => {
+		expect(gcpDraftEffect(connector({ ...fresh, ...NEVER }), "logs", true)).toBe("starts-after-script")
+		expect(
+			gcpDraftEffect(
+				connector({ metrics_enabled: false, applied_metrics_enabled: false }),
+				"metrics",
+				true,
+			),
+		).toBe("starts-after-script")
+	})
+
+	it("changes nothing for a capability that stays as it is", () => {
+		expect(gcpDraftEffect(connector(), "logs", true)).toBeNull()
+		expect(
+			gcpDraftEffect(
+				connector({ metrics_enabled: false, applied_metrics_enabled: false }),
+				"metrics",
+				false,
+			),
+		).toBeNull()
+	})
+
+	it("stops in Maple at once when a capability that is set up is turned off", () => {
+		expect(gcpDraftEffect(connector(), "logs", false)).toBe("stops-now")
+		expect(gcpDraftEffect(connector(), "metrics", false)).toBe("stops-now")
+	})
+
+	it("counts arrived data as set up when no run reported", () => {
+		expect(gcpDraftEffect(connector(fresh), "logs", false)).toBe("stops-now")
+	})
+
+	it("stops nothing when what is turned off was never set up", () => {
+		expect(gcpDraftEffect(connector({ ...fresh, ...NEVER }), "logs", false)).toBeNull()
+	})
+
+	it("leaves the removal to the script for a capability already off in Maple", () => {
+		expect(gcpDraftEffect(connector({ logs_enabled: false }), "logs", false)).toBe("removed-by-script")
+	})
+
+	it("resumes at once when a capability is turned back on before the script removed it", () => {
+		expect(gcpDraftEffect(connector({ logs_enabled: false }), "logs", true)).toBe("resumes-now")
+	})
+})
+
+describe("gcpRunAsked", () => {
+	const RESET = "The subscription wraps each entry. Run the setup script again: it resets the subscription."
+
+	it("names the capabilities whose failure asks for the setup script", () => {
+		expect(gcpRunAsked(connector({ last_log_error: RESET }), NOW)).toEqual(["logs"])
+		expect(
+			gcpRunAsked(
+				connector({
+					last_log_error: RESET,
+					last_metrics_error: "Maple can't sign in. Run the setup script and read its last lines.",
+					last_metrics_received_at: ago(50),
+				}),
+				NOW,
+			),
+		).toEqual(["logs", "metrics"])
+	})
+
+	it("asks for nothing when a failure has another remedy, or nothing fails", () => {
+		expect(
+			gcpRunAsked(connector({ last_log_error: "Over the plan limit. See Settings, Billing." }), NOW),
+		).toEqual([])
+		expect(gcpRunAsked(connector(), NOW)).toEqual([])
+	})
+
+	it("does not ask for a capability that is off, whatever its last error says", () => {
+		expect(gcpRunAsked(connector({ logs_enabled: false, last_log_error: RESET }), NOW)).toEqual([])
+	})
+})
+
+describe("gcpApplyLine", () => {
+	it("says what the run does about a capability", () => {
+		expect(gcpApplyLine(true, true)).toBe("On")
+		expect(gcpApplyLine(true, null)).toBe("On after this run")
+		expect(gcpApplyLine(true, false)).toBe("On after this run")
+		expect(gcpApplyLine(false, true)).toBe("Off in Maple. This run removes it from Google Cloud.")
+		expect(gcpApplyLine(false, false)).toBe("Off")
+		expect(gcpApplyLine(false, null)).toBe("Off")
+	})
+})
+
+describe("gcpMessageParts", () => {
+	it("cuts the first sentence, the remedy and what Google answered, without rewording", () => {
+		expect(
+			gcpMessageParts(
+				"Maple can't sign in as this connection's read-only service account yet. After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes. If this stays, run the setup script and read its last lines. (IAM Credentials returned 403)",
+			),
+		).toEqual({
+			headline: "Maple can't sign in as this connection's read-only service account yet",
+			body: [
+				"After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes.",
+				"If this stays, run the setup script and read its last lines.",
+			],
+			answer: "IAM Credentials returned 403",
+		})
+	})
+
+	it("keeps an address whole and starts a new line after it", () => {
+		expect(
+			gcpMessageParts(
+				"The host project acme has no active billing account. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme Maple retries every 5 minutes. (Cloud Monitoring returned 403, BILLING_DISABLED)",
+			),
+		).toEqual({
+			headline: "The host project acme has no active billing account",
+			body: [
+				"Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme",
+				"Maple retries every 5 minutes.",
+			],
+			answer: "Cloud Monitoring returned 403, BILLING_DISABLED",
+		})
+	})
+
+	it("does not cut inside a metric name", () => {
+		expect(
+			gcpMessageParts(
+				"3 of 46 metric queries failed, first run.googleapis.com/request_latencies. The rest were stored.",
+			),
+		).toEqual({
+			headline: "3 of 46 metric queries failed, first run.googleapis.com/request_latencies",
+			body: ["The rest were stored."],
+			answer: null,
+		})
+	})
+
+	it("is a headline alone for a single sentence", () => {
+		expect(gcpMessageParts("Maple retries on its own.")).toEqual({
+			headline: "Maple retries on its own",
+			body: [],
+			answer: null,
+		})
 	})
 })
 
