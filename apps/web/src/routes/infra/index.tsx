@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
@@ -7,12 +7,13 @@ import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { countLabel } from "@maple/ui/lib/format"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { PlusIcon } from "@/components/icons"
+import { ArrowRightIcon, SquareTerminalIcon } from "@/components/icons"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import {
 	NeedsAttention,
 	SOURCE_ORDER,
 	SOURCE_TITLE,
+	SourceMark,
 	SourcesTable,
 	presentSources,
 } from "@/components/infra/overview/infra-overview"
@@ -86,20 +87,38 @@ function InfraOverviewPage() {
 				) : null}
 
 				{missing.length > 0 ? (
-					<EmptyMessage dashed className="flex flex-wrap items-center gap-4 px-4 py-4 text-left">
-						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
-							<span className="text-sm text-foreground">Add a source</span>
-							<span className="text-xs text-muted-foreground">
-								Not reporting yet: {missing.map((id) => SOURCE_TITLE[id]).join(", ")}.
-							</span>
+					<EmptyMessage dashed className="@container px-4 py-4 text-left">
+						<div className="flex flex-col gap-3 @2xl:flex-row @2xl:items-center @2xl:gap-4">
+							<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+								<span className="text-sm text-foreground">Add a source</span>
+								<span className="text-xs text-muted-foreground">
+									Not reporting yet:{" "}
+									{missing.map((id, i) => (
+										<Fragment key={id}>
+											<span className="whitespace-nowrap">
+												<SourceMark
+													id={id}
+													size={12}
+													className="inline align-[-2px]"
+												/>{" "}
+												{SOURCE_TITLE[id]}
+												{i < missing.length - 1 ? "," : "."}
+											</span>{" "}
+										</Fragment>
+									))}
+								</span>
+							</div>
+							<div className="grid gap-2 @sm:flex @sm:shrink-0">
+								<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
+									<SquareTerminalIcon />
+									Install a collector
+								</Button>
+								<Button size="sm" render={<Link to="/integrations" />}>
+									Connect a provider
+									<ArrowRightIcon />
+								</Button>
+							</div>
 						</div>
-						<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
-							<PlusIcon />
-							Install a collector
-						</Button>
-						<Button size="sm" render={<Link to="/integrations" />}>
-							Connect a provider
-						</Button>
 					</EmptyMessage>
 				) : null}
 			</div>
