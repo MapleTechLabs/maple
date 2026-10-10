@@ -10,12 +10,12 @@ Each user message in a conversation is usually its own trace. **Agent Sessions**
 
 ## Sessions, turns and calls
 
-| Level | What it is | Where it comes from |
-| --- | --- | --- |
-| **Session** | One conversation, from the first message to the last. | Every trace that carries the same session id, such as `gen_ai.conversation.id`. |
-| **Turn** | One user message and everything the agent did to answer it. | Usually one trace, rooted at an `invoke_agent` span. |
-| **Model call** | One request to an LLM: the prompt, the reply, tokens, finish reason. | A `chat` (or `generate_content`, `text_completion`) span. |
-| **Tool call** | One function the model asked to run, with its arguments and result. | An `execute_tool` span. |
+| Level          | What it is                                                           | Where it comes from                                                             |
+| -------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Session**    | One conversation, from the first message to the last.                | Every trace that carries the same session id, such as `gen_ai.conversation.id`. |
+| **Turn**       | One user message and everything the agent did to answer it.          | Usually one trace, rooted at an `invoke_agent` span.                            |
+| **Model call** | One request to an LLM: the prompt, the reply, tokens, finish reason. | A `chat` (or `generate_content`, `text_completion`) span.                       |
+| **Tool call**  | One function the model asked to run, with its arguments and result.  | An `execute_tool` span.                                                         |
 
 Sub-agents show up inside a turn as their own lane, labeled with their `gen_ai.agent.name`. A background job with no user is also a session, usually one trace long.
 
@@ -76,7 +76,7 @@ A tool call counts as failed when its span has an `ERROR` status or an `error.ty
 
 ## Query sessions from your coding agent
 
-The [MCP server](/docs/reference/mcp) exposes the same data. `list_agent_sessions` finds sessions by cost, model, tool or failure, `get_agent_session` returns a session's verdict, checks and turns, and `get_agent_tools_overview` and `get_agent_tool_error` return the tool rankings and failure groups.
+The [MCP server](/docs/reference/mcp) exposes the same data. `list_agent_sessions` finds sessions by cost, model, tool or failure, `get_agent_session` returns a session's verdict, checks and turns, `get_agent_session_transcript` returns what it did step by step, and `get_agent_tools_overview` and `get_agent_tool_error` return the tool rankings and failure groups.
 
 ## When a session doesn't look right
 

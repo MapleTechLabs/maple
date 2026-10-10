@@ -93,12 +93,17 @@ const MCP_TOOLS = [
 	{
 		name: "list_agent_sessions",
 		description:
-			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, model, tool, errors, or duration/cost ranges.",
+			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, agent, model, tool or errors, and sort by cost, tokens, duration or failures.",
 	},
 	{
 		name: "get_agent_session",
 		description:
-			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, failure groups, and turns.",
+			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, and turn counts. The transcript tool reads it turn by turn.",
+	},
+	{
+		name: "get_agent_session_transcript",
+		description:
+			"Read what an AI agent session did, step by step: prompts, replies, tool calls with their arguments and results, sub-agent runs, and what failed.",
 	},
 	{
 		name: "get_agent_tools_overview",

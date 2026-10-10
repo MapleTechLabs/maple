@@ -290,6 +290,13 @@ describe("structured output", () => {
 		const overview = await call(OVERVIEW, { ...WINDOW, tool: "search_docs" })
 		const decoded = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(overview.structuredContent)
 		expect(decoded.failureGroups?.groups[0]?.trend).toHaveLength(TREND_BUCKETS)
+		// A selected tool's read is about that tool: the every-tool breakdown is not read or carried.
+		expect(decoded.tools).toBeUndefined()
+		expect(markdown(overview)).not.toContain("### Tools (busiest first")
+		const all = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(
+			(await call(OVERVIEW, WINDOW)).structuredContent,
+		)
+		expect(all.tools?.length).toBeGreaterThan(0)
 		const detail = await call(ERROR_DETAIL, {
 			...WINDOW,
 			tool: "search_docs",
