@@ -219,8 +219,15 @@ function MetricsTiles({ alone = false }: { alone?: boolean }) {
 				eyebrow="Workloads · 24h"
 				read={fleet}
 				className={alone ? FIRST_OF_THREE : LAST_ROW}
-				value={(services) => services.reduce((sum, { workloads }) => sum + workloads.length, 0)}
+				// Every service unread is a number that is not there, not a zero.
+				value={(services) =>
+					services.length > 0 && services.every(({ failed }) => failed)
+						? null
+						: services.reduce((sum, { workloads }) => sum + workloads.length, 0)
+				}
 				caption={(services) => {
+					const unread = services.filter(({ failed }) => failed)
+					if (unread.length > 0) return `${gcpTitles(unread)} could not be read`
 					const reporting = gcpWorkloadCounts(services).length
 					return reporting === 0
 						? "No metrics in 24 hours"
@@ -254,6 +261,10 @@ function MetricsTiles({ alone = false }: { alone?: boolean }) {
 	)
 }
 
+/** A service whose read failed: its workloads are unknown, not absent. */
+const gcpTitles = (services: ReadonlyArray<{ readonly service: GcpInfraServiceId }>) =>
+	services.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+
 /** Worst first: what needs a look is at the top of the board. */
 const TONE_ORDER = ["crit", "warn", "neutral"] as const
 /** How many of a service's columns a row shows. */
@@ -271,6 +282,7 @@ function Workloads({ className }: { className?: string }) {
 	if (fleet === null) return <Skeleton className={cn("h-40 rounded-md", className)} />
 
 	const services = fleet === "failed" ? [] : fleet.filter(({ workloads }) => workloads.length > 0)
+	const unread = fleet === "failed" ? [] : fleet.filter(({ failed }) => failed)
 	// A service that stopped reporting takes its chip with it.
 	const service = services.some((entry) => entry.service === chosen) ? chosen : "all"
 	const all = services.flatMap(({ service, workloads }) =>
@@ -321,12 +333,20 @@ function Workloads({ className }: { className?: string }) {
 					</ToggleGroup>
 				) : null}
 			</PanelHeader>
+			{unread.length === 0 ? null : (
+				<p className="border-b border-border/40 px-4 py-2 text-2xs text-severity-warn">
+					{gcpTitles(unread)} metrics could not be read. Reload to try again.
+				</p>
+			)}
 			{rows.length === 0 ? (
-				<EmptyMessage className="px-3 py-10">
-					{fleet === "failed"
-						? "Not available right now."
-						: "No workload reported metrics in 24 hours."}
-				</EmptyMessage>
+				// The note above already says why the list is empty.
+				unread.length > 0 ? null : (
+					<EmptyMessage className="px-3 py-10">
+						{fleet === "failed"
+							? "Not available right now."
+							: "No workload reported metrics in 24 hours."}
+					</EmptyMessage>
+				)
 			) : (
 				<div className="max-h-[22rem] overflow-y-auto overscroll-contain">
 					{rows.map(({ service, workload }) => {
