@@ -24,11 +24,12 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
+import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
-import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
+import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -252,11 +253,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const [
 		{ InvestigationServicesLive },
-		{ layerPg },
-		{ mapleDbConnectionLayer },
+		{ DatabasePgLive },
+		{ layerMapleDbConnection },
 		{
 			layerDecisionModelFromConfig,
-			layerFindingEmbedderFromConfig,
+			FindingEmbedderFromConfigLive,
 			layerLlmFromConfig,
 			loadLlmSettings,
 			resolveReviewModel,
@@ -281,13 +282,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerDecisionModelFromConfig(input.workersAi)),
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
-			Layer.provideMerge(layerFindingEmbedderFromConfig),
+			Layer.provideMerge(FindingEmbedderFromConfigLive),
 			Layer.provideMerge(layerLlmFromConfig(input.workersAi)),
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(ReturnedToolFailuresOkLayer.pipe(Layer.provideMerge(telemetry.layer))),
+			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
 
@@ -359,8 +360,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			}
 		}
 		// Clone the commit while the model reads the diff, rather than when its first source tool
-		// asks and waits on it. A child of the turn: a clone still running when the turn ends
-		// carries on in the container.
+		// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
+		// parents it on this fiber): a clone still running when the turn ends carries on in the container.
 		if (prReviewId !== undefined) {
 			yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
 				Effect.flatMap(
@@ -378,13 +379,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
 					),
 				),
-				Effect.forkChild,
+				forkRequestScoped,
 			)
 		}
 		// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
 		// could read instead: the deployed commit then clones from a filled mirror in seconds.
 		if (investigationId !== undefined) {
-			yield* toolExecutor.prepareConnectedRepositories(runTenant).pipe(Effect.forkChild)
+			yield* forkRequestScoped(toolExecutor.prepareConnectedRepositories(runTenant))
 		}
 		const history = input.session.history()
 		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }

@@ -16,7 +16,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
@@ -69,7 +69,7 @@ const makeHarness = () => {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -447,7 +447,7 @@ describe("v2 dashboard shares", () => {
 	 */
 	const resolve = (harness: Harness, token: string) =>
 		harness.runtime.runPromise(
-			SharedDashboardService.resolveByToken(token).pipe(
+			SharedDashboardService.use((shares) => shares.resolveByToken(token)).pipe(
 				Effect.map((resolved) => encodeDashboardPublicId(resolved.share.dashboardId)),
 				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
 					Effect.succeed("__not_found__"),
@@ -458,7 +458,7 @@ describe("v2 dashboard shares", () => {
 	/** The mode a token actually grants, or `"__not_found__"`. */
 	const resolveMode = (harness: Harness, token: string) =>
 		harness.runtime.runPromise(
-			SharedDashboardService.resolveByToken(token).pipe(
+			SharedDashboardService.use((shares) => shares.resolveByToken(token)).pipe(
 				Effect.map((resolved) => resolved.share.mode),
 				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
 					Effect.succeed("__not_found__"),

@@ -123,7 +123,7 @@ export default ChatBot.make(
 				const scope = yield* Scope.make()
 				return yield* HttpRouter.toHttpEffect(
 					connectorWebhookRouter().pipe(
-						Layer.provideMerge(InboundHandler.layer(relays)),
+						Layer.provideMerge(InboundHandler.layerFromRelays(relays)),
 						Layer.provideMerge(HttpRouter.layer),
 						Layer.provideMerge(workerEnvLayer(env)),
 					),

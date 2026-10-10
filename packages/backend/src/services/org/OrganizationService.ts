@@ -479,9 +479,4 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
-
-	static readonly retrieve = (orgId: OrgId) => this.use((service) => service.retrieve(orgId))
-
-	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.delete(orgId, roles))
 }

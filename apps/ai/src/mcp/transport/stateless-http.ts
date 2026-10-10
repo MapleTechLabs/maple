@@ -22,7 +22,7 @@
  * deletes when the request scope closes — instead of under a session id, which
  * nothing ever deletes, and it reads headers off the message rather than the
  * live request. No `mcp-session-id` is issued, so clients never send one back
- * and the 404 branch cannot be reached. See `statelessMcpServerLayer`.
+ * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
 import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
@@ -304,7 +304,7 @@ export const layerStatelessMcpHttp = (options: {
  * register its route — is kept out of the server's own context. The caller provides
  * `McpServer`, so tool registration can share the instance from outside the transport.
  */
-export const statelessMcpServerLayer = (options: {
+export const layerStatelessMcpServer = (options: {
 	readonly name: string
 	readonly version: string
 	readonly instructions?: string | undefined

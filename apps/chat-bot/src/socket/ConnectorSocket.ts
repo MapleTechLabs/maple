@@ -106,7 +106,7 @@ const NORMAL_CLOSE = 1_000
 
 /** The services one step needs. Rebuilt per step, and both are a value each. */
 const stepLayer = (relays: ConnectorRelayClient) =>
-	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer(relays))
+	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layerFromRelays(relays))
 
 /** A call into the object that rejected: the RPC caller (the cron) sees it as a typed failure. */
 export class ConnectorSocketCallFailed extends Schema.TaggedError<ConnectorSocketCallFailed>()(

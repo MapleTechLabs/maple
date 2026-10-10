@@ -251,7 +251,7 @@ What each kind of Worker keeps beside the module:
   `Cloudflare.Workflows.task` over an Effect whose failure rejects the step, so Cloudflare
   retries it per config. The body reads `Database`, `Cloudflare.WorkerEnvironment` and
   `Cloudflare.WorkflowStep` as services. The class wraps a run in `withPgConnectionScope` +
-  `layerPg` (one Postgres connection per run) and the run's own `eventTelemetry`
+  `DatabasePgLive` (one Postgres connection per run) and the run's own `eventTelemetry`
   (`maple-schema-apply`), which flushes when alchemy closes the run's scope. The Workflow is
   imported statically (check startup CPU with `apps/api/scripts/bench-startup-cpu.ts`). The
   yield is the

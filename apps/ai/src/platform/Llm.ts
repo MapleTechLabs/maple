@@ -683,6 +683,6 @@ export const layerDecisionModelFromConfig = (
 	Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerDecisionModel(settings, workersAi)))
 
 /** {@link layerFindingEmbedder} on the settings the graph's ConfigProvider holds. */
-export const layerFindingEmbedderFromConfig: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
+export const FindingEmbedderFromConfigLive: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
 	Effect.map(loadLlmSettings, layerFindingEmbedder),
 )

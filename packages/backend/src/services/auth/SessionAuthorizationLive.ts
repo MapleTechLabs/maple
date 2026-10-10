@@ -21,7 +21,7 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
 /**
  * Authorization for the internal API: Clerk sessions only.
  *
- * The public `ApiAuthorizationLayer` tries an API key first and falls back to a
+ * The public `ApiAuthorizationLive` tries an API key first and falls back to a
  * session. This one inverts the posture — an API-key-shaped token is refused
  * outright, because these endpoints are dashboard transport whose request and
  * response shapes change with the UI.
@@ -31,7 +31,7 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
  * dial on what is the busiest path in the API. Session tokens never match the
  * prefix, so they reach `resolveTenant` exactly as before.
  */
-export const SessionAuthorizationLayer = Layer.effect(
+export const SessionAuthorizationLive = Layer.effect(
 	CurrentTenant.SessionAuthorization,
 	Effect.gen(function* () {
 		const env = yield* Env
@@ -71,10 +71,10 @@ export const SessionAuthorizationLayer = Layer.effect(
 )
 
 /**
- * {@link SessionAuthorizationLayer} without the region check, for choosing an organization's
+ * {@link SessionAuthorizationLive} without the region check, for choosing an organization's
  * region in onboarding. Everything else about the session is checked the same way.
  */
-export const RegionlessSessionAuthorizationLayer = Layer.effect(
+export const RegionlessSessionAuthorizationLive = Layer.effect(
 	CurrentTenant.RegionlessSessionAuthorization,
 	Effect.gen(function* () {
 		const env = yield* Env

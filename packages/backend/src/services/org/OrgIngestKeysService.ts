@@ -409,16 +409,4 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly getOrCreate = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.getOrCreate(orgId, userId))
-
-	static readonly rerollPublic = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.rerollPublic(orgId, userId))
-
-	static readonly rerollPrivate = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.rerollPrivate(orgId, userId))
-
-	static readonly resolveIngestKey = (rawKey: string) =>
-		this.use((service) => service.resolveIngestKey(rawKey))
 }
