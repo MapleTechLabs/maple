@@ -8,7 +8,7 @@ import {
 	supportChannelName,
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
-import { Clock, Context, Effect, Layer, Option, Schedule } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Result, Schedule, Stream } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -202,34 +202,40 @@ const make = Effect.gen(function* () {
 		// workspace, and a name alone would let an org name steer an invite into one of those.
 		const botUserId = (yield* slack.call("auth.test", {})).user_id
 		if (botUserId === undefined) return Option.none<SlackChannelRef>()
-		let cursor = ""
-		for (let page = 0; page < MAX_CHANNEL_PAGES; page++) {
+		// Pages stop at the first page holding a match; the stream is read lazily.
+		const match = yield* Stream.paginate({ page: 0, cursor: "" }, ({ page, cursor }) => {
 			const args: UsersConversationsArgs = {
 				types: "private_channel",
 				exclude_archived: true,
 				limit: 200,
+				...(cursor !== "" ? { cursor } : undefined),
 			}
-			if (cursor !== "") args.cursor = cursor
-			const response = yield* slack.call("users.conversations", args)
-			const match = response.channels?.find(
-				(channel) => channel.name === name && channel.creator === botUserId,
+			return slack.call("users.conversations", args).pipe(
+				Effect.map((response) => {
+					const found = response.channels?.find(
+						(channel) => channel.name === name && channel.creator === botUserId,
+					)
+					const next = response.response_metadata?.next_cursor ?? ""
+					const more = found === undefined && next !== "" && page + 1 < MAX_CHANNEL_PAGES
+					return [
+						found === undefined ? [] : [found],
+						more ? Option.some({ page: page + 1, cursor: next }) : Option.none(),
+					] as const
+				}),
 			)
-			if (match !== undefined) {
-				const recorded = yield* dbExecute("findUnrecordedChannel")((db) =>
-					db.run(
-						PG.from(OrgSupportChannels)
-							.select("orgId")
-							.where(($) => [$.slackChannelId.eq(match.id)]),
-					),
-				)
-				return recorded.length === 0
-					? Option.some<SlackChannelRef>(match)
-					: Option.none<SlackChannelRef>()
-			}
-			cursor = response.response_metadata?.next_cursor ?? ""
-			if (cursor === "") break
-		}
-		return Option.none<SlackChannelRef>()
+		}).pipe(Stream.runHead)
+		if (Option.isNone(match)) return Option.none<SlackChannelRef>()
+
+		const recorded = yield* dbExecute("findUnrecordedChannel")((db) =>
+			db.run(
+				PG.from(OrgSupportChannels)
+					.select("orgId")
+					.where(($) => [$.slackChannelId.eq(match.value.id)]),
+			),
+		)
+		return recorded.length === 0
+			? Option.some<SlackChannelRef>(match.value)
+			: Option.none<SlackChannelRef>()
 	})
 
 	/** `conversations.create`, stepping past names another channel already holds. */
@@ -240,33 +246,39 @@ const make = Effect.gen(function* () {
 			Effect.map((org) => org.name),
 			Effect.orElseSucceed(() => null),
 		)
-		for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
-			const name = supportChannelName(orgName, orgId, attempt)
-			const created = yield* slack.call("conversations.create", { name, is_private: true }).pipe(
-				Effect.map(Option.some),
-				Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
-					refused.error === "name_taken"
-						? findUnrecordedChannel(name).pipe(
-								Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", () =>
-									Effect.succeed(Option.none<SlackChannelRef>()),
+		const channel = yield* Effect.findFirstFilter(
+			Arr.makeBy(MAX_NAME_ATTEMPTS, (attempt) => attempt),
+			(attempt) => {
+				const name = supportChannelName(orgName, orgId, attempt)
+				return slack.call("conversations.create", { name, is_private: true }).pipe(
+					Effect.map(Option.some),
+					Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
+						refused.error === "name_taken"
+							? findUnrecordedChannel(name).pipe(
+									Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", () =>
+										Effect.succeed(Option.none<SlackChannelRef>()),
+									),
+									Effect.map((adopted) =>
+										Option.map(adopted, (channel) => ({ ok: true, channel })),
+									),
+								)
+							: Effect.fail(
+									new SupportChannelUnavailableError({
+										message: refused.message,
+										operation: refused.method,
+										slackError: refused.error,
+									}),
 								),
-								Effect.map((adopted) =>
-									Option.map(adopted, (channel) => ({ ok: true, channel })),
-								),
-							)
-						: Effect.fail(
-								new SupportChannelUnavailableError({
-									message: refused.message,
-									operation: refused.method,
-									slackError: refused.error,
-								}),
-							),
-				),
-			)
-			if (Option.isSome(created) && created.value.channel !== undefined) {
-				return { channel: created.value.channel, orgName }
-			}
-		}
+					),
+					Effect.map((created) =>
+						Option.isSome(created) && created.value.channel !== undefined
+							? Result.succeed(created.value.channel)
+							: Result.failVoid,
+					),
+				)
+			},
+		)
+		if (Option.isSome(channel)) return { channel: channel.value, orgName }
 		return yield* new SupportChannelUnavailableError({
 			message: `Every candidate channel name for ${orgId} is taken`,
 			operation: "conversations.create",

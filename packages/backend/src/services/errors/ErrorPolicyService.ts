@@ -284,17 +284,17 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		const timestamp = yield* Clock.currentTimeMillis
 
 		if (request.rules !== undefined) {
-			const seen = new Set<string>()
-			for (const rule of request.rules) {
-				if (seen.has(rule.severity)) {
-					return yield* Effect.fail(
-						new ErrorValidationError({
-							message: "Escalation policy has duplicate severity rules",
-							details: [rule.severity],
-						}),
-					)
-				}
-				seen.add(rule.severity)
+			const rules = request.rules
+			const duplicate = rules.find(
+				(rule, index) => rules.findIndex((other) => other.severity === rule.severity) !== index,
+			)
+			if (duplicate !== undefined) {
+				return yield* Effect.fail(
+					new ErrorValidationError({
+						message: "Escalation policy has duplicate severity rules",
+						details: [duplicate.severity],
+					}),
+				)
 			}
 
 			// Reject destination IDs that don't belong to this org at write time.

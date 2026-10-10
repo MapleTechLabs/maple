@@ -590,7 +590,14 @@ export class DashboardPersistenceService extends Context.Service<
 				"tenant.userId": userId,
 				"maple.dashboard.id": dashboardId,
 			})
-			for (let attempt = 0; attempt < MUTATE_MAX_ATTEMPTS; attempt++) {
+			// One instance per call, so the retry predicate matches only a lost CAS
+			// and never an error the caller's transform happens to raise.
+			const conflict = new DashboardConcurrencyError({
+				dashboardId,
+				message:
+					"Dashboard mutation failed after repeated concurrency conflicts. Refetch and try again.",
+			})
+			const attempt = Effect.gen(function* () {
 				const current = yield* loadCurrent(orgId, dashboardId)
 				if (current === null) {
 					return yield* Effect.fail(
@@ -613,7 +620,7 @@ export class DashboardPersistenceService extends Context.Service<
 					updatedAt,
 					payloadJson,
 				)
-				if (!result.won) continue
+				if (!result.won) return yield* Effect.fail(conflict)
 
 				yield* recordVersion(orgId, userId, next, current.document, versionOptions).pipe(
 					Effect.tapError((error) =>
@@ -627,14 +634,10 @@ export class DashboardPersistenceService extends Context.Service<
 				return result.txid === undefined
 					? next
 					: new DashboardDocument({ ...next, txid: result.txid })
-			}
+			})
 
-			return yield* Effect.fail(
-				new DashboardConcurrencyError({
-					dashboardId,
-					message:
-						"Dashboard mutation failed after repeated concurrency conflicts. Refetch and try again.",
-				}),
+			return yield* attempt.pipe(
+				Effect.retry({ times: MUTATE_MAX_ATTEMPTS - 1, while: (error) => error === conflict }),
 			)
 		})
 

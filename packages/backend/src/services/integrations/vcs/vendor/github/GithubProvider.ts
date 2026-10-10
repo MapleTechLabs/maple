@@ -338,6 +338,30 @@ const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUps
 	}
 }
 
+/**
+ * Greedily pack commits into slices whose job stays under PUSH_JOB_MAX_BYTES. Every commit
+ * lands in a slice (guaranteed progress), and the result always holds at least one slice.
+ */
+const packCommits = (
+	commits: ReadonlyArray<CommitUpsertInput>,
+	envelopeBytes: number,
+): Array<Array<CommitUpsertInput>> => {
+	const slices: Array<Array<CommitUpsertInput>> = []
+	let slice: CommitUpsertInput[] = []
+	let sliceBytes = envelopeBytes
+	for (const c of commits) {
+		const commitBytes = Buffer.byteLength(JSON.stringify(c)) + 1 // +1: array comma
+		if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
+			slices.push(slice)
+			slice = []
+			sliceBytes = envelopeBytes
+		}
+		slice.push(c)
+		sliceBytes += commitBytes
+	}
+	slices.push(slice)
+	return slices
+}
 export class GithubProvider extends Context.Service<GithubProvider, VcsProviderClient>()(
 	"@maple/api/services/vcs/vendor/github/GithubProvider",
 	{
@@ -507,21 +531,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// job (guaranteed progress), so a lone commit bigger than the budget — a
 					// pathologically huge message, which the branch's commit backfill re-fetches
 					// in full anyway — gets its own job rather than stalling the loop.
-					const envelopeBytes = Buffer.byteLength(JSON.stringify(makeJob([])))
-					const jobs: VcsSyncJob[] = []
-					let slice: CommitUpsertInput[] = []
-					let sliceBytes = envelopeBytes
-					for (const c of commits) {
-						const commitBytes = Buffer.byteLength(JSON.stringify(c)) + 1 // +1: array comma
-						if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
-							jobs.push(makeJob(slice))
-							slice = []
-							sliceBytes = envelopeBytes
-						}
-						slice.push(c)
-						sliceBytes += commitBytes
-					}
-					jobs.push(makeJob(slice))
+					const jobs = packCommits(commits, Buffer.byteLength(JSON.stringify(makeJob([])))).map(
+						makeJob,
+					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.webhook.jobs": jobs.length,

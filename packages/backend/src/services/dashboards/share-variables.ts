@@ -46,7 +46,7 @@ import {
 	type VariableValues,
 } from "@maple/query-engine"
 import { ShareVariableInvalidError } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 
 /**
  * Characters a free-text variable value may contain.
@@ -116,9 +116,9 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 	 */
 	whereClauseTemplates: ReadonlyArray<string> = [],
 ) {
-	const resolved: Record<string, ResolvedVariable> = {}
-
-	for (const definition of definitions) {
+	const resolveOne = (
+		definition: ShareVariableDefinition,
+	): Effect.Effect<Option.Option<readonly [string, ResolvedVariable]>, ShareVariableInvalidError> => {
 		const options =
 			definition.type === "custom"
 				? (definition.options ?? []).map((option) => option.value)
@@ -135,15 +135,16 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 			options,
 			loading: false,
 		})
-		if (value === undefined) continue
+		if (value === undefined) return Effect.succeedNone
+
+		const accept = (isAll: boolean) =>
+			Effect.succeedSome([definition.name, { value, isAll, options }] as const)
 
 		if (value === ALL_VALUE) {
 			// "All" is only selectable when the board offers it. Otherwise it is a
 			// hand-crafted way to drop the filter entirely, which is exactly the
 			// widening this module exists to prevent.
-			if (definition.includeAll !== true) return yield* invalid(definition.name)
-			resolved[definition.name] = { value, isAll: true, options }
-			continue
+			return definition.includeAll !== true ? invalid(definition.name) : accept(true)
 		}
 
 		/** The free-text defence: conservative charset, then the direct clause check. */
@@ -154,7 +155,7 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 
 		switch (definition.type) {
 			case "custom": {
-				if (!options.includes(value)) return yield* invalid(definition.name)
+				if (!options.includes(value)) return invalid(definition.name)
 				break
 			}
 			case "query": {
@@ -166,23 +167,25 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 				// "unknown", not "nothing is allowed", and treating the two the same
 				// rejected the board's own stored `defaultValue` and blanked the share.
 				if (options.length > 0) {
-					if (!options.includes(value)) return yield* invalid(definition.name)
+					if (!options.includes(value)) return invalid(definition.name)
 					break
 				}
-				if (!passesFreeTextChecks()) return yield* invalid(definition.name)
+				if (!passesFreeTextChecks()) return invalid(definition.name)
 				break
 			}
 			case "textbox": {
-				if (!passesFreeTextChecks()) return yield* invalid(definition.name)
+				if (!passesFreeTextChecks()) return invalid(definition.name)
 				break
 			}
 		}
 
-		resolved[definition.name] = { value, isAll: false, options }
+		return accept(false)
 	}
+
+	const entries = yield* Effect.forEach(definitions, resolveOne)
 
 	// Names the board does not declare are dropped rather than rejected: a
 	// hand-edited or stale URL carrying `?var-removed=x` should render the
 	// dashboard, not a 400.
-	return resolved satisfies VariableValues
+	return Object.fromEntries(Arr.getSomes(entries)) satisfies VariableValues
 })

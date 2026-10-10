@@ -27,6 +27,7 @@ import {
 	Redacted,
 	Schema,
 	Context,
+	Stream,
 } from "effect"
 import {
 	computeDelta,
@@ -863,6 +864,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		// this: the worker builds a fresh layer per cron invocation, so any Ref it
 		// holds starts empty on every tick.
 		const SYNC_WINDOW_MS = 15 * 60 * 1000
+		const CLERK_PAGE_SIZE = 100
 
 		const paginateClerk = <T>(
 			spanName: string,
@@ -873,27 +875,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			}) => Promise<{ data: T[]; totalCount: number }>,
 			errorMessage: string,
 		) =>
-			Effect.gen(function* () {
-				const PAGE_SIZE = 100
-				let offset = 0
-				const all: T[] = []
-
-				// Genuine cursor pagination: each page advances `offset` by the
-				// number of rows it returned, and the terminating condition depends
-				// on the just-fetched page (totalCount / empty page). Effect v4
-				// (beta) ships neither `iterate` nor `loop`, so an imperative
-				// while-loop driving sequential `yield*`s is the clearest form here.
-				while (true) {
-					const page = yield* clerkRequest(spanName, attributes, () =>
-						fetchPage({ limit: PAGE_SIZE, offset }),
-					).pipe(Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })))
-					all.push(...page.data)
-					offset += page.data.length
-					if (offset >= page.totalCount || page.data.length === 0) break
-				}
-
-				return all
-			})
+			Stream.paginate(0, (offset: number) =>
+				clerkRequest(spanName, attributes, () => fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
+					Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })),
+					Effect.map((page) => {
+						// Advance by the rows returned; stop on totalCount or an empty page.
+						const next = offset + page.data.length
+						const done = next >= page.totalCount || page.data.length === 0
+						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					}),
+				),
+			).pipe(Stream.runCollect)
 
 		const fetchAllClerkMemberships = Effect.fn("DigestService.fetchAllClerkMemberships")(function* (
 			clerk: ReturnType<typeof createClerkClient>,

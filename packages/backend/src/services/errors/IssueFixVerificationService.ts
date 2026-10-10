@@ -800,9 +800,8 @@ const make: Effect.Effect<
 				return true
 			})
 
-			let opened = 0
-			for (const link of links) {
-				const didOpen = yield* openForLink(link).pipe(
+			const opened = yield* Effect.forEach(links, (link) =>
+				openForLink(link).pipe(
 					Effect.catchCause((cause) =>
 						Cause.hasInterruptsOnly(cause)
 							? Effect.interrupt
@@ -816,10 +815,9 @@ const make: Effect.Effect<
 									Effect.as(false),
 								),
 					),
-				)
-				if (didOpen) opened += 1
-			}
-			return opened
+				),
+			)
+			return opened.filter(Boolean).length
 		},
 	)
 
@@ -827,46 +825,44 @@ const make: Effect.Effect<
 		"IssueFixVerificationService.onPullRequestEvent",
 	)(function* (input) {
 		const nowMs = yield* Clock.currentTimeMillis
-		let linksAutoCreated = 0
-		let verificationsOpened = 0
 
 		// Auto-link: a PR whose title or body names a Maple issue links itself.
 		// Runs on every action, not just `opened` — a description edited after the
 		// fact is the common case, and `upsertLink` makes repeats free.
 		const referenceText = [input.title ?? "", input.body ?? ""].join("\n")
 		const referencedIds = extractIssueIdsFromText(referenceText, env.MAPLE_APP_BASE_URL)
-		for (const rawId of referencedIds) {
-			const decoded = decodeIssueId(rawId)
-			if (Option.isNone(decoded)) continue
-			const issueId = decoded.value
-			// Confirm the issue exists in THIS org before linking. A PR body is
-			// attacker-influenced text, so a well-formed id from another tenant must
-			// not create a cross-org link.
-			const issueRows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssues)
-						.select()
-						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
-						.limit(1),
-				),
-			)
-			if (issueRows[0] === undefined) continue
-			const created = yield* upsertLink({
-				orgId: input.orgId,
-				issueId,
-				actorId: null,
-				source: "auto",
-				provider: input.provider,
-				repoFullName: input.repoFullName,
-				number: input.number,
-				url: input.url,
-				title: input.title,
-				authorLogin: input.authorLogin,
-				externalRepoId: input.externalRepoId,
-				nowMs,
-			})
-			if (created !== null && created.createdAt === nowMs) {
-				linksAutoCreated += 1
+		const autoLinked = yield* Effect.forEach(referencedIds, (rawId) =>
+			Effect.gen(function* () {
+				const decoded = decodeIssueId(rawId)
+				if (Option.isNone(decoded)) return false
+				const issueId = decoded.value
+				// Confirm the issue exists in THIS org before linking. A PR body is
+				// attacker-influenced text, so a well-formed id from another tenant must
+				// not create a cross-org link.
+				const issueRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIssues)
+							.select()
+							.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
+							.limit(1),
+					),
+				)
+				if (issueRows[0] === undefined) return false
+				const created = yield* upsertLink({
+					orgId: input.orgId,
+					issueId,
+					actorId: null,
+					source: "auto",
+					provider: input.provider,
+					repoFullName: input.repoFullName,
+					number: input.number,
+					url: input.url,
+					title: input.title,
+					authorLogin: input.authorLogin,
+					externalRepoId: input.externalRepoId,
+					nowMs,
+				})
+				if (created === null || created.createdAt !== nowMs) return false
 				yield* workflow.recordEvent(input.orgId, issueId, null, "pr_linked", {
 					payload: {
 						pullRequestId: created.id,
@@ -877,8 +873,10 @@ const make: Effect.Effect<
 					},
 					timestamp: nowMs,
 				})
-			}
-		}
+				return true
+			}),
+		)
+		const linksAutoCreated = autoLinked.filter(Boolean).length
 
 		// Every link pointing at this PR, however it was created.
 		const links = yield* dbExecute((db) =>
@@ -895,7 +893,7 @@ const make: Effect.Effect<
 		)
 		const [firstLink, ...restLinks] = links
 		if (firstLink === undefined) {
-			return { linksAutoCreated, verificationsOpened, linksUpdated: 0 }
+			return { linksAutoCreated, verificationsOpened: 0, linksUpdated: 0 }
 		}
 
 		// `closed` on GitHub covers both outcomes; `merged` is what separates them.
@@ -928,15 +926,14 @@ const make: Effect.Effect<
 		)
 
 		if (!input.merged) {
-			return { linksAutoCreated, verificationsOpened, linksUpdated: links.length }
+			return { linksAutoCreated, verificationsOpened: 0, linksUpdated: links.length }
 		}
 
-		const openedCount = yield* openMergedVerifications(input.orgId, links, {
+		const verificationsOpened = yield* openMergedVerifications(input.orgId, links, {
 			mergedAtMs: input.mergedAtMs ?? nowMs,
 			mergeCommitSha: input.mergeCommitSha,
 			nowMs,
 		})
-		verificationsOpened += openedCount
 
 		return { linksAutoCreated, verificationsOpened, linksUpdated: links.length }
 	})

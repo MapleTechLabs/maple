@@ -592,17 +592,19 @@ export const persistErrorTickWindow = (
 
 				const idByFingerprint = new Map(upserted.map((row) => [row.fingerprintHash, row.id]))
 
-				for (const { row, prior, regression, suppressed } of applicable) {
-					const issueId = idByFingerprint.get(row.fingerprintHash)
-					if (!issueId) {
-						return yield* Effect.fail(
-							new ErrorTickUpsertMissingRow({
-								message: `Error issue upsert returned no row for ${row.fingerprintHash}`,
-								fingerprintHash: row.fingerprintHash,
-							}),
-						)
-					}
+				const resolvedRows = yield* Effect.forEach(applicable, (entry) => {
+					const issueId = idByFingerprint.get(entry.row.fingerprintHash)
+					return issueId
+						? Effect.succeed({ ...entry, issueId })
+						: Effect.fail(
+								new ErrorTickUpsertMissingRow({
+									message: `Error issue upsert returned no row for ${entry.row.fingerprintHash}`,
+									fingerprintHash: entry.row.fingerprintHash,
+								}),
+							)
+				})
 
+				for (const { row, prior, regression, suppressed, issueId } of resolvedRows) {
 					if (!prior) {
 						events.push(
 							buildEvent(input, issueId, "created", {

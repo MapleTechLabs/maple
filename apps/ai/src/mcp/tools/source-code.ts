@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import {
 	ListSourceRepositoriesOutput,
 	ReadSourceFileOutput,
@@ -45,7 +45,11 @@ export const matchLines = (content: string, query: string, snippet: string | und
 		lines.flatMap((line, i) => (line.toLowerCase().includes(needle) ? [i + 1] : []))
 	const byQuery = find(query.toLowerCase())
 	if (byQuery.length > 0) return byQuery.slice(0, MAX_LINES_PER_MATCH)
-	const anchor = snippet?.split("\n").find((line) => line.trim().length > 0)?.trim().toLowerCase()
+	const anchor = snippet
+		?.split("\n")
+		.find((line) => line.trim().length > 0)
+		?.trim()
+		.toLowerCase()
 	return anchor === undefined ? [] : find(anchor).slice(0, MAX_LINES_PER_MATCH)
 }
 
@@ -138,10 +142,15 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			const repo = repository.trim()
 			const { dir, filename } = path === undefined ? {} : splitSearchPath(path)
 			const matches = yield* source
-				.searchCode(tenant.orgId, repo, filename === undefined ? trimmed : `${trimmed} filename:${filename}`, {
-					...(dir === undefined ? undefined : { path: dir }),
-					limit,
-				})
+				.searchCode(
+					tenant.orgId,
+					repo,
+					filename === undefined ? trimmed : `${trimmed} filename:${filename}`,
+					{
+						...(dir === undefined ? undefined : { path: dir }),
+						limit,
+					},
+				)
 				.pipe(Effect.mapError(fromVcsLookupError("search_source_code")))
 			// Code search returns no line numbers; read the top files to find them. Best effort.
 			const lines = yield* Effect.forEach(
@@ -206,21 +215,19 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 				]),
 				...match.snippets.map((snippet) => doc.code("", snippet)),
 			]),
-			next: output.matches
-				.slice(0, 3)
-				.map((match) =>
-					doc.next(
-						"read_source_file",
-						{
-							repository: output.repository,
-							path: match.path,
-							...(match.lines?.[0] === undefined
-								? undefined
-								: { start_line: Math.max(1, match.lines[0] - 20) }),
-						},
-						"read the file",
-					),
+			next: output.matches.slice(0, 3).map((match) =>
+				doc.next(
+					"read_source_file",
+					{
+						repository: output.repository,
+						path: match.path,
+						...(match.lines?.[0] === undefined
+							? undefined
+							: { start_line: Math.max(1, match.lines[0] - 20) }),
+					},
+					"read the file",
 				),
+			),
 		}),
 	})
 
@@ -277,13 +284,13 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			}
 			const allLines = file.content.split("\n")
 			// Whole lines up to the character budget, so every returned line keeps its number.
-			const lines: Array<string> = []
-			let chars = 0
-			for (const line of allLines.slice(start - 1, end)) {
-				if (chars + line.length > MAX_FILE_CHARS && lines.length > 0) break
-				lines.push(line)
-				chars += line.length + 1
-			}
+			const candidates = allLines.slice(start - 1, end)
+			// Characters spent before each line: every line costs its length plus a newline.
+			const spentBefore = Arr.scan(candidates, 0, (chars, line) => chars + line.length + 1)
+			const lines = Arr.takeWhile(
+				candidates,
+				(line, index) => index === 0 || (spentBefore[index] ?? 0) + line.length <= MAX_FILE_CHARS,
+			)
 			const endLine = start + lines.length - 1
 			return {
 				repository: repository.trim(),

@@ -61,7 +61,7 @@ export interface QuerySetWindowResult {
  * never asked about that window, so failing on it would turn a working chart
  * into an error because a speculative widening was too expensive.
  */
-const executeWithFallback = Effect.fnUntraced(function* <E>(
+const executeWithFallback = <E>(
 	executor: QuerySetExecutor<E>,
 	startTime: string,
 	endTime: string,
@@ -69,61 +69,77 @@ const executeWithFallback = Effect.fnUntraced(function* <E>(
 	strategy: EmptyRangeFallbackStrategy,
 	allowFallback: boolean,
 	bucketOptions: BucketResolutionOptions | undefined,
-) {
+): Effect.Effect<WindowedExecution, E> => {
 	const windows = buildExecutionWindows(startTime, endTime, strategy, allowFallback)
-	const attempts: QuerySetAttempt[] = []
-	let lastPoints: ReadonlyArray<{ bucket: string; series: Record<string, number> }> = []
 
-	for (const [index, window] of windows.entries()) {
+	const tryWindow = (
+		index: number,
+		attempts: Array<QuerySetAttempt>,
+		lastPoints: ReadonlyArray<WindowPoint>,
+	): Effect.Effect<WindowedExecution, E> => {
+		const window = windows[index]
+		if (window === undefined) {
+			return Effect.succeed({ points: lastPoints, attempts, fallbackUsed: false })
+		}
 		const windowSpec = resolveExecutionSpecForWindow(spec, window, bucketOptions)
-
-		const outcome = yield* Effect.result(
+		return Effect.result(
 			executor.execute({ startTime: window.startTime, endTime: window.endTime, query: windowSpec }),
+		).pipe(
+			Effect.flatMap((outcome) => {
+				if (Result.isFailure(outcome)) {
+					const error = outcome.failure
+					const failed = [
+						...attempts,
+						{
+							startTime: window.startTime,
+							endTime: window.endTime,
+							kind: window.kind,
+							points: 0,
+							hasSeries: false,
+							error: executor.describeError(error),
+						},
+					]
+					return window.kind === "primary"
+						? Effect.fail(error)
+						: tryWindow(index + 1, failed, lastPoints)
+				}
+
+				const result = outcome.success
+				// A non-timeseries result for a timeseries spec is the host answering a
+				// different question; treat it as no data for this window rather than
+				// crashing the whole set.
+				const points =
+					result.kind === "timeseries"
+						? result.data.map((point) => ({ bucket: point.bucket, series: { ...point.series } }))
+						: []
+				const hasSeries = hasAnySeriesData(points)
+				const next = [
+					...attempts,
+					{
+						startTime: window.startTime,
+						endTime: window.endTime,
+						kind: window.kind,
+						points: points.length,
+						hasSeries,
+					},
+				]
+				return hasSeries
+					? Effect.succeed({ points, attempts: next, fallbackUsed: index > 0 })
+					: tryWindow(index + 1, next, points)
+			}),
 		)
-
-		if (Result.isFailure(outcome)) {
-			const error = outcome.failure
-			attempts.push({
-				startTime: window.startTime,
-				endTime: window.endTime,
-				kind: window.kind,
-				points: 0,
-				hasSeries: false,
-				error: executor.describeError(error),
-			})
-
-			if (window.kind === "primary") {
-				return yield* Effect.fail(error)
-			}
-			continue
-		}
-
-		const result = outcome.success
-		// A non-timeseries result for a timeseries spec is the host answering a
-		// different question; treat it as no data for this window rather than
-		// crashing the whole set.
-		const points =
-			result.kind === "timeseries"
-				? result.data.map((point) => ({ bucket: point.bucket, series: { ...point.series } }))
-				: []
-		const hasSeries = hasAnySeriesData(points)
-
-		attempts.push({
-			startTime: window.startTime,
-			endTime: window.endTime,
-			kind: window.kind,
-			points: points.length,
-			hasSeries,
-		})
-		lastPoints = points
-
-		if (hasSeries) {
-			return { points, attempts, fallbackUsed: index > 0 }
-		}
 	}
 
-	return { points: lastPoints, attempts, fallbackUsed: false }
-})
+	return tryWindow(0, [], [])
+}
+
+type WindowPoint = { bucket: string; series: Record<string, number> }
+
+interface WindowedExecution {
+	readonly points: ReadonlyArray<WindowPoint>
+	readonly attempts: Array<QuerySetAttempt>
+	readonly fallbackUsed: boolean
+}
 
 export interface RunQuerySetWindowInput {
 	readonly queries: ReadonlyArray<QueryBuilderQueryDraftPayload>

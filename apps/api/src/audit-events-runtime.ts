@@ -91,9 +91,8 @@ export const processAuditEventsBatch = (batch: QueueBatch) =>
 		const warehouse = yield* WarehouseQueryService
 		const now = yield* Clock.currentTimeMillis
 
-		const decoded: Array<DecodedMessage> = []
-		for (const message of batch.messages) {
-			const event = yield* decodeAuditLogEvent(message.body).pipe(
+		const decodedPerMessage = yield* Effect.forEach(batch.messages, (message) =>
+			decodeAuditLogEvent(message.body).pipe(
 				Effect.matchEffect({
 					// Undecodable now means undecodable on every redelivery, so retrying
 					// only burns attempts. Acked, but at Error: an audit entry that
@@ -102,13 +101,13 @@ export const processAuditEventsBatch = (batch: QueueBatch) =>
 						Effect.logError("Discarding malformed audit event queue message").pipe(
 							Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
 							Effect.flatMap(() => Effect.sync(() => message.ack())),
-							Effect.as(undefined),
+							Effect.as([]),
 						),
-					onSuccess: (event) => Effect.succeed(event),
+					onSuccess: (event) => Effect.succeed<Array<DecodedMessage>>([{ message, event }]),
 				}),
-			)
-			if (event !== undefined) decoded.push({ message, event })
-		}
+			),
+		)
+		const decoded = decodedPerMessage.flat()
 
 		// One `ingest` per org so the write span names the tenant it belongs to.
 		const byOrg = new Map<OrgId, Array<DecodedMessage>>()
