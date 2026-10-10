@@ -11,6 +11,7 @@
  * and move once they pass every trial on every target model.
  */
 import { FIXTURES } from "../../mcp/__evals__/utils"
+import { INFRA_WORLD } from "../../mcp/__evals__/infra-world"
 import type { EvalTask } from "../runner"
 import { answerMentions, call, calls, never, noTools, type Check } from "../targets"
 
@@ -509,6 +510,65 @@ export const TOOL_TASKS: ReadonlyArray<ToolTask> = [
 			call("query_data", { service: SVC.api }),
 			call("find_errors", { service: SVC.api }),
 		),
+	),
+	// Infrastructure, in the world of `infra-world.ts`; see src/evals/playground/README.md.
+	withRoom(
+		capability(
+			"infra-running-hot",
+			["infra", "fuzzy"],
+			"Is anything in our infrastructure running hot right now?",
+			calls(call("list_infra")),
+			answerMentions(INFRA_WORLD.oomPod, INFRA_WORLD.hotContainer),
+		),
+	),
+	capability(
+		"infra-no-limits",
+		["infra"],
+		"Which of our pods have no resource limits set?",
+		calls(
+			call("list_infra", { kind: "pods" }),
+			call("list_infra", { kind: "workloads" }),
+			call("list_infra"),
+		),
+	),
+	capability(
+		"infra-node-contents",
+		["infra"],
+		`What runs on node ${INFRA_WORLD.hotNode}, and is it overloaded?`,
+		calls(
+			call("inspect_infra", { kind: "node", name: INFRA_WORLD.hotNode }),
+			call("list_infra", { kind: "pods", node: INFRA_WORLD.hotNode }),
+		),
+	),
+	withRoom(
+		capability(
+			"infra-service-resources",
+			["infra", "services", "fuzzy"],
+			"Our checkout service has been flaky for the last few hours. Could it be a resource problem?",
+			calls(
+				call("diagnose_service", { service: "checkout" }),
+				call("inspect_infra", { kind: "workload", name: "checkout" }),
+				call("inspect_infra", { kind: "pod", name: INFRA_WORLD.oomPod }),
+				call("list_infra", { kind: "pods" }),
+			),
+			answerMentions(INFRA_WORLD.oomPod, "98"),
+		),
+	),
+	capability(
+		"infra-ci-host",
+		["infra", "fuzzy"],
+		`Our CI builds got slow. Can you check ${INFRA_WORLD.hotHost}?`,
+		calls(
+			call("inspect_infra", { kind: "host", name: INFRA_WORLD.hotHost }),
+			call("list_infra", { kind: "hosts" }),
+			call("list_infra"),
+		),
+	),
+	capability(
+		"infra-not-for-errors",
+		["infra", "negative"],
+		`How many server errors did the ${SVC.api} service return in the last hour?`,
+		never("list_infra", "inspect_infra"),
 	),
 	capability(
 		"user-reported-failure",

@@ -235,6 +235,91 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 		.format("JSON")
 }
 
+// Host filesystems: used fraction per mountpoint. `state` must be pinned to `used`;
+// averaging across used/free/reserved reads every disk as about a third full.
+
+export interface HostFilesystemsOpts {
+	hostName: string
+	limit?: number
+}
+
+export interface HostFilesystemsOutput {
+	readonly mountpoint: string
+	readonly device: string
+	readonly usedAvg: number
+	readonly usedMax: number
+}
+
+export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
+	return from(MetricsGauge)
+		.select(($) => ({
+			mountpoint: $.Attributes.get("mountpoint"),
+			device: CH.any_($.Attributes.get("device")),
+			usedAvg: avgIfOrZero($.Value, $.Attributes.get("state").eq("used")),
+			usedMax: maxIfOrZero($.Value, $.Attributes.get("state").eq("used")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.ResourceAttributes.get("host.name").eq(opts.hostName),
+			$.MetricName.eq("system.filesystem.utilization"),
+			$.Attributes.get("state").eq("used"),
+		])
+		.groupBy("mountpoint")
+		.orderBy(["usedMax", "desc"])
+		.limit(opts.limit ?? 20)
+		.format("JSON")
+}
+
+// Pod container restarts, from the k8s_cluster receiver's `k8s.container.restarts`
+// (a running total per container). The window's restarts are max − min per container.
+
+export interface PodRestartsOpts {
+	podNames?: ReadonlyArray<string>
+	namespace?: string
+	workloadKind?: "deployment" | "statefulset" | "daemonset"
+	workloadName?: string
+	limit?: number
+}
+
+export interface PodRestartsOutput {
+	readonly namespace: string
+	readonly podName: string
+	readonly containerName: string
+	readonly restarts: number
+	readonly totalRestarts: number
+}
+
+export function podRestartsQuery(opts: PodRestartsOpts) {
+	return from(MetricsGauge)
+		.select(($) => ({
+			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
+			podName: $.ResourceAttributes.get("k8s.pod.name"),
+			containerName: $.ResourceAttributes.get("k8s.container.name"),
+			restarts: CH.ifNotFinite(CH.max_($.Value).sub(CH.min_($.Value)), 0),
+			totalRestarts: CH.ifNotFinite(CH.max_($.Value), 0),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.MetricName.eq("k8s.container.restarts"),
+			$.ResourceAttributes.get("k8s.pod.name").neq(""),
+			CH.when(opts.podNames, (names: ReadonlyArray<string>) =>
+				$.ResourceAttributes.get("k8s.pod.name").in_(...names),
+			),
+			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
+			CH.when(opts.workloadName, (v: string) =>
+				$.ResourceAttributes.get(workloadAttrKey(opts.workloadKind ?? "deployment")).eq(v),
+			),
+		])
+		.groupBy("namespace", "podName", "containerName")
+		.orderBy(["restarts", "desc"])
+		.limit(opts.limit ?? 50)
+		.format("JSON")
+}
+
 // Kubernetes — pod aggregations over k8s.pod.* metrics emitted by the kubelet
 // stats receiver. Identity carried on ResourceAttributes:
 //   k8s.pod.name, k8s.pod.uid, k8s.namespace.name, k8s.node.name,

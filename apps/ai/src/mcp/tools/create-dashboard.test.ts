@@ -12,5 +12,6 @@ describe("normalizeGroupBy", () => {
 		expect(normalizeGroupBy("service.name", "traces")).toBe("service.name")
 		expect(normalizeGroupBy("span_name", "logs")).toBe("span_name")
 		expect(normalizeGroupBy("attr.signal", "metrics")).toBe("attr.signal")
+		expect(normalizeGroupBy("resource.host.name", "metrics")).toBe("resource.host.name")
 	})
 })

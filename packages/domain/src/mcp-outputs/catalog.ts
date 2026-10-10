@@ -3,6 +3,7 @@
  * each tool declares exactly this schema) and the chat UI's `StructuredToolOutput` derive from.
  */
 import { SendMapleFeedbackOutput } from "./feedback"
+import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import {
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
@@ -129,6 +130,7 @@ export const McpToolOutputs = {
 	ingest_freshness: IngestFreshnessOutput,
 	ingest_usage: IngestUsageOutput,
 	inspect_chart_data: InspectChartDataOutput,
+	inspect_infra: InspectInfraOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
 	link_pull_request: LinkPullRequestOutput,
@@ -142,6 +144,7 @@ export const McpToolOutputs = {
 	list_error_incidents: ListErrorIncidentsOutput,
 	list_error_issue_events: ListErrorIssueEventsOutput,
 	list_error_issues: ListErrorIssuesOutput,
+	list_infra: ListInfraOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,
