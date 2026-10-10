@@ -49,7 +49,7 @@ export function FilterSelect({
 			value={value ?? ALL}
 			onValueChange={(next) => onChange(next === null || next === ALL ? undefined : next)}
 		>
-			<SelectTrigger size="sm" className="w-auto min-w-0 text-xs" aria-label={label}>
+			<SelectTrigger className="w-auto min-w-0" aria-label={label}>
 				<SelectValue />
 			</SelectTrigger>
 			{/* Opens below the trigger: aligned to its item, a long list covers the sidebar. */}
