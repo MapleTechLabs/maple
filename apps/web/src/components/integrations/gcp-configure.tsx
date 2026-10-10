@@ -546,7 +546,7 @@ function FilterField({
 					[
 						"Applies",
 						sinkExists
-							? "When the script runs: it replaces the sink's current filter."
+							? "When the script runs: it replaces the sink's current filter. Maple doesn't store the choice."
 							: "When the script runs. Maple doesn't store the choice.",
 					],
 				] as const)),
@@ -1075,7 +1075,7 @@ function ApplyStage({
 				<dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 rounded-md border border-border/60 bg-muted/40 px-3 py-2.5 text-xs/5 sm:grid-cols-[auto_1fr] [&>dd]:text-pretty [&>dd]:max-sm:mb-1.5 [&>dt]:text-muted-foreground">
 					<dt>Log forwarding</dt>
 					<dd>{gcpApplyLine(connector.logs_enabled, connector.applied_logs_enabled)}</dd>
-					{connector.logs_enabled ? (
+					{connector.logs_enabled && !confirmed ? (
 						<>
 							<dt>Log filter</dt>
 							<dd>
