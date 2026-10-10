@@ -1055,6 +1055,24 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
+-- builder:infra:hostFilesystemsQuery:default  [c12d4b7b]
+SELECT
+          metrics_gauge.Attributes['mountpoint'] AS mountpoint,
+          any(metrics_gauge.Attributes['device']) AS device,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0), 0) AS usedAvg,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0) AS usedMax
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
+          AND metrics_gauge.MetricName = 'system.filesystem.utilization'
+          AND metrics_gauge.Attributes['state'] = 'used'
+        GROUP BY mountpoint
+        ORDER BY usedMax DESC
+        LIMIT 20
+        FORMAT JSON
+
 -- builder:infra:hostGaugeTimeseriesQuery:default  [b4ba966f]
 SELECT
           toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
@@ -1137,6 +1155,60 @@ SELECT
         LIMIT 1
 FORMAT JSON
 
+-- builder:infra:listNodesQuery:default  [6fe8973a]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.cluster.name'], metrics_gauge.ResourceAttributes['k8s.cluster.name'] != '') AS clusterName,
+          anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']), coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']) != '') AS environment,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0), 0), 0) AS cpuUtilization,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) AS memoryUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS memoryUtilization,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.uptime'), 0) AS uptime
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')
+        GROUP BY nodeName
+        HAVING countIf(metrics_gauge.MetricName = 'k8s.node.cpu.usage') > 0
+        ORDER BY lastSeen DESC
+        LIMIT 200
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:infra:nodeDetailSummaryQuery:default  [33fb2081]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
+          anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']), coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']) != '') AS containerRuntime,
+          min(metrics_gauge.TimeUnix) AS firstSeen,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0), 0), 0) AS cpuUtilization,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) AS memoryUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS memoryUtilization,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.uptime'), 0) AS uptime
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')
+        GROUP BY nodeName
+        FORMAT JSON
+
 -- builder:infra:nodeFacetsQuery:default  [0dff8530]
 SELECT
           metrics_gauge.ResourceAttributes['k8s.node.name'] AS name,
@@ -1199,6 +1271,22 @@ SELECT
           AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
           AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
           AND metrics_gauge.MetricName = 'k8s.node.cpu.utilization'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:nodeGaugeTimeseriesQuery:utilization  [f4c7789a]
+SELECT
+          toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          '' AS attributeValue,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS avgValue
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.memory.working_set', 'k8s.node.allocatable_memory')
         GROUP BY bucket
         ORDER BY bucket ASC
         FORMAT JSON
@@ -1369,6 +1457,26 @@ SELECT
           AND metrics_gauge.MetricName = 'k8s.pod.cpu.utilization'
         GROUP BY bucket
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:podRestartsQuery:default  [5cde512b]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.namespace.name'] AS namespace,
+          metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
+          metrics_gauge.ResourceAttributes['k8s.container.name'] AS containerName,
+          ifNotFinite(max(metrics_gauge.Value) - min(metrics_gauge.Value), 0) AS restarts,
+          ifNotFinite(max(metrics_gauge.Value), 0) AS totalRestarts
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.MetricName = 'k8s.container.restarts'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.namespace.name'] = 'backend'
+          AND metrics_gauge.ResourceAttributes['k8s.deployment.name'] = 'api'
+        GROUP BY namespace, podName, containerName
+        ORDER BY restarts DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:infra:workloadFacetsQuery:default  [39bce5d0]
