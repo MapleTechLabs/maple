@@ -42,7 +42,6 @@ import {
 	buildResolved,
 	fetchTransport,
 	guardFlush,
-	makeSerializedFlush,
 	type Resolved,
 	runFlush,
 	type SignalState,
@@ -198,38 +197,36 @@ export const make = (config: Config = {}): Telemetry => {
 
 	// Never rejects: this runs inside `ctx.waitUntil`, where a rejection would
 	// surface as an unhandled Worker error caused purely by telemetry.
-	const flush = makeSerializedFlush(
-		guardFlush("[MapleCloudflareSDK]", async (env: Record<string, unknown>): Promise<void> => {
-			// Effect defers work onto the scheduler's next macrotask
-			// (`scheduleTask(task, 0)`) — including `HttpMiddleware.tracer`'s
-			// `span.end` and `withSpan` finalizers — while the drain below is
-			// synchronous. Flushing in the same task therefore misses exactly the
-			// spans the request just produced, and an isolated request (e.g. a lone
-			// webhook) can freeze the isolate before a later flush rescues them.
-			// Yield one macrotask so those tasks run first. This sits INSIDE the
-			// serialized body, so overlapping flushes still queue rather than
-			// interleave.
-			await new Promise<void>((resolve) => setTimeout(resolve, 0))
+	//
+	// Not serialized: each call drains and POSTs whatever is buffered at that
+	// moment, and never awaits a promise from another invocation. workerd cancels
+	// the I/O of an invocation that has ended, so a shared chain could stay
+	// pending forever and stop every later export in the isolate.
+	const flush = guardFlush("[MapleCloudflareSDK]", async (env: Record<string, unknown>): Promise<void> => {
+		// Effect defers work onto the scheduler's next macrotask
+		// (`scheduleTask(task, 0)`), including `HttpMiddleware.tracer`'s
+		// `span.end` and `withSpan` finalizers, while the drain below is
+		// synchronous. Yield one macrotask so the spans this request just
+		// produced are in the buffer before the drain.
+		await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-			if (resolved === undefined) {
-				resolved = resolveOnce(env, config)
-			}
+		if (resolved === undefined) {
+			resolved = resolveOnce(env, config)
+		}
 
-			await runFlush({
-				resolved,
-				spans,
-				logs,
-				metrics,
-				tracesState,
-				logsState,
-				metricsState,
-				transport: fetchTransport,
-				logPrefix: "[MapleCloudflareSDK]",
-				onNoOp: noOpNotice,
-			})
-		}),
-		{ coalesceSameArguments: true },
-	)
+		await runFlush({
+			resolved,
+			spans,
+			logs,
+			metrics,
+			tracesState,
+			logsState,
+			metricsState,
+			transport: fetchTransport,
+			logPrefix: "[MapleCloudflareSDK]",
+			onNoOp: noOpNotice,
+		})
+	})
 
 	const requestLayer = Layer.mergeAll(
 		layer,

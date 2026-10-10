@@ -14,6 +14,12 @@ import type { OtlpSpan, SpanBuffer } from "./flushable-tracer.js"
 /** Disable a signal for this long after a failed POST so a broken collector isn't hammered. */
 const COOLDOWN_MS = 60_000
 
+/** Upper bound on one default-transport POST. A request that never answers must not hold its flush. */
+const EXPORT_TIMEOUT_MS = 10_000
+
+/** Upper bound on how long a serialized flush waits for the one before it. */
+const FLUSH_LINK_TIMEOUT_MS = 15_000
+
 /**
  * Minimal resource shape consumed by {@link buildResolved}. Structurally
  * satisfied by `ResolvedResource` from `server/resource.ts` (server +
@@ -137,13 +143,22 @@ const anyValue = (value: unknown): unknown => {
 	}
 }
 
-/** Plain `fetch` POST. Throws on non-2xx so {@link flushSignal} records a cooldown. */
-const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<void> => {
-	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
-	if (!res.ok) {
-		throw new Error(`OTLP ${res.status} ${res.statusText}`)
-	}
-}
+/**
+ * Plain `fetch` POST, aborted after {@link EXPORT_TIMEOUT_MS}. Rejects on
+ * non-2xx or timeout so {@link flushSignal} restores the batch and cools down.
+ */
+const post = (url: string, headers: Record<string, string>, body: unknown): Promise<void> =>
+	Effect.runPromise(
+		Effect.tryPromise({
+			try: (signal) => fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal }),
+			catch: (cause) => cause,
+		}).pipe(
+			Effect.timeout(EXPORT_TIMEOUT_MS),
+			Effect.flatMap((res) =>
+				res.ok ? Effect.void : Effect.fail(new Error(`OTLP ${res.status} ${res.statusText}`)),
+			),
+		),
+	)
 
 /** Default transport: plain `fetch` (server + Cloudflare). */
 export const fetchTransport: FlushTransport = { post }
@@ -245,35 +260,31 @@ export const guardFlush =
 	}
 
 /**
- * Serialize drains. Workers may coalesce queued calls with identical arguments:
- * every caller waits for that drain, and calls arriving DURING it queue a later
- * drain so spans completed after the first snapshot cannot be stranded.
- * Other presets retain one drain per call by default.
+ * Serialize drains: each call waits for the one before it, then drains. The
+ * wait is bounded, so a flush that never settles delays later ones by at most
+ * {@link FLUSH_LINK_TIMEOUT_MS} instead of blocking them for the process lifetime.
  */
 export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	run: (...args: Args) => Promise<void>,
-	options?: { readonly coalesceSameArguments?: boolean },
 ): ((...args: Args) => Promise<void>) => {
 	let tail: Promise<void> = Promise.resolve()
-	let queued: { readonly args: Args; readonly promise: Promise<void> } | undefined
 	return (...args) => {
-		const waiting = queued
-		if (
-			options?.coalesceSameArguments &&
-			waiting &&
-			args.length === waiting.args.length &&
-			args.every((value, index) => value === waiting.args[index])
-		)
-			return waiting.promise
-		const next: Promise<void> = tail.then(() => {
-			if (queued?.promise === next) queued = undefined
-			return run(...args)
-		})
-		queued = { args, promise: next }
-		tail = next.catch(() => undefined)
+		const next = tail.then(() => run(...args))
+		tail = settledWithin(next, FLUSH_LINK_TIMEOUT_MS)
 		return next
 	}
 }
+
+/** Resolves when `promise` settles or after `ms`, whichever is first. Never rejects. */
+const settledWithin = (promise: Promise<unknown>, ms: number): Promise<void> =>
+	new Promise<void>((resolve) => {
+		const timer = setTimeout(resolve, ms)
+		const done = () => {
+			clearTimeout(timer)
+			resolve()
+		}
+		promise.then(done, done)
+	})
 
 /**
  * Drain the span + log buffers and POST them. Errors are swallowed per signal
