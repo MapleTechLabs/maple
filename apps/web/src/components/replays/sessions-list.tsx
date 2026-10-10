@@ -82,7 +82,7 @@ const COLUMNS = {
 /** Consecutive pages that may add no visible row before auto-loading waits for a scroll. */
 const MAX_STALLED_PAGES = 3
 
-const RESUME_EVENTS = ["scroll", "wheel", "touchmove"] as const
+const RESUME_EVENTS = ["scroll", "wheel", "touchmove", "keydown"] as const
 
 /**
  * A page that only extends a folded run adds no row, so the sentinel stays in
@@ -103,7 +103,7 @@ function useAutoLoadPause(sessionCount: number, rowCount: number) {
 	}
 }
 
-/** Mounted while auto-loading is paused. `wheel` and `touchmove` cover a list too short to scroll. */
+/** Mounted while auto-loading is paused. `wheel`, `touchmove` and `keydown` cover a list too short to scroll. */
 function ResumeOnScroll({ onResume }: { onResume: () => void }) {
 	useMountEffect(() => {
 		const options = { capture: true, passive: true }

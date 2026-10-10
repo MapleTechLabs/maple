@@ -106,6 +106,16 @@ describe("SessionsList pagination observer", () => {
 		expect(MockIntersectionObserver.instances).toHaveLength(2)
 	})
 
+	// A list too short to scroll gives a keyboard no `scroll` event to resume on.
+	it("resumes a paused list on a key press", () => {
+		const view = render(list([session, ...bots(2)]))
+		for (const count of [4, 6, 8]) view.rerender(list([session, ...bots(count)]))
+		expect(MockIntersectionObserver.instances).toHaveLength(1)
+
+		fireEvent.keyDown(window, { key: "PageDown" })
+		expect(MockIntersectionObserver.instances).toHaveLength(2)
+	})
+
 	it("keeps auto-loading while pages add rows", () => {
 		const engaged = (count: number) =>
 			Array.from({ length: count }, (_, index) => ({ ...session, sessionId: `s-${index}` }))
