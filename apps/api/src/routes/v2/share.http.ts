@@ -28,6 +28,7 @@ import {
 	ShareNotConfiguredError,
 	ShareNotFoundError,
 	ShareOgCardResponse,
+	SharePersistenceError,
 	ShareOgMetaResponse,
 	ShareRateLimitedError,
 	ShareSignInRequiredError,
@@ -37,6 +38,7 @@ import {
 	ShareWrongOrgError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
+import type { DashboardId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
 import { ChatSessions } from "@maple/backend/platform/bindings"
@@ -79,6 +81,18 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const persistence = yield* DashboardPersistenceService
 		const widgetData = yield* DashboardWidgetDataService
 		const warehouse = yield* WarehouseQueryService
+
+		// A dashboard deleted (or no longer decodable) under a live share reads as
+		// "no such link", identical to an unknown token; a database failure stays a 503.
+		const sharedDocument = (orgId: OrgId, dashboardId: DashboardId) =>
+			persistence.get(orgId, dashboardId).pipe(
+				Effect.catchTags({
+					"@maple/http/errors/DashboardNotFoundError": () => notFound,
+					"@maple/http/errors/DashboardStoredConfigInvalidError": () => notFound,
+					"@maple/http/errors/DashboardPersistenceError": (error) =>
+						Effect.fail(new SharePersistenceError({ message: error.message, cause: error })),
+				}),
+			)
 
 		/**
 		 * Two keys, both must pass: per token, so a leaked link cannot be scraped
@@ -239,11 +253,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				}
 			}
 
-			// A dashboard deleted out from under a live share must read as "no such
-			// link", identical to an unknown token — never as a distinguishable 500.
-			const document = yield* persistence
-				.get(orgId, share.dashboardId)
-				.pipe(Effect.catch(() => notFound))
+			const document = yield* sharedDocument(orgId, share.dashboardId)
 
 			return { share, orgId, document }
 		})
@@ -395,9 +405,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// something the anonymous caller does not get to learn.
 					if (share.mode !== "public") return yield* notFound
 
-					const document = yield* persistence
-						.get(orgId, share.dashboardId)
-						.pipe(Effect.catch(() => notFound))
+					const document = yield* sharedDocument(orgId, share.dashboardId)
 
 					const dashboard = redactForShare(document, share.widgetId ?? null)
 					if (dashboard === null) return yield* notFound
@@ -425,9 +433,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// the link stops resolving.
 					const share = yield* shares.resolvePublicById(shareId)
 
-					const document = yield* persistence
-						.get(share.orgId, share.dashboardId)
-						.pipe(Effect.catch(() => notFound))
+					const document = yield* sharedDocument(share.orgId, share.dashboardId)
 
 					const dashboard = redactForShare(document, share.widgetId)
 					if (dashboard === null) return yield* notFound

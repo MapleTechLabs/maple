@@ -45,7 +45,6 @@ import {
 	formatWarehouseDateTimeMs,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
-import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
 import {
 	computeBucketSeconds,
 	formatRangeSeconds,
@@ -59,16 +58,17 @@ import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import {
+	TelemetryReadService,
+	type ServiceBaselines,
+} from "@maple/backend/services/warehouse/TelemetryReadService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
 const decodeServiceName = Schema.decodeSync(ServiceName)
 const decodeMetricName = Schema.decodeSync(MetricName)
 
-const HOUR_MS = 60 * 60 * 1000
-const PARTITION_HINT_RADIUS_MS = 60 * 60 * 1000
 const PUBLIC_TIMESERIES_DEFAULT_SERIES_LIMIT = 50
 const PUBLIC_BREAKDOWN_DEFAULT_LIMIT = 20
 // Search endpoints return raw rows, so they carry the query engine's list cap.
@@ -148,14 +148,6 @@ const chToIso = (value: string): Timestamp => {
 	const zoned = /[zZ]|[+-]\d\d:?\d\d$/.test(normalized) ? normalized : `${normalized}Z`
 	const ms = parseWarehouseDateTime(zoned)
 	return timestamp(Number.isNaN(ms) ? value : new Date(ms).toISOString())
-}
-
-const partitionWindow = (value: string) => {
-	const ms = parseWarehouseDateTime(value)
-	return {
-		startTime: formatWarehouseDateTimeMs(ms - PARTITION_HINT_RADIUS_MS),
-		endTime: formatWarehouseDateTimeMs(ms + PARTITION_HINT_RADIUS_MS),
-	}
 }
 
 const decodeJsonUnknown = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
@@ -445,24 +437,8 @@ const pivotTimeseries = (
 
 export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		const queryEngine = yield* QueryEngineService
-
-		const hierarchy = Effect.fn("HttpV2Traces.hierarchy")(function* (
-			tenant: CurrentTenant.TenantSchema,
-			traceId: string,
-		) {
-			const compiled = CH.compile(
-				CH.spanHierarchyQuery({ traceId, limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1 }),
-				{
-					orgId: tenant.orgId,
-				},
-			)
-			return yield* warehouse.compiledQuery(tenant, compiled, {
-				profile: "list",
-				context: "v2GetTrace",
-			})
-		})
 
 		return handlers
 			.handle("search", ({ payload }) =>
@@ -477,8 +453,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "trc", 2)
 					const filters = payload.filters
 					const internalFilters = traceFilters(filters)
-					const compiled = CH.compile(
-						CH.traceSummariesQuery({
+					const rows = yield* telemetry.searchTraces(
+						tenant,
+						{
 							serviceName: filters?.service_name,
 							spanName: filters?.span_name,
 							statusCode: filters?.status_code,
@@ -502,13 +479,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 										})),
 									)
 								: undefined,
-						}),
-						{ orgId: tenant.orgId, ...window },
+						},
+						window,
 					)
-					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-						profile: "list",
-						context: "v2TraceSearch",
-					})
 
 					const dataRows = rows.slice(0, limit)
 					const last = dataRows.at(-1)
@@ -626,7 +599,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const rows = yield* hierarchy(tenant, params.trace_id)
+					const rows = yield* telemetry.traceSpans(tenant, params.trace_id)
 					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
 					const truncated = rows.length > CH.SPAN_HIERARCHY_MAX_SPANS
 					const spans = rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS).map(toSpan)
@@ -650,18 +623,8 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 			.handle("retrieveSpan", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const detail = yield* warehouse
-						.compiledQueryFirst(
-							tenant,
-							CH.compile(
-								CH.spanDetailQuery({
-									traceId: params.trace_id,
-									spanId: params.span_id,
-								}),
-								{ orgId: tenant.orgId },
-							),
-							{ profile: "discovery", context: "v2GetSpan" },
-						)
+					const detail = yield* telemetry
+						.span(tenant, params.trace_id, params.span_id)
 						.pipe(Effect.map(Option.getOrNull))
 					if (!detail) return yield* Effect.fail(V2SpanNotFound.make())
 					return toSpan(detail)
@@ -672,7 +635,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 
 export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		const queryEngine = yield* QueryEngineService
 		return handlers
 			.handle("search", ({ payload }) =>
@@ -685,11 +648,10 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					})
 					const limit = payload.limit ?? 20
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "log", 5)
-					const filters = payload.filters
-					const internalFilters = logFilters(filters)
-					const compiled = CH.compile(
-						CH.logsListQuery({
-							...internalFilters,
+					const rows = yield* telemetry.searchLogs(
+						tenant,
+						{
+							...logFilters(payload.filters),
 							limit: limit + 1,
 							cursorIdentity: cursorParts
 								? {
@@ -700,14 +662,9 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 										recordIdentity: cursorParts[4]!,
 									}
 								: undefined,
-						}),
-						{ orgId: tenant.orgId, ...window },
+						},
+						window,
 					)
-					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-						profile: "list",
-						context: "v2LogSearch",
-						settings: filters?.body_search ? LOGS_BODY_SEARCH_SETTINGS : undefined,
-					})
 
 					const dataRows = rows.slice(0, limit)
 					const last = dataRows.at(-1)
@@ -821,21 +778,8 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const [logTimestamp, recordIdentity] = yield* parseLogKey(params.id)
-					const compiled = CH.compile(
-						CH.getLogByKeyQuery({
-							recordIdentity,
-						}),
-						{
-							orgId: tenant.orgId,
-							...partitionWindow(logTimestamp),
-							timestamp: logTimestamp,
-						},
-					)
-					const row = yield* warehouse
-						.compiledQueryFirst(tenant, compiled, {
-							profile: "list",
-							context: "v2GetLog",
-						})
+					const row = yield* telemetry
+						.log(tenant, { timestamp: logTimestamp, recordIdentity })
 						.pipe(Effect.map(Option.getOrNull))
 					if (!row) return yield* Effect.fail(V2LogNotFound.make())
 					return toLog(row)
@@ -846,7 +790,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 
 export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		const queryEngine = yield* QueryEngineService
 		return handlers
 			.handle("list", ({ query }) =>
@@ -858,39 +802,34 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 						precision: "second",
 					})
 					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
-						Effect.gen(function* () {
-							const compiled = CH.compile(
-								CH.listMetricsQuery({
+						telemetry
+							.listMetrics(
+								tenant,
+								{
 									serviceName: query.service_name,
 									metricType: query.metric_type,
 									search: query.search,
 									limit,
 									offset,
-								}),
-								{ orgId: tenant.orgId, ...window },
+								},
+								window,
 							)
-							return yield* warehouse
-								.compiledQuery(tenant, compiled, {
-									profile: "discovery",
-									context: "v2ListMetrics",
-								})
-								.pipe(
-									Effect.map((rows): ReadonlyArray<V2Metric> =>
-										rows.map((row) => ({
-											object: "metric",
-											name: decodeMetricName(row.metricName),
-											type: row.metricType,
-											service_name: row.serviceName,
-											description: row.metricDescription,
-											unit: row.metricUnit,
-											is_monotonic: row.isMonotonic !== 0,
-											data_point_count: row.dataPointCount,
-											first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
-											last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
-										})),
-									),
-								)
-						}),
+							.pipe(
+								Effect.map((rows): ReadonlyArray<V2Metric> =>
+									rows.map((row) => ({
+										object: "metric",
+										name: decodeMetricName(row.metricName),
+										type: row.metricType,
+										service_name: row.serviceName,
+										description: row.metricDescription,
+										unit: row.metricUnit,
+										is_monotonic: row.isMonotonic !== 0,
+										data_point_count: row.dataPointCount,
+										first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
+										last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
+									})),
+								),
+							),
 					)
 					return { object: "list" as const, ...page }
 				}),
@@ -994,39 +933,6 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 	}),
 )
 
-// The latency baseline covers the seven days BEFORE the window being judged,
-// so a regression that is still running can't raise the bar it is measured
-// against.
-const BASELINE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
-// Matches the `serviceHealthBaseline` registry definition the dashboard reads
-// through, so both surfaces re-read a week-wide aggregate at the same rate.
-const BASELINE_CACHE_SECONDS = 3600
-
-/**
- * The trailing p95 a service is judged against, keyed by service name. The
- * catalog rows aggregate every namespace and environment under one name, so
- * the baseline rows collapse the same way: the busiest row wins rather than
- * the numbers being averaged across populations that don't compare.
- */
-export type ServiceBaselines = ReadonlyMap<string, { p95LatencyMs: number; spanCount: number }>
-
-const collapseBaselines = (
-	rows: readonly {
-		serviceName: string
-		baselineP95LatencyMs: number
-		baselineSpanCount: number
-	}[],
-): ServiceBaselines => {
-	const map = new Map<string, { p95LatencyMs: number; spanCount: number }>()
-	for (const row of rows) {
-		const spanCount = row.baselineSpanCount
-		const current = map.get(row.serviceName)
-		if (current !== undefined && current.spanCount >= spanCount) continue
-		map.set(row.serviceName, { p95LatencyMs: row.baselineP95LatencyMs, spanCount })
-	}
-	return map
-}
-
 export const toService = (
 	row: {
 		serviceName: string
@@ -1104,78 +1010,19 @@ const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation
 
 export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		const queryEngine = yield* QueryEngineService
-
-		/**
-		 * Trailing p95 per service for the seven days before `windowStartMs`.
-		 *
-		 * Hour-floored so a polling client's drifting window keeps hitting the
-		 * same cache entry, and cached for an hour — a week-wide aggregate that
-		 * moves slowly should not be re-read on every list request.
-		 */
-		const loadBaselines = (
-			tenant: CurrentTenant.TenantSchema,
-			windowStartMs: number,
-			filters: { deploymentEnvironment?: string; serviceNamespace?: string },
-		) =>
-			Effect.gen(function* () {
-				const endMs = Math.floor(windowStartMs / HOUR_MS) * HOUR_MS
-				const window = {
-					startTime: formatWarehouseDateTime(endMs - BASELINE_WINDOW_MS),
-					endTime: formatWarehouseDateTime(endMs),
-				}
-				const compiled = CH.compile(
-					CH.serviceHealthBaselineQuery({
-						environments: filters.deploymentEnvironment
-							? [filters.deploymentEnvironment]
-							: undefined,
-						namespaces: filters.serviceNamespace ? [filters.serviceNamespace] : undefined,
-					}),
-					{ orgId: tenant.orgId, ...window },
-				)
-				const rows = yield* queryEngine.cachedDirect(
-					tenant,
-					"v2ServiceHealthBaseline",
-					{ ...window, ...filters },
-					warehouse.compiledQuery(tenant, compiled, {
-						profile: "aggregation",
-						context: "v2ServiceHealthBaseline",
-					}),
-					BASELINE_CACHE_SECONDS,
-				)
-				return collapseBaselines(rows)
-			}).pipe(
-				// A missing baseline is a supported state — clients fall back to
-				// absolute thresholds — so a failed baseline read degrades the health
-				// signal instead of failing the whole listing.
-				Effect.catchCause((cause) =>
-					Effect.as(
-						Effect.logWarning("v2 service baseline read failed", cause),
-						collapseBaselines([]),
-					),
-				),
-			)
+		const warehouse = yield* WarehouseQueryService
 
 		const execute = (
 			tenant: CurrentTenant.TenantSchema,
 			window: { startTime: string; endTime: string; rangeSeconds: number },
 			baselines: ServiceBaselines,
-			opts: Parameters<typeof CH.serviceCatalogQuery>[0],
+			opts: CH.ServiceCatalogOpts,
 		) =>
-			Effect.gen(function* () {
-				const compiled = CH.compile(CH.serviceCatalogQuery(opts), { orgId: tenant.orgId, ...window })
-				return yield* warehouse
-					.compiledQuery(tenant, compiled, {
-						profile: "aggregation",
-						context: "v2ServiceCatalog",
-					})
-					.pipe(
-						Effect.map((rows) =>
-							rows.map((row) => toService(row, window.rangeSeconds, baselines)),
-						),
-					)
-			})
+			telemetry
+				.serviceCatalog(tenant, opts, window)
+				.pipe(Effect.map((rows) => rows.map((row) => toService(row, window.rangeSeconds, baselines))))
 		return (
 			handlers
 				.handle("list", ({ query }) =>
@@ -1187,7 +1034,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							precision: "second",
 							rangeLabel: "Service queries",
 						})
-						const baselines = yield* loadBaselines(
+						const baselines = yield* telemetry.serviceBaselines(
 							tenant,
 							parseWarehouseDateTime(query.start_time),
 							{
@@ -1215,7 +1062,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							precision: "second",
 							rangeLabel: "Service queries",
 						})
-						const baselines = yield* loadBaselines(
+						const baselines = yield* telemetry.serviceBaselines(
 							tenant,
 							parseWarehouseDateTime(query.start_time),
 							{},
@@ -1290,7 +1137,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 						yield* warehouse.warmRoute(tenant)
 
 						const summary = Effect.gen(function* () {
-							const baselines = yield* loadBaselines(
+							const baselines = yield* telemetry.serviceBaselines(
 								tenant,
 								parseWarehouseDateTime(query.start_time),
 								environmentFilter,
@@ -1317,62 +1164,30 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							),
 						)
 
-						const operationOptions = {
-							serviceName: params.name,
-							environments: query.deployment_environment
-								? [query.deployment_environment]
-								: undefined,
-							limit: SERVICE_OVERVIEW_OPERATIONS_LIMIT,
-						}
-						const operationParams = {
-							orgId: tenant.orgId,
-							startTime: window.startTime,
-							endTime: window.endTime,
-						}
-						const operationRowSchema = { rowSchema: CH.serviceOperationsSummaryRowSchema }
-						const runOperations = (rollup: boolean) =>
-							warehouse.compiledQuery(
+						const operations = telemetry
+							.serviceOperations(
 								tenant,
-								rollup
-									? CH.compile(
-											CH.serviceOperationsSummaryQuery(operationOptions),
-											operationParams,
-											operationRowSchema,
-										)
-									: CH.compile(
-											CH.serviceOperationsSummaryRawQuery(operationOptions),
-											operationParams,
-											operationRowSchema,
-										),
 								{
-									profile: "aggregation",
-									context: rollup
-										? "v2ServiceOverviewOperations"
-										: "v2ServiceOverviewOperationsRaw",
+									serviceName: params.name,
+									environments: query.deployment_environment
+										? [query.deployment_environment]
+										: undefined,
+									limit: SERVICE_OVERVIEW_OPERATIONS_LIMIT,
 								},
+								window,
 							)
-						// Same rollout state as the internal Operations tab: the
-						// `service_operations_*` rollups reach a BYO cluster only when its
-						// admin applies schema, so a missing table reads raw traces instead.
-						const operations = runOperations(true).pipe(
-							Effect.catch((error) =>
-								isMissingServiceOperationsRollup(error)
-									? Effect.logWarning(
-											"service_operations rollup is absent on this cluster; reading raw traces for the v2 service overview.",
-										).pipe(
-											Effect.annotateLogs({ orgId: tenant.orgId }),
-											Effect.andThen(runOperations(false)),
-										)
-									: Effect.fail(error),
-							),
-							Effect.map((rows) => rows.map(toOperation)),
-							Effect.catchCause((cause) =>
-								Effect.as(
-									Effect.logWarning("v2 service overview operations read failed", cause),
-									[] as ReadonlyArray<V2ServiceOperation>,
+							.pipe(
+								Effect.map((rows) => rows.map(toOperation)),
+								Effect.catchCause((cause) =>
+									Effect.as(
+										Effect.logWarning(
+											"v2 service overview operations read failed",
+											cause,
+										),
+										[] as ReadonlyArray<V2ServiceOperation>,
+									),
 								),
-							),
-						)
+							)
 
 						const [service, series, operationRows] = yield* Effect.all(
 							[summary, points, operations],
@@ -1431,7 +1246,7 @@ const toMapEdge = (row: {
  */
 export const HttpV2EnvironmentsLive = HttpApiBuilder.group(MapleApiV2, "environments", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		return handlers.handle("list", ({ query }) =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
@@ -1441,11 +1256,7 @@ export const HttpV2EnvironmentsLive = HttpApiBuilder.group(MapleApiV2, "environm
 					precision: "second",
 					rangeLabel: "Environment queries",
 				})
-				const compiled = CH.compile(CH.serviceEnvironmentsQuery(), { orgId: tenant.orgId, ...window })
-				const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-					profile: "discovery",
-					context: "v2Environments",
-				})
+				const rows = yield* telemetry.environments(tenant, window)
 
 				return {
 					object: "list" as const,
@@ -1463,7 +1274,7 @@ export const HttpV2EnvironmentsLive = HttpApiBuilder.group(MapleApiV2, "environm
 
 export const HttpV2ServiceMapLive = HttpApiBuilder.group(MapleApiV2, "serviceMap", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		return handlers.handle("retrieve", ({ query }) =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
@@ -1473,22 +1284,11 @@ export const HttpV2ServiceMapLive = HttpApiBuilder.group(MapleApiV2, "serviceMap
 					precision: "second",
 					rangeLabel: "Service map queries",
 				})
-				const compiled = query.service_name
-					? CH.compile(
-							CH.serviceDependenciesForServiceQuery({
-								serviceName: query.service_name,
-								deploymentEnv: query.deployment_environment,
-							}),
-							{ orgId: tenant.orgId, ...window },
-						)
-					: CH.serviceDependenciesSQL(
-							{ deploymentEnv: query.deployment_environment },
-							{ orgId: tenant.orgId, ...window },
-						)
-				const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-					profile: "aggregation",
-					context: "v2ServiceMap",
-				})
+				const rows = yield* telemetry.serviceMap(
+					tenant,
+					{ serviceName: query.service_name, deploymentEnv: query.deployment_environment },
+					window,
+				)
 
 				return {
 					object: "service_map" as const,
