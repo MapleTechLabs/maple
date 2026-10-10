@@ -148,6 +148,9 @@ export interface HostGaugeTimeseriesOpts {
 	hostName: string
 	metricName: string
 	groupByAttributeKey?: string
+	// Pins one data-point attribute, e.g. `state = 'used'` for filesystem
+	// utilization, which otherwise averages used/free/reserved together.
+	attributeEquals?: { readonly key: string; readonly value: string }
 }
 
 export interface HostGaugeTimeseriesOutput {
@@ -171,6 +174,9 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq(opts.metricName),
+			opts.attributeEquals
+				? $.Attributes.get(opts.attributeEquals.key).eq(opts.attributeEquals.value)
+				: undefined,
 		])
 
 	return (opts.groupByAttributeKey ? q.groupBy("bucket", "attributeValue") : q.groupBy("bucket"))
