@@ -414,6 +414,7 @@ export function AgentSessionsList({
 				noun="agent sessions"
 				purpose="Replay each AI agent conversation, with its LLM and tool calls in order."
 				guideDocs="agentSessions"
+				setupDocs="agentSessions"
 				filtered={filtered}
 				onClearFilters={onClearFilters}
 			/>
