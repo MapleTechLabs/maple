@@ -53,7 +53,7 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import {
 	gcpInfraTimeseriesResultAtom,
 	getServiceOverviewResultAtom,
@@ -126,11 +126,9 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		})
 	}
 
-	const result = useRefreshableAtomValue(
-		gcpInfraTimeseriesResultAtom({
-			data: { ...range, source: service, keys },
-		}),
-	)
+	const timeseriesAtom = gcpInfraTimeseriesResultAtom({ data: { ...range, source: service, keys } })
+	const result = useRefreshableAtomValue(timeseriesAtom)
+	const refreshTimeseries = useAtomRefresh(timeseriesAtom)
 	const points = Result.builder(result)
 		.onSuccess((response) => response.points)
 		.orElse(() => NO_POINTS)
@@ -216,7 +214,11 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 					</div>
 				</>
 			) : Result.isFailure(result) && points.length === 0 ? (
-				<ErrorState error={result.cause} />
+				<ErrorState
+					error={result.cause}
+					title="Failed to load workload metrics"
+					onRetry={refreshTimeseries}
+				/>
 			) : points.length === 0 ? (
 				<NoMetricsMessage noun={gcpWorkloadNoun(service)} />
 			) : (

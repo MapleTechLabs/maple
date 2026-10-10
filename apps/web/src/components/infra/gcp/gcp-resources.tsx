@@ -8,6 +8,7 @@ import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 import { Link } from "@tanstack/react-router"
 
 import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS } from "@/components/common/data-table"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { ResultView } from "@/components/common/result-view"
 import { CircleWarningIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -126,81 +127,92 @@ function Resources({
 					{countLabel(projectCount, "project")} discovered
 				</span>
 			</div>
-			<DataTable.Root ariaLabel="Google Cloud resources" waiting={waiting}>
-				<DataTable.Head>
-					<Columns />
-				</DataTable.Head>
-				{resources.length === 0 ? (
-					<DataTable.Empty>
-						{filtered
-							? "No resources match these filters."
-							: "No resources yet. Maple lists them with a connection's first metrics read, then every hour."}
-					</DataTable.Empty>
-				) : null}
-				{resources.map((resource) => {
-					const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
-					const type = gcpAssetTypeLabel(resource.assetType)
-					const state = resource.state === null ? null : gcpStateLabel(resource.state)
-					const workload = gcpResourceWorkload(resource)
-					const cells = (
-						<>
+			{resources.length === 0 && filtered ? (
+				<FilteredEmpty
+					noun="resources"
+					description="Clear the type or project filter to see them all."
+				/>
+			) : (
+				<DataTable.Root ariaLabel="Google Cloud resources" waiting={waiting}>
+					<DataTable.Head>
+						<Columns />
+					</DataTable.Head>
+					{resources.length === 0 ? (
+						<DataTable.Empty>
+							No resources yet. Maple lists them with a connection's first metrics read, then
+							every hour.
+						</DataTable.Empty>
+					) : null}
+					{resources.map((resource) => {
+						const labels = Object.entries(resource.labels).map(
+							([key, value]) => `${key}: ${value}`,
+						)
+						const type = gcpAssetTypeLabel(resource.assetType)
+						const state = resource.state === null ? null : gcpStateLabel(resource.state)
+						const workload = gcpResourceWorkload(resource)
+						const cells = (
+							<>
+								<div
+									className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+									title={resource.name}
+								>
+									{gcpResourceName(resource)}
+								</div>
+								<div className="w-[170px] truncate text-xs text-foreground/80" title={type}>
+									{type}
+								</div>
+								<div className={`w-[200px] ${CELL}`} title={resource.projectId}>
+									{resource.projectId}
+								</div>
+								<div className={`w-[120px] ${CELL}`} title={resource.location ?? undefined}>
+									{resource.location ?? EMPTY_VALUE}
+								</div>
+								<div
+									className="w-[120px] truncate text-xs text-foreground/80"
+									title={state ?? undefined}
+								>
+									{state ?? EMPTY_VALUE}
+								</div>
+								{/* One line: the first label, and how many more the tooltip lists. */}
+								<div
+									className="hidden w-[150px] items-center gap-2 whitespace-nowrap lg:flex"
+									title={labels.join("\n")}
+								>
+									{labels.length === 0 ? null : (
+										<span className="min-w-0 truncate">
+											<MetaChip>{labels[0]}</MetaChip>
+										</span>
+									)}
+									{labels.length > 1 ? <MetaChip>+{labels.length - 1}</MetaChip> : null}
+								</div>
+							</>
+						)
+						const key = `${resource.assetType}:${resource.name}`
+						// A resource that is one workload opens its page; the rest have none.
+						return workload === undefined ? (
 							<div
-								className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
-								title={resource.name}
+								key={key}
+								className="flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 							>
-								{gcpResourceName(resource)}
+								{cells}
 							</div>
-							<div className="w-[170px] truncate text-xs text-foreground/80" title={type}>
-								{type}
-							</div>
-							<div className={`w-[200px] ${CELL}`} title={resource.projectId}>
-								{resource.projectId}
-							</div>
-							<div className={`w-[120px] ${CELL}`} title={resource.location ?? undefined}>
-								{resource.location ?? EMPTY_VALUE}
-							</div>
-							<div
-								className="w-[120px] truncate text-xs text-foreground/80"
-								title={state ?? undefined}
+						) : (
+							<Link
+								key={key}
+								to="/infra/gcp/$service/$name"
+								params={{ service: workload.service, name: workload.keys[0] }}
+								search={{
+									...timeSearch,
+									...gcpWorkloadSearch(workload.service, workload.keys),
+								}}
+								className={ROW_LINK_CLASS}
 							>
-								{state ?? EMPTY_VALUE}
-							</div>
-							{/* One line: the first label, and how many more the tooltip lists. */}
-							<div
-								className="hidden w-[150px] items-center gap-2 whitespace-nowrap lg:flex"
-								title={labels.join("\n")}
-							>
-								{labels.length === 0 ? null : (
-									<span className="min-w-0 truncate">
-										<MetaChip>{labels[0]}</MetaChip>
-									</span>
-								)}
-								{labels.length > 1 ? <MetaChip>+{labels.length - 1}</MetaChip> : null}
-							</div>
-						</>
-					)
-					const key = `${resource.assetType}:${resource.name}`
-					// A resource that is one workload opens its page; the rest have none.
-					return workload === undefined ? (
-						<div
-							key={key}
-							className="flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
-						>
-							{cells}
-						</div>
-					) : (
-						<Link
-							key={key}
-							to="/infra/gcp/$service/$name"
-							params={{ service: workload.service, name: workload.keys[0] }}
-							search={{ ...timeSearch, ...gcpWorkloadSearch(workload.service, workload.keys) }}
-							className={ROW_LINK_CLASS}
-						>
-							{cells}
-						</Link>
-					)
-				})}
-			</DataTable.Root>
+								{cells}
+							</Link>
+						)
+					})}
+				</DataTable.Root>
+			)}
 		</>
 	)
 }
@@ -228,7 +240,8 @@ export function GcpResources({
 	const empty = Result.builder(result)
 		.onSuccess((inventory) => inventory.types.length === 0)
 		.orElse(() => false)
-	useIntervalRefresh(useAtomRefresh(query), { intervalMs: EMPTY_REFRESH_MS, enabled: empty })
+	const refresh = useAtomRefresh(query)
+	useIntervalRefresh(refresh, { intervalMs: EMPTY_REFRESH_MS, enabled: empty })
 
 	return (
 		<div className="space-y-4">
@@ -243,6 +256,8 @@ export function GcpResources({
 			)}
 			<ResultView
 				result={result}
+				errorTitle="Failed to load resources"
+				onRetry={refresh}
 				loading={
 					<DataTable.Root ariaLabel="Google Cloud resources">
 						<DataTable.Head>

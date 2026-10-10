@@ -10,6 +10,7 @@ import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ColumnHead, DataTable, ROW_LINK_CLASS, type SortControls } from "@/components/common/data-table"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { SearchToolbar } from "@/components/common/search-toolbar"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useSortState } from "@/hooks/use-table-sort"
@@ -215,6 +216,11 @@ export function GcpServiceTable({
 		)
 		return sortGcpWorkloads(service, matching, { key: sortKey ?? GCP_NAME_SORT, dir: sortDir })
 	}, [service, workloads, scope, needle, sortKey, sortDir])
+	// The service has workloads (or a place filter hides them), and the search, filters or scope left none.
+	const filteredOut =
+		shown.length === 0 &&
+		!failed &&
+		(workloads.length > 0 || place.project !== undefined || place.region !== undefined)
 
 	return (
 		<div className="space-y-4">
@@ -248,59 +254,62 @@ export function GcpServiceTable({
 					/>
 				) : null}
 			</SearchToolbar>
-			<DataTable.Root ariaLabel={title} waiting={waiting}>
-				<DataTable.Head>
-					<Columns
-						service={service}
-						sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }}
-					/>
-				</DataTable.Head>
-				{shown.length === 0 ? (
-					<DataTable.Empty>
-						{failed
-							? `Maple could not read the ${title} metrics. Reload to try again.`
-							: workloads.length === 0 &&
-								  place.project === undefined &&
-								  place.region === undefined
-								? `No ${title} metrics in this time range.`
-								: "Nothing matches. Clear the search, filters or scope to see them all."}
-					</DataTable.Empty>
-				) : null}
-				{shown.map((workload) => (
-					<Link
-						key={workload.keys.join("\u0000")}
-						to="/infra/gcp/$service/$name"
-						params={{ service, name: workload.keys[0] }}
-						search={{ ...timeSearch, ...gcpWorkloadSearch(service, workload.keys) }}
-						className={ROW_LINK_CLASS}
-					>
-						<div className={NAME_WIDTH}>
-							<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-								{gcpWorkloadName(service, workload.keys)}
+			{filteredOut ? (
+				<FilteredEmpty
+					noun={`${noun}s`}
+					description="Clear the search, filters or scope to see them all."
+				/>
+			) : (
+				<DataTable.Root ariaLabel={title} waiting={waiting}>
+					<DataTable.Head>
+						<Columns
+							service={service}
+							sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }}
+						/>
+					</DataTable.Head>
+					{shown.length === 0 ? (
+						<DataTable.Empty>
+							{failed
+								? `Maple could not read the ${title} metrics. Reload to try again.`
+								: `No ${title} metrics in this time range.`}
+						</DataTable.Empty>
+					) : null}
+					{shown.map((workload) => (
+						<Link
+							key={workload.keys.join("\u0000")}
+							to="/infra/gcp/$service/$name"
+							params={{ service, name: workload.keys[0] }}
+							search={{ ...timeSearch, ...gcpWorkloadSearch(service, workload.keys) }}
+							className={ROW_LINK_CLASS}
+						>
+							<div className={NAME_WIDTH}>
+								<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+									{gcpWorkloadName(service, workload.keys)}
+								</div>
+								<MetaLine
+									items={workload.keys.slice(1)}
+									title={identity
+										.slice(1)
+										.map(([label], index) => `${label}: ${workload.keys[index + 1]}`)
+										.join(" · ")}
+								/>
 							</div>
-							<MetaLine
-								items={workload.keys.slice(1)}
-								title={identity
-									.slice(1)
-									.map(([label], index) => `${label}: ${workload.keys[index + 1]}`)
-									.join(" · ")}
-							/>
-						</div>
-						{columns.map((spec, index) => (
-							<div
-								key={spec.label}
-								className={cn(
-									"text-right font-mono text-xs tabular-nums",
-									VALUE_WIDTH,
-									valueClass(spec, workload.values[index]),
-								)}
-							>
-								{formatGcpValue(spec.format, workload.values[index])}
-							</div>
-						))}
-					</Link>
-				))}
-			</DataTable.Root>
+							{columns.map((spec, index) => (
+								<div
+									key={spec.label}
+									className={cn(
+										"text-right font-mono text-xs tabular-nums",
+										VALUE_WIDTH,
+										valueClass(spec, workload.values[index]),
+									)}
+								>
+									{formatGcpValue(spec.format, workload.values[index])}
+								</div>
+							))}
+						</Link>
+					))}
+				</DataTable.Root>
+			)}
 			{truncated ? (
 				<p className="text-xs text-muted-foreground">
 					This list is cut off: it shows the first workloads by name.

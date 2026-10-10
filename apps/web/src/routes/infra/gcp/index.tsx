@@ -8,10 +8,14 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/comp
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Spinner } from "@maple/ui/components/ui/spinner"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 import { PageHero } from "@/components/common/page-hero"
 import { ResultView } from "@/components/common/result-view"
+import {
+	UnderlineTabCount,
+	UnderlineTabStrip,
+	underlineTabClass,
+} from "@/components/common/underline-link-tabs"
 import { CircleInfoIcon, CircleWarningIcon, GoogleCloudIcon } from "@/components/icons"
 import { GcpResources } from "@/components/infra/gcp/gcp-resources"
 import {
@@ -118,7 +122,12 @@ function GcpPage() {
 				title="Google Cloud"
 				description="Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory."
 			/>
-			<ResultView result={statusResult} loading={<Skeleton className="h-64 w-full" />}>
+			<ResultView
+				result={statusResult}
+				loading={<Skeleton className="h-64 w-full" />}
+				errorTitle="Failed to load the Google Cloud integration"
+				onRetry={refreshStatus}
+			>
 				{(status) => {
 					if (status.connectors.length === 0) {
 						return (
@@ -252,6 +261,8 @@ function GcpInfra({
 	return (
 		<ResultView
 			result={fleetResult}
+			errorTitle="Failed to load Google Cloud workloads"
+			onRetry={refreshFleet}
 			loading={
 				<div className="space-y-6">
 					<GcpSummaryBandLoading className={FLEET_BAND_BOXED} />
@@ -277,48 +288,35 @@ function GcpInfra({
 							className={FLEET_BAND_BOXED}
 						/>
 					)}
-					{/* The strip scrolls sideways on a phone; the bottom pixel is the active underline. */}
-					<Tabs value={tab} className="-mx-2 overflow-x-auto pb-px">
-						<TabsList variant="underline" className="gap-x-1 py-0">
-							{tabs.map((candidate) => (
-								<TabsTrigger
-									key={candidate}
-									value={candidate}
-									className="h-8 px-2 text-sm sm:h-8"
-									// A tab that is a link: Base UI needs to know it is not a <button>.
-									nativeButton={false}
-									render={
-										<Link
-											to="/infra/gcp"
-											// The place and scope carry over; a name search and the asset type do not.
-											search={{
-												...timeSearch,
-												...place,
-												scope: search.scope,
-												tab: candidate,
-											}}
-										/>
-									}
-								>
-									{candidate === GCP_RESOURCES_TAB
-										? "Resources"
-										: GCP_INFRA_SERVICES[candidate].title}
-									{/* With a band cell active: how many of its workloads each tab holds. */}
-									{activeScope === undefined || candidate === GCP_RESOURCES_TAB ? null : (
-										<span className="ml-1.5 font-mono text-2xs tabular-nums text-muted-foreground">
-											{
-												(
+					{/* Below the band, which counts every tab. The strip scrolls sideways on a phone. */}
+					<UnderlineTabStrip navigation label="Google Cloud services" bleed={false}>
+						{tabs.map((candidate) => (
+							<Link
+								key={candidate}
+								to="/infra/gcp"
+								// The place and scope carry over; a name search and the asset type do not.
+								search={{ ...timeSearch, ...place, scope: activeScope, tab: candidate }}
+								aria-current={candidate === tab ? "page" : undefined}
+								className={underlineTabClass(candidate === tab)}
+							>
+								{candidate === GCP_RESOURCES_TAB
+									? "Resources"
+									: GCP_INFRA_SERVICES[candidate].title}
+								{/* With a band cell active: how many of its workloads each tab holds. */}
+								<UnderlineTabCount
+									count={
+										activeScope === undefined || candidate === GCP_RESOURCES_TAB
+											? undefined
+											: (
 													inPlace.find((entry) => entry.service === candidate)
 														?.workloads ?? []
 												).filter((workload) => gcpInScope(workload, activeScope))
 													.length
-											}
-										</span>
-									)}
-								</TabsTrigger>
-							))}
-						</TabsList>
-					</Tabs>
+									}
+								/>
+							</Link>
+						))}
+					</UnderlineTabStrip>
 					{tab === GCP_RESOURCES_TAB ? (
 						<GcpResources
 							filter={{ type: assetType, project: place.project }}
