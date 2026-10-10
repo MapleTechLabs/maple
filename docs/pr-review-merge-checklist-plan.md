@@ -53,7 +53,7 @@ This is the reminder Christo asked for. Both parts depend on section 1.
 
 - **Repository rules.** The prompt already asks for steps "in the repository's terms". Make it
   explicit: a `## Before merge` section in `.maple/review.md` that the reviewer always applies
-  (for example, "a change under `packages/db/drizzle` needs `ps:migrations-preflight`").
+  (for example, "a new migration needs `ps:migrations-preflight` before the deploy applies it").
 - **Kinds.** `dependency` (a new or major-bumped package) is not detected. `permission` and `flag`
   currently fold into `manual`. Add them only if the evals show the model-written manual steps
   missing them.
