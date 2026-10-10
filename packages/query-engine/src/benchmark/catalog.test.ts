@@ -50,6 +50,7 @@ import * as productEventPathQueries from "../ch/queries/product-events-paths"
 import * as productEventExploreQueries from "../ch/queries/product-events-explore"
 import * as topOperationQueries from "../ch/queries/top-operations"
 import * as traceQueries from "../ch/queries/traces"
+import * as rootlessTraceQueries from "../ch/queries/rootless-traces"
 
 // These run on every PR with no ClickHouse. They guarantee the catalog the
 // DESCRIBE sweep consumes is complete and actually compiles; the sweep itself
@@ -287,6 +288,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"product-events-paths": productEventPathQueries,
 	"product-events-explore": productEventExploreQueries,
 	traces: traceQueries,
+	"rootless-traces": rootlessTraceQueries,
 } satisfies Record<string, Record<string, unknown>>
 
 /**
@@ -383,8 +385,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	"services/serviceHealthBaselineQuery",
 	"services/serviceEnvironmentsQuery",
 	"services/serviceUsageWithPreviousQuery",
-	"traces/traceSummariesQuery",
-	"traces/traceListQuery",
 ])
 
 describe("builder coverage", () => {

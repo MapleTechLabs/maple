@@ -57,6 +57,8 @@ interface TracesTableViewProps {
 	hasNextPage: boolean
 	isCapped: boolean
 	hiddenCount: number
+	/** What this range leaves out for traces with no root span, when it leaves anything out. */
+	rootlessNote?: React.ReactNode
 	fetchNextPage: () => void
 	waiting: boolean
 	onTraceClick: (trace: Trace) => void
@@ -208,6 +210,8 @@ function columnClasses(columnId: string): { responsive?: string; cellClass?: str
 
 interface TracesTableProps {
 	filters?: TracesSearchParams
+	/** The sidebar's counts left rootless traces out (`TracesFacetsResponse`). */
+	facetsOmitRootless?: boolean
 }
 
 function LoadingState() {
@@ -236,6 +240,7 @@ function TracesTableView({
 	hasNextPage,
 	isCapped,
 	hiddenCount,
+	rootlessNote,
 	fetchNextPage,
 	waiting,
 	onTraceClick,
@@ -429,11 +434,18 @@ function TracesTableView({
 						onWidenRange={onWidenRange}
 						// The hint names the excluded values, which the generic clear button cannot.
 						detail={
-							<ExcludedEmptyHint
-								excluded={excludedValues}
-								onClear={clearExclusions}
-								className="mx-auto max-w-lg"
-							/>
+							<>
+								<ExcludedEmptyHint
+									excluded={excludedValues}
+									onClear={clearExclusions}
+									className="mx-auto max-w-lg"
+								/>
+								{rootlessNote !== undefined && (
+									<p className="mx-auto max-w-lg text-xs text-muted-foreground">
+										{rootlessNote}
+									</p>
+								)}
+							</>
 						}
 					/>
 				</div>
@@ -549,12 +561,18 @@ function TracesTableView({
 						</Button>
 					</span>
 				)}
+				{rootlessNote !== undefined && (
+					<span>
+						{" · "}
+						{rootlessNote}
+					</span>
+				)}
 			</div>
 		</div>
 	)
 }
 
-export function TracesTable({ filters }: TracesTableProps) {
+export function TracesTable({ filters, facetsOmitRootless = false }: TracesTableProps) {
 	const navigate = useNavigate()
 	// Bound to the traces route so the sort patch keeps the rest of the search
 	// params typed and intact.
@@ -566,8 +584,29 @@ export function TracesTable({ filters }: TracesTableProps) {
 		hasNextPage,
 		isCapped,
 		hiddenCount,
+		rootlessTraces,
 		fetchNextPage,
 	} = useInfiniteTraces(filters)
+
+	// Whatever this range leaves out is said: the list could not look for them
+	// here, or the sidebar's counts could not include them.
+	const rootlessNote =
+		rootlessTraces === "omitted" ? (
+			<>
+				Traces without a root span may be missing from this list. Shorten the range, or{" "}
+				<Button
+					variant="link"
+					size="xs"
+					onClick={() => navigateTraces({ search: (prev) => ({ ...prev, rootOnly: false }) })}
+					className="h-auto p-0 text-primary underline decoration-primary/30 hover:decoration-primary"
+				>
+					list their spans
+				</Button>
+				.
+			</>
+		) : facetsOmitRootless ? (
+			"The filter counts leave out traces without a root span. Shorten the range to count them."
+		) : undefined
 
 	// An empty list under an exclusion cannot explain itself — the filter is defined by what is
 	// absent, so it reads exactly like telemetry that stopped arriving.
@@ -685,6 +724,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 				hasNextPage={hasNextPage}
 				isCapped={isCapped}
 				hiddenCount={hiddenCount}
+				rootlessNote={rootlessNote}
 				fetchNextPage={fetchNextPage}
 				waiting={result.waiting ?? false}
 				onTraceClick={onTraceClick}

@@ -129,6 +129,8 @@ export function FilterSidebarLoading({ sectionCount = 3 }: FilterSidebarLoadingP
 interface FilterSidebarEmptyProps {
 	title?: string
 	description?: string
+	/** A control that still applies with no facet values: one that changes what the page lists. */
+	children?: ReactNode
 }
 
 /**
@@ -142,6 +144,7 @@ interface FilterSidebarEmptyProps {
 export function FilterSidebarEmpty({
 	title = "Nothing to filter yet",
 	description = "Filters fill in from the values in your data once it arrives.",
+	children,
 }: FilterSidebarEmptyProps) {
 	return (
 		<FilterSidebarFrame>
@@ -150,6 +153,7 @@ export function FilterSidebarEmpty({
 			<div className="space-y-1 py-2 pr-4">
 				<p className="text-xs font-medium text-foreground">{title}</p>
 				<p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+				{children}
 			</div>
 		</FilterSidebarFrame>
 	)

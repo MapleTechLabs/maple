@@ -806,7 +806,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:tracesDurationStatsQuery:rollup  [b66532bf]
+-- builder:errors:tracesDurationStatsQuery:rollup  [433f5dee]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -835,10 +835,60 @@ SELECT
           AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
+UNION ALL
+SELECT
+          count() AS traceCount,
+          min(rootless.slowest) AS durationMin,
+          max(rootless.slowest) AS durationMax,
+          quantilesTDigestState(0.5, 0.95)(slowest) AS durationQuantiles
+        FROM (SELECT
+          trace_list_entry_spans.TraceId AS traceId,
+          max(trace_list_entry_spans.Duration) AS slowest
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+        GROUP BY traceId) AS rootless
 ) AS duration_tiers
         FORMAT JSON
 
--- builder:errors:tracesFacetsQuery:rollup  [afb9c0ed]
+-- builder:errors:tracesFacetsQuery:rollup  [bc4a8fe9]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -863,6 +913,51 @@ SELECT
           AND trace_facets_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -896,6 +991,52 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.SpanName != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.SpanName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.SpanName != ''
+        GROUP BY name
 ) AS spanName_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -927,6 +1068,52 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.HttpMethod != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpMethod AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
         GROUP BY name
@@ -960,6 +1147,52 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.HttpStatusCode != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpStatusCode AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpStatusCode != ''
+        GROUP BY name
 ) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -991,6 +1224,52 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.DeploymentEnv AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
         GROUP BY name
@@ -1024,6 +1303,52 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.ServiceNamespace != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceNamespace AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.ServiceNamespace != ''
+        GROUP BY name
 ) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -1052,6 +1377,50 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.HasError = 1
+UNION ALL
+SELECT
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
@@ -3127,6 +3496,59 @@ SELECT
         WHERE ranked.versionRank <= 20
         ORDER BY serviceName ASC, firstSeen DESC
         LIMIT 500
+        FORMAT JSON
+
+-- builder:rootless-traces:rootedTraceIdsQuery:page-candidates  [e2592d8b]
+SELECT
+          trace_list_mv.TraceId AS traceId
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 3000001)) <= 3000000
+          AND trace_list_mv.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+        FORMAT JSON
+
+-- builder:rootless-traces:rootlessOmittedQuery:default  [167e0f5f]
+SELECT
+          1 AS omitted
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND NOT (((SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000 AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000))
+        LIMIT 1
+        FORMAT JSON
+
+-- builder:rootless-traces:rootSpansInRangeQuery:page-candidates  [81cb1ec3]
+SELECT
+          count() AS roots
+        FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 3000001) AS probe
         FORMAT JSON
 
 -- builder:service-endpoints:serviceEndpointsSummaryQuery:default  [3decb4a7]
@@ -6154,6 +6576,79 @@ SELECT
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
 FORMAT JSON
 
+-- builder:traces:traceListEntryPageQuery:list-tables  [d3f01ee1]
+SELECT DISTINCT ON (traceId)
+          trace_list_entry_spans.TraceId AS traceId,
+          trace_list_entry_spans.Timestamp AS ts,
+          trace_list_entry_spans.Duration AS d
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 400
+        FORMAT JSON
+
+-- builder:traces:traceListEntryPageQuery:raw-traces  [18133d9b]
+SELECT DISTINCT ON (traceId)
+          traces.TraceId AS traceId,
+          traces.Timestamp AS ts,
+          traces.Duration AS d
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND SpanAttributes['user.id'] = 'u1'
+          AND traces.SpanKind IN ('Server', 'Consumer')
+          AND traces.ParentSpanId != ''
+          AND traces.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY d DESC, ts DESC, traceId DESC
+        LIMIT 400
+        FORMAT JSON
+
+-- builder:traces:traceListQuery:by-ids  [c876a67a]
+SELECT
+          trace_detail_spans.TraceId AS traceId,
+          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          count() AS spanCount,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
+          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM trace_detail_spans
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND trace_detail_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+        GROUP BY traceId
+        ORDER BY startSecond DESC, traceId DESC
+        LIMIT 2
+        FORMAT JSON
+
+-- builder:traces:traceListRootPageQuery:duration-sort  [d4770c40]
+SELECT
+          trace_list_mv.TraceId AS traceId,
+          trace_list_mv.Timestamp AS ts,
+          trace_list_mv.Duration AS d
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        ORDER BY d DESC, ts DESC, traceId DESC
+        LIMIT 100
+        FORMAT JSON
+
 -- builder:traces:traceServicesByTraceIdsQuery:page-enrichment  [465d5a7d]
 SELECT
           service_map_spans.TraceId AS traceId,
@@ -6179,6 +6674,100 @@ SELECT
           AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
         GROUP BY traceId
         LIMIT 2
+        FORMAT JSON
+
+-- builder:traces:traceSummariesQuery:span-filter  [423d9ab2]
+SELECT
+          summaries.traceId AS traceId,
+          summaries.startTime AS startTime,
+          summaries.durationMs AS durationMs,
+          summaries.rootSpanName AS rootSpanName,
+          summaries.rootSpanKind AS rootSpanKind,
+          summaries.rootServiceName AS rootServiceName,
+          summaries.statusCode AS statusCode,
+          summaries.hasError AS hasError,
+          summaries.deploymentEnvironment AS deploymentEnvironment,
+          summaries.serviceNamespace AS serviceNamespace,
+          summaries.httpMethod AS httpMethod,
+          summaries.httpRoute AS httpRoute,
+          summaries.httpStatusCode AS httpStatusCode
+        FROM (SELECT
+          spans.id AS traceId,
+          argMin(spans.ts, (entry, ts)) AS startTime,
+          argMin(spans.duration, (entry, ts)) / 1000000 AS durationMs,
+          argMin(spans.name, (entry, ts)) AS rootSpanName,
+          argMin(spans.kind, (entry, ts)) AS rootSpanKind,
+          argMin(spans.service, (entry, ts)) AS rootServiceName,
+          argMin(spans.status, (entry, ts)) AS statusCode,
+          if(min(spans.entry) = 0, maxIf(spans.error, spans.entry = 0), max(spans.error)) AS hasError,
+          argMin(spans.env, (entry, ts)) AS deploymentEnvironment,
+          argMin(spans.namespace, (entry, ts)) AS serviceNamespace,
+          argMin(spans.method, (entry, ts)) AS httpMethod,
+          argMin(spans.route, (entry, ts)) AS httpRoute,
+          argMin(spans.httpStatus, (entry, ts)) AS httpStatusCode
+        FROM (
+SELECT
+          trace_list_mv.TraceId AS id,
+          trace_list_mv.Timestamp AS ts,
+          0 AS entry,
+          trace_list_mv.Duration AS duration,
+          trace_list_mv.SpanName AS name,
+          trace_list_mv.SpanKind AS kind,
+          trace_list_mv.ServiceName AS service,
+          trace_list_mv.StatusCode AS status,
+          trace_list_mv.HasError AS error,
+          trace_list_mv.DeploymentEnv AS env,
+          trace_list_mv.ServiceNamespace AS namespace,
+          trace_list_mv.HttpMethod AS method,
+          trace_list_mv.HttpRoute AS route,
+          trace_list_mv.HttpStatusCode AS httpStatus
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND TraceId IN (SELECT
+          traces.TraceId AS traceId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+        GROUP BY traceId)
+UNION ALL
+SELECT
+          trace_list_entry_spans.TraceId AS id,
+          trace_list_entry_spans.Timestamp AS ts,
+          1 AS entry,
+          trace_list_entry_spans.Duration AS duration,
+          trace_list_entry_spans.SpanName AS name,
+          trace_list_entry_spans.SpanKind AS kind,
+          trace_list_entry_spans.ServiceName AS service,
+          trace_list_entry_spans.StatusCode AS status,
+          trace_list_entry_spans.HasError AS error,
+          trace_list_entry_spans.DeploymentEnv AS env,
+          trace_list_entry_spans.ServiceNamespace AS namespace,
+          trace_list_entry_spans.HttpMethod AS method,
+          trace_list_entry_spans.HttpRoute AS route,
+          trace_list_entry_spans.HttpStatusCode AS httpStatus
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND TraceId IN (SELECT
+          traces.TraceId AS traceId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+        GROUP BY traceId)
+) AS spans
+        GROUP BY traceId) AS summaries
+        WHERE summaries.startTime >= '2026-01-01 10:30:00'
+        ORDER BY startTime DESC, traceId DESC
+        LIMIT 21
+        OFFSET 0
         FORMAT JSON
 
 -- builder:web-analytics-ai:webAnalyticsAiCrawledPagesQuery:default  [56486fc0]
@@ -11103,7 +11692,15 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- pipe:slow_traces:default:baseline  [23e2dc88]
+-- pipe:slow_traces:default:baseline  [e6f7ac00]
+SELECT
+          slowest.traceId AS traceId,
+          slowest.spanName AS spanName,
+          slowest.serviceName AS serviceName,
+          slowest.durationMs AS durationMs,
+          slowest.statusCode AS statusCode,
+          slowest.timestamp AS timestamp
+        FROM (
 SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.SpanName AS spanName,
@@ -11117,6 +11714,88 @@ SELECT
           AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
+        ORDER BY durationMs DESC
+        LIMIT 10
+) AS slowest
+        ORDER BY durationMs DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- pipe:slow_traces:with-rootless:baseline  [fcd416f3]
+SELECT
+          slowest.traceId AS traceId,
+          slowest.spanName AS spanName,
+          slowest.serviceName AS serviceName,
+          slowest.durationMs AS durationMs,
+          slowest.statusCode AS statusCode,
+          slowest.timestamp AS timestamp
+        FROM (
+SELECT
+          trace_list_mv.TraceId AS traceId,
+          trace_list_mv.SpanName AS spanName,
+          trace_list_mv.ServiceName AS serviceName,
+          trace_list_mv.Duration / 1000000 AS durationMs,
+          trace_list_mv.StatusCode AS statusCode,
+          trace_list_mv.Timestamp AS timestamp
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_mv.ServiceName = 'api'
+        ORDER BY durationMs DESC
+        LIMIT 10
+UNION ALL
+SELECT
+          trace_list_entry_spans.TraceId AS traceId,
+          argMax(trace_list_entry_spans.SpanName, trace_list_entry_spans.Duration) AS spanName,
+          argMax(trace_list_entry_spans.ServiceName, trace_list_entry_spans.Duration) AS serviceName,
+          max(trace_list_entry_spans.Duration) / 1000000 AS durationMs,
+          argMax(trace_list_entry_spans.StatusCode, trace_list_entry_spans.Duration) AS statusCode,
+          argMax(trace_list_entry_spans.Timestamp, trace_list_entry_spans.Duration) AS timestamp
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+        GROUP BY traceId
+        ORDER BY durationMs DESC
+        LIMIT 10
+) AS slowest
         ORDER BY durationMs DESC
         LIMIT 10
         FORMAT JSON
@@ -13545,7 +14224,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- spec:traces-facets-single-dimension:baseline  [d670c94d]
+-- spec:traces-facets-single-dimension#1:baseline  [8ddd7f00]
 SELECT
           spanName_tiers.name AS name,
           sum(spanName_tiers.count) AS count,
@@ -13575,13 +14254,84 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.SpanName != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.SpanName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.SpanName != ''
+        GROUP BY name
 ) AS spanName_tiers
         GROUP BY name
         ORDER BY count DESC
         LIMIT 20
 FORMAT JSON
 
--- spec:traces-facets:baseline  [29a29fef]
+-- spec:traces-facets-single-dimension#2:baseline  [167e0f5f]
+SELECT
+          1 AS omitted
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND NOT (((SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000 AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000))
+        LIMIT 1
+        FORMAT JSON
+
+-- spec:traces-facets#1:baseline  [a598de69]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -13608,6 +14358,52 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -13643,6 +14439,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.SpanName != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.SpanName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.SpanName != ''
+        GROUP BY name
 ) AS spanName_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -13676,6 +14519,53 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HttpMethod != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpMethod AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
         GROUP BY name
@@ -13711,6 +14601,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HttpStatusCode != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpStatusCode AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpStatusCode != ''
+        GROUP BY name
 ) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -13744,6 +14681,53 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.DeploymentEnv != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.DeploymentEnv AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
         GROUP BY name
@@ -13779,6 +14763,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.ServiceNamespace != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceNamespace AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.ServiceNamespace != ''
+        GROUP BY name
 ) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -13809,10 +14840,55 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HasError = 1
+UNION ALL
+SELECT
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-facets:bloom  [29a29fef]
+-- spec:traces-facets#1:bloom  [a598de69]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -13839,6 +14915,52 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -13874,6 +14996,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.SpanName != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.SpanName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.SpanName != ''
+        GROUP BY name
 ) AS spanName_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -13907,6 +15076,53 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HttpMethod != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpMethod AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
         GROUP BY name
@@ -13942,6 +15158,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HttpStatusCode != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpStatusCode AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpStatusCode != ''
+        GROUP BY name
 ) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -13975,6 +15238,53 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.DeploymentEnv != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.DeploymentEnv AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
         GROUP BY name
@@ -14010,6 +15320,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.ServiceNamespace != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceNamespace AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.ServiceNamespace != ''
+        GROUP BY name
 ) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -14040,10 +15397,55 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HasError = 1
+UNION ALL
+SELECT
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-facets:text  [29a29fef]
+-- spec:traces-facets#1:text  [a598de69]
 SELECT
           service_tiers.name AS name,
           sum(service_tiers.count) AS count,
@@ -14070,6 +15472,52 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
         GROUP BY name
 ) AS service_tiers
         GROUP BY name
@@ -14105,6 +15553,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.SpanName != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.SpanName AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.SpanName != ''
+        GROUP BY name
 ) AS spanName_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -14138,6 +15633,53 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HttpMethod != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpMethod AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpMethod != ''
         GROUP BY name
 ) AS httpMethod_tiers
         GROUP BY name
@@ -14173,6 +15715,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HttpStatusCode != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.HttpStatusCode AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HttpStatusCode != ''
+        GROUP BY name
 ) AS httpStatus_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -14206,6 +15795,53 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.DeploymentEnv != ''
+        GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.DeploymentEnv AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.DeploymentEnv != ''
         GROUP BY name
 ) AS deploymentEnv_tiers
         GROUP BY name
@@ -14241,6 +15877,53 @@ SELECT
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.ServiceNamespace != ''
         GROUP BY name
+UNION ALL
+SELECT
+          trace_list_entry_spans.ServiceNamespace AS name,
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.ServiceNamespace != ''
+        GROUP BY name
 ) AS serviceNamespace_tiers
         GROUP BY name
         ORDER BY count DESC
@@ -14271,10 +15954,127 @@ SELECT
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
           AND trace_facets_hourly.HasError = 1
+UNION ALL
+SELECT
+          uniq(trace_list_entry_spans.TraceId) AS count
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+          AND trace_list_entry_spans.HasError = 1
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:baseline  [8e705c5c]
+-- spec:traces-facets#2:baseline  [167e0f5f]
+SELECT
+          1 AS omitted
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND NOT (((SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000 AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000))
+        LIMIT 1
+        FORMAT JSON
+
+-- spec:traces-facets#2:bloom  [167e0f5f]
+SELECT
+          1 AS omitted
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND NOT (((SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000 AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000))
+        LIMIT 1
+        FORMAT JSON
+
+-- spec:traces-facets#2:text  [167e0f5f]
+SELECT
+          1 AS omitted
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND NOT (((SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000 AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000))
+        LIMIT 1
+        FORMAT JSON
+
+-- spec:traces-list-grouped-attr-fallback#1:baseline  [8e705c5c]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14315,7 +16115,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:bloom  [3fd93e22]
+-- spec:traces-list-grouped-attr-fallback#1:bloom  [3fd93e22]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14356,7 +16156,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:text  [f7e16154]
+-- spec:traces-list-grouped-attr-fallback#1:text  [f7e16154]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14397,7 +16197,64 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-duration-sort:baseline  [31bf5ac8]
+-- spec:traces-list-grouped-attr-fallback#2:baseline  [85dc095d]
+SELECT DISTINCT ON (traceId)
+          traces.TraceId AS traceId,
+          traces.Timestamp AS ts,
+          traces.Duration AS d
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
+          AND SpanAttributes['user.id'] = 'u1'
+          AND traces.SpanKind IN ('Server', 'Consumer')
+          AND traces.ParentSpanId != ''
+          AND traces.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- spec:traces-list-grouped-attr-fallback#2:bloom  [7e5136c7]
+SELECT DISTINCT ON (traceId)
+          traces.TraceId AS traceId,
+          traces.Timestamp AS ts,
+          traces.Duration AS d
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
+          AND ((has(mapKeys(SpanAttributes), 'user.id') AND has(mapValues(SpanAttributes), 'u1')) AND SpanAttributes['user.id'] = 'u1')
+          AND traces.SpanKind IN ('Server', 'Consumer')
+          AND traces.ParentSpanId != ''
+          AND traces.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- spec:traces-list-grouped-attr-fallback#2:text  [1b8089cf]
+SELECT DISTINCT ON (traceId)
+          traces.TraceId AS traceId,
+          traces.Timestamp AS ts,
+          traces.Duration AS d
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
+          AND (has(SpanAttributeItems, concat('user.id', char(31), 'u1')) AND SpanAttributes['user.id'] = 'u1')
+          AND traces.SpanKind IN ('Server', 'Consumer')
+          AND traces.ParentSpanId != ''
+          AND traces.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- spec:traces-list-grouped-duration-sort#1:baseline  [31bf5ac8]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14437,7 +16294,23 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:baseline  [a0e94af9]
+-- spec:traces-list-grouped-duration-sort#2:baseline  [6f853932]
+SELECT DISTINCT ON (traceId)
+          trace_list_entry_spans.TraceId AS traceId,
+          trace_list_entry_spans.Timestamp AS ts,
+          trace_list_entry_spans.Duration AS d
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY d DESC, ts DESC, traceId DESC
+        LIMIT 600
+        FORMAT JSON
+
+-- spec:traces-list-grouped#1:baseline  [a0e94af9]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14476,7 +16349,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:bloom  [a0e94af9]
+-- spec:traces-list-grouped#1:bloom  [a0e94af9]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14515,7 +16388,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:text  [a0e94af9]
+-- spec:traces-list-grouped#1:text  [a0e94af9]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14552,6 +16425,54 @@ SELECT
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
+        FORMAT JSON
+
+-- spec:traces-list-grouped#2:baseline  [0c88b671]
+SELECT DISTINCT ON (traceId)
+          trace_list_entry_spans.TraceId AS traceId,
+          trace_list_entry_spans.Timestamp AS ts,
+          trace_list_entry_spans.Duration AS d
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- spec:traces-list-grouped#2:bloom  [0c88b671]
+SELECT DISTINCT ON (traceId)
+          trace_list_entry_spans.TraceId AS traceId,
+          trace_list_entry_spans.Timestamp AS ts,
+          trace_list_entry_spans.Duration AS d
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- spec:traces-list-grouped#2:text  [0c88b671]
+SELECT DISTINCT ON (traceId)
+          trace_list_entry_spans.TraceId AS traceId,
+          trace_list_entry_spans.Timestamp AS ts,
+          trace_list_entry_spans.Duration AS d
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 200
         FORMAT JSON
 
 -- spec:traces-list:baseline  [0ea84771]
@@ -14656,7 +16577,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-stats:baseline  [fa38bf8f]
+-- spec:traces-stats:baseline  [3ddfcb7e]
 SELECT
           minIf(durationMin, traceCount > 0) / 1000000 AS minDurationMs,
           maxIf(durationMax, traceCount > 0) / 1000000 AS maxDurationMs,
@@ -14687,6 +16608,57 @@ SELECT
           AND trace_facets_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND trace_facets_hourly.ServiceName = 'api'
           AND trace_facets_hourly.DeploymentEnv = 'production'
+UNION ALL
+SELECT
+          count() AS traceCount,
+          min(rootless.slowest) AS durationMin,
+          max(rootless.slowest) AS durationMax,
+          quantilesTDigestState(0.5, 0.95)(slowest) AS durationQuantiles
+        FROM (SELECT
+          trace_list_entry_spans.TraceId AS traceId,
+          max(trace_list_entry_spans.Duration) AS slowest
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_list_entry_spans.ServiceName = 'api'
+          AND trace_list_entry_spans.DeploymentEnv = 'production'
+          AND trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000
+          AND cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT
+          cityHash64(trace_list_mv.TraceId) AS id
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 250001)) <= 250000
+          AND (SELECT count() FROM (SELECT
+          1 AS one
+        FROM trace_list_entry_spans
+        WHERE trace_list_entry_spans.OrgId = 'org_sql_catalog'
+          AND trace_list_entry_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_entry_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1000001)) <= 1000000)
+        GROUP BY traceId) AS rootless
 ) AS duration_tiers
         FORMAT JSON
 

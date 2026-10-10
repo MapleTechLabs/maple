@@ -64,9 +64,10 @@ export function dedupeBySpanId(spans: Span[]): Span[] {
 }
 
 /**
- * Build a span tree from a flat span list. Spans whose parent is absent are
- * grouped under a synthetic "Missing Span" placeholder root so orphaned
- * subtrees still render. Children and roots are sorted by start time and each
+ * Build a span tree from a flat span list. In a trace that has a root, spans
+ * whose parent is absent are grouped under a synthetic "Missing Span"
+ * placeholder root so orphaned subtrees still render; in a trace with no root
+ * they are the roots. Children and roots are sorted by start time and each
  * node's `depth` is assigned.
  *
  * Duplicate spanIds (at-least-once ingest delivery) collapse to a single node;
@@ -101,7 +102,16 @@ export function buildSpanTree(spans: Span[]): SpanNode[] {
 		}
 	}
 
+	// With no root span at all (the trace entered through a proxy that never
+	// exports its own span), the spans whose parent is absent are the top level.
+	// A placeholder is for a rooted trace, where it shows where a subtree hung.
+	const rootless = rootSpans.length === 0
+
 	for (const [missingParentId, children] of missingParentGroups) {
+		if (rootless) {
+			rootSpans.push(...children)
+			continue
+		}
 		const placeholder: SpanNode = {
 			traceId: children[0].traceId,
 			spanId: toSpanId(missingParentId),

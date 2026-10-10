@@ -83,6 +83,8 @@ function facetOpts(filters: TraceFilters): CH.TracesFacetsOpts {
 		namespace: filters.ns,
 		minDurationMs: filters.minDurationMs,
 		maxDurationMs: filters.maxDurationMs,
+		// The root list here pages `traceListQuery` alone, so the counts stay with it.
+		rootsOnly: true,
 	}
 }
 

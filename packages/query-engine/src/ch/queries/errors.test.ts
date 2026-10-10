@@ -499,8 +499,9 @@ describe("tracesFacetsQuery", () => {
 	it("compiles UNION ALL with 7 facet dimensions", () => {
 		const q = tracesFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		// 7 facet branches, each splicing a raw edge with the hourly interior.
-		expect(sql.match(/UNION ALL/g)).toHaveLength(6 + 7)
+		// 7 facet branches, each splicing a raw edge with the hourly interior
+		// and the traces that have no root span.
+		expect(sql.match(/UNION ALL/g)).toHaveLength(6 + 7 * 2)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).toContain("'spanName' AS facetType")
 		expect(sql).toContain("'httpMethod' AS facetType")
@@ -562,8 +563,8 @@ describe("tracesFacetsQuery", () => {
 	it("compiles only the requested branch when facet is set", () => {
 		const q = tracesFacetsQuery({ facet: "service" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		// The only UNION left is the branch's own two tiers.
-		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
+		// The only UNIONs left are between the branch's own three tiers.
+		expect(sql.match(/UNION ALL/g)).toHaveLength(2)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).not.toContain("'spanName' AS facetType")
 		expect(sql).not.toContain("'errorCount' AS facetType")
@@ -575,10 +576,10 @@ describe("tracesFacetsQuery", () => {
 	it("keeps the non-service branch empty-value guard when facet-scoped", () => {
 		const q = tracesFacetsQuery({ facet: "deploymentEnv" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
+		expect(sql.match(/UNION ALL/g)).toHaveLength(2)
 		expect(sql).toContain("'deploymentEnv' AS facetType")
-		// On both tiers.
-		expect(sql.match(/DeploymentEnv != ''/g)).toHaveLength(2)
+		// On every tier.
+		expect(sql.match(/DeploymentEnv != ''/g)).toHaveLength(3)
 		expect(sql).toContain("LIMIT 20")
 	})
 })
@@ -592,16 +593,15 @@ describe("trace facets rollup routing", () => {
 		]) {
 			expect(sql).toContain("FROM trace_facets_hourly")
 			expect(sql).toContain("FROM trace_list_mv")
-			// Every filter reaches both tiers.
-			expect(sql.match(/ServiceName IN \('api', 'web'\)/g)).toHaveLength(2)
-			expect(sql.match(/HasError = 1/g)).toHaveLength(2)
-			expect(sql.match(/DeploymentEnv = 'production'/g)).toHaveLength(2)
+			// Every filter reaches all three tiers.
+			expect(sql.match(/ServiceName IN \('api', 'web'\)/g)).toHaveLength(3)
+			expect(sql.match(/HasError = 1/g)).toHaveLength(3)
+			expect(sql.match(/DeploymentEnv = 'production'/g)).toHaveLength(3)
 		}
 	})
 
-	it("reads only trace_list_mv, for the whole window, when the rollup cannot answer", () => {
+	it("reads trace_list_mv for the whole window when the rollup cannot answer", () => {
 		for (const opts of [
-			{ rawOnly: true },
 			{ minDurationMs: 100 },
 			{ maxDurationMs: 100 },
 			{ attributeFilterKey: "http.route", attributeFilterValue: "/users" },
@@ -610,10 +610,88 @@ describe("trace facets rollup routing", () => {
 			const facets = compileUnionUnsafe(tracesFacetsQuery(opts), baseParams).sql
 			expect(facets, JSON.stringify(opts)).not.toContain("trace_facets_hourly")
 			expect(facets, JSON.stringify(opts)).not.toContain("INTERVAL 1 HOUR")
-			expect(facets.match(/UNION ALL/g), JSON.stringify(opts)).toHaveLength(6)
+			// The rootless tier stays: it never depended on the rollup.
+			expect(facets.match(/UNION ALL/g), JSON.stringify(opts)).toHaveLength(6 + 7)
 		}
+	})
+
+	it("reads only trace_list_mv when told the cluster lacks the other tables", () => {
+		const facets = compileUnionUnsafe(tracesFacetsQuery({ rawOnly: true }), baseParams).sql
 		const stats = compileUnsafe(tracesDurationStatsQuery({ rawOnly: true }), baseParams).sql
-		expect(stats).not.toContain("trace_facets_hourly")
-		expect(stats).not.toContain("INTERVAL 1 HOUR")
+		expect(facets.match(/UNION ALL/g)).toHaveLength(6)
+		for (const sql of [facets, stats]) {
+			expect(sql).not.toContain("trace_facets_hourly")
+			expect(sql).not.toContain("trace_list_entry_spans")
+			expect(sql).not.toContain("INTERVAL 1 HOUR")
+		}
+	})
+
+	it("keeps the rollup on a cluster that lacks only the entry-span table", () => {
+		const facets = compileUnionUnsafe(tracesFacetsQuery({ rootsOnly: true }), baseParams).sql
+		const stats = compileUnsafe(tracesDurationStatsQuery({ rootsOnly: true }), baseParams).sql
+		expect(facets.match(/UNION ALL/g)).toHaveLength(6 + 7)
+		for (const sql of [facets, stats]) {
+			expect(sql).toContain("FROM trace_facets_hourly")
+			expect(sql).not.toContain("trace_list_entry_spans")
+		}
+	})
+})
+
+describe("trace facets for traces with no root span", () => {
+	/** The last tier reading `trace_list_entry_spans`: the error count's, in the full facet union. */
+	const rootlessTier = (sql: string): string => {
+		const tier = sql
+			.split("UNION ALL")
+			.filter((part) => part.includes("FROM trace_list_entry_spans\n"))
+			.at(-1)
+		expect(tier).toBeDefined()
+		return tier!
+	}
+
+	it("counts each rootless trace once, over the whole window", () => {
+		const tier = rootlessTier(
+			compileUnionUnsafe(tracesFacetsQuery({ facet: "service", serviceNames: ["api"] }), baseParams)
+				.sql,
+		)
+		// One per trace, as the list shows it: two matching entry spans are one row there.
+		expect(tier).toContain("uniq(trace_list_entry_spans.TraceId) AS count")
+		expect(tier).toContain("ServiceName = 'api'")
+		expect(tier).toContain("trace_list_entry_spans.Timestamp >= '2024-01-01 00:00:00'")
+		expect(tier).toContain("trace_list_entry_spans.Timestamp <= '2024-01-02 00:00:00'")
+		// The rollup cannot hold these, so this tier is not narrowed to the end hours.
+		expect(tier).not.toContain("toStartOfHour")
+		expect(tier).toContain("cityHash64(trace_list_entry_spans.TraceId) NOT IN (SELECT")
+		// Both tables are budgeted, and an entry span stands in only once its root had time to arrive.
+		expect(tier).toContain("LIMIT 250001)) <= 250000")
+		expect(tier).toContain("LIMIT 1000001)) <= 1000000")
+		expect(tier).toContain("trace_list_entry_spans.Timestamp <= now() - INTERVAL 30 SECOND")
+	})
+
+	it("adds them to the error count and the duration stats", () => {
+		const errorTier = rootlessTier(compileUnionUnsafe(tracesFacetsQuery({}), baseParams).sql)
+		expect(errorTier).toContain("uniq(trace_list_entry_spans.TraceId) AS count")
+		expect(errorTier).toContain("HasError = 1")
+
+		const stats = rootlessTier(compileUnsafe(tracesDurationStatsQuery({}), baseParams).sql)
+		// One sample per trace, its slowest entry span: not one per entry span.
+		expect(stats).toContain("max(trace_list_entry_spans.Duration) AS slowest")
+		expect(stats).toContain("GROUP BY traceId) AS rootless")
+		expect(stats).toContain("quantilesTDigestState(0.5, 0.95)(slowest)")
+		expect(stats).toContain("NOT IN (SELECT")
+	})
+
+	it("carries the attribute filter's correlated EXISTS", () => {
+		const tier = rootlessTier(
+			compileUnionUnsafe(
+				tracesFacetsQuery({
+					facet: "service",
+					attributeFilterKey: "http.route",
+					attributeFilterValue: "/users",
+				}),
+				baseParams,
+			).sql,
+		)
+		expect(tier).toContain("EXISTS")
+		expect(tier).toContain("t_attr.SpanAttributes")
 	})
 })

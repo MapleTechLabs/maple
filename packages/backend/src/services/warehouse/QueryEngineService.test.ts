@@ -298,79 +298,247 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
-	// The sidebar's two reads: a failure on the first one is what either returns.
-	const traceSidebarStub = (failRollup: () => unknown) => {
-		const queries: Array<string> = []
+	// The sidebar's reads, by `query.context`: a failure on a table is what any read naming it returns.
+	const traceSidebarStub = (failing: string, fail: () => unknown) => {
+		const reads: Array<{ readonly context: string; readonly sql: string }> = []
 		const execute = makeQueryEngineExecute(
 			makeTinybirdStub({
-				sqlQuery: (_tenant, sql) => {
-					queries.push(sql)
-					return sql.includes("trace_facets_hourly")
-						? Effect.fail(failRollup() as WarehouseConfigError)
-						: Effect.succeed(
-								sql.includes("facetType")
-									? [{ name: "api", count: 3, facetType: "service" }]
-									: [
-											{
-												minDurationMs: 1,
-												maxDurationMs: 9,
-												p50DurationMs: 4,
-												p95DurationMs: 8,
-											},
-										],
-							)
+				sqlQuery: (_tenant, sql, options) => {
+					reads.push({ context: options?.context ?? "", sql })
+					if (sql.includes(failing)) return Effect.fail(fail() as WarehouseConfigError)
+					if (sql.includes("AS omitted")) return Effect.succeed([])
+					return Effect.succeed(
+						sql.includes("facetType")
+							? [{ name: "api", count: 3, facetType: "service" }]
+							: [{ minDurationMs: 1, maxDurationMs: 9, p50DurationMs: 4, p95DurationMs: 8 }],
+					)
 				},
 			}),
 		)
-		return { queries, execute }
+		/** The statements of the sidebar's own query, in the order they were tried. */
+		const attempts = () =>
+			reads.filter((read) => !read.sql.includes("AS omitted")).map((read) => read.sql)
+		return { attempts, execute }
 	}
 	const sidebarRequest = (kind: "facets" | "stats") => ({
 		startTime: "2026-01-01 00:00:00",
 		endTime: "2026-01-08 00:00:00",
 		query: { kind, source: "traces" as const },
 	})
+	const missingTable = (table: string) => () =>
+		new WarehouseConfigError({
+			message: `Unknown table expression identifier '${table}'`,
+			pipeName: "tracesFacets",
+			clickhouseType: "UNKNOWN_TABLE",
+		})
 
 	it.effect("reads trace_list_mv when the cluster lacks trace_facets_hourly", () =>
 		Effect.gen(function* () {
 			for (const kind of ["facets", "stats"] as const) {
-				const { queries, execute } = traceSidebarStub(
-					() =>
-						new WarehouseConfigError({
-							message: "Unknown table expression identifier 'trace_facets_hourly'",
-							pipeName: "tracesFacets",
-							clickhouseType: "UNKNOWN_TABLE",
-						}),
+				const { attempts, execute } = traceSidebarStub(
+					"trace_facets_hourly",
+					missingTable("trace_facets_hourly"),
 				)
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
-				assert.strictEqual(queries.length, 2, kind)
-				assert.ok(queries[0]!.includes("trace_facets_hourly"), kind)
-				assert.ok(!queries[1]!.includes("trace_facets_hourly"), kind)
+				const [first, second, ...rest] = attempts()
+				assert.deepStrictEqual(rest, [], kind)
+				assert.ok(first!.includes("trace_facets_hourly"), kind)
+				assert.ok(!second!.includes("trace_facets_hourly"), kind)
+				// A cluster without 0034 has no 0038 either.
+				assert.ok(!second!.includes("trace_list_entry_spans"), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),
 	)
 
-	it.effect("surfaces a rollup read that failed for another reason instead of rereading raw", () =>
+	it.effect("keeps the rollup when the cluster lacks only trace_list_entry_spans", () =>
 		Effect.gen(function* () {
-			const { queries, execute } = traceSidebarStub(
-				() =>
-					new WarehouseQuotaExceededError({
-						message: "Timeout exceeded while reading from table default.trace_facets_hourly",
-						pipeName: "tracesFacets",
-						setting: "max_execution_time",
-					}),
-			)
-			const exit = yield* Effect.exit(execute(tenant, sidebarRequest("facets")))
+			for (const kind of ["facets", "stats"] as const) {
+				const { attempts, execute } = traceSidebarStub(
+					"trace_list_entry_spans",
+					missingTable("trace_list_entry_spans"),
+				)
+				const response = yield* execute(tenant, sidebarRequest(kind))
 
-			assert.isTrue(Exit.isFailure(exit))
-			assert.strictEqual(queries.length, 1)
-			assert.strictEqual(
-				(getFailure(exit) as { _tag?: string } | undefined)?._tag,
-				"@maple/http/errors/WarehouseQuotaExceededError",
-			)
+				const [first, second, ...rest] = attempts()
+				assert.deepStrictEqual(rest, [], kind)
+				assert.ok(first!.includes("trace_list_entry_spans"), kind)
+				assert.ok(!second!.includes("trace_list_entry_spans"), kind)
+				assert.ok(second!.includes("trace_facets_hourly"), kind)
+				assert.strictEqual(response.result.kind, kind)
+			}
 		}),
 	)
+
+	it.effect("surfaces a read that failed for another reason instead of rereading without the table", () =>
+		Effect.gen(function* () {
+			for (const table of ["trace_facets_hourly", "trace_list_entry_spans"]) {
+				const { attempts, execute } = traceSidebarStub(
+					table,
+					() =>
+						new WarehouseQuotaExceededError({
+							message: `Timeout exceeded while reading from table default.${table}`,
+							pipeName: "tracesFacets",
+							setting: "max_execution_time",
+						}),
+				)
+				const exit = yield* Effect.exit(execute(tenant, sidebarRequest("facets")))
+
+				assert.isTrue(Exit.isFailure(exit), table)
+				assert.strictEqual(attempts().length, 1, table)
+				assert.strictEqual(
+					(getFailure(exit) as { _tag?: string } | undefined)?._tag,
+					"@maple/http/errors/WarehouseQuotaExceededError",
+				)
+			}
+		}),
+	)
+
+	it.effect("says when the facets left traces with no root span out", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, sql) =>
+						Effect.succeed(
+							sql.includes("AS omitted")
+								? [{ omitted: 1 }]
+								: [{ name: "api", count: 3, facetType: "service" }],
+						),
+				}),
+			)
+			const { result } = yield* execute(tenant, sidebarRequest("facets"))
+			assert.strictEqual(result.kind === "facets" && result.rootlessTracesOmitted, true)
+		}),
+	)
+
+	describe("grouped trace list", () => {
+		const second = (s: number) => `2026-01-01 00:00:${String(s).padStart(2, "0")}`
+		const position = (traceId: string, s: number) => ({ traceId, ts: second(s), d: 0 })
+		const listRow = (traceId: string, s: number) => ({
+			traceId,
+			startTime: `${second(s)}.000000000`,
+			startSecond: second(s),
+			endTime: `${second(s)}.000000000`,
+			durationMicros: 0,
+			rootDurationMicros: 0,
+			spanCount: 1,
+			services: ["api"],
+			rootSpanName: `op-${traceId}`,
+			rootSpanKind: "Server",
+			rootSpanStatusCode: "Ok",
+			rootHttpMethod: "",
+			rootHttpRoute: "",
+			rootHttpStatusCode: "",
+			rootSpanAttributes: "{}",
+			hasError: 0,
+		})
+		type Reads = Partial<Record<string, ReadonlyArray<Record<string, unknown>> | (() => unknown)>>
+
+		// Two roots fill a two-row page: it ends at 20s.
+		const run = (reads: Reads) =>
+			Effect.gen(function* () {
+				const asked: Array<{ readonly context: string; readonly sql: string }> = []
+				const execute = makeQueryEngineExecute(
+					makeTinybirdStub({
+						sqlQuery: (_tenant, sql, options) => {
+							const context = options?.context ?? ""
+							asked.push({ context, sql })
+							const read = reads[context] ?? []
+							return typeof read === "function"
+								? Effect.fail(read() as WarehouseConfigError)
+								: Effect.succeed(read)
+						},
+					}),
+				)
+				const { result } = yield* execute(tenant, {
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:01:00",
+					query: { kind: "list", source: "traces", groupByTrace: true, limit: 2 },
+				})
+				if (result.kind !== "list") throw new Error(`expected a list, got ${result.kind}`)
+				return {
+					traceIds: result.data.map((row) => (row as { traceId: string }).traceId),
+					rootlessTraces: result.rootlessTraces,
+					contexts: asked.map((read) => read.context).sort(),
+					sqlOf: (context: string) => asked.find((read) => read.context === context)?.sql ?? "",
+				}
+			})
+		const rooted = [listRow("r1", 30), listRow("r2", 20)]
+		const roots = [position("r1", 30), position("r2", 20)]
+
+		it.effect("is the rooted page alone when no entry span is near it", () =>
+			Effect.gen(function* () {
+				const page = yield* run({ traceList: rooted })
+				assert.deepStrictEqual(page.traceIds, ["r1", "r2"])
+				assert.strictEqual(page.rootlessTraces, undefined)
+				assert.deepStrictEqual(page.contexts, ["traceList", "traceListEntries"])
+				assert.ok(!page.sqlOf("traceList").includes("trace_list_entry_spans"))
+			}),
+		)
+
+		it.effect("leaves the page alone when its candidates all have a root span", () =>
+			Effect.gen(function* () {
+				const page = yield* run({
+					traceList: rooted,
+					traceListEntries: [position("x", 25)],
+					traceListRoots: roots,
+					traceListRootedCandidates: [{ traceId: "x" }],
+					traceListRootsInRange: [{ roots: 12 }],
+				})
+				assert.deepStrictEqual(page.traceIds, ["r1", "r2"])
+				assert.strictEqual(page.rootlessTraces, undefined)
+				assert.ok(!page.contexts.includes("traceListByIds"))
+				// Asked of the candidate's own bounds (25s, plus five minutes), not the window's.
+				const lookup = page.sqlOf("traceListRootedCandidates")
+				assert.ok(lookup.includes("TraceId IN ('x')"))
+				assert.ok(lookup.includes("subtractHours(toDateTime('2026-01-01 00:00:25'), 1)"))
+				assert.ok(lookup.includes("Timestamp <= '2026-01-01 00:05:25'"))
+			}),
+		)
+
+		it.effect("merges a trace with no root span into the page at its entry span", () =>
+			Effect.gen(function* () {
+				const page = yield* run({
+					traceList: rooted,
+					// `y` is past the page's last root.
+					traceListEntries: [position("x", 25), position("y", 5)],
+					traceListRoots: roots,
+					traceListRootsInRange: [{ roots: 12 }],
+					traceListByIds: [listRow("x", 24)],
+				})
+				assert.deepStrictEqual(page.traceIds, ["r1", "x"])
+				assert.strictEqual(page.rootlessTraces, "listed")
+				assert.ok(page.sqlOf("traceListRootedCandidates").includes("TraceId IN ('x')"))
+				// Only the row not already in hand is fetched.
+				assert.ok(page.sqlOf("traceListByIds").includes("TraceId IN ('x')"))
+			}),
+		)
+
+		it.effect("says so when the roots around the page are too many to check", () =>
+			Effect.gen(function* () {
+				const page = yield* run({
+					traceList: rooted,
+					traceListEntries: [position("x", 25)],
+					traceListRoots: roots,
+					traceListRootsInRange: [{ roots: 3_000_001 }],
+				})
+				assert.deepStrictEqual(page.traceIds, ["r1", "r2"])
+				assert.strictEqual(page.rootlessTraces, "omitted")
+			}),
+		)
+
+		it.effect("lists rooted traces only on a cluster without trace_list_entry_spans", () =>
+			Effect.gen(function* () {
+				const page = yield* run({
+					traceList: rooted,
+					traceListEntries: missingTable("trace_list_entry_spans"),
+				})
+				assert.deepStrictEqual(page.traceIds, ["r1", "r2"])
+				assert.strictEqual(page.rootlessTraces, undefined)
+			}),
+		)
+	})
 
 	it.effect("fills missing buckets while preserving existing traces values", () =>
 		Effect.gen(function* () {

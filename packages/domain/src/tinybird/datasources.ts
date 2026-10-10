@@ -1036,6 +1036,44 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 
 export type ErrorFingerprintsMinutelyRow = InferRow<typeof errorFingerprintsMinutely>
 
+/** One trace-list row per span: the layout the root-span and entry-span tables share. */
+const defineTraceListRows = <Name extends string>(name: Name, description: string) =>
+	defineDatasource(name, {
+		tenantColumn: "OrgId",
+		description,
+		jsonPaths: false,
+		schema: {
+			OrgId: t.string().lowCardinality().brand(OrgId),
+			TraceId: t.string(),
+			Timestamp: utcDateTime(),
+			ServiceName: t.string().lowCardinality(),
+			SpanName: t.string(),
+			SpanKind: t.string().lowCardinality(),
+			Duration: t.uint64(),
+			StatusCode: t.string().lowCardinality(),
+			HttpMethod: t.string().lowCardinality(),
+			HttpRoute: t.string(),
+			HttpStatusCode: t.string().lowCardinality(),
+			DeploymentEnv: t.string().lowCardinality(),
+			HasError: t.uint8(),
+			TraceState: t.string(),
+			ServiceNamespace: t.string().lowCardinality(),
+		},
+		engine: engine.mergeTree({
+			partitionKey: "toDate(Timestamp)",
+			sortingKey: ["OrgId", "Timestamp", "TraceId"],
+			ttl: "Timestamp + INTERVAL 30 DAY",
+		}),
+		indexes: [
+			{
+				name: "idx_service_namespace",
+				expr: "ServiceNamespace",
+				type: "set(1000)",
+				granularity: 4,
+			},
+		],
+	})
+
 /**
  * Pre-materialized root spans for the trace list view.
  * Extracts HTTP attributes and normalizes span names at write time
@@ -1043,44 +1081,25 @@ export type ErrorFingerprintsMinutelyRow = InferRow<typeof errorFingerprintsMinu
  * Sorted by (OrgId, Timestamp, TraceId) for fast time-range pagination.
  * Populated by materialized view, not direct ingestion.
  */
-export const traceListMv = defineDatasource("trace_list_mv", {
-	tenantColumn: "OrgId",
-	description:
-		"Pre-materialized root spans for the trace list view. Extracts HTTP attributes and normalizes span names at write time. Populated by materialized view.",
-	jsonPaths: false,
-	schema: {
-		OrgId: t.string().lowCardinality().brand(OrgId),
-		TraceId: t.string(),
-		Timestamp: utcDateTime(),
-		ServiceName: t.string().lowCardinality(),
-		SpanName: t.string(),
-		SpanKind: t.string().lowCardinality(),
-		Duration: t.uint64(),
-		StatusCode: t.string().lowCardinality(),
-		HttpMethod: t.string().lowCardinality(),
-		HttpRoute: t.string(),
-		HttpStatusCode: t.string().lowCardinality(),
-		DeploymentEnv: t.string().lowCardinality(),
-		HasError: t.uint8(),
-		TraceState: t.string(),
-		ServiceNamespace: t.string().lowCardinality(),
-	},
-	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "Timestamp + INTERVAL 30 DAY",
-	}),
-	indexes: [
-		{
-			name: "idx_service_namespace",
-			expr: "ServiceNamespace",
-			type: "set(1000)",
-			granularity: 4,
-		},
-	],
-})
+export const traceListMv = defineTraceListRows(
+	"trace_list_mv",
+	"Pre-materialized root spans for the trace list view. Extracts HTTP attributes and normalizes span names at write time. Populated by materialized view.",
+)
 
 export type TraceListMvRow = InferRow<typeof traceListMv>
+
+/**
+ * Server/Consumer spans that have a parent, in `trace_list_mv`'s layout. A trace
+ * whose root span never reaches Maple (a proxy injected `traceparent` without
+ * exporting its span, or the root was dropped) has no row in `trace_list_mv`;
+ * the trace list, its facets and the trace search read its entry spans here.
+ */
+export const traceListEntrySpans = defineTraceListRows(
+	"trace_list_entry_spans",
+	"Server/Consumer spans that have a parent, in trace_list_mv's layout. Stands in for traces whose root span was never received. Populated by materialized view.",
+)
+
+export type TraceListEntrySpansRow = InferRow<typeof traceListEntrySpans>
 
 /**
  * Hourly rollup of `trace_list_mv` for the traces sidebar facets and duration

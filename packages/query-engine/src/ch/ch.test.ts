@@ -1426,8 +1426,8 @@ describe("converted queries", () => {
 			matchModes: { serviceName: "contains" },
 		})
 		const { sql } = compileUnsafe(q, baseParams)
-		// On both tiers: the trace_list_mv edges and the hourly interior.
-		expect(sql.match(/positionCaseInsensitive\((\w+\.)?ServiceName, 'api'\) > 0/g)).toHaveLength(2)
+		// On every tier: the trace_list_mv edges, the hourly interior and the rootless entry spans.
+		expect(sql.match(/positionCaseInsensitive\((\w+\.)?ServiceName, 'api'\) > 0/g)).toHaveLength(3)
 	})
 
 	it("spanHierarchyQuery projects only the trimmed tree attribute keys", () => {

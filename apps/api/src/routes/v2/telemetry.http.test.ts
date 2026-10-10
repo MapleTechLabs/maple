@@ -125,7 +125,7 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 				httpStatusCode: "200",
 			},
 		]
-		return sql.includes("TraceId <") ? rows.slice(1) : rows
+		return sql.includes("traceId <") ? rows.slice(1) : rows
 	}
 	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
 	if (

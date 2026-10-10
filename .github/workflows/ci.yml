@@ -538,6 +538,17 @@ jobs:
                   bun run --filter=@maple/backend test --
                   src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
 
+            # A trace with no root span that nothing lists is also "no data".
+            - name: Verify traces with no root span are listed
+              env:
+                  CLICKHOUSE_E2E: "1"
+                  CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
+                  CLICKHOUSE_E2E_USER: maple
+                  CLICKHOUSE_E2E_PASSWORD: maple
+              run: >-
+                  bun run --filter=@maple/backend test --
+                  src/services/warehouse/trace-list-rootless.clickhouse.e2e.test.ts
+
     local-checkpoint-native:
         name: Local checkpoint native
         needs: changes

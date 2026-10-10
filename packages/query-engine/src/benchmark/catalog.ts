@@ -160,6 +160,7 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 		allCapabilities: true,
 	},
 	{ pipe: "slow_traces", label: "default", params: { service: "api", deployment_env: "production" } },
+	{ pipe: "slow_traces", label: "with-rootless", params: { service: "api", roots_only: false } },
 	{ pipe: "span_search", label: "default", params: { search: "timeout" }, allCapabilities: true },
 	{ pipe: "top_operations", label: "default", params: { service_name: "api", metric: "p95_duration" } },
 
@@ -1187,7 +1188,7 @@ export function undecodedColumns(
  */
 const ROLLUP_TABLE_RE = /\w_(?:hourly|minutely|daily)\b|\w_aggregates_\w/
 const RAW_TABLE_RE =
-	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans|trace_list_mv)\b/
+	/\bFROM\s+(?:traces|logs|service_map_spans|service_map_children|service_overview_spans|trace_list_mv|trace_list_entry_spans)\b/
 
 /**
  * The `firstFullBucket` fragment `makeGrain` emits. Structural rather than a

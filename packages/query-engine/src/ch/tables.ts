@@ -102,6 +102,9 @@ export const AiCrawlerRequests = Datasources.aiCrawlerRequests
 
 export const TraceListMv = Datasources.traceListMv
 
+/** Entry spans with a parent, in `TraceListMv`'s columns: see `rootlessTraceConditions`. */
+export const TraceListEntrySpans = Datasources.traceListEntrySpans
+
 export const TraceFacetsHourly = Datasources.traceFacetsHourly
 
 export const Logs = Datasources.logs

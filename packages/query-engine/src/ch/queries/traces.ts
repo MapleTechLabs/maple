@@ -2,13 +2,14 @@
 //
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
-import type { DateTime } from "effect"
+import { DateTime } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
 import { subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	from,
+	fromQuery,
 	fromUnion,
 	unionAll,
 	type CHQuery,
@@ -21,6 +22,7 @@ import {
 	ServiceOverviewHourly,
 	ServiceOverviewMinutely,
 	TraceDetailSpans,
+	TraceListEntrySpans,
 	TraceListMv,
 	Traces,
 	TracesAggregatesHourly,
@@ -37,6 +39,7 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "./series-cap"
 import { edgeCondition, hourGrain, interiorBounds, utcInteriorConditions, minuteGrain } from "./rollup-splice"
+import { entriesInWindow, rootlessTraceConditions, rootsInWindow, settledEntrySpan } from "./rootless-traces"
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
@@ -1116,12 +1119,15 @@ export function tracesListQuery(opts: TracesListOpts) {
 // `observability/find-slow-traces.ts`. Returns the slowest root spans
 // (`ParentSpanId = ''`) ordered by Duration DESC at the database, so the
 // caller gets the actual slowest traces in the window rather than the most
-// recent. OrgId-scoped per the Warehouse Query Pattern.
+// recent. A trace with no root span competes with its slowest entry span.
+// OrgId-scoped per the Warehouse Query Pattern.
 
 export interface SlowTracesOpts {
 	service?: string
 	environment?: string
 	limit?: number
+	/** Read root spans only: for clusters that have not applied migration 0038. */
+	rootsOnly?: boolean
 }
 
 export interface SlowTracesOutput {
@@ -1134,7 +1140,15 @@ export interface SlowTracesOutput {
 }
 
 export function slowTracesQuery(opts: SlowTracesOpts) {
-	return from(TraceListMv)
+	const limit = opts.limit ?? 10
+	const inScope = ($: ColumnAccessor<typeof TraceListMv.columns>) => [
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
+		CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
+		CH.when(opts.environment, (v: string) => $.DeploymentEnv.eq(v)),
+	]
+	const roots = from(TraceListMv)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanName: $.SpanName,
@@ -1143,15 +1157,30 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			statusCode: $.StatusCode,
 			timestamp: $.Timestamp,
 		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
-			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.environment, (v: string) => $.DeploymentEnv.eq(v)),
-		])
+		.where(inScope)
 		.orderBy(["durationMs", "desc"])
-		.limit(opts.limit ?? 10)
+		.limit(limit)
+	// One row per trace, its slowest entry span. Grouped only on this arm: the
+	// roots arm keeps its top-N sort.
+	const rootless = () =>
+		from(TraceListEntrySpans)
+			.select(($) => ({
+				traceId: $.TraceId,
+				spanName: CH.argMax($.SpanName, $.Duration),
+				serviceName: CH.argMax($.ServiceName, $.Duration),
+				durationMs: CH.max_($.Duration).div(1000000),
+				statusCode: CH.argMax($.StatusCode, $.Duration),
+				timestamp: CH.argMax($.Timestamp, $.Duration),
+			}))
+			.where(($) => [...inScope($), ...rootlessTraceConditions($.TraceId, $.Timestamp)])
+			.groupBy("traceId")
+			.orderBy(["durationMs", "desc"])
+			.limit(limit)
+
+	return fromUnion(opts.rootsOnly ? unionAll(roots) : unionAll(roots, rootless()), "slowest")
+		.select("traceId", "spanName", "serviceName", "durationMs", "statusCode", "timestamp")
+		.orderBy(["durationMs", "desc"])
+		.limit(limit)
 		.format("JSON")
 }
 
@@ -1319,6 +1348,8 @@ export interface TraceSummariesOpts extends TracesBaseWhereOpts {
 	limit?: number
 	offset?: number
 	cursor?: { timestamp: DateTime.Utc; traceId: string }
+	/** Read root spans only: for clusters that have not applied migration 0038. */
+	rootsOnly?: boolean
 }
 
 export interface TraceSummaryOutput {
@@ -1343,10 +1374,15 @@ export interface TraceSummaryOutput {
 const argMin = CH.argMin
 
 /**
- * Public trace catalog read over the root-span MV, ordered deterministically.
+ * Public trace catalog read, one summary per trace, ordered deterministically.
  * Signal filters match any span by default. A tenant/time-filtered `IN`
- * semi-join selects owning TraceIds before the root-summary MV is read, avoiding
- * a broad runtime JOIN while keeping the returned fields explicitly root-scoped.
+ * semi-join selects owning TraceIds before the list tables are read, avoiding
+ * a broad runtime JOIN.
+ *
+ * A trace is summarized by its root span, or with no root by its earliest
+ * settled entry span. Root and entry spans are grouped per trace and a root
+ * wins, so the choice needs no set of root ids: it costs the entry-span rows
+ * of the matched traces.
  */
 export function traceSummariesQuery(opts: TraceSummariesOpts) {
 	const attributeFilters = [
@@ -1381,34 +1417,84 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 				.groupBy("traceId")
 		: undefined
 
-	return from(TraceListMv)
+	const cursor = opts.cursor
+	// The spans that can summarize a trace. A root may start up to an hour before
+	// the window's first entry span (`rootsInWindow`); `entry` ranks it first.
+	const spans = <Name extends string>(source: Table<Name, typeof TraceListMv.columns>, entry: 0 | 1) =>
+		from(source)
+			.select(($) => ({
+				id: $.TraceId,
+				ts: $.Timestamp,
+				entry: CH.lit(entry),
+				duration: $.Duration,
+				name: $.SpanName,
+				kind: $.SpanKind,
+				service: $.ServiceName,
+				status: $.StatusCode,
+				error: $.HasError,
+				env: $.DeploymentEnv,
+				namespace: $.ServiceNamespace,
+				method: $.HttpMethod,
+				route: $.HttpRoute,
+				httpStatus: $.HttpStatusCode,
+			}))
+			.where(($) => [
+				...(entry === 1 ? [...entriesInWindow($), settledEntrySpan($.Timestamp)] : rootsInWindow($)),
+				matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
+				// A trace's summarizing span starts no more than that hour after the cursor.
+				cursor ? $.Timestamp.lte(DateTime.add(cursor.timestamp, { hours: 1 })) : undefined,
+			])
+
+	const first = CH.untypedExpr("(entry, ts)")
+	const summaries = fromUnion(
+		opts.rootsOnly
+			? unionAll(spans(TraceListMv, 0))
+			: unionAll(spans(TraceListMv, 0), spans(TraceListEntrySpans, 1)),
+		"spans",
+	)
 		.select(($) => ({
-			traceId: $.TraceId,
-			startTime: CH.min_($.Timestamp),
-			durationMs: argMin($.Duration, $.Timestamp).div(1000000),
-			rootSpanName: argMin($.SpanName, $.Timestamp),
-			rootSpanKind: argMin($.SpanKind, $.Timestamp),
-			rootServiceName: argMin($.ServiceName, $.Timestamp),
-			statusCode: argMin($.StatusCode, $.Timestamp),
-			hasError: CH.max_($.HasError),
-			deploymentEnvironment: argMin($.DeploymentEnv, $.Timestamp),
-			serviceNamespace: argMin($.ServiceNamespace, $.Timestamp),
-			httpMethod: argMin($.HttpMethod, $.Timestamp),
-			httpRoute: argMin($.HttpRoute, $.Timestamp),
-			httpStatusCode: argMin($.HttpStatusCode, $.Timestamp),
+			traceId: $.id,
+			startTime: argMin($.ts, first),
+			durationMs: argMin($.duration, first).div(1000000),
+			rootSpanName: argMin($.name, first),
+			rootSpanKind: argMin($.kind, first),
+			rootServiceName: argMin($.service, first),
+			statusCode: argMin($.status, first),
+			// A root's own flag; without a root, any entry span's.
+			hasError: CH.if_(CH.min_($.entry).eq(0), CH.maxIf($.error, $.entry.eq(0)), CH.max_($.error)),
+			deploymentEnvironment: argMin($.env, first),
+			serviceNamespace: argMin($.namespace, first),
+			httpMethod: argMin($.method, first),
+			httpRoute: argMin($.route, first),
+			httpStatusCode: argMin($.httpStatus, first),
 		}))
+		.groupBy("traceId")
+
+	return fromQuery(summaries, "summaries")
+		.select(
+			"traceId",
+			"startTime",
+			"durationMs",
+			"rootSpanName",
+			"rootSpanKind",
+			"rootServiceName",
+			"statusCode",
+			"hasError",
+			"deploymentEnvironment",
+			"serviceNamespace",
+			"httpMethod",
+			"httpRoute",
+			"httpStatusCode",
+		)
 		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
-			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
-			opts.cursor
-				? $.Timestamp.lt(opts.cursor.timestamp).or(
-						$.Timestamp.eq(opts.cursor.timestamp).and($.TraceId.lt(opts.cursor.traceId)),
-					)
+			// Drops a trace whose root started in the hour before the window.
+			$.startTime.gte(utcSecondsParam("startTime")),
+			cursor
+				? $.startTime
+						.lt(cursor.timestamp)
+						.or($.startTime.eq(cursor.timestamp).and($.traceId.lt(cursor.traceId)))
 				: undefined,
 		])
-		.groupBy("traceId")
 		.orderBy(["startTime", "desc"], ["traceId", "desc"])
 		.limit(opts.limit ?? 20)
 		.offset(opts.offset ?? 0)
@@ -1524,11 +1610,25 @@ export interface TraceListOpts extends TracesQueryOpts {
 	 */
 	sortBy?: TracesListSortKey
 	sortDir?: TracesListSortDir
+	/**
+	 * Aggregate exactly these traces instead of paging: stage 2 for a page that
+	 * was cut elsewhere (`executeTraceList` merges rootless traces into it).
+	 */
+	traceIds?: ReadonlyArray<string>
+}
+
+/** A trace and where a list page places it: what stage 1 reads. */
+export interface TraceListPositionOutput {
+	readonly traceId: string
+	/** Second-granular on the list tables, the span's own start on raw `traces`. */
+	readonly ts: DateTime.Utc
+	/** The row's own duration in nanoseconds: the `durationMs` sort key. */
+	readonly d: number
 }
 
 export interface TraceListOutput {
 	readonly traceId: string
-	/** Root span timestamp — the keyset cursor field, paired with `traceId`. */
+	/** Root span timestamp (the first span's, with no root): the keyset cursor field, paired with `traceId`. */
 	readonly startTime: DateTime.Utc
 	/** `startTime` truncated to the second: the page order on the `trace_list_mv` path. */
 	readonly startSecond: DateTime.Utc
@@ -1585,7 +1685,7 @@ const TRACE_LIST_MV_ATTR_COLUMNS = new Map<string, "HttpMethod" | "HttpStatusCod
  * — the raw table's `(OrgId, ServiceName, SpanName, Timestamp)` key cannot
  * serve a time-ordered scan without reading the whole window.
  *
- * The MV stores roots only (exactly this query's population) but has no
+ * The MV (and `trace_list_entry_spans`, which shares its layout) has no
  * attribute maps: only HTTP method/status filters that map onto its
  * pre-extracted columns are expressible; anything else falls back to raw.
  */
@@ -1679,6 +1779,72 @@ function traceListMvWhereConditions(
 }
 
 /**
+ * Stage 1 of the trace list: traces and the positions a page orders them by.
+ *
+ * `trace_list_mv` and `trace_list_entry_spans` are sorted `(OrgId, Timestamp,
+ * TraceId)`, so a page reads in order instead of scanning the window. Their
+ * Timestamp is second-granularity (`toDateTime`): the column's codec floors the
+ * stage-2 `startTime` cursor to the second, and the `(ts, traceId)` tuple
+ * ordering is what keeps pages disjoint despite the truncation ties. A filter
+ * those tables cannot express reads raw `traces` for the same rows.
+ */
+function traceListPositions(opts: TraceListOpts, entrySpans: boolean) {
+	const limit = opts.limit ?? 25
+	const offset = opts.offset ?? 0
+	const cursor = opts.cursor
+	const sortDir = opts.sortDir ?? "desc"
+	const order: Array<["traceId" | "ts" | "d", TracesListSortDir]> =
+		opts.sortBy === "durationMs"
+			? [
+					["d", sortDir],
+					["ts", sortDir],
+					["traceId", "desc"],
+				]
+			: [
+					["ts", sortDir],
+					["traceId", "desc"],
+				]
+
+	if (canUseTraceListMvStage1(opts)) {
+		const page = from(entrySpans ? TraceListEntrySpans : TraceListMv)
+			.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
+			.where(($) => [
+				...traceListMvWhereConditions($, opts),
+				CH.whenTrue(entrySpans, () => settledEntrySpan($.Timestamp)),
+				cursor
+					? $.Timestamp.lt(cursor.timestamp).or(
+							$.Timestamp.eq(cursor.timestamp).and($.TraceId.lt(cursor.traceId)),
+						)
+					: undefined,
+			])
+			.orderBy(...order)
+			.limit(limit)
+		return offset > 0 ? page.offset(offset) : page
+	}
+
+	const page = from(Traces)
+		.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
+		.where(($) => [
+			...buildWhereConditions($, opts),
+			...(entrySpans
+				? [
+						CH.inList($.SpanKind, ["Server", "Consumer"]),
+						$.ParentSpanId.neq(""),
+						settledEntrySpan($.Timestamp),
+					]
+				: [$.ParentSpanId.eq("")]),
+			cursor
+				? $.Timestamp.lt(cursor.timestamp).or(
+						$.Timestamp.eq(cursor.timestamp).and($.TraceId.lt(cursor.traceId)),
+					)
+				: undefined,
+		])
+		.orderBy(...order)
+		.limit(limit)
+	return offset > 0 ? page.offset(offset) : page
+}
+
+/**
  * Two-stage **trace**-level list: exactly one row per TraceId, carrying the real
  * span count, every participating service, and the trace's wall-clock duration.
  *
@@ -1700,71 +1866,20 @@ function traceListMvWhereConditions(
  * undercount `spanCount` at the window edge. The pad has to exist at all
  * because an unbounded stage 2 defeats partition pruning — the PK analysis
  * touches every retained partition and times out on prod-sized retention.
+ *
+ * A trace with no root span has no stage-1 row here. `executeTraceList` finds
+ * those through `traceListEntryPageQuery` and asks for their rows by `traceIds`.
  */
 export function traceListQuery(opts: TraceListOpts) {
 	const limit = opts.limit ?? 25
-	const offset = opts.offset ?? 0
-	const cursor = opts.cursor
 	const sortBy = opts.sortBy ?? "timestamp"
 	const sortDir = opts.sortDir ?? "desc"
-
-	// An IIFE per arm rather than a `let` widened to `CHQuery<any, any, any>`:
-	// the two stage-1 pages read different tables but the same three columns, and
-	// inferring their union keeps the splice below typed.
 	const pagesOverMv = canUseTraceListMvStage1(opts)
-	const pageQuery = pagesOverMv
-		? (() => {
-				// `trace_list_mv` is sorted `(OrgId, Timestamp, TraceId)`, so this pages
-				// read-in-order instead of scanning the window. Its Timestamp is
-				// second-granularity (`toDateTime`): the column's codec floors the
-				// stage-2 `startTime` cursor to the second, and the `(ts, traceId)` tuple
-				// ordering is what keeps pages disjoint despite the truncation ties.
-				const secCursor = cursor
-				const mvBase = from(TraceListMv)
-					.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
-					.where(($) => [
-						...traceListMvWhereConditions($, opts),
-						secCursor
-							? $.Timestamp.lt(secCursor.timestamp).or(
-									$.Timestamp.eq(secCursor.timestamp).and($.TraceId.lt(secCursor.traceId)),
-								)
-							: undefined,
-					])
-				let page = (
-					sortBy === "durationMs"
-						? mvBase.orderBy(["d", sortDir], ["ts", sortDir], ["traceId", "desc"])
-						: mvBase.orderBy(["ts", sortDir], ["traceId", "desc"])
-				).limit(limit)
-				if (offset > 0) {
-					page = page.offset(offset)
-				}
-				return page
-			})()
-		: (() => {
-				const pageBase = from(Traces)
-					.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
-					.where(($) => [
-						...buildWhereConditions($, opts),
-						$.ParentSpanId.eq(""),
-						cursor
-							? $.Timestamp.lt(cursor.timestamp).or(
-									$.Timestamp.eq(cursor.timestamp).and($.TraceId.lt(cursor.traceId)),
-								)
-							: undefined,
-					])
-				let page = (
-					sortBy === "durationMs"
-						? pageBase.orderBy(["d", sortDir], ["ts", sortDir], ["traceId", "desc"])
-						: pageBase.orderBy(["ts", sortDir], ["traceId", "desc"])
-				).limit(limit)
-				if (offset > 0) {
-					page = page.offset(offset)
-				}
-				return page
-			})()
+	const traceIds = opts.traceIds
+	const pageQuery = traceListPositions(opts, false)
 
-	// Lexicographic tuple ordering: true root first, earliest span as the
-	// tiebreaker for the (malformed) traces that ship no root at all.
+	// Lexicographic tuple ordering: true root first, earliest span for the
+	// traces that have no root at all.
 	const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 
 	const aggregated = from(TraceDetailSpans)
@@ -1812,7 +1927,9 @@ export function traceListQuery(opts: TraceListOpts) {
 			// (measured: 12h window, unbounded >10s; bounded <10s).
 			$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
 			$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
-			subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
+			traceIds
+				? $.TraceId.in_(...traceIds)
+				: subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
 		])
 		.groupBy("traceId")
 
@@ -1825,8 +1942,29 @@ export function traceListQuery(opts: TraceListOpts) {
 			? aggregated.orderBy(["rootDurationMicros", sortDir], [startKey, sortDir], ["traceId", "desc"])
 			: aggregated.orderBy([startKey, sortDir], ["traceId", "desc"])
 	)
-		.limit(limit)
+		.limit(traceIds ? traceIds.length : limit)
 		.format("JSON")
+}
+
+// One type for either stage-1 source, so a page compiles as a statement of its own.
+type TraceListPage = CHQuery<any, TraceListPositionOutput>
+
+/** The root spans a list page is cut from, at the positions `traceListQuery` pages them. */
+export function traceListRootPageQuery(opts: TraceListOpts): TraceListPage {
+	return traceListPositions(opts, false).format("JSON")
+}
+
+/**
+ * The traces a list page could be cut from by a settled entry span
+ * (Server/Consumer with a parent), each at its first one in page order: where
+ * the trace is listed if it has no root, which is `rootedTraceIdsQuery`'s
+ * question. ClickHouse parses `DISTINCT ON (x)` as `LIMIT 1 BY x`, which runs
+ * after `ORDER BY` (unlike a plain `DISTINCT`): the first row per trace of the
+ * ordered read, which still stops at the limit (measured: the newest 400 of
+ * 7 days in 0.1 s).
+ */
+export function traceListEntryPageQuery(opts: TraceListOpts): TraceListPage {
+	return traceListPositions(opts, true).distinctOn("traceId").format("JSON")
 }
 
 // Trace-list service enrichment

@@ -59,6 +59,14 @@ function TracesFilterSidebarView({
 		(filters.excludedHttpMethods?.length ?? 0) > 0 ||
 		(filters.excludedHttpStatusCodes?.length ?? 0) > 0
 
+	const rootTracesOnly = (
+		<SingleCheckboxFilter
+			title="Root traces only"
+			checked={filters.rootOnly ?? true}
+			onChange={(checked) => onFilterChange("rootOnly", checked ? undefined : false)}
+		/>
+	)
+
 	return (
 		<ResultView
 			result={facetsResult}
@@ -68,7 +76,8 @@ function TracesFilterSidebarView({
 			{(facetsResponse, { waiting }) => {
 				const facets = facetsResponse.data
 				if (!hasActiveFilters && (facets.services ?? []).length === 0) {
-					return <FilterSidebarEmpty />
+					// No trace to facet on does not mean no spans: this control lists them.
+					return <FilterSidebarEmpty>{rootTracesOnly}</FilterSidebarEmpty>
 				}
 
 				return (
@@ -82,13 +91,7 @@ function TracesFilterSidebarView({
 								count={facets.errorCount}
 							/>
 
-							<SingleCheckboxFilter
-								title="Root traces only"
-								checked={filters.rootOnly ?? true}
-								onChange={(checked) =>
-									onFilterChange("rootOnly", checked ? undefined : false)
-								}
-							/>
+							{rootTracesOnly}
 
 							{/* Only meaningful on the grouped trace list — the span-level
 						    list (rootOnly off) has no trace structure to judge. */}

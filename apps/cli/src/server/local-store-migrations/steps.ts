@@ -1194,5 +1194,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Both objects are new, so the bootstrap's IF NOT EXISTS CREATEs are the whole edge.
+		id: "local-0028-to-0029-trace-list-entry-spans",
+		from: 28,
+		to: 29,
+		description:
+			"Create trace_list_entry_spans and its materialized view, so a trace whose root span was never received is found by the trace search",
+		clonedBefore: "any DDL runs",
+		plan: [
+			[
+				"create-trace-list-entry-spans",
+				"Create trace_list_entry_spans and trace_list_entry_spans_mv via the v29 bootstrap (both new, IF NOT EXISTS)",
+			],
+		],
+		verifies: "Verify the v29 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_list_entry_spans",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"The projection accrues for spans ingested after the migration; an older trace with no root span stays readable by id but is not listed.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

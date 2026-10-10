@@ -29,6 +29,7 @@ import {
 	aiCrawlerRequests,
 	traceDetailSpans,
 	traceListMv,
+	traceListEntrySpans,
 	traceFacetsHourly,
 	attributeKeysHourly,
 	attributeValuesHourly,
@@ -1138,14 +1139,8 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
 	],
 })
 
-export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
-	description:
-		"Populates trace_list_mv from root spans with pre-extracted HTTP attributes and normalized span names.",
-	datasource: traceListMv,
-	nodes: [
-		node({
-			name: "trace_list_mv_node",
-			sql: `
+/** The trace-list row of one span; the two views differ only in which spans they admit. */
+const traceListRowsSql = (where: string) => `
         SELECT
           OrgId,
           TraceId,
@@ -1176,8 +1171,29 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
           TraceState,
           ResourceAttributes['service.namespace'] AS ServiceNamespace
         FROM traces
-        WHERE ParentSpanId = ''
-      `,
+        WHERE ${where}
+      `
+
+export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
+	description:
+		"Populates trace_list_mv from root spans with pre-extracted HTTP attributes and normalized span names.",
+	datasource: traceListMv,
+	nodes: [node({ name: "trace_list_mv_node", sql: traceListRowsSql("ParentSpanId = ''") })],
+})
+
+/**
+ * Whether a span's parent is stored is unknowable at insert (it may arrive
+ * later or never), so this admits every entry span that has one and the read
+ * side decides per trace: see `rootlessTraceConditions` in the query engine.
+ */
+export const traceListEntrySpansMv = defineMaterializedView("trace_list_entry_spans_mv", {
+	description:
+		"Populates trace_list_entry_spans from Server/Consumer spans that have a parent, in trace_list_mv's layout.",
+	datasource: traceListEntrySpans,
+	nodes: [
+		node({
+			name: "trace_list_entry_spans_mv_node",
+			sql: traceListRowsSql("SpanKind IN ('Server', 'Consumer') AND ParentSpanId != ''"),
 		}),
 	],
 })

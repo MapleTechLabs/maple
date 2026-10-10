@@ -632,6 +632,13 @@ export const QueryEngineResult = Schema.Union([
 		kind: Schema.Literal("list"),
 		source: Schema.Literals(["traces", "logs", "product_events"]),
 		data: Schema.Array(ListRow),
+		/**
+		 * Grouped trace lists only. `listed`: this page, or one before it, holds a
+		 * trace that has no root span, listed by an entry span. `omitted`: such traces could not all
+		 * be looked for on this page (too many candidates or root spans around
+		 * it), so some may be missing; a shorter range or a narrower filter finds them.
+		 */
+		rootlessTraces: Schema.optionalKey(Schema.Literals(["listed", "omitted"])),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeKeys"),
@@ -642,6 +649,11 @@ export const QueryEngineResult = Schema.Union([
 		kind: Schema.Literal("facets"),
 		source: Schema.Literals(["traces", "logs", "errors", "services"]),
 		data: Schema.Array(FacetItem),
+		/**
+		 * Trace facets only: the range holds entry spans, but too many rows to tell
+		 * which traces have no root span, so the counts cover rooted traces only.
+		 */
+		rootlessTracesOmitted: Schema.optionalKey(Schema.Boolean),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("stats"),

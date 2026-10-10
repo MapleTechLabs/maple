@@ -48,6 +48,7 @@ const RETENTION_DAYS = {
 	// Matches its source, trace_list_mv: facet counts past the list's own window
 	// would offer values that filter the list down to nothing.
 	trace_facets_hourly: 30,
+	trace_list_entry_spans: 30,
 	trace_list_mv: 30,
 	traces: 30,
 	traces_aggregates_hourly: 365,

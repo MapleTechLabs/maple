@@ -4,6 +4,7 @@
 
 import { finiteOrZero } from "./format"
 import { edgeCondition, utcInteriorConditions } from "./rollup-splice"
+import { rootlessTraceConditions } from "./rootless-traces"
 import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
@@ -28,6 +29,7 @@ import {
 	ServiceUsage,
 	TraceDetailSpans,
 	TraceFacetsHourly,
+	TraceListEntrySpans,
 	TraceListMv,
 	Traces,
 	orgIdParam,
@@ -553,7 +555,10 @@ export function recentTraceTimeProbeQuery(opts: { traceId: string }) {
 // Both count root spans over the window. When `trace_facets_hourly` carries the
 // filters, its whole hours answer the interior and `trace_list_mv` only the
 // partial hour at each end (`rollup-splice`); otherwise `trace_list_mv` answers
-// the whole window through the same union.
+// the whole window through the same union. Traces with no root span are a third
+// tier, read from `trace_list_entry_spans` for the whole window: the rollup
+// cannot hold them, because which entry spans stand in for a trace is only
+// known at read time. That read is budgeted (`rootless-traces`).
 
 export interface TracesDurationStatsOpts {
 	serviceName?: string
@@ -583,6 +588,8 @@ export interface TracesDurationStatsOpts {
 	}
 	/** Read only `trace_list_mv`: for clusters that have not applied migration 0034. */
 	rawOnly?: boolean
+	/** Leave out traces with no root span: for clusters that have not applied migration 0038. */
+	rootsOnly?: boolean
 }
 
 /** The facet dimensions, spelled the same on `trace_list_mv` and `trace_facets_hourly`. */
@@ -647,8 +654,19 @@ export function canUseTraceFacetsRollup(
 	)
 }
 
-/** `trace_list_mv` rows in the window, narrowed to the partial end hours when the rollup has the rest. */
-function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>, opts: TracesFacetsOpts) {
+/** Whether the entry-span tier is read: not on a cluster that lacks either newer table. */
+const withRootless = (opts: TracesDurationStatsOpts): boolean => !opts.rawOnly && !opts.rootsOnly
+
+/**
+ * Trace-list rows in the window. Root rows are narrowed to the partial end
+ * hours when the rollup has the rest; entry-span rows are narrowed to the
+ * traces that have no root.
+ */
+function traceListWindowConditions(
+	$: ColumnAccessor<typeof TraceListMv.columns>,
+	opts: TracesFacetsOpts,
+	rootless = false,
+) {
 	return [
 		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(utcSecondsParam("startTime")),
@@ -656,7 +674,9 @@ function traceListWindowConditions($: ColumnAccessor<typeof TraceListMv.columns>
 		...traceFacetDimensionConditions($, opts),
 		CH.when(opts.minDurationMs, (v: number) => $.Duration.gte(v * 1000000)),
 		CH.when(opts.maxDurationMs, (v: number) => $.Duration.lte(v * 1000000)),
-		CH.whenTrue(canUseTraceFacetsRollup(opts), () => edgeCondition("Timestamp")),
+		...(rootless
+			? rootlessTraceConditions($.TraceId, $.Timestamp)
+			: [CH.whenTrue(canUseTraceFacetsRollup(opts), () => edgeCondition("Timestamp"))]),
 	]
 }
 
@@ -692,6 +712,20 @@ export function tracesDurationStatsQuery(
 			durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(Duration)", T.string),
 		}))
 		.where(($) => traceListWindowConditions($, opts))
+	// One sample per trace: its slowest matching entry span, as the list ranks it.
+	const rootless = () =>
+		fromQuery(
+			from(TraceListEntrySpans)
+				.select(($) => ({ traceId: $.TraceId, slowest: CH.max_($.Duration) }))
+				.where(($) => traceListWindowConditions($, opts, true))
+				.groupBy("traceId"),
+			"rootless",
+		).select(($) => ({
+			traceCount: CH.count(),
+			durationMin: CH.min_($.slowest),
+			durationMax: CH.max_($.slowest),
+			durationQuantiles: CH.rawExpr("quantilesTDigestState(0.5, 0.95)(slowest)", T.string),
+		}))
 	const hourly = () =>
 		from(TraceFacetsHourly)
 			.select(($) => ({
@@ -707,7 +741,13 @@ export function tracesDurationStatsQuery(
 
 	const quantiles = "quantilesTDigestMerge(0.5, 0.95)(durationQuantiles)"
 	return fromUnion(
-		canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw),
+		canUseTraceFacetsRollup(opts)
+			? withRootless(opts)
+				? unionAll(raw, hourly(), rootless())
+				: unionAll(raw, hourly())
+			: withRootless(opts)
+				? unionAll(raw, rootless())
+				: unionAll(raw),
 		"duration_tiers",
 	)
 		.select(() => ({
@@ -750,8 +790,11 @@ type StringColumn<Cols extends ColumnDefs> = {
 }[keyof Cols & string]
 
 export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFacetsOutput> {
-	const rawWhere = ($: ColumnAccessor<typeof TraceListMv.columns>): Array<CH.Condition | undefined> => {
-		const conditions: Array<CH.Condition | undefined> = traceListWindowConditions($, opts)
+	const rawWhere = (
+		$: ColumnAccessor<typeof TraceListMv.columns>,
+		rootless = false,
+	): Array<CH.Condition | undefined> => {
+		const conditions: Array<CH.Condition | undefined> = traceListWindowConditions($, opts, rootless)
 
 		// Attribute filter EXISTS subqueries (correlated — references outer TraceId)
 		if (opts.attributeFilterKey) {
@@ -823,6 +866,12 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 			.select(($) => ({ name: $[colName], count: CH.count() }))
 			.where(($) => [...rawWhere($), CH.whenTrue(dropEmpty, () => $[colName].neq(""))])
 			.groupBy("name")
+		// One per trace, as the list shows it, however many of its entry spans match.
+		const rootless = () =>
+			from(TraceListEntrySpans)
+				.select(($) => ({ name: $[colName], count: CH.uniq($.TraceId) }))
+				.where(($) => [...rawWhere($, true), CH.whenTrue(dropEmpty, () => $[colName].neq(""))])
+				.groupBy("name")
 		const hourly = () =>
 			from(TraceFacetsHourly)
 				.select(($) => ({ name: $[colName], count: CH.sum($.TraceCount) }))
@@ -832,7 +881,13 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 				])
 				.groupBy("name")
 		return fromUnion(
-			canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw),
+			canUseTraceFacetsRollup(opts)
+				? withRootless(opts)
+					? unionAll(raw, hourly(), rootless())
+					: unionAll(raw, hourly())
+				: withRootless(opts)
+					? unionAll(raw, rootless())
+					: unionAll(raw),
 			`${facetType}_tiers`,
 		)
 			.select(($) => ({
@@ -849,12 +904,22 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 		const raw = from(TraceListMv)
 			.select(() => ({ count: CH.count() }))
 			.where(($) => [...rawWhere($), $.HasError.eq(1)])
+		const rootless = () =>
+			from(TraceListEntrySpans)
+				.select(($) => ({ count: CH.uniq($.TraceId) }))
+				.where(($) => [...rawWhere($, true), $.HasError.eq(1)])
 		const hourly = () =>
 			from(TraceFacetsHourly)
 				.select(($) => ({ count: CH.sum($.TraceCount) }))
 				.where(($) => [...traceFacetsHourlyInteriorConditions($, opts), $.HasError.eq(1)])
 		return fromUnion(
-			canUseTraceFacetsRollup(opts) ? unionAll(raw, hourly()) : unionAll(raw),
+			canUseTraceFacetsRollup(opts)
+				? withRootless(opts)
+					? unionAll(raw, hourly(), rootless())
+					: unionAll(raw, hourly())
+				: withRootless(opts)
+					? unionAll(raw, rootless())
+					: unionAll(raw),
 			"errorCount_tiers",
 		).select(($) => ({
 			name: CH.lit("error"),

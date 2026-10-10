@@ -2,18 +2,18 @@ import { Array as Arr, Effect, pipe } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
+import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
+import { withTraceListTierFallback } from "../runtime/trace-list-tiers"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
 import { safeUInt } from "./sql-utils"
 
 const MAX_LIMIT = 1000
 
 /**
- * Returns the slowest root spans in a time range, ordered by Duration DESC at
- * the database via the `slow_traces` pipe. Previously this fetched 500 rows
- * from the `list_traces` pipe (sorted by recency) and sorted them in JS, which
- * both over-fetched and returned the wrong page when the actual slowest traces
- * were older than the 500 most-recent.
+ * Returns the slowest traces in a time range (by root span, or by entry span
+ * when a trace has no root), ordered by Duration DESC at the database via the
+ * `slow_traces` pipe.
  *
  * Routing through a named pipe (rather than building raw SQL here) lets the
  * same code run unchanged against both local chDB and the remote warehouse —
@@ -36,32 +36,35 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 		readonly timestamp: string
 	}
 
-	const [slowResult, statsResult] = yield* Effect.all(
-		[
-			executor.query<SlowTraceRow>(
-				"slow_traces",
-				{
-					start_time: input.timeRange.startTime,
-					end_time: input.timeRange.endTime,
-					...(input.service && { service: input.service }),
-					...(input.environment && { deployment_env: input.environment }),
-					limit,
-				},
-				{ profile: "list" },
-			),
-			executor.query<TracesDurationStatsOutput>(
-				"traces_duration_stats",
-				{
-					start_time: input.timeRange.startTime,
-					end_time: input.timeRange.endTime,
-					...(input.service && { service: input.service }),
-					...(input.environment && { deployment_env: input.environment }),
-				},
-				{ profile: "aggregation" },
-			),
-		],
-		{ concurrency: "unbounded" },
-	)
+	const [slowResult, statsResult, omitted] = yield* withTraceListTierFallback(executor.orgId, (tiers) => {
+		const params = {
+			start_time: input.timeRange.startTime,
+			end_time: input.timeRange.endTime,
+			...(input.service && { service: input.service }),
+			...(input.environment && { deployment_env: input.environment }),
+			roots_only: !tiers.rootless,
+		}
+		return Effect.all(
+			[
+				executor.query<SlowTraceRow>("slow_traces", { ...params, limit }, { profile: "list" }),
+				executor.query<TracesDurationStatsOutput>("traces_duration_stats", params, {
+					profile: "aggregation",
+				}),
+				// Whether the two reads above left traces with no root span out.
+				tiers.rootless
+					? executor.compiledQuery(
+							CH.compile(CH.rootlessOmittedQuery(), {
+								orgId: executor.orgId,
+								startTime: input.timeRange.startTime,
+								endTime: input.timeRange.endTime,
+							}),
+							{ profile: "list" },
+						)
+					: Effect.succeed([]),
+			],
+			{ concurrency: "unbounded" },
+		)
+	})
 
 	const rows = slowResult.data
 
@@ -94,5 +97,6 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 				}
 			: null,
 		traces,
+		...(omitted.length > 0 ? { rootlessTracesOmitted: true } : undefined),
 	} satisfies FindSlowTracesOutput
 })

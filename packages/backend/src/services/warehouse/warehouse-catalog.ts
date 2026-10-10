@@ -51,6 +51,11 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
 	],
+	trace_list_entry_spans: [
+		"Server/Consumer spans that have a parent, in `trace_list_mv`'s columns. NOT one row per trace: most rows belong to traces that also have a root span in `trace_list_mv`.",
+		"A trace with no root span (its entry sits behind a proxy that never exports its span) is the rows here whose `TraceId` is absent from `trace_list_mv`; count such traces with `uniq(TraceId)`.",
+		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0038, never backfilled.",
+	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
 		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",
