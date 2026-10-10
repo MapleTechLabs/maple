@@ -272,10 +272,10 @@ export function ServiceMapServicePanel({
 					onClick={onFocus}
 					title="Focus the map on this service's neighborhood"
 				>
-					<MagnifierIcon size={13} />
+					<MagnifierIcon />
 				</Button>
 				<Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close panel">
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</Button>
 			</PanelHeader>
 
@@ -392,7 +392,7 @@ export function ServiceMapDatabasePanel({
 				}
 			>
 				<Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close panel">
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</Button>
 			</PanelHeader>
 

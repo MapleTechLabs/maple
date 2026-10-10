@@ -5,7 +5,7 @@ import { statusLabel } from "./severity-tokens"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 const STATUS_TEXT: Record<HostStatus, string> = {
-	active: TONE_TEXT.info,
+	active: TONE_TEXT.ok,
 	idle: "text-muted-foreground",
 	ended: "text-muted-foreground",
 } satisfies Record<HostStatus, string>

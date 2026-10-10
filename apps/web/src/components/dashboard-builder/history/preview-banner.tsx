@@ -57,7 +57,7 @@ export function PreviewBanner({ dashboardId, preview, onCancel, onRestored }: Pr
 						Cancel
 					</Button>
 					<Button variant="default" size="sm" onClick={() => setConfirmOpen(true)}>
-						<ArrowPathIcon size={14} data-icon="inline-start" />
+						<ArrowPathIcon data-icon="inline-start" />
 						Restore this version
 					</Button>
 				</div>

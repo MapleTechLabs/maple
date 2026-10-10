@@ -21,20 +21,19 @@ import {
 	type UserId,
 	UserId as UserIdSchema,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	errorNotificationPolicies,
+	AlertDestinations,
+	ErrorNotificationPolicies,
 	type ErrorNotificationPolicyRow,
-	issueEscalationPolicies,
+	IssueEscalationPolicies,
 	type IssueEscalationPolicyRow,
-	issueEscalations,
+	IssueEscalations,
 	type IssueEscalationRow,
-} from "@maple/db"
-import { and, desc, eq, inArray } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
-import { msToDate } from "@maple/backend/platform/time"
 import { evaluateEscalationPolicy as evaluateRoutingPolicy } from "@maple/backend/services/alerts/escalation-policy"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
@@ -128,7 +127,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		notifyOnClaim: false,
 		minOccurrenceCount: 1,
 		severity: "warning",
-		updatedAt: msToDate(timestamp),
+		updatedAt: timestamp,
 		updatedBy: "system",
 	})
 
@@ -152,7 +151,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			notifyOnClaim: row.notifyOnClaim,
 			minOccurrenceCount: row.minOccurrenceCount,
 			severity: row.severity,
-			updatedAt: decodeNotificationUpdatedAt(row.updatedAt.toISOString()),
+			updatedAt: decodeNotificationUpdatedAt(new Date(row.updatedAt).toISOString()),
 			updatedBy: decodeUserIdSync(row.updatedBy),
 		})
 
@@ -160,11 +159,12 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		"ErrorsService.loadPolicyRow",
 	)(function* (orgId) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorNotificationPolicies)
-				.where(eq(errorNotificationPolicies.orgId, orgId))
-				.limit(1),
+			db.run(
+				PG.from(ErrorNotificationPolicies)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)])
+					.limit(1),
+			),
 		)
 		return rows[0] ?? null
 	})
@@ -216,31 +216,32 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 					? request.minOccurrenceCount
 					: base.minOccurrenceCount,
 			severity: request.severity !== undefined ? request.severity : base.severity,
-			updatedAt: msToDate(timestamp),
+			updatedAt: timestamp,
 			updatedBy: userId,
 		}
 
 		yield* dbExecute((db) =>
-			db
-				.insert(errorNotificationPolicies)
-				.values(merged)
-				.onConflictDoUpdate({
-					target: errorNotificationPolicies.orgId,
-					set: {
-						enabled: merged.enabled,
-						destinationIdsJson: merged.destinationIdsJson,
-						notifyOnFirstSeen: merged.notifyOnFirstSeen,
-						notifyOnRegression: merged.notifyOnRegression,
-						notifyOnResolve: merged.notifyOnResolve,
-						notifyOnTransitionInReview: merged.notifyOnTransitionInReview,
-						notifyOnTransitionDone: merged.notifyOnTransitionDone,
-						notifyOnClaim: merged.notifyOnClaim,
-						minOccurrenceCount: merged.minOccurrenceCount,
-						severity: merged.severity,
-						updatedAt: merged.updatedAt,
-						updatedBy: merged.updatedBy,
-					},
-				}),
+			db.run(
+				PG.insertInto(ErrorNotificationPolicies)
+					.values(merged)
+					.onConflictDoUpdate({
+						target: ["orgId"],
+						set: {
+							enabled: merged.enabled,
+							destinationIdsJson: merged.destinationIdsJson,
+							notifyOnFirstSeen: merged.notifyOnFirstSeen,
+							notifyOnRegression: merged.notifyOnRegression,
+							notifyOnResolve: merged.notifyOnResolve,
+							notifyOnTransitionInReview: merged.notifyOnTransitionInReview,
+							notifyOnTransitionDone: merged.notifyOnTransitionDone,
+							notifyOnClaim: merged.notifyOnClaim,
+							minOccurrenceCount: merged.minOccurrenceCount,
+							severity: merged.severity,
+							updatedAt: merged.updatedAt,
+							updatedBy: merged.updatedBy,
+						},
+					}),
+			),
 		)
 
 		return notificationRowToDocument(merged)
@@ -250,7 +251,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		new IssueEscalationPolicyDocument({
 			enabled: row?.enabled ?? false,
 			rules: row == null ? [] : Option.getOrElse(decodeEscalationRules(row.rulesJson), () => []),
-			updatedAt: row == null ? null : decodeEscalationUpdatedAt(row.updatedAt.toISOString()),
+			updatedAt: row == null ? null : decodeEscalationUpdatedAt(new Date(row.updatedAt).toISOString()),
 			updatedBy: row == null || row.updatedBy === "system" ? null : decodeUserIdSync(row.updatedBy),
 		})
 
@@ -258,11 +259,12 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		orgId: OrgId,
 	) {
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(issueEscalationPolicies)
-				.where(eq(issueEscalationPolicies.orgId, orgId))
-				.limit(1),
+			db.run(
+				PG.from(IssueEscalationPolicies)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)])
+					.limit(1),
+			),
 		)
 		return rows[0] ?? null
 	})
@@ -300,17 +302,14 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			// or foreign ID would otherwise only surface much later as a silently
 			// "skipped" escalation with reason no_enabled_destinations.
 			const referencedIds = Arr.dedupe(Arr.flatMap(request.rules, (rule) => rule.destinationIds))
-			if (referencedIds.length > 0) {
+			const [firstReferenced, ...restReferenced] = referencedIds
+			if (firstReferenced !== undefined) {
 				const ownedRows = yield* dbExecute((db) =>
-					db
-						.select({ id: alertDestinations.id })
-						.from(alertDestinations)
-						.where(
-							and(
-								eq(alertDestinations.orgId, orgId),
-								inArray(alertDestinations.id, referencedIds),
-							),
-						),
+					db.run(
+						PG.from(AlertDestinations)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(firstReferenced, ...restReferenced)]),
+					),
 				)
 				const owned = HashSet.fromIterable(Arr.map(ownedRows, (row) => row.id))
 				const unknown = Arr.filter(referencedIds, (id) => !HashSet.has(owned, id))
@@ -329,23 +328,24 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			orgId,
 			enabled: request.enabled !== undefined ? request.enabled : (existing?.enabled ?? false),
 			rulesJson: request.rules !== undefined ? request.rules : (existing?.rulesJson ?? []),
-			updatedAt: msToDate(timestamp),
+			updatedAt: timestamp,
 			updatedBy: userId,
 		}
 
 		yield* dbExecute((db) =>
-			db
-				.insert(issueEscalationPolicies)
-				.values(merged)
-				.onConflictDoUpdate({
-					target: issueEscalationPolicies.orgId,
-					set: {
-						enabled: merged.enabled,
-						rulesJson: merged.rulesJson,
-						updatedAt: merged.updatedAt,
-						updatedBy: merged.updatedBy,
-					},
-				}),
+			db.run(
+				PG.insertInto(IssueEscalationPolicies)
+					.values(merged)
+					.onConflictDoUpdate({
+						target: ["orgId"],
+						set: {
+							enabled: merged.enabled,
+							rulesJson: merged.rulesJson,
+							updatedAt: merged.updatedAt,
+							updatedBy: merged.updatedBy,
+						},
+					}),
+			),
 		)
 
 		return escalationRowToDocument(merged)
@@ -364,11 +364,11 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			skipReason:
 				row.status === "skipped" ? Option.getOrNull(decodeEscalationSkipReason(row.error)) : null,
 			deliveries: Option.getOrElse(decodeEscalationDeliveries(row.deliveryResultsJson), () => []),
-			createdAt: decodeEscalationAttemptCreatedAt(row.createdAt.toISOString()),
+			createdAt: decodeEscalationAttemptCreatedAt(new Date(row.createdAt).toISOString()),
 			processedAt:
 				row.processedAt == null
 					? null
-					: decodeEscalationAttemptProcessedAt(row.processedAt.toISOString()),
+					: decodeEscalationAttemptProcessedAt(new Date(row.processedAt).toISOString()),
 		})
 
 	const evaluatePolicy: ErrorPolicyServiceApi["evaluateEscalationPolicy"] = Effect.fn(
@@ -378,21 +378,22 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		const policy = yield* loadEscalationPolicyRow(orgId)
 		const rules =
 			policy == null ? [] : Option.getOrElse(decodeEscalationRules(policy.rulesJson), () => [])
-		const referencedIds = Arr.dedupe(Arr.flatMap(rules, (rule) => rule.destinationIds))
+		const [firstReferenced, ...restReferenced] = Arr.dedupe(
+			Arr.flatMap(rules, (rule) => rule.destinationIds),
+		)
 		const enabledRows =
-			referencedIds.length === 0
+			firstReferenced === undefined
 				? []
 				: yield* dbExecute((db) =>
-						db
-							.select({ id: alertDestinations.id })
-							.from(alertDestinations)
-							.where(
-								and(
-									eq(alertDestinations.orgId, orgId),
-									eq(alertDestinations.enabled, true),
-									inArray(alertDestinations.id, referencedIds),
-								),
-							),
+						db.run(
+							PG.from(AlertDestinations)
+								.select("id")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.enabled.eq(true),
+									$.id.in_(firstReferenced, ...restReferenced),
+								]),
+						),
 					)
 		const decision = evaluateRoutingPolicy({
 			enabled: policy?.enabled ?? false,
@@ -414,11 +415,12 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	)(function* (orgId, issueId) {
 		yield* Effect.annotateCurrentSpan({ orgId, issueId })
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(issueEscalations)
-				.where(and(eq(issueEscalations.orgId, orgId), eq(issueEscalations.issueId, issueId)))
-				.orderBy(desc(issueEscalations.createdAt)),
+			db.run(
+				PG.from(IssueEscalations)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+					.orderBy(["createdAt", "desc"]),
+			),
 		)
 		return new IssueEscalationAttemptsResponse({ attempts: rows.map(escalationAttemptDocument) })
 	})
@@ -428,12 +430,13 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	)(function* (orgId, limit) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(issueEscalations)
-				.where(eq(issueEscalations.orgId, orgId))
-				.orderBy(desc(issueEscalations.createdAt))
-				.limit(limit ?? 25),
+			db.run(
+				PG.from(IssueEscalations)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)])
+					.orderBy(["createdAt", "desc"])
+					.limit(limit ?? 25),
+			),
 		)
 		return new IssueEscalationAttemptsResponse({ attempts: rows.map(escalationAttemptDocument) })
 	})

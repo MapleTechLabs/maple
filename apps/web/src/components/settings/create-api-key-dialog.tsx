@@ -71,6 +71,7 @@ const SCOPE_FAMILIES = [
 	{ id: "service_map", label: "Service map" },
 	{ id: "query", label: "Query" },
 	{ id: "organization", label: "Organization" },
+	{ id: "audit_log", label: "Audit log" },
 ] as const
 
 type ScopeLevel = "none" | "read" | "write"
@@ -91,7 +92,7 @@ const allScopeLevels = (level: ScopeLevel): Record<string, ScopeLevel> =>
 const scopesFromLevels = (levels: Record<string, ScopeLevel>): Array<V2Scope> =>
 	SCOPE_FAMILIES.flatMap((f) => {
 		const level = levels[f.id]
-		return level === "read" || level === "write" ? [`${f.id}:${level}` as V2Scope] : []
+		return level === "read" || level === "write" ? [`${f.id}:${level}`] : []
 	})
 
 export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: CreateApiKeyDialogProps) {
@@ -144,7 +145,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 				}),
 			})
 			if (!Exit.isSuccess(result)) {
-				toastExit(result, { error: isMcp ? "Couldn't create MCP key" : "Couldn't create API key" })
+				toastExit(result, { error: isMcp ? "Failed to create MCP key" : "Failed to create API key" })
 				return
 			}
 			setCreatedKey(result.value)

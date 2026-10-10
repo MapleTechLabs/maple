@@ -40,7 +40,7 @@ import { retainedInternalQuery } from "@/lib/services/common/internal-atom-clien
 export const PULL_REQUEST_STATE_TONE = {
 	// Open is work under way; merged is done.
 	open: IN_FLIGHT_SOFT,
-	merged: TONE_SOFT.ok,
+	merged: TONE_SOFT.done,
 	closed: TONE_SOFT.neutral,
 } satisfies Record<PullRequestSummary["state"], string>
 

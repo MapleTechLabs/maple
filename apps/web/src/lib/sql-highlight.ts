@@ -82,12 +82,12 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 		} else if (macro) {
 			tokens.push({ text: macro, start: m.index, className: "text-primary font-medium" })
 		} else if (num) {
-			tokens.push({ text: num, start: m.index, className: "text-amber-400" })
+			tokens.push({ text: num, start: m.index, className: "text-chart-4" })
 		} else if (ident) {
 			if (KEYWORDS.has(ident.toUpperCase())) {
-				tokens.push({ text: ident, start: m.index, className: "text-fuchsia-400" })
+				tokens.push({ text: ident, start: m.index, className: "text-chart-5" })
 			} else if (code.charAt(m.index + ident.length) === "(") {
-				tokens.push({ text: ident, start: m.index, className: "text-cyan-400" })
+				tokens.push({ text: ident, start: m.index, className: "text-chart-1" })
 			} else {
 				tokens.push({ text: ident, start: m.index })
 			}

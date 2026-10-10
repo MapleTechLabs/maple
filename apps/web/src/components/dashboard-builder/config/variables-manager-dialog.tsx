@@ -247,7 +247,7 @@ function VariablesEditor({
 								disabled={index === 0}
 								onClick={() => move(index, -1)}
 							>
-								<ArrowUpIcon size={13} />
+								<ArrowUpIcon />
 							</IconButton>
 							<IconButton
 								size="icon-xs"
@@ -255,17 +255,17 @@ function VariablesEditor({
 								disabled={index === drafts.length - 1}
 								onClick={() => move(index, 1)}
 							>
-								<ArrowDownIcon size={13} />
+								<ArrowDownIcon />
 							</IconButton>
 							<IconButton
 								size="icon-xs"
 								label="Edit variable"
 								onClick={() => setEditingIndex(editingIndex === index ? null : index)}
 							>
-								<PencilIcon size={13} />
+								<PencilIcon />
 							</IconButton>
 							<IconButton size="icon-xs" label="Delete variable" onClick={() => remove(index)}>
-								<TrashIcon size={13} />
+								<TrashIcon />
 							</IconButton>
 						</ItemActions>
 					</Item>
@@ -281,7 +281,7 @@ function VariablesEditor({
 				</div>
 			))}
 			<Button variant="outline" size="sm" className="self-start" onClick={add}>
-				<PlusIcon size={14} data-icon="inline-start" />
+				<PlusIcon data-icon="inline-start" />
 				Add variable
 			</Button>
 		</FormDialog>

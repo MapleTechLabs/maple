@@ -326,7 +326,7 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 					{(structuredData || outputText != null) && (
 						<div>
 							{structuredData ? (
-								<Suspense fallback={<div className="text-muted-foreground">Loading…</div>}>
+								<Suspense fallback={<Spinner className="size-3.5 text-muted-foreground" />}>
 									<LazyToolRenderer data={structuredData} />
 								</Suspense>
 							) : outputText != null ? (

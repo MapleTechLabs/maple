@@ -14,14 +14,14 @@ import { capturePgliteFixture } from "./pglite-fixture"
  * the fixture contains 1,375 files but only 27 directories. Indexing once cut
  * measured Linux database boot from 118ms to 63ms without sharing live databases.
  *
- * Keep the real Drizzle migrator: raw concatenated SQL would omit the journal,
- * and a test replaying migrations would try to create existing tables again.
+ * Migrated by the effect-orm runner, so the snapshot carries its ledger and a
+ * test replaying migrations applies nothing.
  */
 
-// A snapshot is tied to the engine as well as the SQL. Migration directory
-// names are Drizzle's journal timestamps, so renaming one must invalidate it too.
+// A snapshot is tied to the engine as well as the SQL. The runner's ledger keys
+// on migration directory names, so renaming one must invalidate it too.
 const snapshotKey = createHash("sha256")
-	.update("maple-pglite-snapshot-v3")
+	.update("maple-pglite-snapshot-v4")
 	.update(process.versions.v8)
 	.update(
 		readFileSync(

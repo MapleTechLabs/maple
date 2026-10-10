@@ -118,7 +118,7 @@ export function ImageDropzone({
 						loading={uploading}
 						disabled={disabled}
 					>
-						<UploadIcon size={14} className="mr-1.5" />
+						<UploadIcon className="mr-1.5" />
 						{changeLabel}
 					</Button>
 					{onRemove && (

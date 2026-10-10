@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 import { formatNumber, formatRate, pluralize } from "@maple/ui/lib/format"
 import { Panel } from "@maple/ui/components/ui/panel"
@@ -144,7 +145,17 @@ function ReleasesSkeleton() {
 		<div className="flex flex-col gap-3">
 			<Skeleton className="h-4 w-64" />
 			<Skeleton className="h-52 w-full rounded-md" />
-			<Skeleton className="h-96 w-full rounded-md" />
+			<TableSkeleton
+				rows={8}
+				columns={[
+					{ header: "Release", headClassName: "w-[46%] min-w-[260px]", skeleton: "w-48" },
+					{ header: "Services" },
+					{ header: "Deployed", headClassName: "whitespace-nowrap" },
+					{ header: "Error rate", headClassName: "whitespace-nowrap", skeleton: "w-12" },
+					{ header: "p95", skeleton: "w-12" },
+					{ header: "Issues", skeleton: "w-8" },
+				]}
+			/>
 		</div>
 	)
 }

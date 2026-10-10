@@ -127,7 +127,7 @@ export function serviceWorkloadsSQL(
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.inList($.ServiceName, opts.services),
 		])

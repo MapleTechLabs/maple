@@ -1,11 +1,15 @@
 import { record } from "rrweb"
+import { consentRevokedAt } from "../identity/consent"
 import { BLOCK_SELECTOR } from "../privacy-markers"
+import { clearPendingChunk, PENDING_CHUNK_KEY } from "../session/pending-chunk"
 import { markActivity, nextChunkSeq } from "../session/session"
+import { isJsonObject } from "../platform/json"
 import type { IngestConfig } from "../platform/transport"
 import {
 	type BlobPostOutcome,
 	gzip,
 	postSessionBlob,
+	reserveKeepalive,
 	warnDropped,
 	type ChunkMeta,
 } from "../platform/transport"
@@ -60,19 +64,124 @@ export interface Recorder {
 	getClickCount: () => number
 }
 
+// The chunk a page was flushing as it went away. `gzip` is async and an
+// unloading document is torn down before it resolves, so the chunk waits in
+// sessionStorage (this tab, this origin, like the session record) for the next
+// recorder start of its session: the next page load, or this page shown again.
+// A keepalive flush holds under FLUSH_BYTES of events, which bounds what is stored.
+//
+// An earlier page's chunk is sent only to its own session and only this young:
+// consent withdrawn by a reload is never seen as a revoke, and must not be
+// outlived by long. This page's own chunk has no such gap (a revoke here removes
+// it), so it is sent whenever the page is shown again, under its own session
+// even if that one rotated out while the page was hidden.
+const MAX_PENDING_AGE_MS = 10 * 60_000
+const PAGE_STARTED_AT = Date.now()
+/** How long a stored chunk that found the keepalive budget full waits before its one re-attempt. */
+const KEEPALIVE_RETRY_MS = 1_000
+
+interface PendingChunk extends ChunkMeta {
+	readonly body: string
+	/** epoch ms; a chunk from before the last consent withdrawal is never sent. */
+	readonly createdAt: number
+	/** Where the recording page uploads; a page configured otherwise does not send it. */
+	readonly target: string
+}
+
+function isPendingChunk(value: unknown): value is PendingChunk {
+	return (
+		isJsonObject(value) &&
+		typeof value.sessionId === "string" &&
+		typeof value.chunkSeq === "number" &&
+		typeof value.isCheckpoint === "boolean" &&
+		typeof value.eventCount === "number" &&
+		typeof value.durationMs === "number" &&
+		typeof value.body === "string" &&
+		typeof value.createdAt === "number" &&
+		typeof value.target === "string"
+	)
+}
+
+/** Endpoint plus an FNV-1a hash of the key, so the key itself is not stored. */
+function targetOf(config: IngestConfig): string {
+	let hash = 0x811c9dc5
+	for (const char of config.ingestKey ?? "") hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193)
+	return `${config.endpoint}|${hash >>> 0}`
+}
+
+function readPending(): PendingChunk | undefined {
+	try {
+		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_CHUNK_KEY) ?? "null")
+		return isPendingChunk(parsed) ? parsed : undefined
+	} catch {
+		return undefined
+	}
+}
+
 /**
- * gzip and POST one chunk. `seq` is claimed here, monotonic across reloads
+ * Keep `chunk` unless one is already waiting. False when it was not kept
+ * (storage blocked or full): it is then only as durable as its upload.
+ */
+function storePending(chunk: PendingChunk): boolean {
+	try {
+		if (readPending()) return false
+		window.sessionStorage.setItem(PENDING_CHUNK_KEY, JSON.stringify(chunk))
+		return true
+	} catch {
+		return false
+	}
+}
+
+/**
+ * Remove the stored chunk if it is `meta`'s, reporting whether it was. Whoever
+ * removes it sends it, so a seq is posted once: ingest appends an index row per POST.
+ */
+function takePending(meta: ChunkMeta): boolean {
+	const chunk = readPending()
+	return chunk?.sessionId === meta.sessionId && chunk.chunkSeq === meta.chunkSeq && clearPendingChunk()
+}
+
+/** Send the chunk an earlier flush left behind, if it is still this recorder's to send; otherwise drop it. */
+function sendPendingChunk(config: IngestConfig, sessionId: string): void {
+	const chunk = readPending()
+	if (!chunk) return
+	const sendable =
+		chunk.target === targetOf(config) &&
+		chunk.createdAt > consentRevokedAt() &&
+		(chunk.createdAt >= PAGE_STARTED_AT ||
+			(chunk.sessionId === sessionId && Date.now() - chunk.createdAt <= MAX_PENDING_AGE_MS))
+	// Left stored until the POST, like the flush that stored it: a revoke can still
+	// discard it, and a page gone mid-compression leaves it for the start after.
+	if (sendable) void compressAndPost(config, chunk, chunk.body, false, true)
+	else clearPendingChunk()
+}
+
+/**
+ * Claim a seq and upload one chunk. The seq is monotonic across reloads
  * (persisted on the session record), so a refresh continues the sequence
  * instead of overwriting the previous load's blobs.
  */
-async function uploadChunk(
+function uploadChunk(
 	config: IngestConfig,
 	sessionId: string,
 	body: string,
 	chunk: Omit<ChunkMeta, "sessionId" | "chunkSeq">,
 	keepalive: boolean,
 ): Promise<BlobPostOutcome | undefined> {
-	const chunkSeq = nextChunkSeq()
+	const meta: ChunkMeta = { sessionId, chunkSeq: nextChunkSeq(), ...chunk }
+	// Stored synchronously: on a page going away nothing after the first await runs.
+	const stored =
+		keepalive && storePending({ ...meta, body, createdAt: Date.now(), target: targetOf(config) })
+	return compressAndPost(config, meta, body, keepalive, stored)
+}
+
+async function compressAndPost(
+	config: IngestConfig,
+	meta: ChunkMeta,
+	body: string,
+	keepalive: boolean,
+	stored: boolean,
+): Promise<BlobPostOutcome | undefined> {
 	// `gzip` rejects rather than returning a truncated stream, and callers run
 	// this as a floating promise: an escaping rejection would surface in the
 	// host app's console as ours. Dropping the chunk is the same outcome ingest
@@ -84,10 +193,27 @@ async function uploadChunk(
 		warnDropped("chunk compression", error)
 		return undefined
 	}
-	return postSessionBlob(config, { sessionId, chunkSeq, ...chunk }, gzipped, keepalive)
+	if (stored) {
+		// A request that does not get keepalive dies with the page, after the copy is
+		// gone. So with no room in the shared budget right now the copy stays stored
+		// and this waits once: the timer only fires on a page that is still alive,
+		// where the other unload writes have finished or a plain request completes.
+		// On a page that went away the copy is the next recorder start's to send.
+		// With room, the probe is released at once: the POST below reserves again
+		// synchronously, before anything else can run.
+		if (keepalive) {
+			const release = reserveKeepalive(true, gzipped.byteLength)
+			if (release) release()
+			else await new Promise((resolve) => setTimeout(resolve, KEEPALIVE_RETRY_MS))
+		}
+		// Gone: a later recorder start already sent it, or a revoke discarded it.
+		if (!takePending(meta)) return undefined
+	}
+	return postSessionBlob(config, meta, gzipped, keepalive)
 }
 
 export function startRecording(config: IngestConfig, sessionId: string): Recorder {
+	sendPendingChunk(config, sessionId)
 	// Events are serialized once at emit time and buffered as JSON strings, so
 	// flushing is a cheap `join` instead of re-stringifying the whole buffer
 	// (which stalls the main thread for hundreds of ms on full snapshots).

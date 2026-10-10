@@ -89,7 +89,10 @@ describe("lazy replay chunk", () => {
 			replay: { enabled: true, sampleRate: 1 },
 			privacy: { requireConsent: true },
 		})
+		// What the previous page's recorder left for this one to send.
+		window.sessionStorage.setItem("maple.replay.pending", "{}")
 		setConsent(false)
+		expect(window.sessionStorage.getItem("maple.replay.pending")).toBeNull()
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(replay.start).not.toHaveBeenCalled()

@@ -56,7 +56,7 @@ export function TraceLogsLink({
 						/>
 					}
 				>
-					<FileIcon className="size-3.5" /> View Logs ({total})
+					<FileIcon /> View Logs ({total})
 				</Button>
 			)
 		})

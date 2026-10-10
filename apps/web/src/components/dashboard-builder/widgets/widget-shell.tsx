@@ -254,20 +254,20 @@ export function WidgetShell({
 							<DropdownMenuTrigger
 								render={
 									<Button variant="ghost" size="icon-xs" aria-label="Widget actions">
-										<DotsVerticalIcon size={14} />
+										<DotsVerticalIcon />
 									</Button>
 								}
 							/>
 							<DropdownMenuContent align="end" className="w-max">
 								{isEditable && configure && (
 									<DropdownMenuItem onClick={configure}>
-										<PencilIcon size={14} />
+										<PencilIcon />
 										Edit
 									</DropdownMenuItem>
 								)}
 								{isEditable && clone && (
 									<DropdownMenuItem onClick={clone}>
-										<CopyIcon size={14} />
+										<CopyIcon />
 										Clone
 									</DropdownMenuItem>
 								)}
@@ -280,7 +280,7 @@ export function WidgetShell({
 								)}
 								{createAlert && (
 									<DropdownMenuItem onClick={createAlert}>
-										<BellIcon size={14} />
+										<BellIcon />
 										Create alert
 									</DropdownMenuItem>
 								)}
@@ -291,7 +291,7 @@ export function WidgetShell({
 										<Tooltip>
 											<TooltipTrigger render={<div />}>
 												<DropdownMenuItem disabled>
-													<CodeIcon size={14} />
+													<CodeIcon />
 													Embed chart
 												</DropdownMenuItem>
 											</TooltipTrigger>
@@ -301,7 +301,7 @@ export function WidgetShell({
 										</Tooltip>
 									) : (
 										<DropdownMenuItem onClick={embed.open}>
-											<CodeIcon size={14} />
+											<CodeIcon />
 											Embed chart
 										</DropdownMenuItem>
 									))}
@@ -309,7 +309,7 @@ export function WidgetShell({
 									<>
 										<DropdownMenuSeparator />
 										<DropdownMenuItem variant="destructive" onClick={remove}>
-											<TrashIcon size={14} />
+											<TrashIcon />
 											Delete
 										</DropdownMenuItem>
 									</>
@@ -414,7 +414,7 @@ export function WidgetFrame({
 								onClick={narrowRange}
 								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<ClockIcon size={12} />
+								<ClockIcon />
 								{actions?.narrowRangeLabel ?? "Narrow range"}
 							</Button>
 						)}
@@ -425,7 +425,7 @@ export function WidgetFrame({
 								onClick={configure}
 								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<PencilIcon size={12} />
+								<PencilIcon />
 								Edit
 							</Button>
 						)}
@@ -452,7 +452,7 @@ export function WidgetFrame({
 								onClick={fix}
 								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<ChatBubbleSparkleIcon size={12} />
+								<ChatBubbleSparkleIcon />
 								Fix with AI
 							</Button>
 						)}

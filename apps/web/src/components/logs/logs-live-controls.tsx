@@ -42,7 +42,7 @@ export function LogsLiveControls({ value, onChange, inspect, onJumpToLatest }: L
 							reload()
 						}}
 					>
-						<ArrowUpIcon size={12} />
+						<ArrowUpIcon />
 						Jump to latest
 					</Button>
 				)}

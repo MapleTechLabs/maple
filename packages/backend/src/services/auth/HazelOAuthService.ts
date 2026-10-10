@@ -10,12 +10,12 @@ import {
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { oauthAuthStates } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OAuthAuthStates } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
 
 const HAZEL_PROVIDER = "hazel"
@@ -298,16 +298,18 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 
 				yield* oauth.purgeExpiredStates(currentTime)
 				yield* oauth.dbExecute((db) =>
-					db.insert(oauthAuthStates).values({
-						state,
-						orgId,
-						provider: HAZEL_PROVIDER,
-						initiatedByUserId: userId,
-						redirectUri: callbackUrl,
-						returnTo: options.returnTo ?? null,
-						createdAt: new Date(currentTime),
-						expiresAt: new Date(currentTime + OAUTH_STATE_TTL_MS),
-					}),
+					db.run(
+						PG.insertInto(OAuthAuthStates).values({
+							state,
+							orgId,
+							provider: HAZEL_PROVIDER,
+							initiatedByUserId: userId,
+							redirectUri: callbackUrl,
+							returnTo: options.returnTo ?? null,
+							createdAt: currentTime,
+							expiresAt: currentTime + OAUTH_STATE_TTL_MS,
+						}),
+					),
 				)
 
 				const params = new URLSearchParams({
@@ -391,7 +393,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 					refreshTokenCiphertext: refreshEnc?.ciphertext ?? null,
 					refreshTokenIv: refreshEnc?.iv ?? null,
 					refreshTokenTag: refreshEnc?.tag ?? null,
-					expiresAt: msToDate(expiresAt),
+					expiresAt,
 				})
 
 				return { orgId, returnTo: stateRow.returnTo ?? null }

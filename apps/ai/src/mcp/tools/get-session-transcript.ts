@@ -137,8 +137,8 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 					targetText: truncate(e.targetText, 256),
 					netMethod: e.netMethod,
 					netUrl: truncate(e.netUrl, 256),
-					netStatus: Number(e.netStatus),
-					netDurationMs: Number(e.netDurationMs),
+					netStatus: e.netStatus,
+					netDurationMs: e.netDurationMs,
 				})),
 				pagination: {
 					offset: off,

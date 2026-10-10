@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import type { V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
@@ -61,13 +62,14 @@ export function PlanetScaleMetricsHealth({
 				) : null}
 				<div className="ml-auto flex items-center gap-2">
 					{state === "degraded" ? (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setDetailsOpen((open) => !open)}
-							className={QUIET_LINK}
+							className={`h-auto p-0 font-normal ${QUIET_LINK}`}
 						>
 							{detailsOpen ? "Hide details" : "Show details"}
-						</button>
+						</Button>
 					) : null}
 					{action}
 				</div>

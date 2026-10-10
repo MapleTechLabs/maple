@@ -180,7 +180,7 @@ export function SignalEmptyStateView({
 							className="gap-2"
 							render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 						>
-							<ConnectionIcon size={14} />
+							<ConnectionIcon />
 							{action ?? copy.action}
 						</Button>
 						{/* One link, not two: before any data the setup guide is the only docs page

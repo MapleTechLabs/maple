@@ -1,11 +1,8 @@
 /**
- * What the sandbox Worker does with a request, minus the Sandbox SDK.
+ * What the sandbox Worker does with a request before it reaches the repository's Durable Object.
  *
- * Kept apart from `worker.ts` for the same reason `auth.ts` and `checkout.ts`
- * are: that module imports Cloudflare's Sandbox SDK, which cannot be loaded
- * outside a Workers runtime, and everything below has to be testable. The
- * container arrives as `open`, a function that hands back the port `checkout.ts`
- * already works against.
+ * Kept apart from `worker.ts`, which needs a Workers runtime, so it can be tested. The Durable
+ * Object arrives as `run`; the work itself happens there (`checkout.ts`'s `execute`).
  */
 import {
 	SANDBOX_EXEC_PATH,
@@ -15,17 +12,24 @@ import {
 	boundMessage,
 	redactSecret,
 } from "@maple/domain/sandbox"
-import { Cause, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { authorize } from "./auth"
-import { SandboxCallError, type SandboxLike, runExec } from "./checkout"
+import { SandboxCallError } from "./checkout"
 
 export interface SandboxHandleEnv {
 	readonly token: string | undefined
-	/** Throws when no container is bound or the SDK refuses the key. */
-	readonly open: (sandboxKey: string) => SandboxLike
+	/**
+	 * Hands the encoded request to the repository's Durable Object and resolves its encoded
+	 * answer. Throws when no Durable Object is bound, rejects when it cannot be reached.
+	 */
+	readonly run: (
+		sandboxKey: string,
+		request: typeof SandboxExecRequest.Encoded,
+	) => Promise<typeof SandboxExecResponse.Encoded>
 }
 
 const decodeRequest = Schema.decodeUnknownEffect(SandboxExecRequest)
+const encodeRequest = Schema.encodeSync(SandboxExecRequest)
 const encodeResponse = Schema.encodeUnknownSync(SandboxExecResponse)
 
 const json = (body: unknown, status = 200) =>
@@ -45,7 +49,7 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 		}
 
 		const body = yield* Effect.tryPromise({
-			try: () => request.json() as Promise<unknown>,
+			try: () => request.json(),
 			// The only outcome that matters is "not a request this Worker can run",
 			// which the decode below reports; the parse failure itself carries nothing.
 			catch: () => "unparseable" as const,
@@ -65,45 +69,22 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 		const exec = decoded.value
 		const redact = (text: string) => boundMessage(redactSecret(text, exec.checkout.token))
 
-		const response = yield* Effect.gen(function* () {
-			// Reaching the container is the one step that throws rather than rejects:
-			// an absent binding fails inside the SDK's own `idFromName`. Left unguarded
-			// it was a defect, and a defect here was a bare 500 the caller could not act
-			// on — the same answer a working container that refused the key would give.
-			const sandbox = yield* Effect.try({
-				try: () => env.open(exec.sandboxKey),
-				catch: (cause) =>
-					new SandboxCallError({
-						message:
-							cause instanceof Error ? cause.message : "no container is bound to this Worker",
-						cause,
-					}),
-			})
-			return yield* runExec(sandbox, exec)
+		// A Durable Object call crosses the network and is retried by nobody here. Its errors can
+		// echo the failing command line, so the clone token is redacted before anything leaves.
+		const response = yield* Effect.tryPromise({
+			try: () => env.run(exec.sandboxKey, encodeRequest(exec)),
+			catch: (cause) =>
+				new SandboxCallError({
+					message: cause instanceof Error ? cause.message : "the sandbox did not answer",
+					cause,
+				}),
 		}).pipe(
-			// A container that never came up is the caller's to report, not a 500 here.
-			// The container puts the failing command line into its own error messages,
-			// so this is one of the paths the clone URL can reach — redact before it
-			// leaves the Worker.
-			Effect.catchTag("@maple/sandbox/SandboxCallError", (error) =>
+			Effect.catch((error) =>
 				Effect.logWarning("sandbox container call failed").pipe(
 					Effect.annotateLogs({ "maple.sandbox.key": exec.sandboxKey }),
-					Effect.as(new SandboxRunUnavailable({ message: redact(error.message) })),
-				),
-			),
-			// Anything left is a bug in this Worker, and this Worker's logs are the
-			// only place it was ever written down. Say what broke in the answer too:
-			// a cause can carry the clone credential, so it goes out redacted.
-			Effect.catchCause((cause) =>
-				Effect.logError("sandbox worker failed", cause).pipe(
-					Effect.annotateLogs({ "maple.sandbox.key": exec.sandboxKey }),
-					Effect.as(
-						new SandboxRunUnavailable({
-							message: redact(`the sandbox worker failed: ${Cause.pretty(cause)}`),
-						}),
-					),
+					Effect.as(encodeResponse(new SandboxRunUnavailable({ message: redact(error.message) }))),
 				),
 			),
 		)
-		return json(encodeResponse(response))
+		return json(response)
 	})

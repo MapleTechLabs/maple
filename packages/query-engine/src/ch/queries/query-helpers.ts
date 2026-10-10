@@ -154,7 +154,7 @@ export function inclusionValues(
  * `Hour` column or the join silently misses.
  */
 export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
-	return CH.toStartOfHour(CH.toDateTime(param.dateTime(name)))
+	return CH.toStartOfHour(CH.toDateTime(utcSecondsParam(name)))
 }
 
 /**
@@ -593,9 +593,7 @@ const HISTOGRAM_TABLES = {
 
 export function resolveMetricTable(metricType: MetricType) {
 	const isHistogram = metricType === "histogram" || metricType === "exponential_histogram"
-	const tbl = isHistogram
-		? HISTOGRAM_TABLES[metricType as keyof typeof HISTOGRAM_TABLES]
-		: VALUE_TABLES[metricType as keyof typeof VALUE_TABLES]
+	const tbl = isHistogram ? HISTOGRAM_TABLES[metricType] : VALUE_TABLES[metricType]
 	return { tbl, isHistogram }
 }
 

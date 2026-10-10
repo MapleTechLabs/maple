@@ -683,7 +683,7 @@ export function GcpIntegrationCard() {
 	})
 
 	if (Result.isInitial(statusResult)) {
-		return <Skeleton className="h-40 w-full rounded-lg" />
+		return <Skeleton className="h-40 w-full rounded-md" />
 	}
 	if (Result.isFailure(statusResult) && status === null) {
 		return (
@@ -776,7 +776,7 @@ export function GcpIntegrationCard() {
 									resources appear here.
 								</IntegrationEmptyHint>
 								<Button onClick={() => setTarget({ kind: "new" })}>
-									<GoogleCloudMonoIcon size={16} />
+									<GoogleCloudMonoIcon />
 									Connect Google Cloud
 								</Button>
 							</>

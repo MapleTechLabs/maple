@@ -39,6 +39,7 @@ import {
 	type RelayPorts,
 	type ResolvedWorkspace,
 } from "./turn.ts"
+import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -47,7 +48,12 @@ import {
  * for, so the spans a turn produces are exported from here or not at all — and flushed when the
  * event is done, because nothing else closes a scope around it.
  */
-const telemetry = MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-chat-bot" }))
+const telemetry = MapleCloudflareSDK.make(
+	workerTelemetryConfig({
+		serviceName: "maple-chat-bot",
+		anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+	}),
+)
 
 const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 

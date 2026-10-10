@@ -1,11 +1,9 @@
-import { orgOnboardingState } from "@maple/db"
-import type { OrgOnboardingStateRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgOnboardingState, type OrgOnboardingStateRow } from "@maple/db/tables"
 import { OnboardingPersistenceError, OnboardingStateResponse } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/http"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs } from "@maple/backend/platform/time"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
@@ -29,14 +27,27 @@ function rowToResponse(row: OrgOnboardingStateRow): OnboardingStateResponse {
 	return new OnboardingStateResponse({
 		role: row.role ?? null,
 		demoDataRequested: row.demoDataRequested,
-		onboardingCompletedAt: dateToMs(row.onboardingCompletedAt),
-		checklistDismissedAt: dateToMs(row.checklistDismissedAt),
-		firstDataReceivedAt: dateToMs(row.firstDataReceivedAt),
-		rewardClaimedAt: dateToMs(row.rewardClaimedAt),
-		rewardReservedAt: dateToMs(row.rewardReservedAt),
-		createdAt: row.createdAt.getTime(),
-		updatedAt: row.updatedAt.getTime(),
+		onboardingCompletedAt: row.onboardingCompletedAt,
+		checklistDismissedAt: row.checklistDismissedAt,
+		firstDataReceivedAt: row.firstDataReceivedAt,
+		rewardClaimedAt: row.rewardClaimedAt,
+		rewardReservedAt: row.rewardReservedAt,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
 	})
+}
+
+const emailSentStamp = (field: OnboardingEmailField, now: number) => {
+	switch (field) {
+		case "welcomeEmailSentAt":
+			return { welcomeEmailSentAt: now }
+		case "connectNudgeEmailSentAt":
+			return { connectNudgeEmailSentAt: now }
+		case "stalledEmailSentAt":
+			return { stalledEmailSentAt: now }
+		case "activationEmailSentAt":
+			return { activationEmailSentAt: now }
+	}
 }
 
 export class OnboardingService extends Context.Service<OnboardingService>()(
@@ -48,11 +59,12 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 			const findRow = (orgId: OrgId) =>
 				database
 					.execute((db) =>
-						db
-							.select()
-							.from(orgOnboardingState)
-							.where(eq(orgOnboardingState.orgId, orgId))
-							.limit(1),
+						db.run(
+							PG.from(OrgOnboardingState)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.limit(1),
+						),
 					)
 					.pipe(
 						Effect.mapError(toPersistenceError),
@@ -71,17 +83,18 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db
-							.insert(orgOnboardingState)
-							.values({
-								orgId,
-								userId: userId ?? null,
-								email: email ?? null,
-								demoDataRequested: false,
-								createdAt: new Date(opts?.createdAt ?? now),
-								updatedAt: new Date(now),
-							})
-							.onConflictDoNothing(),
+						db.run(
+							PG.insertInto(OrgOnboardingState)
+								.values({
+									orgId,
+									userId: userId ?? null,
+									email: email ?? null,
+									demoDataRequested: false,
+									createdAt: opts?.createdAt ?? now,
+									updatedAt: now,
+								})
+								.onConflictDoNothing(),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -121,26 +134,27 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgOnboardingState)
-							.set({
-								...(input.role != null ? { role: input.role } : undefined),
-								...(input.demoDataRequested != null
-									? {
-											demoDataRequested: input.demoDataRequested,
-										}
-									: undefined),
-								...(input.markOnboardingComplete
-									? { onboardingCompletedAt: new Date(now) }
-									: undefined),
-								...(input.markChecklistDismissed
-									? { checklistDismissedAt: new Date(now) }
-									: undefined),
-								...(userId != null ? { userId } : undefined),
-								...(email != null ? { email } : undefined),
-								updatedAt: new Date(now),
-							})
-							.where(eq(orgOnboardingState.orgId, orgId)),
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set({
+									...(input.role != null ? { role: input.role } : undefined),
+									...(input.demoDataRequested != null
+										? {
+												demoDataRequested: input.demoDataRequested,
+											}
+										: undefined),
+									...(input.markOnboardingComplete
+										? { onboardingCompletedAt: now }
+										: undefined),
+									...(input.markChecklistDismissed
+										? { checklistDismissedAt: now }
+										: undefined),
+									...(userId != null ? { userId } : undefined),
+									...(email != null ? { email } : undefined),
+									updatedAt: now,
+								})
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 
@@ -160,16 +174,12 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				const result = yield* database
 					.execute((db) =>
-						db
-							.update(orgOnboardingState)
-							.set({ firstDataReceivedAt: new Date(now), updatedAt: new Date(now) })
-							.where(
-								and(
-									eq(orgOnboardingState.orgId, orgId),
-									isNull(orgOnboardingState.firstDataReceivedAt),
-								),
-							)
-							.returning({ id: orgOnboardingState.orgId }),
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set({ firstDataReceivedAt: now, updatedAt: now })
+								.where(($) => [$.orgId.eq(orgId), $.firstDataReceivedAt.isNull()])
+								.returning(($) => ({ id: $.orgId })),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 				return result.length > 0
@@ -187,20 +197,16 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				const result = yield* database
 					.execute((db) =>
-						db
-							.update(orgOnboardingState)
-							.set({ rewardReservedAt: new Date(now), updatedAt: new Date(now) })
-							.where(
-								and(
-									eq(orgOnboardingState.orgId, orgId),
-									isNull(orgOnboardingState.rewardClaimedAt),
-									or(
-										isNull(orgOnboardingState.rewardReservedAt),
-										lt(orgOnboardingState.rewardReservedAt, new Date(now - leaseMs)),
-									),
-								),
-							)
-							.returning({ id: orgOnboardingState.orgId }),
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set({ rewardReservedAt: now, updatedAt: now })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.rewardClaimedAt.isNull(),
+									PG.or($.rewardReservedAt.isNull(), $.rewardReservedAt.lt(now - leaseMs)),
+								])
+								.returning(($) => ({ id: $.orgId })),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 				return result.length > 0
@@ -213,14 +219,15 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgOnboardingState)
-							.set({
-								rewardClaimedAt: new Date(now),
-								rewardReservedAt: null,
-								updatedAt: new Date(now),
-							})
-							.where(eq(orgOnboardingState.orgId, orgId)),
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set({
+									rewardClaimedAt: now,
+									rewardReservedAt: null,
+									updatedAt: now,
+								})
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
@@ -232,10 +239,11 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgOnboardingState)
-							.set({ rewardReservedAt: null, updatedAt: new Date(now) })
-							.where(eq(orgOnboardingState.orgId, orgId)),
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set({ rewardReservedAt: null, updatedAt: now })
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
@@ -245,22 +253,20 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				field: OnboardingEmailField,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const set: Partial<typeof orgOnboardingState.$inferInsert> = { updatedAt: new Date(now) }
-				if (field === "welcomeEmailSentAt") set.welcomeEmailSentAt = new Date(now)
-				else if (field === "connectNudgeEmailSentAt") set.connectNudgeEmailSentAt = new Date(now)
-				else if (field === "stalledEmailSentAt") set.stalledEmailSentAt = new Date(now)
-				else set.activationEmailSentAt = new Date(now)
-
 				yield* database
 					.execute((db) =>
-						db.update(orgOnboardingState).set(set).where(eq(orgOnboardingState.orgId, orgId)),
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set({ ...emailSentStamp(field, now), updatedAt: now })
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
 			const listAll = Effect.fn("OnboardingService.listAll")(function* () {
 				return yield* database
-					.execute((db) => db.select().from(orgOnboardingState))
+					.execute((db) => db.run(PG.from(OrgOnboardingState).select()))
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 
@@ -275,22 +281,18 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 					const now = yield* Clock.currentTimeMillis
 					yield* database
 						.execute((db) =>
-							db
-								.update(orgOnboardingState)
-								.set({
-									welcomeEmailSentAt: new Date(now),
-									connectNudgeEmailSentAt: new Date(now),
-									stalledEmailSentAt: new Date(now),
-									activationEmailSentAt: new Date(now),
-									onboardingCompletedAt: new Date(now),
-									updatedAt: new Date(now),
-								})
-								.where(
-									and(
-										eq(orgOnboardingState.orgId, orgId),
-										isNull(orgOnboardingState.onboardingCompletedAt),
-									),
-								),
+							db.run(
+								PG.update(OrgOnboardingState)
+									.set({
+										welcomeEmailSentAt: now,
+										connectNudgeEmailSentAt: now,
+										stalledEmailSentAt: now,
+										activationEmailSentAt: now,
+										onboardingCompletedAt: now,
+										updatedAt: now,
+									})
+									.where(($) => [$.orgId.eq(orgId), $.onboardingCompletedAt.isNull()]),
+							),
 						)
 						.pipe(Effect.mapError(toPersistenceError))
 				},

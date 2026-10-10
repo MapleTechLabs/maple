@@ -121,6 +121,26 @@ describe("V2ApiKey wire format", () => {
 		expect("keyPrefix" in wire).toBe(false)
 	})
 
+	it("encodes MCP OAuth tokens, whose stored scope is outside the request grammar", () => {
+		const key = Schema.decodeUnknownSync(V2ApiKey)({
+			id: encodePublicId("key", UUID),
+			object: "api_key",
+			name: "Claude",
+			description: "OAuth access token for the Maple MCP server",
+			key_prefix: "maple_ak_abc...",
+			kind: "mcp",
+			scopes: ["mcp:tools"],
+			revoked: false,
+			revoked_at: null,
+			last_used_at: null,
+			expires_at: "2026-07-15T01:00:00.000Z",
+			created_at: "2026-07-15T00:00:00.000Z",
+			created_by: "user_123",
+			created_by_email: null,
+		})
+		expect(Schema.encodeSync(V2ApiKey)(key).scopes).toEqual(["mcp:tools"])
+	})
+
 	it("keeps txid on mutation responses but out of the base resource", () => {
 		const base = {
 			id: encodePublicId("key", UUID),

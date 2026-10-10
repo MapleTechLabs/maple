@@ -90,9 +90,9 @@ function parseMetricSelection(raw: string): {
 }
 
 const ADD_ON_KEYS: { key: QueryBuilderAddOnKey; label: string }[] = [
-	{ key: "groupBy", label: "Group By" },
+	{ key: "groupBy", label: "Group by" },
 	{ key: "having", label: "Having" },
-	{ key: "orderBy", label: "Order By" },
+	{ key: "orderBy", label: "Order by" },
 	{ key: "limit", label: "Limit" },
 	{ key: "legend", label: "Legend" },
 ]

@@ -19,6 +19,7 @@ const alertVariants = cva(
 				default: "bg-transparent dark:bg-input/32 [&>svg]:text-muted-foreground",
 				crit: "border-severity-error/32 bg-severity-error/4 [&>svg]:text-severity-error",
 				info: "border-severity-info/32 bg-severity-info/4 [&>svg]:text-severity-info",
+				done: "border-severity-debug/32 bg-severity-debug/4 [&>svg]:text-severity-debug",
 				ok: "border-severity-info/32 bg-severity-info/4 [&>svg]:text-severity-info",
 				warn: "border-severity-warn/32 bg-severity-warn/4 [&>svg]:text-severity-warn",
 			},

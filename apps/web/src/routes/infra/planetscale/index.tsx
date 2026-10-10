@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { ResultView } from "@/components/common/result-view"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -145,9 +145,9 @@ function PlanetScaleData({
 	)
 	// Retained so changing the time range dims the numbers instead of replacing
 	// the whole page with skeletons.
-	const statsResult = useRefreshableAtomValue(
-		getServiceMapPlanetScaleResultAtom({ data: { startTime, endTime } }),
-	)
+	const statsAtom = getServiceMapPlanetScaleResultAtom({ data: { startTime, endTime } })
+	const statsResult = useRefreshableAtomValue(statsAtom)
+	const refreshStats = useAtomRefresh(statsAtom)
 
 	const stats = Result.builder(statsResult)
 		.onSuccess((r) => r.databases)
@@ -205,7 +205,12 @@ function PlanetScaleData({
 							/>
 						) : null}
 						{Result.isFailure(statsResult) ? (
-							<ErrorState error={statsResult.cause} variant="row" />
+							<ErrorState
+								error={statsResult.cause}
+								title="Failed to load database stats"
+								onRetry={refreshStats}
+								variant="row"
+							/>
 						) : null}
 						{neverCollected ? <PlanetScaleSetupState steps={setupSteps} /> : null}
 						{/* Inventory counts have no time series, so no sparkline slot to reserve. */}
@@ -292,7 +297,7 @@ function PlanetScaleData({
 							<PlanetScaleDatabaseTable
 								databases={inventory.databases}
 								statsByName={statsByName}
-								waiting={Boolean(statsResult.waiting)}
+								waiting={statsResult.waiting}
 								metricsPaused={neverCollected}
 								emptyMessage={
 									metricsPaused ? METRICS_PAUSED_MESSAGE : "No databases in the inventory."

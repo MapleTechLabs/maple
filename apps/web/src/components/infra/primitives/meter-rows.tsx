@@ -1,6 +1,6 @@
 import { Meter } from "@maple/ui/components/ui/meter"
 import { cn } from "@maple/ui/lib/utils"
-import { formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 
 import { severityLevel } from "../format"
 import { BAR_FILL, BAR_VALUE_TONE } from "../severity-tokens"
@@ -82,7 +82,7 @@ function MeterRow({ label, fraction, hideLabel }: Meter & { hideLabel?: boolean 
 					BAR_VALUE_TONE[level],
 				)}
 			>
-				{finite ? formatPercent(fraction) : "—"}
+				{finite ? formatPercent(fraction) : EMPTY_VALUE}
 			</span>
 		</div>
 	)

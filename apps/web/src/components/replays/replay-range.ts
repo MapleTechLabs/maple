@@ -138,10 +138,12 @@ export const replayRangeInput = (
  * Where a chunk sits on the playback timeline.
  *
  * `timestamp` is the ingest gateway's receipt time, so it trails the recording's
- * own clock by the upload latency — well inside one chunk's duration. That makes
- * it precise enough to resolve a seek to the right *chunk*, which is all this is
- * used for; the exact offset within that chunk comes from its rrweb events once
- * loaded.
+ * own clock by the upload latency — usually well inside one chunk's duration.
+ * The exception is the chunk a page was flushing as it unloaded: the SDK sends
+ * it from the next page load, so it is received a page load or more late (up to
+ * ten minutes) and can be received after the chunk that follows it. Either way
+ * it resolves a seek to a nearby *chunk*, which is all this is used for; the
+ * exact offset comes from the chunk's rrweb events once loaded.
  *
  * Deliberately not a stored first-event timestamp: adding one meant a new
  * warehouse column, and a column the deployed cluster doesn't have yet fails
@@ -174,7 +176,10 @@ export const manifestDurationMs = (chunks: ReadonlyArray<ReplayChunkMeta>): numb
  * The chunk covering `offsetMs` into the recording.
  *
  * Returns the last chunk that starts at or before the target; falls back to the
- * first chunk for a target before the recording begins.
+ * first chunk for a target before the recording begins. The walk is in seq order
+ * and stops at the first chunk received after the target, so where a deferred
+ * unload chunk was received after its successor, a target between the two
+ * receipts resolves to the chunk before both.
  */
 export const chunkAtOffset = (
 	chunks: ReadonlyArray<ReplayChunkMeta>,
