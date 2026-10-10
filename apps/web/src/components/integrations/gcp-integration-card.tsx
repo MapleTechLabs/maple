@@ -551,8 +551,8 @@ function GcpConnection({
 	})
 
 	const state = gcpConnectionState(connector, nowMs)
-	// Side by side while each is a line of status or a hint of a line or two. A failure or a command
-	// to copy takes the card's width: it reads in fewer lines there, and no half stays empty beside it.
+	// Side by side while each is a line of status or a neutral hint of a line or two. A failure, a
+	// warning or a command to copy takes the card's width: no half of the card stays empty beside it.
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
 	const hinted =
@@ -560,6 +560,7 @@ function GcpConnection({
 		(log.kind === "waiting" && log.overdue) ||
 		metrics.kind === "failing" ||
 		metrics.kind === "incomplete" ||
+		metrics.kind === "stalled" ||
 		(metrics.kind === "receiving" && metrics.resourcesError !== null)
 	const onRunScript = isAdmin ? () => onConfigure("apply") : null
 
