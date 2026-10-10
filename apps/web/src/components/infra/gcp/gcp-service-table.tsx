@@ -149,7 +149,7 @@ export function GcpServiceTableLoading({ service }: { service: GcpInfraServiceId
 }
 
 /** An error rate and a share of a limit take their severity color; every other number is plain. */
-function valueClass(spec: GcpColumn, value: number | undefined): string {
+export function gcpValueClass(spec: GcpColumn, value: number | undefined): string {
 	if (value !== undefined && spec.format === "errorRate") return errorRateClass(value)
 	if (value !== undefined && spec.format === "percent" && utilizationLevel(value) !== "ok") {
 		return BAR_VALUE_TONE[utilizationLevel(value)]
@@ -300,7 +300,7 @@ export function GcpServiceTable({
 									className={cn(
 										"text-right font-mono text-xs tabular-nums",
 										VALUE_WIDTH,
-										valueClass(spec, workload.values[index]),
+										gcpValueClass(spec, workload.values[index]),
 									)}
 								>
 									{formatGcpValue(spec.format, workload.values[index])}

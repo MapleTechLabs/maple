@@ -46,13 +46,13 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 1. Open **Integrations → Google Cloud** in Maple and click **Connect Google Cloud**. When the page already has a connection, click **Add connection** above the list. The dialog **Connect Google Cloud** opens on its first stage, **Connect**.
 2. Under **What to connect**, choose **Organization**, **Folder** or **Project** and enter its ID. An organization or folder covers every project in it, including new ones.
 3. For an organization or folder, enter the **Host project ID**.
-4. Under **What to collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
+4. Under **Collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
 5. Click **Create and continue**. Maple creates the connection and the dialog moves to its second stage, **Apply in Google Cloud**. Nothing changes in Google Cloud until you run the script.
 6. In step 1, click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
 7. In step 2, click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. **Read the script** shows it in the dialog.
 8. Return to Maple. Step 3, **Maple is waiting for the run**, updates on its own. Within a minute of the script ending, usually in seconds, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
 
-If you close the dialog before the script has run, the connection's card shows **Setup pending**. Click **Finish setup** to open the dialog at the script. After five minutes without a report from the script, step 3 reads **Maple has no confirmation yet** and lists what to check.
+If you close the dialog before the script has run, the connection's row shows **Setup pending**. Click **Finish setup** to open the dialog at the script. After five minutes without a report from the script, step 3 reads **Maple has no confirmation yet** and lists what to check.
 
 A first run for a project prints:
 
@@ -117,8 +117,8 @@ A project, folder or organization can be connected once per Maple organization. 
 
 ### Change what a connection collects
 
-1. On the connection's card, click **Configure**. The dialog opens on its first stage, **Configure**.
-2. Under **What to collect**, tick or untick **Log forwarding** or **Metrics and resources**. The line under each checkbox says what saving that choice does.
+1. On the connection's row, click **Configure**. The dialog opens on its first stage, **Configure**.
+2. Under **Collect**, tick or untick **Log forwarding** or **Metrics and resources**. The line beside a changed checkbox says what saving it does.
 3. Click **Save and continue**. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, or **Turn on** when you turn something back on that still exists in Google Cloud. Then the button of the first stage reads **Save**, and there is nothing to run.
 4. The dialog moves to **Apply in Google Cloud**. Its recap says what is saved and what this run does. Copy the script and run it in Cloud Shell again.
 5. When the run reports, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
@@ -132,7 +132,7 @@ A change takes effect in Maple and in Google Cloud at different times:
 | **Log forwarding** or **Metrics and resources** on                       | Starts once the script has run.                                                                                | The script creates the log sink, or the read-only service account.                                          |
 | Back on while Google Cloud still has the log sink or the service account | At once: Maple stores the logs again as soon as you save, and reads metrics again from the next 5-minute read. | Nothing changes.                                                                                            |
 
-Until the script has run, the connection's card shows **Changes not applied in Google Cloud** and says what goes on until then, for example "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink." Click **Apply changes** to open the dialog at the script.
+Until the script has run, the connection's row shows **Changes not applied in Google Cloud** and says what goes on until then, for example "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink." Click **Apply changes** to open the dialog at the script.
 
 A run that removes the log sink takes one to two minutes: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error.
 
@@ -142,19 +142,19 @@ A connection collects at least one of the two: the last one that is on can't be 
 
 ### Log filter
 
-**Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **What to collect**, while **Log forwarding** is ticked. To change it on a connection, click **Configure**, choose a filter, click **Continue to the script** and run the script again.
+**Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked. To change it on a connection, click **Configure**, choose a filter, click **Continue to the script** and run the script again.
 
-| Log filter                             | The script                                                                                                                                                                                                                                           |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Recommended: no GKE container logs** | Sets the [recommended filter](#logs). Preselected for a connection that has no sink yet.                                                                                                                                                             |
-| **Include GKE container logs**         | Sets the recommended filter without its GKE container clause. Maple asks you to acknowledge the duplicates before you continue.                                                                                                                      |
-| **Keep the sink's current filter**     | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: read it in the console under **Logging → [Log Router](https://console.cloud.google.com/logs/router)**. |
+| Log filter                           | The script                                                                                                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Recommended**                      | Sets the [recommended filter](#logs). Preselected for a connection that has no sink yet.                                                                                                                |
+| **Recommended + GKE container logs** | Sets the recommended filter without its GKE container clause. Maple asks you to accept the duplicates before you continue.                                                                              |
+| **Keep current filter**              | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: **Current filter in Log Router** opens it in the console. |
 
 Include GKE container logs only for workloads that don't send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [GKE container logs](/docs/integrations/gcp-opentelemetry#gke-container-logs).
 
-Choosing **Include GKE container logs** shows the notice **Not recommended when your GKE workloads send traces to Maple**. The button that continues stays disabled until you tick **I understand that GKE container logs can be stored twice**. To back out, click **Use recommended filter**, or **Keep current filter** on a connection that has a sink.
+Choosing **Recommended + GKE container logs** shows the checkbox **Accept duplicate logs from instrumented workloads**. The button that continues stays disabled until you tick it. To back out, choose another filter.
 
-For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep the sink's current filter** leave your filter in place, while the other two options replace it.
+For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while the other two options replace it.
 
 ## Verify
 
@@ -167,40 +167,40 @@ Once a connection has delivered data, **Integrations → Google Cloud** opens wi
 | **Workloads · 24h**   | Workloads that reported metrics in the last 24 hours.                   |
 | **Resources**         | Resources in the [inventory](#resources), and the projects they are in. |
 
-The row follows what has delivered. While only **Log forwarding** delivers, it shows **Log entries**, **Errors** and **Warnings**. While only **Metrics and resources** delivers, it shows **Workloads**, **Resources** and **Projects**. A number Maple cannot count yet shows a dash. Below the numbers, **Workloads by Google Cloud service** links each service to its tab on **Infrastructure → Google Cloud**.
+The row follows what has delivered. While only **Log forwarding** delivers, it shows **Log entries**, **Errors** and **Warnings**. While only **Metrics and resources** delivers, it shows **Workloads**, **Resources** and **Projects**. A number Maple cannot count yet shows a dash. Below the numbers, **Workloads** lists what reported metrics in the last 24 hours, the worst first, each a link to its page under **Infrastructure → Google Cloud**. Beside it, **Resources** counts the [inventory](#resources) by type.
 
-Under **Connections**, each connection has a card, the worst state first. A card shows a status for **Log forwarding** and one for **Metrics and resources**. The page updates on its own.
+Under **Connections**, each connection is a row, the worst state first, with a status for **Logs** and one for **Metrics**. A hint, a warning or a failure shows in a band under the row. The page updates on its own.
 
-| Log forwarding             | Meaning                                                                                                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Not set up**             | The setup script has not set log forwarding up yet. Run it.                                                                                                                     |
-| **Setup running**          | A run reported on metrics and resources in the last two minutes and has not reported on log forwarding yet.                                                                     |
-| **Waiting for first logs** | The script ran and no entry has arrived. After 20 minutes the row shows the hint **No log entry in 20 minutes** with a `gcloud logging write` command that writes a test entry. |
-| **Receiving logs**         | Entries arrive. The row shows when the last one did, and **View logs** opens Logs filtered to the connection.                                                                   |
-| **No logs in 24 hours**    | Nothing passed the filter for a day. Not an error.                                                                                                                              |
-| **Rejecting logs**         | Maple refused the last push. The row says why and what to do.                                                                                                                   |
-| **Off**                    | Turned off in **Configure**. While Google Cloud still has the log sink, the row reads "Maple discards what Google Cloud still forwards".                                        |
+| Logs                            | Meaning                                                                                                                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Not set up**                  | The setup script has not set log forwarding up yet. Run it.                                                                                                             |
+| **Setup running**               | A run reported on metrics and resources in the last two minutes and has not reported on log forwarding yet.                                                             |
+| **Waiting for the first entry** | The script ran and no entry has arrived. After 20 minutes the band reads **No log entry in 20 minutes** with a `gcloud logging write` command that writes a test entry. |
+| **Receiving**                   | Entries arrive. The row shows when the last one did.                                                                                                                    |
+| **Nothing in 24 hours**         | Nothing passed the filter for a day. Not an error.                                                                                                                      |
+| **Rejected**                    | Maple refused the last push. The band says why and what to do.                                                                                                          |
+| **Off**                         | Turned off in **Configure**. While Google Cloud still has the log sink, the band **Changes not applied in Google Cloud** says so.                                       |
 
-| Metrics and resources             | Meaning                                                                                                                                                                                                                                                                                                       |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Not set up**                    | The setup script has not granted Maple read access yet. Run it.                                                                                                                                                                                                                                               |
-| **Setup running**                 | A run reported on log forwarding in the last two minutes and has not reported on metrics and resources yet.                                                                                                                                                                                                   |
-| **Waiting for first metrics**     | The script ran and the first read has not landed. After 15 minutes the row says that no metrics have arrived yet.                                                                                                                                                                                             |
-| **Receiving metrics**             | Reads succeed. The row shows when the last metrics arrived, and **Open Infrastructure** opens **Infrastructure → Google Cloud**. A folder or organization also shows how many projects Maple found. The label reads **Receiving metrics, resource list incomplete** when Maple could not list every resource. |
-| **Receiving metrics, incomplete** | The last read is under 10 minutes old, but some metric queries failed or were cut short. The row says which.                                                                                                                                                                                                  |
-| **Metrics stalled**               | No read for 30 minutes and no error. Maple retries every 5 minutes.                                                                                                                                                                                                                                           |
-| **Can't read metrics**            | Reads fail, and none has succeeded in the last 10 minutes. The row says why and what to do.                                                                                                                                                                                                                   |
-| **Off**                           | Turned off in **Configure**. While the read-only service account still exists, the row reads "Maple no longer uses its service account".                                                                                                                                                                      |
+| Metrics                        | Meaning                                                                                                                                                  |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Not set up**                 | The setup script has not granted Maple read access yet. Run it.                                                                                          |
+| **Setup running**              | A run reported on log forwarding in the last two minutes and has not reported on metrics and resources yet.                                              |
+| **Waiting for the first read** | The script ran and the first read has not landed. After 15 minutes the band says that no metrics have arrived yet.                                       |
+| **Receiving**                  | Reads succeed. The row shows when the last one landed. The label reads **Receiving, resource list incomplete** when Maple could not list every resource. |
+| **Incomplete**                 | The last read is under 10 minutes old, but some metric queries failed or were cut short. The band says which.                                            |
+| **Stalled**                    | No read for 30 minutes and no error. Maple retries every 5 minutes.                                                                                      |
+| **Can't be read**              | Reads fail, and none has succeeded in the last 10 minutes. The band says why and what to do.                                                             |
+| **Off**                        | Turned off in **Configure**. While the read-only service account still exists, the band **Changes not applied in Google Cloud** says so.                 |
 
 The page header and the Integrations list show the connection's worst status: **Needs attention**, **Setup pending**, **Changes pending**, **Waiting for data** or **Healthy**.
 
-A card whose connection needs the setup script shows a band with one button. The button opens **Configure** at its second stage, **Apply in Google Cloud**.
+A connection that needs the setup script shows a band with one button. The button opens **Configure** at its second stage, **Apply in Google Cloud**.
 
 | Band                                    | Button                   | Shown when                                                                                                             |
 | --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | **Setup pending**                       | **Finish setup**         | The script of a new connection has not reported, or its last run stopped part of the way.                              |
 | **Changes not applied in Google Cloud** | **Apply changes**        | The saved configuration and what the script last reported differ. The band says what goes on until the script has run. |
-| **The setup script needs to run again** | **Run the script again** | The text of a failure asks for another run of the setup script.                                                        |
+| A failure's own message                 | **Run the script again** | The text of the failure asks for another run of the setup script.                                                      |
 
 Members who are not admins of the Maple organization see the statuses and the numbers, without **Configure**, the **⋮** menu or the band's button. The band asks them to have an admin run the setup script, and a line under the list says "Only Maple organization admins can add, configure or disconnect connections."
 
@@ -271,7 +271,7 @@ AND NOT logName:"serialconsole.googleapis.com"
 AND NOT resource.type="k8s_container"
 ```
 
-**Include GKE container logs** sets the filter without the last clause. To forward different logs, see [Log filter](#log-filter).
+**Recommended + GKE container logs** sets the filter without the last clause. To forward different logs, see [Log filter](#log-filter).
 
 The script reports to Maple through a log named `maple-setup`. Maple reads that entry as the report and does not store it, so don't write your own logs under that name.
 
@@ -395,7 +395,7 @@ From a workload's page:
 - **Logs** opens the workload's logs. A Cloud SQL instance, a subscription and a URL map open the logs of their resource type, narrowed to the resource.
 - **Traces** is there when a service of the same name sent traces in the time range.
 - The icon beside a chart's title opens its metric in the metrics explorer.
-- When the workload is in the [inventory](#resources), a panel lists its project, location, state and labels, with a link to its product's list in the Google Cloud console, opened on the resource's project. A GKE container shows its cluster. The match is by type, project, name and location: a workload Maple cannot match exactly shows no panel.
+- When the workload is in the [inventory](#resources), its state and labels show under its name, and **Google Cloud** opens its product's list in the Google Cloud console, on the resource's project. A GKE container gets the link to its cluster's list, without state or labels. The match is by type, project, name and location: a workload Maple cannot match exactly shows neither.
 
 ### Elsewhere in Maple
 
@@ -432,7 +432,7 @@ Cloud Asset Inventory searches are free of charge. See [Cloud Asset Inventory pr
 
 ## Troubleshooting
 
-To run the setup script again, click **Configure** on the connection's card, then **Continue to the script**. When a failure asks for another run, the card also shows **The setup script needs to run again** with the button **Run the script again**.
+To run the setup script again, click **Configure** on the connection's row, then **Continue to the script**. When a failure asks for another run, its band has the button **Run the script again**.
 
 ### In Cloud Shell
 
@@ -454,23 +454,23 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 
 ### Log forwarding
 
-| The connection shows                                                                             | Cause and fix                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Setup pending** after the script ran                                                           | The script stopped before it finished, or could not reach Maple. Read its last lines in Cloud Shell and paste it again.                                                                                                             |
-| **Waiting for first logs** for more than 20 minutes                                              | Either nothing was logged that passes the filter, or the sink can't publish. Run the `gcloud logging write` command the row shows. If the entry does not arrive within a minute, open **Configure** and run the setup script again. |
-| **Rejecting logs**: "The Pub/Sub subscription wraps each entry in an envelope Maple can't read." | The subscription was changed to deliver wrapped messages. Run the setup script again: it resets the subscription. Entries sent meanwhile are lost.                                                                                  |
-| **Rejecting logs**: "Maple could not store an entry just now."                                   | Nothing to do. Pub/Sub retries the entry for up to a day, and the status returns to **Receiving logs** with the next accepted entry.                                                                                                |
-| **Rejecting logs**: "This Maple organization is over its plan limit, so Maple refuses new logs." | Raise the plan limit under **Settings → Billing**. Pub/Sub retries refused entries for up to a day.                                                                                                                                 |
-| GKE container logs appear twice                                                                  | The sink forwards GKE container logs and the workloads also send them over OpenTelemetry. In **Configure**, choose **Recommended: no GKE container logs** as the [log filter](#log-filter) and run the script again.                |
-| GKE container logs are missing                                                                   | The recommended filter leaves them out. If the workloads don't send their logs over OpenTelemetry, choose **Include GKE container logs** as the [log filter](#log-filter) in **Configure** and run the script again.                |
+| The connection shows                                                                       | Cause and fix                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Setup pending** after the script ran                                                     | The script stopped before it finished, or could not reach Maple. Read its last lines in Cloud Shell and paste it again.                                                                                                              |
+| **Waiting for the first entry** for more than 20 minutes                                   | Either nothing was logged that passes the filter, or the sink can't publish. Run the `gcloud logging write` command the band shows. If the entry does not arrive within a minute, open **Configure** and run the setup script again. |
+| **Rejected**: "The Pub/Sub subscription wraps each entry in an envelope Maple can't read." | The subscription was changed to deliver wrapped messages. Run the setup script again: it resets the subscription. Entries sent meanwhile are lost.                                                                                   |
+| **Rejected**: "Maple could not store an entry just now."                                   | Nothing to do. Pub/Sub retries the entry for up to a day, and the status returns to **Receiving** with the next accepted entry.                                                                                                      |
+| **Rejected**: "This Maple organization is over its plan limit, so Maple refuses new logs." | Raise the plan limit under **Settings → Billing**. Pub/Sub retries refused entries for up to a day.                                                                                                                                  |
+| GKE container logs appear twice                                                            | The sink forwards GKE container logs and the workloads also send them over OpenTelemetry. In **Configure**, choose **Recommended** as the [log filter](#log-filter) and run the script again.                                        |
+| GKE container logs are missing                                                             | The recommended filter leaves them out. If the workloads don't send their logs over OpenTelemetry, choose **Recommended + GKE container logs** as the [log filter](#log-filter) in **Configure** and run the script again.           |
 
 ### Metrics and resources
 
-**Can't read metrics** and **Receiving metrics, incomplete** come with one of the messages below. The first means no read has succeeded in the last 10 minutes. The second means the last read is under 10 minutes old and something is missing. The messages about the resource list show under a green **Receiving metrics**. Where a project's message says "the project", a folder's or organization's says "the host project".
+**Can't be read** and **Incomplete** come with one of the messages below. The first means no read has succeeded in the last 10 minutes. The second means the last read is under 10 minutes old and something is missing. The messages about the resource list show under **Receiving, resource list incomplete**. Where a project's message says "the project", a folder's or organization's says "the host project".
 
 | The connection shows                                                                | Cause and fix                                                                                                                                                                                                                                                                                      |
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Metrics stalled**                                                                 | No read for 30 minutes and no error. Maple retries on its own. If it stays for more than an hour, write to support.                                                                                                                                                                                |
+| **Stalled**                                                                         | No read for 30 minutes and no error. Maple retries on its own. If it stays for more than an hour, write to support.                                                                                                                                                                                |
 | "Maple can't sign in as this connection's read-only service account yet."           | Shown from 10 minutes after a setup run, on a connection Maple has never read. The account does not exist, or the grant to Maple is missing or blocked by an organization policy. Run the setup script again and read its last lines. See [Domain restricted sharing](#domain-restricted-sharing). |
 | "Maple can no longer sign in as this connection's read-only service account."       | Maple has read this connection before. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it.                                                                                   |
 | "The project acme-prod has no active billing account"                               | Link a billing account to the host project. The message carries the link. Maple retries every 5 minutes.                                                                                                                                                                                           |
@@ -504,7 +504,7 @@ Google checks the policy when a grant is made, so the grant stays in place if yo
 
 ## Disconnect
 
-1. On **Integrations → Google Cloud**, open the **⋮** menu (**More actions**) on the connection's card and choose **Disconnect**.
+1. On **Integrations → Google Cloud**, open the **⋮** menu (**More actions**) on the connection's row and choose **Disconnect**.
 2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and read-only service account, and ends with "Done. Everything the setup script created is gone."
 3. Wait for the check mark in the dialog, then click **Disconnect**. Maple stops reading the connection's metrics, and stops accepting its logs within about a minute. Data already in Maple is kept.
 

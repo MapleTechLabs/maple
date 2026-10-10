@@ -1,12 +1,33 @@
+import { useState } from "react"
 import type React from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
-import { GCP_INFRA_SERVICES } from "@maple/domain/gcp-infra"
+import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { ToggleGroup } from "@maple/ui/components/ui/toggle-group"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 
 import { StatRail, StatRailItem, StatRailItemSkeleton } from "@/components/common/stat-rail"
-import { gcpFleet } from "@/components/infra/gcp/tabs"
+import { ArrowRightIcon } from "@/components/icons"
+import { gcpValueClass } from "@/components/infra/gcp/gcp-service-table"
+import {
+	GCP_INFRA_COLUMNS,
+	GCP_RESOURCES_TAB,
+	formatGcpValue,
+	gcpAssetTypeLabel,
+	gcpFleet,
+	gcpWorkloadLocation,
+	gcpWorkloadName,
+	gcpWorkloadProject,
+	gcpWorkloadSearch,
+	gcpWorkloadTone,
+} from "@/components/infra/gcp/tabs"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
@@ -15,6 +36,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
+import { CountChip } from "./count-chip"
 import { GCP_LOG_SOURCE, gcpLogVolume, gcpWorkloadCounts } from "./gcp-usage"
 import { GCP_ACCENT } from "./integration-catalog"
 
@@ -52,15 +74,13 @@ function useGcpLogVolume() {
 	)
 }
 
-/** The reporting services: what the Infrastructure page's band counts, over the page's window. */
-function useGcpWorkloads() {
+/** The reporting workloads: what the Infrastructure page's band reads, over the page's window. */
+function useGcpFleet() {
 	const data = useEffectiveTimeRange(undefined, undefined, WINDOW)
-	return loaded(useAtomValue(gcpInfraFleetResultAtom({ data })), (fleet) =>
-		gcpWorkloadCounts(gcpFleet(fleet.services)),
-	)
+	return loaded(useAtomValue(gcpInfraFleetResultAtom({ data })), (fleet) => gcpFleet(fleet.services))
 }
 
-/** The inventory's totals: the read behind the Infrastructure page's Resources tab. */
+/** The inventory by type: the read behind the Infrastructure page's Resources tab. */
 function useGcpInventory() {
 	return loaded(
 		useAtomValue(
@@ -71,7 +91,7 @@ function useGcpInventory() {
 		),
 		(response) => ({
 			total: response.types.reduce((sum, { count }) => sum + count, 0),
-			types: response.types.length,
+			types: response.types,
 			projects: response.projects.length,
 		}),
 	)
@@ -116,18 +136,19 @@ function Tile<A>({
 }
 
 /**
- * The connected state's numbers at a glance, like the Cloudflare page's, summed over every
- * connection: forwarded log entries and how many of them are errors, workloads reporting metrics,
- * and the resource inventory. Each number comes from a read another page already makes. A
- * capability shows its tiles once it has delivered, so the row is always full: the one that
- * delivers alone gets a third tile of its own. A tile whose read fails says so and the others stay.
+ * The connected state's readout, like the Cloudflare page's, over every connection: the numbers at
+ * a glance (forwarded log entries and how many of them are errors, workloads reporting metrics, the
+ * resource inventory), then the workloads themselves beside the inventory by type. Each comes from
+ * a read another page already makes. A capability shows its tiles once it has delivered, so the row
+ * is always full: the one that delivers alone gets a third tile of its own. A tile whose read fails
+ * says so and the others stay.
  */
 export function GcpUsageBand({ connectors }: { connectors: ReadonlyArray<V2GcpConnector> }) {
 	const logs = connectors.some((connector) => connector.last_log_received_at !== null)
 	const metrics = connectors.some((connector) => connector.last_metrics_received_at !== null)
 	if (!logs && !metrics) return null
 	return (
-		<div className="flex flex-col gap-2">
+		<div className="flex flex-col gap-4">
 			{logs && metrics ? (
 				// Four across from a page, not a viewport, that is wide enough; two rows of two below that.
 				<StatRail className="md:grid-cols-2 md:divide-y @2xl/page:grid-cols-4 @2xl/page:divide-y-0">
@@ -140,7 +161,12 @@ export function GcpUsageBand({ connectors }: { connectors: ReadonlyArray<V2GcpCo
 					{logs ? <LogTiles alone /> : <MetricsTiles alone />}
 				</StatRail>
 			)}
-			{metrics ? <WorkloadServices /> : null}
+			{metrics ? (
+				<div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+					<Workloads className="min-w-0 flex-1" />
+					<Resources className="lg:w-72 lg:shrink-0 xl:w-80" />
+				</div>
+			) : null}
 		</div>
 	)
 }
@@ -185,20 +211,21 @@ function LogTiles({ alone = false }: { alone?: boolean }) {
 }
 
 function MetricsTiles({ alone = false }: { alone?: boolean }) {
-	const workloads = useGcpWorkloads()
+	const fleet = useGcpFleet()
 	const inventory = useGcpInventory()
 	return (
 		<>
 			<Tile
 				eyebrow="Workloads · 24h"
-				read={workloads}
+				read={fleet}
 				className={alone ? FIRST_OF_THREE : LAST_ROW}
-				value={(services) => services.reduce((sum, { count }) => sum + count, 0)}
-				caption={(services) =>
-					services.length === 0
+				value={(services) => services.reduce((sum, { workloads }) => sum + workloads.length, 0)}
+				caption={(services) => {
+					const reporting = gcpWorkloadCounts(services).length
+					return reporting === 0
 						? "No metrics in 24 hours"
-						: `In ${countLabel(services.length, "Google Cloud service")}`
-				}
+						: `In ${countLabel(reporting, "Google Cloud service")}`
+				}}
 			/>
 			<Tile
 				eyebrow="Resources"
@@ -209,7 +236,7 @@ function MetricsTiles({ alone = false }: { alone?: boolean }) {
 					total === 0
 						? "Listed within an hour of setup"
 						: alone
-							? `Of ${countLabel(types, "type")}`
+							? `Of ${countLabel(types.length, "type")}`
 							: `In ${countLabel(projects, "project")}`
 				}
 			/>
@@ -227,31 +254,192 @@ function MetricsTiles({ alone = false }: { alone?: boolean }) {
 	)
 }
 
-/** Workloads reporting metrics per service, each a way into its Infrastructure tab. */
-function WorkloadServices() {
-	const workloads = useGcpWorkloads()
-	if (workloads === null || workloads === "failed" || workloads.length === 0) return null
+/** Worst first: what needs a look is at the top of the board. */
+const TONE_ORDER = ["crit", "warn", "neutral"] as const
+/** How many of a service's columns a row shows. */
+const VALUES_SHOWN = 3
+/** The second and third value give way where the board is narrow. */
+const VALUE_VISIBLE = ["flex", "hidden @sm:flex", "hidden @lg:flex"]
+
+/**
+ * The workloads that reported metrics, every service's in one list: its health, where it runs and
+ * the first numbers of its Infrastructure tab. A row opens the workload's page.
+ */
+function Workloads({ className }: { className?: string }) {
+	const fleet = useGcpFleet()
+	const [chosen, setChosen] = useState<GcpInfraServiceId | "all">("all")
+	if (fleet === null) return <Skeleton className={cn("h-40 rounded-md", className)} />
+
+	const services = fleet === "failed" ? [] : fleet.filter(({ workloads }) => workloads.length > 0)
+	// A service that stopped reporting takes its chip with it.
+	const service = services.some((entry) => entry.service === chosen) ? chosen : "all"
+	const all = services.flatMap(({ service, workloads }) =>
+		workloads.map((workload) => ({ service, workload })),
+	)
+	const rows = all
+		.filter((row) => service === "all" || row.service === service)
+		.toSorted(
+			(a, b) =>
+				TONE_ORDER.indexOf(gcpWorkloadTone(a.workload)) -
+					TONE_ORDER.indexOf(gcpWorkloadTone(b.workload)) ||
+				gcpWorkloadName(a.service, a.workload.keys).localeCompare(
+					gcpWorkloadName(b.service, b.workload.keys),
+				),
+		)
+	// One project says nothing on every row; several tell the rows apart.
+	const manyProjects =
+		new Set(all.map((row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
+
 	return (
-		<nav
-			aria-label="Workloads by service"
-			className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md border bg-card px-5 py-2.5 text-xs"
-		>
-			<span className="text-2xs font-medium text-muted-foreground">
-				Workloads by Google Cloud service
-			</span>
-			{workloads.map(({ service, count }) => (
-				<Link
-					key={service}
-					to="/infra/gcp"
-					search={{ tab: service }}
-					className="group inline-flex items-baseline gap-1.5 whitespace-nowrap"
-				>
-					<span className="underline decoration-border underline-offset-4 group-hover:decoration-foreground">
-						{GCP_INFRA_SERVICES[service].title}
+		<Panel className={cn("@container border-border/60", className)}>
+			<PanelHeader className="gap-2 border-border/60 pr-2.5">
+				<div className="flex min-w-0 flex-1 items-baseline gap-3">
+					<h3 className="text-sm font-semibold">Workloads</h3>
+					<span className="truncate text-2xs text-muted-foreground">last 24h</span>
+				</div>
+				{services.length > 1 ? (
+					<ToggleGroup
+						connected={false}
+						size="xs"
+						aria-label="Filter workloads by Google Cloud service"
+						value={[service]}
+						// Pressing the active chip again unpresses it, which falls back to "All".
+						onValueChange={(values) =>
+							setChosen(services.find((entry) => entry.service === values[0])?.service ?? "all")
+						}
+						className="gap-1.5"
+					>
+						<CountChip value="all" label="All" count={all.length} />
+						{services.map((entry) => (
+							<CountChip
+								key={entry.service}
+								value={entry.service}
+								label={GCP_INFRA_SERVICES[entry.service].title}
+								count={entry.workloads.length}
+							/>
+						))}
+					</ToggleGroup>
+				) : null}
+			</PanelHeader>
+			{rows.length === 0 ? (
+				<EmptyMessage className="px-3 py-10">
+					{fleet === "failed"
+						? "Not available right now."
+						: "No workload reported metrics in 24 hours."}
+				</EmptyMessage>
+			) : (
+				<div className="max-h-[22rem] overflow-y-auto overscroll-contain">
+					{rows.map(({ service, workload }) => {
+						const tone = gcpWorkloadTone(workload)
+						return (
+							<Link
+								key={`${service}\u0000${workload.keys.join("\u0000")}`}
+								to="/infra/gcp/$service/$name"
+								params={{ service, name: workload.keys[0] }}
+								// The page opens on the window these numbers are from.
+								search={{ ...gcpWorkloadSearch(service, workload.keys), timePreset: WINDOW }}
+								className="group flex items-center gap-3 border-b border-border/40 px-4 py-2.5 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+							>
+								<StatusDot tone={tone === "neutral" ? "ok" : tone} />
+								<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+									<TruncatedText className="text-xs font-medium text-foreground group-hover:text-primary">
+										{gcpWorkloadName(service, workload.keys)}
+									</TruncatedText>
+									<TruncatedText className="text-2xs text-muted-foreground">
+										{[
+											GCP_INFRA_SERVICES[service].title,
+											gcpWorkloadLocation(service, workload.keys),
+											manyProjects
+												? gcpWorkloadProject(service, workload.keys)
+												: undefined,
+										]
+											.filter(Boolean)
+											.join(" · ")}
+									</TruncatedText>
+								</div>
+								{GCP_INFRA_COLUMNS[service].slice(0, VALUES_SHOWN).map((spec, index) => (
+									<div
+										key={spec.label}
+										className={cn(
+											"w-24 shrink-0 flex-col gap-0.5 text-right",
+											VALUE_VISIBLE[index],
+										)}
+									>
+										<span
+											className={cn(
+												"text-xs font-medium tabular-nums",
+												gcpValueClass(spec, workload.values[index]),
+											)}
+										>
+											{formatGcpValue(spec.format, workload.values[index])}
+										</span>
+										<span className="text-2xs text-muted-foreground">{spec.label}</span>
+									</div>
+								))}
+							</Link>
+						)
+					})}
+				</div>
+			)}
+		</Panel>
+	)
+}
+
+/** The types listed in the card; the Resources tab has the rest. */
+const TYPES_SHOWN = 8
+
+/** The inventory by type, each a way into the Infrastructure page's Resources tab. */
+function Resources({ className }: { className?: string }) {
+	const inventory = useGcpInventory()
+	if (inventory === null) return <Skeleton className={cn("h-40 rounded-md", className)} />
+	const types = inventory === "failed" ? [] : inventory.types.toSorted((a, b) => b.count - a.count)
+	return (
+		<Panel className={cn("h-fit border-border/60", className)}>
+			<PanelHeader
+				className="border-border/60"
+				action={<span className="text-2xs text-muted-foreground">listed hourly</span>}
+			>
+				<h3 className="text-sm font-semibold">Resources</h3>
+			</PanelHeader>
+			{types.length === 0 ? (
+				<p className="px-4 py-3 text-xs text-muted-foreground">
+					{inventory === "failed" ? "Not available right now" : "Listed within an hour of setup"}
+				</p>
+			) : (
+				<ul className="flex flex-col px-2 py-1.5">
+					{types.slice(0, TYPES_SHOWN).map(({ assetType, count }) => (
+						<li key={assetType}>
+							<Link
+								to="/infra/gcp"
+								search={{ tab: GCP_RESOURCES_TAB, type: assetType }}
+								className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+							>
+								<TruncatedText>{gcpAssetTypeLabel(assetType)}</TruncatedText>
+								<span className="shrink-0 tabular-nums text-muted-foreground">
+									{formatNumber(count)}
+								</span>
+							</Link>
+						</li>
+					))}
+				</ul>
+			)}
+			{inventory === "failed" || inventory.total === 0 ? null : (
+				<footer className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground">
+					<span>
+						{formatNumber(inventory.total)} in {countLabel(inventory.projects, "project")}
 					</span>
-					<span className="font-mono text-muted-foreground tabular-nums">{count}</span>
-				</Link>
-			))}
-		</nav>
+					<Link
+						to="/infra/gcp"
+						search={{ tab: GCP_RESOURCES_TAB }}
+						className="inline-flex shrink-0 items-center gap-1 text-foreground hover:text-primary"
+					>
+						{types.length > TYPES_SHOWN
+							? `All ${countLabel(types.length, "type")}`
+							: "All resources"}
+						<ArrowRightIcon size={11} />
+					</Link>
+				</footer>
+			)}
+		</Panel>
 	)
 }

@@ -1,10 +1,9 @@
-import { Fragment, useState } from "react"
+import { useState } from "react"
 import type React from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit, Option } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
-import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
@@ -13,8 +12,7 @@ import { Panel } from "@maple/ui/components/ui/panel"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { countLabel } from "@maple/ui/lib/format"
-import type { Tone } from "@maple/ui/lib/tone"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -24,14 +22,13 @@ import {
 import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { SectionHeading } from "@/components/common/section-heading"
-import { AlertWarningIcon, ArrowRightIcon, GoogleCloudIcon, GoogleCloudMonoIcon } from "@/components/icons"
+import { AlertWarningIcon, GoogleCloudIcon, GoogleCloudMonoIcon } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { showErrorToast } from "@/lib/error-toast"
-import { encodeLogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -49,7 +46,6 @@ import {
 	type GcpConfigureTarget,
 } from "./gcp-configure"
 import {
-	GCP_CONNECTION_LABEL,
 	GCP_LOG_STATUS,
 	GCP_METRICS_STATUS,
 	GCP_SCOPE_NAMES,
@@ -62,6 +58,7 @@ import {
 	gcpRunAsked,
 	gcpScopeLabel,
 	gcpScriptNeeded,
+	type GcpCapability,
 } from "./gcp-connector-state"
 import { GcpUsageBand } from "./gcp-usage-cards"
 import { GCP_ACCENT, gcpStatusQuery } from "./integration-catalog"
@@ -128,322 +125,129 @@ export function GcpMessage({ text }: { text: string }) {
 	)
 }
 
-/** A hint under a capability: a headline, at most two short lines, then one thing to do. */
-function Notice({
+const ASK_ADMIN = "Ask a Maple organization admin to run the setup script."
+
+/**
+ * What hangs under a connection's row when there is something to know or do: a plain hint, or a
+ * warning or failure. `run` is the way into the script: the card's one filled button for an admin,
+ * a sentence for everyone else.
+ */
+function Band({
 	tone,
-	title,
+	run,
 	children,
-	action,
 }: {
 	tone?: "warn" | "crit"
-	title?: string
-	children?: React.ReactNode
-	action?: React.ReactNode
+	run?: { readonly label: string; readonly onRun: (() => void) | null }
+	children: React.ReactNode
 }) {
 	return (
-		<Alert variant={tone} size="sm" role="note" className="mt-1">
-			{title === undefined ? null : <AlertTitle>{title}</AlertTitle>}
-			<AlertDescription className="gap-2 leading-5">
-				{children}
-				{action === undefined ? null : <div>{action}</div>}
-			</AlertDescription>
-		</Alert>
-	)
-}
-
-/**
- * One thing a connection collects, as status: its name and state, under them what it last
- * delivered and where that shows up, then a hint when there is something to know or do.
- */
-function Capability({
-	title,
-	status,
-	facts = [],
-	link,
-	children,
-}: {
-	title: string
-	/** A null tone is the hollow dot of a capability that is off. */
-	status: { readonly tone: Tone | null; readonly label: string }
-	facts?: ReadonlyArray<React.ReactNode>
-	/** Where the data shows up, once it does. */
-	link?: React.ReactNode
-	children?: React.ReactNode
-}) {
-	const shown = facts.filter((fact) => fact !== null && fact !== undefined && fact !== false)
-	return (
-		<section className="flex min-w-0 flex-col gap-1 px-4 py-3 text-xs/5">
-			{/* The state sits beside the name where both fit and under it where they don't, for both rows alike. */}
-			<div className="flex flex-col gap-x-4 @sm:flex-row @sm:items-center @sm:justify-between group-data-stacked/capabilities:@sm:justify-start">
-				<h4 className={GCP_TITLE}>{title}</h4>
-				<span className="flex items-center gap-1.5 font-medium">
-					{status.tone === null ? (
-						// Off: a hollow dot, so the label lines up with the rows that have one.
-						<span
-							aria-hidden
-							className="size-1.5 rounded-full border border-muted-foreground/60"
-						/>
-					) : (
-						<StatusDot tone={status.tone} />
-					)}
-					{status.label}
-				</span>
-			</div>
-			{shown.length === 0 && link === undefined ? null : (
-				<div className="flex flex-wrap items-center justify-between gap-x-4 text-muted-foreground group-data-stacked/capabilities:justify-start">
-					<span className="text-pretty">
-						{shown.map((fact, index) => (
-							<Fragment key={index}>
-								{index === 0 ? null : " · "}
-								{fact}
-							</Fragment>
-						))}
-					</span>
-					{link === undefined ? null : (
-						<span className="ml-auto group-data-stacked/capabilities:ml-0">{link}</span>
-					)}
-				</div>
+		<div
+			role={tone === undefined ? "note" : "status"}
+			className={cn(
+				"flex flex-col gap-2.5 border-t py-2.5 pr-3 pl-4 text-xs/[18px] @xl:flex-row @xl:items-start",
+				tone === "crit"
+					? "border-severity-error/32 bg-severity-error/4"
+					: tone === "warn"
+						? "border-severity-warn/32 bg-severity-warn/4"
+						: "border-border/60 text-muted-foreground",
 			)}
-			{children}
-		</section>
+		>
+			<div className="flex min-w-0 flex-1 gap-2.5">
+				{tone === undefined ? null : (
+					<AlertWarningIcon
+						size={14}
+						className={cn(
+							"mt-0.5 shrink-0",
+							tone === "crit" ? "text-severity-error" : "text-severity-warn",
+						)}
+						aria-hidden
+					/>
+				)}
+				<div className="flex min-w-0 flex-col gap-1">
+					{children}
+					{run?.onRun === null ? <p className="text-foreground/80">{ASK_ADMIN}</p> : null}
+				</div>
+			</div>
+			{run === undefined || run.onRun === null ? null : (
+				<Button size="sm" className="shrink-0 self-start" onClick={run.onRun}>
+					{run.label}
+				</Button>
+			)}
+		</div>
 	)
 }
 
-const DATA_LINK = "inline-flex shrink-0 items-center gap-1 text-foreground/80 hover:text-foreground"
-
-interface CapabilityProps {
-	readonly connector: V2GcpConnector
-	readonly nowMs: number
+/** A band's headline. */
+function Headline({ children }: { children: React.ReactNode }) {
+	return <p className="font-medium text-pretty text-foreground">{children}</p>
 }
 
-function LogCapability({ connector, nowMs }: CapabilityProps) {
-	const title = "Log forwarding"
-	const state = gcpLogState(connector, nowMs)
-	if (state.kind === "off") {
-		return (
-			<Capability
-				title={title}
-				status={{ tone: null, label: "Off" }}
-				facts={[
-					state.stillSetUp ? "Maple discards what Google Cloud still forwards" : "Not collected",
-				]}
-			/>
-		)
-	}
-	const status = GCP_LOG_STATUS[state.kind]
-	switch (state.kind) {
-		case "failing":
-			return (
-				<Capability
-					title={title}
-					status={status}
-					facts={[
-						state.lastLogReceivedAt === null ? null : (
-							<RelativeTime
-								key="at"
-								value={state.lastLogReceivedAt}
-								prefix="Last accepted entry"
-							/>
-						),
-					]}
-				>
-					<Notice tone="crit">
-						<GcpMessage text={state.error} />
-					</Notice>
-				</Capability>
-			)
-		case "setup-pending":
-			return <Capability title={title} status={status} facts={["Starts once the script has run"]} />
-		case "setup-running":
-			return <Capability title={title} status={status} facts={["The script is still working"]} />
-		case "waiting":
-			return (
-				<Capability title={title} status={status}>
-					{state.overdue ? (
-						<Notice
-							title="No log entry in 20 minutes"
-							action={
-								<GcpCommand>
-									{`gcloud logging write maple-test "hello from Maple" --project=${connector.project_id}`}
-								</GcpCommand>
-							}
-						>
-							<p>Nothing that passes the filter was logged, or the sink can&apos;t publish.</p>
-							<p>
-								Write a test entry. If it isn&apos;t here within a minute, open Configure and
-								run the setup script again.
-							</p>
-						</Notice>
-					) : (
-						<Notice title="A new sink takes about 10 minutes to start forwarding">
-							<p>Entries logged before that are not forwarded.</p>
-						</Notice>
-					)}
-				</Capability>
-			)
-		case "idle":
-		case "receiving":
-			return (
-				<Capability
-					title={title}
-					status={status}
-					facts={[<RelativeTime key="at" value={state.lastLogReceivedAt} prefix="Last entry" />]}
-					link={
-						<Link
-							to="/logs"
-							// The entries this connection forwarded: ingest stamps each with the connection's id.
-							search={{
-								attrs: [
-									encodeLogAttributeFilter({
-										source: "resource",
-										key: "maple_gcp_connector_id",
-										value: connector.id,
-										negated: false,
-									}),
-								],
-							}}
-							className={DATA_LINK}
-						>
-							View logs
-							<ArrowRightIcon size={11} />
-						</Link>
-					}
-				/>
-			)
-	}
-}
-
-function MetricsCapability({ connector, nowMs }: CapabilityProps) {
-	const title = "Metrics and resources"
-	const state = gcpMetricsState(connector, nowMs)
-	if (state.kind === "off") {
-		return (
-			<Capability
-				title={title}
-				status={{ tone: null, label: "Off" }}
-				facts={[state.stillSetUp ? "Maple no longer uses its service account" : "Not collected"]}
-			/>
-		)
-	}
-	const status = GCP_METRICS_STATUS[state.kind]
-	const infrastructure = (
-		<Link to="/infra/gcp" className={DATA_LINK}>
-			Open Infrastructure
-			<ArrowRightIcon size={11} />
-		</Link>
+function Retries() {
+	return (
+		<p className="text-pretty text-muted-foreground">
+			Maple retries every 5 minutes. If this lasts an hour, write to{" "}
+			<a href="mailto:support@maple.dev" className={GCP_LINK}>
+				support@maple.dev
+			</a>
+			.
+		</p>
 	)
-	const lastRead = (at: string | null) =>
-		at === null ? null : <RelativeTime key="at" value={at} prefix="Last metrics" />
-	switch (state.kind) {
-		case "setup-pending":
-			return <Capability title={title} status={status} facts={["Starts once the script has run"]} />
-		case "setup-running":
-			return <Capability title={title} status={status} facts={["The script is still working"]} />
-		case "waiting":
-			return (
-				<Capability title={title} status={status}>
-					{state.overdue ? (
-						<Notice title="No metrics have arrived yet">
-							<p>Maple retries every 5 minutes.</p>
-							<p>
-								If this lasts an hour, write to{" "}
-								<a href="mailto:support@maple.dev" className={GCP_LINK}>
-									support@maple.dev
-								</a>
-								.
-							</p>
-						</Notice>
-					) : (
-						<Notice title="The first metrics arrive within about 10 minutes" />
-					)}
-				</Capability>
-			)
-		case "failing":
-			return (
-				<Capability title={title} status={status} facts={[lastRead(state.lastMetricsReceivedAt)]}>
-					<Notice tone="crit">
-						<GcpMessage text={state.error} />
-					</Notice>
-				</Capability>
-			)
-		case "incomplete":
-			return (
-				<Capability
-					title={title}
-					status={status}
-					facts={[lastRead(state.lastMetricsReceivedAt)]}
-					link={infrastructure}
-				>
-					<Notice tone="warn">
-						<GcpMessage text={state.error} />
-					</Notice>
-				</Capability>
-			)
-		case "stalled":
-			return (
-				<Capability
-					title={title}
-					status={status}
-					facts={[lastRead(state.lastMetricsReceivedAt)]}
-					link={infrastructure}
-				>
-					<Notice tone="warn" title="No metrics in 30 minutes">
-						<p>Maple retries every 5 minutes.</p>
-						<p>
-							If this lasts an hour, write to{" "}
-							<a href="mailto:support@maple.dev" className={GCP_LINK}>
-								support@maple.dev
-							</a>
-							.
-						</p>
-					</Notice>
-				</Capability>
-			)
-		case "receiving":
-			return (
-				<Capability
-					title={title}
-					// Metrics arrive; what is short is the list of resources, and the dot says so.
-					status={
-						state.resourcesError === null
-							? status
-							: { tone: "warn", label: "Receiving metrics, resource list incomplete" }
-					}
-					facts={[
-						lastRead(state.lastMetricsReceivedAt),
-						state.projectCount === null ? null : countLabel(state.projectCount, "project"),
-					]}
-					link={infrastructure}
-				>
-					{state.resourcesError === null ? null : (
-						<Notice tone="warn">
-							<GcpMessage text={state.resourcesError} />
-						</Notice>
-					)}
-				</Capability>
-			)
-	}
 }
+
+/** One capability in a connection's row: its name, its state in a word or two, when it last delivered. */
+function Status({
+	name,
+	status,
+	detail,
+	className,
+}: {
+	name: string
+	/** A null tone is a capability that is off. */
+	status: { readonly tone: Tone | null; readonly label: string }
+	detail?: React.ReactNode
+	className?: string
+}) {
+	return (
+		<div className={cn("flex min-w-0 items-baseline gap-2 text-xs", className)}>
+			<span className="shrink-0 text-muted-foreground">{name}</span>
+			<span
+				className={cn(
+					"shrink-0 font-medium",
+					status.tone === null
+						? "text-muted-foreground"
+						: status.tone === "crit" || status.tone === "warn"
+							? TONE_TEXT[status.tone]
+							: null,
+				)}
+			>
+				{status.label}
+			</span>
+			{detail === undefined || detail === null ? null : (
+				<span className="truncate text-muted-foreground">{detail}</span>
+			)}
+		</div>
+	)
+}
+
+const OFF = { tone: null, label: "Off" } as const
 
 /**
- * What a connection needs its admin to do, in a sentence, with the one filled button of the card:
- * finish the setup, apply a saved change, or run the script again because a failure asks for it.
- * Every one of them leads to the same place, the apply step of the configuration.
+ * What a connection needs its admin to do about the script: finish the setup, or apply a saved
+ * change. Both lead to the same place, the apply step of the configuration.
  */
-function Attention({
+function ScriptDue({
 	connector,
+	needed,
 	nowMs,
 	onRunScript,
 }: {
 	connector: V2GcpConnector
+	needed: "setup-pending" | "changes-pending"
 	nowMs: number
 	/** Absent for non-admins. */
 	onRunScript: (() => void) | null
 }) {
-	const needed = gcpScriptNeeded(connector, nowMs)
-	const asked = gcpRunAsked(connector, nowMs)
-	if (needed === null && asked.length === 0) return null
-	const changes = gcpPendingChanges(connector, nowMs)
 	const cleanedUp = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
 	const lines =
 		needed === "setup-pending"
@@ -452,87 +256,42 @@ function Attention({
 						? "Google Cloud has nothing of Maple's yet. Running the setup script takes about a minute."
 						: "The last run stopped part of the way. Run the script again: it continues where it stopped.",
 				]
-			: needed === "changes-pending"
-				? changes
-				: [
-						asked.length === 2
-							? "Log forwarding and metrics report failures that another run repairs."
-							: asked[0] === "logs"
-								? "Log forwarding reports a failure that another run repairs."
-								: "Metrics report a failure that another run repairs.",
-					]
+			: gcpPendingChanges(connector, nowMs)
 	return (
-		<div
-			role="status"
-			className={cn(
-				"flex flex-col gap-3 border-t px-4 py-3 text-xs/5 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-6",
-				needed === null
-					? "border-severity-error/32 bg-severity-error/4"
-					: "border-severity-warn/32 bg-severity-warn/4",
-			)}
+		<Band
+			tone="warn"
+			run={{ label: needed === "setup-pending" ? "Finish setup" : "Apply changes", onRun: onRunScript }}
 		>
-			<div className="flex min-w-0 gap-2">
-				<AlertWarningIcon
-					size={14}
-					className={cn(
-						"mt-0.5 shrink-0",
-						needed === null ? "text-severity-error" : "text-severity-warn",
-					)}
-					aria-hidden
-				/>
-				<div className="min-w-0">
-					<p className="text-sm font-medium">
-						{needed === "setup-pending"
-							? "Setup pending"
-							: needed === "changes-pending"
-								? "Changes not applied in Google Cloud"
-								: "The setup script needs to run again"}
-					</p>
-					{lines.length === 1 ? (
-						<p className="text-pretty text-muted-foreground">{lines[0]}</p>
-					) : (
-						<ul className="list-disc pl-4 text-pretty text-muted-foreground">
-							{lines.map((line) => (
-								<li key={line}>{line}</li>
-							))}
-						</ul>
-					)}
-					{onRunScript === null ? (
-						<p className="text-foreground/80">
-							Ask a Maple organization admin to run the setup script.
-						</p>
-					) : needed === "changes-pending" && cleanedUp ? (
-						<p className="text-muted-foreground">
-							To remove the connection instead, choose Disconnect in its menu.
-						</p>
-					) : null}
-				</div>
-			</div>
-			{onRunScript === null ? null : (
-				<Button size="sm" className="shrink-0 self-start @xl:self-center" onClick={onRunScript}>
-					{needed === "setup-pending"
-						? "Finish setup"
-						: needed === "changes-pending"
-							? "Apply changes"
-							: "Run the script again"}
-				</Button>
+			<Headline>
+				{needed === "setup-pending" ? "Setup pending" : "Changes not applied in Google Cloud"}
+			</Headline>
+			{lines.length === 1 ? (
+				<p className="text-pretty text-muted-foreground">{lines[0]}</p>
+			) : (
+				<ul className="list-disc pl-4 text-pretty text-muted-foreground">
+					{lines.map((line) => (
+						<li key={line}>{line}</li>
+					))}
+				</ul>
 			)}
-		</div>
+			{onRunScript !== null && needed === "changes-pending" && cleanedUp ? (
+				<p className="text-muted-foreground">
+					To remove the connection instead, choose Disconnect in its menu.
+				</p>
+			) : null}
+		</Band>
 	)
 }
 
 function GcpConnection({
 	connector,
 	isAdmin,
-	alone,
 	nowMs,
 	onConfigure,
 	onRemoved,
 }: {
 	connector: V2GcpConnector
 	isAdmin: boolean
-	/** The only connection. */
-	alone: boolean
 	nowMs: number
 	onConfigure: (stage: "choose" | "apply") => void
 	onRemoved: (removed: RemovedGcpConnector) => void
@@ -568,43 +327,79 @@ function GcpConnection({
 		return true
 	})
 
-	const state = gcpConnectionState(connector, nowMs)
-	// Side by side while each is a line of status or a neutral hint of a line or two. A failure, a
-	// warning or a command to copy takes the card's width: no half of the card stays empty beside it.
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
-	const hinted =
-		log.kind === "failing" ||
-		(log.kind === "waiting" && log.overdue) ||
-		metrics.kind === "failing" ||
-		metrics.kind === "incomplete" ||
-		metrics.kind === "stalled" ||
-		(metrics.kind === "receiving" && metrics.resourcesError !== null)
+	const resourcesError = metrics.kind === "receiving" ? metrics.resourcesError : null
+	const state = gcpConnectionState(connector, nowMs)
+	const tone: Tone =
+		log.kind === "failing" || metrics.kind === "failing"
+			? "crit"
+			: state === "healthy"
+				? resourcesError === null
+					? "ok"
+					: "warn"
+				: state === "waiting"
+					? "neutral"
+					: "warn"
 	const onRunScript = isAdmin ? () => onConfigure("apply") : null
+	const needed = gcpScriptNeeded(connector, nowMs)
+	// The card has one filled button. The script being due takes it; else the first failure that
+	// another run repairs does.
+	const repairs = needed === null ? gcpRunAsked(connector, nowMs)[0] : undefined
+	const rerun = (capability: GcpCapability) =>
+		repairs === capability ? { label: "Run the script again", onRun: onRunScript } : undefined
+	const lastRead =
+		"lastMetricsReceivedAt" in metrics && metrics.lastMetricsReceivedAt !== null ? (
+			<RelativeTime value={metrics.lastMetricsReceivedAt} prefix="last read" />
+		) : undefined
 
 	return (
 		<Panel className="@container">
-			<div className="flex flex-col gap-2 px-4 py-3 @md:flex-row @md:items-start @md:justify-between @md:gap-3">
-				<div className="min-w-0">
-					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-						<h3 className={GCP_TITLE}>
-							{GCP_SCOPE_NAMES[connector.scope_type]}{" "}
-							<span className="[overflow-wrap:anywhere]">{connector.scope_id}</span>
-						</h3>
-						{/* A state the band under the header spells out needs no badge beside it, and the
-						    only connection none at all: the page header names its state. */}
-						{alone ? null : state === "attention" ? (
-							<Badge variant="warn">{GCP_CONNECTION_LABEL[state]}</Badge>
-						) : state === "waiting" ? (
-							<Badge variant="outline">{GCP_CONNECTION_LABEL[state]}</Badge>
-						) : null}
-					</div>
-					{connector.scope_type !== "project" ? (
-						<p className="text-xs/5 text-muted-foreground">
-							Host project{" "}
-							<span className="font-mono [overflow-wrap:anywhere]">{connector.project_id}</span>
-						</p>
-					) : null}
+			{/* One line where the card is wide: the name, a lane for each capability, the actions. Narrower, the capabilities go under the name. */}
+			<div className="flex flex-wrap items-center gap-x-6 gap-y-2 py-2.5 pr-3 pl-4">
+				<div className="flex min-w-0 flex-1 basis-56 items-center gap-2.5">
+					{/* As wide as a band's icon, so the name, the wrapped statuses and a band's text share a lane. */}
+					<span className="flex w-3.5 shrink-0 justify-center">
+						<StatusDot tone={tone} />
+					</span>
+					<h3 className="truncate text-sm font-medium" title={label}>
+						{connector.scope_id}
+					</h3>
+					<Badge variant="meta" size="xs">
+						{GCP_SCOPE_NAMES[connector.scope_type]}
+					</Badge>
+					{connector.scope_type === "project" ? null : (
+						<span className="truncate text-xs text-muted-foreground">
+							host <span className="font-mono">{connector.project_id}</span>
+						</span>
+					)}
+				</div>
+				<div className="order-last flex basis-full flex-col gap-x-6 gap-y-1 pl-6 @md:flex-row @5xl:order-none @5xl:basis-auto @5xl:pl-0">
+					<Status
+						name="Logs"
+						className="@5xl:w-59"
+						status={log.kind === "off" ? OFF : GCP_LOG_STATUS[log.kind]}
+						detail={
+							log.kind === "receiving" || log.kind === "idle" ? (
+								<RelativeTime value={log.lastLogReceivedAt} prefix="last entry" />
+							) : log.kind === "failing" && log.lastLogReceivedAt !== null ? (
+								<RelativeTime value={log.lastLogReceivedAt} prefix="last accepted" />
+							) : undefined
+						}
+					/>
+					<Status
+						name="Metrics"
+						className="@5xl:w-84"
+						status={
+							metrics.kind === "off"
+								? OFF
+								: resourcesError === null
+									? GCP_METRICS_STATUS[metrics.kind]
+									: // Metrics arrive; what is short is the list of resources.
+										{ tone: "warn", label: "Receiving, resource list incomplete" }
+						}
+						detail={lastRead}
+					/>
 				</div>
 				{isAdmin ? (
 					<div className="flex shrink-0 items-center gap-1">
@@ -619,17 +414,65 @@ function GcpConnection({
 					</div>
 				) : null}
 			</div>
-			<Attention connector={connector} nowMs={nowMs} onRunScript={onRunScript} />
-			<div
-				data-stacked={hinted ? "" : undefined}
-				className={cn(
-					"group/capabilities grid grid-cols-1 divide-y divide-border/60 border-t border-border/60",
-					hinted ? null : "@2xl:grid-cols-2 @2xl:divide-x @2xl:divide-y-0",
-				)}
-			>
-				<LogCapability connector={connector} nowMs={nowMs} />
-				<MetricsCapability connector={connector} nowMs={nowMs} />
-			</div>
+
+			{needed === null ? null : (
+				<ScriptDue connector={connector} needed={needed} nowMs={nowMs} onRunScript={onRunScript} />
+			)}
+			{log.kind === "failing" ? (
+				<Band tone="crit" run={rerun("logs")}>
+					<GcpMessage text={log.error} />
+				</Band>
+			) : log.kind !== "waiting" ? null : log.overdue ? (
+				<Band>
+					<Headline>No log entry in 20 minutes</Headline>
+					<p className="text-pretty">
+						Nothing that passes the filter was logged, or the sink can&apos;t publish. Write a
+						test entry. If it isn&apos;t here within a minute, open Configure and run the setup
+						script again.
+					</p>
+					<div className="pt-1">
+						<GcpCommand>
+							{`gcloud logging write maple-test "hello from Maple" --project=${connector.project_id}`}
+						</GcpCommand>
+					</div>
+				</Band>
+			) : (
+				<Band>
+					<p className="text-pretty">
+						A new sink takes about 10 minutes to start forwarding. Entries logged before that are
+						not forwarded.
+					</p>
+				</Band>
+			)}
+			{metrics.kind === "failing" ? (
+				<Band tone="crit" run={rerun("metrics")}>
+					<GcpMessage text={metrics.error} />
+				</Band>
+			) : metrics.kind === "incomplete" ? (
+				<Band tone="warn" run={rerun("metrics")}>
+					<GcpMessage text={metrics.error} />
+				</Band>
+			) : metrics.kind === "stalled" ? (
+				<Band tone="warn">
+					<Headline>No metrics in 30 minutes</Headline>
+					<Retries />
+				</Band>
+			) : metrics.kind === "waiting" ? (
+				<Band>
+					{metrics.overdue ? (
+						<>
+							<Headline>No metrics have arrived yet</Headline>
+							<Retries />
+						</>
+					) : (
+						<p className="text-pretty">The first metrics arrive within about 10 minutes.</p>
+					)}
+				</Band>
+			) : resourcesError === null ? null : (
+				<Band tone="warn">
+					<GcpMessage text={resourcesError} />
+				</Band>
+			)}
 
 			{neverReported ? (
 				<ConfirmDialog
@@ -840,7 +683,6 @@ export function GcpIntegrationCard() {
 						key={connector.id}
 						connector={connector}
 						isAdmin={isAdmin}
-						alone={connectors.length === 1}
 						nowMs={nowMs}
 						onConfigure={(stage) => setTarget({ kind: "connection", id: connector.id, stage })}
 						onRemoved={(entry) => setRemoved([...removed, entry])}

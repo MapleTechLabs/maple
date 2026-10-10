@@ -155,24 +155,24 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	}
 }
 
-/** The card's dot and label for each state a capability that is on can be in. */
+/** A connection row's words, after "Logs" or "Metrics", for each state a capability that is on can be in. */
 export const GCP_LOG_STATUS = {
-	failing: { tone: "crit", label: "Rejecting logs" },
+	failing: { tone: "crit", label: "Rejected" },
 	"setup-pending": { tone: "neutral", label: "Not set up" },
 	"setup-running": { tone: "neutral", label: "Setup running" },
-	waiting: { tone: "neutral", label: "Waiting for first logs" },
-	idle: { tone: "neutral", label: "No logs in 24 hours" },
-	receiving: { tone: "ok", label: "Receiving logs" },
+	waiting: { tone: "neutral", label: "Waiting for the first entry" },
+	idle: { tone: "neutral", label: "Nothing in 24 hours" },
+	receiving: { tone: "ok", label: "Receiving" },
 } as const satisfies Record<Exclude<GcpLogState["kind"], "off">, { tone: Tone; label: string }>
 
 export const GCP_METRICS_STATUS = {
 	"setup-pending": { tone: "neutral", label: "Not set up" },
 	"setup-running": { tone: "neutral", label: "Setup running" },
-	waiting: { tone: "neutral", label: "Waiting for first metrics" },
-	failing: { tone: "crit", label: "Can't read metrics" },
-	incomplete: { tone: "warn", label: "Receiving metrics, incomplete" },
-	stalled: { tone: "warn", label: "Metrics stalled" },
-	receiving: { tone: "ok", label: "Receiving metrics" },
+	waiting: { tone: "neutral", label: "Waiting for the first read" },
+	failing: { tone: "crit", label: "Can't be read" },
+	incomplete: { tone: "warn", label: "Incomplete" },
+	stalled: { tone: "warn", label: "Stalled" },
+	receiving: { tone: "ok", label: "Receiving" },
 } as const satisfies Record<Exclude<GcpMetricsState["kind"], "off">, { tone: Tone; label: string }>
 
 type ConnectorFields = LogFields & MetricsFields
@@ -436,12 +436,19 @@ export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)
 
 const LOG_FILTERS = [
-	{ value: "default", label: "Recommended: no GKE container logs" },
-	{ value: "include_gke_container_logs", label: "Include GKE container logs" },
-	{ value: "keep", label: "Keep the sink's current filter" },
-] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string }>
+	{ value: "default", label: "Recommended", hint: "Request, audit and managed-service logs" },
+	{
+		value: "include_gke_container_logs",
+		label: "Recommended + GKE container logs",
+		hint: "Adds container stdout and stderr",
+	},
+	{ value: "keep", label: "Keep current filter", hint: "Leaves the sink as it is" },
+] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string; hint: string }>
 
-/** The configuration's log filters in display order. Keeping a filter needs a sink that has one. */
+/**
+ * The configuration's log filters in display order, each with what it forwards. Keeping a filter
+ * needs a sink that has one.
+ */
 export const gcpLogFilters = (sinkExists: boolean) =>
 	LOG_FILTERS.filter((filter) => filter.value !== "keep" || sinkExists)
 

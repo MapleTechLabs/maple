@@ -119,14 +119,12 @@ const CAPABILITIES = {
 	logs: {
 		title: "Log forwarding",
 		flag: "logs_enabled",
-		description: "A log sink sends Cloud Logging entries to Maple through Pub/Sub.",
+		description: "Cloud Logging entries, through a log sink",
 		effects: {
-			"starts-after-script": "Starts once the script has run in Google Cloud.",
-			"resumes-now":
-				"Maple stores these logs again as soon as you save. Google Cloud still forwards them.",
-			"stops-now":
-				"Maple stops storing these logs within about a minute of saving. Google Cloud keeps forwarding them until the script has run.",
-			"removed-by-script": "Off in Maple. Google Cloud keeps forwarding until the script has run.",
+			"starts-after-script": "Starts once the script has run",
+			"resumes-now": "Stored again as soon as you save",
+			"stops-now": "Maple stops storing them when you save",
+			"removed-by-script": "Still forwarded by Google Cloud until the script has run",
 		},
 		now: {
 			"stops-now": "Stops storing this connection's logs within about a minute.",
@@ -140,16 +138,12 @@ const CAPABILITIES = {
 	metrics: {
 		title: "Metrics and resources",
 		flag: "metrics_enabled",
-		description:
-			"Maple reads Cloud Monitoring every 5 minutes and lists your resources every hour, through a read-only service account.",
+		description: "Cloud Monitoring, read-only, every 5 minutes",
 		effects: {
-			"starts-after-script": "Starts once the script has run in Google Cloud.",
-			"resumes-now":
-				"Maple reads metrics again from the next 5-minute read. Its service account is still there.",
-			"stops-now":
-				"Maple stops reading from the next 5-minute read. Its service account stays in Google Cloud until the script has run.",
-			"removed-by-script":
-				"Off in Maple. Its service account stays in Google Cloud until the script has run.",
+			"starts-after-script": "Starts once the script has run",
+			"resumes-now": "Read again from the next 5-minute read",
+			"stops-now": "Maple stops reading when you save",
+			"removed-by-script": "Its service account stays in Google Cloud until the script has run",
 		},
 		now: {
 			"stops-now": "Stops reading this connection's metrics and resources from the next 5-minute read.",
@@ -165,6 +159,7 @@ const CAPABILITIES = {
 		readonly title: string
 		readonly flag: keyof GcpFlags
 		readonly description: string
+		/** What a changed choice does, in the place of the description. The confirmation has the detail. */
 		readonly effects: { readonly [Effect in GcpDraftEffect]: string }
 		/** What a choice that acts at once does when it is saved, and what stays until the script runs. */
 		readonly now: { readonly [Effect in "stops-now" | "resumes-now"]: string }
@@ -175,6 +170,8 @@ const CAPABILITY_IDS: ReadonlyArray<GcpCapability> = ["logs", "metrics"]
 
 /** The page's one link style, the other integrations' (Railway's token link). */
 export const GCP_LINK = "underline underline-offset-2 hover:no-underline"
+/** The name over a group of controls. */
+const LABEL = "text-xs font-medium text-muted-foreground"
 /** Small print: one size, one colour, short lines. */
 const SMALL = "text-xs/5 text-pretty text-muted-foreground"
 /** A section's or a step's name. On a phone it grows with the controls. */
@@ -445,57 +442,61 @@ function CollectFields({
 	const id = useId()
 	const locks = CAPABILITY_IDS.map((capability) => gcpCollectLock(flags, capability, metricsAvailable))
 	return (
-		<fieldset className="flex flex-col gap-4">
-			<legend className={cn(GCP_TITLE, "mb-3")}>What to collect</legend>
-			{CAPABILITY_IDS.map((capability, index) => {
-				const { title, flag, description, effects } = CAPABILITIES[capability]
-				const note = effect?.(capability) ?? null
-				return (
-					<Field
-						key={capability}
-						className="grid grid-cols-[auto_1fr] items-start gap-x-2.5 gap-y-1"
-					>
-						<Checkbox
-							id={`${id}-${capability}`}
-							className="mt-px"
-							checked={flags[flag]}
-							disabled={locks[index] !== null}
-							onCheckedChange={(checked) => onChange({ ...flags, [flag]: checked === true })}
-						/>
-						<FieldLabel htmlFor={`${id}-${capability}`}>{title}</FieldLabel>
-						<FieldDescription className="col-start-2 leading-5 text-pretty">
-							{locks[index] === "metrics-unavailable"
-								? LOCK_NOTES["metrics-unavailable"]
-								: description}
-						</FieldDescription>
-						{note === null ? null : (
-							<p className="col-start-2 flex items-start gap-1.5 text-xs/5 text-pretty text-foreground">
+		<fieldset className="flex flex-col gap-2.5">
+			<legend className={cn(LABEL, "mb-2.5")}>Collect</legend>
+			<div className="divide-y rounded-md border">
+				{CAPABILITY_IDS.map((capability, index) => {
+					const { title, flag, description, effects } = CAPABILITIES[capability]
+					const note = effect?.(capability) ?? null
+					return (
+						<Field
+							key={capability}
+							className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0.5 px-3.5 py-3 sm:grid-cols-[auto_11.875rem_1fr]"
+						>
+							<Checkbox
+								id={`${id}-${capability}`}
+								checked={flags[flag]}
+								disabled={locks[index] !== null}
+								onCheckedChange={(checked) =>
+									onChange({ ...flags, [flag]: checked === true })
+								}
+							/>
+							<FieldLabel htmlFor={`${id}-${capability}`} className="sm:text-sm/5">
+								{title}
+							</FieldLabel>
+							<FieldDescription
+								className={cn(
+									"col-start-2 flex items-start gap-1.5 text-pretty sm:col-start-3",
+									note !== null && "text-foreground",
+								)}
+							>
 								{note === "stops-now" ? (
 									<AlertWarningIcon
 										size={12}
-										className="mt-1 shrink-0 text-severity-warn"
+										className="mt-0.5 shrink-0 text-severity-warn"
 										aria-hidden
 									/>
-								) : (
-									<CircleInfoIcon
-										size={12}
-										className="mt-1 shrink-0 text-muted-foreground"
-										aria-hidden
-									/>
-								)}
-								{effects[note]}
-							</p>
-						)}
-					</Field>
-				)
-			})}
+								) : null}
+								{locks[index] === "metrics-unavailable"
+									? LOCK_NOTES["metrics-unavailable"]
+									: note === null
+										? description
+										: effects[note]}
+							</FieldDescription>
+						</Field>
+					)
+				})}
+			</div>
 			{/* A rule of the pair, so it stands under both and not under the one it happens to lock. */}
 			{locks.includes("last-on") ? <p className={SMALL}>{LOCK_NOTES["last-on"]}</p> : null}
 		</fieldset>
 	)
 }
 
-/** The filter the script gives the log sink. Including GKE container logs asks to be confirmed. */
+/**
+ * The filter the script gives the log sink. Each choice says what it forwards, in the list and once
+ * chosen. Including GKE container logs asks for a tick.
+ */
 function FilterField({
 	sinkExists,
 	filter,
@@ -511,123 +512,73 @@ function FilterField({
 	const checkboxId = useId()
 	const filters = gcpLogFilters(sinkExists)
 	const choice = gcpLogFilterChoice(filter.chosen, filter.acknowledged, sinkExists)
-	// What the choice does, a term and a line each: scanned, not read.
-	const lines: ReadonlyArray<readonly [string, React.ReactNode]> = [
-		...(choice.selected === "keep"
-			? ([
-					[
-						"Keeps",
-						<>
-							The filter the sink has now. Maple doesn&apos;t store it
-							{logRouter === undefined ? null : (
-								<>
-									: read it in{" "}
-									<GcpExternalLink href={logRouter}>Log Router</GcpExternalLink>
-								</>
-							)}
-							.
-						</>,
-					],
-				] as const)
-			: choice.selected === "default"
-				? ([
-						["Forwards", "Request logs, audit logs and managed-service logs."],
-						[
-							"Leaves out",
-							<>
-								<GcpExternalLink href={GKE_LOGS_DOCS}>GKE container logs</GcpExternalLink> and
-								high-volume noise such as health checks.
-							</>,
-						],
-					] as const)
-				: ([
-						["Forwards", "The recommended logs and GKE container logs."],
-						["Stored twice", "Logs from workloads that also send them over OpenTelemetry."],
-					] as const)),
-		...(choice.selected === "keep"
-			? []
-			: ([
-					[
-						"Applies",
-						sinkExists
-							? "When the script runs: it replaces the sink's current filter. Maple doesn't store the choice."
-							: "When the script runs. Maple doesn't store the choice.",
-					],
-				] as const)),
-	]
 	return (
-		<div className="flex flex-col gap-3">
-			<Field className="items-stretch gap-1.5">
-				<FieldLabel>Log filter</FieldLabel>
-				<Select
-					items={filters}
-					value={choice.selected}
-					onValueChange={(chosen) => onFilter({ chosen, acknowledged: false })}
-				>
-					<SelectTrigger className="w-full">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent alignItemWithTrigger={false}>
-						{filters.map((option) => (
-							<SelectItem key={option.value} value={option.value}>
-								{option.label}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-				<dl className="grid grid-cols-[auto_1fr] gap-x-3 text-xs/5">
-					{lines.map(([term, text]) => (
-						<Fragment key={term}>
-							<dt className="text-foreground">{term}</dt>
-							<dd className="text-pretty text-muted-foreground">{text}</dd>
-						</Fragment>
+		<Field className="items-stretch gap-2.5">
+			<div className="flex items-baseline justify-between gap-4 text-xs text-muted-foreground">
+				<FieldLabel className={cn(LABEL, "sm:text-xs/4")}>Log filter</FieldLabel>
+				{choice.selected === "keep" && logRouter !== undefined ? (
+					// Maple doesn't store a sink's filter: the console shows it.
+					<GcpExternalLink href={logRouter}>Current filter in Log Router</GcpExternalLink>
+				) : (
+					<GcpExternalLink href={`${DOCS}#log-filter`}>Custom filter</GcpExternalLink>
+				)}
+			</div>
+			<Select
+				items={filters}
+				value={choice.selected}
+				onValueChange={(chosen) => onFilter({ chosen, acknowledged: false })}
+			>
+				<SelectTrigger className="w-full">
+					<SelectValue>
+						{(value: GcpLogFilter) => (
+							<FilterOption option={filters.find((option) => option.value === value)} />
+						)}
+					</SelectValue>
+				</SelectTrigger>
+				<SelectContent alignItemWithTrigger={false}>
+					{filters.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							<FilterOption option={option} />
+						</SelectItem>
 					))}
-				</dl>
-				<p className="text-xs/5 text-muted-foreground">
-					<GcpExternalLink href={`${DOCS}#log-filter`}>Write a filter of your own</GcpExternalLink>
-				</p>
-			</Field>
+				</SelectContent>
+			</Select>
 			{choice.selected !== "include_gke_container_logs" ? null : (
-				<Alert variant="warn" size="sm" role="group" aria-label="GKE container logs">
-					<AlertWarningIcon size={14} />
-					<AlertTitle>Not recommended when your GKE workloads send traces to Maple</AlertTitle>
-					<AlertDescription className="gap-2 leading-5 text-pretty">
-						<p>
-							Instrumented workloads already send their logs to Maple, linked to their traces.
+				<fieldset
+					aria-label="GKE container logs"
+					className="flex items-start gap-3 rounded-md border border-transparent bg-severity-warn/8 px-3.5 py-2.5 text-xs/[18px]"
+				>
+					<Checkbox
+						id={checkboxId}
+						className="mt-px"
+						checked={filter.acknowledged}
+						onCheckedChange={(checked) => onFilter({ ...filter, acknowledged: checked === true })}
+					/>
+					<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+						<label htmlFor={checkboxId} className="font-medium text-pretty">
+							Accept duplicate logs from instrumented workloads
+						</label>
+						<p className="text-pretty text-muted-foreground">
+							They already send their logs over OpenTelemetry, linked to traces.
 						</p>
-						<p>
-							Forwarding the same container logs from Google Cloud stores each line twice, and
-							the copy from Google Cloud has no trace link.{" "}
-							<GcpExternalLink href={OTEL_DOCS}>
-								Google Cloud with OpenTelemetry
-							</GcpExternalLink>
-						</p>
-						<div className="flex items-start gap-2 pt-1 text-foreground">
-							<Checkbox
-								id={checkboxId}
-								className="mt-px"
-								checked={filter.acknowledged}
-								onCheckedChange={(checked) =>
-									onFilter({ ...filter, acknowledged: checked === true })
-								}
-							/>
-							<label htmlFor={checkboxId}>
-								I understand that GKE container logs can be stored twice
-							</label>
-						</div>
-						<div>
-							<Button
-								size="sm"
-								variant="outline"
-								onClick={() => onFilter({ chosen: null, acknowledged: false })}
-							>
-								{sinkExists ? "Keep current filter" : "Use recommended filter"}
-							</Button>
-						</div>
-					</AlertDescription>
-				</Alert>
+					</div>
+					<span className="shrink-0 text-muted-foreground">
+						<GcpExternalLink href={GKE_LOGS_DOCS}>Why</GcpExternalLink>
+					</span>
+				</fieldset>
 			)}
-		</div>
+		</Field>
+	)
+}
+
+/** A filter by name, with what it forwards beside it. */
+function FilterOption({ option }: { option: ReturnType<typeof gcpLogFilters>[number] | undefined }) {
+	if (option === undefined) return null
+	return (
+		<span className="flex min-w-0 items-baseline gap-2.5">
+			<span className="shrink-0 font-medium">{option.label}</span>
+			<span className="truncate text-xs text-muted-foreground">{option.hint}</span>
+		</span>
 	)
 }
 
@@ -739,7 +690,7 @@ function ConnectStage({
 					className="@container flex w-full flex-col gap-6 text-left"
 				>
 					<fieldset className="flex flex-col gap-2">
-						<legend className={cn(GCP_TITLE, "mb-2")}>What to connect</legend>
+						<legend className={cn(LABEL, "mb-2")}>What to connect</legend>
 						<div className="grid grid-cols-1 gap-2 @lg:grid-cols-3">
 							{SCOPE_TYPES.map((scopeType) => (
 								<OptionCard
@@ -852,10 +803,10 @@ function ConnectStage({
 							{error}
 						</p>
 					) : null}
-					<EffectNote />
 				</form>
 			</DialogPanel>
 			<DialogFooter>
+				<EffectNote />
 				<DialogClose render={<Button variant="outline" disabled={submitting} />}>Cancel</DialogClose>
 				<Button
 					type="submit"
@@ -870,14 +821,11 @@ function ConnectStage({
 	)
 }
 
-/** When a choice takes effect, said once where the choices are made. */
+/** When a choice takes effect, said once beside the button that saves it. */
 function EffectNote({ scripted = true }: { scripted?: boolean }) {
 	return (
-		<p className={cn(SMALL, "flex items-start gap-1.5")}>
-			<CircleInfoIcon size={12} className="mt-1 shrink-0" aria-hidden />
-			{scripted
-				? "Nothing changes in Google Cloud until you run the script in the next step."
-				: "Nothing to run after this: Google Cloud still has what it needs."}
+		<p className="text-xs text-pretty text-muted-foreground sm:mr-auto sm:self-center">
+			{scripted ? "Google Cloud changes when the script runs." : "Nothing to run after this."}
 		</p>
 	)
 }
@@ -964,9 +912,9 @@ function ChooseStage({
 						logRouter={logRouterUrl(connector)}
 					/>
 				) : null}
-				<EffectNote scripted={changed.length === 0 || scripted} />
 			</DialogPanel>
 			<DialogFooter>
+				<EffectNote scripted={changed.length === 0 || scripted} />
 				<DialogClose render={<Button variant="outline" disabled={saving} />}>Cancel</DialogClose>
 				<Button
 					disabled={unacknowledged}

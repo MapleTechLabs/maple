@@ -669,7 +669,7 @@ ${
 		? `# GKE container logs are included, as chosen in Maple. Logs from workloads that also send them
 # over OpenTelemetry are then stored twice: ${OTEL_DOCS_URL}`
 		: `# It also leaves out GKE container logs: logs from workloads that also send them over
-# OpenTelemetry would be stored twice. To include them, choose "Include GKE container logs" under
+# OpenTelemetry would be stored twice. To include them, choose "Recommended + GKE container logs" under
 # Log filter in Maple, or delete AND ${GKE_CONTAINER_LOGS} from LOG_FILTER and make
 # LOG_FILTER_MODE 'set'. Details: ${OTEL_DOCS_URL}`
 }
