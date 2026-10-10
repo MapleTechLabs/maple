@@ -19,7 +19,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { ROW_LANE } from "@maple/ui/components/ui/list-row"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
@@ -493,7 +493,7 @@ function TracesTableView({
 								data-index={index}
 								data-focused={index === focusedIndex || undefined}
 								className={cn(
-									rowSelectedClass(row.original.spanId === activeRowSpanId),
+									row.original.spanId === activeRowSpanId && "bg-muted/40",
 									"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 								)}
 								tabIndex={0}
@@ -504,13 +504,19 @@ function TracesTableView({
 									}
 								}}
 							>
-								{row.getAllCells().map((cell) => {
+								{row.getAllCells().map((cell, cellIndex) => {
 									const { responsive, cellClass } = columnClasses(cell.column.id)
 									return (
 										<TableCell
 											key={cell.id}
 											className={cn(
 												"p-2 whitespace-normal leading-normal",
+											// The lane's ::before goes on the cell: on a <tr> it becomes an extra table cell.
+											cellIndex === 0 && ROW_LANE,
+											cellIndex === 0 &&
+												(row.original.spanId === activeRowSpanId
+													? "before:bg-primary"
+													: "before:bg-transparent"),
 												responsive,
 												cellClass,
 											)}
