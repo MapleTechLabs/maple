@@ -23,7 +23,6 @@ import {
 import {
 	GCP_INFRA_TABS,
 	GCP_RESOURCES_TAB,
-	GCP_SCOPES,
 	NO_GCP_FLEET,
 	gcpFleet,
 	gcpInScope,
@@ -63,7 +62,8 @@ const gcpSearchSchema = Schema.Struct({
 	project: Schema.optional(Schema.String),
 	region: Schema.optional(Schema.String),
 	q: Schema.optional(Schema.String),
-	scope: Schema.optional(Schema.Literals(GCP_SCOPES)),
+	// Spelled out, as on the sibling pages: importing the list would put the tab model in the startup bundle.
+	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "erroring"])),
 	/** Resources tab: the asset type. */
 	type: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
