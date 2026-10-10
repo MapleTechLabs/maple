@@ -33,6 +33,8 @@ export type DocBlock =
 export interface ToolDoc {
 	/** Rendered as the `##` heading. */
 	readonly title: string
+	/** Where the call was not run as sent (ignored keys). First under the title, so it is not missed. */
+	readonly warnings?: ReadonlyArray<string>
 	/** What the result covers: the resolved window and the filters that applied. One line. */
 	readonly scope?: ReadonlyArray<readonly [string, string | undefined]>
 	readonly blocks: ReadonlyArray<DocBlock>
@@ -45,7 +47,7 @@ export interface ToolDoc {
 		readonly noun: string
 		readonly next?: NextCall
 	}
-	/** Things the model should know about how its call was read (ignored keys, clamped values). */
+	/** Things the model should know about how its call was read (clamped windows, inferred values). */
 	readonly notices?: ReadonlyArray<string>
 	readonly next?: ReadonlyArray<NextCall>
 }
@@ -122,6 +124,9 @@ const renderScope = (scope: NonNullable<ToolDoc["scope"]>): string | undefined =
 /** Markdown, in a fixed order, with blank lines between sections. */
 export const renderToolDoc = (tool: ToolDoc): string => {
 	const sections: Array<string> = [`## ${tool.title}`]
+	if (tool.warnings !== undefined && tool.warnings.length > 0) {
+		sections.push(tool.warnings.map((warning) => `Warning: ${warning}`).join("\n"))
+	}
 	const scope = tool.scope === undefined ? undefined : renderScope(tool.scope)
 	if (scope !== undefined) sections.push(scope)
 	if (tool.notices !== undefined && tool.notices.length > 0) {

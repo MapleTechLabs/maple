@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Exit, Schema } from "effect"
 import { toInputSchema } from "../tools/registry"
-import { formatDecodeFailure, normalizeArguments, suggestParameter } from "./decode-issues"
+import { argumentWarnings, formatDecodeFailure, normalizeArguments, suggestParameter } from "./decode-issues"
 import * as P from "./params"
 
 const failureFor = (tool: string, schema: Schema.Codec<unknown, unknown, never, unknown>, input: unknown) => {
@@ -81,7 +81,29 @@ describe("argument normalization", () => {
 	it("drops unknown keys and reports them", () => {
 		const normalized = normalizeArguments({ servce: "api", limit: 5 }, ["service", "limit"])
 		expect(normalized.args).toEqual({ limit: 5 })
-		expect(normalized.unknown).toEqual([{ key: "servce", suggestion: "service" }])
+		expect(normalized.unknown).toEqual([{ key: "servce", suggestions: ["service"] }])
+	})
+
+	it("points a key that names a whole window at both bounds", () => {
+		const known = ["service", "start_time", "end_time", "limit"]
+		const unknown = (key: string) => normalizeArguments({ [key]: "today" }, known).unknown
+		expect(unknown("time_range")).toEqual([
+			{ key: "time_range", suggestions: ["start_time", "end_time"] },
+		])
+		expect(unknown("lookback")).toEqual([{ key: "lookback", suggestions: ["start_time", "end_time"] }])
+		// One bound stays one bound.
+		expect(unknown("start")).toEqual([{ key: "start", suggestions: ["start_time"] }])
+		// A tool without a window gets no window suggestion.
+		expect(normalizeArguments({ time_range: "1h" }, ["service"]).unknown).toEqual([
+			{ key: "time_range", suggestions: [] },
+		])
+	})
+
+	it("warns that the result is for the call without the ignored key", () => {
+		const normalized = normalizeArguments({ time_range: "today" }, ["start_time", "end_time"])
+		expect(argumentWarnings(normalized, "list_services")).toEqual([
+			"`time_range` is not a parameter of `list_services`. It was ignored, and this result is for the call without it. Did you mean `start_time`/`end_time`?",
+		])
 	})
 
 	it("fixes the case of an enum value when exactly one published value matches", () => {

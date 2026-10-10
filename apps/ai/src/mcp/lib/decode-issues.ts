@@ -15,8 +15,14 @@ export interface NormalizedArguments {
 	readonly args: unknown
 	/** Retired names that were rewritten to their current name. */
 	readonly renamed: ReadonlyArray<readonly [from: string, to: string]>
-	/** Keys the schema does not have, with the parameter each was probably meant to be. */
-	readonly unknown: ReadonlyArray<{ readonly key: string; readonly suggestion?: string }>
+	/** Keys the schema does not have, with the parameters each was probably meant to be. */
+	readonly unknown: ReadonlyArray<UnknownArgument>
+}
+
+export interface UnknownArgument {
+	readonly key: string
+	/** Empty when no parameter is close; both bounds for a key that names a whole window. */
+	readonly suggestions: ReadonlyArray<string>
 }
 
 const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -72,6 +78,36 @@ export const suggestParameter = (key: string, known: ReadonlyArray<string>): str
 	return best?.name
 }
 
+/** Words that name a whole time window (`time_range`, `lookback`) rather than one of its bounds. */
+const WINDOW_WORDS: ReadonlySet<string> = new Set([
+	"range",
+	"window",
+	"timerange",
+	"timeframe",
+	"timespan",
+	"period",
+	"since",
+	"lookback",
+	"duration",
+	"last",
+	"ago",
+])
+
+const isWindowKey = (key: string): boolean =>
+	key.toLowerCase() === "time" || words(key).some((word) => WINDOW_WORDS.has(word))
+
+/** The parameters an unknown key most plausibly meant: `time_range` is both window bounds. */
+const suggestParameters = (key: string, known: ReadonlyArray<string>): ReadonlyArray<string> => {
+	if (isWindowKey(key) && known.includes("start_time") && known.includes("end_time")) {
+		return ["start_time", "end_time"]
+	}
+	const suggestion = suggestParameter(key, known)
+	return suggestion === undefined ? [] : [suggestion]
+}
+
+const didYouMean = (suggestions: ReadonlyArray<string>): string =>
+	suggestions.length === 0 ? "" : ` Did you mean ${suggestions.map((name) => `\`${name}\``).join("/")}?`
+
 /**
  * Apply aliases and drop keys the schema does not declare. A dropped key is reported rather than
  * silently ignored: a model that sent `service_name` to a tool without it believed it filtered.
@@ -110,7 +146,7 @@ export const normalizeArguments = (
 	const knownSet = new Set(known)
 	const args: Record<string, unknown> = {}
 	const renamed: Array<readonly [string, string]> = []
-	const unknown: Array<{ key: string; suggestion?: string }> = []
+	const unknown: Array<UnknownArgument> = []
 	for (const [key, value] of Object.entries(input)) {
 		if (knownSet.has(key)) {
 			args[key] = canonicalEnumValue(value, enums.get(key))
@@ -123,20 +159,20 @@ export const normalizeArguments = (
 			renamed.push([key, target])
 			continue
 		}
-		const suggestion = suggestParameter(key, known)
-		unknown.push(suggestion === undefined ? { key } : { key, suggestion })
+		unknown.push({ key, suggestions: suggestParameters(key, known) })
 	}
 	return { args, renamed, unknown }
 }
 
-/** Notes for the result text: how the call was read, when that differs from what was sent. */
-export const argumentNotices = (normalized: NormalizedArguments, tool: string): ReadonlyArray<string> => [
-	...normalized.unknown.map(({ key, suggestion }) =>
-		suggestion === undefined
-			? `\`${key}\` is not a parameter of \`${tool}\` and was ignored.`
-			: `\`${key}\` is not a parameter of \`${tool}\` and was ignored. Did you mean \`${suggestion}\`?`,
-	),
-]
+/**
+ * Warnings for the result text, one per ignored key. The call still ran, so each says the result
+ * is for the call without that key: a model that sent `time_range` otherwise reads a default window.
+ */
+export const argumentWarnings = (normalized: NormalizedArguments, tool: string): ReadonlyArray<string> =>
+	normalized.unknown.map(
+		({ key, suggestions }) =>
+			`\`${key}\` is not a parameter of \`${tool}\`. It was ignored, and this result is for the call without it.${didYouMean(suggestions)}`,
+	)
 
 interface ParameterDoc {
 	readonly type: string
@@ -216,10 +252,8 @@ export const formatDecodeFailure = (
 			? `- Missing required ${describeParameter(name, docs)}`
 			: `- \`${name}\`${nested}: ${message}`
 	})
-	const ignored = normalized.unknown.map(({ key, suggestion }) =>
-		suggestion === undefined
-			? `- \`${key}\` is not a parameter of this tool.`
-			: `- \`${key}\` is not a parameter of this tool. Did you mean \`${suggestion}\`?`,
+	const ignored = normalized.unknown.map(
+		({ key, suggestions }) => `- \`${key}\` is not a parameter of this tool.${didYouMean(suggestions)}`,
 	)
 	const names = [...docs.keys()].map((name) => (required.has(name) ? `${name} (required)` : name))
 	return [
