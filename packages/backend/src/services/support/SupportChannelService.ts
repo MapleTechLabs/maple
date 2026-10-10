@@ -10,6 +10,7 @@ import {
 } from "@maple/domain/support-channel"
 import { Clock, Context, Effect, Layer, Option, Schedule } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
@@ -102,23 +103,20 @@ const persistenceError = (operation: string) => (cause: unknown) =>
 
 const make = Effect.gen(function* () {
 	const database = yield* Database
+	const dbExecute = (operation: string) =>
+		makeDbExecute(database, "SupportChannelService", persistenceError(operation))
 	const slack = yield* SupportSlackClient
 	const members = yield* OrgMembersService
 	const organizations = yield* OrganizationService
 
 	const findRow = (orgId: OrgId) =>
-		database
-			.execute((db) =>
-				db.run(
-					PG.from(OrgSupportChannels)
-						.select()
-						.where(($) => [$.orgId.eq(orgId)]),
-				),
-			)
-			.pipe(
-				Effect.map((rows) => Option.fromNullishOr(rows[0])),
-				Effect.mapError(persistenceError("find")),
-			)
+		dbExecute("find")((db) =>
+			db.run(
+				PG.from(OrgSupportChannels)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
+		).pipe(Effect.map((rows) => Option.fromNullishOr(rows[0])))
 
 	const retrieve = Effect.fn("SupportChannelService.retrieve")(function* (orgId: OrgId) {
 		if (!slack.configured) return { status: "unavailable" } satisfies SupportChannelView
@@ -136,43 +134,39 @@ const make = Effect.gen(function* () {
 	const reserve = Effect.fn("SupportChannelService.reserve")(function* (orgId: OrgId, userId: UserId) {
 		const now = yield* Clock.currentTimeMillis
 		const reservationId = crypto.randomUUID()
-		const inserted = yield* database
-			.execute((db) =>
-				db.run(
-					PG.insertInto(OrgSupportChannels)
-						.values({
-							orgId,
-							reservationId,
-							reservedAt: now,
-							createdByUserId: userId,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.onConflictDoNothing()
-						.returning("orgId"),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError("reserve")))
+		const inserted = yield* dbExecute("reserve")((db) =>
+			db.run(
+				PG.insertInto(OrgSupportChannels)
+					.values({
+						orgId,
+						reservationId,
+						reservedAt: now,
+						createdByUserId: userId,
+						createdAt: now,
+						updatedAt: now,
+					})
+					.onConflictDoNothing()
+					.returning("orgId"),
+			),
+		)
 		if (inserted.length > 0) return Option.some(reservationId)
-		const takenOver = yield* database
-			.execute((db) =>
-				db.run(
-					PG.update(OrgSupportChannels)
-						.set({
-							reservationId,
-							reservedAt: now,
-							createdByUserId: userId,
-							updatedAt: now,
-						})
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.slackChannelId.isNull(),
-							PG.or($.reservedAt.isNull(), $.reservedAt.lt(now - CREATE_LEASE_MS)),
-						])
-						.returning("orgId"),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError("reserve")))
+		const takenOver = yield* dbExecute("reserve")((db) =>
+			db.run(
+				PG.update(OrgSupportChannels)
+					.set({
+						reservationId,
+						reservedAt: now,
+						createdByUserId: userId,
+						updatedAt: now,
+					})
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.slackChannelId.isNull(),
+						PG.or($.reservedAt.isNull(), $.reservedAt.lt(now - CREATE_LEASE_MS)),
+					])
+					.returning("orgId"),
+			),
+		)
 		return takenOver.length > 0 ? Option.some(reservationId) : Option.none()
 	})
 
@@ -221,15 +215,13 @@ const make = Effect.gen(function* () {
 				(channel) => channel.name === name && channel.creator === botUserId,
 			)
 			if (match !== undefined) {
-				const recorded = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(OrgSupportChannels)
-								.select("orgId")
-								.where(($) => [$.slackChannelId.eq(match.id)]),
-						),
-					)
-					.pipe(Effect.mapError(persistenceError("findUnrecordedChannel")))
+				const recorded = yield* dbExecute("findUnrecordedChannel")((db) =>
+					db.run(
+						PG.from(OrgSupportChannels)
+							.select("orgId")
+							.where(($) => [$.slackChannelId.eq(match.id)]),
+					),
+				)
 				return recorded.length === 0
 					? Option.some<SlackChannelRef>(match)
 					: Option.none<SlackChannelRef>()
@@ -352,34 +344,31 @@ const make = Effect.gen(function* () {
 				).pipe(Effect.tapError(() => releaseReservation(orgId, reservationId)))
 				yield* Effect.annotateCurrentSpan({ "maple.support_channel.id": channel.id })
 				const now = yield* Clock.currentTimeMillis
-				const [row] = yield* database
-					.execute((db) =>
-						db.run(
-							PG.update(OrgSupportChannels)
-								.set({
-									slackChannelId: channel.id,
-									slackChannelName: channel.name,
-									reservedAt: null,
-									reservationId: null,
-									createdAt: now,
-									updatedAt: now,
-								})
-								.where(ownedBy(orgId, reservationId))
-								.returning(),
-						),
-					)
-					.pipe(
-						Effect.mapError(persistenceError("finalize")),
-						// A transient write failure must not strand a channel Slack already made.
-						Effect.retry({ times: 3, schedule: Schedule.exponential("200 millis") }),
-						// The channel exists in Slack but not here; name it so it can be cleaned up.
-						Effect.tapError(() =>
-							Effect.logError("Support channel created but not recorded", {
-								orgId,
-								channelId: channel.id,
-							}),
-						),
-					)
+				const [row] = yield* dbExecute("finalize")((db) =>
+					db.run(
+						PG.update(OrgSupportChannels)
+							.set({
+								slackChannelId: channel.id,
+								slackChannelName: channel.name,
+								reservedAt: null,
+								reservationId: null,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.where(ownedBy(orgId, reservationId))
+							.returning(),
+					),
+				).pipe(
+					// A transient write failure must not strand a channel Slack already made.
+					Effect.retry({ times: 3, schedule: Schedule.exponential("200 millis") }),
+					// The channel exists in Slack but not here; name it so it can be cleaned up.
+					Effect.tapError(() =>
+						Effect.logError("Support channel created but not recorded", {
+							orgId,
+							channelId: channel.id,
+						}),
+					),
+				)
 				return { channel, orgName, row }
 			}),
 		)

@@ -14,6 +14,7 @@ import type { ChatWorkspaceSettings } from "@maple/chat-platform"
 import { ChatConnectorId, ChatWorkspaceId, IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import { Effect, Option } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import {
 	openChatWorkspaceCredentials,
 	storedCredentials,
@@ -34,6 +35,8 @@ export interface ChatWorkspaceResolution {
 
 const persistenceError = (error: DatabaseError) =>
 	new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
+
+const dbExecute = (database: DatabaseApi) => makeDbExecute(database, "chat-workspace-rows", persistenceError)
 
 const unreadable = (message: string) => new IntegrationsPersistenceError({ message })
 
@@ -57,19 +60,14 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 	encryptionKey: Buffer | null,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
-	const rows = yield* database
-		.execute((db) =>
-			db.run(
-				PG.from(ChatWorkspaces)
-					.select()
-					.where(($) => [
-						$.connector.eq(connectorId),
-						$.externalWorkspaceId.eq(externalWorkspaceId),
-					])
-					.limit(1),
-			),
-		)
-		.pipe(Effect.mapError(persistenceError))
+	const rows = yield* dbExecute(database)((db) =>
+		db.run(
+			PG.from(ChatWorkspaces)
+				.select()
+				.where(($) => [$.connector.eq(connectorId), $.externalWorkspaceId.eq(externalWorkspaceId)])
+				.limit(1),
+		),
+	)
 	const row = rows[0]
 	if (row === undefined) return Option.none<ChatWorkspaceResolution>()
 	const sealed = storedCredentials(row)
@@ -113,17 +111,15 @@ export const forgetChatWorkspace = (
 	externalWorkspaceId: string,
 ): Effect.Effect<boolean, IntegrationsPersistenceError> =>
 	Effect.gen(function* () {
-		const deleted = yield* database
-			.execute((db) =>
-				db.run(
-					PG.deleteFrom(ChatWorkspaces)
-						.where(($) => [
-							$.connector.eq(connectorId),
-							$.externalWorkspaceId.eq(externalWorkspaceId),
-						])
-						.returning("id"),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError))
+		const deleted = yield* dbExecute(database)((db) =>
+			db.run(
+				PG.deleteFrom(ChatWorkspaces)
+					.where(($) => [
+						$.connector.eq(connectorId),
+						$.externalWorkspaceId.eq(externalWorkspaceId),
+					])
+					.returning("id"),
+			),
+		)
 		return deleted.length > 0
 	})
