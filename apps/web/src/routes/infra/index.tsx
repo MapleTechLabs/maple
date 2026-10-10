@@ -6,12 +6,13 @@ import { Button } from "@maple/ui/components/ui/button"
 import { countLabel } from "@maple/ui/lib/format"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { PlusIcon } from "@/components/icons"
+import { ArrowRightIcon, SquareTerminalIcon } from "@/components/icons"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import {
 	NeedsAttention,
 	SOURCE_ORDER,
 	SOURCE_TITLE,
+	SourceMark,
 	SourcesTable,
 	presentSources,
 } from "@/components/infra/overview/infra-overview"
@@ -89,15 +90,23 @@ function InfraOverviewPage() {
 						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 							<span className="text-sm text-foreground">Add a source</span>
 							<span className="text-xs text-muted-foreground">
-								Not reporting yet: {missing.map((id) => SOURCE_TITLE[id]).join(", ")}.
+								Not reporting yet:{" "}
+								{missing.map((id, i) => (
+									<span key={id} className="whitespace-nowrap">
+										<SourceMark id={id} size={12} className="inline align-[-2px]" />{" "}
+										{SOURCE_TITLE[id]}
+										{i < missing.length - 1 ? ", " : "."}
+									</span>
+								))}
 							</span>
 						</div>
 						<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
-							<PlusIcon size={14} />
+							<SquareTerminalIcon size={14} />
 							Install a collector
 						</Button>
 						<Button size="sm" render={<Link to="/integrations" />}>
 							Connect a provider
+							<ArrowRightIcon size={14} />
 						</Button>
 					</div>
 				) : null}
