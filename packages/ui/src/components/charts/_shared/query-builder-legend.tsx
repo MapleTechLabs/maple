@@ -1,6 +1,11 @@
 import { cn } from "../../../lib/utils"
 import { EMPTY_VALUE, formatValueByUnit } from "../../../lib/format"
-import { isAllZeroStats, type SeriesStats, type StatsSeries } from "../../plot/series-stats"
+import {
+	isAllZeroStats,
+	type SeriesStats,
+	type SeriesStatsMap,
+	type StatsSeries,
+} from "../../plot/series-stats"
 import { PlotLegend, usePlotLegend } from "../../plot/plot-legend"
 
 /**
@@ -15,7 +20,7 @@ export type LegendSeries = StatsSeries
 
 interface QueryBuilderLegendProps {
 	series: ReadonlyArray<LegendSeries>
-	stats: Record<string, SeriesStats>
+	stats: SeriesStatsMap
 	hidden: ReadonlySet<string>
 	onToggle: (key: string) => void
 	unit?: string
@@ -71,9 +76,10 @@ export function responsiveLegendHeight(
 	return Math.max(MIN_LEGEND_HEIGHT, Math.min(ideal, cap))
 }
 
-const STAT_COLUMNS: ReadonlyArray<{ label: string; field: keyof SeriesStats }> = [
-	{ label: "Min", field: "min" },
-	{ label: "Max", field: "max" },
+// Min and Max drop out in narrow legends so the series name keeps room to be read.
+const STAT_COLUMNS: ReadonlyArray<{ label: string; field: keyof SeriesStats; className?: string }> = [
+	{ label: "Min", field: "min", className: "hidden @lg:table-cell" },
+	{ label: "Max", field: "max", className: "hidden @lg:table-cell" },
 	{ label: "Mean", field: "mean" },
 	{ label: "Last", field: "last" },
 ]
@@ -142,9 +148,10 @@ function CompactStrip({ layout, maxHeight }: { layout: "bottom" | "right"; maxHe
 						type="button"
 						onClick={() => actions.toggle?.(entry.key)}
 						className={cn(
-							"hover:bg-muted/50 flex items-center gap-1.5 rounded px-1 py-0.5 select-none",
+							"hover:bg-muted/50 flex min-w-0 max-w-full items-center gap-1.5 rounded px-1 py-0.5 select-none",
 							isHidden && "opacity-40",
 						)}
+						title={entry.label}
 					>
 						<span
 							className="size-2 shrink-0 rounded-xs"
@@ -171,21 +178,25 @@ function StatsTable({
 	// this table renders and how it formats, not state the legend shares with the
 	// chart. Putting query-builder figures into the generic legend context would
 	// be the first field that only one consumer can ever set.
-	stats: Record<string, SeriesStats>
+	stats: SeriesStatsMap
 	unit?: string
 }) {
 	const { state, actions } = usePlotLegend()
 	return (
 		<div
 			style={heightStyle(maxHeight)}
-			className={cn("h-full overflow-auto text-xs", layout === "right" ? "pl-3" : "pt-2")}
+			className={cn("@container h-full overflow-auto text-xs", layout === "right" ? "pl-3" : "pt-2")}
 		>
-			<table className="w-full border-collapse">
+			<table className="w-full table-fixed border-collapse">
 				<thead>
 					<tr className="text-muted-foreground">
+						{/* Fixed layout: Series takes what the w-20 stat columns leave (mono "123.4ms" fits). */}
 						<th className="py-0.5 pr-3 text-left font-normal">Series</th>
 						{STAT_COLUMNS.map((column) => (
-							<th key={column.field} className="px-2 text-right font-normal last:pr-0">
+							<th
+								key={column.field}
+								className={cn("w-20 px-2 text-right font-normal last:pr-0", column.className)}
+							>
 								{column.label}
 							</th>
 						))}
@@ -205,37 +216,49 @@ function StatsTable({
 									isHidden && "opacity-40",
 								)}
 							>
-								<td className="py-0.5 pr-3">
-									<span className="flex items-center gap-1.5">
+								<td className="max-w-0 py-0.5 pr-3">
+									<span className="flex min-w-0 items-center gap-1.5">
 										<span
 											className="size-2 shrink-0 rounded-xs"
 											style={{ backgroundColor: entry.color }}
 										/>
-										<span className={cn("truncate", allZero && "text-muted-foreground")}>
+										<span
+											className={cn("truncate", allZero && "text-muted-foreground")}
+											title={entry.label}
+										>
 											{entry.label}
 										</span>
 									</span>
 								</td>
-								{allZero ? (
-									// Four zeros in a row read as noise — collapse to one muted 0.
-									<td
-										colSpan={STAT_COLUMNS.length}
-										className="px-2 text-right font-mono tabular-nums text-muted-foreground/60"
-									>
-										0
-									</td>
-								) : (
-									STAT_COLUMNS.map((column) => (
-										<td
-											key={column.field}
-											className="px-2 text-right font-mono tabular-nums last:pr-0"
-										>
-											{entryStats
-												? formatValueByUnit(entryStats[column.field], unit)
-												: EMPTY_VALUE}
-										</td>
-									))
-								)}
+								{entryStats == null || allZero
+									? // No data reads "—" and four zeros collapse to one muted 0, both in the
+										// Last column. One cell per column so hidden narrow columns stay hidden.
+										STAT_COLUMNS.map((column) => (
+											<td
+												key={column.field}
+												className={cn(
+													"px-2 text-right font-mono tabular-nums text-muted-foreground/60 last:pr-0",
+													column.className,
+												)}
+											>
+												{column.field === "last"
+													? entryStats == null
+														? EMPTY_VALUE
+														: "0"
+													: null}
+											</td>
+										))
+									: STAT_COLUMNS.map((column) => (
+											<td
+												key={column.field}
+												className={cn(
+													"px-2 text-right font-mono tabular-nums last:pr-0",
+													column.className,
+												)}
+											>
+												{formatValueByUnit(entryStats[column.field], unit)}
+											</td>
+										))}
 							</tr>
 						)
 					})}

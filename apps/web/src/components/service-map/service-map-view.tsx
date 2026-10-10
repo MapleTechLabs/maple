@@ -101,6 +101,7 @@ import {
 	utilizationClass,
 } from "@/components/infra/planetscale/metrics"
 import {
+	aggregateServiceOverviews,
 	buildFlowElements,
 	CLOUDFLARE_COLOR,
 	DB_NODE_PREFIX,
@@ -280,7 +281,11 @@ function ServiceDetailPanel({
 	onFocus,
 	onClose,
 }: ServiceDetailPanelProps) {
-	const overview = overviews.find((o) => o.serviceName === serviceId)
+	// Same per-service aggregate the map node renders, so panel and node agree.
+	const overview = useMemo(
+		() => aggregateServiceOverviews(overviews).get(serviceId),
+		[overviews, serviceId],
+	)
 	const errorRate = overview?.errorRate ?? 0
 	const accentColor = getServiceMapNodeColor(
 		{
@@ -292,10 +297,7 @@ function ServiceDetailPanel({
 		colorMode,
 	)
 
-	const throughput = overview?.throughput ?? 0
 	const hasSampling = overview?.hasSampling ?? false
-	const avgLatencyMs = overview?.p50LatencyMs ?? 0
-	const p95LatencyMs = overview?.p95LatencyMs ?? 0
 
 	const dependencies = edges.filter((e) => e.sourceService === serviceId)
 	const calledBy = edges.filter((e) => e.targetService === serviceId)
@@ -364,34 +366,48 @@ function ServiceDetailPanel({
 								<div className="grid grid-cols-2 gap-x-6 gap-y-4">
 									<MetricTile label="Throughput" caption="req/s">
 										<MetricValue>
-											<SampledValue
-												estimated={hasSampling}
-												value={formatRate(throughput)}
-											/>
+											{overview ? (
+												<SampledValue
+													estimated={hasSampling}
+													value={formatRate(overview.throughput)}
+												/>
+											) : (
+												EMPTY_VALUE
+											)}
 										</MetricValue>
 									</MetricTile>
 									<MetricTile label="Error rate">
-										<MetricValue className={errorRateClass(errorRate)}>
-											{formatErrorRate(errorRate)}
+										<MetricValue
+											className={overview ? errorRateClass(errorRate) : undefined}
+										>
+											{overview ? formatErrorRate(errorRate) : EMPTY_VALUE}
 										</MetricValue>
 									</MetricTile>
-									<MetricTile label="Avg latency">
-										<MetricValue className={cn(latencyToneClass(avgLatencyMs, "avg"))}>
-											{formatLatency(avgLatencyMs)}
+									<MetricTile label="P50 latency">
+										<MetricValue
+											className={
+												overview
+													? latencyToneClass(overview.p50LatencyMs, "p50")
+													: undefined
+											}
+										>
+											{overview ? formatLatency(overview.p50LatencyMs) : EMPTY_VALUE}
 										</MetricValue>
 									</MetricTile>
 									<MetricTile label="P95 latency">
 										<MetricValue
 											className={cn(
-												// A p95 far above this service's own avg is a tail
+												// A p95 far above this service's own p50 is a tail
 												// problem worth flagging even when the absolute
 												// magnitude is fine, so it outranks the ramp.
-												p95LatencyMs > avgLatencyMs * 3
-													? "text-severity-warn"
-													: latencyToneClass(p95LatencyMs, "p95"),
+												overview === undefined
+													? undefined
+													: overview.p95LatencyMs > overview.p50LatencyMs * 3
+														? "text-severity-warn"
+														: latencyToneClass(overview.p95LatencyMs, "p95"),
 											)}
 										>
-											{formatLatency(p95LatencyMs)}
+											{overview ? formatLatency(overview.p95LatencyMs) : EMPTY_VALUE}
 										</MetricValue>
 									</MetricTile>
 								</div>
@@ -416,11 +432,15 @@ function ServiceDetailPanel({
 										</MetricTile>
 										<MetricTile label="CPU p99">
 											<MetricValue
-												className={cn(
-													latencyToneClass(cloudflare.cpuP99Ms ?? 0, "cpu"),
-												)}
+												className={
+													cloudflare.cpuP99Ms === undefined
+														? undefined
+														: latencyToneClass(cloudflare.cpuP99Ms, "cpu")
+												}
 											>
-												{formatLatency(cloudflare.cpuP99Ms ?? 0)}
+												{cloudflare.cpuP99Ms === undefined
+													? EMPTY_VALUE
+													: formatLatency(cloudflare.cpuP99Ms)}
 											</MetricValue>
 										</MetricTile>
 										<MetricTile label="Duration p99">
@@ -998,10 +1018,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 			</div>
 			<div className="space-y-1.5">
 				{configs.map((config) => (
-					<Panel
-						key={config.id}
-						className="px-2.5 py-2 text-xs"
-					>
+					<Panel key={config.id} className="px-2.5 py-2 text-xs">
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex min-w-0 items-center gap-1.5">
 								<span className="truncate font-medium text-foreground">{config.name}</span>
@@ -1168,7 +1185,9 @@ function DatabaseDetailPanel({
 											: latencyToneClass(metricP50LatencyMs, "p50"),
 									)}
 								>
-									{metricP50LatencyMs === null ? EMPTY_VALUE : formatLatency(metricP50LatencyMs)}
+									{metricP50LatencyMs === null
+										? EMPTY_VALUE
+										: formatLatency(metricP50LatencyMs)}
 								</MetricValue>
 							</MetricTile>
 							<MetricTile label="P95 latency">
@@ -1184,7 +1203,9 @@ function DatabaseDetailPanel({
 												: latencyToneClass(metricP95LatencyMs, "p95"),
 									)}
 								>
-									{metricP95LatencyMs === null ? EMPTY_VALUE : formatLatency(metricP95LatencyMs)}
+									{metricP95LatencyMs === null
+										? EMPTY_VALUE
+										: formatLatency(metricP95LatencyMs)}
 								</MetricValue>
 							</MetricTile>
 							<MetricTile label="Avg latency">
@@ -1235,10 +1256,7 @@ function DatabaseDetailPanel({
 							<Eyebrow as="h4">Top query shapes</Eyebrow>
 							<div className="space-y-1.5">
 								{summaryResponse.topQueries.map((query) => (
-									<Panel
-										key={query.queryKey}
-										className="px-2.5 py-2"
-									>
+									<Panel key={query.queryKey} className="px-2.5 py-2">
 										<div className="flex items-start justify-between gap-2">
 											<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
 												{formatQueryLabel(query.queryLabel)}

@@ -17,6 +17,7 @@ import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infr
 import { LogHeroHeader } from "./log-hero-header"
 import { LogMetaStrip } from "./log-meta-strip"
 import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
+import { severityLabel } from "@maple/ui/components/logs/severity-badge"
 import { LogTraceTimeline } from "./log-trace-timeline"
 import { LogContextPanel } from "./log-context-panel"
 import { LogAttributesPanel } from "./log-attributes-panel"
@@ -49,7 +50,7 @@ export function LogDetailSheet({ log, open, onOpenChange, onAttributeFilter }: L
 
 	if (!viewedLog) return null
 
-	const sev = viewedLog.severityText.toUpperCase()
+	const sev = severityLabel(viewedLog.severityText, viewedLog.severityNumber).toUpperCase()
 	const showErrorBanner = sev === "ERROR" || sev === "FATAL"
 	// Identity used to remount panels (resets attribute search) on log change.
 	const logKey = `${viewedLog.timestamp}-${viewedLog.spanId}-${viewedLog.body.slice(0, 24)}`

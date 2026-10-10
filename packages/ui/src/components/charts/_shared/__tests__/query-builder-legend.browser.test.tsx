@@ -70,12 +70,12 @@ describe("QueryBuilderLegend", () => {
 	})
 
 	it("collapses an all-zero row to a single muted zero", () => {
-		// Four zeros in a row read as noise, so the table spans them.
+		// Four zeros in a row read as noise: only the Last column shows a 0. One cell
+		// per column (no colspan) so narrow legends can hide Min/Max.
 		const { container } = setup()
-		const cells = container.querySelectorAll("tbody tr:last-child td")
-		expect(cells).toHaveLength(2)
-		expect(cells[1]?.getAttribute("colspan")).toBe("4")
-		expect(cells[1]?.textContent).toBe("0")
+		const cells = Array.from(container.querySelectorAll("tbody tr:last-child td"))
+		expect(cells).toHaveLength(5)
+		expect(cells.slice(1).map((cell) => cell.textContent)).toEqual(["", "", "", "0"])
 	})
 
 	it("renders nothing without series", () => {

@@ -274,8 +274,8 @@ function Report({ audit, refreshing }: { audit: V2SetupAudit; refreshing: boolea
 					<CircleCheckIcon size={20} className="text-severity-info" />
 					<p className="text-sm font-medium">Everything checks out</p>
 					<p className="text-muted-foreground text-xs">
-						All {summary.pass} checks passed. Alerts can deliver, and your telemetry follows the
-						conventions Maple reads.
+						All {countLabel(summary.pass, "check")} passed. Alerts can deliver, and your telemetry
+						follows the conventions Maple reads.
 					</p>
 				</Panel>
 			) : (

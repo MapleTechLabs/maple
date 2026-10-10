@@ -284,6 +284,24 @@ function FindingLink({
 	}
 }
 
+/** The name truncates; the metric after it ("at 97% CPU") always stays visible. */
+function FindingTitle({ finding }: { finding: Finding }) {
+	const { subject, title } = finding
+	if (!subject || !title.startsWith(subject)) {
+		return (
+			<span className="truncate text-sm text-foreground group-hover:text-primary" title={title}>
+				{title}
+			</span>
+		)
+	}
+	return (
+		<span className="flex min-w-0 text-sm text-foreground group-hover:text-primary" title={title}>
+			<span className="truncate">{subject}</span>
+			<span className="shrink-0 whitespace-pre tabular-nums">{title.slice(subject.length)}</span>
+		</span>
+	)
+}
+
 export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSearch: TimeRangeSearch }) {
 	return (
 		<FindingLink
@@ -301,9 +319,7 @@ export function FindingRow({ finding, timeSearch }: { finding: Finding; timeSear
 				{SOURCE_TITLE[finding.source]}
 			</span>
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-				<span className="truncate text-sm text-foreground group-hover:text-primary">
-					{finding.title}
-				</span>
+				<FindingTitle finding={finding} />
 				<span className="truncate text-xs text-muted-foreground">{finding.detail}</span>
 			</span>
 			<ChevronRightIcon size={14} className="shrink-0 text-muted-foreground" />

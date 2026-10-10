@@ -256,15 +256,21 @@ function ShareShell({
 
 	return (
 		<div className="flex min-h-screen flex-col bg-background">
-			<header className="flex items-center justify-between border-b px-6 py-3">
-				{title ? <h1 className="font-medium text-sm">{title}</h1> : <span />}
+			<header className="flex items-center justify-between gap-4 border-b px-6 py-3">
+				{title ? (
+					<h1 className="min-w-0 truncate font-medium text-sm" title={title}>
+						{title}
+					</h1>
+				) : (
+					<span />
+				)}
 				<a
 					href="https://maple.dev"
 					target="_blank"
 					rel="noopener noreferrer"
-					className="flex items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground"
+					className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs transition-colors hover:text-foreground"
 				>
-					<span>Shared via</span>
+					<span className="hidden sm:inline">Shared via</span>
 					<MapleMark size={14} className="shrink-0" aria-hidden="true" />
 					<span className="font-medium">Maple</span>
 				</a>

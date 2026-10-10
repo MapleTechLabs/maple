@@ -1,6 +1,7 @@
 import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -27,6 +28,8 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
+// The list query returns the most recently seen N nodes; the toolbar says so when it hits the cap.
+const NODE_LIST_LIMIT = 200
 
 const NodeStatusParam = Schema.optional(Schema.Literals(["active", "idle", "ended"]))
 
@@ -93,7 +96,9 @@ function NodesPage() {
 		environments: search.environments,
 	}
 
-	const nodesAtom = listNodesResultAtom({ data: { startTime, endTime, ...filters } })
+	const nodesAtom = listNodesResultAtom({
+		data: { startTime, endTime, ...filters, limit: NODE_LIST_LIMIT },
+	})
 	const nodesResult = useAtomValue(nodesAtom)
 	const refreshNodes = useAtomRefresh(nodesAtom)
 	const facetsResult = useAtomValue(nodeFacetsResultAtom({ data: { startTime, endTime } }))
@@ -132,7 +137,9 @@ function NodesPage() {
 		>
 			{Result.builder(nodesResult)
 				.onInitial(() => <NodeTableLoading />)
-				.onError((err) => <ErrorState error={err} title="Failed to load nodes" onRetry={refreshNodes} />)
+				.onError((err) => (
+					<ErrorState error={err} title="Failed to load nodes" onRetry={refreshNodes} />
+				))
 				.onSuccess((response, result) => {
 					const nodes = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
@@ -191,7 +198,11 @@ function NodesPage() {
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search nodes…"
-									trailing={countLabel(filtered.length, filtered.length, "node")}
+									trailing={
+										nodes.length >= NODE_LIST_LIMIT
+											? `${formatNumber(filtered.length)} of the ${formatNumber(NODE_LIST_LIMIT)} most recently seen nodes`
+											: countLabel(filtered.length, filtered.length, "node")
+									}
 								/>
 								{(q || statusScope) && filtered.length === 0 ? (
 									<FilteredEmpty

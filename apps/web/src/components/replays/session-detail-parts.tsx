@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { shortId } from "@maple/ui/lib/ids"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -68,9 +69,11 @@ export function SessionIdentityBar({
 				<div
 					className={`grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(sessionId)} text-xs font-semibold text-white shadow-sm`}
 				>
-					{(label[0] ?? "?").toUpperCase()}
+					{initialsFrom(label)}
 				</div>
-				<h2 className="min-w-0 truncate text-sm font-medium leading-tight">{label}</h2>
+				<h2 className="min-w-0 truncate text-sm font-medium leading-tight" title={label}>
+					{label}
+				</h2>
 				<StatusPill active={isActive} />
 				<Tooltip>
 					<TooltipTrigger

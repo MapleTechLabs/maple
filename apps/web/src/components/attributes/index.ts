@@ -3,6 +3,7 @@
 // existing `@/components/attributes` import path working.
 export {
 	CopyableValue,
+	SelectableValue,
 	AttributesSection,
 	ResourceAttributesSection,
 	tryParseJson,

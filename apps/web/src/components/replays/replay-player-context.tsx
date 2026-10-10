@@ -267,6 +267,29 @@ export function useReplayPlayer(): ReplayPlayerContextValue {
 	return ctx
 }
 
+/**
+ * The slice of the player that changes on play/pause and skip-idle toggles,
+ * never per frame. Rows that just seek or print a clock read this so playback doesn't
+ * re-render them on every animation frame.
+ */
+export interface ReplayClockValue {
+	timeline: Timeline
+	recordingStartEpochMs: number
+	realTotalMs: number
+	seekDisplay(displayMs: number): void
+}
+
+const ReplayClockContext = React.createContext<ReplayClockValue>({
+	timeline: buildTimeline([], 0),
+	recordingStartEpochMs: 0,
+	realTotalMs: 0,
+	seekDisplay: () => {},
+})
+
+export function useReplayClock(): ReplayClockValue {
+	return React.useContext(ReplayClockContext)
+}
+
 const EMPTY_EVENTS: ReadonlyArray<unknown> = []
 
 /** Read the engine's playhead, treating "no engine yet" as 0. */
@@ -787,5 +810,14 @@ export function ReplayPlayerProvider({
 		],
 	)
 
-	return <ReplayPlayerContext.Provider value={value}>{children}</ReplayPlayerContext.Provider>
+	const clock = React.useMemo<ReplayClockValue>(
+		() => ({ timeline, recordingStartEpochMs: startTime, realTotalMs: totalMs, seekDisplay }),
+		[timeline, startTime, totalMs, seekDisplay],
+	)
+
+	return (
+		<ReplayPlayerContext.Provider value={value}>
+			<ReplayClockContext.Provider value={clock}>{children}</ReplayClockContext.Provider>
+		</ReplayPlayerContext.Provider>
+	)
 }

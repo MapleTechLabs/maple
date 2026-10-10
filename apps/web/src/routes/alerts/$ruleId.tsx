@@ -71,7 +71,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
-import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
@@ -89,6 +89,9 @@ const SIGNAL_SOURCE_DESCRIPTION: Record<SignalSource, string> = {
 	preview: "The rule's query, replayed now over the selected window.",
 	checks: "What the evaluator actually observed and stored, one point per check.",
 } satisfies Record<SignalSource, string>
+
+/** Incidents rendered before "Show all"; a noisy grouped rule can carry hundreds. */
+const INCIDENT_RENDER_LIMIT = 100
 
 function formatBucketRange(bucket: { start: number; end: number }, timeZone: string): string {
 	const time = (ms: number) => formatTimeInTimezone(ms, { timeZone })
@@ -366,6 +369,10 @@ function RuleDetailContent() {
 		if (stateFilter === "all") return ruleIncidents
 		return ruleIncidents.filter((i) => i.status === stateFilter)
 	}, [ruleIncidents, stateFilter])
+	const [showAllIncidents, setShowAllIncidents] = useState(false)
+	const visibleIncidents = showAllIncidents
+		? filteredIncidents
+		: filteredIncidents.slice(0, INCIDENT_RENDER_LIMIT)
 
 	// Incident the Overview AI-summary card binds to: the open one, else most recent.
 	const overviewIncident = useMemo(
@@ -905,9 +912,10 @@ function RuleDetailContent() {
 														>
 															<Badge
 																variant="outline"
-																className="text-xs shrink-0 truncate max-w-[160px]"
+																className="min-w-0 max-w-[160px] shrink justify-start text-xs"
+																title={groupKey}
 															>
-																{groupKey}
+																<span className="truncate">{groupKey}</span>
 															</Badge>
 															<Meter
 																value={count}
@@ -969,7 +977,7 @@ function RuleDetailContent() {
 												</TableRow>
 											</TableHeader>
 											<TableBody>
-												{filteredIncidents.map((incident) => {
+												{visibleIncidents.map((incident) => {
 													const isOpen = incident.status === "open"
 													return (
 														<TableRow key={incident.id}>
@@ -985,7 +993,10 @@ function RuleDetailContent() {
 																/>
 															</TableCell>
 															<TableCell>
-																<span className="font-mono text-muted-foreground">
+																<span
+																	className="block max-w-[180px] truncate font-mono text-muted-foreground"
+																	title={incident.groupKey ?? "all"}
+																>
 																	{incident.groupKey ?? "all"}
 																</span>
 															</TableCell>
@@ -1084,6 +1095,14 @@ function RuleDetailContent() {
 												})}
 											</TableBody>
 										</Table>
+									)}
+									{visibleIncidents.length < filteredIncidents.length && (
+										<div className="flex justify-center pt-3">
+											<LoadMoreButton
+												onClick={() => setShowAllIncidents(true)}
+												label={`Show all ${filteredIncidents.length.toLocaleString()}`}
+											/>
+										</div>
 									)}
 								</div>
 							)}
@@ -1478,12 +1497,20 @@ function ChecksPanel({
 												</div>
 											)}
 										</TableCell>
-										<TableCell className="tabular-nums text-muted-foreground">
-											{check.sampleCount}
+										<TableCell
+											className="tabular-nums text-muted-foreground"
+											title={check.sampleCount.toLocaleString()}
+										>
+											{formatNumber(check.sampleCount)}
 										</TableCell>
 										{isGrouped && (
 											<TableCell className="font-mono text-muted-foreground">
-												{check.groupKey || "all"}
+												<span
+													className="block max-w-[180px] truncate"
+													title={check.groupKey || "all"}
+												>
+													{check.groupKey || "all"}
+												</span>
 											</TableCell>
 										)}
 										<TableCell>

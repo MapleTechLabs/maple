@@ -130,18 +130,27 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 								return (
 									<TableRow
 										key={row.id}
+										tabIndex={0}
 										onClick={() => handleRowClick(row)}
-										className="cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40"
+										onKeyDown={(e) => {
+											if (e.key === "Enter" || e.key === " ") {
+												e.preventDefault()
+												handleRowClick(row)
+											}
+										}}
+										className="cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 									>
-										<TableCell className="py-2 pl-3 align-middle">
+										<TableCell className="max-w-0 py-2 pl-3 align-middle">
 											<div className="flex items-center gap-2.5 min-w-0">
 												<DependencyTypeBadge kind={row.kind} />
 												<div className="flex min-w-0 flex-col leading-tight">
-													<span className="flex items-center gap-1.5 truncate text-xs text-foreground">
+													<span className="flex min-w-0 items-center gap-1.5 text-xs text-foreground">
 														{row.kind === "service" && (
 															<ServiceDot serviceName={row.name} size="sm" />
 														)}
-														<span className="truncate">{row.name}</span>
+														<span className="truncate" title={row.name}>
+															{row.name}
+														</span>
 													</span>
 													{row.subtitle ? (
 														<span className="truncate text-3xs text-muted-foreground/60">

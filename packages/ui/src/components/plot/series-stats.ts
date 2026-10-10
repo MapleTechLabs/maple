@@ -15,6 +15,9 @@ export interface SeriesStats {
 	last: number
 }
 
+/** `null` when the series has no finite values in range: "no data", not zeros. */
+export type SeriesStatsMap = Record<string, SeriesStats | null>
+
 export interface StatsSeries {
 	/** Internal chart key (s1, s2, …). */
 	key: string
@@ -26,8 +29,8 @@ export interface StatsSeries {
 export function computeSeriesStats(
 	data: ReadonlyArray<Record<string, unknown>>,
 	keys: ReadonlyArray<string>,
-): Record<string, SeriesStats> {
-	const result: Record<string, SeriesStats> = {}
+): SeriesStatsMap {
+	const result: SeriesStatsMap = {}
 
 	for (const key of keys) {
 		let min = Number.POSITIVE_INFINITY
@@ -46,14 +49,13 @@ export function computeSeriesStats(
 			last = value
 		}
 
-		result[key] =
-			count === 0 ? { min: 0, max: 0, mean: 0, last: 0 } : { min, max, mean: sum / count, last }
+		result[key] = count === 0 ? null : { min, max, mean: sum / count, last }
 	}
 
 	return result
 }
 
-export function isAllZeroStats(stats: SeriesStats | undefined): boolean {
+export function isAllZeroStats(stats: SeriesStats | null | undefined): boolean {
 	return stats == null || (stats.min === 0 && stats.max === 0)
 }
 
@@ -66,7 +68,7 @@ export function isAllZeroStats(stats: SeriesStats | undefined): boolean {
  */
 export function sortZeroSeriesLast<T extends StatsSeries>(
 	series: ReadonlyArray<T>,
-	stats: Record<string, SeriesStats>,
+	stats: SeriesStatsMap,
 ): T[] {
 	return [...series].sort(
 		(a, b) => Number(isAllZeroStats(stats[a.key])) - Number(isAllZeroStats(stats[b.key])),
