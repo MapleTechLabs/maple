@@ -86,7 +86,7 @@ const SOURCE_ICON: Record<SourceId, IconComponent> = {
 	planetscale: PlanetScaleIcon,
 } satisfies Record<SourceId, IconComponent>
 
-function SourceMark({ id, size }: { id: SourceId; size: number }) {
+export function SourceMark({ id, size }: { id: SourceId; size: number }) {
 	const Icon = SOURCE_ICON[id]
 	return <Icon size={size} className="shrink-0 text-foreground" />
 }

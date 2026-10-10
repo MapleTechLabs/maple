@@ -7,12 +7,13 @@ import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { countLabel } from "@maple/ui/lib/format"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { PlusIcon } from "@/components/icons"
+import { ArrowRightIcon, GridSquareCirclePlusIcon, SquareTerminalIcon } from "@/components/icons"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import {
 	NeedsAttention,
 	SOURCE_ORDER,
 	SOURCE_TITLE,
+	SourceMark,
 	SourcesTable,
 	presentSources,
 } from "@/components/infra/overview/infra-overview"
@@ -87,18 +88,31 @@ function InfraOverviewPage() {
 
 				{missing.length > 0 ? (
 					<EmptyMessage dashed className="flex flex-wrap items-center gap-4 px-4 py-4 text-left">
-						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+						<div className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-muted/40">
+							<GridSquareCirclePlusIcon size={18} className="text-muted-foreground" />
+						</div>
+						<div className="flex min-w-0 flex-1 flex-col gap-1.5">
 							<span className="text-sm text-foreground">Add a source</span>
-							<span className="text-xs text-muted-foreground">
-								Not reporting yet: {missing.map((id) => SOURCE_TITLE[id]).join(", ")}.
-							</span>
+							<div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+								<span>Not reporting yet:</span>
+								{missing.map((id) => (
+									<span
+										key={id}
+										className="inline-flex items-center gap-1 rounded border bg-muted/40 px-1.5 py-0.5"
+									>
+										<SourceMark id={id} size={12} />
+										{SOURCE_TITLE[id]}
+									</span>
+								))}
+							</div>
 						</div>
 						<Button size="sm" variant="outline" onClick={() => setInstallOpen(true)}>
-							<PlusIcon />
+							<SquareTerminalIcon />
 							Install a collector
 						</Button>
 						<Button size="sm" render={<Link to="/integrations" />}>
 							Connect a provider
+							<ArrowRightIcon />
 						</Button>
 					</EmptyMessage>
 				) : null}
