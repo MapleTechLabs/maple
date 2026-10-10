@@ -14,6 +14,7 @@
  */
 import { Cause, Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
+import { AgentSpawner } from "@yielded/agent/agent-runtime"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalogFor, toInputSchema } from "./registry"
@@ -166,17 +167,25 @@ const ToolFailure = Schema.Union([MapleToolFailure, ApprovalRequired])
 const IDENTICAL_CALL_LIMIT = 3
 
 /**
- * How many times this exact call has been dispatched, counting the one being asked about.
+ * How many times this exact call has been dispatched in this run, counting the one being asked about.
  *
  * Keyed on the encoded arguments, so a repeat with one field changed is a different call and does
  * not count. The arguments came off the wire as JSON, so re-encoding them cannot fail.
  */
-const repeats = (dispatched: Map<string, number>, name: string, params: unknown): number => {
-	const key = `${name}:${JSON.stringify(params)}`
+const repeats = (dispatched: Map<string, number>, runId: string, name: string, params: unknown): number => {
+	const key = `${runId}:${name}:${JSON.stringify(params)}`
 	const seen = (dispatched.get(key) ?? 0) + 1
 	dispatched.set(key, seen)
 	return seen
 }
+
+/**
+ * The engine run dispatching the call. The engine provides `AgentSpawner` to every run, bound to
+ * that run's identity, so a child sees its own run id; outside an engine run there is one run.
+ */
+const currentRunId = Effect.map(Effect.serviceOption(AgentSpawner), (spawner) =>
+	Option.match(spawner, { onNone: () => "", onSome: (service) => service.parent.runId }),
+)
 
 /**
  * The registry entries this build exposes: what the surface may see at all, then
@@ -211,8 +220,9 @@ export const buildMapleToolkit = (
 		})
 	})
 	const toolkit = Toolkit.make(...tools)
-	// Per build, which is per run: two turns of one conversation are two builds, so a model may ask
-	// the same question again in a later turn. Repeating it inside one turn is the loop.
+	// Per build and per run: two turns of one conversation are two builds, so a model may ask the
+	// same question again in a later turn. The `review_files` children share the parent's build, and
+	// each one asking for the changed files is not a loop, so the count is per engine run.
 	const dispatched = new Map<string, number>()
 	const handlers = Object.fromEntries(
 		definitions.map((definition) => {
@@ -242,13 +252,14 @@ export const buildMapleToolkit = (
 						}),
 					)
 				}
-				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
-					return fail(
-						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
-							"exact arguments in this turn. Read the result you already have, or call it differently.",
-					)
-				}
-				return dispatch(params, toolCallId)
+				return Effect.flatMap(currentRunId, (runId) =>
+					repeats(dispatched, runId, definition.name, params) > IDENTICAL_CALL_LIMIT
+						? fail(
+								`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
+									"exact arguments in this turn. Read the result you already have, or call it differently.",
+							)
+						: dispatch(params, toolCallId),
+				)
 			}
 			return [
 				definition.name,
