@@ -36,10 +36,16 @@ export function PageHero({ title, description, meta, actions, trailing, classNam
 	)
 }
 
-export function HeroChip({ children }: { children: React.ReactNode }) {
+// Values are unbounded (image refs, deployment names): shrink with the row, truncate, and
+// expose the full text as a title when the children are plain text.
+export function HeroChip({ children, title }: { children: React.ReactNode; title?: string }) {
+	const textParts = React.Children.toArray(children)
+	const derivedTitle = textParts.every((part) => typeof part === "string" || typeof part === "number")
+		? textParts.join("")
+		: undefined
 	return (
-		<Badge variant="meta" size="xs" mono>
-			{children}
+		<Badge variant="meta" size="xs" mono className="min-w-0" title={title ?? derivedTitle}>
+			<span className="min-w-0 truncate">{children}</span>
 		</Badge>
 	)
 }

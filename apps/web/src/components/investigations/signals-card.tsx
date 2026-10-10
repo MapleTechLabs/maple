@@ -49,7 +49,9 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 		<Panel className="shrink-0 gap-4 px-5 py-4">
 			<header className="flex items-center gap-2">
 				<ServiceDot serviceName={service} />
-				<span className="font-mono text-sm text-foreground">{service}</span>
+				<span className="min-w-0 truncate font-mono text-sm text-foreground" title={service}>
+					{service}
+				</span>
 				{window.label ? (
 					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 						· {window.label}

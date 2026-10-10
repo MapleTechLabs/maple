@@ -1,6 +1,7 @@
 /** Output schemas for the services, metrics and query MCP tools. */
 import { Schema } from "effect"
 import { OutputPagination, OutputTimeRange } from "./shared"
+import { InfraEntityRow } from "./infra"
 
 // list_services
 
@@ -59,6 +60,27 @@ export const DiagnoseServiceOutput = Schema.Struct({
 	recentTraces: Schema.Array(DiagnoseServiceTraceRow),
 	recentLogs: Schema.Array(DiagnoseServiceLogRow),
 	environment: Schema.optionalKey(Schema.String),
+	/** Where the service runs, from the Kubernetes workload its spans name. Absent without k8s context. */
+	infrastructure: Schema.optionalKey(
+		Schema.Struct({
+			workloads: Schema.Array(
+				Schema.Struct({
+					kind: Schema.String,
+					name: Schema.String,
+					namespace: Schema.String,
+					cluster: Schema.optionalKey(Schema.String),
+					podCount: Schema.Number,
+					/** Average CPU / memory against the pods' limits, 0..1. Absent when no limit is set. */
+					cpu: Schema.optionalKey(Schema.Number),
+					memory: Schema.optionalKey(Schema.Number),
+				}),
+			),
+			/** The busiest pods of the dominant workload, closest to a limit first. */
+			pods: Schema.Array(InfraEntityRow),
+		}),
+	),
+	/** Set when the infrastructure lookup failed; the rest of the diagnosis still stands. */
+	infrastructureError: Schema.optionalKey(Schema.String),
 })
 
 // get_service_top_operations

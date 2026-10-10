@@ -232,9 +232,10 @@ interface TurnAnchor {
  * Assignment then depends on which rule fired. On rule 1 the id a span CARRIES
  * decides, because concurrent turns make time meaningless as an owner: a pure
  * time cursor gives each lane only the sliver before the next lane anchored and
- * dumps every lane's tail into whichever anchored last. On rules 2 and 3 — and
- * for any span carrying no id — a turn owns every span that started before the
- * next turn did, whatever trace or service it came from. Spans that start before
+ * dumps every lane's tail into whichever anchored last. On rule 2 the agent root
+ * above a span decides, for the same reason: a fan-out starts its sub-agents
+ * together. On rule 3, and for any span neither rule places, a turn owns every
+ * span that started before the next turn did, whatever trace or service it came from. Spans that start before
  * the first anchor (a gateway span that opens the trace, say) join turn 1 rather
  * than becoming a turn of their own.
  */
@@ -249,7 +250,10 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	const anchors = findAnchors(ordered.map((entry) => entry.span))
 	const anchorStarts = anchors.map((anchor) => spanStartMs(anchor.span))
 	const buckets: AiSessionSpan[][] = anchors.map(() => [])
-	const turnOf = conversationTurnResolver(spans, anchors)
+	const turnOf =
+		anchors[0]?.kind === "agent-root"
+			? agentRootTurnResolver(spans, anchors)
+			: conversationTurnResolver(spans, anchors)
 
 	// Both lists are in start order, so one forward cursor assigns every span that
 	// names no turn of its own.
@@ -290,11 +294,10 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 		}
 	}
 
-	// A turn with no spans has no start, no end and nothing to draw. Rule 1 can no
-	// longer produce one — an anchor always carries its own id, so it lands in its
-	// own bucket even when another anchor shares its millisecond — but two
-	// agent-root or trace anchors in one millisecond still leave the earlier bucket
-	// empty.
+	// A turn with no spans has no start, no end and nothing to draw. Rules 1 and 2
+	// cannot produce one, since an anchor resolves to its own bucket even when
+	// another shares its millisecond; two trace anchors in one millisecond still
+	// leave the earlier bucket empty.
 	return anchors
 		.map((anchor, index) => ({ anchor, turnSpans: buckets[index] }))
 		.filter((entry) => entry.turnSpans.length > 0)
@@ -322,16 +325,32 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 				// app's own errored HTTP span is not the agent failing. A tool call
 				// roots the turn whenever the run span above it carries no turn id,
 				// and one the agent carried on from did not end the turn either.
-				failed: turnSpans.some(
-					(span) =>
-						span.isAiSpan &&
-						spanFailed(span) &&
-						(span.parentSpanId === "" || !spanIds.has(span.parentSpanId)) &&
-						!(classifyAiSpan(span) === "tool" && recoveredFrom(span, turnSpans)),
-				),
+				// An agent root failing is the run failing, wherever its own parent landed.
+				failed:
+					(anchor.kind === "agent-root" && spanFailed(anchor.span)) ||
+					turnSpans.some(
+						(span) =>
+							span.isAiSpan &&
+							spanFailed(span) &&
+							(span.parentSpanId === "" || !spanIds.has(span.parentSpanId)) &&
+							!(classifyAiSpan(span) === "tool" && recoveredFrom(span, turnSpans)),
+					),
 				traceIds,
 			}
 		})
+}
+
+/**
+ * The turn the session ended on: the one that finished last, the later-started
+ * on a tie. Not the last to start: an orchestrator that fans out sub-agents
+ * outlives them, and its outcome is the session's.
+ */
+export function finalTurnIndex(turns: readonly SessionTurn[]): number {
+	return turns.reduce(
+		(final, turn, index) =>
+			turn.endMs >= (turns[final]?.endMs ?? Number.NEGATIVE_INFINITY) ? index : final,
+		turns.length - 1,
+	)
 }
 
 /** Whether the agent carried on after `failed`: an AI span of the same turn
@@ -388,6 +407,63 @@ function conversationTurnResolver(
 		return turn
 	}
 	return resolve
+}
+
+/**
+ * Which agent-root turn a span sits under, by parentage — or `undefined` for a
+ * span with no anchor above it, left to the time cursor.
+ *
+ * Sub-agents a fan-out launches together run concurrently, often from the same
+ * millisecond: by time alone every lane's spans land in whichever anchored last
+ * and the others vanish. An agent root has no AI span above it, so the nearest
+ * anchor in a span's ancestry is its only one.
+ */
+function agentRootTurnResolver(
+	spans: readonly AiSessionSpan[],
+	anchors: readonly TurnAnchor[],
+): (span: AiSessionSpan) => number | undefined {
+	const turnByAnchor = new Map(anchors.map((anchor, turn) => [anchor.span.spanId, turn]))
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const memo = new Map<string, number | undefined>()
+
+	const byParentage = (span: AiSessionSpan): number | undefined => {
+		if (memo.has(span.spanId)) return memo.get(span.spanId)
+		// Seeded before the walk so a malformed parent cycle ends here.
+		memo.set(span.spanId, undefined)
+		let turn = turnByAnchor.get(span.spanId)
+		if (turn === undefined) {
+			const parent = byId.get(span.parentSpanId)
+			if (parent !== undefined) turn = byParentage(parent)
+		}
+		memo.set(span.spanId, turn)
+		return turn
+	}
+
+	// A span no anchor is above (the runtime's spawn of a sub-agent, an orchestrator's
+	// own rejected delegation) belongs to the outermost run open in its trace when it
+	// started: by time alone it lands in whichever sub-agent anchored last.
+	const runs = anchors.map((anchor, turn) => ({
+		turn,
+		traceId: anchor.span.traceId,
+		startMs: spanStartMs(anchor.span),
+		endMs: spanEndMs(anchor.span),
+	}))
+	const enclosingRun = (span: AiSessionSpan): number | undefined => {
+		const startMs = spanStartMs(span)
+		const open = runs.filter(
+			(run) => run.traceId === span.traceId && run.startMs <= startMs && startMs <= run.endMs,
+		)
+		return open.reduce<(typeof runs)[number] | undefined>(
+			(outer, run) =>
+				outer === undefined ||
+				run.startMs < outer.startMs ||
+				(run.startMs === outer.startMs && run.endMs > outer.endMs)
+					? run
+					: outer,
+			undefined,
+		)?.turn
+	}
+	return (span) => byParentage(span) ?? enclosingRun(span)
 }
 
 /**
@@ -546,18 +622,27 @@ export function lastUserMessageText(value: unknown): string | undefined {
 	return undefined
 }
 
+/** Leading blocks a framework writes into the prompt (`<run-status>…</run-status>`,
+ *  `<system-reminder>…`): hyphenated tags, so a user's own `<task>` stays prose. */
+const INJECTED_BLOCKS = /^(?:\s*<([a-z][\w]*-[\w-]+)\b[^>]*>[\s\S]*?<\/\1>)+\s*/i
+
+/** The text without the framework blocks it opens with; empty when that was all of it. */
+export function withoutInjectedBlocks(text: string): string {
+	return text.replace(INJECTED_BLOCKS, "")
+}
+
 function messageText(value: unknown): string | undefined {
-	if (typeof value === "string") return proseLine(value)
+	if (typeof value === "string") return proseLine(withoutInjectedBlocks(value))
 	if (!Array.isArray(value)) return undefined
 	for (const part of value) {
 		if (typeof part === "string") {
-			const text = proseLine(part)
+			const text = proseLine(withoutInjectedBlocks(part))
 			if (text !== undefined) return text
 		}
 		if (!isRecord(part)) continue
 		const content = typeof part.content === "string" ? part.content : part.text
 		if (typeof content === "string") {
-			const text = proseLine(content)
+			const text = proseLine(withoutInjectedBlocks(content))
 			if (text !== undefined) return text
 		}
 	}

@@ -180,6 +180,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 									target="_blank"
 									rel="noreferrer"
 									className="truncate text-foreground hover:underline"
+									title={subject}
 								>
 									{subject}
 								</a>

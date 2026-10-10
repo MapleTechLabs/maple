@@ -1055,6 +1055,24 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
+-- builder:infra:hostFilesystemsQuery:default  [c12d4b7b]
+SELECT
+          metrics_gauge.Attributes['mountpoint'] AS mountpoint,
+          any(metrics_gauge.Attributes['device']) AS device,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0), 0) AS usedAvg,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0) AS usedMax
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
+          AND metrics_gauge.MetricName = 'system.filesystem.utilization'
+          AND metrics_gauge.Attributes['state'] = 'used'
+        GROUP BY mountpoint
+        ORDER BY usedMax DESC
+        LIMIT 20
+        FORMAT JSON
+
 -- builder:infra:hostGaugeTimeseriesQuery:default  [b4ba966f]
 SELECT
           toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
@@ -1439,6 +1457,26 @@ SELECT
           AND metrics_gauge.MetricName = 'k8s.pod.cpu.utilization'
         GROUP BY bucket
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:podRestartsQuery:default  [5cde512b]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.namespace.name'] AS namespace,
+          metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
+          metrics_gauge.ResourceAttributes['k8s.container.name'] AS containerName,
+          ifNotFinite(max(metrics_gauge.Value) - min(metrics_gauge.Value), 0) AS restarts,
+          ifNotFinite(max(metrics_gauge.Value), 0) AS totalRestarts
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.MetricName = 'k8s.container.restarts'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.namespace.name'] = 'backend'
+          AND metrics_gauge.ResourceAttributes['k8s.deployment.name'] = 'api'
+        GROUP BY namespace, podName, containerName
+        ORDER BY restarts DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:infra:workloadFacetsQuery:default  [39bce5d0]

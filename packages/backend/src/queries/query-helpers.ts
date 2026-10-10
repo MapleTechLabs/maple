@@ -143,6 +143,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
+				attributeEquals: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -150,6 +151,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
+				attributeEquals: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -157,6 +159,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.filesystem.utilization",
 				groupByAttributeKey: "mountpoint",
+				// Per-mount disk usage is the `used` share; free and reserved are its complement.
+				attributeEquals: { key: "state", value: "used" },
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -164,6 +168,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
+				attributeEquals: undefined,
 				unit: "load" as const,
 				isNetwork: false,
 			}
@@ -171,6 +176,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
+				attributeEquals: undefined,
 				unit: "bytes_per_second" as const,
 				isNetwork: true,
 			}

@@ -40,10 +40,18 @@ interface MetricPreviewCardProps {
 	entry: MetricPreviewEntry
 	points: ReadonlyArray<MetricSparklinePoint> | undefined
 	loading: boolean
+	/** The sparkline query failed, as opposed to returning too few points. */
+	failed?: boolean
 	onOpen: () => void
 }
 
-export function MetricPreviewCard({ entry, points, loading, onOpen }: MetricPreviewCardProps) {
+export function MetricPreviewCard({
+	entry,
+	points,
+	loading,
+	failed = false,
+	onOpen,
+}: MetricPreviewCardProps) {
 	const rows = React.useMemo(
 		() => sparklineRows(entry.metricType, points ?? []),
 		[entry.metricType, points],
@@ -69,7 +77,11 @@ export function MetricPreviewCard({ entry, points, loading, onOpen }: MetricPrev
 					/>
 				) : (
 					<div className="flex h-full items-center text-3xs text-muted-foreground">
-						{loading ? "Loading…" : "Not enough datapoints for a preview"}
+						{loading
+							? "Loading…"
+							: failed
+								? "Preview unavailable"
+								: "Not enough datapoints for a preview"}
 					</div>
 				)}
 			</div>

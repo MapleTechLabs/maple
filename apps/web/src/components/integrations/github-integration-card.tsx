@@ -424,7 +424,7 @@ function ConnectedView({
 					<StatusDot tone="ok" size="lg" />
 				</ItemMedia>
 				<ItemContent className="leading-tight">
-					<div className="text-sm font-medium">
+					<div className="text-sm font-medium [overflow-wrap:anywhere]">
 						Connected
 						{status.accountLogin ? (
 							<>
@@ -568,7 +568,9 @@ function ConnectedView({
 											rel="noreferrer"
 											className="group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline"
 										>
-											<span className="truncate">{repo.fullName}</span>
+											<span className="truncate" title={repo.fullName}>
+												{repo.fullName}
+											</span>
 											<ExternalLinkIcon
 												size={12}
 												className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
@@ -643,7 +645,9 @@ function RepoRow({
 						rel="noreferrer"
 						className="group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline"
 					>
-						<span className="truncate">{repo.fullName}</span>
+						<span className="truncate" title={repo.fullName}>
+							{repo.fullName}
+						</span>
 						<ExternalLinkIcon
 							size={12}
 							className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"

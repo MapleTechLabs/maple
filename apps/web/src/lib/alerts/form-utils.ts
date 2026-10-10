@@ -151,8 +151,11 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 	if (value == null || Number.isNaN(value)) return "n/a"
 
 	switch (signalType) {
-		case "error_rate":
-			return formatErrorRate(value)
+		case "error_rate": {
+			// formatErrorRate floors to "<0.01%", which makes a tiny value and its tiny threshold read the same.
+			const pct = value * 100
+			return pct > 0 && pct < 0.01 ? `${pct.toPrecision(2)}%` : formatErrorRate(value)
+		}
 		case "p95_latency":
 		case "p99_latency":
 			return formatLatency(value)
@@ -179,7 +182,8 @@ export function formThresholdToDomain(signalType: AlertSignalType, value: string
 }
 
 export function domainThresholdToForm(signalType: AlertSignalType, value: number): string {
-	return signalType === "error_rate" ? String(value * 100) : String(value)
+	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
+	return signalType === "error_rate" ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
 
 function parsePositiveNumber(value: string, fallback: number): number {

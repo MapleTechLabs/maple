@@ -7,6 +7,9 @@ import { countLabel, formatDuration } from "../../lib/format"
 import { describeSpan } from "../../lib/span-category"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, ROW_HEIGHT } from "./trace-timeline-types"
+
+/** Indent stops growing past this depth so deep traces keep room for the label. */
+const MAX_INDENT_DEPTH = 12
 import { TONE_TEXT } from "../../lib/tone"
 
 interface TraceTimelineRowProps {
@@ -62,6 +65,7 @@ function TraceTimelineRowImpl({
 	const { category, cacheInfo } = describeSpan(bar.span)
 	const CategoryIcon = category.Icon
 	const durationLabel = formatDuration(bar.span.durationMs)
+	const indentDepth = Math.min(bar.depth, MAX_INDENT_DEPTH)
 
 	return (
 		<div
@@ -87,11 +91,11 @@ function TraceTimelineRowImpl({
 				// A container, so the trailing chips can drop out at narrow column widths without a
 				// re-render: a resize drag only rewrites `--sidebar-w`.
 				className="@container/label sticky left-0 z-10 relative flex items-center gap-1 shrink-0 border-r border-border bg-inherit pr-2 text-2xs"
-				style={{ width: "var(--sidebar-w)", paddingLeft: bar.depth * DEPTH_INDENT + 4 }}
+				style={{ width: "var(--sidebar-w)", paddingLeft: indentDepth * DEPTH_INDENT + 4 }}
 			>
 				{/* Ancestor indent guides */}
-				{bar.depth > 0 &&
-					Array.from({ length: bar.depth }).map((_, level) => (
+				{indentDepth > 0 &&
+					Array.from({ length: indentDepth }).map((_, level) => (
 						<span
 							key={level}
 							aria-hidden
@@ -103,6 +107,14 @@ function TraceTimelineRowImpl({
 					className="shrink-0"
 					style={{ width: 3, height: ROW_HEIGHT - 8, backgroundColor: bar.borderColor }}
 				/>
+				{bar.depth > MAX_INDENT_DEPTH && (
+					<span
+						className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"
+						title={`Depth ${bar.depth}`}
+					>
+						L{bar.depth}
+					</span>
+				)}
 				{bar.hasChildren ? (
 					<button
 						type="button"

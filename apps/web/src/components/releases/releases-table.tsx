@@ -128,9 +128,13 @@ function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpa
 			<span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
 				<span className="tabular-nums">{names.length} services</span>
 				{flagged.slice(0, 2).map((serviceName) => (
-					<span key={serviceName} className="inline-flex items-center gap-1">
+					<span
+						key={serviceName}
+						className="inline-flex min-w-0 max-w-56 items-center gap-1"
+						title={serviceName}
+					>
 						<ServiceDot serviceName={serviceName} />
-						{serviceName}
+						<span className="truncate">{serviceName}</span>
 					</span>
 				))}
 				{flagged.length > 2 ? (
@@ -144,10 +148,11 @@ function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpa
 			{names.map((serviceName) => (
 				<span
 					key={serviceName}
-					className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+					className="inline-flex min-w-0 max-w-56 items-center gap-1 text-xs text-muted-foreground"
+					title={serviceName}
 				>
 					<ServiceDot serviceName={serviceName} />
-					{serviceName}
+					<span className="truncate">{serviceName}</span>
 				</span>
 			))}
 		</span>
@@ -184,7 +189,7 @@ function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitle
 							commit === undefined && "font-mono text-xs",
 						)}
 					>
-						{commit ? firstLine(commit.message) : shortReleaseLabel(commitSha)}
+						{(commit ? firstLine(commit.message) : "") || shortReleaseLabel(commitSha)}
 					</CommitShaHoverCard>
 					{health === "healthy" ? null : <ReleaseHealthPill health={health} label={figure} />}
 				</div>
@@ -340,7 +345,7 @@ function ReleasesTableRows({
 											</Link>
 										</div>
 									</TableCell>
-									<TableCell className="py-2 align-top">
+									<TableCell className="whitespace-normal py-2 align-top">
 										<ServiceChips services={group.services} />
 									</TableCell>
 									<TableCell className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground">
@@ -392,7 +397,7 @@ function ReleasesTableRows({
 												key={`${service.serviceName}:${service.environment}`}
 												className="bg-muted/20"
 											>
-												<TableCell className="py-1.5 pl-12">
+												<TableCell className="max-w-0 py-1.5 pl-12">
 													<Link
 														to="/releases/$commitSha"
 														params={{ commitSha: group.commitSha }}
@@ -400,12 +405,17 @@ function ReleasesTableRows({
 															service.serviceName,
 															service.environment,
 														)}
-														className="inline-flex items-center gap-2 text-xs hover:underline"
+														className="inline-flex max-w-full items-center gap-2 text-xs hover:underline"
 													>
 														<ServiceDot serviceName={service.serviceName} />
-														{service.serviceName}
+														<span
+															className="min-w-0 truncate"
+															title={service.serviceName}
+														>
+															{service.serviceName}
+														</span>
 														{service.environment && !environments?.length ? (
-															<span className="text-muted-foreground/70">
+															<span className="min-w-0 truncate text-muted-foreground/70">
 																{service.environment}
 															</span>
 														) : null}
@@ -413,6 +423,7 @@ function ReleasesTableRows({
 															<ReleaseHealthPill
 																health={service.health}
 																label={releaseHealthFigure(service)}
+																className="shrink-0"
 															/>
 														)}
 													</Link>

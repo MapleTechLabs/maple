@@ -26,6 +26,8 @@ import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
 import { registerIngestFreshnessTool } from "./ingest-freshness"
 import { registerDbQueryVolumeTool } from "./db-query-volume"
+import { registerListInfraTool } from "./list-infra"
+import { registerInspectInfraTool } from "./inspect-infra"
 import { registerIngestUsageTool } from "./ingest-usage"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
@@ -66,6 +68,7 @@ import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerListAgentSessionsTool } from "./list-agent-sessions"
 import { registerGetAgentSessionTool } from "./get-agent-session"
+import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
 import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
@@ -369,6 +372,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetSessionTracesTool(registrar)
 	registerListAgentSessionsTool(registrar)
 	registerGetAgentSessionTool(registrar)
+	registerGetAgentSessionTranscriptTool(registrar)
 	registerGetAgentToolsOverviewTool(registrar)
 	registerGetAgentToolErrorTool(registrar)
 	registerDiagnoseServiceTool(registrar)
@@ -408,6 +412,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRouteUsageTool(registrar)
 	registerIngestFreshnessTool(registrar)
 	registerDbQueryVolumeTool(registrar)
+	registerListInfraTool(registrar)
+	registerInspectInfraTool(registrar)
 	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)

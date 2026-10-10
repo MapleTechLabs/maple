@@ -10,6 +10,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { LogHeroHeader } from "@/components/logs/log-hero-header"
 import { LogMetaStrip } from "@/components/logs/log-meta-strip"
 import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
+import { severityLabel } from "@maple/ui/components/logs/severity-badge"
 import { LogAttributesPanel } from "@/components/logs/log-attributes-panel"
 import { LogRawPanel } from "@/components/logs/log-raw-panel"
 import { LogTraceTimeline } from "@/components/logs/log-trace-timeline"
@@ -104,7 +105,7 @@ function LogDetailPage() {
 			}
 		>
 			{(log) => {
-				const sev = log.severityText.toUpperCase()
+				const sev = severityLabel(log.severityText, log.severityNumber).toUpperCase()
 				const showErrorBanner = sev === "ERROR" || sev === "FATAL"
 				const openLog = (next: Log) =>
 					navigate({ to: "/logs/$logId", params: { logId: encodeLogKey(next) } })

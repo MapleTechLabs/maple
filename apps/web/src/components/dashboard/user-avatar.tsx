@@ -1,3 +1,7 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
+import { cn } from "@maple/ui/lib/utils"
+import { initialsFrom } from "@maple/ui/lib/initials"
+
 /**
  * The signed-in user's avatar. Shared by the sidebar menus, the onboarding header and
  * `/account` so one image/initials fallback covers every surface.
@@ -13,24 +17,17 @@ export function UserAvatar({
 	name: string
 	className?: string
 }) {
-	const base = className ?? "size-6 rounded-md text-3xs"
-	return imageUrl ? (
-		<img alt={name} className={`${base} shrink-0 object-cover`} src={imageUrl} />
-	) : (
-		<div
-			className={`${base} flex shrink-0 items-center justify-center bg-muted font-medium text-muted-foreground`}
-		>
-			{initials}
-		</div>
+	return (
+		<Avatar className={cn("bg-muted", className ?? "size-6 rounded-md text-3xs")}>
+			{imageUrl && <AvatarImage alt={name} src={imageUrl} />}
+			<AvatarFallback className="rounded-[inherit] font-medium text-muted-foreground">
+				{initials}
+			</AvatarFallback>
+		</Avatar>
 	)
 }
 
 /** Two-letter initials from a display name, e.g. "Ada Lovelace" -> "AL". */
 export function userInitials(name: string) {
-	return name
-		.split(" ")
-		.map((part) => part[0])
-		.join("")
-		.slice(0, 2)
-		.toUpperCase()
+	return initialsFrom(name)
 }

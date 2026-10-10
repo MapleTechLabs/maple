@@ -2,7 +2,7 @@ import { warmAtoms } from "@effect-router/core"
 import * as React from "react"
 import { useNavigate, useRouterState, createFileRoute } from "@tanstack/react-router"
 import { useAtomValue } from "@/lib/effect-atom"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import { TraceId } from "@maple/domain"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -22,6 +22,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { type Span, type SpanNode, type SpanHierarchyResponse } from "@/api/warehouse/traces"
 import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
@@ -36,6 +37,9 @@ const TraceDetailSearchSchema = Schema.Struct({
 	t: Schema.optional(Schema.String),
 })
 
+/** A pasted id may carry whitespace; anything still undecodable renders the not-found state. */
+const decodeTraceIdParam = (raw: string) => Option.getOrNull(Schema.decodeUnknownOption(TraceId)(raw.trim()))
+
 function buildBackToTracesHref(searchStr: string): string {
 	const params = new URLSearchParams(searchStr)
 	params.delete("spanId")
@@ -49,13 +53,10 @@ export const Route = createFileRoute("/traces/$traceId")({
 	validateSearch: Schema.toStandardSchemaV1(TraceDetailSearchSchema),
 	loaderDeps: ({ search }) => ({ t: search.t }),
 	loader: ({ context, params, deps }) => {
+		const traceId = decodeTraceIdParam(params.traceId)
+		if (traceId === null) return
 		warmAtoms(context.effectRegistry, [
-			getSpanHierarchyResultAtom({
-				data: {
-					traceId: Schema.decodeSync(TraceId)(params.traceId),
-					timestamp: deps.t,
-				},
-			}),
+			getSpanHierarchyResultAtom({ data: { traceId, timestamp: deps.t } }),
 		])
 	},
 })
@@ -65,10 +66,11 @@ function TraceDetailPage() {
 	const search = Route.useSearch()
 	const searchStr = useRouterState({ select: (state) => state.location.searchStr })
 	const backToTracesHref = buildBackToTracesHref(searchStr)
+	const decodedTraceId = decodeTraceIdParam(traceId)
 	const result = useAtomValue(
-		getSpanHierarchyResultAtom({
-			data: { traceId: Schema.decodeSync(TraceId)(traceId), timestamp: search.t },
-		}),
+		decodedTraceId === null
+			? disabledResultAtom<SpanHierarchyResponse>()
+			: getSpanHierarchyResultAtom({ data: { traceId: decodedTraceId, timestamp: search.t } }),
 	)
 
 	return (
@@ -85,6 +87,16 @@ function TraceDetailPage() {
 			crumb={() => shortId(traceId, "trace")}
 			errorTitle="Failed to load trace details"
 			loading={<TraceDetailLoading />}
+			invalid={
+				decodedTraceId === null ? (
+					<TraceNotFound
+						traceId={traceId}
+						backToTracesHref={backToTracesHref}
+						title="Trace not found"
+						description="This is not a valid trace ID. Check that the link was copied in full."
+					/>
+				) : undefined
+			}
 			notFound={
 				<TraceNotFound
 					traceId={traceId}

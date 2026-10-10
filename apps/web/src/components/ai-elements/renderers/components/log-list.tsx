@@ -41,7 +41,12 @@ export function LogList({ props }: RendererComponentProps<LogListProps>) {
 						>
 							<span className="shrink-0 font-mono text-3xs text-muted-foreground">{time}</span>
 							<SeverityBadge severity={log.severityText} className="shrink-0" />
-							<span className="shrink-0 text-muted-foreground">{log.serviceName}</span>
+							<span
+								className="min-w-0 max-w-[30%] truncate text-muted-foreground"
+								title={log.serviceName}
+							>
+								{log.serviceName}
+							</span>
 							<span className="min-w-0 flex-1 truncate">{log.body}</span>
 							{log.traceId && (
 								<a

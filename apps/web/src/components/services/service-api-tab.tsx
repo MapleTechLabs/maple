@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
@@ -504,8 +505,15 @@ function EndpointRow({
 	const { head, tail } = leafLabel(endpoint.route, stem)
 	return (
 		<TableRow
+			tabIndex={0}
 			onClick={() => onSelect(endpoint)}
-			className="group/row cursor-pointer border-b last:border-b-0 hover:bg-muted/40"
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault()
+					onSelect(endpoint)
+				}
+			}}
+			className="group/row cursor-pointer border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 		>
 			<TableCell className={cn("max-w-0 py-2 align-middle", stem.length > 0 ? "pl-6" : "pl-3")}>
 				<div className="flex min-w-0 items-center gap-2.5">
@@ -539,7 +547,7 @@ function EndpointRow({
 				<LatencyValue ms={endpoint.p95DurationMs} scale="p95" className="text-xs" />
 			</BarCell>
 			<TableCell className="py-2 pr-3 text-right align-middle">
-				<LatencyValue ms={endpoint.p99DurationMs} scale="p95" className="text-xs" />
+				<LatencyValue ms={endpoint.p99DurationMs} scale="p99" className="text-xs" />
 			</TableCell>
 		</TableRow>
 	)
@@ -610,11 +618,13 @@ function MobileGroup({
 							<MobileListRow key={endpoint.spanName} onClick={() => onSelect(endpoint)}>
 								<span className="flex min-w-0 items-center gap-2">
 									<MethodLabel method={endpoint.method} />
-									<span className="truncate font-mono text-ui">
+									<span className="flex min-w-0 font-mono text-ui" title={endpoint.route}>
 										{head.length > 0 && (
-											<span className="text-muted-foreground/50">{head}</span>
+											<span className="min-w-0 truncate text-muted-foreground/50">
+												{head}
+											</span>
 										)}
-										<span className="text-foreground">{tail}</span>
+										<MiddleTruncate text={tail} tail={12} className="text-foreground" />
 									</span>
 								</span>
 								<MobileStatLine>
