@@ -172,7 +172,7 @@ const firstSeen = (sql: string) => fmt(windowOf(sql).start + 30_000)
 
 /** Values for `ResourceAttributes['key'] = 'v'` or `IN ('a', 'b')` in the SQL; undefined when unfiltered. */
 const filterValues = (sql: string, key: string): ReadonlyArray<string> | undefined => {
-	const escaped = key.replace(/\./g, "\\.")
+	const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 	const eq = [...sql.matchAll(new RegExp(`\\['${escaped}'\\] = '([^']*)'`, "g"))].map((m) => m[1] ?? "")
 	const inList = [...sql.matchAll(new RegExp(`\\['${escaped}'\\] IN \\(([^)]*)\\)`, "g"))].flatMap((m) =>
 		[...(m[1] ?? "").matchAll(/'([^']*)'/g)].map((v) => v[1] ?? ""),
