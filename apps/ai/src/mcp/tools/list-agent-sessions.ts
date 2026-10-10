@@ -1,11 +1,5 @@
 import { Effect, Schema } from "effect"
-import {
-	AI_SESSION_SEARCH_MAX_CHARS,
-	AI_SESSION_SORT_KEYS,
-	CountBound,
-	ListAiSessionsRequest,
-	RangeBound,
-} from "@maple/domain/http"
+import { AI_SESSION_SEARCH_MAX_CHARS, AI_SESSION_SORT_KEYS, ListAiSessionsRequest } from "@maple/domain/http"
 import { ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
 import { formatCost } from "@maple/agent-sessions"
 import { listAiSessions } from "@maple/backend/services/ai-sessions/ai-session-reads"
@@ -21,13 +15,6 @@ import { doc } from "../lib/tool-doc"
 
 const WINDOW = P.timeWindow({ defaultHours: 24, maxHours: MCP_SEARCH_MAX_HOURS })
 
-/** The bounds reach a column comparison, so the request refuses a negative one and a fractional
- *  count; declared here, they are a parameter error instead. */
-const rangeBound = (description: string) =>
-	P.optionalNumber(description).pipe(Schema.decodeTo(Schema.optional(RangeBound)))
-const countBound = (description: string) =>
-	P.optionalNumber(description).pipe(Schema.decodeTo(Schema.optional(CountBound)))
-
 /** A list filter, trimmed; an empty list is no filter. */
 const listFilter = (values: ReadonlyArray<string> | undefined): ReadonlyArray<string> | undefined => {
 	const entries = (values ?? []).map((value) => value.trim()).filter((value) => value !== "")
@@ -40,23 +27,11 @@ type Filters = typeof ListAgentSessionsOutput.Type.filters
 const filterArgs = (filters: Filters) => ({
 	vendors: filters.vendors,
 	services: filters.services,
-	environments: filters.environments,
 	models: filters.models,
 	agents: filters.agents,
 	tools: filters.tools,
 	search: filters.search,
 	has_errors: filters.hasErrors,
-	exclude_trace_sessions: filters.excludeTraceSessions,
-	duration_min_ms: filters.durationMinMs,
-	duration_max_ms: filters.durationMaxMs,
-	cost_min: filters.costMin,
-	cost_max: filters.costMax,
-	tokens_min: filters.tokensMin,
-	tokens_max: filters.tokensMax,
-	llm_calls_min: filters.llmCallsMin,
-	llm_calls_max: filters.llmCallsMax,
-	tool_calls_min: filters.toolCallsMin,
-	tool_calls_max: filters.toolCallsMax,
 	sort_by: filters.sortBy,
 	sort_dir: filters.sortDir,
 })
@@ -73,7 +48,6 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				"Vendor ids to match (e.g. eve, vercel_ai_sdk): a row's Vendor column is one",
 			),
 			services: P.optionalList("Service names to match"),
-			environments: P.optionalList("Deployment environments to match"),
 			models: P.optionalList("Model names to match"),
 			agents: P.optionalList("Agent names to match"),
 			tools: P.optionalList(
@@ -84,24 +58,13 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				AI_SESSION_SEARCH_MAX_CHARS,
 			),
 			has_errors: P.optionalFlag("Only sessions with at least one failed agent span"),
-			exclude_trace_sessions: P.optionalFlag(
-				"Drop `trace:<id>` sessions: traces whose vendor exposed no session key",
-			),
-			duration_min_ms: rangeBound("Only sessions at least this long (ms)"),
-			duration_max_ms: rangeBound("Only sessions at most this long (ms)"),
-			cost_min: rangeBound("Only sessions costing at least this much (USD, as reported)"),
-			cost_max: rangeBound("Only sessions costing at most this much (USD)"),
-			tokens_min: countBound("Only sessions with at least this many total tokens"),
-			tokens_max: countBound("Only sessions with at most this many total tokens"),
-			llm_calls_min: countBound("Only sessions with at least this many model calls"),
-			llm_calls_max: countBound("Only sessions with at most this many model calls"),
-			tool_calls_min: countBound("Only sessions with at least this many tool calls"),
-			tool_calls_max: countBound("Only sessions with at most this many tool calls"),
 			sort_by: P.optionalOneOf(AI_SESSION_SORT_KEYS, "Sort key (default startTime)"),
 			sort_dir: P.optionalOneOf(["asc", "desc"], "Sort direction (default desc)"),
 			limit: P.limit({ default: 25, max: 100, noun: "sessions" }),
 			offset: P.offset({ max: 10_000 }),
 		}),
+		// Agents sort rather than bound: the page's min/max and environment filters stay off the tool.
+		aliases: { service: "services" },
 		output: ListAgentSessionsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing agent sessions"],
@@ -113,7 +76,6 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			const lists = {
 				vendors: listFilter(params.vendors),
 				services: listFilter(params.services),
-				environments: listFilter(params.environments),
 				models: listFilter(params.models),
 				agents: listFilter(params.agents),
 				tools: listFilter(params.tools),
@@ -136,23 +98,11 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					offset,
 					vendorIds: lists.vendors,
 					serviceNames: lists.services,
-					deploymentEnvs: lists.environments,
 					models: lists.models,
 					agentNames: lists.agents,
 					toolNames: lists.tools,
 					search: params.search,
 					hasErrors: params.has_errors,
-					excludeTraceSessions: params.exclude_trace_sessions,
-					durationMinMs: params.duration_min_ms,
-					durationMaxMs: params.duration_max_ms,
-					costMin: params.cost_min,
-					costMax: params.cost_max,
-					tokensMin: params.tokens_min,
-					tokensMax: params.tokens_max,
-					llmCallsMin: params.llm_calls_min,
-					llmCallsMax: params.llm_calls_max,
-					toolCallsMin: params.tool_calls_min,
-					toolCallsMax: params.tool_calls_max,
 					sortBy,
 					sortDir,
 				}),
@@ -174,37 +124,11 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 				filters: {
 					...(lists.vendors === undefined ? undefined : { vendors: lists.vendors }),
 					...(lists.services === undefined ? undefined : { services: lists.services }),
-					...(lists.environments === undefined ? undefined : { environments: lists.environments }),
 					...(lists.models === undefined ? undefined : { models: lists.models }),
 					...(lists.agents === undefined ? undefined : { agents: lists.agents }),
 					...(lists.tools === undefined ? undefined : { tools: lists.tools }),
 					...(params.search === undefined ? undefined : { search: params.search }),
 					...(params.has_errors === undefined ? undefined : { hasErrors: params.has_errors }),
-					...(params.exclude_trace_sessions === undefined
-						? undefined
-						: { excludeTraceSessions: params.exclude_trace_sessions }),
-					...(params.duration_min_ms === undefined
-						? undefined
-						: { durationMinMs: params.duration_min_ms }),
-					...(params.duration_max_ms === undefined
-						? undefined
-						: { durationMaxMs: params.duration_max_ms }),
-					...(params.cost_min === undefined ? undefined : { costMin: params.cost_min }),
-					...(params.cost_max === undefined ? undefined : { costMax: params.cost_max }),
-					...(params.tokens_min === undefined ? undefined : { tokensMin: params.tokens_min }),
-					...(params.tokens_max === undefined ? undefined : { tokensMax: params.tokens_max }),
-					...(params.llm_calls_min === undefined
-						? undefined
-						: { llmCallsMin: params.llm_calls_min }),
-					...(params.llm_calls_max === undefined
-						? undefined
-						: { llmCallsMax: params.llm_calls_max }),
-					...(params.tool_calls_min === undefined
-						? undefined
-						: { toolCallsMin: params.tool_calls_min }),
-					...(params.tool_calls_max === undefined
-						? undefined
-						: { toolCallsMax: params.tool_calls_max }),
 					sortBy,
 					sortDir,
 				},

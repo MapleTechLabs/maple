@@ -58,6 +58,7 @@ import {
 } from "./services"
 import {
 	GetAgentSessionOutput,
+	GetAgentSessionTranscriptOutput,
 	GetAgentToolErrorOutput,
 	GetAgentToolsOverviewOutput,
 	GetSessionTracesOutput,
@@ -115,6 +116,7 @@ export const McpToolOutputs = {
 	find_errors: FindErrorsOutput,
 	find_slow_traces: FindSlowTracesOutput,
 	get_agent_session: GetAgentSessionOutput,
+	get_agent_session_transcript: GetAgentSessionTranscriptOutput,
 	get_agent_tool_error: GetAgentToolErrorOutput,
 	get_agent_tools_overview: GetAgentToolsOverviewOutput,
 	get_alert_rule: GetAlertRuleOutput,

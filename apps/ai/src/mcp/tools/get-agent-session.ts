@@ -6,7 +6,6 @@ import {
 	buildSessionSummary,
 	buildSessionTurns,
 	formatCost,
-	turnOrdinal,
 } from "@maple/agent-sessions"
 import { GetAgentSessionOutput } from "@maple/domain/mcp-outputs"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
@@ -15,7 +14,6 @@ import { formatDurationFromMs, formatNumber, tableCell, truncate } from "../lib/
 import {
 	loadAgentSessionSpans,
 	loadSummary,
-	offsetLabel,
 	sessionTooLarge,
 	sessionWindowFrom,
 	sessionWindowParams,
@@ -29,7 +27,6 @@ import { doc, type DocBlock } from "../lib/tool-doc"
  *  table of every row. */
 const MAX_FINDINGS = 10
 const MAX_TOOLS = 15
-const MAX_TURNS = 25
 
 /** Characters kept of captured text the output carries (the opening message, a turn's label). */
 const CAPTURED_TEXT_CHARS = 500
@@ -135,14 +132,20 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						passed: counts.passed,
 						skipped: counts.skipped,
 					},
-					checks: checks.checks.map((check) => ({
-						id: check.id,
-						name: check.name,
-						status: check.status,
-						headline: check.headline,
-						...(check.action === undefined ? undefined : { action: check.action }),
-						...(check.fixArea === undefined ? undefined : { fixArea: check.fixArea }),
-					})),
+					// Only what needs attention carries its sentence; a passed check is its name.
+					checks: checks.checks
+						.filter((check) => check.status !== "passed")
+						.map((check) => ({
+							id: check.id,
+							name: check.name,
+							status: check.status,
+							headline: check.headline,
+							...(check.action === undefined ? undefined : { action: check.action }),
+							...(check.fixArea === undefined ? undefined : { fixArea: check.fixArea }),
+						})),
+					passedChecks: checks.checks
+						.filter((check) => check.status === "passed")
+						.map((check) => check.name),
 					findingCount: report.findings.length,
 					findings: report.findings.slice(0, MAX_FINDINGS).map((finding) => ({
 						kind: finding.kind,
@@ -188,24 +191,9 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						totalMs: tool.totalMs,
 						slowestMs: tool.slowestMs,
 					})),
-					failureGroups: summary.failureGroups.map((group) => ({
-						kind: group.kind,
-						label: group.label,
-						count: group.count,
-					})),
+					// Turn by turn is the transcript's index; this read says how many, and how many failed.
 					turnCount: turns.length,
-					turns: turns.slice(0, MAX_TURNS).map((turn) => ({
-						ordinal: turnOrdinal(turn),
-						anchorKind: turn.anchorKind,
-						...(turn.agentName === undefined ? undefined : { agentName: turn.agentName }),
-						offsetMs: turn.startMs - summary.startMs,
-						durationMs: turn.durationMs,
-						spanCount: turn.spans.length,
-						failed: turn.failed,
-						...(turn.label === undefined
-							? undefined
-							: { label: truncate(turn.label, CAPTURED_TEXT_CHARS) }),
-					})),
+					failedTurnCount: turns.filter((turn) => turn.failed).length,
 					...(evidence === undefined
 						? undefined
 						: {
@@ -271,6 +259,9 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 									check.action === undefined ? "—" : truncate(check.action, 120),
 								]),
 							),
+					...(output.passedChecks.length === 0
+						? []
+						: [doc.text(`Passed: ${output.passedChecks.join(", ")}.`)]),
 					...(settled.length === 0
 						? []
 						: [
@@ -306,7 +297,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					]),
 					doc.heading("Work"),
 					doc.list([
-						`${output.work.turns} turns · ${output.work.llmCalls} LLM calls · ${output.work.toolCalls} tool calls · ${output.work.spans} spans · ${output.work.traces} traces`,
+						`${output.work.turns} turns${output.failedTurnCount > 0 ? ` (${output.failedTurnCount} failed)` : ""} · ${output.work.llmCalls} LLM calls · ${output.work.toolCalls} tool calls · ${output.work.spans} spans · ${output.work.traces} traces`,
 					]),
 					doc.heading(`Tokens (reported ${output.tokenReporting})`),
 					doc.list([
@@ -336,34 +327,40 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							formatDurationFromMs(tool.slowestMs),
 						]),
 					),
-					...tableSection(
-						"Failure groups",
-						["Kind", "Label", "Count"],
-						output.failureGroups.map((group) => [
-							group.kind,
-							truncate(group.label, 80),
-							String(group.count),
-						]),
-					),
-					doc.heading(
-						`Turns (${output.turnCount}${output.turns.length < output.turnCount ? `, showing ${output.turns.length}` : ""})`,
-					),
-					doc.table(
-						["Turn", "Anchor", "Agent", "Start", "Duration", "Spans", "Failed", "Opened with"],
-						output.turns.map((turn) => [
-							turn.ordinal,
-							turn.anchorKind,
-							turn.agentName ?? "—",
-							offsetLabel(turn.offsetMs),
-							formatDurationFromMs(turn.durationMs),
-							String(turn.spanCount),
-							turn.failed ? "yes" : "",
-							turn.label === undefined ? "—" : truncate(turn.label, 80),
-						]),
-					),
 				],
-				next:
-					output.evidence === undefined
+				next: [
+					doc.next(
+						"get_agent_session_transcript",
+						{
+							session_id: output.sessionId,
+							...(output.window === undefined
+								? undefined
+								: { start_time: output.window.start, end_time: output.window.end }),
+							...(output.findingCount > 0 ? { failed_only: true } : undefined),
+						},
+						output.findingCount > 0
+							? "every failure in time order, where a cascade starts"
+							: "what the agent did, step by step",
+					),
+					// The findings name turns by number; the transcript's index says which run each is.
+					...(output.findingCount > 0 && output.turnCount > 1
+						? [
+								doc.next(
+									"get_agent_session_transcript",
+									{
+										session_id: output.sessionId,
+										...(output.window === undefined
+											? undefined
+											: {
+													start_time: output.window.start,
+													end_time: output.window.end,
+												}),
+									},
+									"each turn's agent, outcome and opening, step by step",
+								),
+							]
+						: []),
+					...(output.evidence === undefined
 						? []
 						: [
 								doc.next(
@@ -375,7 +372,8 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 									},
 									"the messages and tool calls of the span behind the verdict",
 								),
-							],
+							]),
+				],
 			}
 		},
 	})

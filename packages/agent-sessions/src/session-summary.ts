@@ -25,6 +25,7 @@ import {
 } from "./failure-text"
 import {
 	classifyAiSpan,
+	finalTurnIndex,
 	isCountedToolCall,
 	isLlmCall,
 	spanEndMs,
@@ -153,6 +154,8 @@ export interface SessionToolUsage {
  *   connected, a repository not linked, a permission missing.
  * - `toolTimeout`: a tool's backend gave up.
  * - `incomplete`: the run ended without the completion the agent required.
+ * - `agentLimit`: the framework stopped an agent run on one of its budgets
+ *   (duration, turns, tool calls, consecutive failures, tokens, cost).
  */
 export type SessionFailureKind =
 	| "error"
@@ -165,6 +168,7 @@ export type SessionFailureKind =
 	| "toolUnavailable"
 	| "toolTimeout"
 	| "incomplete"
+	| "agentLimit"
 
 export interface SessionFailureEvent {
 	readonly kind: SessionFailureKind
@@ -279,7 +283,7 @@ export function buildSessionSummary({
 		idleMs,
 		idleGaps,
 		agentTime: computeAgentTime(ordered),
-		failed: turns[turns.length - 1]?.failed === true,
+		failed: turns[finalTurnIndex(turns)]?.failed === true,
 		title: turns[0]?.label,
 		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
 		vendorIds: distinctInOrder(ordered.map((span) => span.vendorId)),
@@ -1135,11 +1139,14 @@ export function failureEvents(spans: readonly AiSessionSpan[]): readonly Session
 	return dedupeByResponseId(events)
 }
 
-/** The signal as the agent's spans carry it: a provider attempt's is not read. */
+/** The signal as the agent's spans carry it: a provider attempt's is not read,
+ *  nor an app span's. A runtime's own wrapper under an agent span restating its
+ *  failure would otherwise shadow the agent, then be dropped as the app's own,
+ *  and the failure would vanish. */
 function agentSignal(
 	signalOf: (span: AiSessionSpan) => string | undefined,
 ): (span: AiSessionSpan) => string | undefined {
-	return (span) => (isProviderAttempt(span) ? undefined : signalOf(span))
+	return (span) => (isProviderAttempt(span) || !span.isAiSpan ? undefined : signalOf(span))
 }
 
 /**
@@ -1202,6 +1209,23 @@ const TOOL_ARGUMENTS_PATTERN =
 const TOOL_UNAVAILABLE_PATTERN =
 	/not configured|not connected|not available|unavailable|not enabled|not installed|unauthori[sz]ed|forbidden|permission denied|access denied|no sandbox|integration/i
 
+/** A framework stopping a run on one of its budgets: `Agent exceeded its 4m duration
+ *  limit`, `reached its 3 consecutive Tool Call failure limit`, `exceeded its 64000 token
+ *  budget`. The words before the noun name the budget; the figures in them do not. */
+const AGENT_LIMIT_PATTERN =
+	/\b(?:exceeded|reached) its ((?:[\w$.]+ ){0,6}?(?:duration (?:limit|budget)|limit|budget|allowance|bound|cap|duration))\b/i
+
+/** `duration limit`, `consecutive tool call failure limit`: the budget without its figure. */
+export function agentLimitName(text: string): string | undefined {
+	const match = AGENT_LIMIT_PATTERN.exec(text)?.[1]
+	if (match === undefined) return undefined
+	const words = match
+		.toLowerCase()
+		.split(" ")
+		.filter((word) => !/^[\d$.]/.test(word) && word !== "microdollar")
+	return words.length === 0 ? undefined : words.join(" ")
+}
+
 function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span"> {
 	const signal = errorSignal(span)
 	if (RATE_LIMIT_PATTERN.test(signal)) return { kind: "rateLimited", label: "rate_limit" }
@@ -1212,6 +1236,9 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
 	const text = stripFailurePrefixes(raw)
 	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
+	// Only an agent run is stopped on a budget; a tool's own `limit` is its business.
+	const limit = classifyAiSpan(span) === "agent" ? agentLimitName(text) : undefined
+	if (limit !== undefined) return { kind: "agentLimit", label: `agent_limit · ${limit}` }
 
 	// `error.type` is the instrumentation's own word for it; the tool name is
 	// what separates one failing tool from another under a shared `tool_error`.

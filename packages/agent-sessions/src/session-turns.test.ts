@@ -172,17 +172,17 @@ describe("buildSessionTurns", () => {
 		expect(turns[1]!.spans.map((span) => span.spanId)).toEqual(["agent-2"])
 	})
 
-	it("never emits a turn with no spans in it", () => {
-		// Two anchors in the same millisecond: the earlier one's bucket is empty,
-		// and a turn measured over no spans starts at Infinity.
+	it("gives agent roots that start in the same millisecond a turn each", () => {
+		// A fan-out launches its sub-agents together; by time alone the earlier
+		// anchor's bucket was empty and its run vanished into the later one.
 		const turns = buildSessionTurns([
 			agentSpan({ spanId: "agent-1", traceId: "trace-1", startMs: 0, durationMs: 10 * SECOND }),
 			agentSpan({ spanId: "agent-2", traceId: "trace-2", startMs: 0, durationMs: 10 * SECOND }),
 		])
 
 		expect(turns.every((turn) => turn.spans.length > 0)).toBe(true)
-		expect(turns.map((turn) => turn.index)).toEqual([1])
-		expect(Number.isFinite(turns[0]!.startMs)).toBe(true)
+		expect(turns.map((turn) => turn.index)).toEqual([1, 2])
+		expect(turns.every((turn) => Number.isFinite(turn.startMs))).toBe(true)
 	})
 
 	// Microsoft Agent Framework workflows: `workflow.build` is a one-span trace
