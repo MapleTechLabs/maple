@@ -43,6 +43,7 @@ const recordingEdgeCache = () => {
 		rawGetDetailed: () => Effect.succeed({ status: "miss", value: Option.none(), readMs: 0 }),
 		rawGet: () => Effect.succeed(Option.none()),
 		rawPut: () => Effect.void,
+		rawDelete: () => Effect.void,
 	}
 	const layer = Layer.succeed(EdgeCacheService, api)
 	return { invalidated, layer }

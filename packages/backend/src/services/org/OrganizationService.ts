@@ -72,6 +72,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 
 const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
 const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
@@ -268,6 +269,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			const env = yield* Env
 
 			const autumn = yield* AutumnClient
+			const regions = yield* OrganizationRegionService
 
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
 				roles: ReadonlyArray<RoleName>,
@@ -439,6 +441,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 							publicMetadata: organizationRegionMetadata(region),
 						}),
 				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				// A yes this instance cached before the write may now be wrong.
+				yield* regions.forget(orgId)
 				// Clerk has no conditional write, so two admins choosing at once both succeed and the
 				// later write wins. Answering with a fresh read rather than the request sends both to
 				// the region that stuck in all but a same-instant race. The write already landed, so a
@@ -478,7 +482,9 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer)),
+	)
 
 	static readonly retrieve = (orgId: OrgId) => this.use((service) => service.retrieve(orgId))
 
