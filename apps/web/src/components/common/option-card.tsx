@@ -72,7 +72,7 @@ export function OptionCard({
 						: undefined
 				}
 				className={cn(
-					"flex h-full rounded-xl border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+					"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
 					layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
 					!checked
 						? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"

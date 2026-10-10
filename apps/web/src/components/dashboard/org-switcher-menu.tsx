@@ -120,7 +120,6 @@ export function ClerkOrgSwitcherMenu({
 									)}
 								{organization?.id === mem.organization.id && (
 									<CheckIcon
-										size={16}
 										className={hasMultipleRegions ? undefined : "ml-auto"}
 									/>
 								)}
@@ -130,7 +129,7 @@ export function ClerkOrgSwitcherMenu({
 					<DropdownMenuSeparator />
 					<DropdownMenuGroup>
 						<DropdownMenuItem onClick={() => setShowCreateDialog(true)}>
-							<PlusIcon size={16} />
+							<PlusIcon />
 							Create Organization
 						</DropdownMenuItem>
 					</DropdownMenuGroup>

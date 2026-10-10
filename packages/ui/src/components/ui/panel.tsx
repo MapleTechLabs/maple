@@ -1,3 +1,5 @@
+import { mergeProps } from "@base-ui/react/merge-props"
+import { useRender } from "@base-ui/react/use-render"
 import type * as React from "react"
 import { cn } from "../../lib/utils"
 
@@ -23,25 +25,24 @@ export function Panel({
 	className,
 	padded = false,
 	tone = "default",
+	render,
 	...props
-}: React.ComponentProps<"section"> & {
+}: useRender.ComponentProps<"section"> & {
 	/** Inner padding: `true` is `p-4`, `"sm"` is `p-3`. Off for panels with a `PanelHeader`. */
 	padded?: boolean | "sm"
 	/** Surface fill: `muted` for a recessed well, `background` for a frame on a card. */
 	tone?: PanelTone
 }): React.ReactElement {
-	return (
-		<section
-			className={cn(
-				"flex min-w-0 flex-col overflow-hidden rounded-md border",
-				PANEL_TONE[tone],
-				padded === "sm" ? PANEL_PADDING.sm : padded ? PANEL_PADDING.md : null,
-				className,
-			)}
-			data-slot="panel"
-			{...props}
-		/>
-	)
+	const defaultProps = {
+		className: cn(
+			"flex min-w-0 flex-col overflow-hidden rounded-md border",
+			PANEL_TONE[tone],
+			padded === "sm" ? PANEL_PADDING.sm : padded ? PANEL_PADDING.md : null,
+			className,
+		),
+		"data-slot": "panel",
+	}
+	return useRender({ defaultTagName: "section", props: mergeProps<"section">(defaultProps, props), render })
 }
 
 /** Header strip: title (+ scope marker) on the left, an action or legend on the right. */

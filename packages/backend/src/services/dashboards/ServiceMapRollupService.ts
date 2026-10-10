@@ -1,5 +1,6 @@
 import { RoleName, UserId as UserIdSchema, type OrgId } from "@maple/domain/http"
-import { orgClickHouseSettings, orgIngestKeys } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgClickHouseSettings, OrgIngestKeys } from "@maple/db/tables"
 import * as CH from "@maple/query-engine/ch"
 import { Clock, Cause, Context, Effect, Layer, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -220,10 +221,8 @@ export class ServiceMapRollupService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			const startTime = formatWarehouseDateTime(nowMs - ACTIVE_DISCOVERY_HOURS * HOUR_MS)
 			const byoRows = yield* database
-				.execute((db) =>
-					db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
-				)
-				.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: OrgId }>))
+				.execute((db) => db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()))
+				.pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: OrgId }> => []))
 
 			return yield* warehouse
 				.crossOrgQuery(
@@ -238,11 +237,11 @@ export class ServiceMapRollupService extends Context.Service<
 				)
 				.pipe(
 					Effect.map((rows) => {
-						const active = new Set<OrgId>(byoRows.map((row) => row.orgId))
-						for (const row of rows) {
-							active.add(row.orgId)
-						}
-						return active as ReadonlySet<OrgId>
+						const active: ReadonlySet<OrgId> = new Set<OrgId>([
+							...byoRows.map((row) => row.orgId),
+							...rows.map((row) => row.orgId),
+						])
+						return active
 					}),
 					Effect.catchCause((cause) =>
 						Cause.hasInterruptsOnly(cause)
@@ -261,7 +260,7 @@ export class ServiceMapRollupService extends Context.Service<
 			"ServiceMapRollupService.runRollupTick",
 		)(function* () {
 			const orgRows = yield* database.execute((db) =>
-				db.selectDistinct({ orgId: orgIngestKeys.orgId }).from(orgIngestKeys),
+				db.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
 			)
 
 			const knownOrgs = orgRows.map((row) => row.orgId)

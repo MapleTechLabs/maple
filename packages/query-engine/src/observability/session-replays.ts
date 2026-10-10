@@ -95,8 +95,8 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	const activity = Option.getOrNull(maybeActivity)
 	const session: SessionWithActivity = {
 		...sessionRow,
-		activeTimeMs: activity ? Number(activity.activeTimeMs) : null,
-		idleTimeMs: activity ? Number(activity.idleTimeMs) : null,
+		activeTimeMs: activity ? activity.activeTimeMs : null,
+		idleTimeMs: activity ? activity.idleTimeMs : null,
 	}
 
 	const totalTraceCount = session.traceIds.length

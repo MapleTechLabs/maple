@@ -41,9 +41,9 @@ export const getErrorRateByService = Effect.fn("QueryEngine.getErrorRateByServic
 	return {
 		data: result.data.map((row) => ({
 			serviceName: row.serviceName,
-			totalLogs: Number(row.totalLogs),
-			errorLogs: Number(row.errorLogs),
-			errorRate: Number(row.errorRate),
+			totalLogs: row.totalLogs,
+			errorLogs: row.errorLogs,
+			errorRate: row.errorRate,
 		})),
 	}
 })

@@ -8,9 +8,10 @@ import { ArrowRotateClockwiseIcon, ClockIcon } from "./icons"
 import { Button } from "./ui/button"
 import { NativeSelect, NativeSelectOption } from "./ui/native-select"
 import { SearchInput } from "./ui/search-input"
+import { StatusDot } from "./ui/status-dot"
 import { useDebouncedCallback } from "../hooks/use-debounced-callback"
 import { cn } from "../lib/utils"
-import { TONE_TEXT } from "../lib/tone"
+import { TONE_TEXT, type Tone } from "../lib/tone"
 import { formatNumber } from "../lib/format"
 
 export function Toolbar({ children, className }: { children: ReactNode; className?: string }) {
@@ -53,7 +54,7 @@ export function RefreshButton({
 			disabled={spinning}
 			className={className}
 		>
-			<ArrowRotateClockwiseIcon className={cn("size-3.5", spinning && "animate-spin")} />
+			<ArrowRotateClockwiseIcon className={spinning ? "animate-spin" : undefined} />
 		</Button>
 	)
 }
@@ -63,12 +64,14 @@ export function ToolbarSearch({
 	onSearch,
 	placeholder,
 	debounceMs = 300,
+	size = "default",
 	className,
 }: {
 	query: string
 	onSearch: (value: string | undefined) => void
 	placeholder: string
 	debounceMs?: number
+	size?: "sm" | "default"
 	className?: string
 }) {
 	const [value, setValue] = useState(query)
@@ -104,7 +107,7 @@ export function ToolbarSearch({
 
 	return (
 		<SearchInput
-			size="default"
+			size={size}
 			value={value}
 			onValueChange={handleChange}
 			placeholder={placeholder}
@@ -118,17 +121,26 @@ export function ToolbarStat({
 	label,
 	dot,
 	danger,
+	tone,
 }: {
-	value: number
+	/** Numbers are formatted; strings (rates, durations) render as given. */
+	value: number | string
 	label: string
 	dot?: boolean
 	danger?: boolean
+	tone?: Tone
 }) {
 	return (
 		<span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
-			{dot ? <span className="size-1.5 rounded-full bg-severity-info" /> : null}
-			<span className={cn("font-medium tabular-nums", danger && value > 0 && TONE_TEXT.crit)}>
-				{formatNumber(value)}
+			{dot ? <StatusDot tone="ok" /> : null}
+			<span
+				className={cn(
+					"font-medium tabular-nums",
+					tone && TONE_TEXT[tone],
+					danger && typeof value === "number" && value > 0 && TONE_TEXT.crit,
+				)}
+			>
+				{typeof value === "number" ? formatNumber(value) : value}
 			</span>
 			<span className="text-muted-foreground">{label}</span>
 		</span>

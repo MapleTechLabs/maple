@@ -2,6 +2,7 @@ import * as React from "react"
 
 import type { QueryBuilderHbarChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
+import { TruncatedText } from "../../ui/truncated-text"
 import { formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
 import { pickValueField, toBreakdownRows, type BreakdownRow } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
@@ -143,15 +144,11 @@ export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHba
 							}}
 							onPointerEnter={() => setHover(i)}
 						>
-							<span
-								className={cn(
-									"truncate",
-									bar.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
-								)}
-								title={bar.name}
+							<TruncatedText
+								className={bar.unnamed ? "italic text-muted-foreground" : "text-foreground/90"}
 							>
 								{bar.name}
-							</span>
+							</TruncatedText>
 							<div
 								className="relative w-full overflow-hidden rounded-[3px] bg-foreground/5"
 								style={{ height: barH }}

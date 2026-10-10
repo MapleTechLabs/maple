@@ -117,7 +117,7 @@ export function McpToolsList() {
 		<Card>
 			<CardHeader>
 				<div className="flex items-center gap-2">
-					<CardTitle>Available Tools</CardTitle>
+					<CardTitle>Available tools</CardTitle>
 					<Badge variant="secondary">{MCP_TOOLS.length}</Badge>
 				</div>
 			</CardHeader>

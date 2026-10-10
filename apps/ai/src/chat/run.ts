@@ -10,7 +10,7 @@ import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
@@ -143,7 +143,10 @@ export interface ChatRunOutcome {
  * appended by the time it settles, and the terminal reason is whatever the engine reported — this
  * module never invents one.
  */
-export const runChatTurn = (input: ChatRunInput) => {
+export const runChatTurn = (input: ChatRunInput) =>
+	Clock.currentTimeMillis.pipe(Effect.flatMap((startedAt) => runChatTurnFrom(input, startedAt)))
+
+const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const agent = input.agent ?? agentForSession(input.sessionId)
 	const profile = profileForTurn(agent, input.origin)
 	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
@@ -203,7 +206,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 	// A review's own pass may hand groups of a large pull request's files to child reviewers.
 	const fanout =
 		completion?.tool === SUBMIT_REVIEW && completion.autonomous
-			? buildReviewFanout(maple.toolkit, input.model)
+			? buildReviewFanout(
+					maple.toolkit,
+					input.model,
+					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
+				)
 			: undefined
 
 	const toolkit = Toolkit.merge(

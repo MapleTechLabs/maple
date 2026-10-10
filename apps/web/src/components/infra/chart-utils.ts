@@ -6,6 +6,7 @@
 
 import { bucketDate } from "@maple/ui/components/plot"
 import {
+	EMPTY_VALUE,
 	formatBytes,
 	formatBytesPerSecond,
 	formatLatency,
@@ -14,7 +15,7 @@ import {
 	formatRate,
 	formatThroughput,
 } from "@maple/ui/lib/format"
-import { toEpochMs } from "@maple/ui/lib/time-format"
+import { formatTimeInTimezone } from "@/lib/timezone-format"
 
 /**
  * Bucket width for the timeseries charts: aim for ~100 points, floored at the
@@ -45,7 +46,7 @@ export type ChartUnit =
 
 /** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */
 export function formatSeconds(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+	if (!Number.isFinite(seconds) || seconds <= 0) return EMPTY_VALUE
 	if (seconds < 60) return `${Math.round(seconds)}s`
 	const m = Math.floor(seconds / 60)
 	if (m < 60) return `${m}m`
@@ -61,7 +62,7 @@ export function formatSeconds(seconds: number): string {
  * decides how each unit renders.
  */
 export function formatValueWithUnit(value: number, unit: ChartUnit): string {
-	if (!Number.isFinite(value)) return "—"
+	if (!Number.isFinite(value)) return EMPTY_VALUE
 	switch (unit) {
 		case "percent":
 			return formatPercent(value)
@@ -107,8 +108,7 @@ export interface TransformedPoint extends Record<string, string | number | Date>
 
 /** Axis label for a bucket timestamp ("14:35"), in `timeZone` or the browser's. */
 export function isoToLabel(iso: string, timeZone?: string): string {
-	const d = new Date(toEpochMs(iso))
-	return d.toLocaleTimeString("en-US", { timeZone, hour: "2-digit", minute: "2-digit" })
+	return formatTimeInTimezone(iso, { timeZone: timeZone ?? "" })
 }
 
 /** Pivot long-form `{bucket, attributeValue, value}` rows into per-bucket points keyed by series. */

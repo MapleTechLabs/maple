@@ -808,7 +808,7 @@ const validateRestoredDatabaseInFreshProcess = (
 	if (child.status !== 0) {
 		throw new Error(
 			`fresh-process checkpoint reopen probe failed${child.signal ? ` (${child.signal})` : ""}` +
-				`${stderr ? `: ${stderr.slice(-4096)}` : ""}`,
+				(stderr ? `: ${stderr.slice(-4096)}` : ""),
 		)
 	}
 	let parsed: CheckpointValidation

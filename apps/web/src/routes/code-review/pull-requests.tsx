@@ -326,7 +326,7 @@ function ReviewTable({
 										</span>
 									)}
 								</TableCell>
-								<TableCell className="hidden px-4 text-right text-muted-foreground sm:table-cell">
+								<TableCell className="hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell">
 									<RelativeTime value={review.createdAt} tooltip="title" />
 								</TableCell>
 							</TableRow>

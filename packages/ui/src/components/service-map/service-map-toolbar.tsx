@@ -1,5 +1,6 @@
 import { memo } from "react"
 import { Button } from "../ui/button"
+import { IconButton } from "../ui/icon-button"
 import {
 	Combobox,
 	ComboboxContent,
@@ -65,14 +66,14 @@ export const ServiceMapToolbar = memo(function ServiceMapToolbar({
 					<span className="flex h-7 items-center gap-1.5 rounded-lg border border-input bg-background pr-1 pl-2 text-sm dark:bg-input/32">
 						<ServiceDot serviceName={focus.serviceId} className="size-1.5 shrink-0" />
 						<span className="max-w-40 truncate font-medium">{focus.serviceId}</span>
-						<button
-							type="button"
-							aria-label="Clear focus"
+						<IconButton
+							size="icon-xs"
+							label="Clear focus"
 							onClick={() => onFocusChange(null)}
-							className="-mr-0.5 flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+							className="-mr-0.5 size-5 text-muted-foreground hover:text-foreground sm:size-5"
 						>
-							<XmarkIcon size={12} />
-						</button>
+							<XmarkIcon />
+						</IconButton>
 					</span>
 					<Select
 						items={[
@@ -218,7 +219,7 @@ export const ServiceMapToolbar = memo(function ServiceMapToolbar({
 									aria-label="Re-sort"
 									className="max-sm:size-8 max-sm:px-0"
 								>
-									<ArrowRotateAnticlockwiseIcon size={13} />
+									<ArrowRotateAnticlockwiseIcon />
 									<span className="max-sm:sr-only">Re-sort</span>
 								</Button>
 							}

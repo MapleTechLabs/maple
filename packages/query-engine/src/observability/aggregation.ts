@@ -46,10 +46,10 @@ export const aggregateServiceRows = (
 				weightedP99: 0,
 			} as AggregatedService,
 			(acc, r) => {
-				const tp = Number(r.throughput)
+				const tp = r.throughput
 				return {
 					throughput: acc.throughput + tp,
-					errorCount: acc.errorCount + Number(r.errorCount),
+					errorCount: acc.errorCount + r.errorCount,
 					weightedP50: acc.weightedP50 + r.p50LatencyMs * tp,
 					weightedP95: acc.weightedP95 + r.p95LatencyMs * tp,
 					weightedP99: acc.weightedP99 + r.p99LatencyMs * tp,

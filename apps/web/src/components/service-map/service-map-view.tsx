@@ -44,6 +44,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
@@ -104,7 +105,12 @@ import {
 	gcpWorkloadSearch,
 } from "@/components/infra/gcp/tabs"
 import { PlanetScaleTopQueries } from "@/components/infra/planetscale/planetscale-top-queries"
-import { formatStoragePercent, lagClass, utilizationClass } from "@/components/infra/planetscale/metrics"
+import {
+	formatLag,
+	formatStoragePercent,
+	lagClass,
+	utilizationClass,
+} from "@/components/infra/planetscale/metrics"
 import {
 	buildFlowElements,
 	CLOUDFLARE_COLOR,
@@ -138,9 +144,6 @@ const healthTone = (errorRate: number): Tone => {
 	const level = errorRateLevel(errorRate)
 	return level === "neutral" ? "ok" : level
 }
-
-const formatReplicationLag = (seconds: number) =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
 
 function MetricValue({ className, ...props }: React.ComponentProps<"p">) {
 	return (
@@ -238,7 +241,7 @@ function EdgeRow({
 			)}
 			title={
 				explainSampling && edge.hasSampling
-					? `Estimated x${edge.samplingWeight.toFixed(0)} from ${formatRate(edge.callCount / safeDuration)} traced req/s`
+					? `Estimated ×${edge.samplingWeight.toFixed(0)} from ${formatRate(edge.callCount / safeDuration)} traced req/s`
 					: undefined
 			}
 		>
@@ -324,7 +327,7 @@ function ServiceDetailPanel({
 							onClick={onFocus}
 							label="Focus the map on this service's neighborhood"
 						>
-							<MagnifierIcon size={13} />
+							<MagnifierIcon />
 						</IconButton>
 						<Link
 							to="/services/$serviceName"
@@ -334,7 +337,7 @@ function ServiceDetailPanel({
 							View service
 						</Link>
 						<IconButton size="icon-xs" onClick={onClose} label="Close">
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 						</IconButton>
 					</>
 				}
@@ -382,17 +385,17 @@ function ServiceDetailPanel({
 											/>
 										</MetricValue>
 									</MetricTile>
-									<MetricTile label="Error Rate">
+									<MetricTile label="Error rate">
 										<MetricValue className={errorRateClass(errorRate)}>
 											{formatErrorRate(errorRate)}
 										</MetricValue>
 									</MetricTile>
-									<MetricTile label="Avg Latency">
+									<MetricTile label="Avg latency">
 										<MetricValue className={cn(latencyToneClass(avgLatencyMs, "avg"))}>
 											{formatLatency(avgLatencyMs)}
 										</MetricValue>
 									</MetricTile>
-									<MetricTile label="P95 Latency">
+									<MetricTile label="P95 latency">
 										<MetricValue
 											className={cn(
 												// A p95 far above this service's own avg is a tail
@@ -421,7 +424,7 @@ function ServiceDetailPanel({
 										<MetricTile label="Requests" caption="edge-reported (unsampled)">
 											<MetricValue>{formatNumber(cloudflare.requests)}</MetricValue>
 										</MetricTile>
-										<MetricTile label="Error Rate">
+										<MetricTile label="Error rate">
 											<MetricValue className={errorRateClass(cloudflare.errorRate)}>
 												{formatErrorRate(cloudflare.errorRate)}
 											</MetricValue>
@@ -471,11 +474,11 @@ function ServiceDetailPanel({
 								</div>
 							)}
 
-							{/* Called By */}
+							{/* Called by */}
 							{calledBy.length > 0 && (
 								<div className="space-y-3">
 									<Separator />
-									<Eyebrow as="h4">Called By</Eyebrow>
+									<Eyebrow as="h4">Called by</Eyebrow>
 									<div className="space-y-1.5">
 										{calledBy.map((caller) => (
 											<EdgeRow
@@ -808,11 +811,7 @@ function DbQueryActivityChart({
 	}, [response])
 
 	if (!response && waiting) {
-		return (
-			<div className="flex h-44 items-center justify-center rounded-md border border-border/70 bg-muted/20 text-xs text-muted-foreground">
-				Loading query activity…
-			</div>
-		)
+		return <Skeleton className="h-44 w-full rounded-md" />
 	}
 
 	if (volumeRows.length === 0) {
@@ -997,13 +996,13 @@ function PlanetScaleSection({
 							)}
 						>
 							{stats.storageUsedPercent === null
-								? "—"
+								? EMPTY_VALUE
 								: formatStoragePercent(stats.storageUsedPercent)}
 						</MetricValue>
 					</MetricTile>
-					<MetricTile label="Replica Lag (max)">
+					<MetricTile label="Replica lag (max)">
 						<MetricValue className={cn(lagClass(stats.replicaLagMaxSeconds))}>
-							{formatReplicationLag(stats.replicaLagMaxSeconds)}
+							{formatLag(stats.replicaLagMaxSeconds)}
 						</MetricValue>
 					</MetricTile>
 				</div>
@@ -1031,9 +1030,9 @@ function PlanetScaleSection({
 					{branchStats.map((row) => {
 						const info = branchInfoByName.get(row.branch)
 						return (
-							<div
+							<Panel
 								key={row.branch}
-								className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs"
+								className="flex-row items-center justify-between gap-2 px-2.5 py-2 text-xs"
 							>
 								<div className="flex min-w-0 items-center gap-1.5">
 									<span className="truncate font-mono text-2xs text-foreground">
@@ -1047,16 +1046,16 @@ function PlanetScaleSection({
 										{formatPercent(row.cpuMaxPercent / 100)} cpu
 									</span>
 									<span className={lagClass(row.replicaLagMaxSeconds)}>
-										{formatReplicationLag(row.replicaLagMaxSeconds)} lag
+										{formatLag(row.replicaLagMaxSeconds)} lag
 									</span>
 								</div>
-							</div>
+							</Panel>
 						)
 					})}
 					{idleBranches.map((branch) => (
-						<div
+						<Panel
 							key={branch.name}
-							className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-xs opacity-70"
+							className="flex-row items-center justify-between gap-2 border-border/60 px-2.5 py-2 text-xs opacity-70"
 						>
 							<div className="flex min-w-0 items-center gap-1.5">
 								<span className="truncate font-mono text-2xs text-muted-foreground">
@@ -1067,13 +1066,13 @@ function PlanetScaleSection({
 							<span className="shrink-0 text-3xs text-muted-foreground">
 								{branch.ready ? "no metrics" : "not ready"}
 							</span>
-						</div>
+						</Panel>
 					))}
 				</div>
 			) : null}
 
 			<div className="space-y-2">
-				<Eyebrow as="h5">Top Queries (PlanetScale Insights)</Eyebrow>
+				<Eyebrow as="h5">Top queries (PlanetScale Insights)</Eyebrow>
 				<PlanetScaleTopQueries
 					database={planetscale.database}
 					startTime={startTime}
@@ -1095,16 +1094,16 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 			<Separator />
 			<div className="flex items-center gap-1.5">
 				<CloudflareIcon size={12} className="shrink-0 text-muted-foreground" />
-				<Eyebrow as="h4">Hyperdrive Configs</Eyebrow>
+				<Eyebrow as="h4">Hyperdrive configs</Eyebrow>
 				<span className="ml-auto text-3xs text-muted-foreground">
 					{countLabel(configs.length, "config")}
 				</span>
 			</div>
 			<div className="space-y-1.5">
 				{configs.map((config) => (
-					<div
+					<Panel
 						key={config.id}
-						className="rounded-md border border-border bg-card px-2.5 py-2 text-xs"
+						className="px-2.5 py-2 text-xs"
 					>
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex min-w-0 items-center gap-1.5">
@@ -1153,7 +1152,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								</span>
 							)}
 						</div>
-					</div>
+					</Panel>
 				))}
 			</div>
 		</div>
@@ -1211,7 +1210,7 @@ function DatabaseDetailPanel({
 	const metricHasSampling = summary
 		? summary.estimatedQueryCount > summary.queryCount + 1
 		: callers.some((caller) => caller.hasSampling)
-	const summaryWaiting = Boolean(summaryResult.waiting)
+	const summaryWaiting = summaryResult.waiting
 
 	const {
 		title: dbTitle,
@@ -1229,7 +1228,7 @@ function DatabaseDetailPanel({
 				accentColor={dbColor}
 				actions={
 					<IconButton size="icon-xs" onClick={onClose} label="Close">
-						<XmarkIcon size={14} />
+						<XmarkIcon />
 					</IconButton>
 				}
 			>
@@ -1259,12 +1258,12 @@ function DatabaseDetailPanel({
 									/>
 								</MetricValue>
 							</MetricTile>
-							<MetricTile label="Error Rate">
+							<MetricTile label="Error rate">
 								<MetricValue className={errorRateClass(metricErrorRate)}>
 									{formatErrorRate(metricErrorRate)}
 								</MetricValue>
 							</MetricTile>
-							<MetricTile label="P50 Latency">
+							<MetricTile label="P50 latency">
 								<MetricValue
 									className={cn(
 										metricP50LatencyMs === null
@@ -1272,10 +1271,10 @@ function DatabaseDetailPanel({
 											: latencyToneClass(metricP50LatencyMs, "p50"),
 									)}
 								>
-									{metricP50LatencyMs === null ? "—" : formatLatency(metricP50LatencyMs)}
+									{metricP50LatencyMs === null ? EMPTY_VALUE : formatLatency(metricP50LatencyMs)}
 								</MetricValue>
 							</MetricTile>
-							<MetricTile label="P95 Latency">
+							<MetricTile label="P95 latency">
 								<MetricValue
 									className={cn(
 										metricP95LatencyMs === null
@@ -1288,10 +1287,10 @@ function DatabaseDetailPanel({
 												: latencyToneClass(metricP95LatencyMs, "p95"),
 									)}
 								>
-									{metricP95LatencyMs === null ? "—" : formatLatency(metricP95LatencyMs)}
+									{metricP95LatencyMs === null ? EMPTY_VALUE : formatLatency(metricP95LatencyMs)}
 								</MetricValue>
 							</MetricTile>
-							<MetricTile label="Avg Latency">
+							<MetricTile label="Avg latency">
 								<MetricValue className={cn(latencyToneClass(metricAvgLatencyMs, "avg"))}>
 									{formatLatency(metricAvgLatencyMs)}
 								</MetricValue>
@@ -1312,7 +1311,7 @@ function DatabaseDetailPanel({
 					<div className="space-y-3">
 						<Separator />
 						<div className="flex items-center justify-between gap-2">
-							<Eyebrow as="h4">Query Activity</Eyebrow>
+							<Eyebrow as="h4">Query activity</Eyebrow>
 							{summaryWaiting && summaryResponse && (
 								<span className="text-3xs text-muted-foreground">Refreshing</span>
 							)}
@@ -1336,12 +1335,12 @@ function DatabaseDetailPanel({
 					{summaryResponse?.topQueries.length ? (
 						<div className="space-y-3">
 							<Separator />
-							<Eyebrow as="h4">Top Query Shapes</Eyebrow>
+							<Eyebrow as="h4">Top query shapes</Eyebrow>
 							<div className="space-y-1.5">
 								{summaryResponse.topQueries.map((query) => (
-									<div
+									<Panel
 										key={query.queryKey}
-										className="rounded-md border border-border bg-card px-2.5 py-2"
+										className="px-2.5 py-2"
 									>
 										<div className="flex items-start justify-between gap-2">
 											<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
@@ -1384,7 +1383,7 @@ function DatabaseDetailPanel({
 													: query.sampleService}
 											</span>
 										</div>
-									</div>
+									</Panel>
 								))}
 							</div>
 						</div>
@@ -1393,7 +1392,7 @@ function DatabaseDetailPanel({
 					{callers.length > 0 && (
 						<div className="space-y-3">
 							<Separator />
-							<Eyebrow as="h4">Called By</Eyebrow>
+							<Eyebrow as="h4">Called by</Eyebrow>
 							<div className="space-y-1.5">
 								{callers.map((caller) => (
 									<EdgeRow

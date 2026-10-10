@@ -2,6 +2,7 @@
 // import, while the consent-aware controller itself is always lightweight.
 import {
 	claimReplaySample,
+	clearPendingChunk,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -183,6 +184,8 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 				}
 				rotateOnNextStart = runtime !== undefined
 				clearPendingEvents()
+				// Before the teardown: a flush still compressing the chunk then finds nothing to send.
+				clearPendingChunk()
 				setVisitorTracking(false)
 				void stopRuntime(false)
 			})

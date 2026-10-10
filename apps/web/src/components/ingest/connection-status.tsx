@@ -3,6 +3,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { PaperPlaneIcon, PulseIcon } from "@/components/icons"
 import { sendTestEvent, type IngestConnection } from "./use-ingest-connection"
@@ -27,8 +28,7 @@ export function ConnectionStatusPill({ connection }: { connection: IngestConnect
 			{connected ? (
 				<>
 					<StatusDot tone="ok" />
-					Connected · {connection.serviceCount}{" "}
-					{connection.serviceCount === 1 ? "service" : "services"}
+					Connected · {countLabel(connection.serviceCount, "service")}
 				</>
 			) : (
 				<>
@@ -79,7 +79,7 @@ export function SendTestEventStrip({ apiKey, onTestSent }: { apiKey: string; onT
 					disabled={!apiKey}
 					className="gap-2 shrink-0"
 				>
-					<PaperPlaneIcon size={13} />
+					<PaperPlaneIcon />
 					Send a test event
 				</Button>
 			</div>

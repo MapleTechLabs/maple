@@ -1,20 +1,21 @@
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	alertRules,
-	alertRuleStates,
-	anomalyDetectorSettings,
-	cloudflareAnalyticsState,
-	dashboards,
-	errorNotificationPolicies,
-	oauthConnections,
-	orgClickHouseSettings,
-	orgIngestAttributeMappings,
-	orgIngestSamplingPolicies,
-	orgOnboardingState,
-	orgRecommendationIssues,
-	scrapeTargets,
-	vcsRepositories,
-} from "@maple/db"
+	AlertDestinations,
+	AlertRules,
+	AlertRuleStates,
+	AnomalyDetectorSettings,
+	CloudflareAnalyticsState,
+	Dashboards,
+	ErrorNotificationPolicies,
+	OAuthConnections,
+	OrgClickHouseSettings,
+	OrgIngestAttributeMappings,
+	OrgIngestSamplingPolicies,
+	OrgOnboardingState,
+	OrgRecommendationIssues,
+	ScrapeTargets,
+	VcsRepositories,
+} from "@maple/db/tables"
 import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
 import type { OrgId } from "@maple/domain/primitives"
 import {
@@ -26,7 +27,6 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { and, eq, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -49,8 +49,6 @@ export interface SetupAuditServiceApi {
 	/** Runs every check against a fresh snapshot of config + telemetry. */
 	readonly run: (tenant: TenantContext) => Effect.Effect<SetupAuditReport, SetupAuditUnavailableError>
 }
-
-const msOrNull = (value: Date | null | undefined): number | null => value?.getTime() ?? null
 
 const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQueryService> = Effect.gen(
 	function* () {
@@ -105,130 +103,108 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 							openRecommendations,
 						] = yield* Effect.all(
 							[
-								db
-									.select({ firstDataReceivedAt: orgOnboardingState.firstDataReceivedAt })
-									.from(orgOnboardingState)
-									.where(eq(orgOnboardingState.orgId, orgId))
-									.limit(1),
-								db
-									.select({
-										id: alertRules.id,
-										name: alertRules.name,
-										enabled: alertRules.enabled,
-										destinationIdsJson: alertRules.destinationIdsJson,
-										windowMinutes: alertRules.windowMinutes,
-										lastScheduledAt: alertRules.lastScheduledAt,
-										createdAt: alertRules.createdAt,
-									})
-									.from(alertRules)
-									.where(eq(alertRules.orgId, orgId)),
-								db
-									.select({
-										ruleId: alertRuleStates.ruleId,
-										lastEvaluatedAt: alertRuleStates.lastEvaluatedAt,
-										lastError: alertRuleStates.lastError,
-									})
-									.from(alertRuleStates)
-									.where(eq(alertRuleStates.orgId, orgId)),
-								db
-									.select({
-										id: alertDestinations.id,
-										name: alertDestinations.name,
-										enabled: alertDestinations.enabled,
-										lastTestError: alertDestinations.lastTestError,
-									})
-									.from(alertDestinations)
-									.where(eq(alertDestinations.orgId, orgId)),
-								db
-									.select({
-										enabled: errorNotificationPolicies.enabled,
-										destinationIdsJson: errorNotificationPolicies.destinationIdsJson,
-									})
-									.from(errorNotificationPolicies)
-									.where(eq(errorNotificationPolicies.orgId, orgId))
-									.limit(1),
-								db
-									.select({ enabled: anomalyDetectorSettings.enabled })
-									.from(anomalyDetectorSettings)
-									.where(eq(anomalyDetectorSettings.orgId, orgId))
-									.limit(1),
-								db
-									.select({ count: sql<number>`count(*)::int` })
-									.from(dashboards)
-									.where(eq(dashboards.orgId, orgId)),
-								db
-									.select({
-										traceSampleRatio: orgIngestSamplingPolicies.traceSampleRatio,
-										alwaysKeepErrorSpans: orgIngestSamplingPolicies.alwaysKeepErrorSpans,
-									})
-									.from(orgIngestSamplingPolicies)
-									.where(eq(orgIngestSamplingPolicies.orgId, orgId))
-									.limit(1),
-								db
-									.select({
-										id: orgIngestAttributeMappings.id,
-										name: orgIngestAttributeMappings.name,
-										enabled: orgIngestAttributeMappings.enabled,
-										sourceContext: orgIngestAttributeMappings.sourceContext,
-										sourceKey: orgIngestAttributeMappings.sourceKey,
-										targetKey: orgIngestAttributeMappings.targetKey,
-									})
-									.from(orgIngestAttributeMappings)
-									.where(eq(orgIngestAttributeMappings.orgId, orgId)),
-								db
-									.select({
-										syncStatus: orgClickHouseSettings.syncStatus,
-										lastSyncError: orgClickHouseSettings.lastSyncError,
-										schemaVersion: orgClickHouseSettings.schemaVersion,
-									})
-									.from(orgClickHouseSettings)
-									.where(eq(orgClickHouseSettings.orgId, orgId))
-									.limit(1),
-								db
-									.select({
-										provider: oauthConnections.provider,
-										revokedAt: oauthConnections.revokedAt,
-									})
-									.from(oauthConnections)
-									.where(eq(oauthConnections.orgId, orgId)),
-								db
-									.select({
-										dataset: cloudflareAnalyticsState.dataset,
-										zoneName: cloudflareAnalyticsState.zoneName,
-										enabled: cloudflareAnalyticsState.enabled,
-										lastSuccessAt: cloudflareAnalyticsState.lastSuccessAt,
-										lastErrorAt: cloudflareAnalyticsState.lastErrorAt,
-										lastError: cloudflareAnalyticsState.lastError,
-									})
-									.from(cloudflareAnalyticsState)
-									.where(eq(cloudflareAnalyticsState.orgId, orgId)),
-								db
-									.select({
-										id: vcsRepositories.id,
-										fullName: vcsRepositories.fullName,
-										syncStatus: vcsRepositories.syncStatus,
-										lastSyncError: vcsRepositories.lastSyncError,
-									})
-									.from(vcsRepositories)
-									.where(eq(vcsRepositories.orgId, orgId)),
-								db
-									.select({
-										id: scrapeTargets.id,
-										name: scrapeTargets.name,
-										enabled: scrapeTargets.enabled,
-										lastScrapeError: scrapeTargets.lastScrapeError,
-									})
-									.from(scrapeTargets)
-									.where(eq(scrapeTargets.orgId, orgId)),
-								db
-									.select({ count: sql<number>`count(*)::int` })
-									.from(orgRecommendationIssues)
-									.where(
-										and(
-											eq(orgRecommendationIssues.orgId, orgId),
-											eq(orgRecommendationIssues.status, "open"),
-										),
-									),
+								db.run(
+									PG.from(OrgOnboardingState)
+										.select("firstDataReceivedAt")
+										.where(($) => [$.orgId.eq(orgId)])
+										.limit(1),
+								),
+								db.run(
+									PG.from(AlertRules)
+										.select(
+											"id",
+											"name",
+											"enabled",
+											"destinationIdsJson",
+											"windowMinutes",
+											"lastScheduledAt",
+											"createdAt",
+										)
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(AlertRuleStates)
+										.select("ruleId", "lastEvaluatedAt", "lastError")
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(AlertDestinations)
+										.select("id", "name", "enabled", "lastTestError")
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(ErrorNotificationPolicies)
+										.select("enabled", "destinationIdsJson")
+										.where(($) => [$.orgId.eq(orgId)])
+										.limit(1),
+								),
+								db.run(
+									PG.from(AnomalyDetectorSettings)
+										.select("enabled")
+										.where(($) => [$.orgId.eq(orgId)])
+										.limit(1),
+								),
+								db.run(
+									PG.from(Dashboards)
+										.select(() => ({ count: PG.count() }))
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(OrgIngestSamplingPolicies)
+										.select("traceSampleRatio", "alwaysKeepErrorSpans")
+										.where(($) => [$.orgId.eq(orgId)])
+										.limit(1),
+								),
+								db.run(
+									PG.from(OrgIngestAttributeMappings)
+										.select(
+											"id",
+											"name",
+											"enabled",
+											"sourceContext",
+											"sourceKey",
+											"targetKey",
+										)
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(OrgClickHouseSettings)
+										.select("syncStatus", "lastSyncError", "schemaVersion")
+										.where(($) => [$.orgId.eq(orgId)])
+										.limit(1),
+								),
+								db.run(
+									PG.from(OAuthConnections)
+										.select("provider", "revokedAt")
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(CloudflareAnalyticsState)
+										.select(
+											"dataset",
+											"zoneName",
+											"enabled",
+											"lastSuccessAt",
+											"lastErrorAt",
+											"lastError",
+										)
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(VcsRepositories)
+										.select("id", "fullName", "syncStatus", "lastSyncError")
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(ScrapeTargets)
+										.select("id", "name", "enabled", "lastScrapeError")
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+								db.run(
+									PG.from(OrgRecommendationIssues)
+										.select(() => ({ count: PG.count() }))
+										.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
+								),
 							],
 							{ concurrency: "unbounded" },
 						)
@@ -257,19 +233,19 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			const clickhouseRow = rows.clickhouse[0]
 
 			const config: ConfigAuditInputs = {
-				firstDataReceivedAt: msOrNull(rows.onboarding[0]?.firstDataReceivedAt),
+				firstDataReceivedAt: rows.onboarding[0]?.firstDataReceivedAt ?? null,
 				alertRules: rows.rules.map((rule) => ({
 					id: rule.id,
 					name: rule.name,
 					enabled: rule.enabled,
 					destinationIds: rule.destinationIdsJson ?? [],
 					windowMinutes: rule.windowMinutes,
-					lastScheduledAt: msOrNull(rule.lastScheduledAt),
-					createdAt: rule.createdAt.getTime(),
+					lastScheduledAt: rule.lastScheduledAt,
+					createdAt: rule.createdAt,
 				})),
 				alertRuleStates: rows.ruleStates.map((state) => ({
 					ruleId: state.ruleId,
-					lastEvaluatedAt: msOrNull(state.lastEvaluatedAt),
+					lastEvaluatedAt: state.lastEvaluatedAt,
 					lastError: state.lastError,
 				})),
 				alertDestinations: rows.destinations.map((destination) => ({
@@ -312,7 +288,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					: null,
 				integrations: rows.connections.map((connection) => ({
 					provider: connection.provider,
-					revokedAt: msOrNull(connection.revokedAt),
+					revokedAt: connection.revokedAt,
 				})),
 				// Disabled datasets are not collected at all, so a stale error on one is not a finding.
 				cloudflareAnalytics: rows.cloudflare
@@ -320,8 +296,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					.map((state) => ({
 						dataset: state.dataset,
 						zoneName: state.zoneName,
-						lastSuccessAt: msOrNull(state.lastSuccessAt),
-						lastErrorAt: msOrNull(state.lastErrorAt),
+						lastSuccessAt: state.lastSuccessAt,
+						lastErrorAt: state.lastErrorAt,
 						lastError: state.lastError,
 					})),
 				vcsRepositories: rows.repositories.map((repository) => ({

@@ -28,13 +28,18 @@ import {
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
 import { UserId } from "@maple/domain/primitives"
-import { prReviewEdits, prReviewFindings, prReviewReplies, prReviews, type PrReviewReplyRow } from "@maple/db"
-import { and, count, desc, eq, gte, inArray } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	PrReviewEdits,
+	PrReviewFindings,
+	PrReviewReplies,
+	PrReviews,
+	type PrReviewReplyRow,
+} from "@maple/db/tables"
 import { Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { msToDate } from "@maple/backend/platform/time"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -232,23 +237,20 @@ export class PrReviewConversationService extends Context.Service<
 			orgId: OrgId,
 			replyId: PrReviewReplyId,
 			fromStatuses: ReadonlyArray<PrReviewReplyStatus> | undefined,
-			values: Partial<typeof prReviewReplies.$inferInsert>,
+			values: PG.UpdateSetOf<typeof PrReviewReplies>,
 		) =>
 			database
 				.execute((db) =>
-					db
-						.update(prReviewReplies)
-						.set(values)
-						.where(
-							and(
-								eq(prReviewReplies.orgId, orgId),
-								eq(prReviewReplies.id, replyId),
-								...(fromStatuses === undefined
-									? []
-									: [inArray(prReviewReplies.status, [...fromStatuses])]),
-							),
-						)
-						.returning({ id: prReviewReplies.id }),
+					db.run(
+						PG.update(PrReviewReplies)
+							.set(values)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.id.eq(replyId),
+								fromStatuses === undefined ? undefined : $.status.in_(...fromStatuses),
+							])
+							.returning("id"),
+					),
 				)
 				.pipe(
 					Effect.mapError(toPersistence),
@@ -258,11 +260,12 @@ export class PrReviewConversationService extends Context.Service<
 		const getReply = (orgId: OrgId, replyId: PrReviewReplyId) =>
 			database
 				.execute((db) =>
-					db
-						.select()
-						.from(prReviewReplies)
-						.where(and(eq(prReviewReplies.orgId, orgId), eq(prReviewReplies.id, replyId)))
-						.limit(1),
+					db.run(
+						PG.from(PrReviewReplies)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(replyId)])
+							.limit(1),
+					),
 				)
 				.pipe(
 					Effect.mapError(toPersistence),
@@ -338,18 +341,14 @@ export class PrReviewConversationService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			const today = yield* database
 				.execute((db) =>
-					db
-						.select({ total: count() })
-						.from(prReviewReplies)
-						.where(
-							and(
-								eq(prReviewReplies.orgId, orgId),
-								gte(prReviewReplies.createdAt, msToDate(nowMs - (nowMs % DAY_MS))),
-							),
-						),
+					db.run(
+						PG.from(PrReviewReplies)
+							.select(() => ({ total: PG.count() }))
+							.where(($) => [$.orgId.eq(orgId), $.createdAt.gte(nowMs - (nowMs % DAY_MS))]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
-			if (Number(today[0]?.total ?? 0) >= PR_REPLY_DAILY_CEILING) {
+			if ((today[0]?.total ?? 0) >= PR_REPLY_DAILY_CEILING) {
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "quota" })
 				return skip("quota")
 			}
@@ -362,27 +361,26 @@ export class PrReviewConversationService extends Context.Service<
 			const replyId = newReplyId()
 			const inserted = yield* database
 				.execute((db) =>
-					db
-						.insert(prReviewReplies)
-						.values({
-							id: replyId,
-							orgId,
-							repositoryId: repo.id,
-							number: job.number,
-							commentId: job.commentId,
-							surface: job.surface,
-							threadRootId: job.threadRootId ?? null,
-							authorLogin: job.authorLogin,
-							command,
-							status: "queued",
-							sessionId: prReplySessionId(orgId, replyId),
-							createdAt: msToDate(nowMs),
-							updatedAt: msToDate(nowMs),
-						})
-						.onConflictDoNothing({
-							target: [prReviewReplies.repositoryId, prReviewReplies.commentId],
-						})
-						.returning({ id: prReviewReplies.id }),
+					db.run(
+						PG.insertInto(PrReviewReplies)
+							.values({
+								id: replyId,
+								orgId,
+								repositoryId: repo.id,
+								number: job.number,
+								commentId: job.commentId,
+								surface: job.surface,
+								threadRootId: job.threadRootId ?? null,
+								authorLogin: job.authorLogin,
+								command,
+								status: "queued",
+								sessionId: prReplySessionId(orgId, replyId),
+								createdAt: nowMs,
+								updatedAt: nowMs,
+							})
+							.onConflictDoNothing({ target: ["repositoryId", "commentId"] })
+							.returning("id"),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
 			if (inserted.length === 0) {
@@ -396,7 +394,7 @@ export class PrReviewConversationService extends Context.Service<
 					yield* updateReply(orgId, replyId, ACTIVE, {
 						status: "failed",
 						error: reason,
-						updatedAt: msToDate(nowMs),
+						updatedAt: nowMs,
 					})
 					if (say !== undefined) {
 						const url = yield* post(orgId, row, say)
@@ -455,7 +453,7 @@ export class PrReviewConversationService extends Context.Service<
 					)
 				yield* updateReply(orgId, replyId, ACTIVE, {
 					status: "completed",
-					updatedAt: msToDate(nowMs),
+					updatedAt: nowMs,
 				})
 				yield* annotate("reviewing")
 				return { replyId, outcome: "reviewing" as const }
@@ -485,47 +483,44 @@ export class PrReviewConversationService extends Context.Service<
 					? undefined
 					: (yield* database
 							.execute((db) =>
-								db
-									.select()
-									.from(prReviewFindings)
-									.where(
-										and(
-											eq(prReviewFindings.repositoryId, repo.id),
-											eq(prReviewFindings.number, job.number),
-											eq(prReviewFindings.commentId, job.threadRootId ?? ""),
-										),
-									)
-									.limit(1),
+								db.run(
+									PG.from(PrReviewFindings)
+										.select()
+										.where(($) => [
+											$.repositoryId.eq(repo.id),
+											$.number.eq(job.number),
+											$.commentId.eq(job.threadRootId ?? ""),
+										])
+										.limit(1),
+								),
 							)
 							.pipe(Effect.mapError(toPersistence)))[0]
 			const open = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(prReviewFindings)
-						.where(
-							and(
-								eq(prReviewFindings.repositoryId, repo.id),
-								eq(prReviewFindings.number, job.number),
-								eq(prReviewFindings.status, "open"),
-							),
-						),
+					db.run(
+						PG.from(PrReviewFindings)
+							.select()
+							.where(($) => [
+								$.repositoryId.eq(repo.id),
+								$.number.eq(job.number),
+								$.status.eq("open"),
+							]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
 			const lastReview = yield* database
 				.execute((db) =>
-					db
-						.select({ report: prReviews.reportJson })
-						.from(prReviews)
-						.where(
-							and(
-								eq(prReviews.repositoryId, repo.id),
-								eq(prReviews.number, job.number),
-								eq(prReviews.status, "completed"),
-							),
-						)
-						.orderBy(desc(prReviews.finishedAt))
-						.limit(1),
+					db.run(
+						PG.from(PrReviews)
+							.select(($) => ({ report: $.reportJson }))
+							.where(($) => [
+								$.repositoryId.eq(repo.id),
+								$.number.eq(job.number),
+								$.status.eq("completed"),
+							])
+							.orderBy(($) => [[$.finishedAt, "desc"]])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
 
@@ -575,7 +570,7 @@ export class PrReviewConversationService extends Context.Service<
 				}),
 			)
 			if (Exit.isFailure(claimed) || claimed.value === undefined) return yield* fail("start_failed")
-			yield* updateReply(orgId, replyId, ["queued"], { status: "running", updatedAt: msToDate(nowMs) })
+			yield* updateReply(orgId, replyId, ["queued"], { status: "running", updatedAt: nowMs })
 			yield* annotate("started")
 			return { replyId, outcome: "started" as const }
 		})
@@ -603,27 +598,30 @@ export class PrReviewConversationService extends Context.Service<
 				return "Not staged: the edit is too large. Make smaller, exact edits."
 			const staged = yield* database
 				.execute((db) =>
-					db
-						.select({ total: count() })
-						.from(prReviewEdits)
-						.where(eq(prReviewEdits.replyId, replyId)),
+					db.run(
+						PG.from(PrReviewEdits)
+							.select(() => ({ total: PG.count() }))
+							.where(($) => [$.replyId.eq(replyId)]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
-			const seq = Number(staged[0]?.total ?? 0)
+			const seq = staged[0]?.total ?? 0
 			if (seq >= MAX_EDITS) return `Not staged: at most ${MAX_EDITS} edits per fix.`
 			const nowMs = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db.insert(prReviewEdits).values({
-						id: randomUUID(),
-						orgId,
-						replyId,
-						seq,
-						path: edit.path.trim().replace(/^\.\//, ""),
-						oldText: edit.oldText,
-						newText: edit.newText,
-						createdAt: msToDate(nowMs),
-					}),
+					db.run(
+						PG.insertInto(PrReviewEdits).values({
+							id: randomUUID(),
+							orgId,
+							replyId,
+							seq,
+							path: edit.path.trim().replace(/^\.\//, ""),
+							oldText: edit.oldText,
+							newText: edit.newText,
+							createdAt: nowMs,
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
 			yield* Effect.annotateCurrentSpan({
@@ -640,11 +638,12 @@ export class PrReviewConversationService extends Context.Service<
 		) {
 			const edits = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(prReviewEdits)
-						.where(eq(prReviewEdits.replyId, row.id))
-						.orderBy(prReviewEdits.seq),
+					db.run(
+						PG.from(PrReviewEdits)
+							.select()
+							.where(($) => [$.replyId.eq(row.id)])
+							.orderBy(["seq", "asc"]),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
 			if (edits.length === 0) return { note: "", commitSha: null }
@@ -722,7 +721,7 @@ export class PrReviewConversationService extends Context.Service<
 				replyUrl: Option.getOrNull(url),
 				commitSha: fix.commitSha,
 				...(Option.isNone(url) ? { error: "the answer could not be posted" } : undefined),
-				updatedAt: msToDate(nowMs),
+				updatedAt: nowMs,
 			})
 			yield* Effect.annotateCurrentSpan({
 				"maple.pr_reply.id": replyId,
@@ -738,11 +737,12 @@ export class PrReviewConversationService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(prReviewReplies)
-						.where(and(eq(prReviewReplies.orgId, orgId), eq(prReviewReplies.id, replyId)))
-						.limit(1),
+					db.run(
+						PG.from(PrReviewReplies)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(replyId)])
+							.limit(1),
+					),
 				)
 				.pipe(Effect.mapError(toPersistence))
 			const row = rows[0]
@@ -750,7 +750,7 @@ export class PrReviewConversationService extends Context.Service<
 			const settled = yield* updateReply(orgId, replyId, ACTIVE, {
 				status: "failed",
 				error,
-				updatedAt: msToDate(nowMs),
+				updatedAt: nowMs,
 			})
 			if (!settled) return
 			const url = yield* post(

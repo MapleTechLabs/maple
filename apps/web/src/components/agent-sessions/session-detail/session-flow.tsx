@@ -397,10 +397,10 @@ function FlowControls({ zoom }: { zoom: number }) {
 	return (
 		<div className="pointer-events-auto flex items-center gap-1 rounded-md bg-background/80 p-0.5 backdrop-blur-sm">
 			<IconButton label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => void flow.zoomIn()}>
-				<PlusIcon size={14} />
+				<PlusIcon />
 			</IconButton>
 			<IconButton label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => void flow.zoomOut()}>
-				<MinusIcon size={14} />
+				<MinusIcon />
 			</IconButton>
 			{/* A deliberate reset rather than `fitView`: fit clamps against the
 			    0.5 floor on any real session and lands somewhere unpredictable,
@@ -408,7 +408,7 @@ function FlowControls({ zoom }: { zoom: number }) {
 			    always name. (`fitView` also queues behind the flow's own render
 			    when called from outside it, and this button lives in the floor.) */}
 			<IconButton label="Reset view" onClick={() => void flow.setViewport({ x: 0, y: 0, zoom: 1 })}>
-				<MaximizeIcon size={14} />
+				<MaximizeIcon />
 			</IconButton>
 		</div>
 	)

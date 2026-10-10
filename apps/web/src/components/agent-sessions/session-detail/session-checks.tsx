@@ -77,7 +77,7 @@ export function SessionChecks({
 			<section className="flex flex-col gap-2">
 				<SectionHeading variant="eyebrow" as="h3" title="Needs attention" className="mb-0" />
 				{clean ? (
-					<p className="flex items-center gap-2 py-2 text-[13px]">
+					<p className="flex items-center gap-2 py-2 text-ui">
 						<CheckIcon size={14} aria-hidden className="shrink-0 text-severity-info" />
 						{skipped.length === 0
 							? "Nothing to fix. Every check below carries what it measured."
@@ -161,7 +161,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 					onClick={() => onOpenSpan(failingSpanId)}
 				>
 					Open failing span
-					<ArrowRightIcon size={14} />
+					<ArrowRightIcon />
 				</Button>
 			)}
 		</section>
@@ -191,21 +191,22 @@ function CheckBlock({
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
 			<CheckDot status={check.status} />
-			<span className="truncate font-semibold text-[13px]">{check.name}</span>
+			<span className="truncate font-semibold text-ui">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
-				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
+				<p className="text-ui leading-relaxed">{withCode(check.headline)}</p>
 				{toolsAction ? (
 					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
 						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
 						<span>
 							Check the{" "}
-							<button
-								type="button"
+							<Button
+								variant="link"
+								size="xs"
 								onClick={onOpenTools}
-								className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground"
+								className="h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground"
 							>
 								Tools section
-							</button>{" "}
+							</Button>{" "}
 							at the bottom of this page for details.
 						</span>
 					</p>
@@ -323,7 +324,7 @@ function Disclosure({
 			<span className="flex items-baseline gap-2">
 				<span
 					className={cn(
-						"font-semibold text-[13px]",
+						"font-semibold text-ui",
 						disclosable ? STATUS_TEXT[status] : "text-muted-foreground",
 					)}
 				>
@@ -368,7 +369,7 @@ function CheckFact({ check }: { check: SessionCheck }) {
 	return (
 		<div className={ROW_GRID}>
 			<CheckDot status={check.status} />
-			<span className="truncate text-[13px]">{check.name}</span>
+			<span className="truncate text-ui">{check.name}</span>
 			<span className="min-w-0 text-muted-foreground text-xs leading-relaxed">
 				{withCode(check.headline)}
 			</span>

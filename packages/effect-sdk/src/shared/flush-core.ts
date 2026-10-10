@@ -157,9 +157,11 @@ const flushSignal = async <A>(args: {
 	readonly signal: string
 	readonly transport: FlushTransport
 	readonly logPrefix: string
+	readonly tailBytes: (() => number) | undefined
+	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
-	const { url, headers, buffer, body, state, signal, transport, logPrefix } = args
-	if (state.disabledUntil && Date.now() < state.disabledUntil) {
+	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
+	if (!args.ignoreCooldown && state.disabledUntil && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -168,19 +170,59 @@ const flushSignal = async <A>(args: {
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
-	const posted = await Effect.runPromise(
-		Effect.result(
-			Effect.tryPromise({
-				try: () => transport.post(url, headers, body(batch)),
-				catch: (cause) => cause,
-			}),
-		),
+	// Asked per signal, right before the split: the room depends on what the
+	// signals before this one have just reserved.
+	const tail = tailBytes?.()
+	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
+	const posted = await Promise.all(
+		chunks.map(async (chunk) => ({
+			chunk,
+			result: await Effect.runPromise(
+				Effect.result(
+					Effect.tryPromise({
+						try: () => transport.post(url, headers, body(chunk)),
+						catch: (cause) => cause,
+					}),
+				),
+			),
+		})),
 	)
-	if (Result.isFailure(posted)) {
-		buffer.restore(batch)
+	const failed = posted.flatMap(({ chunk, result }) =>
+		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
+	)
+	const [first] = failed
+	if (first) {
+		// One restore, back in drain order.
+		buffer.restore(failed.reverse().flatMap(({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
-		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, posted.failure)
+		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause)
 	}
+}
+
+/**
+ * Split a batch for a document that may be unloading: the newest items that
+ * fit `maxBytes` (UTF-8) in one body, issued first so it gets the keepalive
+ * attempt, then everything older in a second. Only the tail is measured, so a
+ * large backlog is not serialized here. No split when nothing or everything fits.
+ */
+const newestFirst = <A>(
+	items: ReadonlyArray<A>,
+	body: (items: ReadonlyArray<A>) => unknown,
+	maxBytes: number,
+): Array<ReadonlyArray<A>> => {
+	const encoder = new TextEncoder()
+	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
+	const envelope = size([])
+	let start = items.length
+	let bytes = envelope
+	while (start > 0) {
+		// +1 for the comma that joins it to the tail.
+		const next = size(items.slice(start - 1, start)) - envelope + 1
+		if (bytes + next > maxBytes) break
+		bytes += next
+		start -= 1
+	}
+	return start > 0 && start < items.length ? [items.slice(start), items.slice(0, start)] : [items]
 }
 
 /**
@@ -240,6 +282,12 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  * - `noOp`: drain so the buffers don't grow unbounded, fire `onNoOp` (one-shot
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
+ * - `tailBytes` (browser, document hidden or unloading): each signal goes out
+ *   as at most two requests, its newest items first in a body of at most the
+ *   size this returns for it. Every request is issued before `runFlush`
+ *   returns, traces first.
+ * - `ignoreCooldown` (browser `pagehide`): no later flush is coming, so a
+ *   signal in cooldown is sent anyway.
  */
 export const runFlush = async (args: {
 	readonly resolved: Resolved
@@ -252,6 +300,8 @@ export const runFlush = async (args: {
 	readonly transport: FlushTransport
 	readonly logPrefix: string
 	readonly onNoOp?: (() => void) | undefined
+	readonly tailBytes?: (() => number) | undefined
+	readonly ignoreCooldown?: boolean | undefined
 }): Promise<void> => {
 	const {
 		resolved: r,
@@ -264,6 +314,8 @@ export const runFlush = async (args: {
 		transport,
 		logPrefix,
 		onNoOp,
+		tailBytes,
+		ignoreCooldown,
 	} = args
 
 	if (r.noOp) {
@@ -284,6 +336,8 @@ export const runFlush = async (args: {
 			signal: "traces",
 			transport,
 			logPrefix,
+			tailBytes,
+			ignoreCooldown,
 		}),
 		flushSignal({
 			url: r.logsUrl,
@@ -294,6 +348,8 @@ export const runFlush = async (args: {
 			signal: "logs",
 			transport,
 			logPrefix,
+			tailBytes,
+			ignoreCooldown,
 		}),
 		flushSignal({
 			url: r.metricsUrl,
@@ -304,6 +360,8 @@ export const runFlush = async (args: {
 			signal: "metrics",
 			transport,
 			logPrefix,
+			tailBytes,
+			ignoreCooldown,
 		}),
 	])
 }

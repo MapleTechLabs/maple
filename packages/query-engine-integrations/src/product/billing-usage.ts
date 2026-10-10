@@ -21,7 +21,7 @@
 import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { dateTime64, from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "@maple/query-engine/ch/tables"
+import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 
@@ -91,8 +91,8 @@ export function dailySessionCountQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(CH.toDateTime(param.dateTime("startTime"))),
-			$.StartTime.lte(CH.toDateTime(param.dateTime("endTime"))),
+			$.StartTime.gte(CH.toDateTime(utcSecondsParam("startTime"))),
+			$.StartTime.lte(CH.toDateTime(utcSecondsParam("endTime"))),
 		])
 		.groupBy("day")
 		.orderBy(["day", "asc"])
@@ -128,8 +128,8 @@ export function dailyProductEventCountQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(CH.toDateTime(param.dateTime("startTime"))),
-			$.Timestamp.lte(CH.toDateTime(param.dateTime("endTime"))),
+			$.Timestamp.gte(CH.toDateTime(utcSecondsParam("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(utcSecondsParam("endTime"))),
 			$.Kind.neq("navigation"),
 		])
 		.groupBy("day")

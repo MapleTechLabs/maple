@@ -15,7 +15,7 @@ export function FollowUpComposer({ onSubmit }: { onSubmit: () => void }) {
 		<button
 			type="button"
 			onClick={onSubmit}
-			className="flex h-10.5 w-full items-center gap-3 rounded-lg border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-accent/40"
+			className="flex h-10.5 w-full items-center gap-3 rounded-md border border-input bg-card px-3.5 text-left transition-colors hover:border-ring hover:bg-accent/40"
 		>
 			<ChatBubbleSparkleIcon size={14} className="shrink-0 text-primary" />
 			<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">

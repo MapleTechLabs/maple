@@ -71,7 +71,7 @@ export function TimeRangeHeaderControls({
 						onClick={() => onTimeChange({ presetValue: defaultPreset })}
 						aria-label="Reset to default time range"
 					>
-						<XmarkIcon className="size-3" />
+						<XmarkIcon />
 					</Button>
 				)}
 			</div>

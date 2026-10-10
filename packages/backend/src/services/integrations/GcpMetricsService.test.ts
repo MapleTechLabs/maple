@@ -26,13 +26,13 @@ describe("nextWindow", () => {
 	})
 
 	it("continues from the watermark, and is null once caught up", () => {
-		const watermark = new Date(horizon - 5 * minute)
-		assert.deepStrictEqual(nextWindow(watermark, now), { startMs: watermark.getTime(), endMs: horizon })
-		assert.isNull(nextWindow(new Date(horizon), now))
+		const watermark = horizon - 5 * minute
+		assert.deepStrictEqual(nextWindow(watermark, now), { startMs: watermark, endMs: horizon })
+		assert.isNull(nextWindow(horizon, now))
 	})
 
 	it("never reaches back more than an hour: a long pause is skipped, not replayed", () => {
-		const watermark = new Date(horizon - 48 * 60 * minute)
+		const watermark = horizon - 48 * 60 * minute
 		assert.deepStrictEqual(nextWindow(watermark, now), {
 			startMs: horizon - 60 * minute,
 			endMs: horizon,

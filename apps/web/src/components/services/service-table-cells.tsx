@@ -11,9 +11,6 @@ import { SortableHeader } from "@/components/common/sortable-header"
 import type { SortDir } from "@/hooks/use-table-sort"
 import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 
-/** Shared chrome for the desktop table and the mobile list of the service detail tabs. */
-export const TABLE_CARD_CLASS = "overflow-hidden rounded-md border bg-card"
-
 interface BarCellProps {
 	value: number
 	max: number
@@ -24,7 +21,7 @@ interface BarCellProps {
 /** Numeric cell with a column-tinted distribution bar. */
 export function BarCell({ value, max, tone, children }: BarCellProps) {
 	return (
-		<TableCell className="relative py-2 text-right align-middle">
+		<TableCell className="relative py-2 text-right align-middle tabular-nums">
 			<BackdropBar
 				value={value}
 				max={max}
