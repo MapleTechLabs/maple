@@ -39,6 +39,7 @@ import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-r
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
 import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
+import { OffsetPager, pageRangeLabel, useResettingPage } from "@/components/infra/primitives/offset-pager"
 
 const PAGE_SIZE = 50
 
@@ -113,6 +114,10 @@ function ContainersPage() {
 	// The server filters by name, so typing must not fire a query per keystroke.
 	const searchText = search.q ?? ""
 	const debouncedSearch = useDebouncedValue(searchText, 300)
+	const [pageIndex, setPageIndex] = useResettingPage(
+		JSON.stringify({ filters, q: debouncedSearch.trim(), scope, sortBy, sortDir }),
+	)
+	const offset = pageIndex * PAGE_SIZE
 
 	const containersResult = useAtomValue(
 		listContainersResultAtom({
@@ -125,6 +130,7 @@ function ContainersPage() {
 				sortBy,
 				sortDir,
 				limit: PAGE_SIZE,
+				offset,
 			},
 		}),
 	)
@@ -193,7 +199,8 @@ function ContainersPage() {
 	}
 
 	const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
-	const hasAnyNarrowing = hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope)
+	const hasAnyNarrowing =
+		hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope) || pageIndex > 0
 
 	return (
 		<DashboardPage
@@ -271,7 +278,11 @@ function ContainersPage() {
 								value={searchText}
 								onChange={(value) => patchSearch({ q: value || undefined })}
 								placeholder="Search all containers…"
-								trailing={countLabel(containers.length, total, "container")}
+								trailing={
+									offset > 0
+										? pageRangeLabel(offset, containers.length, total, "containers")
+										: countLabel(containers.length, total, "container")
+								}
 							/>
 
 							{containers.length === 0 ? (
@@ -301,6 +312,14 @@ function ContainersPage() {
 									referenceTime={endTime}
 								/>
 							)}
+							<OffsetPager
+								offset={offset}
+								shown={containers.length}
+								total={total}
+								pageSize={PAGE_SIZE}
+								noun="containers"
+								onPageChange={(direction) => setPageIndex(pageIndex + direction)}
+							/>
 						</div>
 					)
 				})

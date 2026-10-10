@@ -2,7 +2,15 @@ import { memo } from "react"
 import { Link } from "@tanstack/react-router"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { shortId } from "@maple/ui/lib/ids"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
 import { cn } from "@maple/ui/lib/utils"
 import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import { columnVisibilityClass, formatCellValue } from "@/components/dashboard-builder/widgets/table-widget"
@@ -51,9 +59,7 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 			dataState={dataState}
 			mode={mode}
 			contentClassName="flex-1 min-h-0 overflow-auto p-0"
-			loadingSkeleton={
-				<SkeletonList rows={5} rowClassName="h-6" gap="2" className="p-3" />
-			}
+			loadingSkeleton={<SkeletonList rows={5} rowClassName="h-6" gap="2" className="p-3" />}
 		>
 			{rows.length === 0 ? (
 				<WidgetEmptyState />
@@ -114,6 +120,21 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 											>
 												{displayValue}
 											</Link>
+										)
+									}
+
+									// A log body is unbounded: let it take the spare width and truncate.
+									if (col.field === "body" && typeof displayValue === "string") {
+										return (
+											<TruncatedCell
+												key={col.field}
+												className={cn("text-xs", columnVisibilityClass(colIndex))}
+												style={{ textAlign: col.align ?? "left" }}
+											>
+												<span className="block truncate" title={displayValue}>
+													{displayValue}
+												</span>
+											</TruncatedCell>
 										)
 									}
 

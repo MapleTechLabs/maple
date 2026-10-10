@@ -278,7 +278,12 @@ export function RailwayIntegrationCard() {
 							resume.
 						</p>
 					) : status.lastError !== null ? (
-						<p className="text-xs text-muted-foreground">Last error: {status.lastError}</p>
+						<p
+							className="line-clamp-2 text-xs text-muted-foreground [overflow-wrap:anywhere]"
+							title={status.lastError}
+						>
+							Last error: {status.lastError}
+						</p>
 					) : null}
 					{rotating || status.authFailed ? (
 						<RailwayTokenForm

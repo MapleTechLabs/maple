@@ -48,6 +48,9 @@ const edgeTypes = {
 	flowEdge: TraceFlowEdge,
 }
 
+/** Past this many nodes the layout and render cost outweighs what the graph can still show. */
+const MAX_FLOW_NODES = 1500
+
 const defaultEdgeOptions = {
 	animated: true,
 }
@@ -61,10 +64,17 @@ export function TraceFlowView({
 }: TraceFlowViewProps) {
 	// Selection is intentionally NOT part of this memo — it's applied by the
 	// effect below, so a selection change never re-layouts or refits the view.
-	const { initialNodes, initialEdges } = useMemo(() => {
+	const { initialNodes, initialEdges, nodeCount } = useMemo<{
+		initialNodes: FlowNode[]
+		initialEdges: FlowEdge[]
+		nodeCount: number
+	}>(() => {
 		const { nodes, edges } = transformSpansToFlow(rootSpans, services, totalDurationMs)
+		if (nodes.length > MAX_FLOW_NODES) {
+			return { initialNodes: [], initialEdges: [], nodeCount: nodes.length }
+		}
 		const layouted = getLayoutedElements(nodes, edges)
-		return { initialNodes: layouted.nodes, initialEdges: layouted.edges }
+		return { initialNodes: layouted.nodes, initialEdges: layouted.edges, nodeCount: nodes.length }
 	}, [rootSpans, services, totalDurationMs])
 
 	// Only legend categories that actually occur in this trace
@@ -144,6 +154,18 @@ export function TraceFlowView({
 		)
 	}
 
+	if (nodeCount > MAX_FLOW_NODES) {
+		return (
+			<div className="border p-8 text-center">
+				<p className="text-muted-foreground">Trace too large for the flow view</p>
+				<p className="mt-1 text-xs text-muted-foreground">
+					{nodeCount.toLocaleString()} nodes, the limit is {MAX_FLOW_NODES.toLocaleString()}. Use
+					the timeline instead.
+				</p>
+			</div>
+		)
+	}
+
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
 			<div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2 shrink-0">
@@ -186,6 +208,7 @@ export function TraceFlowView({
 					minZoom={0.1}
 					maxZoom={2}
 					proOptions={{ hideAttribution: true }}
+					onlyRenderVisibleElements
 				>
 					<Controls showInteractive={false} />
 					<MiniMap

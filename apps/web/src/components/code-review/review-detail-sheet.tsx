@@ -220,7 +220,7 @@ function ReviewDetailContent({
 						) : null}
 						{report.unreviewed && report.unreviewed.length > 0 ? (
 							<Section title="Files not reviewed">
-								<ul className="flex flex-col gap-1 font-mono text-xs text-muted-foreground">
+								<ul className="flex flex-col gap-1 font-mono text-xs break-all text-muted-foreground">
 									{report.unreviewed.map((path) => (
 										<li key={path}>{path}</li>
 									))}
@@ -299,7 +299,7 @@ function FindingCard({
 				) : null}
 			</div>
 			<p className="text-sm font-medium">{finding.title}</p>
-			<p className="font-mono text-xs text-muted-foreground">
+			<p className="font-mono text-xs break-all text-muted-foreground">
 				{finding.path}:{finding.line}
 				{finding.endLine && finding.endLine !== finding.line ? `-${finding.endLine}` : null}
 			</p>

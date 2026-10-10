@@ -114,7 +114,11 @@ const EMPTY_RELEASES: ReadonlyArray<ReleasePoint> = []
 /** Commit message as the page title once the sha resolves; the short sha until then. */
 function ReleaseTitle({ commitSha }: { commitSha: string }) {
 	if (!isResolvableSha(commitSha)) {
-		return <span className="truncate font-mono">{commitSha}</span>
+		return (
+			<span className="truncate font-mono" title={commitSha}>
+				{commitSha}
+			</span>
+		)
 	}
 	return <ResolvedReleaseTitle commitSha={commitSha} />
 }
@@ -122,16 +126,31 @@ function ReleaseTitle({ commitSha }: { commitSha: string }) {
 function ResolvedReleaseTitle({ commitSha }: { commitSha: string }) {
 	const result = useAtomValue(commitQueryAtom(commitSha))
 	return Result.builder(result)
-		.onSuccess((commit) => (
-			<span className="flex min-w-0 items-center gap-2.5">
-				<CommitAvatar
-					url={commit.authorAvatarUrl}
-					name={commit.authorLogin ?? commit.authorName ?? "Unknown author"}
-				/>
-				<span className="truncate">{firstLine(commit.message)}</span>
+		.onSuccess((commit) => {
+			const subject = firstLine(commit.message)
+			return (
+				<span className="flex min-w-0 items-center gap-2.5">
+					<CommitAvatar
+						url={commit.authorAvatarUrl}
+						name={commit.authorLogin ?? commit.authorName ?? "Unknown author"}
+					/>
+					{subject ? (
+						<span className="truncate" title={subject}>
+							{subject}
+						</span>
+					) : (
+						<span className="truncate font-mono" title={commitSha}>
+							{shortReleaseLabel(commitSha)}
+						</span>
+					)}
+				</span>
+			)
+		})
+		.orElse(() => (
+			<span className="truncate font-mono" title={commitSha}>
+				{shortReleaseLabel(commitSha)}
 			</span>
 		))
-		.orElse(() => <span className="truncate font-mono">{shortReleaseLabel(commitSha)}</span>)
 }
 
 /** Author · repo · sha, plus the link out to the provider. */
@@ -202,7 +221,7 @@ function ReleaseDetailPage() {
 						]
 			}
 			titleContent={
-				<DashboardLayout.Title className="flex min-w-0 items-center gap-2.5" title={commitSha}>
+				<DashboardLayout.Title className="flex min-w-0 items-center gap-2.5">
 					<ReleaseTitle commitSha={commitSha} />
 				</DashboardLayout.Title>
 			}

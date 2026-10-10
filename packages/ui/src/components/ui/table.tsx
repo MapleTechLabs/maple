@@ -126,6 +126,15 @@ export function TableCell({ className, ...props }: React.ComponentProps<"td">): 
 	)
 }
 
+/**
+ * A cell whose text truncates instead of widening the table. Plain `truncate`
+ * inside an auto-layout `TableCell` never fires (cells are nowrap and size to
+ * content); `max-w-0 w-full` makes this column take the leftover width.
+ */
+export function TruncatedCell({ className, ...props }: React.ComponentProps<"td">): React.ReactElement {
+	return <TableCell className={cn("w-full max-w-0", className)} {...props} />
+}
+
 export function TableCaption({ className, ...props }: React.ComponentProps<"caption">): React.ReactElement {
 	return (
 		<caption

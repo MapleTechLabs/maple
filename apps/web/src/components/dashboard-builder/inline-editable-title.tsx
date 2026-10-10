@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from "react"
+import { cn } from "@maple/ui/lib/utils"
 
 export function InlineEditableTitle({
 	value,
@@ -27,6 +28,9 @@ export function InlineEditableTitle({
 		}
 		setIsEditing(false)
 	}
+
+	// A blank name would otherwise render a zero-size, unclickable h1.
+	const isBlank = !value.trim()
 
 	if (isEditing && !readOnly) {
 		return (
@@ -65,13 +69,13 @@ export function InlineEditableTitle({
 				}
 			}}
 			aria-disabled={readOnly}
-			className={
-				readOnly
-					? "text-2xl font-bold tracking-tight"
-					: "text-2xl font-bold tracking-tight cursor-pointer hover:text-foreground/80"
-			}
+			className={cn(
+				"text-2xl font-bold tracking-tight break-words",
+				!readOnly && "cursor-pointer hover:text-foreground/80",
+				isBlank && "text-muted-foreground",
+			)}
 		>
-			{value}
+			{isBlank ? "Untitled dashboard" : value}
 		</h1>
 	)
 }

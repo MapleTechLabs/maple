@@ -156,6 +156,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/worst-case",
+		title: "Worst case",
+		description:
+			"Existing components over worst-case fixture data (long names, extreme numbers, unbroken URLs, 8KB messages) behind a Demo data / Worst case toggle, for before and after screenshots.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/time-range",
 		title: "Time range picker",
 		description:

@@ -1,12 +1,13 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { Atom, Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
@@ -131,12 +132,39 @@ function InvestigationsHub() {
 		mode: "promiseExit",
 	})
 
-	const page = Result.builder(result)
-		.onSuccess((response) => response.data)
-		.orElse((): ReadonlyArray<V2Investigation> => [])
-	const hasMore = Result.builder(result)
-		.onSuccess((response) => response.has_more)
-		.orElse(() => false)
+	// Pages after the first, as the cursors that fetched them (same pattern as the errors hub).
+	const [cursors, setCursors] = useState<ReadonlyArray<string>>([])
+	const morePagesAtom = useMemo(() => {
+		const atoms = cursors.map((cursor) =>
+			retainedQueryV2("investigations", "list", {
+				query: { limit: PAGE_SIZE, cursor },
+				reactivityKeys: ["investigations"],
+			}),
+		)
+		return Atom.make((get) => atoms.map((atom) => get(atom)))
+	}, [cursors])
+	const morePages = useAtomValue(morePagesAtom)
+	const lastPage = morePages[morePages.length - 1] ?? result
+
+	const page = useMemo(() => {
+		const byId = new Map<string, V2Investigation>()
+		const all = [result, ...morePages]
+		all.forEach((pageResult) => {
+			if (!Result.isSuccess(pageResult)) return
+			pageResult.value.data.forEach((investigation) => {
+				if (!byId.has(investigation.id)) byId.set(investigation.id, investigation)
+			})
+		})
+		return [...byId.values()]
+	}, [result, morePages])
+	const nextCursor =
+		Result.isSuccess(lastPage) && lastPage.value.has_more ? lastPage.value.next_cursor : null
+	const loadingMore = cursors.length > 0 && Result.isInitial(lastPage)
+	const hasMore = nextCursor !== null || loadingMore
+	const loadMore = () => {
+		if (nextCursor === null || loadingMore || cursors.includes(nextCursor)) return
+		setCursors([...cursors, nextCursor])
+	}
 
 	// The list endpoint filters by a single status, but each tab spans two, so the
 	// split happens here — which is also what lets the tabs carry counts.
@@ -199,7 +227,7 @@ function InvestigationsHub() {
 			// Honest about the page: with more rows on the server, this is what's
 			// shown, not a total.
 			countLabel={
-				hasMore ? `Showing ${investigations.length} of the ${PAGE_SIZE} most recent` : undefined
+				hasMore ? `Showing ${investigations.length} of the ${page.length} most recent` : undefined
 			}
 			totalCount={hasMore ? undefined : investigations.length}
 			trailing={
@@ -313,7 +341,16 @@ function InvestigationsHub() {
 							/>
 						}
 					>
-						{() => <InvestigationTable investigations={investigations} />}
+						{() => (
+							<>
+								<InvestigationTable investigations={investigations} />
+								{hasMore && (
+									<div className="flex justify-center border-t py-3">
+										<LoadMoreButton loading={loadingMore} onClick={loadMore} />
+									</div>
+								)}
+							</>
+						)}
 					</ResultView>
 				</Panel>
 			)}

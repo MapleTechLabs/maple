@@ -36,7 +36,7 @@ export function MessageActions({ message, permalink }: MessageActionsProps) {
 		// reply and the turn after it. Sized down from the default icon button: 28px of
 		// permanently empty space under every one-line answer is what made short exchanges
 		// read as spaced-out.
-		<div className="-my-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+		<div className="-my-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
 			{text ? (
 				<CopyButton
 					value={text}

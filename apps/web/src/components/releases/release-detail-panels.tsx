@@ -40,8 +40,8 @@ function changeTone(row: ComparisonRow): string {
 
 function formatChange(row: ComparisonRow): string {
 	if (row.change === undefined) return EMPTY_VALUE
-	if (row.direction === "lower-is-better" && row.change >= 1) return `${(1 + row.change).toFixed(1)}×`
 	if (!Number.isFinite(row.change)) return "from 0"
+	if (row.direction === "lower-is-better" && row.change >= 1) return `${(1 + row.change).toFixed(1)}×`
 	const sign = row.change > 0 ? "+" : row.change < 0 ? "-" : ""
 	return `${sign}${formatPercent(Math.abs(row.change))}`
 }

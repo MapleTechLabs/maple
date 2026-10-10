@@ -1,5 +1,6 @@
 import { ExternalLinkIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import type { Log } from "@/api/warehouse/logs"
 import { LogAttributesPanel } from "./log-attributes-panel"
 import { buildLogJsonPayload } from "./log-raw-panel"
@@ -46,7 +47,7 @@ export function LogRowExpanded({ log, highlight, onOpenDetail }: LogRowExpandedP
 			    wide event stays a predictable size and scrolls vertically in place. */}
 			<div className="max-h-[60vh] space-y-2.5 overflow-auto">
 				<p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
-					<HighlightedText text={log.body} query={highlight} />
+					<HighlightedText text={stripAnsi(log.body)} query={highlight} />
 				</p>
 				<LogAttributesPanel log={log} />
 			</div>

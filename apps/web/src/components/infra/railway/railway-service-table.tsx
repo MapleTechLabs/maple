@@ -179,7 +179,10 @@ export function RailwayServiceTable({
 					className={ROW_LINK_CLASS}
 				>
 					<div className="w-0 min-w-[240px] flex-1">
-						<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+						<div
+							className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+							title={row.displayName}
+						>
 							{row.displayName}
 						</div>
 						<MetaLine items={[row.projectName, row.environmentName]} />

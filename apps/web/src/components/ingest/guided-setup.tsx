@@ -22,6 +22,8 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { useQuickStart } from "@/hooks/use-quick-start"
 import type { OnboardingRole } from "@/lib/onboarding-role"
 import { CopyableField } from "@maple/ui/components/ui/copyable-field"
+import { CopyableFieldSkeleton, IngestKeysUnavailableNote } from "@/components/ingest/connect-credentials"
+import type { IngestKeyStatus } from "@/components/ingest/use-ingest-connection"
 
 const frameworkIconMap: Record<FrameworkId, React.ComponentType<{ size?: number; className?: string }>> = {
 	nextjs: NextjsIcon,
@@ -44,6 +46,7 @@ const ROLE_DEFAULT_FRAMEWORK = {
 interface GuidedSetupProps {
 	/** Public ingest key, interpolated into the instrument snippet. */
 	apiKey: string
+	apiKeyStatus?: IngestKeyStatus
 	/** Render the endpoint + key credentials column beside the snippet tabs. */
 	showCredentials?: boolean
 }
@@ -90,13 +93,18 @@ export const useGuidedFramework: () => GuidedFramework = isClerkAuthEnabled
  * the guided ingestion flow, used by the dashboard setup checklist and the
  * ingestion settings page. Selection persists via the per-org quick-start atom.
  */
-export function GuidedSetup({ apiKey, showCredentials = false }: GuidedSetupProps) {
+export function GuidedSetup({ apiKey, apiKeyStatus, showCredentials = false }: GuidedSetupProps) {
 	const { framework, setFramework } = useGuidedFramework()
 
 	return (
 		<div className="space-y-4">
 			<FrameworkPicker selected={framework} onSelect={setFramework} />
-			<ConnectInstructions framework={framework} apiKey={apiKey} showCredentials={showCredentials} />
+			<ConnectInstructions
+				framework={framework}
+				apiKey={apiKey}
+				apiKeyStatus={apiKeyStatus}
+				showCredentials={showCredentials}
+			/>
 		</div>
 	)
 }
@@ -156,11 +164,13 @@ export function FrameworkPicker({
 export function ConnectInstructions({
 	framework,
 	apiKey,
+	apiKeyStatus = apiKey ? "ready" : "loading",
 	showCredentials = false,
 	variant = "boxed",
 }: {
 	framework: FrameworkId
 	apiKey: string
+	apiKeyStatus?: IngestKeyStatus
 	showCredentials?: boolean
 	/** `flush` drops the outer border/background so the tabs sit directly in a parent card. */
 	variant?: "boxed" | "flush"
@@ -233,7 +243,13 @@ export function ConnectInstructions({
 			<div className="space-y-3">
 				<Eyebrow variant="label">Credentials</Eyebrow>
 				<CopyableField value={ingestUrl} label="Ingest endpoint" />
-				<CopyableField value={apiKey || "Loading…"} label="API key" masked />
+				{apiKeyStatus === "failed" ? (
+					<IngestKeysUnavailableNote />
+				) : apiKeyStatus === "loading" || !apiKey ? (
+					<CopyableFieldSkeleton label="API key" />
+				) : (
+					<CopyableField value={apiKey} label="API key" masked />
+				)}
 			</div>
 			{tabs}
 		</div>

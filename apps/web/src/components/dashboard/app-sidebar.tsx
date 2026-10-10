@@ -96,7 +96,7 @@ function UserMenu() {
 	const { user } = useUser()
 	const { signOut } = useClerk()
 
-	const name = user?.fullName ?? "User"
+	const name = user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "User"
 	const email = user?.primaryEmailAddress?.emailAddress ?? ""
 	const imageUrl = user?.imageUrl
 	const initials = userInitials(name)
@@ -125,9 +125,13 @@ function UserMenu() {
 								name={name}
 							/>
 							<div className="grid flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{name}</span>
+								<span className="truncate font-medium" title={name}>
+									{name}
+								</span>
 								{email && (
-									<span className="truncate text-muted-foreground text-xs">{email}</span>
+									<span className="truncate text-muted-foreground text-xs" title={email}>
+										{email}
+									</span>
 								)}
 							</div>
 						</div>
@@ -502,7 +506,7 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 								size="sm"
 							>
 								<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
-								<span>{dashboard.name}</span>
+								<span title={dashboard.name}>{dashboard.name}</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 					))}

@@ -62,6 +62,9 @@ const BAR_MIN_PCT = 0.04
 const MORE_ROW_H = 16
 /** A group bar (6px) + its gap (2px) in a broken-down stage. */
 const GROUP_BAR_H = 8
+/** A tiny non-zero conversion reads "<0.05%", never "0%" (formatPercent rounds below 0.05%). */
+const PERCENT_FLOOR = { floor: 0.0005 }
+
 /** The legend line above a broken-down funnel. */
 const LEGEND_H = 18
 
@@ -122,7 +125,8 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 	const valueField = React.useMemo(() => pickValueField(source), [source])
 
 	const containerRef = React.useRef<HTMLDivElement>(null)
-	const { height } = useContainerSize(containerRef)
+	const { width, height } = useContainerSize(containerRef)
+	const legendRef = React.useRef<HTMLDivElement>(null)
 
 	const { stages, legend } = React.useMemo((): {
 		stages: Stage[]
@@ -212,6 +216,21 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 	const [hover, setHover] = React.useState<number | null>(null)
 	// Hovering a group (a bar or its legend chip) lifts that group in every stage.
 	const [hoverGroup, setHoverGroup] = React.useState<string | null>(null)
+	// The legend is one clipped line; count the chips that wrapped out of view so
+	// the "+N" chip can name them instead of dropping them silently.
+	const [legendHidden, setLegendHidden] = React.useState(0)
+	React.useLayoutEffect(() => {
+		const el = legendRef.current
+		// `relative` on the legend makes it the chips' offsetParent.
+		const hidden = el
+			? Array.from(el.children).filter(
+					(child) => child instanceof HTMLElement && child.offsetTop >= LEGEND_H,
+				).length
+			: 0
+		setLegendHidden(hidden)
+	}, [legend, width])
+	const legendHiddenNames = legend.slice(legend.length - legendHidden).map((entry) => entry.name)
+
 	// `showStepPercent` gates BOTH percentage labels, not just the step-to-step
 	// one: setting it `false` used to leave the "share of the first stage" label
 	// on screen, so a widget that explicitly asked for no percentages still got
@@ -243,30 +262,38 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 			}}
 		>
 			{isGrouped && (
-				<div
-					className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 overflow-hidden text-3xs leading-none text-muted-foreground"
-					style={{ maxHeight: LEGEND_H }}
-					data-slot="funnel-legend"
-				>
-					{legend.map((entry) => (
-						<button
-							key={entry.name}
-							type="button"
-							className={cn(
-								"flex min-w-0 items-center gap-1 transition-opacity",
-								hoverGroup !== null && hoverGroup !== entry.name && "opacity-50",
-							)}
-							onPointerEnter={() => setHoverGroup(entry.name)}
-							onPointerLeave={() => setHoverGroup(null)}
-							title={entry.name}
-						>
-							<span
-								className="size-2 shrink-0 rounded-xs"
-								style={{ backgroundColor: entry.color }}
-							/>
-							<span className="truncate">{entry.name}</span>
-						</button>
-					))}
+				<div className="flex shrink-0 items-start gap-x-3 text-3xs leading-none text-muted-foreground">
+					<div
+						ref={legendRef}
+						className="relative flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 overflow-hidden"
+						style={{ maxHeight: LEGEND_H }}
+						data-slot="funnel-legend"
+					>
+						{legend.map((entry) => (
+							<button
+								key={entry.name}
+								type="button"
+								className={cn(
+									"flex min-w-0 items-center gap-1 transition-opacity",
+									hoverGroup !== null && hoverGroup !== entry.name && "opacity-50",
+								)}
+								onPointerEnter={() => setHoverGroup(entry.name)}
+								onPointerLeave={() => setHoverGroup(null)}
+								title={entry.name}
+							>
+								<span
+									className="size-2 shrink-0 rounded-xs"
+									style={{ backgroundColor: entry.color }}
+								/>
+								<span className="truncate">{entry.name}</span>
+							</button>
+						))}
+					</div>
+					{legendHidden > 0 && (
+						<span className="shrink-0 tabular-nums" title={legendHiddenNames.join(", ")}>
+							+{legendHidden}
+						</span>
+					)}
 				</div>
 			)}
 			{visibleStages.map((stage, i) => {
@@ -307,7 +334,9 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 										{showShareOfFirst && (
 											<>
 												<span className="px-1 text-muted-foreground/50">·</span>
-												<span>{formatPercent(hoveredGroup.pctOfFirst)}</span>
+												<span>
+													{formatPercent(hoveredGroup.pctOfFirst, PERCENT_FLOOR)}
+												</span>
 											</>
 										)}
 									</>
@@ -319,13 +348,13 @@ function FunnelBarsChart({ data, className, unit, showStepPercent }: QueryBuilde
 										{showShareOfFirst && (
 											<>
 												<span className="px-1 text-muted-foreground/50">·</span>
-												<span>{formatPercent(stage.pctOfFirst)}</span>
+												<span>{formatPercent(stage.pctOfFirst, PERCENT_FLOOR)}</span>
 											</>
 										)}
 										{showStepConversion && stage.pctOfPrev != null && (
 											<>
 												<span className="px-1 text-muted-foreground/50">↓</span>
-												<span>{formatPercent(stage.pctOfPrev)}</span>
+												<span>{formatPercent(stage.pctOfPrev, PERCENT_FLOOR)}</span>
 											</>
 										)}
 									</>

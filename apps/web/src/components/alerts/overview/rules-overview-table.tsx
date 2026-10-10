@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router"
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
 
 import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
@@ -15,12 +15,36 @@ import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { worstState } from "@/lib/alerts/rule-status"
 import { RelativeTime } from "@/components/common/relative-time"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { Switch } from "@maple/ui/components/ui/switch"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
 const COL_SPAN = 8
+/** Rows rendered before "Show all"; an org can have a thousand rules. */
+const RENDER_LIMIT = 100
+
+/** Cap the groups to `limit` rows in total, keeping group order. */
+const capGroups = <T,>(groups: TagGroup<T>[], limit: number): TagGroup<T>[] =>
+	groups.reduce<{ out: TagGroup<T>[]; left: number }>(
+		(acc, group) =>
+			acc.left <= 0
+				? acc
+				: {
+						out: [...acc.out, { ...group, items: group.items.slice(0, acc.left) }],
+						left: acc.left - group.items.length,
+					},
+		{ out: [], left: limit },
+	).out
 
 /** Derived rule status → status-badge state ("healthy" renders as "OK"). */
 const badgeState = (status: DerivedRuleStatus["status"]): AlertStatusState =>
@@ -60,6 +84,11 @@ export function RulesOverviewTable({
 	onToggle: (rule: AlertRuleDocument) => void
 }) {
 	const navigate = useNavigate()
+	const [showAll, setShowAll] = useState(false)
+	const totalRows = groups ? groups.reduce((sum, group) => sum + group.items.length, 0) : rules.length
+	const capped = !showAll && totalRows > RENDER_LIMIT
+	const visibleGroups = groups && capped ? capGroups(groups, RENDER_LIMIT) : groups
+	const visibleRules = capped ? rules.slice(0, RENDER_LIMIT) : rules
 
 	const renderRow = (rule: AlertRuleDocument, key: string) => {
 		const derived = derivedByRuleId.get(rule.id)
@@ -85,17 +114,21 @@ export function RulesOverviewTable({
 						disabled={!isAdmin || isToggling}
 					/>
 				</TableCell>
-				<TableCell className="min-w-0">
-					<div className="flex items-center gap-2">
+				<TruncatedCell>
+					<div className="flex min-w-0 items-center gap-2">
 						<span
-							className={cn("font-medium truncate", !rule.enabled && "text-muted-foreground")}
+							className={cn(
+								"min-w-0 truncate font-medium",
+								!rule.enabled && "text-muted-foreground",
+							)}
+							title={rule.name}
 						>
 							{rule.name}
 						</span>
 						<SignalBadge signalType={rule.signalType} />
 					</div>
 					{!grouped && <TagChips tags={rule.tags} />}
-				</TableCell>
+				</TruncatedCell>
 				<TableCell>
 					<AlertSeverityBadge severity={rule.severity} />
 				</TableCell>
@@ -167,34 +200,44 @@ export function RulesOverviewTable({
 	}
 
 	return (
-		<Table>
-			<TableHeader>
-				<TableRow>
-					<TableHead className="w-[40px]" />
-					<TableHead className="min-w-[220px]">Name</TableHead>
-					<TableHead className="w-[100px]">Severity</TableHead>
-					<TableHead className="w-[140px]">Status</TableHead>
-					<TableHead className="w-[120px]">Last 24h</TableHead>
-					<TableHead className="w-[160px]">Last value</TableHead>
-					<TableHead className="w-[110px]">Evaluated</TableHead>
-					<TableHead className="w-[110px]">Notify</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{groups
-					? groups.map((group) => (
-							<Fragment key={group.key}>
-								<TagGroupHeaderRow
-									label={group.label}
-									count={group.count}
-									noun="rule"
-									colSpan={COL_SPAN}
-								/>
-								{group.items.map((rule) => renderRow(rule, `${group.key}:${rule.id}`))}
-							</Fragment>
-						))
-					: rules.map((rule) => renderRow(rule, rule.id))}
-			</TableBody>
-		</Table>
+		<>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead className="w-[40px]" />
+						<TableHead className="min-w-[220px]">Name</TableHead>
+						<TableHead className="w-[100px]">Severity</TableHead>
+						<TableHead className="w-[140px]">Status</TableHead>
+						<TableHead className="w-[120px]">Last 24h</TableHead>
+						<TableHead className="w-[160px]">Last value</TableHead>
+						<TableHead className="w-[110px]">Evaluated</TableHead>
+						<TableHead className="w-[110px]">Notify</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{visibleGroups
+						? visibleGroups.map((group) => (
+								<Fragment key={group.key}>
+									<TagGroupHeaderRow
+										label={group.label}
+										count={group.count}
+										noun="rule"
+										colSpan={COL_SPAN}
+									/>
+									{group.items.map((rule) => renderRow(rule, `${group.key}:${rule.id}`))}
+								</Fragment>
+							))
+						: visibleRules.map((rule) => renderRow(rule, rule.id))}
+				</TableBody>
+			</Table>
+			{capped && (
+				<div className="flex justify-center pt-3">
+					<LoadMoreButton
+						onClick={() => setShowAll(true)}
+						label={`Show all ${totalRows.toLocaleString()}`}
+					/>
+				</div>
+			)}
+		</>
 	)
 }

@@ -2,12 +2,14 @@
 "use client"
 
 import { Option } from "effect"
+import { useMemo } from "react"
 
 import { trySync } from "../../lib/try-sync"
 import { ChevronRightIcon } from "../icons"
 import { cn } from "../../lib/utils"
 import { Badge } from "../ui/badge"
 import { useCopy } from "../../hooks/use-copy"
+import { CopyButton } from "../ui/copy-button"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible"
 import { groupAttributesByNamespace } from "../../lib/log-attributes"
 import { splitGenAiAttributes } from "../../lib/gen-ai"
@@ -64,6 +66,39 @@ export function CopyableValue({
 	)
 }
 
+/**
+ * Text that stays selectable (so a fragment can be copied by hand) with a
+ * trailing copy button for the whole value. Use for long values, where a
+ * click-to-copy `CopyableValue` would make partial selection impossible.
+ */
+export function SelectableValue({
+	value,
+	label,
+	children,
+	className,
+	textClassName,
+}: {
+	value: string
+	/** Names the thing in the `aria-label` and the toast, e.g. the attribute key. */
+	label?: string
+	children?: React.ReactNode
+	className?: string
+	textClassName?: string
+}) {
+	return (
+		<span className={cn("group/sel", className)}>
+			<span className={cn("select-text", textClassName)}>{children ?? value}</span>
+			<CopyButton
+				value={value}
+				label={label ?? "value"}
+				iconSize={10}
+				className="-my-1 ml-1 size-5 shrink-0 align-middle opacity-0 transition-opacity group-hover/sel:opacity-100 group-hover/attr:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 sm:size-5"
+				onClick={(event) => event.stopPropagation()}
+			/>
+		</span>
+	)
+}
+
 export function tryParseJson(value: string): unknown | null {
 	const trimmed = value.trimStart()
 	if (trimmed[0] !== "{" && trimmed[0] !== "[") return null
@@ -92,7 +127,10 @@ export function AttributeRow({
 	plainKey?: boolean
 }) {
 	const { renderValue, onFilterByAttribute, canFilterAttribute } = useAttributesConfig()
-	const parsed = displayValue !== undefined && displayValue !== value ? null : tryParseJson(value)
+	const parsed = useMemo(
+		() => (displayValue !== undefined && displayValue !== value ? null : tryParseJson(value)),
+		[displayValue, value],
+	)
 	// Only non-JSON values are overridable; JSON keeps its collapsible renderer.
 	const override = parsed === null ? renderValue?.(attrKey, value) : null
 	// A JSON blob is not a facet value — filtering on a serialized object would never match.
@@ -116,12 +154,21 @@ export function AttributeRow({
 				) : override != null ? (
 					override
 				) : (
-					<CopyableValue value={value} label={attrKey}>
-						{displayValue ?? value}
-					</CopyableValue>
+					<SelectableValue
+						value={value}
+						label={attrKey}
+						// A 4KB db.statement scrolls in place instead of pushing every other attribute away.
+						textClassName={value.length > 400 ? "block max-h-48 overflow-y-auto" : undefined}
+					>
+						{(displayValue ?? value) === "" ? (
+							<span className="text-muted-foreground">""</span>
+						) : (
+							(displayValue ?? value)
+						)}
+					</SelectableValue>
 				)}
 				{filterable && (
-					<span className="ml-2 inline-flex items-center gap-1 align-middle opacity-0 transition-opacity group-hover/attr:opacity-100 group-focus-within/attr:opacity-100">
+					<span className="ml-2 inline-flex items-center gap-1 align-middle opacity-0 transition-opacity group-hover/attr:opacity-100 group-focus-within/attr:opacity-100 pointer-coarse:opacity-100">
 						<AttributeFilterAction
 							label={`Filter by ${attrKey} = ${value}`}
 							onClick={() => onFilterByAttribute({ attrKey, value, action: "include" })}

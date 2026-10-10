@@ -36,6 +36,14 @@ describe("listHostsQuery (sanity)", () => {
 		expect(sql).toContain("ResourceAttributes['host.name']")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
+
+	it("derives cpuPct from the idle share and skips pseudo filesystems", () => {
+		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
+		expect(sql).toContain("Attributes['state'] = 'idle'")
+		expect(sql).not.toContain("Attributes['state'] != 'idle'")
+		expect(sql).toMatch(/greatest\(1 - ifNotFinite\(avgIf\(/)
+		expect(sql).toContain("NOT IN ('squashfs'")
+	})
 })
 
 describe("hostDetailSummaryQuery (sanity)", () => {
@@ -384,6 +392,12 @@ describe("listWorkloadsQuery", () => {
 		const { sql } = compileUnsafe(listWorkloadsQuery({ kind: "deployment" }), baseParams)
 		expect(sql).toContain("ResourceAttributes['k8s.deployment.name']")
 		expect(sql).toContain("uniq")
+	})
+
+	it("keeps same-named workloads in different namespaces/clusters apart", () => {
+		const { sql } = compileUnsafe(listWorkloadsQuery({ kind: "deployment" }), baseParams)
+		expect(sql).toMatch(/GROUP BY workloadName, namespace, clusterName/)
+		expect(sql).not.toContain("any(metrics_gauge.ResourceAttributes['k8s.namespace.name'])")
 	})
 
 	it("uses the right attribute for statefulset and daemonset", () => {

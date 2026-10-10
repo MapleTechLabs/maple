@@ -76,8 +76,15 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{summary.services.map((service) => (
-							<Badge key={service} variant="outline" size="xs" mono>
-								{service}
+							<Badge
+								key={service}
+								variant="outline"
+								size="xs"
+								mono
+								className="max-w-full"
+								title={service}
+							>
+								<span className="min-w-0 truncate">{service}</span>
 							</Badge>
 						))}
 					</div>

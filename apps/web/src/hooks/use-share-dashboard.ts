@@ -188,6 +188,8 @@ const post = async (path: string, body: unknown, signedIn: boolean): Promise<Res
 	})
 }
 
+const SHARE_UNAVAILABLE_MESSAGE = "This dashboard could not be loaded. Try again later."
+
 const toResolveError = (status: number, payload: unknown): ShareResolveError => {
 	const tag = (payload as { _tag?: string } | null)?._tag
 
@@ -197,9 +199,11 @@ const toResolveError = (status: number, payload: unknown): ShareResolveError => 
 	// Every "this link does not resolve" reason arrives as the same 404 by
 	// design, so the page has exactly one state for it too.
 	if (status === 404) return { kind: "not_found" }
+	// A 5xx message is server internals; anonymous viewers get fixed copy.
+	if (status < 400 || status >= 500) return { kind: "unavailable", message: SHARE_UNAVAILABLE_MESSAGE }
 	return {
 		kind: "unavailable",
-		message: (payload as { message?: string } | null)?.message ?? "This dashboard could not be loaded.",
+		message: (payload as { message?: string } | null)?.message ?? SHARE_UNAVAILABLE_MESSAGE,
 	}
 }
 
@@ -255,7 +259,7 @@ export function useSharedDashboard(token: string, isSignedIn: boolean) {
 				if (!cancelled) {
 					setState({
 						status: "error",
-						error: { kind: "unavailable", message: "This dashboard could not be loaded." },
+						error: { kind: "unavailable", message: SHARE_UNAVAILABLE_MESSAGE },
 					})
 				}
 			})

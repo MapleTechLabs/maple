@@ -387,7 +387,12 @@ function InvestigationLead({ ctx }: { ctx: InvestigationContext }) {
  */
 function FailedSendNotice({ failed, onRetry }: { failed: FailedSend; onRetry: (text: string) => void }) {
 	return (
-		<ChatFailureNotice truncate actionLabel="Try again" onAction={() => onRetry(failed.message)}>
+		<ChatFailureNotice
+			truncate
+			title={`Message not sent: ${failed.error.message}`}
+			actionLabel="Try again"
+			onAction={() => onRetry(failed.message)}
+		>
 			Message not sent: {failed.error.message}
 		</ChatFailureNotice>
 	)

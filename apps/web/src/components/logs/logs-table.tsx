@@ -18,8 +18,11 @@ import { LogsTableToolbar } from "./logs-table-toolbar"
 import type { LogsSearchParams } from "@/routes/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useLogsViewPreferences, type LogsDensity } from "@/hooks/use-logs-view-preferences"
-import { formatCompactTimeInTimezone } from "@/lib/timezone-format"
+import { formatCompactTimeInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
+import { severityLabel } from "@maple/ui/components/logs/severity-badge"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
 import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
@@ -151,7 +154,9 @@ const LogRow = React.memo(function LogRow({
 		const pinned = new Set(pinnedColumns)
 		return all.filter((attr) => !pinned.has(attr.key))
 	}, [all, pinnedColumns])
-	const severityColor = getSeverityColor(log.severityText)
+	const severity = severityLabel(log.severityText, log.severityNumber)
+	const severityColor = getSeverityColor(severity)
+	const body = React.useMemo(() => stripAnsi(log.body), [log.body])
 	// When `fill` the header line stretches to the container (no horizontal
 	// scroll): wrap mode wraps the body, expanded keeps a one-line summary with
 	// the full body in the panel below. Otherwise (the default), the row sizes to
@@ -217,12 +222,20 @@ const LogRow = React.memo(function LogRow({
 					<StatusDot tone="custom" style={{ backgroundColor: severityColor }} />
 				</span>
 				<span
-					className="shrink-0 w-12 text-3xs uppercase tabular-nums font-semibold hidden md:inline-block"
+					className="shrink-0 w-12 truncate text-3xs uppercase tabular-nums font-semibold hidden md:inline-block"
 					style={{ color: severityColor }}
+					title={severity}
 				>
-					{log.severityText}
+					{severity}
 				</span>
-				<span className="shrink-0 w-24 text-muted-foreground tabular-nums">
+				<span
+					className="shrink-0 w-24 text-muted-foreground tabular-nums"
+					title={formatTimestampInTimezone(log.timestamp, {
+						timeZone,
+						withMilliseconds: true,
+						withYear: true,
+					})}
+				>
 					{formatCompactTimeInTimezone(log.timestamp, { timeZone })}
 				</span>
 				<span className="shrink-0 w-[120px] truncate text-muted-foreground/60 hidden md:inline-block">
@@ -253,11 +266,11 @@ const LogRow = React.memo(function LogRow({
 							wrap ? "whitespace-pre-wrap break-words" : "truncate",
 						)}
 					>
-						<HighlightedText text={log.body} query={highlight} />
+						<HighlightedText text={body} query={highlight} />
 					</span>
 				) : (
 					<span style={{ width: BODY_WIDTH }} className="shrink-0 truncate text-foreground text-xs">
-						<HighlightedText text={log.body} query={highlight} />
+						<HighlightedText text={body} query={highlight} />
 					</span>
 				)}
 				{!fill && chips.length > 0 && (
@@ -319,11 +332,10 @@ function PinnedHeader({
 			{pinnedColumns.map((key) => (
 				<span
 					key={key}
-					title={key}
 					style={{ width: PINNED_COL_WIDTH }}
-					className="shrink-0 truncate text-foreground/60 hidden md:block"
+					className="shrink-0 text-foreground/60 hidden md:block"
 				>
-					{key}
+					<MiddleTruncate text={key} tail={10} />
 				</span>
 			))}
 			{wrap ? (
@@ -586,13 +598,15 @@ export function LogsTableView({
 							{traceId ? (
 								<>
 									No logs on trace{" "}
-									<span className="font-mono text-foreground">{traceId}</span> in this time
-									range
+									<span className="font-mono text-foreground break-all">{traceId}</span> in
+									this time range
 								</>
 							) : (
 								<>
 									No log message contains{" "}
-									<span className="font-mono text-foreground">“{searchText}”</span>
+									<span className="font-mono text-foreground break-all">
+										“{searchText}”
+									</span>
 								</>
 							)}
 						</span>

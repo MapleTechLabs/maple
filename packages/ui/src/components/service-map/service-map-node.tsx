@@ -7,6 +7,7 @@ import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
 import { type UtilizationLevel, utilizationLevel } from "../../lib/utilization"
 import { latencyToneClass } from "../../lib/latency-tone"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
+import { MiddleTruncate } from "../ui/middle-truncate"
 import {
 	AwsLambdaIcon,
 	CloudflareBrandIcon,
@@ -174,7 +175,9 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 								<p>{systemLabel}</p>
 							</TooltipContent>
 						</Tooltip>
-						<span className="truncate text-xs font-medium text-foreground">{title}</span>
+						<span className="truncate text-xs font-medium text-foreground" title={title}>
+							{title}
+						</span>
 						<span
 							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
@@ -301,7 +304,11 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 								</p>
 							</TooltipContent>
 						</Tooltip>
-						<span className="truncate text-xs font-medium text-foreground">{label}</span>
+						<MiddleTruncate
+							text={label}
+							tail={12}
+							className="text-xs font-medium text-foreground"
+						/>
 						{runtimeInfo &&
 							(RuntimeIcon ? (
 								<Tooltip>

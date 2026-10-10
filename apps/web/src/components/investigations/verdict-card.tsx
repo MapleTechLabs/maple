@@ -183,7 +183,7 @@ const repeatsHeading = (heading: string | null, text: string): boolean =>
 /** The summary, unless the heading fell back to being it. */
 function Body({ heading, text }: { heading: string | null; text: string }) {
 	if (repeatsHeading(heading, text)) return null
-	return <p className="text-sm leading-6 text-muted-foreground">{text}</p>
+	return <p className="text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{text}</p>
 }
 
 /** The mechanism, set off by a rule so a reader who already believes the verdict can skip it. */
@@ -191,7 +191,9 @@ function Mechanism({ heading, text }: { heading: string | null; text: string }) 
 	if (repeatsHeading(heading, text)) return null
 	return (
 		<div className="mt-1 border-l-2 pl-4">
-			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground">{text}</p>
+			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+				{text}
+			</p>
 		</div>
 	)
 }
@@ -209,7 +211,7 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 						<span className="mt-px shrink-0 text-xs tabular-nums text-muted-foreground">
 							{index + 1}
 						</span>
-						<span className="min-w-0">{action}</span>
+						<span className="min-w-0 [overflow-wrap:anywhere]">{action}</span>
 					</li>
 				))}
 			</ol>

@@ -109,7 +109,7 @@ export function DashboardSectionView<W extends CanvasWidget>({
 					ariaLabel={`Rename group ${section.title}`}
 					readOnly={!editable}
 					onChange={(title) => actions?.renameSection(section.id, title)}
-					className="truncate text-sm font-semibold"
+					className="min-w-0 truncate text-sm font-semibold"
 				/>
 
 				{hasTabs && !collapsed && (

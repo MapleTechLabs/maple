@@ -171,9 +171,9 @@ export function TimeRangePicker({
 					/>
 				) : (
 					<div className="flex flex-col">
-						<div className="flex items-stretch">
-							{/* Left rail: presets */}
-							<div className="w-[168px] shrink-0 border-r border-border/70">
+						<div className="flex flex-col sm:flex-row sm:items-stretch">
+							{/* Left rail: presets. Stacks above the pane on phones. */}
+							<div className="w-full shrink-0 border-b border-border/70 sm:w-[168px] sm:border-r sm:border-b-0">
 								<PresetList
 									presets={presets}
 									selectedValue={presetValue}

@@ -146,6 +146,8 @@ export function buildMetricExplorerDraft(
 	}
 }
 
+const GROUP_BY_SERIES_LIMIT = 20
+
 interface MetricDetailProps {
 	metricName: string
 	state: MetricDetailQueryState
@@ -264,15 +266,28 @@ function MetricChart({
 	startTime: string
 	endTime: string
 }) {
+	// A group-by can fan out to thousands of series; cap the chart to the top N.
+	const grouped = draft.groupBy.length > 0
 	const result = useRefreshableAtomValue(
 		getQueryBuilderTimeseriesResultAtom({
-			data: { startTime, endTime, queries: [draft] },
+			data: {
+				startTime,
+				endTime,
+				queries: [grouped ? { ...draft, seriesLimit: String(GROUP_BY_SERIES_LIMIT) } : draft],
+			},
 		}),
 	)
 
 	const entry = getChartById("query-builder-area")
 	if (!entry) return null
 	const ChartComponent = entry.component
+
+	// The cap runs in SQL, so the total is unknown; flag only when it was hit.
+	const capped =
+		grouped &&
+		Result.isSuccess(result) &&
+		new Set(result.value.data.flatMap((row) => Object.keys(row).filter((k) => k !== "bucket"))).size >=
+			GROUP_BY_SERIES_LIMIT
 
 	const queryLabel = `${draft.aggregation}(${draft.metricName})${
 		draft.groupBy[0] ? ` by ${draft.groupBy[0]}` : ""
@@ -281,9 +296,18 @@ function MetricChart({
 	return (
 		<Panel>
 			<PanelHeader
-				title={<span className="font-mono">{queryLabel}</span>}
+				title={
+					<span className="font-mono" title={queryLabel}>
+						{queryLabel}
+					</span>
+				}
 				action={
-					unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined
+					capped || unit ? (
+						<span className="flex items-center gap-3 text-xs text-muted-foreground">
+							{capped ? <span>Top {GROUP_BY_SERIES_LIMIT} series</span> : null}
+							{unit ? <span>unit: {unit}</span> : null}
+						</span>
+					) : undefined
 				}
 			/>
 			<div className="h-80 p-3">

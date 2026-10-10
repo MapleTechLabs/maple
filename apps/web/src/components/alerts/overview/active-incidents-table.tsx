@@ -11,7 +11,15 @@ import { formatSignalValue } from "@/lib/alerts/form-utils"
 import { groupByTag as groupItemsByTag } from "@/lib/alerts/tag-grouping"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
 
 const holdReasonTitle = (reason: AlertIncidentHoldReason): string => {
 	switch (reason) {
@@ -59,18 +67,24 @@ export function ActiveIncidentsTable({
 				<TableCell>
 					<AlertSeverityBadge severity={incident.severity} />
 				</TableCell>
-				<TableCell>
+				<TruncatedCell>
 					<Link
 						to="/alerts/$ruleId"
 						params={{ ruleId: incident.ruleId }}
-						className="font-medium hover:underline"
+						className="block truncate font-medium hover:underline"
+						title={incident.ruleName}
 					>
 						{incident.ruleName}
 					</Link>
 					{!grouped && <TagChips tags={tags} />}
-				</TableCell>
+				</TruncatedCell>
 				<TableCell>
-					<span className="font-mono text-muted-foreground">{incident.groupKey ?? "all"}</span>
+					<span
+						className="block max-w-[180px] truncate font-mono text-muted-foreground"
+						title={incident.groupKey ?? "all"}
+					>
+						{incident.groupKey ?? "all"}
+					</span>
 				</TableCell>
 				<TableCell>
 					{incident.holdReason != null ? (

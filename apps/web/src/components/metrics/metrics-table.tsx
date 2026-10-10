@@ -136,8 +136,15 @@ export function MetricsTable({
 							return (
 								<TableRow
 									key={`${metric.metricName}-${metric.metricType}-${metric.serviceName}`}
-									className="cursor-pointer hover:bg-muted/50"
+									className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+									tabIndex={0}
 									onClick={() => onOpenMetric(metric)}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault()
+											onOpenMetric(metric)
+										}
+									}}
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
@@ -156,11 +163,17 @@ export function MetricsTable({
 									<TableCell className="hidden md:table-cell">
 										<MetricTypeBadge type={metric.metricType} />
 									</TableCell>
-									<TableCell className="hidden md:table-cell">
+									<TableCell className="hidden md:table-cell overflow-hidden">
 										{metric.serviceName ? (
-											<Badge variant="outline" size="xs" mono>
+											<Badge
+												variant="outline"
+												size="xs"
+												mono
+												className="max-w-full"
+												title={metric.serviceName}
+											>
 												<ServiceDot serviceName={metric.serviceName} size="sm" />
-												{metric.serviceName}
+												<span className="min-w-0 truncate">{metric.serviceName}</span>
 											</Badge>
 										) : (
 											<span className="text-xs text-muted-foreground">-</span>

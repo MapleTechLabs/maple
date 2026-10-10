@@ -334,6 +334,7 @@ function SessionListRow({
 							"min-w-0 truncate text-sm font-medium",
 							muted && "text-muted-foreground",
 						)}
+						title={label}
 					>
 						{label}
 					</span>

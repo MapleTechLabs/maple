@@ -1,6 +1,7 @@
 import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -33,6 +34,8 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
+// The list query returns the most recently seen N workloads; the toolbar says so at the cap.
+const WORKLOAD_LIST_LIMIT = 200
 
 const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset"])
 
@@ -107,7 +110,11 @@ function WorkloadsPage() {
 		computeTypes: search.computeTypes,
 	}
 
-	const wlResult = useAtomValue(listWorkloadsResultAtom({ data: { kind, startTime, endTime, ...filters } }))
+	const wlResult = useAtomValue(
+		listWorkloadsResultAtom({
+			data: { kind, startTime, endTime, ...filters, limit: WORKLOAD_LIST_LIMIT },
+		}),
+	)
 	const facetsResult = useAtomValue(workloadFacetsResultAtom({ data: { kind, startTime, endTime } }))
 
 	const onFilterChange = <K extends keyof WorkloadFilters>(key: K, value: WorkloadFilters[K]) => {
@@ -279,7 +286,11 @@ function WorkloadsPage() {
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search workloads…"
-									trailing={countLabel(filtered.length, filtered.length, "workload")}
+									trailing={
+										workloads.length >= WORKLOAD_LIST_LIMIT
+											? `${formatNumber(filtered.length)} of the ${formatNumber(WORKLOAD_LIST_LIMIT)} most recently seen workloads`
+											: countLabel(filtered.length, filtered.length, "workload")
+									}
 								>
 									<SegmentPivot
 										ariaLabel="Workload kind"

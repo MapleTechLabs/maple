@@ -26,6 +26,34 @@ const HOSTMETRIC_NAMES = [
 	"system.cpu.load_average.15m",
 ] as const
 
+// Per-state CPU values sum to 1 per core, so busy share is 1 - avg(idle).
+// Averaging every non-idle state instead divides a fully busy host by ~7.
+// A host with no idle samples falls back to idle = 1, i.e. 0% busy.
+const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	CH.greatest_(
+		CH.lit(1).sub(
+			CH.ifNotFinite(
+				CH.avgIf(
+					$.Value,
+					$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").eq("idle")),
+				),
+				1,
+			),
+		),
+		CH.lit(0),
+	)
+
+// Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
+const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+
+const hostDiskPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	maxIfOrZero(
+		$.Value,
+		$.MetricName.eq("system.filesystem.utilization")
+			.and($.Attributes.get("state").eq("used"))
+			.and(CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES)),
+	)
+
 // List hosts — one row per host.name with latest-window headline gauges
 
 export interface ListHostsOpts {
@@ -54,18 +82,12 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 			hostArch: CH.any_($.ResourceAttributes.get("host.arch")),
 			cloudProvider: CH.any_($.ResourceAttributes.get("cloud.provider")),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuPct: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").neq("idle")),
-			),
+			cpuPct: hostCpuPctExpr($),
 			memoryPct: avgIfOrZero(
 				$.Value,
 				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
 			),
-			diskPct: maxIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.filesystem.utilization").and($.Attributes.get("state").eq("used")),
-			),
+			diskPct: hostDiskPctExpr($),
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
@@ -115,18 +137,12 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 			cloudRegion: CH.any_($.ResourceAttributes.get("cloud.region")),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuPct: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").neq("idle")),
-			),
+			cpuPct: hostCpuPctExpr($),
 			memoryPct: avgIfOrZero(
 				$.Value,
 				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
 			),
-			diskPct: maxIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.filesystem.utilization").and($.Attributes.get("state").eq("used")),
-			),
+			diskPct: hostDiskPctExpr($),
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
@@ -906,8 +922,9 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 	return from(MetricsGauge)
 		.select(($) => ({
 			workloadName: $.ResourceAttributes.get(attrKey),
-			namespace: CH.any_($.ResourceAttributes.get("k8s.namespace.name")),
-			clusterName: CH.any_($.ResourceAttributes.get("k8s.cluster.name")),
+			// Same-named workloads in different namespaces/clusters are distinct rows.
+			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
+			clusterName: $.ResourceAttributes.get("k8s.cluster.name"),
 			environment: CH.any_(deploymentEnvExpr($.ResourceAttributes)),
 			podCount: CH.uniq($.ResourceAttributes.get("k8s.pod.uid")),
 			lastSeen: CH.max_($.TimeUnix),
@@ -923,7 +940,7 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 			$.MetricName.in_(...POD_METRIC_NAMES),
 			...workloadFilterConditions($, opts, attrKey),
 		])
-		.groupBy("workloadName")
+		.groupBy("workloadName", "namespace", "clusterName")
 		.orderBy(["lastSeen", "desc"])
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)

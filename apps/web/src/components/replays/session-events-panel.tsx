@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { shortId } from "@maple/ui/lib/ids"
 import * as Predicate from "effect/Predicate"
@@ -57,7 +58,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { StatFigure } from "@/components/common/stat-rail"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import { formatClock, formatSessionDuration, type ReplayPartitionWindow } from "./replay-format"
-import { useReplayPlayer } from "./replay-player-context"
+import { useReplayClock } from "./replay-player-context"
 import { parseChTimestampMs } from "./replay-timeline"
 import type { SessionTraceSummary } from "./replay-editor-timeline"
 
@@ -222,7 +223,7 @@ function RailTabItem({
 
 /** Seek the player to a warehouse event timestamp. */
 function useSeekToTimestamp() {
-	const { timeline, recordingStartEpochMs, realTotalMs, seekDisplay } = useReplayPlayer()
+	const { timeline, recordingStartEpochMs, realTotalMs, seekDisplay } = useReplayClock()
 	return React.useCallback(
 		(ts: string) => {
 			const epoch = parseChTimestampMs(ts)
@@ -236,7 +237,7 @@ function useSeekToTimestamp() {
 
 /** Clock offset of a warehouse timestamp within the recording ("04:12"), for row gutters. */
 function useClockAt() {
-	const { recordingStartEpochMs, realTotalMs, timeline } = useReplayPlayer()
+	const { recordingStartEpochMs, realTotalMs, timeline } = useReplayClock()
 	return React.useCallback(
 		(ts: string) => {
 			const epoch = parseChTimestampMs(ts)
@@ -254,6 +255,10 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 	// Row indexes are filter-relative, so a filter change has to close whatever
 	// was open rather than carry the index onto a different row.
 	const [openIndex, setOpenIndex] = React.useState<number | null>(null)
+	const onToggle = React.useCallback(
+		(index: number) => setOpenIndex((current) => (current === index ? null : index)),
+		[],
+	)
 
 	const renderBody = (events: ReadonlyArray<EventRow>) => {
 		const counts = {
@@ -265,7 +270,7 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 		}
 		const rows = filter === "all" ? events : events.filter((e) => e.type === filter)
 		return (
-			<div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+			<div className="flex min-h-0 flex-1 flex-col">
 				<EventFilterBar
 					counts={counts}
 					filter={filter}
@@ -283,17 +288,12 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 						session.
 					</div>
 				) : (
-					<ul className="divide-y divide-border font-mono text-xs">
-						{rows.map((ev, i) => (
-							<EventLine
-								key={i}
-								ev={ev}
-								showNetworkBar={filter === "network"}
-								open={openIndex === i}
-								onToggle={() => setOpenIndex(openIndex === i ? null : i)}
-							/>
-						))}
-					</ul>
+					<EventList
+						rows={rows}
+						showNetworkBar={filter === "network"}
+						openIndex={openIndex}
+						onToggle={onToggle}
+					/>
 				)}
 			</div>
 		)
@@ -306,6 +306,48 @@ function EventsTab({ sessionId, window }: { sessionId: string; window?: ReplayPa
 		))
 		.onSuccess((data) => renderBody(data.data as ReadonlyArray<EventRow>))
 		.orElse(() => <Skeleton className="m-3 min-h-0 flex-1 rounded-lg" />)
+}
+
+/** Virtualized: long sessions carry thousands of events, all fetched up front. */
+function EventList({
+	rows,
+	showNetworkBar,
+	openIndex,
+	onToggle,
+}: {
+	rows: ReadonlyArray<EventRow>
+	showNetworkBar: boolean
+	openIndex: number | null
+	onToggle: (index: number) => void
+}) {
+	const [scroller, setScroller] = React.useState<HTMLDivElement | null>(null)
+	const virtualizer = useVirtualizer({
+		count: rows.length,
+		getScrollElement: () => scroller,
+		estimateSize: () => (showNetworkBar ? 38 : 29),
+		overscan: 12,
+	})
+	return (
+		<div ref={setScroller} className="min-h-0 flex-1 overflow-y-auto">
+			<ul
+				className="relative divide-y divide-border font-mono text-xs"
+				style={{ height: virtualizer.getTotalSize() }}
+			>
+				{virtualizer.getVirtualItems().map((item) => (
+					<EventLine
+						key={item.key}
+						measureRef={virtualizer.measureElement}
+						index={item.index}
+						start={item.start}
+						ev={rows[item.index]!}
+						showNetworkBar={showNetworkBar}
+						open={openIndex === item.index}
+						onToggle={onToggle}
+					/>
+				))}
+			</ul>
+		</div>
+	)
 }
 
 // Status 0 is a request that never got a response: as bad as a 5xx.
@@ -616,17 +658,26 @@ function isFailedRequest(ev: EventRow): boolean {
  * The row is a single click target — it seeks the player to the moment and
  * opens the detail underneath, so the full URL, stack and trace link live one
  * click away instead of competing for the ~380px the rail actually has.
+ * Memoized and reading only the clock context, so playback doesn't re-render
+ * every row each frame.
  */
-function EventLine({
+const EventLine = React.memo(function EventLine({
+	measureRef,
+	index,
+	start,
 	ev,
 	showNetworkBar,
 	open,
 	onToggle,
 }: {
+	measureRef: (node: HTMLLIElement | null) => void
+	index: number
+	/** Virtual row offset (px) inside the list. */
+	start: number
 	ev: EventRow
 	showNetworkBar: boolean
 	open: boolean
-	onToggle: () => void
+	onToggle: (index: number) => void
 }) {
 	const seekTo = useSeekToTimestamp()
 	const clockAt = useClockAt()
@@ -634,13 +685,18 @@ function EventLine({
 	const isError = ev.type === "error" || isFailedRequest(ev)
 
 	return (
-		<li className={cn("relative", isError && "bg-severity-error/5")}>
+		<li
+			ref={measureRef}
+			data-index={index}
+			style={{ transform: `translateY(${start}px)` }}
+			className={cn("absolute inset-x-0 top-0", isError && "bg-severity-error/5")}
+		>
 			{isError && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-severity-error" />}
 			<button
 				type="button"
 				onClick={() => {
 					seekTo(ev.timestamp)
-					onToggle()
+					onToggle(index)
 				}}
 				aria-expanded={open}
 				className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50"
@@ -688,7 +744,7 @@ function EventLine({
 			{open && <EventDetail ev={ev} />}
 		</li>
 	)
-}
+})
 
 /** The row's overflow: everything the single line had to drop. */
 function EventDetail({ ev }: { ev: EventRow }) {

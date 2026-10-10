@@ -72,13 +72,13 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 					<Link
 						to="/investigations/$id"
 						params={{ id: investigation.id }}
-						className="truncate font-medium text-sm text-foreground hover:underline"
+						className="min-w-0 truncate font-medium text-sm text-foreground hover:underline"
 						title={headline}
 					>
 						{headline}
 					</Link>
 					{scope ? (
-						<TruncatedText className="shrink-0 font-normal text-xs text-muted-foreground">
+						<TruncatedText className="max-w-[40%] shrink font-normal text-xs text-muted-foreground">
 							{scope}
 						</TruncatedText>
 					) : null}

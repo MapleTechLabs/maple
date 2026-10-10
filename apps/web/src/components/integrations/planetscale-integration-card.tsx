@@ -635,10 +635,10 @@ function PlanetScaleWebhookConfig() {
 	return (
 		<div className="space-y-3 border-t border-border/60 p-4">
 			<KeyValueList layout="stacked">
-				<KeyValue label={<Eyebrow>Webhook URL</Eyebrow>} mono wrap>
+				<KeyValue label={<Eyebrow>Webhook URL</Eyebrow>} mono wrap copyValue={config.url}>
 					{config.url}
 				</KeyValue>
-				<KeyValue label={<Eyebrow>Secret</Eyebrow>} mono wrap>
+				<KeyValue label={<Eyebrow>Secret</Eyebrow>} mono wrap copyValue={config.secret}>
 					{config.secret}
 				</KeyValue>
 			</KeyValueList>

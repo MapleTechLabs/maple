@@ -198,7 +198,7 @@ function DeployRowResolved({ deploy }: { deploy: DeployEntry }) {
 						avatar={<CommitAvatar url={commit.authorAvatarUrl} name={author} compact />}
 						line1={
 							<CommitShaHoverCard sha={deploy.sha} className="text-foreground">
-								{firstLine(commit.message)}
+								{firstLine(commit.message) || shortReleaseLabel(deploy.sha)}
 							</CommitShaHoverCard>
 						}
 						chip={<ErrorRateChip errorCount={deploy.errorCount} spanCount={deploy.spanCount} />}

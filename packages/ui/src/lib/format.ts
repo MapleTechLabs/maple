@@ -45,8 +45,8 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 // customer is billed for is quoted in decimal units, and quietly showing
 // "976.6 KB" where an invoice says "1.0 MB" is a support ticket.
 
-const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
-const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
+const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
+const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 
 /** Binary (1024-based) byte size — memory, disk, page weight. */
 export function formatBytes(bytes: number): string {
@@ -108,43 +108,30 @@ export function formatLoad(load: number): string {
 	return load.toFixed(2)
 }
 
-/** Coarse uptime: minutes, then hours, then `"3d 4h"`. */
+/** Coarse uptime: `"<1m"`, minutes, hours, `"3d 4h"`, then `"2y 14d"`. */
 export function formatUptime(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return EMPTY_VALUE
 	const m = Math.floor(seconds / 60)
+	if (m < 1) return "<1m"
 	if (m < 60) return `${m}m`
 	const h = Math.floor(m / 60)
 	if (h < 24) return `${h}h`
 	const d = Math.floor(h / 24)
-	return `${d}d ${h % 24}h`
+	if (d < 365) return `${d}d ${h % 24}h`
+	return `${Math.floor(d / 365)}y ${d % 365}d`
 }
 
-/**
- * Format a latency value in milliseconds to a human-readable string.
- */
+/** A latency in milliseconds; the duration ladder with a placeholder for missing values. */
 export function formatLatency(ms: number): string {
-	if (ms == null || Number.isNaN(ms)) {
-		return EMPTY_VALUE
-	}
-	if (ms < 1) {
-		return `${(ms * 1000).toFixed(0)}μs`
-	}
-	if (ms < 1000) {
-		return `${ms.toFixed(1)}ms`
-	}
-	if (ms < 60_000) {
-		return `${(ms / 1000).toFixed(2)}s`
-	}
-	if (ms < 3_600_000) {
-		return `${(ms / 60_000).toFixed(1)}min`
-	}
-	return `${(ms / 3_600_000).toFixed(1)}h`
+	if (ms == null || Number.isNaN(ms)) return EMPTY_VALUE
+	return formatDuration(ms)
 }
 
 /**
  * Format an error rate (0–1 ratio) as a percentage string.
  */
 export function formatErrorRate(rate: number): string {
+	if (!Number.isFinite(rate)) return EMPTY_VALUE
 	const pct = rate * 100
 	if (pct === 0) {
 		return "0%"

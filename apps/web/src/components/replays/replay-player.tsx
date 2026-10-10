@@ -377,46 +377,11 @@ function Scrubber({
 			{/* Track */}
 			<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
 				{/* Idle bands — greyed/hatched, under the progress fill */}
-				{totalMs > 0 &&
-					idleBands.map((band, i) => {
-						const leftPct = Math.max(0, Math.min(100, (band.start / totalMs) * 100))
-						const widthPct = Math.max(
-							0,
-							Math.min(100 - leftPct, ((band.end - band.start) / totalMs) * 100),
-						)
-						return (
-							<span
-								key={`idle-${band.start}-${i}`}
-								className="absolute inset-y-0 bg-foreground/25"
-								style={{
-									left: `${leftPct}%`,
-									width: `${widthPct}%`,
-									minWidth: 3,
-									backgroundImage:
-										"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
-								}}
-								title="Idle"
-							/>
-						)
-					})}
+				<ScrubberIdleBands idleBands={idleBands} totalMs={totalMs} />
 				<div className="relative h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
 			</div>
 			{/* Action markers */}
-			{totalMs > 0 &&
-				markers.map((m, i) => {
-					const markerPct = Math.min(100, Math.max(0, (m.ms / totalMs) * 100))
-					return (
-						<span
-							key={`${m.kind}-${m.ms}-${i}`}
-							className={cn(
-								"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
-								MARKER_STYLES[m.kind],
-							)}
-							style={{ left: `${markerPct}%` }}
-							title={m.kind}
-						/>
-					)
-				})}
+			<ScrubberMarkers markers={markers} totalMs={totalMs} />
 			{/* Thumb — hover-revealed on desktop, always shown on touch (no hover). */}
 			<div
 				className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100"
@@ -516,3 +481,67 @@ function PlayerMessage({ children, spinner }: { children: React.ReactNode; spinn
 		</div>
 	)
 }
+
+// Memoized on their inputs only: the playhead moves every frame, these don't.
+const ScrubberIdleBands = React.memo(function ScrubberIdleBands({
+	idleBands,
+	totalMs,
+}: {
+	idleBands: ReadonlyArray<IdleBand>
+	totalMs: number
+}) {
+	if (totalMs <= 0) return null
+	return (
+		<>
+			{idleBands.map((band, i) => {
+				const leftPct = Math.max(0, Math.min(100, (band.start / totalMs) * 100))
+				const widthPct = Math.max(
+					0,
+					Math.min(100 - leftPct, ((band.end - band.start) / totalMs) * 100),
+				)
+				return (
+					<span
+						key={`idle-${band.start}-${i}`}
+						className="absolute inset-y-0 bg-foreground/25"
+						style={{
+							left: `${leftPct}%`,
+							width: `${widthPct}%`,
+							minWidth: 3,
+							backgroundImage:
+								"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
+						}}
+						title="Idle"
+					/>
+				)
+			})}
+		</>
+	)
+})
+
+const ScrubberMarkers = React.memo(function ScrubberMarkers({
+	markers,
+	totalMs,
+}: {
+	markers: ReadonlyArray<DisplayMarker>
+	totalMs: number
+}) {
+	if (totalMs <= 0) return null
+	return (
+		<>
+			{markers.map((m, i) => {
+				const markerPct = Math.min(100, Math.max(0, (m.ms / totalMs) * 100))
+				return (
+					<span
+						key={`${m.kind}-${m.ms}-${i}`}
+						className={cn(
+							"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
+							MARKER_STYLES[m.kind],
+						)}
+						style={{ left: `${markerPct}%` }}
+						title={m.kind}
+					/>
+				)
+			})}
+		</>
+	)
+})

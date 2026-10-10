@@ -1,3 +1,4 @@
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useMemo } from "react"
 import { countLabel } from "@maple/ui/lib/format"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
@@ -72,12 +73,15 @@ function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArra
 							<CloudflareMonoIcon size={16} className="text-muted-foreground" />
 						</ItemMedia>
 						<ItemContent className="gap-0">
-							<span className="truncate text-sm font-medium">
-								{account.accountName ?? account.accountId}
-							</span>
-							<span className="truncate font-mono text-2xs text-muted-foreground">
-								{account.accountId}
-							</span>
+							<TruncatedText
+								text={account.accountName ?? account.accountId}
+								className="text-sm font-medium"
+							/>
+							<TruncatedText
+								text={account.accountId}
+								mono
+								className="text-2xs text-muted-foreground"
+							/>
 						</ItemContent>
 						<ItemActions className="gap-1.5">
 							{account.revoked ? (

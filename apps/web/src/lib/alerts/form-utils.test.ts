@@ -19,6 +19,7 @@ import {
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
+	formatSignalValue,
 	normalizeRuleQueryDraft,
 	pickDefaultDestination,
 	suggestedDestinationName,
@@ -27,6 +28,7 @@ import {
 	v2DeliveryToDocument,
 	v2PreviewToResponse,
 } from "./form-utils"
+import { formatErrorRate } from "@maple/ui/lib/format"
 
 describe("rule notes", () => {
 	it("defaults to an empty note", () => {
@@ -57,6 +59,17 @@ describe("threshold unit conversion", () => {
 		expect(formThresholdToDomain("error_rate", "50")).toBe(0.5)
 		expect(domainThresholdToForm("error_rate", 0.05)).toBe("5")
 		expect(domainThresholdToForm("error_rate", 0.5)).toBe("50")
+	})
+
+	it("drops float noise when converting error_rate ratios to percent", () => {
+		expect(domainThresholdToForm("error_rate", 0.07)).toBe("7")
+		expect(domainThresholdToForm("error_rate", 0.29)).toBe("29")
+	})
+
+	it("keeps precision for error rates below 0.01%", () => {
+		expect(formatSignalValue("error_rate", 0.00005)).toBe("0.0050%")
+		expect(formatSignalValue("error_rate", 0.05)).toBe(formatErrorRate(0.05))
+		expect(formatSignalValue("error_rate", 0)).toBe("0%")
 	})
 
 	it("passes non-error_rate thresholds through unchanged", () => {

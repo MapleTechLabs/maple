@@ -67,6 +67,7 @@ import { Route as LabTimeRangeRouteImport } from './routes/lab/time-range'
 import { Route as LabTimelineRouteImport } from './routes/lab/timeline'
 import { Route as LabVerdictRouteImport } from './routes/lab/verdict'
 import { Route as LabWidgetsRouteImport } from './routes/lab/widgets'
+import { Route as LabWorstCaseRouteImport } from './routes/lab/worst-case'
 import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as MetricsIndexRouteImport } from './routes/metrics/index'
@@ -404,6 +405,11 @@ const LabWidgetsRoute = LabWidgetsRouteImport.update({
   path: '/widgets',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabWorstCaseRoute = LabWorstCaseRouteImport.update({
+  id: '/worst-case',
+  path: '/worst-case',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LogsIndexRoute = LogsIndexRouteImport.update({
   id: '/logs/',
   path: '/logs/',
@@ -697,6 +703,7 @@ export interface FileRoutesByFullPath {
   '/lab/timeline': typeof LabTimelineRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
+  '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
@@ -802,6 +809,7 @@ export interface FileRoutesByTo {
   '/lab/timeline': typeof LabTimelineRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
+  '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
@@ -909,6 +917,7 @@ export interface FileRoutesById {
   '/lab/timeline': typeof LabTimelineRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
+  '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
@@ -1017,6 +1026,7 @@ export interface FileRouteTypes {
     | '/lab/timeline'
     | '/lab/verdict'
     | '/lab/widgets'
+    | '/lab/worst-case'
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
@@ -1122,6 +1132,7 @@ export interface FileRouteTypes {
     | '/lab/timeline'
     | '/lab/verdict'
     | '/lab/widgets'
+    | '/lab/worst-case'
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
@@ -1228,6 +1239,7 @@ export interface FileRouteTypes {
     | '/lab/timeline'
     | '/lab/verdict'
     | '/lab/widgets'
+    | '/lab/worst-case'
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
@@ -1775,6 +1787,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabWidgetsRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/worst-case': {
+      id: '/lab/worst-case'
+      path: '/worst-case'
+      fullPath: '/lab/worst-case'
+      preLoaderRoute: typeof LabWorstCaseRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/logs/': {
       id: '/logs/'
       path: '/logs'
@@ -2119,6 +2138,7 @@ interface LabRouteRouteChildren {
   LabTimelineRoute: typeof LabTimelineRoute
   LabVerdictRoute: typeof LabVerdictRoute
   LabWidgetsRoute: typeof LabWidgetsRoute
+  LabWorstCaseRoute: typeof LabWorstCaseRoute
   LabIndexRoute: typeof LabIndexRoute
   LabBenchAgentTranscriptRoute: typeof LabBenchAgentTranscriptRoute
   LabBenchInfraRoute: typeof LabBenchInfraRoute
@@ -2148,6 +2168,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabTimelineRoute: LabTimelineRoute,
   LabVerdictRoute: LabVerdictRoute,
   LabWidgetsRoute: LabWidgetsRoute,
+  LabWorstCaseRoute: LabWorstCaseRoute,
   LabIndexRoute: LabIndexRoute,
   LabBenchAgentTranscriptRoute: LabBenchAgentTranscriptRoute,
   LabBenchInfraRoute: LabBenchInfraRoute,

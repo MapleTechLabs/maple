@@ -1,4 +1,5 @@
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
@@ -233,7 +234,7 @@ function EmailMemberPicker({
 				adornment: (
 					<Avatar className="size-5">
 						<AvatarImage alt={name || email} src={member.publicUserData?.imageUrl} />
-						<AvatarFallback>{(name || email)[0]?.toUpperCase() ?? "?"}</AvatarFallback>
+						<AvatarFallback>{initialsFrom(name || email)}</AvatarFallback>
 					</Avatar>
 				),
 				meta: name ? email : undefined,

@@ -18,7 +18,12 @@ import {
 	getSessionTraceSummariesResultAtom,
 	getSpanHierarchyResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { type DisplayMarker, useReplayPlayer, type ReplayPlayerContextValue } from "./replay-player-context"
+import {
+	type DisplayMarker,
+	type IdleBand,
+	useReplayPlayer,
+	type ReplayPlayerContextValue,
+} from "./replay-player-context"
 import { spanDisplayRange, type Timeline } from "./replay-timeline"
 import { formatClock, MARKER_STYLES, type ReplayPartitionWindow } from "./replay-format"
 import {
@@ -237,45 +242,74 @@ function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 			<div className="relative h-9 flex-1">
 				{/* Track bar */}
 				<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
-					{idleBands.map((band, i) => {
-						const leftPct = pct(band.start, displayTotalMs)
-						const widthPct = Math.max(0, pct(band.end, displayTotalMs) - leftPct)
-						return (
-							<span
-								key={`idle-${band.start}-${i}`}
-								className="absolute inset-y-0 bg-foreground/25"
-								style={{
-									left: `${leftPct}%`,
-									width: `${widthPct}%`,
-									minWidth: 3,
-									backgroundImage:
-										"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
-								}}
-								title="Idle"
-							/>
-						)
-					})}
+					<IdleBandsLayer idleBands={idleBands} displayTotalMs={displayTotalMs} />
 					<div
 						className="relative h-full rounded-full bg-primary"
 						style={{ width: `${pct(player.displayCurrentMs, displayTotalMs)}%` }}
 					/>
 				</div>
 				{/* Action markers */}
-				{markers.map((m: DisplayMarker, i) => (
-					<span
-						key={`${m.kind}-${m.ms}-${i}`}
-						className={cn(
-							"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
-							MARKER_STYLES[m.kind],
-						)}
-						style={{ left: `${pct(m.ms, displayTotalMs)}%` }}
-						title={m.kind}
-					/>
-				))}
+				<MarkersLayer markers={markers} displayTotalMs={displayTotalMs} />
 			</div>
 		</div>
 	)
 }
+
+// Memoized on their inputs only: the playhead moves every frame, these don't.
+const IdleBandsLayer = React.memo(function IdleBandsLayer({
+	idleBands,
+	displayTotalMs,
+}: {
+	idleBands: ReadonlyArray<IdleBand>
+	displayTotalMs: number
+}) {
+	return (
+		<>
+			{idleBands.map((band, i) => {
+				const leftPct = pct(band.start, displayTotalMs)
+				const widthPct = Math.max(0, pct(band.end, displayTotalMs) - leftPct)
+				return (
+					<span
+						key={`idle-${band.start}-${i}`}
+						className="absolute inset-y-0 bg-foreground/25"
+						style={{
+							left: `${leftPct}%`,
+							width: `${widthPct}%`,
+							minWidth: 3,
+							backgroundImage:
+								"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
+						}}
+						title="Idle"
+					/>
+				)
+			})}
+		</>
+	)
+})
+
+const MarkersLayer = React.memo(function MarkersLayer({
+	markers,
+	displayTotalMs,
+}: {
+	markers: ReadonlyArray<DisplayMarker>
+	displayTotalMs: number
+}) {
+	return (
+		<>
+			{markers.map((m: DisplayMarker, i) => (
+				<span
+					key={`${m.kind}-${m.ms}-${i}`}
+					className={cn(
+						"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
+						MARKER_STYLES[m.kind],
+					)}
+					style={{ left: `${pct(m.ms, displayTotalMs)}%` }}
+					title={m.kind}
+				/>
+			))}
+		</>
+	)
+})
 
 const TracesTrack = React.memo(function TracesTrack({
 	traceIds,

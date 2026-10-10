@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -99,9 +100,11 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-								{node.nodeName}
-							</span>
+							<TruncatedText
+								text={node.nodeName}
+								mono
+								className="text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+							/>
 							<HostStatusBadge quiet lastSeen={node.lastSeen} referenceTime={referenceTime} />
 						</div>
 						<MetaLine items={[node.kubeletVersion && `kubelet ${node.kubeletVersion}`]} />

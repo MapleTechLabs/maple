@@ -171,7 +171,14 @@ function ChatIdentityRow({
 		<Item variant="card" className="gap-3 px-4 py-3">
 			<ItemContent className="gap-0.5">
 				<ItemTitle>Your {platform} account</ItemTitle>
-				<ItemDescription className="truncate text-2xs">
+				<ItemDescription
+					className="truncate text-2xs"
+					title={
+						identity === undefined
+							? undefined
+							: (identity.display_name ?? identity.external_user_id)
+					}
+				>
 					{identity === undefined
 						? `Link it so Maple knows it's you acting from ${platform}.`
 						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
@@ -307,6 +314,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 		)
 	}
 
+	const confirmWorkspace = workspaces.find((workspace) => workspace.id === confirmId)
+
 	return (
 		<div className="flex flex-col gap-4">
 			{workspaces.map((workspace) => (
@@ -316,7 +325,9 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					</ItemMedia>
 					<ItemContent className="gap-2">
 						<div className="flex items-center gap-2">
-							<h3 className="text-sm font-semibold">{workspace.name}</h3>
+							<h3 className="min-w-0 text-sm font-semibold [overflow-wrap:anywhere]">
+								{workspace.name}
+							</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
 								<StatusDot tone="ok" size="lg" />
 								Connected
@@ -380,8 +391,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				onOpenChange={(open) => {
 					if (!open) setConfirmId(null)
 				}}
-				title="Disconnect workspace"
-				description={`This workspace is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`}
+				title={confirmWorkspace ? `Disconnect ${confirmWorkspace.name}?` : "Disconnect workspace"}
+				description={`${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`}
 				confirmLabel="Disconnect"
 				onConfirm={() => (confirmId !== null ? handleDisconnect(confirmId) : undefined)}
 				pending={busy !== null && busy === confirmId}
