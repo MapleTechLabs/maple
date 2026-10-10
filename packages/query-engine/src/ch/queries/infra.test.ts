@@ -10,6 +10,7 @@ import {
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
+	podRestartsQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
 	listNodesQuery,
@@ -296,6 +297,41 @@ describe("podDetailSummaryQuery", () => {
 		expect(sql).toContain("'prod'")
 		expect(sql).toContain("k8s.pod.cpu_request_utilization")
 		expect(sql).toContain("k8s.pod.memory_request_utilization")
+	})
+})
+
+describe("podRestartsQuery", () => {
+	it("reads the running total per container and scopes to the org and window", () => {
+		const { sql } = compileUnsafe(podRestartsQuery({}), baseParams)
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("MetricName = 'k8s.container.restarts'")
+		expect(sql).toContain("max(metrics_gauge.Value) - min(metrics_gauge.Value)")
+		expect(sql).toContain("ResourceAttributes['k8s.container.status.last_terminated_reason']")
+		expect(sql).toMatch(/GROUP BY podName, namespace, containerName/)
+		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
+
+	it("narrows to the page's pods, a namespace and a workload", () => {
+		const { sql } = compileUnsafe(
+			podRestartsQuery({
+				podNames: ["api-1", "api-2"],
+				namespace: "backend",
+				workloadKind: "statefulset",
+				workloadName: "db",
+				limit: 500,
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("'api-1'")
+		expect(sql).toContain("'api-2'")
+		expect(sql).toContain("ResourceAttributes['k8s.namespace.name'] = 'backend'")
+		expect(sql).toContain("ResourceAttributes['k8s.statefulset.name'] = 'db'")
+		expect(sql).toContain("LIMIT 500")
+	})
+
+	it("skips the pod-name filter for an empty page rather than emitting IN ()", () => {
+		const { sql } = compileUnsafe(podRestartsQuery({ podNames: [] }), baseParams)
+		expect(sql).not.toMatch(/IN \(\s*\)/)
 	})
 })
 

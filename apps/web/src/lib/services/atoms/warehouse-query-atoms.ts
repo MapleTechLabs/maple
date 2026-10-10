@@ -47,6 +47,7 @@ import {
 	listPods,
 	podsSummary,
 	podDetailSummary,
+	podRestarts,
 	podInfraTimeseries,
 	listNodes,
 	nodeDetailSummary,
@@ -594,6 +595,10 @@ export const podsSummaryResultAtom = makeQueryAtomFamily(podsSummary, {
 })
 
 export const podDetailSummaryResultAtom = makeQueryAtomFamily(podDetailSummary, {
+	staleTime: 30_000,
+})
+
+export const podRestartsResultAtom = makeQueryAtomFamily(podRestarts, {
 	staleTime: 30_000,
 })
 

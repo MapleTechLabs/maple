@@ -19,7 +19,8 @@ import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
-import { PodTable, PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
+import { PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
+import { PodTableWithRestarts } from "@/components/infra/kubernetes/pod-restarts-panel"
 import { FleetBand, FleetBandLoading, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
 import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { podFilterChips } from "@/lib/infra/pod-filter-chips"
@@ -396,8 +397,10 @@ function PodsPage() {
 										clearLabel="Clear all filters"
 									/>
 								) : (
-									<PodTable
+									<PodTableWithRestarts
 										pods={page}
+										startTime={startTime}
+										endTime={endTime}
 										sortBy={sortBy}
 										sortDir={sortDir}
 										onSortChange={onSortChange}

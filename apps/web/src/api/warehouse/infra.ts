@@ -6,6 +6,7 @@ import {
 	ListPodsRequest,
 	PodsSummaryRequest,
 	PodDetailSummaryRequest,
+	PodRestartsRequest,
 	PodInfraTimeseriesRequest,
 	PodFacetsRequest,
 	ListNodesRequest,
@@ -28,6 +29,7 @@ import {
 	type ListPodsResponse,
 	type PodsSummaryResponse,
 	type PodDetailSummaryResponse,
+	type PodRestartsResponse,
 	type PodInfraTimeseriesResponse,
 	type PodFacetsResponse,
 	type ListNodesResponse,
@@ -347,6 +349,32 @@ export function podDetailSummary({ data }: { data: PodDetailSummaryInput }) {
 					endTime: data.endTime,
 					podName: data.podName,
 					namespace: data.namespace,
+				}),
+			})
+			return response
+		}),
+	)
+}
+
+export interface PodRestartsInput {
+	startTime: string
+	endTime: string
+	podNames?: ReadonlyArray<string>
+	namespace?: string
+	limit?: number
+}
+
+export function podRestarts({ data }: { data: PodRestartsInput }) {
+	return runWarehouseQuery("podRestarts", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: PodRestartsResponse = yield* client.queryEngine.podRestarts({
+				payload: new PodRestartsRequest({
+					startTime: data.startTime,
+					endTime: data.endTime,
+					podNames: data.podNames,
+					namespace: data.namespace,
+					limit: data.limit,
 				}),
 			})
 			return response

@@ -17,11 +17,11 @@ import { formatWholePercent } from "./format"
 import { MetaLine } from "./primitives/meta-line"
 import { RelativeTime } from "@/components/common/relative-time"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { formatRestarts, podKey, restartTone, type PodRestartSummary } from "./pod-restarts"
 
 export type PodRow = ListPodsResponse["data"][number]
 
-/** Row identity. A pod name repeats across namespaces; the pair doesn't. */
-export const podKey = (pod: Pick<PodRow, "namespace" | "podName">) => `${pod.namespace}/${pod.podName}`
+export { podKey }
 
 interface PodTableProps {
 	pods: ReadonlyArray<PodRow>
@@ -48,6 +48,8 @@ interface PodTableProps {
 	timeSearch?: TimeRangeSearch
 	waiting?: boolean
 	referenceTime?: string
+	/** Per-pod restarts by `podKey`, fetched for the page beside the list. Omitted, no marker. */
+	restarts?: ReadonlyMap<string, PodRestartSummary>
 }
 
 const isPlainClick = (event: MouseEvent) =>
@@ -72,6 +74,23 @@ function metaTitle(pod: PodRow, workload: { kind: string; name: string } | null)
 	]
 		.filter(Boolean)
 		.join(" · ")
+}
+
+/** Inline beside the name, like the quiet status badge: absent unless the pod restarted in the window. */
+function RestartMarker({ summary }: { summary: PodRestartSummary | undefined }) {
+	if (!summary || summary.restarts <= 0) return null
+	const label = [formatRestarts(summary.restarts), summary.lastTerminatedReason].filter(Boolean).join(" · ")
+	return (
+		<span
+			className={cn(
+				"shrink-0 text-2xs font-medium",
+				TONE_TEXT[restartTone(summary.restarts, summary.lastTerminatedReason)],
+			)}
+			title={`${label} in this window, ${summary.totalRestarts} in total`}
+		>
+			{label}
+		</span>
+	)
 }
 
 /** Cores read at very different magnitudes across a fleet; keep them comparable. */
@@ -159,6 +178,7 @@ export function PodTable({
 	timeSearch,
 	waiting,
 	referenceTime,
+	restarts,
 }: PodTableProps) {
 	return (
 		<DataTable.Root ariaLabel="Pods" waiting={waiting}>
@@ -198,6 +218,7 @@ export function PodTable({
 									lastSeen={pod.lastSeen}
 									referenceTime={referenceTime}
 								/>
+								<RestartMarker summary={restarts?.get(key)} />
 							</div>
 							<MetaLine
 								title={metaTitle(pod, workload)}
