@@ -57,6 +57,35 @@ describe("hostDetailSummaryQuery (sanity)", () => {
 	})
 })
 
+describe("hostGaugeTimeseriesQuery", () => {
+	it("pins the attribute named by attributeEquals", () => {
+		const { sql } = compileUnsafe(
+			hostGaugeTimeseriesQuery({
+				hostName: "h",
+				metricName: "system.filesystem.utilization",
+				groupByAttributeKey: "mountpoint",
+				attributeEquals: { key: "state", value: "used" },
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
+		expect(sql).toContain("Attributes['state'] = 'used'")
+		expect(sql).toContain("Attributes['mountpoint']")
+	})
+
+	it("leaves states unfiltered without attributeEquals", () => {
+		const { sql } = compileUnsafe(
+			hostGaugeTimeseriesQuery({
+				hostName: "h",
+				metricName: "system.cpu.utilization",
+				groupByAttributeKey: "state",
+			}),
+			baseParams,
+		)
+		expect(sql).not.toContain("Attributes['state'] =")
+	})
+})
+
 describe("listPodsQuery", () => {
 	it("compiles with required filters and pod metric whitelist", () => {
 		const { sql } = compileUnsafe(listPodsQuery({}), baseParams)
