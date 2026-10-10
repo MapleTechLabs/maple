@@ -1256,6 +1256,34 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "infra",
+		name: "podRestartsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.podRestartsQuery({
+					workloadKind: "deployment",
+					workloadName: "api",
+					namespace: "backend",
+				}),
+				window,
+			),
+	},
+	{
+		// The pod list's shape: one page of pod names, every container on them.
+		module: "infra",
+		name: "podRestartsQuery",
+		label: "podNames",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.podRestartsQuery({
+					podNames: ["api-7d9f8b6c5-x2n4k", "worker-5c8d7f9b4-q7m2p"],
+					limit: 500,
+				}),
+				window,
+			),
+	},
+	{
+		module: "infra",
 		name: "podGaugeTimeseriesQuery",
 		label: "default",
 		compile: () =>

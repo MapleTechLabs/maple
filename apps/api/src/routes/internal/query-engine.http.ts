@@ -54,6 +54,7 @@ import {
 	ListPodsResponse,
 	PodsSummaryResponse,
 	PodDetailSummaryResponse,
+	PodRestartsResponse,
 	PodInfraTimeseriesResponse,
 	PodFacetsResponse,
 	ListContainersResponse,
@@ -1549,6 +1550,22 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										memoryRequestPct: row.memoryRequestPct || 0,
 									}
 								: null,
+						})
+					}),
+				)
+				.handle("podRestarts", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.podRestarts, tenant, payload)
+						return new PodRestartsResponse({
+							data: rows.map((row) => ({
+								podName: row.podName,
+								namespace: row.namespace,
+								containerName: row.containerName,
+								restarts: Number(row.restarts) || 0,
+								totalRestarts: Number(row.totalRestarts) || 0,
+								lastTerminatedReason: row.lastTerminatedReason,
+							})),
 						})
 					}),
 				)

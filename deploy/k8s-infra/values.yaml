@@ -313,6 +313,8 @@ presets:
                 enabled: true
             container.runtime.version:
                 enabled: true
+            # Off by default upstream. Rides on k8s.container.restarts, where the
+            # pod pages read it as the restart reason (OOMKilled, Error, ...).
             k8s.container.status.last_terminated_reason:
                 enabled: true
         metrics:
