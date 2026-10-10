@@ -183,19 +183,19 @@ describe("summarizeGcp", () => {
 			headlineTone: "neutral",
 			findings: [],
 		})
-		expect(summarizeGcp([]).headline).toBe("no metrics in this window")
+		expect(summarizeGcp([])?.headline).toBe("no metrics in this window")
 	})
 
 	it("raises a failing workload and a filling disk, worst first, each opening its page", () => {
 		const summary = summarizeGcp(fleet(80, 0.72))
-		expect(summary.segments).toEqual([
+		expect(summary?.segments).toEqual([
 			{ key: "ok", count: 0 },
 			{ key: "elevated", count: 1 },
 			{ key: "saturated", count: 1 },
 		])
-		expect(summary.headline).toBe("2 workloads elevated or erroring")
-		expect(summary.headlineTone).toBe("crit")
-		expect(summary.findings).toEqual([
+		expect(summary?.headline).toBe("2 workloads elevated or erroring")
+		expect(summary?.headlineTone).toBe("crit")
+		expect(summary?.findings).toEqual([
 			{
 				key: "gcp:cloudRun:api/acme-prod/europe-west1",
 				source: "gcp",
@@ -213,6 +213,46 @@ describe("summarizeGcp", () => {
 				target: { kind: "gcp", service: "cloudSql", keys: db },
 			},
 		])
+	})
+
+	const unread = (service: "cloudSql" | "pubsub") => ({ service, failed: true, points: [] })
+	const unreadFinding = (service: "cloudSql" | "pubsub", title: string) => ({
+		key: `gcp:${service}:unread`,
+		source: "gcp",
+		tone: "warn",
+		title: `Maple could not read the ${title} metrics`,
+		detail: "Reload to try again",
+		target: { kind: "gcpService", service },
+	})
+
+	it("says which service could not be read instead of counting it as healthy", () => {
+		const [cloudRun] = fleet(0, 0.4)
+		expect(summarizeGcp([cloudRun!, ...gcpFleet([unread("cloudSql"), unread("pubsub")])])).toEqual({
+			resources: "1 workload",
+			segments: [
+				{ key: "ok", count: 1 },
+				{ key: "elevated", count: 0 },
+				{ key: "saturated", count: 0 },
+			],
+			headline: "could not read Cloud SQL, Pub/Sub",
+			headlineTone: "warn",
+			findings: [unreadFinding("cloudSql", "Cloud SQL"), unreadFinding("pubsub", "Pub/Sub")],
+		})
+	})
+
+	it("keeps the workloads it did read beside the service it could not", () => {
+		const [cloudRun] = fleet(80, 0.4)
+		const summary = summarizeGcp([cloudRun!, ...gcpFleet([unread("cloudSql")])])
+		expect(summary?.headline).toBe("could not read Cloud SQL, 1 workload elevated or erroring")
+		expect(summary?.headlineTone).toBe("crit")
+		expect(summary?.findings.map((finding) => finding.key)).toEqual([
+			"gcp:cloudRun:api/acme-prod/europe-west1",
+			"gcp:cloudSql:unread",
+		])
+	})
+
+	it("has no summary when no service could be read", () => {
+		expect(summarizeGcp(gcpFleet([unread("cloudSql"), unread("pubsub")]))).toBeNull()
 	})
 })
 

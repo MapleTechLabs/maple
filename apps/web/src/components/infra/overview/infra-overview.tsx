@@ -121,9 +121,16 @@ export type SourceState =
 
 type RenderState = (state: SourceState) => ReactNode
 
-function toState<A>(result: Result.Result<A, unknown>, summarize: (value: A) => SourceSummary): SourceState {
+/** `summarize` answers null for a source that responded with nothing it could read. */
+function toState<A>(
+	result: Result.Result<A, unknown>,
+	summarize: (value: A) => SourceSummary | null,
+): SourceState {
 	return Result.builder(result)
-		.onSuccess((value): SourceState => ({ status: "ready", summary: summarize(value) }))
+		.onSuccess((value): SourceState => {
+			const summary = summarize(value)
+			return summary === null ? { status: "error" } : { status: "ready", summary }
+		})
 		.onInitial((): SourceState => ({ status: "loading" }))
 		.orElse((): SourceState => ({ status: "error" }))
 }
@@ -293,6 +300,12 @@ function FindingLink({
 					search={timeSearch}
 					className={className}
 				>
+					{children}
+				</Link>
+			)
+		case "gcpService":
+			return (
+				<Link to="/infra/gcp" search={{ ...timeSearch, tab: target.service }} className={className}>
 					{children}
 				</Link>
 			)
