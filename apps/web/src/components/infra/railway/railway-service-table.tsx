@@ -17,7 +17,9 @@ import {
 import { FleetBand, FleetBandLoading } from "../primitives/fleet-band"
 import { MetaLine } from "../primitives/meta-line"
 import { MeterRows } from "../primitives/meter-rows"
+import { AvgPeak } from "../primitives/avg-peak"
 import { TONE_FILL } from "@maple/ui/lib/tone"
+import { formatBytes } from "@maple/ui/lib/format"
 
 export type RailwayScope = "saturated" | "elevated" | "unbounded"
 
@@ -103,7 +105,15 @@ export function RailwaySummaryBandLoading({ className }: { className?: string })
 	return <FleetBandLoading cells={3} className={className} />
 }
 
-type SortKey = "displayName" | "peakOfLimit" | "replicas" | "lastSeen"
+type SortKey = "displayName" | "cpuMax" | "memoryMax" | "peakOfLimit" | "replicas" | "lastSeen"
+
+/** Railway services idle in the millicore range; keep three decimals there so they still differ. */
+const formatVcpu = (cores: number) => {
+	if (!Number.isFinite(cores) || cores === 0) return "0"
+	if (cores >= 10) return cores.toFixed(0)
+	if (cores >= 1) return cores.toFixed(2)
+	return cores.toFixed(3)
+}
 
 function RailwayColumns({ sort }: { sort?: SortControls<SortKey> }) {
 	return (
@@ -114,7 +124,21 @@ function RailwayColumns({ sort }: { sort?: SortControls<SortKey> }) {
 				{...sort}
 				width="w-0 flex-1 min-w-[240px]"
 			/>
-			<ColumnHead<SortKey> label="Peak of limit" sortKey="peakOfLimit" {...sort} width="w-[200px]" />
+			<ColumnHead<SortKey> label="vCPU" sortKey="cpuMax" {...sort} align="right" width="w-[140px]" />
+			<ColumnHead<SortKey>
+				label="Memory"
+				sortKey="memoryMax"
+				{...sort}
+				align="right"
+				width="w-[150px]"
+			/>
+			<ColumnHead<SortKey>
+				label="Of limit"
+				sortKey="peakOfLimit"
+				{...sort}
+				width="w-[160px]"
+				hidden="hidden lg:flex"
+			/>
 			<ColumnHead<SortKey>
 				label="Replicas"
 				sortKey="replicas"
@@ -144,7 +168,9 @@ export function RailwayServiceTableLoading() {
 					<Skeleton className="h-4 w-36" />
 					<Skeleton className="mt-1.5 h-3 w-28" />
 				</div>
-				<Skeleton className="h-6 w-[200px]" />
+				<Skeleton className="ml-auto h-3 w-[140px]" />
+				<Skeleton className="ml-auto h-3 w-[150px]" />
+				<Skeleton className="hidden h-6 w-[160px] lg:block" />
 				<Skeleton className="ml-auto h-3 w-[80px]" />
 				<Skeleton className="h-3 w-[100px]" />
 			</DataTable.SkeletonRows>
@@ -161,7 +187,7 @@ export function RailwayServiceTable({
 }) {
 	const rows = useMemo(() => services.map(toView), [services])
 	const { sorted, sortKey, sortDir, handleSort } = useTableSort<RailwayRowView, SortKey>(rows, {
-		initialKey: "peakOfLimit",
+		initialKey: "memoryMax",
 		stringKeys: ["displayName"],
 	})
 
@@ -184,7 +210,13 @@ export function RailwayServiceTable({
 						</div>
 						<MetaLine items={[row.projectName, row.environmentName]} />
 					</div>
-					<div className="w-[200px]">
+					<div className="w-[140px] text-right">
+						<AvgPeak avg={row.cpuAvg} peak={row.cpuMax} format={formatVcpu} />
+					</div>
+					<div className="w-[150px] text-right">
+						<AvgPeak avg={row.memoryAvg} peak={row.memoryMax} format={formatBytes} />
+					</div>
+					<div className="hidden w-[160px] lg:block">
 						<MeterRows
 							meters={[
 								{ label: "CPU", fraction: row.cpuOfLimit },
