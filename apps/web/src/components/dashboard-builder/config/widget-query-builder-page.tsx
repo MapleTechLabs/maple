@@ -506,7 +506,7 @@ export function WidgetQueryBuilderPage({
 									<ListConfigPanel />
 									<div className="flex items-center gap-3">
 										<Button size="sm" onClick={runPreview}>
-											Run Preview
+											Run preview
 										</Button>
 									</div>
 								</>
@@ -519,7 +519,7 @@ export function WidgetQueryBuilderPage({
 									/>
 									<div className="flex items-center gap-3">
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
-											Run Preview
+											Run preview
 										</Button>
 										<span className="text-2xs text-muted-foreground ml-auto">A</span>
 									</div>
@@ -534,7 +534,7 @@ export function WidgetQueryBuilderPage({
 									/>
 									<div className="flex items-center gap-3">
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
-											Run Preview
+											Run preview
 										</Button>
 										<span className="text-2xs text-muted-foreground ml-auto">A</span>
 									</div>
@@ -592,7 +592,7 @@ export function WidgetQueryBuilderPage({
 											+ Formula
 										</Button>
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
-											Run Preview
+											Run preview
 										</Button>
 										<span className="text-2xs text-muted-foreground ml-auto">
 											{state.queries.map((q) => q.name).join(", ")}

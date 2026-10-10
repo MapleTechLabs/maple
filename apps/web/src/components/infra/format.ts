@@ -37,3 +37,6 @@ export function deriveHostStatus(lastSeenIso: string, reference: number | string
 /** Whole-number percent of a 0-1 fraction; table cells want "7%", not formatPercent's "7.2%". */
 export const formatWholePercent = (fraction: number) =>
 	Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : EMPTY_VALUE
+
+/** CPU usage in cores, two decimals. */
+export const formatCores = (cores: number) => (Number.isFinite(cores) ? cores.toFixed(2) : EMPTY_VALUE)

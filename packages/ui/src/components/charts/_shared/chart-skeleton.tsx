@@ -118,7 +118,7 @@ function PathsGhost() {
 	const nodeX = (column: number) => (column * (100 - PATH_NODE_W)) / (columns - 1)
 	return (
 		<div className="flex h-full w-full flex-col">
-			<div className="flex h-[18px] shrink-0 items-start justify-between">
+			<div className="flex h-4.5 shrink-0 items-start justify-between">
 				{PATH_COLUMNS.map((_, i) => (
 					<div key={i} className="h-2 w-10 rounded-xs bg-foreground/10" />
 				))}
@@ -258,7 +258,7 @@ function renderVariant(variant: ChartSkeletonVariant) {
 					{[92, 78, 55, 34, 16].map((w, i) => (
 						<div
 							key={i}
-							className="grid max-h-14 min-h-[18px] flex-1 items-center gap-2"
+							className="grid max-h-14 min-h-4.5 flex-1 items-center gap-2"
 							style={{ gridTemplateColumns: "minmax(0, 38%) 1fr 44px" }}
 						>
 							<div
@@ -324,12 +324,12 @@ function renderVariant(variant: ChartSkeletonVariant) {
 									<div className="relative mt-2.5 min-h-0 flex-1">
 										{i > 0 && (
 											<div
-												className="absolute inset-x-0 rounded-[4px] bg-foreground/[0.04]"
+												className="absolute inset-x-0 rounded-sm bg-foreground/[0.04]"
 												style={{ bottom: `${h}%`, height: `${prev - h}%` }}
 											/>
 										)}
 										<div
-											className="absolute inset-x-0 bottom-0 rounded-[4px] bg-foreground/10 animate-pulse"
+											className="absolute inset-x-0 bottom-0 rounded-sm bg-foreground/10 animate-pulse"
 											style={{ height: `${h}%`, animationDelay: `${-i * 0.13}s` }}
 										/>
 									</div>

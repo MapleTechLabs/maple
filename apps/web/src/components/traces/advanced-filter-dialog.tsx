@@ -1,14 +1,5 @@
 import * as React from "react"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogTitle,
-	DialogTrigger,
-} from "@maple/ui/components/ui/dialog"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
@@ -74,70 +65,62 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 	const warnings = React.useMemo(() => parseWhereClause(value).warnings, [value])
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger
-				render={
-					<Button
-						variant={hasActiveFilter ? "secondary" : "outline"}
-						className="gap-2"
-						data-shortcut-focus="search"
-					>
-						<MagnifierIcon
-							className={hasActiveFilter ? "text-primary" : "text-muted-foreground"}
-						/>
-						<span>Advanced Filter</span>
-						<Kbd>F</Kbd>
-					</Button>
-				}
-			/>
-			<DialogContent className="sm:max-w-3xl">
-				<DialogHeader>
-					<DialogTitle>Advanced Filter</DialogTitle>
-					<DialogDescription>
+		<>
+			<Button
+				variant={hasActiveFilter ? "secondary" : "outline"}
+				className="gap-2"
+				data-shortcut-focus="search"
+				onClick={() => setOpen(true)}
+			>
+				<MagnifierIcon className={hasActiveFilter ? "text-primary" : "text-muted-foreground"} />
+				<span>Advanced filter</span>
+				<Kbd>F</Kbd>
+			</Button>
+			<FormDialog
+				open={open}
+				onOpenChange={setOpen}
+				className="sm:max-w-3xl"
+				panelClassName="space-y-0"
+				title="Advanced filter"
+				description={
+					<>
 						Write SQL-like queries to filter traces. Use <Kbd>Ctrl+Space</Kbd> for autocomplete.
 						Press <Kbd>Cmd+Enter</Kbd> to apply.
-					</DialogDescription>
-				</DialogHeader>
-				<DialogPanel>
-					<WhereClauseEditor
-						className="w-full"
-						rows={8}
-						value={value}
-						dataSource="traces"
-						autocompleteScope="trace_search"
-						maxSuggestions={20}
-						onChange={setValue}
-						placeholder='service.name = "checkout" AND attr.http.route != "/health"'
-						textareaClassName="font-mono text-sm leading-relaxed resize-y min-h-[200px] max-h-[40vh]"
-						ariaLabel="Advanced traces where clause"
-					/>
-					{warnings.length > 0 && (
-						<Alert variant="warn" size="sm" className="mt-2">
-							<CircleWarningIcon size={14} />
-							<AlertDescription className="text-severity-warn">
-								<ul className="space-y-1">
-									{warnings.map((warning) => (
-										<li key={warning}>{warning}</li>
-									))}
-								</ul>
-							</AlertDescription>
-						</Alert>
-					)}
-				</DialogPanel>
-				<DialogFooter>
-					<div className="flex w-full items-center justify-between sm:justify-between">
-						<Button variant="ghost" onClick={handleClear} className="text-muted-foreground">
-							Clear Filter
-						</Button>
-						<div className="flex gap-2">
-							<Button variant="outline" onClick={() => setOpen(false)}>
-								Cancel
-							</Button>
-							<Button onClick={handleApply}>Apply Filter</Button>
-						</div>
-					</div>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
+					</>
+				}
+				onSubmit={handleApply}
+				submitLabel="Apply filter"
+				footerStart={
+					<Button variant="ghost" onClick={handleClear} className="text-muted-foreground">
+						Clear filter
+					</Button>
+				}
+			>
+				<WhereClauseEditor
+					className="w-full"
+					rows={8}
+					value={value}
+					dataSource="traces"
+					autocompleteScope="trace_search"
+					maxSuggestions={20}
+					onChange={setValue}
+					placeholder='service.name = "checkout" AND attr.http.route != "/health"'
+					textareaClassName="font-mono text-sm leading-relaxed resize-y min-h-[200px] max-h-[40vh]"
+					ariaLabel="Advanced traces where clause"
+				/>
+				{warnings.length > 0 && (
+					<Alert variant="warn" size="sm" className="mt-2">
+						<CircleWarningIcon size={14} />
+						<AlertDescription className="text-severity-warn">
+							<ul className="space-y-1">
+								{warnings.map((warning) => (
+									<li key={warning}>{warning}</li>
+								))}
+							</ul>
+						</AlertDescription>
+					</Alert>
+				)}
+			</FormDialog>
+		</>
 	)
 }

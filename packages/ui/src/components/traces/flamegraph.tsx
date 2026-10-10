@@ -3,6 +3,8 @@ import * as React from "react"
 import { XmarkIcon } from "../icons"
 
 import { Button } from "../ui/button"
+import { EmptyMessage } from "../ui/empty"
+import { Kbd } from "../ui/kbd"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
 import { SpanTooltipContent } from "./span-tooltip"
 import { FlamegraphMinimap } from "./flamegraph-minimap"
@@ -145,9 +147,7 @@ export function Flamegraph({
 
 	if (rootSpans.length === 0) {
 		return (
-			<div className="border p-8 text-center">
-				<p className="text-muted-foreground">No spans found for this trace</p>
-			</div>
+			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 		)
 	}
 
@@ -172,7 +172,7 @@ export function Flamegraph({
 				</div>
 				{focusedSpan && (
 					<Button variant="ghost" size="sm" onClick={handleReset} className="h-6 gap-1 text-xs">
-						<XmarkIcon size={12} />
+						<XmarkIcon />
 						Reset
 					</Button>
 				)}
@@ -278,15 +278,15 @@ export function Flamegraph({
 			<div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-2xs text-muted-foreground">
 				<div className="flex items-center gap-3 text-foreground/30">
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-3xs">
+						<Kbd className="h-4 font-mono text-3xs">
 							Click
-						</kbd>{" "}
+						</Kbd>{" "}
 						select
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-3xs">
+						<Kbd className="h-4 font-mono text-3xs">
 							Shift+Click
-						</kbd>{" "}
+						</Kbd>{" "}
 						zoom
 					</span>
 				</div>

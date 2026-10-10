@@ -161,7 +161,7 @@ export function EmailAddressesSection() {
 													disabled={isBusy}
 													onClick={() => void handleResendVerification(address)}
 												>
-													<EnvelopeIcon size={14} />
+													<EnvelopeIcon />
 													Verify
 												</DropdownMenuItem>
 											)}
@@ -170,7 +170,7 @@ export function EmailAddressesSection() {
 													disabled={isBusy}
 													onClick={() => void handleSetPrimary(address)}
 												>
-													<CircleCheckIcon size={14} />
+													<CircleCheckIcon />
 													Set as primary
 												</DropdownMenuItem>
 											)}
@@ -179,7 +179,7 @@ export function EmailAddressesSection() {
 												disabled={isBusy || !canRemove}
 												onClick={() => setPendingRemoval(address)}
 											>
-												<TrashIcon size={14} />
+												<TrashIcon />
 												Remove
 											</DropdownMenuItem>
 										</RowActionsMenu>

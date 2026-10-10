@@ -60,11 +60,11 @@ export function MetricGraduationActions({ draft }: MetricGraduationActionsProps)
 	return (
 		<div className="flex items-center gap-2">
 			<Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-				<GridSquareCirclePlusIcon size={14} />
+				<GridSquareCirclePlusIcon />
 				Add to dashboard
 			</Button>
 			<Button variant="outline" size="sm" onClick={handleCreateAlert}>
-				<BellIcon size={14} />
+				<BellIcon />
 				Create alert
 			</Button>
 			<CopyButton

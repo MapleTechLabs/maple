@@ -485,11 +485,11 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 			<CardFooter className="flex flex-wrap items-center justify-between gap-2 border-b border-t bg-card">
 				<div className="flex flex-wrap items-center gap-2">
 					<Button variant="outline" size="sm" onClick={addQuery}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add Query
 					</Button>
 					<Button variant="outline" size="sm" onClick={addFormula}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add Formula
 					</Button>
 				</div>
@@ -504,7 +504,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 						<span className="text-2xs text-muted-foreground">last run: {lastRunAt}</span>
 					)}
 					<Button size="sm" onClick={runQueries}>
-						<MagnifierIcon size={14} />
+						<MagnifierIcon />
 						Run Query
 					</Button>
 				</div>
@@ -625,7 +625,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														size="xs"
 														onClick={() => removeQuery(query.id)}
 													>
-														<XmarkIcon size={14} />
+														<XmarkIcon />
 														Remove
 													</Button>
 												</div>
@@ -995,7 +995,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												size="xs"
 												onClick={() => removeFormula(formula.id)}
 											>
-												<XmarkIcon size={14} />
+												<XmarkIcon />
 												Remove
 											</Button>
 										</div>

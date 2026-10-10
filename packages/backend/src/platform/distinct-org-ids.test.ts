@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { errorIssues, errorIssueStates, orgClickHouseSettings } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIssues, ErrorIssueStates, OrgClickHouseSettings } from "@maple/db/tables"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -22,10 +23,10 @@ const issueRow = (org: string, suffix: string) => ({
 	exceptionType: "TimeoutError",
 	exceptionMessage: "upstream timed out",
 	topFrame: "",
-	firstSeenAt: new Date(0),
-	lastSeenAt: new Date(0),
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	firstSeenAt: 0,
+	lastSeenAt: 0,
+	createdAt: 0,
+	updatedAt: 0,
 })
 
 describe("selectDistinctOrgIds", () => {
@@ -37,9 +38,8 @@ describe("selectDistinctOrgIds", () => {
 			// Duplicates per org are the point: a loose index scan must emit each
 			// org exactly once no matter how many rows it owns.
 			yield* database.execute((client) =>
-				client
-					.insert(errorIssues)
-					.values([
+				client.run(
+					PG.insertInto(ErrorIssues).values([
 						issueRow("org_c", "1"),
 						issueRow("org_a", "1"),
 						issueRow("org_a", "2"),
@@ -47,13 +47,12 @@ describe("selectDistinctOrgIds", () => {
 						issueRow("org_b", "1"),
 						issueRow("org_b", "2"),
 					]),
+				),
 			)
 
-			const loose = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, errorIssues, errorIssues.orgId),
-			)
+			const loose = yield* database.execute((client) => selectDistinctOrgIds(client, ErrorIssues))
 			const baseline = yield* database.execute((client) =>
-				client.selectDistinct({ orgId: errorIssues.orgId }).from(errorIssues),
+				client.run(PG.from(ErrorIssues).select("orgId").distinct()),
 			)
 
 			assert.deepStrictEqual([...loose], ["org_a", "org_b", "org_c"])
@@ -66,9 +65,7 @@ describe("selectDistinctOrgIds", () => {
 			const db = createTestDb(createdDbs)
 			const database = yield* Database.pipe(Effect.provide(db.layer))
 
-			const loose = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, errorIssues, errorIssues.orgId),
-			)
+			const loose = yield* database.execute((client) => selectDistinctOrgIds(client, ErrorIssues))
 			assert.deepStrictEqual([...loose], [])
 		}),
 	)
@@ -80,32 +77,34 @@ describe("selectDistinctOrgIds", () => {
 
 			yield* database.execute((client) =>
 				Effect.gen(function* () {
-					yield* client.insert(errorIssueStates).values([
-						{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
-						{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
-						{ orgId: asOrgId("org_a"), issueId: asIssueId(randomUUID()), updatedAt: new Date(0) },
-					])
-					yield* client.insert(orgClickHouseSettings).values(
-						["org_z", "org_y"].map((orgId) => ({
-							orgId,
-							chUrl: "https://ch.example",
-							chUser: "default",
-							chDatabase: "maple",
-							syncStatus: "connected",
-							createdAt: new Date(0),
-							updatedAt: new Date(0),
-							createdBy: "test",
-							updatedBy: "test",
-						})),
+					yield* client.run(
+						PG.insertInto(ErrorIssueStates).values([
+							{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: 0 },
+							{ orgId: asOrgId("org_b"), issueId: asIssueId(randomUUID()), updatedAt: 0 },
+							{ orgId: asOrgId("org_a"), issueId: asIssueId(randomUUID()), updatedAt: 0 },
+						]),
+					)
+					yield* client.run(
+						PG.insertInto(OrgClickHouseSettings).values(
+							["org_z", "org_y"].map((orgId) => ({
+								orgId: asOrgId(orgId),
+								chUrl: "https://ch.example",
+								chUser: "default",
+								chDatabase: "maple",
+								syncStatus: "connected",
+								createdAt: 0,
+								updatedAt: 0,
+								createdBy: "test",
+								updatedBy: "test",
+							})),
+						),
 					)
 				}),
 			)
 
-			const states = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, errorIssueStates, errorIssueStates.orgId),
-			)
+			const states = yield* database.execute((client) => selectDistinctOrgIds(client, ErrorIssueStates))
 			const settings = yield* database.execute((client) =>
-				selectDistinctOrgIds(client, orgClickHouseSettings, orgClickHouseSettings.orgId),
+				selectDistinctOrgIds(client, OrgClickHouseSettings),
 			)
 
 			assert.deepStrictEqual([...states], ["org_a", "org_b"])

@@ -76,7 +76,7 @@ export function RailwaySummaryBand({
 				{
 					key: "healthy",
 					count: Math.max(services.length - saturated - elevated - unbounded, 0),
-					className: "bg-muted-foreground/35",
+					className: TONE_FILL.ok,
 				},
 				{ key: "elevated", count: elevated, className: TONE_FILL.warn },
 				{ key: "saturated", count: saturated, className: TONE_FILL.crit },

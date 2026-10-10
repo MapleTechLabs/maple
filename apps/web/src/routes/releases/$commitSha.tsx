@@ -439,7 +439,7 @@ function ReleaseBodyLoaded({
 			</div>
 			<MetricsGrid
 				items={metrics}
-				waiting={!!waiting}
+				waiting={waiting}
 				syncId={`release-${commitSha}`}
 				overlay={commitMarkers}
 				yAxisWidth={72}

@@ -387,7 +387,7 @@ export function NeedsAttention({
  * ----------------------------------------------------------------------------------------------*/
 
 const SEGMENT_CLASS: Record<HealthSegment["key"], string> = {
-	ok: "bg-muted-foreground/35",
+	ok: TONE_FILL.ok,
 	elevated: TONE_FILL.warn,
 	saturated: TONE_FILL.crit,
 	// Hatched, not a fill: there is no limit to measure against, and a plain

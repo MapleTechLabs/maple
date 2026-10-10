@@ -140,15 +140,15 @@ function UserMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem render={<Link to="/account" />}>
-						<UserIcon size={16} />
+						<UserIcon />
 						Account
 					</DropdownMenuItem>
 					<DropdownMenuItem render={<Link to="/settings" />}>
-						<GearIcon size={16} />
+						<GearIcon />
 						Settings
 					</DropdownMenuItem>
 					<DropdownMenuItem onClick={showKeyboardShortcuts}>
-						<KeyboardIcon size={16} />
+						<KeyboardIcon />
 						Keyboard shortcuts
 						<DropdownMenuShortcut>?</DropdownMenuShortcut>
 					</DropdownMenuItem>
@@ -156,7 +156,7 @@ function UserMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={() => signOut()}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
@@ -191,11 +191,11 @@ function GuestMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem render={<Link to="/settings" />}>
-						<GearIcon size={16} />
+						<GearIcon />
 						Settings
 					</DropdownMenuItem>
 					<DropdownMenuItem onClick={showKeyboardShortcuts}>
-						<KeyboardIcon size={16} />
+						<KeyboardIcon />
 						Keyboard shortcuts
 						<DropdownMenuShortcut>?</DropdownMenuShortcut>
 					</DropdownMenuItem>
@@ -203,7 +203,7 @@ function GuestMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={handleGuestLogout}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
@@ -599,7 +599,7 @@ function SupportMenu() {
 						{/* The channel is created in Maple's Slack for a Clerk org; self-hosted has neither. */}
 						{isClerkAuthEnabled ? (
 							<DropdownMenuItem onClick={() => setSlackOpen(true)}>
-								<SlackIcon size={16} />
+								<SlackIcon />
 								Shared Slack channel
 							</DropdownMenuItem>
 						) : null}
@@ -613,17 +613,17 @@ function SupportMenu() {
 								/>
 							}
 						>
-							<DiscordIcon size={16} />
+							<DiscordIcon />
 							Community Discord
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							render={<a aria-label="Email Support" href="mailto:support@maple.dev" />}
 						>
-							<EnvelopeIcon size={16} />
+							<EnvelopeIcon />
 							Email Support
 						</DropdownMenuItem>
 						<DropdownMenuItem onClick={showKeyboardShortcuts}>
-							<KeyboardIcon size={16} />
+							<KeyboardIcon />
 							Keyboard shortcuts
 							<DropdownMenuShortcut>?</DropdownMenuShortcut>
 						</DropdownMenuItem>

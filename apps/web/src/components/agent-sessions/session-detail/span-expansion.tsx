@@ -6,10 +6,12 @@ import { SpanId, TraceId } from "@maple/domain"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { ErrorSection } from "@maple/ui/components/error-section"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
@@ -182,7 +184,7 @@ function OpenInTracesLink({ span }: { span: AiSessionSpan }) {
 			}
 		>
 			Open in Traces
-			<ExternalLinkIcon size={11} />
+			<ExternalLinkIcon />
 		</Button>
 	)
 }
@@ -257,9 +259,9 @@ function roleColor(role: string): string {
 function MessagesSection({ messages, span }: { messages: readonly SpanMessage[]; span: AiSessionSpan }) {
 	if (messages.length === 0) {
 		return (
-			<EmptyNote>
+			<EmptyMessage>
 				No messages were captured on this span — message capture is opt-in and off by default.
-			</EmptyNote>
+			</EmptyMessage>
 		)
 	}
 	return (
@@ -286,7 +288,7 @@ function SystemMessageRow({ message }: { message: SpanMessage }) {
 	const body = useMessageBody(text)
 
 	return (
-		<div className="rounded-md border border-border/60 bg-muted/30">
+		<Panel tone="muted" className="border-border/60">
 			<button
 				type="button"
 				onClick={() => setOpen((previous) => !previous)}
@@ -321,7 +323,7 @@ function SystemMessageRow({ message }: { message: SpanMessage }) {
 					<CopyButton value={text} label="system message" className="-my-1 shrink-0" />
 				</div>
 			)}
-		</div>
+		</Panel>
 	)
 }
 
@@ -423,7 +425,7 @@ function ToolCallsSection({ span, toolCalls }: { span: AiSessionSpan; toolCalls:
 	}, [])
 
 	if (toolCalls.length === 0) {
-		return <EmptyNote>No tool calls were captured on this span.</EmptyNote>
+		return <EmptyMessage>No tool calls were captured on this span.</EmptyMessage>
 	}
 	// A failed span condemns the call it EXECUTED and no other: its output calls
 	// are the request it made, and a model call that died on its own error never
@@ -648,10 +650,10 @@ function DetailsSection({ span, toolCalls }: { span: AiSessionSpan; toolCalls: r
 						<Skeleton className="h-24 w-full" />
 					</div>
 				))
-				.onError(() => <EmptyNote>Failed to load this span's full attributes.</EmptyNote>)
+				.onError(() => <EmptyMessage>Failed to load this span's full attributes.</EmptyMessage>)
 				.onSuccess((detail) => (
 					<>
-						<AttributesSection attributes={detail.spanAttributes} title="Span Attributes" />
+						<AttributesSection attributes={detail.spanAttributes} title="Span attributes" />
 						<ResourceAttributesSection attributes={detail.resourceAttributes} />
 					</>
 				))
@@ -674,7 +676,7 @@ function FailureBanner({ span }: { span: AiSessionSpan }) {
 		<div className="flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5">
 			<div className="flex flex-wrap items-center gap-2">
 				<CircleWarningIcon size={13} className="shrink-0 text-severity-error" />
-				<span className="font-medium text-[13px] text-severity-error">This call failed</span>
+				<span className="font-medium text-ui text-severity-error">This call failed</span>
 				{span.statusCode === "Error" && (
 					<Badge pill size="xs" mono className={TONE_SOFT.crit}>
 						span status Error
@@ -763,10 +765,6 @@ function IdentityRows({ span }: { span: AiSessionSpan }) {
 /* -------------------------------------------------------------------------- */
 /* Shared bits                                                                */
 /* -------------------------------------------------------------------------- */
-
-function EmptyNote({ children }: { children: ReactNode }) {
-	return <p className="py-6 text-center text-muted-foreground text-sm">{children}</p>
-}
 
 /**
  * A message's parts as one preview body.

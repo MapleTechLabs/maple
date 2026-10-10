@@ -258,7 +258,7 @@ export function ProviderLogo({ type, chatConnector, size = 40, className, bare }
 					loading="lazy"
 					referrerPolicy="no-referrer"
 					onError={() => setErrored(true)}
-					className="rounded-[6px] object-contain"
+					className="rounded-md object-contain"
 					style={{ width: inner, height: inner }}
 				/>
 			)
@@ -271,7 +271,7 @@ export function ProviderLogo({ type, chatConnector, size = 40, className, bare }
 			}
 			return (
 				<span
-					className="flex items-center justify-center rounded-[6px] font-semibold"
+					className="flex items-center justify-center rounded-md font-semibold"
 					style={{
 						width: inner,
 						height: inner,
@@ -291,7 +291,7 @@ export function ProviderLogo({ type, chatConnector, size = 40, className, bare }
 		if (provider.fallbackIcon) {
 			return (
 				<span
-					className="flex items-center justify-center rounded-[6px]"
+					className="flex items-center justify-center rounded-md"
 					style={{
 						width: inner,
 						height: inner,

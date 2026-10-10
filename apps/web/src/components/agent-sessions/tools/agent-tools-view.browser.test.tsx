@@ -17,6 +17,7 @@ import { sessionRowId } from "@maple/agent-sessions"
 import type { ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
+import { AgentSessionsTabs } from "./agent-sessions-tabs"
 import { AgentToolsView, type AgentToolsViewProps } from "./agent-tools-view"
 import { ToolDetailView } from "./tool-detail-view"
 import { ToolErrorModal } from "./tool-error-modal"
@@ -183,9 +184,8 @@ describe("AgentToolsView", () => {
 		expect(reload.closest(".ml-auto")?.parentElement?.contains(search)).toBe(true)
 	})
 
-	it("counts the tabs from what it is given, not the filtered table, and never shows an unknown count", () => {
-		// A name search narrows the table; the tabs must read the same on both pages.
-		renderView({ q: "read" }, vi.fn(), { tabCounts: { sessions: 812 } })
+	it("counts the tabs from what it is given and never shows an unknown count", () => {
+		render(<AgentSessionsTabs active="tools" counts={{ sessions: 812 }} />)
 		expect(document.querySelector('[data-to="/agent-sessions"]')?.textContent).toBe("Sessions812")
 		// The tools count has not landed: no number, rather than a 0.
 		expect(document.querySelector('[data-to="/agent-sessions/tools"]')?.textContent).toBe("Tools")

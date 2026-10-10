@@ -1,7 +1,7 @@
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { useMemo } from "react"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -20,11 +20,16 @@ import { ErrorState } from "@/components/common/error-state"
 import { LONG_RANGE_PRESET_OPTIONS, snapRangeForCache } from "@/lib/time-utils"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
-// `__all__` is the sentinel for the "All Environments" option. Storing it in the
+// `__all__` is the sentinel for the "All environments" option. Storing it in the
 // URL (rather than clearing the param) keeps an explicit all-environments choice
 // sticky, distinct from "no choice → default to production".
 const ALL_ENVIRONMENTS = "__all__"
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
+
+const VIEW_OPTIONS: ReadonlyArray<SegmentedOption<"2d" | "3d">> = [
+	{ value: "2d", label: "2D" },
+	{ value: "3d", label: "3D" },
+]
 
 const serviceMapSearchSchema = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["2d", "3d"])),
@@ -97,7 +102,7 @@ function ServiceMapContent() {
 
 	const environmentItems = useMemo(
 		() => [
-			{ value: ALL_ENVIRONMENTS, label: "All Environments" },
+			{ value: ALL_ENVIRONMENTS, label: "All environments" },
 			...environments.map((e) => ({ value: e.name, label: e.name })),
 		],
 		[environments],
@@ -145,24 +150,13 @@ function ServiceMapContent() {
 				// Wraps, and below the header's side-by-side breakpoint the environment select
 				// takes a row of its own: all three controls on one narrow row left it ~70px.
 				<div className="flex flex-wrap items-center gap-2">
-					<ToggleGroup
-						variant="outline"
+					<SegmentedSelect
 						size="sm"
 						aria-label="Service map view"
-						value={[search.view ?? "2d"]}
-						onValueChange={(values) => {
-							const view = values[0]
-							if (view === "2d" || view === "3d")
-								void navigate({ search: (prev) => ({ ...prev, view }) })
-						}}
-					>
-						<ToggleGroupItem value="2d" aria-label="2D map">
-							2D
-						</ToggleGroupItem>
-						<ToggleGroupItem value="3d" aria-label="3D map">
-							3D
-						</ToggleGroupItem>
-					</ToggleGroup>
+						options={VIEW_OPTIONS}
+						value={search.view ?? "2d"}
+						onChange={(view) => void navigate({ search: (prev) => ({ ...prev, view }) })}
+					/>
 					<Select
 						items={environmentItems}
 						value={selectedEnvironment}

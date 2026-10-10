@@ -21,7 +21,7 @@ export function ConnectButton() {
 			<PopoverTrigger
 				render={
 					<Button variant="default" size="sm" className="gap-2" aria-label="Connect your app">
-						<ConnectionIcon size={14} />
+						<ConnectionIcon />
 						<span className="hidden sm:inline">Connect</span>
 					</Button>
 				}

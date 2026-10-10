@@ -1,4 +1,5 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Button } from "@maple/ui/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -74,13 +75,14 @@ export function ToolScopeRow({
 								<TooltipContent>{`Remove ${chip.kind} ${chip.value}`}</TooltipContent>
 							</Tooltip>
 						))}
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={onClearAll}
-							className="pl-0.5 text-2xs text-muted-foreground underline-offset-2 hover:underline"
+							className="h-auto px-0.5 text-2xs text-muted-foreground sm:text-2xs"
 						>
 							Clear all
-						</button>
+						</Button>
 					</>
 				)}
 			</div>

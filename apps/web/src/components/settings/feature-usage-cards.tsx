@@ -13,6 +13,7 @@ import {
 	type FeatureSpend,
 	type SpendModel,
 } from "@/lib/billing/spend"
+import { StatFigure } from "@/components/common/stat-rail"
 import { formatFeatureUsage } from "./format-feature-usage"
 
 /**
@@ -79,7 +80,7 @@ function FeatureCard({
 						className="mt-1.5 size-2 shrink-0 rounded-full"
 						style={{ background: color }}
 					/>
-					<span className="line-clamp-2 text-sm leading-[18px]">{feature.label}</span>
+					<span className="line-clamp-2 text-sm leading-4.5">{feature.label}</span>
 				</div>
 				{overageCap === null ? (
 					<Badge variant="meta" size="xs" mono className="rounded-none px-1.5">
@@ -110,9 +111,11 @@ function FeatureCard({
 			    inline pair wraps for some units and not others, which is exactly what
 			    knocks the meters out of alignment. */}
 			<div className="mt-2 flex h-11 flex-col justify-start">
-				<span className="font-mono text-xl leading-6 tabular-nums">
-					{formatFeatureUsage(feature.featureId, feature.used)}
-				</span>
+				<StatFigure
+					size="sm"
+					value={formatFeatureUsage(feature.featureId, feature.used)}
+					valueClassName="leading-6"
+				/>
 				<span className="truncate text-2xs leading-4 text-muted-foreground">
 					{feature.unlimited
 						? "unlimited"

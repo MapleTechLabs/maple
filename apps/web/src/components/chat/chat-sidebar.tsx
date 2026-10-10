@@ -110,7 +110,7 @@ export function ChatSidebar({
 			<div className="flex w-full flex-1 flex-col">
 				<div className="p-3">
 					<Button onClick={onCreate} size="sm" className="w-full justify-start gap-2 font-medium">
-						<PlusIcon size={14} />
+						<PlusIcon />
 						New chat
 					</Button>
 				</div>
@@ -248,7 +248,7 @@ function ChatSidebarRow({
 				{isLoading ? (
 					<DotLoader label="Working" color="var(--primary)" />
 				) : Icon ? (
-					<Icon size={14} className="shrink-0 opacity-70" />
+					<Icon size={14} className="shrink-0 text-muted-foreground/70" />
 				) : null}
 				{isRenaming ? (
 					<input
@@ -286,12 +286,12 @@ function ChatSidebarRow({
 						/>
 						<DropdownMenuContent side="right" align="start" sideOffset={4} className="min-w-36">
 							<DropdownMenuItem onClick={onStartRename}>
-								<PencilIcon size={14} />
+								<PencilIcon />
 								Rename
 							</DropdownMenuItem>
 							{onShare && (
 								<DropdownMenuItem onClick={() => onShare(tab)}>
-									<LinkIcon size={14} />
+									<LinkIcon />
 									Copy link
 								</DropdownMenuItem>
 							)}
@@ -302,7 +302,7 @@ function ChatSidebarRow({
 									if (canDelete) setConfirmDelete(true)
 								}}
 							>
-								<TrashIcon size={14} />
+								<TrashIcon />
 								Delete
 							</DropdownMenuItem>
 						</DropdownMenuContent>

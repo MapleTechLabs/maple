@@ -25,7 +25,7 @@ const WORKFLOW_TONE: Record<WorkflowState, string> = {
 	in_progress: IN_FLIGHT_SOFT,
 	in_review: IN_FLIGHT_SOFT,
 	verifying: IN_FLIGHT_SOFT,
-	done: TONE_SOFT.ok,
+	done: TONE_SOFT.done,
 	cancelled: TONE_SOFT.neutral,
 	wontfix: TONE_SOFT.neutral,
 } satisfies Record<WorkflowState, string>

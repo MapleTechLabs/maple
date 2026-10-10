@@ -88,7 +88,7 @@ export function BillingControlsDialog({
 	readonly onOpenChange: (open: boolean) => void
 }) {
 	const [save, saving] = useMutationAction(updateBillingControlsMutation, {
-		success: `${FEATURE_LABELS[featureId]} controls saved.`,
+		success: `${FEATURE_LABELS[featureId]} controls saved`,
 		error: "Billing controls could not be saved.",
 		onSuccess: () => onOpenChange(false),
 	})

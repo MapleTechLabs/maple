@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest"
 import { isRegression } from "./error-tick-persistence"
 
 const HOUR = 60 * 60 * 1000
-const resolvedAt = new Date("2026-08-18T12:00:00Z")
+const resolvedAt = Date.parse("2026-08-18T12:00:00Z")
 
 const priorRow = (
 	overrides: {
 		workflowState?: "done" | "triage" | "in_progress"
-		resolvedAt?: Date | null
+		resolvedAt?: number | null
 		resolvedVersionsJson?: ReadonlyArray<string>
 	} = {},
 ) => ({
@@ -17,7 +17,7 @@ const priorRow = (
 })
 
 const occurrence = (afterHours: number, ...serviceVersions: ReadonlyArray<string>) => ({
-	lastSeenMs: resolvedAt.getTime() + afterHours * HOUR,
+	lastSeenMs: resolvedAt + afterHours * HOUR,
 	serviceVersions: serviceVersions.filter((version) => version !== ""),
 })
 

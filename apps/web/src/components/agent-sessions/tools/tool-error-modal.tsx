@@ -263,7 +263,7 @@ export function ToolErrorModal({
 									disabled={position.index === 0}
 									onClick={() => onStep(-1)}
 								>
-									<ChevronUpIcon size={12} aria-hidden />
+									<ChevronUpIcon aria-hidden />
 								</IconButton>
 								<IconButton
 									variant="outline"
@@ -272,7 +272,7 @@ export function ToolErrorModal({
 									disabled={position.index >= position.total - 1}
 									onClick={() => onStep(1)}
 								>
-									<ChevronDownIcon size={12} aria-hidden />
+									<ChevronDownIcon aria-hidden />
 								</IconButton>
 								<IconButton
 									variant="outline"
@@ -292,9 +292,9 @@ export function ToolErrorModal({
 									}}
 								>
 									{linkCopy === "copied" ? (
-										<CheckIcon size={12} aria-hidden />
+										<CheckIcon aria-hidden />
 									) : (
-										<LinkIcon size={12} aria-hidden />
+										<LinkIcon aria-hidden />
 									)}
 								</IconButton>
 								<Link
@@ -312,7 +312,7 @@ export function ToolErrorModal({
 									/>
 								</Link>
 								<IconButton label="Close" onClick={onClose}>
-									<XmarkIcon size={12} aria-hidden />
+									<XmarkIcon aria-hidden />
 								</IconButton>
 							</div>
 							<div className="flex w-[340px] flex-col gap-1.5">
@@ -804,7 +804,7 @@ function SamplesPane({
 						onClick={() => select(current - 1)}
 						className="text-muted-foreground hover:text-foreground"
 					>
-						<ChevronLeftIcon size={12} aria-hidden />
+						<ChevronLeftIcon aria-hidden />
 					</IconButton>
 					<span className="w-[72px] text-center text-xs tabular-nums text-foreground">
 						{rows.length === 0 ? 0 : current + 1} of {formatToolCount(total)}
@@ -818,7 +818,7 @@ function SamplesPane({
 						onClick={() => select(current + 1)}
 						className="text-muted-foreground hover:text-foreground"
 					>
-						<ChevronRightIcon size={12} aria-hidden />
+						<ChevronRightIcon aria-hidden />
 					</IconButton>
 				</div>
 			</div>

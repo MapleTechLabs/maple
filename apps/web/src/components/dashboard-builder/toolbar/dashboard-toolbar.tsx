@@ -111,7 +111,7 @@ export function DashboardToolbar({
 						disabled={readOnly}
 						aria-label="Add widget"
 					>
-						<PlusIcon size={14} data-icon="inline-start" />
+						<PlusIcon data-icon="inline-start" />
 						<span className="hidden @min-[560px]/page:inline">Add Widget</span>
 					</Button>
 				)}
@@ -123,9 +123,9 @@ export function DashboardToolbar({
 					aria-label={isEdit ? "Done editing" : "Edit dashboard"}
 				>
 					{isEdit ? (
-						<CheckIcon size={14} data-icon="inline-start" />
+						<CheckIcon data-icon="inline-start" />
 					) : (
-						<PencilIcon size={14} data-icon="inline-start" />
+						<PencilIcon data-icon="inline-start" />
 					)}
 					<span className="hidden @min-[560px]/page:inline">{isEdit ? "Done" : "Edit"}</span>
 				</Button>
@@ -136,8 +136,8 @@ export function DashboardToolbar({
 							disabled={readOnly}
 							className="whitespace-nowrap"
 						>
-							<GridIcon size={14} />
-							Auto Layout
+							<GridIcon />
+							Auto layout
 						</DropdownMenuItem>
 					)}
 					{isEdit && (
@@ -146,7 +146,7 @@ export function DashboardToolbar({
 							disabled={readOnly}
 							className="whitespace-nowrap"
 						>
-							<LayersIcon size={14} />
+							<LayersIcon />
 							Add group
 						</DropdownMenuItem>
 					)}
@@ -156,7 +156,7 @@ export function DashboardToolbar({
 							disabled={readOnly}
 							className="whitespace-nowrap"
 						>
-							<BracketsCurlyIcon size={14} />
+							<BracketsCurlyIcon />
 							Variables
 						</DropdownMenuItem>
 					)}
@@ -166,26 +166,26 @@ export function DashboardToolbar({
 							disabled={readOnly}
 							className="whitespace-nowrap"
 						>
-							<TagIcon size={14} />
+							<TagIcon />
 							Tags
 						</DropdownMenuItem>
 					)}
 					{onOpenHistory && (
 						<DropdownMenuItem onClick={onOpenHistory} className="whitespace-nowrap">
-							<HistoryIcon size={14} />
+							<HistoryIcon />
 							Version history
 						</DropdownMenuItem>
 					)}
 					{(isEdit || onOpenHistory) && <DropdownMenuSeparator />}
 					<DropdownMenuItem onClick={() => setShareDialogOpen(true)} className="whitespace-nowrap">
-						<LinkIcon size={14} />
+						<LinkIcon />
 						Share…
 					</DropdownMenuItem>
 					<DropdownMenuItem
 						onClick={() => downloadPortableDashboard(dashboard)}
 						className="whitespace-nowrap"
 					>
-						<DownloadIcon size={14} />
+						<DownloadIcon />
 						Export as JSON
 					</DropdownMenuItem>
 				</RowActionsMenu>
