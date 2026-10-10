@@ -103,6 +103,7 @@ const planetscaleServiceLayer = (fakes: PlanetScaleFakes) =>
 			setMetricsToken: psDie,
 			disconnect: psDie,
 			loadConnection: psDie,
+			loadConnectionById: psDie,
 			webhookConfig: psDie,
 			...fakes.connection,
 		}),

@@ -37,6 +37,7 @@ import {
 } from "@maple/backend/platform/Crypto"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -572,6 +573,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "ScrapeTargetsService", toPersistenceError)
 			const env = yield* Env
 			const discovery = yield* PlanetScaleDiscoveryService
 			const psOAuth = yield* PlanetScaleOAuthService
@@ -585,16 +587,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(ScrapeTargets)
-								.select()
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
-								.limit(1),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+							.limit(1),
+					),
+				)
 
 				return Option.fromNullishOr(rows[0])
 			})
@@ -630,16 +630,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 			const list = Effect.fn("ScrapeTargetsService.list")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(ScrapeTargets)
-								.select()
-								.where(($) => [$.orgId.eq(orgId)])
-								.orderBy(["createdAt", "desc"], ["id", "desc"]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(["createdAt", "desc"], ["id", "desc"]),
+					),
+				)
 
 				return new ScrapeTargetsListResponse({
 					targets: yield* Effect.forEach(rows, rowToResponse),
@@ -766,32 +764,29 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const now = yield* Clock.currentTimeMillis
 				const id = decodeTargetIdSync(randomUUID())
 
-				const inserted = yield* database
-					.execute((db) =>
-						db.run(
-							PG.insertInto(ScrapeTargets)
-								.values({
-									id,
-									orgId,
-									name,
-									serviceName,
-									url,
-									targetType,
-									discoveryConfigJson,
-									scrapeIntervalSeconds:
-										request.scrapeIntervalSeconds ??
-										(targetType === "planetscale" ? 30 : 15),
-									labelsJson: labels ?? null,
-									authType,
-									...credentialFields,
-									enabled: request.enabled !== false,
-									createdAt: now,
-									updatedAt: now,
-								})
-								.returning("id"),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const inserted = yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(ScrapeTargets)
+							.values({
+								id,
+								orgId,
+								name,
+								serviceName,
+								url,
+								targetType,
+								discoveryConfigJson,
+								scrapeIntervalSeconds:
+									request.scrapeIntervalSeconds ?? (targetType === "planetscale" ? 30 : 15),
+								labelsJson: labels ?? null,
+								authType,
+								...credentialFields,
+								enabled: request.enabled !== false,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.returning("id"),
+					),
+				)
 				if (inserted.length !== 1) {
 					return yield* Effect.fail(
 						new ScrapeTargetPersistenceError({
@@ -1016,15 +1011,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					)
 				}
 
-				yield* database
-					.execute((db) =>
-						db.run(
-							PG.update(ScrapeTargets)
-								.set(updates)
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(ScrapeTargets)
+							.set(updates)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)]),
+					),
+				)
 
 				const row = yield* selectById(orgId, targetId)
 				if (Option.isNone(row)) {
@@ -1054,15 +1047,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.deleteFrom(ScrapeTargets)
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
-								.returning("id"),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ScrapeTargets)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+							.returning("id"),
+					),
+				)
 
 				const deleted = Option.fromNullishOr(rows[0])
 				if (Option.isNone(deleted)) {
@@ -1102,20 +1093,18 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const listAllEnabled = Effect.fn("ScrapeTargetsService.listAllEnabled")(function* (
 				interval?: ScrapeIntervalSeconds,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(ScrapeTargets)
-								// Labels as stored: the scraper reads a malformed document as no labels
-								// rather than failing every org's target list.
-								.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
-								.where(($) => [
-									$.enabled.eq(true),
-									interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
-								]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
+							// Labels as stored: the scraper reads a malformed document as no labels
+							// rather than failing every org's target list.
+							.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
+							.where(($) => [
+								$.enabled.eq(true),
+								interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
+							]),
+					),
+				)
 
 				return rows
 			})
@@ -1218,25 +1207,21 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				yield* requireTarget(orgId, targetId)
 				const limit = Math.min(Math.max(query.limit ?? 50, 1), 500)
 				const offset = Math.max(Math.trunc(query.offset ?? 0), 0)
-				return yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(ScrapeTargetChecks)
-								.select()
-								.where(($) => [
-									$.targetId.eq(targetId),
-									$.orgId.eq(orgId),
-									query.startTime !== undefined
-										? $.checkedAt.gte(query.startTime)
-										: undefined,
-									query.endTime !== undefined ? $.checkedAt.lte(query.endTime) : undefined,
-								])
-								.orderBy(["checkedAt", "desc"], ["id", "desc"])
-								.limit(limit)
-								.offset(offset),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				return yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargetChecks)
+							.select()
+							.where(($) => [
+								$.targetId.eq(targetId),
+								$.orgId.eq(orgId),
+								query.startTime !== undefined ? $.checkedAt.gte(query.startTime) : undefined,
+								query.endTime !== undefined ? $.checkedAt.lte(query.endTime) : undefined,
+							])
+							.orderBy(["checkedAt", "desc"], ["id", "desc"])
+							.limit(limit)
+							.offset(offset),
+					),
+				)
 			})
 
 			const probe = Effect.fn("ScrapeTargetsService.probe")(function* (
@@ -1321,16 +1306,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					{ recordChecks: false },
 				)
 
-				const updatedRows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(ScrapeTargets)
-								.select()
-								.where(($) => [$.id.eq(targetId)])
-								.limit(1),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const updatedRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ScrapeTargets)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+							.limit(1),
+					),
+				)
 
 				const updated = Option.fromNullishOr(updatedRows[0])
 				if (Option.isNone(updated)) {

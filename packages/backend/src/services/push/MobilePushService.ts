@@ -574,7 +574,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 									reason: result.reason,
 								}),
 							)
-							yield* devices.disable(device.id, result.reason).pipe(
+							yield* devices.disable(event.orgId, device.id, result.reason).pipe(
 								ignoreLogged("Mobile push: could not disable a dead device", {
 									orgId: event.orgId,
 									deviceId: device.id,
@@ -595,7 +595,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							break
 					}
 				}
-				yield* devices.markPushed(pushed).pipe(
+				yield* devices.markPushed(event.orgId, pushed).pipe(
 					ignoreLogged("Mobile push: could not record which devices were pushed", {
 						orgId: event.orgId,
 						deviceCount: pushed.length,
@@ -732,7 +732,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							break
 						case "unregistered":
 							unregistered += 1
-							yield* devices.disable(device.id, result.reason).pipe(
+							yield* devices.disable(orgId, device.id, result.reason).pipe(
 								ignoreLogged("Mobile push: could not disable a dead device", {
 									orgId,
 									deviceId: device.id,

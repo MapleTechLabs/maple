@@ -29,6 +29,7 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { EdgeCacheService } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -100,6 +101,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "WebAnalyticsDigestService", toPersistenceError)
 			const email = yield* EmailService
 			const env = yield* Env
 			const warehouse = yield* WarehouseQueryService
@@ -458,15 +460,13 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const todayStartMs = now - (now % DAY_MS)
 				const currentDayOfWeek = new Date(now).getUTCDay()
 
-				const subs = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(DigestSubscriptions)
-								.select()
-								.where(($) => [$.webAnalyticsEnabled.eq(true)]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const subs = yield* dbExecute((db) =>
+					db.run(
+						PG.from(DigestSubscriptions)
+							.select()
+							.where(($) => [$.webAnalyticsEnabled.eq(true)]),
+					),
+				)
 
 				const due = subs.filter(
 					(s) =>
@@ -484,25 +484,23 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							const orgId = OrgId.make(rawOrgId)
 							if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) return []
 
-							const claim = yield* database
-								.execute((db) =>
-									db.run(
-										PG.update(DigestSubscriptions)
-											.set({ webAnalyticsLastAttemptedAt: now })
-											.where(($) => [
-												PG.inList(
-													$.id,
-													orgSubs.map((s) => s.id),
-												),
-												PG.or(
-													$.webAnalyticsLastAttemptedAt.isNull(),
-													$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
-												),
-											])
-											.returning("id"),
-									),
-								)
-								.pipe(Effect.mapError(toPersistenceError))
+							const claim = yield* dbExecute((db) =>
+								db.run(
+									PG.update(DigestSubscriptions)
+										.set({ webAnalyticsLastAttemptedAt: now })
+										.where(($) => [
+											PG.inList(
+												$.id,
+												orgSubs.map((s) => s.id),
+											),
+											PG.or(
+												$.webAnalyticsLastAttemptedAt.isNull(),
+												$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
+											),
+										])
+										.returning("id"),
+								),
+							)
 							const claimed = new Set(claim.map((c) => c.id))
 							const claimedSubs = orgSubs.filter((s) => claimed.has(s.id))
 							if (claimedSubs.length === 0) return []

@@ -1130,6 +1130,33 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("findHttpZone returns the enabled zone's account and skips disabled or orphaned rows", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "z-off",
+				zoneName: "off.example.com",
+				enabled: false,
+			})
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "z-orphan",
+				zoneName: "orphan.example.com",
+				accountId: "",
+			})
+			yield* seedStateRow({ dataset: "http_requests", zoneId: ZONE_ID, zoneName: ZONE_NAME })
+			const service = yield* CloudflareAnalyticsService
+
+			const found = yield* service.findHttpZone(ORG, ZONE_NAME)
+			assert.deepStrictEqual(found, { zoneId: ZONE_ID, accountId: ACCOUNT_ID })
+			assert.isNull(yield* service.findHttpZone(ORG, "off.example.com"))
+			assert.isNull(yield* service.findHttpZone(ORG, "orphan.example.com"))
+			assert.isNull(yield* service.findHttpZone(asOrgId("org_other"), ZONE_NAME))
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("pollOrg records GraphQL errors without advancing watermarks", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []

@@ -22,6 +22,7 @@ import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { CliAuthRateLimit } from "@maple/backend/platform/bindings"
@@ -114,6 +115,7 @@ export class CliDeviceAuthService extends Context.Service<
 >()("@maple/api/services/CliDeviceAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "CliDeviceAuthService", persistenceError)
 		const env = yield* Env
 		// Absent outside the api Worker (tests, the CLI): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(CliAuthRateLimit)
@@ -130,11 +132,9 @@ export class CliDeviceAuthService extends Context.Service<
 		).pipe(Effect.orDie)
 
 		const purgeExpired = Effect.fn("CliDeviceAuthService.purgeExpired")(function* (now: number) {
-			yield* database
-				.execute((db) =>
-					db.run(PG.deleteFrom(CliDeviceAuthorizations).where(($) => [$.expiresAt.lt(now)])),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			yield* dbExecute((db) =>
+				db.run(PG.deleteFrom(CliDeviceAuthorizations).where(($) => [$.expiresAt.lt(now)])),
+			)
 		})
 
 		const checkRateLimit = Effect.fn("CliDeviceAuthService.checkRateLimit")(function* (key: string) {
@@ -155,16 +155,14 @@ export class CliDeviceAuthService extends Context.Service<
 			if (normalized.length !== 8) {
 				return yield* new CliDeviceNotFoundError({ message: "CLI login code not found" })
 			}
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(CliDeviceAuthorizations)
-							.select()
-							.where(($) => [$.userCodeHash.eq(hashCode(normalized))])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(CliDeviceAuthorizations)
+						.select()
+						.where(($) => [$.userCodeHash.eq(hashCode(normalized))])
+						.limit(1),
+				),
+			)
 			const row = Option.fromNullishOr(rows[0])
 			if (Option.isNone(row)) {
 				return yield* new CliDeviceNotFoundError({ message: "CLI login code not found" })
@@ -191,19 +189,17 @@ export class CliDeviceAuthService extends Context.Service<
 			const deviceCode = randomBytes(32).toString("base64url")
 			const userCode = makeUserCode()
 			const verificationUri = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/cli-login`
-			yield* database
-				.execute((db) =>
-					db.run(
-						PG.insertInto(CliDeviceAuthorizations).values({
-							deviceCodeHash: hashCode(deviceCode),
-							userCodeHash: hashCode(userCode),
-							deviceName: deviceName.trim().slice(0, 120) || "Maple CLI",
-							createdAt: now,
-							expiresAt: now + DEVICE_TTL_SECONDS * 1000,
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(CliDeviceAuthorizations).values({
+						deviceCodeHash: hashCode(deviceCode),
+						userCodeHash: hashCode(userCode),
+						deviceName: deviceName.trim().slice(0, 120) || "Maple CLI",
+						createdAt: now,
+						expiresAt: now + DEVICE_TTL_SECONDS * 1000,
+					}),
+				),
+			)
 			const displayed = displayUserCode(userCode)
 			return new CliDeviceStartResponse({
 				deviceCode,
@@ -242,26 +238,24 @@ export class CliDeviceAuthService extends Context.Service<
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
 			const now = yield* Clock.currentTimeMillis
-			const updated = yield* database
-				.execute((db) =>
-					db.run(
-						PG.update(CliDeviceAuthorizations)
-							.set({
-								approvedOrgId: identity.orgId,
-								approvedUserId: identity.userId,
-								approvedRoles: [...identity.roles],
-								approvedUserEmail: identity.userEmail,
-								approvedAt: now,
-							})
-							.where(($) => [
-								$.deviceCodeHash.eq(row.deviceCodeHash),
-								$.approvedAt.isNull(),
-								$.deniedAt.isNull(),
-							])
-							.returning("deviceCodeHash"),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(CliDeviceAuthorizations)
+						.set({
+							approvedOrgId: identity.orgId,
+							approvedUserId: identity.userId,
+							approvedRoles: [...identity.roles],
+							approvedUserEmail: identity.userEmail,
+							approvedAt: now,
+						})
+						.where(($) => [
+							$.deviceCodeHash.eq(row.deviceCodeHash),
+							$.approvedAt.isNull(),
+							$.deniedAt.isNull(),
+						])
+						.returning("deviceCodeHash"),
+				),
+			)
 			if (updated.length === 0) {
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
@@ -274,20 +268,18 @@ export class CliDeviceAuthService extends Context.Service<
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
 			const now = yield* Clock.currentTimeMillis
-			const updated = yield* database
-				.execute((db) =>
-					db.run(
-						PG.update(CliDeviceAuthorizations)
-							.set({ deniedAt: now })
-							.where(($) => [
-								$.deviceCodeHash.eq(row.deviceCodeHash),
-								$.approvedAt.isNull(),
-								$.deniedAt.isNull(),
-							])
-							.returning("deviceCodeHash"),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(CliDeviceAuthorizations)
+						.set({ deniedAt: now })
+						.where(($) => [
+							$.deviceCodeHash.eq(row.deviceCodeHash),
+							$.approvedAt.isNull(),
+							$.deniedAt.isNull(),
+						])
+						.returning("deviceCodeHash"),
+				),
+			)
 			if (updated.length === 0) {
 				return yield* new CliDeviceConflictError({ message: "CLI login code was already used" })
 			}
@@ -303,16 +295,14 @@ export class CliDeviceAuthService extends Context.Service<
 		const loadByDeviceCodeHash = Effect.fn("CliDeviceAuthService.loadByDeviceCodeHash")(function* (
 			deviceCodeHash: string,
 		) {
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(CliDeviceAuthorizations)
-							.select()
-							.where(($) => [$.deviceCodeHash.eq(deviceCodeHash)])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(CliDeviceAuthorizations)
+						.select()
+						.where(($) => [$.deviceCodeHash.eq(deviceCodeHash)])
+						.limit(1),
+				),
+			)
 			return Option.fromNullishOr(rows[0])
 		})
 
@@ -347,51 +337,46 @@ export class CliDeviceAuthService extends Context.Service<
 				(message) => new CliDevicePersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
-			const won = yield* database
-				.execute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							const claimed = yield* db.run(
-								PG.update(CliDeviceAuthorizations)
-									.set({
-										apiKeyId,
-										tokenCiphertext: encrypted.ciphertext,
-										tokenIv: encrypted.iv,
-										tokenTag: encrypted.tag,
-									})
-									.where(($) => [
-										$.deviceCodeHash.eq(row.deviceCodeHash),
-										$.apiKeyId.isNull(),
-									])
-									.returning("deviceCodeHash"),
-							)
-							if (claimed.length === 0) return false
-							yield* db.run(
-								PG.insertInto(ApiKeys).values({
-									id: apiKeyId,
-									orgId: approvedOrgId,
-									name: row.deviceName,
-									description: "Created by maple auth login",
-									keyHash: hashApiKey(rawToken, apiKeyHmacKey),
-									keyPrefix: rawToken.slice(0, 12) + "...",
-									kind: "standard",
-									scopes: null,
-									metadataJson: {
-										source: "maple_cli",
-										roles: [...approvedRoles],
-										deviceName: row.deviceName,
-									},
-									expiresAt: now + CLI_KEY_TTL_MS,
-									createdAt: now,
-									createdBy: approvedUserId,
-									createdByEmail: row.approvedUserEmail,
-								}),
-							)
-							return true
-						}),
-					),
-				)
-				.pipe(Effect.mapError(persistenceError))
+			const won = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const claimed = yield* db.run(
+							PG.update(CliDeviceAuthorizations)
+								.set({
+									apiKeyId,
+									tokenCiphertext: encrypted.ciphertext,
+									tokenIv: encrypted.iv,
+									tokenTag: encrypted.tag,
+								})
+								.where(($) => [$.deviceCodeHash.eq(row.deviceCodeHash), $.apiKeyId.isNull()])
+								.returning("deviceCodeHash"),
+						)
+						if (claimed.length === 0) return false
+						yield* db.run(
+							PG.insertInto(ApiKeys).values({
+								id: apiKeyId,
+								orgId: approvedOrgId,
+								name: row.deviceName,
+								description: "Created by maple auth login",
+								keyHash: hashApiKey(rawToken, apiKeyHmacKey),
+								keyPrefix: rawToken.slice(0, 12) + "...",
+								kind: "standard",
+								scopes: null,
+								metadataJson: {
+									source: "maple_cli",
+									roles: [...approvedRoles],
+									deviceName: row.deviceName,
+								},
+								expiresAt: now + CLI_KEY_TTL_MS,
+								createdAt: now,
+								createdBy: approvedUserId,
+								createdByEmail: row.approvedUserEmail,
+							}),
+						)
+						return true
+					}),
+				),
+			)
 			if (!won) {
 				const winner = yield* loadByDeviceCodeHash(row.deviceCodeHash)
 				if (

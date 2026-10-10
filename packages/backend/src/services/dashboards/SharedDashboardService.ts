@@ -34,6 +34,7 @@ import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
 import { Env } from "@maple/backend/platform/Env"
 
@@ -203,6 +204,7 @@ export class SharedDashboardService extends Context.Service<
 >()("@maple/api/services/SharedDashboardService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "SharedDashboardService", toPersistenceError)
 		const env = yield* Env
 
 		/**
@@ -258,20 +260,18 @@ export class SharedDashboardService extends Context.Service<
 			readToken(row).pipe(Effect.map((token) => toDashboardShare(row, token)))
 
 		const loadLive = (orgId: OrgId, scope: ShareScope) =>
-			database
-				.execute((db) =>
-					db.run(
-						PG.from(DashboardShares)
-							.select(shareColumns)
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.dashboardId.eq(scope.dashboardId),
-								scopeMatches($, scope),
-								$.revokedAt.isNull(),
-							]),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			dbExecute((db) =>
+				db.run(
+					PG.from(DashboardShares)
+						.select(shareColumns)
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.dashboardId.eq(scope.dashboardId),
+							scopeMatches($, scope),
+							$.revokedAt.isNull(),
+						]),
+				),
+			)
 
 		const get = Effect.fn("SharedDashboardService.get")(function* (orgId: OrgId, scope: ShareScope) {
 			yield* Effect.annotateCurrentSpan({
@@ -290,19 +290,17 @@ export class SharedDashboardService extends Context.Service<
 			dashboardId: DashboardId,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(DashboardShares)
-							.select(shareColumns)
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.dashboardId.eq(dashboardId),
-								$.revokedAt.isNull(),
-							]),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DashboardShares)
+						.select(shareColumns)
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.dashboardId.eq(dashboardId),
+							$.revokedAt.isNull(),
+						]),
+				),
+			)
 			return yield* Effect.forEach(rows, decodeShare)
 		})
 
@@ -373,16 +371,14 @@ export class SharedDashboardService extends Context.Service<
 			// same URL it had before.
 			const updateMode = (shareId: DashboardShareId) =>
 				Effect.gen(function* () {
-					const updated = yield* database
-						.execute((db) =>
-							db.run(
-								PG.update(DashboardShares)
-									.set({ mode, updatedAt: now, updatedBy: userId })
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(shareId), $.revokedAt.isNull()])
-									.returning(shareColumns),
-							),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
+					const updated = yield* dbExecute((db) =>
+						db.run(
+							PG.update(DashboardShares)
+								.set({ mode, updatedAt: now, updatedBy: userId })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(shareId), $.revokedAt.isNull()])
+								.returning(shareColumns),
+						),
+					)
 
 					const row = updated[0]
 					if (row === undefined) {
@@ -472,22 +468,20 @@ export class SharedDashboardService extends Context.Service<
 			// One transaction: the old row must stop resolving at the same instant the
 			// new one starts. Revoke first so the partial unique index — one live row
 			// per dashboard — is satisfied when the insert lands.
-			const inserted = yield* database
-				.execute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							yield* db.run(
-								PG.update(DashboardShares)
-									.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(existing.id)]),
-							)
-							return yield* db.run(
-								PG.insertInto(DashboardShares).values(values).returning(shareColumns),
-							)
-						}),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const inserted = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.update(DashboardShares)
+								.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(existing.id)]),
+						)
+						return yield* db.run(
+							PG.insertInto(DashboardShares).values(values).returning(shareColumns),
+						)
+					}),
+				),
+			)
 
 			const row = inserted[0]
 			if (row === undefined) {
@@ -514,24 +508,22 @@ export class SharedDashboardService extends Context.Service<
 			})
 			const now = yield* Clock.currentTimeMillis
 
-			const revoked = yield* database
-				.execute((db) =>
-					db.run(
-						PG.update(DashboardShares)
-							// `updatedBy` too, not just the timestamp: revoked rows are kept
-							// for audit, and a row that records only who *created* the link
-							// cannot answer who took it down.
-							.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.dashboardId.eq(scope.dashboardId),
-								scopeMatches($, scope),
-								$.revokedAt.isNull(),
-							])
-							.returning("id"),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const revoked = yield* dbExecute((db) =>
+				db.run(
+					PG.update(DashboardShares)
+						// `updatedBy` too, not just the timestamp: revoked rows are kept
+						// for audit, and a row that records only who *created* the link
+						// cannot answer who took it down.
+						.set({ revokedAt: now, updatedAt: now, updatedBy: userId })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.dashboardId.eq(scope.dashboardId),
+							scopeMatches($, scope),
+							$.revokedAt.isNull(),
+						])
+						.returning("id"),
+				),
+			)
 
 			// Idempotent by design: "stop sharing" on a dashboard that was never
 			// shared is a no-op, not a 404. The dialog can call it without first
@@ -568,15 +560,13 @@ export class SharedDashboardService extends Context.Service<
 			const hmacKey = yield* requireHmacKey
 			const tokenHash = hashShareToken(token, hmacKey)
 
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(DashboardShares)
-							.select(shareColumns)
-							.where(($) => [$.tokenHash.eq(tokenHash), $.revokedAt.isNull()]),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DashboardShares)
+						.select(shareColumns)
+						.where(($) => [$.tokenHash.eq(tokenHash), $.revokedAt.isNull()]),
+				),
+			)
 
 			const row = rows[0]
 			if (row === undefined) {
@@ -611,15 +601,13 @@ export class SharedDashboardService extends Context.Service<
 				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
 			}
 
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(DashboardShares)
-							.select("id", "orgId", "dashboardId", "widgetId")
-							.where(($) => [$.id.eq(shareId), $.mode.eq("public"), $.revokedAt.isNull()]),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DashboardShares)
+						.select("id", "orgId", "dashboardId", "widgetId")
+						.where(($) => [$.id.eq(shareId), $.mode.eq("public"), $.revokedAt.isNull()]),
+				),
+			)
 
 			const row = rows[0]
 			if (row === undefined) {

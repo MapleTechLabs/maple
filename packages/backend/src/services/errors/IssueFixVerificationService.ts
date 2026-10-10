@@ -606,7 +606,13 @@ const make: Effect.Effect<
 			),
 		)
 		yield* dbExecute((db) =>
-			db.run(PG.deleteFrom(ErrorIssuePullRequests).where(($) => [$.id.eq(pullRequestId)])),
+			db.run(
+				PG.deleteFrom(ErrorIssuePullRequests).where(($) => [
+					$.orgId.eq(orgId),
+					$.issueId.eq(issueId),
+					$.id.eq(pullRequestId),
+				]),
+			),
 		)
 		yield* workflow.recordEvent(orgId, issueId, actorId, "pr_unlinked", {
 			payload: { pullRequestId, url: row.url, repoFullName: row.repoFullName, number: row.number },

@@ -22,6 +22,7 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 type IssueRow = OrgRecommendationIssueRow
@@ -80,29 +81,15 @@ export class RecommendationIssueService extends Context.Service<
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
 
-		const runDb = <A>(
-			operation: string,
-			effect: Effect.Effect<A, DatabaseError>,
-		): Effect.Effect<A, RecommendationIssuePersistenceError> =>
-			effect.pipe(
-				Effect.tapCause((cause) =>
-					Effect.logError("Recommendation issue database operation failed").pipe(
-						Effect.annotateLogs({ operation, cause }),
-					),
-				),
-				Effect.mapError(toPersistenceError),
-			)
+		const dbExecute = makeDbExecute(database, "RecommendationIssueService", toPersistenceError)
 
 		const selectAll = (orgId: OrgId) =>
-			runDb(
-				"list",
-				database.execute((db) =>
-					db.run(
-						PG.from(OrgRecommendationIssues)
-							.select()
-							.where(($) => [$.orgId.eq(orgId)])
-							.orderBy(["number", "asc"]),
-					),
+			dbExecute((db) =>
+				db.run(
+					PG.from(OrgRecommendationIssues)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(["number", "asc"]),
 				),
 			)
 
@@ -159,14 +146,11 @@ export class RecommendationIssueService extends Context.Service<
 			}
 			const spanKeys = spanKeysOpt.value
 
-			const mappingRows = yield* runDb(
-				"listMappings",
-				database.execute((db) =>
-					db.run(
-						PG.from(OrgIngestAttributeMappings)
-							.select("sourceKey")
-							.where(($) => [$.orgId.eq(orgId), $.sourceContext.eq("span")]),
-					),
+			const mappingRows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgIngestAttributeMappings)
+						.select("sourceKey")
+						.where(($) => [$.orgId.eq(orgId), $.sourceContext.eq("span")]),
 				),
 			)
 			const mappingSourceKeys = mappingRows.map((row) => row.sourceKey)
@@ -199,10 +183,7 @@ export class RecommendationIssueService extends Context.Service<
 					updatedAt: now,
 					resolvedAt: null,
 				}))
-				yield* runDb(
-					"insert",
-					database.execute((db) => db.run(PG.insertInto(OrgRecommendationIssues).values(rows))),
-				)
+				yield* dbExecute((db) => db.run(PG.insertInto(OrgRecommendationIssues).values(rows)))
 			}
 
 			yield* Effect.forEach(
@@ -218,14 +199,11 @@ export class RecommendationIssueService extends Context.Service<
 								}
 							: undefined),
 					}
-					return runDb(
-						"update",
-						database.execute((db) =>
-							db.run(
-								PG.update(OrgRecommendationIssues)
-									.set(fields)
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(update.id)]),
-							),
+					return dbExecute((db) =>
+						db.run(
+							PG.update(OrgRecommendationIssues)
+								.set(fields)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(update.id)]),
 						),
 					)
 				},
@@ -242,15 +220,12 @@ export class RecommendationIssueService extends Context.Service<
 		) {
 			const orgId = tenant.orgId
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.recommendation_issue.id": id })
-			const existing = yield* runDb(
-				"selectById",
-				database.execute((db) =>
-					db.run(
-						PG.from(OrgRecommendationIssues)
-							.select("id")
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
-							.limit(1),
-					),
+			const existing = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgRecommendationIssues)
+						.select("id")
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
+						.limit(1),
 				),
 			)
 			if (Option.isNone(Option.fromNullishOr(existing[0]))) {
@@ -264,14 +239,11 @@ export class RecommendationIssueService extends Context.Service<
 			}
 
 			const now = yield* Clock.currentTimeMillis
-			yield* runDb(
-				"setStatus",
-				database.execute((db) =>
-					db.run(
-						PG.update(OrgRecommendationIssues)
-							.set({ ...fields, updatedAt: now })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
-					),
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(OrgRecommendationIssues)
+						.set({ ...fields, updatedAt: now })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 				),
 			)
 			return yield* listResponse(orgId)

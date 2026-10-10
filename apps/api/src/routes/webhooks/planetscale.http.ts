@@ -1,11 +1,9 @@
 import { HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
 import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
-import * as PG from "@maple-dev/effect-orm/postgres"
-import { PlanetscaleConnections } from "@maple/db/tables"
 import { Clock, Effect, Option, Redacted, Schema } from "effect"
 import { decryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
-import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import {
 	classifyPlanetScaleEvent,
 	decodePlanetScaleWebhookPayload,
@@ -40,7 +38,7 @@ class PlanetScaleWebhookUnavailable extends Schema.TaggedError<PlanetScaleWebhoo
 
 export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
-		const database = yield* Database
+		const connections = yield* PlanetScaleConnectionService
 		const env = yield* Env
 		const webhookQueue = yield* PlanetScaleWebhookQueue
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
@@ -83,29 +81,9 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 				return yield* reject(404, "missing_connection", "Unknown webhook endpoint")
 			}
 
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(PlanetscaleConnections)
-							.select()
-							.where(($) => [$.id.eq(connectionId)])
-							.limit(1),
-					),
-				)
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new IntegrationsPersistenceError({
-								message:
-									error instanceof Error
-										? error.message
-										: "Failed to load webhook connection",
-							}),
-					),
-				)
-			const connection = rows[0]
+			const connection = yield* connections.loadConnectionById(connectionId)
 			if (
-				connection === undefined ||
+				connection === null ||
 				connection.webhookSecretCiphertext === null ||
 				connection.webhookSecretIv === null ||
 				connection.webhookSecretTag === null

@@ -26,6 +26,7 @@ import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema }
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
@@ -243,6 +244,7 @@ const make: Effect.Effect<
 
 	const toPersistenceError = (error: DatabaseError | OAuthStatePersistenceError) =>
 		new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
+	const dbExecute = makeDbExecute(database, "ChatWorkspaceService", toPersistenceError)
 
 	const notFound = (message: string) => new IntegrationsNotFoundError({ message })
 
@@ -289,16 +291,14 @@ const make: Effect.Effect<
 	})
 
 	const rowsForOrg = (orgId: OrgId) =>
-		database
-			.execute((db) =>
-				db.run(
-					PG.from(ChatWorkspaces)
-						.select()
-						.where(($) => [$.orgId.eq(orgId)])
-						.orderBy(["createdAt", "asc"]),
-				),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+		dbExecute((db) =>
+			db.run(
+				PG.from(ChatWorkspaces)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)])
+					.orderBy(["createdAt", "asc"]),
+			),
+		)
 
 	const list = Effect.fn("ChatWorkspaceService.list")(function* (orgId: OrgId, userId?: UserId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
@@ -443,32 +443,30 @@ const make: Effect.Effect<
 			credentialsTag: sealed?.tag ?? null,
 		}
 
-		const inserted = yield* database
-			.execute((db) =>
-				db.run(
-					PG.insertInto(ChatWorkspaces)
-						.values({
-							id: newWorkspaceId(),
-							orgId,
-							connector: connectorId,
-							externalWorkspaceId: installed.externalWorkspaceId,
-							name: installed.name,
-							settings: {},
-							...credentialColumns,
-							createdAt: now,
-						})
-						.onConflictDoUpdate({
-							target: ["connector", "externalWorkspaceId"],
-							// A re-install refreshes the org's own row (the name and the credential may
-							// both have changed) and keeps its settings. Another org's row is left alone:
-							// the update is skipped, and zero returned rows is the conflict.
-							where: ($) => $.orgId.eq(orgId),
-							set: { name: installed.name, ...credentialColumns },
-						})
-						.returning("id"),
-				),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+		const inserted = yield* dbExecute((db) =>
+			db.run(
+				PG.insertInto(ChatWorkspaces)
+					.values({
+						id: newWorkspaceId(),
+						orgId,
+						connector: connectorId,
+						externalWorkspaceId: installed.externalWorkspaceId,
+						name: installed.name,
+						settings: {},
+						...credentialColumns,
+						createdAt: now,
+					})
+					.onConflictDoUpdate({
+						target: ["connector", "externalWorkspaceId"],
+						// A re-install refreshes the org's own row (the name and the credential may
+						// both have changed) and keeps its settings. Another org's row is left alone:
+						// the update is skipped, and zero returned rows is the conflict.
+						where: ($) => $.orgId.eq(orgId),
+						set: { name: installed.name, ...credentialColumns },
+					})
+					.returning("id"),
+			),
+		)
 		if (inserted.length === 0) {
 			// The branch the conflict guard exists to produce: this workspace is
 			// already linked to a different org. Worth counting, so it is logged.
@@ -625,16 +623,14 @@ const make: Effect.Effect<
 	})
 
 	const loadOwned = Effect.fnUntraced(function* (orgId: OrgId, workspaceId: ChatWorkspaceId) {
-		const rows = yield* database
-			.execute((db) =>
-				db.run(
-					PG.from(ChatWorkspaces)
-						.select()
-						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
-						.limit(1),
-				),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+		const rows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(ChatWorkspaces)
+					.select()
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+					.limit(1),
+			),
+		)
 		const row = rows[0]
 		if (row === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
 		return row
@@ -649,16 +645,14 @@ const make: Effect.Effect<
 		const row = yield* loadOwned(orgId, workspaceId)
 		const connector = yield* requireConnector(row.connector)
 		const validated = yield* validateSettings(connector, settings)
-		const updated = yield* database
-			.execute((db) =>
-				db.run(
-					PG.update(ChatWorkspaces)
-						.set({ settings: validated })
-						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
-						.returning(),
-				),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+		const updated = yield* dbExecute((db) =>
+			db.run(
+				PG.update(ChatWorkspaces)
+					.set({ settings: validated })
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+					.returning(),
+			),
+		)
 		const stored = updated[0]
 		// Lost a race with an unlink: the row was there a statement ago.
 		if (stored === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
@@ -670,15 +664,13 @@ const make: Effect.Effect<
 		workspaceId: ChatWorkspaceId,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		const deleted = yield* database
-			.execute((db) =>
-				db.run(
-					PG.deleteFrom(ChatWorkspaces)
-						.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
-						.returning("connector"),
-				),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+		const deleted = yield* dbExecute((db) =>
+			db.run(
+				PG.deleteFrom(ChatWorkspaces)
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+					.returning("connector"),
+			),
+		)
 		const row = deleted[0]
 		if (row === undefined) {
 			return yield* Effect.fail(notFound("No chat workspace with this id"))

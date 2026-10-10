@@ -28,6 +28,7 @@ import { Clock, Context, Duration, Effect, Layer, Redacted, Schema } from "effec
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import {
@@ -124,6 +125,13 @@ export interface PlanetScaleConnectionServiceApi {
 	readonly loadConnection: (
 		orgId: OrgId,
 	) => Effect.Effect<PlanetScaleConnectionRow | null, IntegrationsPersistenceError>
+	/**
+	 * Load a connection by its own id, unscoped: the public webhook receiver only has the id
+	 * from its path, and the org is derived from the row it finds.
+	 */
+	readonly loadConnectionById: (
+		connectionId: string,
+	) => Effect.Effect<PlanetScaleConnectionRow | null, IntegrationsPersistenceError>
 	/** Webhook endpoint path + decrypted HMAC secret for manual setup (admin-gated at the route). */
 	readonly webhookConfig: (
 		orgId: OrgId,
@@ -159,6 +167,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 >()("@maple/api/services/PlanetScaleConnectionService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "PlanetScaleConnectionService", toPersistenceError)
 		const env = yield* Env
 		const scrapeTargetsService = yield* ScrapeTargetsService
 		const psOAuth = yield* PlanetScaleOAuthService
@@ -307,16 +316,14 @@ export class PlanetScaleConnectionService extends Context.Service<
 		const selectConnection = Effect.fn("PlanetScaleConnectionService.selectConnection")(function* (
 			orgId: OrgId,
 		) {
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(PlanetscaleConnections)
-							.select()
-							.where(($) => [$.orgId.eq(orgId)])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PlanetscaleConnections)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.limit(1),
+				),
+			)
 			return rows[0] ?? null
 		})
 
@@ -325,16 +332,14 @@ export class PlanetScaleConnectionService extends Context.Service<
 		) {
 			const scrapeTargetId = connection.scrapeTargetId
 			if (scrapeTargetId === null) return null
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(ScrapeTargets)
-							.select()
-							.where(($) => [$.orgId.eq(connection.orgId), $.id.eq(scrapeTargetId)])
-							.limit(1),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ScrapeTargets)
+						.select()
+						.where(($) => [$.orgId.eq(connection.orgId), $.id.eq(scrapeTargetId)])
+						.limit(1),
+				),
+			)
 			return rows[0] ?? null
 		})
 
@@ -416,15 +421,13 @@ export class PlanetScaleConnectionService extends Context.Service<
 			orgId: OrgId,
 			organization: string,
 		) {
-			const rows = yield* database
-				.execute((db) =>
-					db.run(
-						PG.from(ScrapeTargets)
-							.select()
-							.where(($) => [$.orgId.eq(orgId), $.targetType.eq("planetscale")]),
-					),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ScrapeTargets)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.targetType.eq("planetscale")]),
+				),
+			)
 			const targetsWithConfig = yield* Effect.forEach(rows, (row) =>
 				Effect.map(decodeStoredDiscoveryConfig(row), (config) => ({ row, config })),
 			)
@@ -548,126 +551,120 @@ export class PlanetScaleConnectionService extends Context.Service<
 							)
 						: null
 
-				const retiredTargets = yield* database
-					.execute((db) =>
-						db.transaction(
-							Effect.gen(function* () {
-								const claimed = yield* db.run(
-									PG.update(ScrapeTargets)
-										.set({ managedBy })
-										.where(($) => [$.orgId.eq(orgId), $.id.eq(scrapeTargetId)])
-										.returning("id"),
+				const retiredTargets = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const claimed = yield* db.run(
+								PG.update(ScrapeTargets)
+									.set({ managedBy })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(scrapeTargetId)])
+									.returning("id"),
+							)
+							if (claimed.length !== 1) {
+								return yield* Effect.fail(
+									new IntegrationsPersistenceError({
+										message:
+											"Replacement PlanetScale scrape target disappeared before binding",
+									}),
 								)
-								if (claimed.length !== 1) {
-									return yield* Effect.fail(
-										new IntegrationsPersistenceError({
-											message:
-												"Replacement PlanetScale scrape target disappeared before binding",
-										}),
-									)
-								}
+							}
 
-								if (existing !== null) {
-									const rebound = yield* db.run(
-										PG.update(PlanetscaleConnections)
-											.set({
-												psOrganization: organization,
-												connectedByUserId,
-												scrapeTargetId,
-												detectedPermissionsJson: { ...permissions },
-												updatedAt: now,
-											})
-											.where(($) => [$.id.eq(existing.id)])
-											.returning("id"),
-									)
-									if (rebound.length !== 1) {
-										return yield* Effect.fail(
-											new IntegrationsPersistenceError({
-												message:
-													"PlanetScale connection disappeared before rebinding",
-											}),
-										)
-									}
-
-									const previousTargetId = existing.scrapeTargetId
-									if (previousTargetId === null || previousTargetId === scrapeTargetId) {
-										return []
-									}
-
-									// Ownership is part of the predicate: a target transferred by a
-									// concurrent operation is never removed by this connection.
-									return yield* db.run(
-										PG.deleteFrom(ScrapeTargets)
-											.where(($) => [
-												$.orgId.eq(orgId),
-												$.id.eq(previousTargetId),
-												$.managedBy.eq(managedBy),
-											])
-											.returning("id"),
-									)
-								}
-
-								if (encryptedWebhookSecret === null) {
-									return yield* Effect.fail(
-										new IntegrationsPersistenceError({
-											message: "Missing webhook secret for new PlanetScale connection",
-										}),
-									)
-								}
-								const inserted = yield* db.run(
-									PG.insertInto(PlanetscaleConnections)
-										.values({
-											id: connectionId,
-											orgId,
+							if (existing !== null) {
+								const rebound = yield* db.run(
+									PG.update(PlanetscaleConnections)
+										.set({
 											psOrganization: organization,
 											connectedByUserId,
 											scrapeTargetId,
-											webhookSecretCiphertext: encryptedWebhookSecret.ciphertext,
-											webhookSecretIv: encryptedWebhookSecret.iv,
-											webhookSecretTag: encryptedWebhookSecret.tag,
 											detectedPermissionsJson: { ...permissions },
-											createdAt: now,
 											updatedAt: now,
 										})
+										.where(($) => [$.id.eq(existing.id)])
 										.returning("id"),
 								)
-								if (inserted.length !== 1) {
+								if (rebound.length !== 1) {
 									return yield* Effect.fail(
 										new IntegrationsPersistenceError({
-											message: "Failed to persist PlanetScale connection",
+											message: "PlanetScale connection disappeared before rebinding",
 										}),
 									)
 								}
-								return []
-							}),
-						),
-					)
-					.pipe(
-						Effect.catchTag("@maple/api/lib/DatabaseError", (error) =>
-							Effect.fail(toPersistenceError(error)),
-						),
-						Effect.tapError(() =>
-							createdTarget
-								? scrapeTargetsService.deleteManaged(orgId, scrapeTargetId).pipe(
-										Effect.catchTag(
-											"@maple/http/errors/ScrapeTargetNotFoundError",
-											() => Effect.void,
+
+								const previousTargetId = existing.scrapeTargetId
+								if (previousTargetId === null || previousTargetId === scrapeTargetId) {
+									return []
+								}
+
+								// Ownership is part of the predicate: a target transferred by a
+								// concurrent operation is never removed by this connection.
+								return yield* db.run(
+									PG.deleteFrom(ScrapeTargets)
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(previousTargetId),
+											$.managedBy.eq(managedBy),
+										])
+										.returning("id"),
+								)
+							}
+
+							if (encryptedWebhookSecret === null) {
+								return yield* Effect.fail(
+									new IntegrationsPersistenceError({
+										message: "Missing webhook secret for new PlanetScale connection",
+									}),
+								)
+							}
+							const inserted = yield* db.run(
+								PG.insertInto(PlanetscaleConnections)
+									.values({
+										id: connectionId,
+										orgId,
+										psOrganization: organization,
+										connectedByUserId,
+										scrapeTargetId,
+										webhookSecretCiphertext: encryptedWebhookSecret.ciphertext,
+										webhookSecretIv: encryptedWebhookSecret.iv,
+										webhookSecretTag: encryptedWebhookSecret.tag,
+										detectedPermissionsJson: { ...permissions },
+										createdAt: now,
+										updatedAt: now,
+									})
+									.returning("id"),
+							)
+							if (inserted.length !== 1) {
+								return yield* Effect.fail(
+									new IntegrationsPersistenceError({
+										message: "Failed to persist PlanetScale connection",
+									}),
+								)
+							}
+							return []
+						}),
+					),
+				).pipe(
+					Effect.tapError(() =>
+						createdTarget
+							? scrapeTargetsService.deleteManaged(orgId, scrapeTargetId).pipe(
+									Effect.catchTag(
+										"@maple/http/errors/ScrapeTargetNotFoundError",
+										() => Effect.void,
+									),
+									Effect.catch((error) =>
+										Effect.logWarning(
+											"Failed to compensate newly created PlanetScale target after binding failure",
+										).pipe(
+											Effect.annotateLogs({
+												orgId,
+												scrapeTargetId,
+												error: String(error),
+											}),
 										),
-										Effect.catch((error) =>
-											Effect.logWarning(
-												"Failed to compensate newly created PlanetScale target after binding failure",
-											).pipe(
-												Effect.annotateLogs({
-													orgId,
-													scrapeTargetId,
-													error: String(error),
-												}),
-											),
-										),
-									)
-								: Effect.void,
-						),
-					)
+									),
+								)
+							: Effect.void,
+					),
+				)
 
 				yield* Effect.forEach(retiredTargets, (target) => discovery.invalidate(target.id), {
 					discard: true,
@@ -766,11 +763,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 						)
 				}
 
-				yield* database
-					.execute((db) =>
-						db.run(PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)])),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)])),
+				)
 			}
 
 			// Drop the OAuth grant too — covers the pending state (grant stored, no
@@ -785,6 +780,20 @@ export class PlanetScaleConnectionService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			return yield* selectConnection(orgId)
+		})
+
+		const loadConnectionById = Effect.fn("PlanetScaleConnectionService.loadConnectionById")(function* (
+			connectionId: string,
+		) {
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PlanetscaleConnections)
+						.select()
+						.where(($) => [$.id.eq(connectionId)])
+						.limit(1),
+				),
+			)
+			return rows[0] ?? null
 		})
 
 		const webhookConfig = Effect.fn("PlanetScaleConnectionService.webhookConfig")(function* (
@@ -822,6 +831,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 			setMetricsToken,
 			disconnect,
 			loadConnection,
+			loadConnectionById,
 			webhookConfig,
 		} satisfies PlanetScaleConnectionServiceApi
 	}),
