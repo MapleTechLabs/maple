@@ -291,7 +291,7 @@ describe("PgConnectionScope", () => {
 
 			// `run` stays typed as DatabaseError — ~200 call sites depend on that —
 			// but the reason travels as a tagged cause instead of flattened prose.
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			assert.instanceOf(error.cause, PgConnectionScopeClosedError)
 		}),
 	)

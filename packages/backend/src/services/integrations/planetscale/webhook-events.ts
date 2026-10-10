@@ -221,12 +221,12 @@ const planetScaleRegistry = (
  * queue retries the delivery instead of acking a lost occurrence.
  */
 export class PlanetScaleIssueConflictUnresolved extends Schema.TaggedError<PlanetScaleIssueConflictUnresolved>()(
-	"@maple/api/planetscale/PlanetScaleIssueConflictUnresolved",
+	"@maple/backend/planetscale/PlanetScaleIssueConflictUnresolved",
 	{ message: Schema.String, orgId: Schema.String, fingerprintHash: Schema.String },
 ) {}
 
 export class PlanetScaleWebhookProjectionInvalid extends Schema.TaggedError<PlanetScaleWebhookProjectionInvalid>()(
-	"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+	"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 	{ message: Schema.String, orgId: Schema.String, connectionId: Schema.String, cause: Schema.Defect() },
 ) {}
 
@@ -850,7 +850,7 @@ export const upsertPlanetScaleIssue: (
 			),
 		)
 		.pipe(
-			Effect.catchTag("@maple/api/planetscale/PlanetScaleIssueConflictUnresolved", (error) =>
+			Effect.catchTag("@maple/backend/planetscale/PlanetScaleIssueConflictUnresolved", (error) =>
 				Effect.fail(new DatabaseError({ message: error.message, cause: error })),
 			),
 		)

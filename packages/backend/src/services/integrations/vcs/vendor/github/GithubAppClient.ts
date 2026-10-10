@@ -14,17 +14,20 @@ import { timestampMs } from "@maple/backend/platform/time"
 // `GithubAppError` is internal to the GitHub layer; `GithubProvider` maps it to
 // the generic `VcsProviderError` at the port boundary.
 
-export class GithubAppError extends Schema.TaggedError<GithubAppError>()("@maple/api/vcs/GithubAppError", {
-	message: Schema.String,
-	status: Schema.optionalKey(Schema.Number),
-	// Which resource the failing call addressed, so the provider can tell an
-	// installation-auth failure (the gone/suspended signal) from a repo-level one.
-	scope: Schema.optionalKey(Schema.Literals(["installation", "repository"])),
-	// Set when the failure is a rate limit too far out to wait through inline:
-	// seconds until the budget returns. The provider maps this to VcsRateLimitedError.
-	retryAfterSeconds: Schema.optionalKey(Schema.Number),
-	cause: Schema.optionalKey(Schema.Defect()),
-}) {}
+export class GithubAppError extends Schema.TaggedError<GithubAppError>()(
+	"@maple/backend/vcs/GithubAppError",
+	{
+		message: Schema.String,
+		status: Schema.optionalKey(Schema.Number),
+		// Which resource the failing call addressed, so the provider can tell an
+		// installation-auth failure (the gone/suspended signal) from a repo-level one.
+		scope: Schema.optionalKey(Schema.Literals(["installation", "repository"])),
+		// Set when the failure is a rate limit too far out to wait through inline:
+		// seconds until the budget returns. The provider maps this to VcsRateLimitedError.
+		retryAfterSeconds: Schema.optionalKey(Schema.Number),
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
 
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"

@@ -51,7 +51,7 @@ const getOrgSelectionHeader = (headers: Record<string, string | undefined>): str
  * construction — it is a defect (500), never a silently unscoped request.
  */
 class V2UnclassifiableRoute extends Schema.TaggedError<V2UnclassifiableRoute>()(
-	"@maple/api/auth/V2UnclassifiableRoute",
+	"@maple/backend/auth/V2UnclassifiableRoute",
 	{
 		message: Schema.String,
 		method: Schema.String,

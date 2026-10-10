@@ -25,7 +25,7 @@ export type DatabaseClient = MapleDb
  * `toDatabaseError` already lifts the root cause's message into `message`, so
  * the diagnostic half survives the narrowing.
  */
-export class DatabaseError extends Schema.TaggedError<DatabaseError>()("@maple/api/lib/DatabaseError", {
+export class DatabaseError extends Schema.TaggedError<DatabaseError>()("@maple/backend/lib/DatabaseError", {
 	message: Schema.String,
 	cause: Schema.Defect({ excludeCause: true }),
 }) {}

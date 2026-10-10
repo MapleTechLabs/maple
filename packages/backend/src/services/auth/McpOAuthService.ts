@@ -35,7 +35,7 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const REFRESH_FAMILY_ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const MCP_SCOPE = "mcp:tools"
 export class McpOAuthProtocolError extends Schema.TaggedError<McpOAuthProtocolError>()(
-	"@maple/api/errors/McpOAuthProtocolError",
+	"@maple/backend/errors/McpOAuthProtocolError",
 	{
 		error: Schema.String,
 		message: Schema.String,
@@ -45,7 +45,7 @@ export class McpOAuthProtocolError extends Schema.TaggedError<McpOAuthProtocolEr
 ) {}
 
 export class McpOAuthRateLimitError extends Schema.TaggedError<McpOAuthRateLimitError>()(
-	"@maple/api/errors/McpOAuthRateLimitError",
+	"@maple/backend/errors/McpOAuthRateLimitError",
 	{ message: Schema.String },
 ) {}
 

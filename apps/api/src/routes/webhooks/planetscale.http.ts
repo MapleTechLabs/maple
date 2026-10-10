@@ -208,7 +208,7 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 		yield* router.add("POST", ROUTE, (req) =>
 			handle(req).pipe(
 				Effect.catchTags({
-					"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid": (error) =>
+					"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid": (error) =>
 						Effect.logWarning(error.message).pipe(
 							Effect.annotateLogs({ errorTag: error._tag, cause: error.cause }),
 							Effect.as(textResponse(error._tag, 400)),

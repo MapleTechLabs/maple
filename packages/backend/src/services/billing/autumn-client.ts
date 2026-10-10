@@ -120,7 +120,7 @@ const customerCacheTtl = (response: unknown): number => {
 // fails with this so `getOrCompute` never stores it, then the caller recovers it
 // into the normal path. Mirrors `AutumnResult` so `.result` stays typed.
 class UncacheableAutumnResult extends Schema.TaggedError<UncacheableAutumnResult>()(
-	"@maple/api/billing/UncacheableAutumnResult",
+	"@maple/backend/billing/UncacheableAutumnResult",
 	{
 		message: Schema.String,
 		result: Schema.Struct({ statusCode: Schema.Number, response: Schema.Unknown }),
@@ -159,7 +159,7 @@ export const readCustomerCached = (
 		)
 		.pipe(
 			Effect.map((cached) => ({ result: cached.value, hit: cached.hit })),
-			Effect.catchTag("@maple/api/billing/UncacheableAutumnResult", (error) =>
+			Effect.catchTag("@maple/backend/billing/UncacheableAutumnResult", (error) =>
 				Effect.succeed({ result: error.result, hit: false }),
 			),
 		)

@@ -101,7 +101,7 @@ const toDashboardShare = (row: DashboardShareRow, token: string) => {
 }
 
 class ShareEncryptionKeyConfigError extends Schema.TaggedError<ShareEncryptionKeyConfigError>()(
-	"@maple/api/services/ShareEncryptionKeyConfigError",
+	"@maple/backend/services/ShareEncryptionKeyConfigError",
 	{ message: Schema.String },
 ) {}
 

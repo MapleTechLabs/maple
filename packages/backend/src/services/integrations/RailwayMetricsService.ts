@@ -92,7 +92,7 @@ export const nextWindow = (watermarkAt: number | null, now: number) => {
 }
 
 class RailwayIngestError extends Schema.TaggedError<RailwayIngestError>()(
-	"@maple/api/integrations/RailwayIngestError",
+	"@maple/backend/integrations/RailwayIngestError",
 	{ message: Schema.String, status: Schema.optionalKey(Schema.Number) },
 ) {}
 
@@ -598,7 +598,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							environmentId: row.environmentId,
 							error: error.message,
 						})
-						if (error._tag === "@maple/api/integrations/RailwayApiError") {
+						if (error._tag === "@maple/backend/integrations/RailwayApiError") {
 							if (error.kind === "unauthorized") {
 								yield* markAuthFailed(error.message)
 								break

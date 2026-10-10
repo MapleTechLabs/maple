@@ -286,7 +286,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 				collectPages(PlanetScale.listOrganizations, { per_page: PAGE_SIZE }, MAX_PAGES),
 			).pipe(
 				// The org picker keys its reconnect CTA on the revoked tag.
-				Effect.catchTag("@maple/api/integrations/PlanetScaleForbiddenError", (forbidden) =>
+				Effect.catchTag("@maple/backend/integrations/PlanetScaleForbiddenError", (forbidden) =>
 					Effect.fail(new IntegrationsRevokedError({ message: forbidden.message })),
 				),
 				Effect.flatMap(({ items }) =>
@@ -307,7 +307,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return yield* fetchOrganizationsWith(accessToken).pipe(
 				// A dead grant is a revoked-authorization failure, not a generic upstream one:
 				// the org picker keys its reconnect CTA on the tag.
-				Effect.catchTag("@maple/api/integrations/PlanetScaleTokenRejectedError", (rejected) =>
+				Effect.catchTag("@maple/backend/integrations/PlanetScaleTokenRejectedError", (rejected) =>
 					Effect.logError("PlanetScale rejected the OAuth token on /v1/organizations").pipe(
 						Effect.andThen(
 							Effect.fail(new IntegrationsRevokedError({ message: rejected.message })),

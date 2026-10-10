@@ -4,14 +4,14 @@ import { makeDbExecute, makePersistenceErrorMapper } from "./db-execute"
 import { DatabaseError, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
 
 class TestPersistenceError extends Schema.TaggedError<TestPersistenceError>()(
-	"@maple/api/test/TestPersistenceError",
+	"@maple/test/TestPersistenceError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.String),
 	},
 ) {}
 
-class TestDomainError extends Schema.TaggedError<TestDomainError>()("@maple/api/test/TestDomainError", {
+class TestDomainError extends Schema.TaggedError<TestDomainError>()("@maple/test/TestDomainError", {
 	message: Schema.String,
 }) {}
 
@@ -80,7 +80,7 @@ describe("makeDbExecute", () => {
 
 			const error = yield* Effect.flip(dbExecute(() => Effect.succeed("unused")))
 
-			assert.strictEqual(error._tag, "@maple/api/test/TestPersistenceError")
+			assert.strictEqual(error._tag, "@maple/test/TestPersistenceError")
 		}),
 	)
 
@@ -100,7 +100,7 @@ describe("makeDbExecute", () => {
 
 			// A domain error raised inside a transaction is the caller's, not the
 			// database's: no retry, no persistence-error disguise.
-			assert.strictEqual(error._tag, "@maple/api/test/TestDomainError")
+			assert.strictEqual(error._tag, "@maple/test/TestDomainError")
 			assert.strictEqual(attempts, 1)
 		}),
 	)

@@ -269,7 +269,7 @@ describe("MCP dispatcher", () => {
 
 				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
 				assert.isDefined(dispatchSpan)
-				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/decode-error")
+				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
 
 				// The inner registry span still FAILS with the decode error (the typed
@@ -277,7 +277,7 @@ describe("MCP dispatcher", () => {
 				// into an Ok span, keyed off the identifier list below.
 				const registrySpan = spans.find((s) => s.name === "McpToolRegistry.execute")
 				assert.isDefined(registrySpan)
-				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain("@maple/mcp/decode-error")
+				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain("@maple/mcp/errors/McpDecodeError")
 			}),
 		)
 

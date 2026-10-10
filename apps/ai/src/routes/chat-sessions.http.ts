@@ -62,7 +62,7 @@ const decodeSendRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(ChatS
  * path, a defect escaping into a recovery handler that fails the same way.
  */
 class ChatSessionUnavailableError extends Schema.TaggedError<ChatSessionUnavailableError>()(
-	"@maple/api/chat/ChatSessionUnavailableError",
+	"@maple/ai/chat/ChatSessionUnavailableError",
 	{ operation: Schema.String },
 ) {
 	override get message(): string {

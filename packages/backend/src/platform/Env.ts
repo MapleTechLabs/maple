@@ -10,7 +10,7 @@ import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-r
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
-	"@maple/api/lib/EnvValidationError",
+	"@maple/backend/lib/EnvValidationError",
 	{ message: Schema.String },
 ) {}
 

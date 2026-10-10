@@ -1049,7 +1049,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					Effect.catchTags({
 						// Only a 403 from the insights endpoint itself: a revoked grant still fails, so
 						// the client sees the reconnect error rather than a scope hint.
-						"@maple/api/integrations/PlanetScaleForbiddenError": () =>
+						"@maple/backend/integrations/PlanetScaleForbiddenError": () =>
 							unavailable(
 								"The PlanetScale authorization lacks the read_databases scope needed for Query Insights.",
 							),

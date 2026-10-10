@@ -79,7 +79,7 @@ const describeIncident = (input: UpsertAlertIssueInput): string => {
  * make it reproducible.
  */
 class SystemActorMissingError extends Schema.TaggedError<SystemActorMissingError>()(
-	"@maple/api/errors/SystemActorMissingError",
+	"@maple/backend/errors/SystemActorMissingError",
 	{ orgId: Schema.String, agentName: Schema.String, message: Schema.String },
 ) {}
 

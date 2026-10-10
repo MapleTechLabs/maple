@@ -24,7 +24,7 @@ import {
 const decodeAuditLogEntryIdSync = Schema.decodeUnknownSync(AuditLogEntryIdSchema)
 
 class AuditQueueSendError extends Schema.TaggedError<AuditQueueSendError>()(
-	"@maple/api/services/audit/AuditQueueSendError",
+	"@maple/backend/services/audit/AuditQueueSendError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
