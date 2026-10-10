@@ -33,6 +33,9 @@
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
 		"test": "turbo test",
+		"changeset": "changeset",
+		"changeset:version": "changeset version && bun install --lockfile-only",
+		"changeset:publish": "bun run ./scripts/publish-packages.ts",
 		"tinybird:manifest": "bun run ./scripts/generate-tinybird-project-manifest.ts",
 		"tinybird:manifest:check": "bun run ./scripts/generate-tinybird-project-manifest.ts --check",
 		"tinybird:datafiles": "bun run ./scripts/write-tinybird-datafiles.ts",
@@ -51,6 +54,7 @@
 		"pg": "^8.23.1"
 	},
 	"devDependencies": {
+		"@changesets/cli": "3.0.3",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/platform-node": "catalog:effect",
 		"@effect/tsgo": "0.48.1",
