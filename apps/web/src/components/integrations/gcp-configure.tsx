@@ -851,11 +851,13 @@ function ConnectStage({
 }
 
 /** When a choice takes effect, said once where the choices are made. */
-function EffectNote() {
+function EffectNote({ scripted = true }: { scripted?: boolean }) {
 	return (
 		<p className={cn(SMALL, "flex items-start gap-1.5")}>
 			<CircleInfoIcon size={12} className="mt-1 shrink-0" aria-hidden />
-			Nothing changes in Google Cloud until you run the script in the next step.
+			{scripted
+				? "Nothing changes in Google Cloud until you run the script in the next step."
+				: "Nothing to run after this: Google Cloud still has what it needs."}
 		</p>
 	)
 }
@@ -942,7 +944,7 @@ function ChooseStage({
 						logRouter={logRouterUrl(connector)}
 					/>
 				) : null}
-				<EffectNote />
+				<EffectNote scripted={changed.length === 0 || scripted} />
 			</DialogPanel>
 			<DialogFooter>
 				<DialogClose render={<Button variant="outline" disabled={saving} />}>Cancel</DialogClose>
@@ -1306,7 +1308,12 @@ export function GcpConfigure({
 						current={stage === "apply" ? 1 : 0}
 					/>
 				</DialogHeader>
-				{target.kind === "new" ? (
+				{/* Each stage brings its own panel and footer. */}
+				{target.kind !== "new" && connector === undefined ? (
+					<DialogPanel>
+						<Skeleton className="h-40 w-full" />
+					</DialogPanel>
+				) : connector === undefined ? (
 					<ConnectStage
 						metricsAvailable={metricsAvailable}
 						existing={connectors}
@@ -1318,10 +1325,6 @@ export function GcpConfigure({
 							onCreated(connector)
 						}}
 					/>
-				) : connector === undefined ? (
-					<DialogPanel>
-						<Skeleton className="h-40 w-full" />
-					</DialogPanel>
 				) : (
 					<ConnectionStages
 						key={connector.id}
