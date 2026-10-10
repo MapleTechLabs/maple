@@ -44,10 +44,10 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				severity: params.severity ?? "all",
-				sampleSize: params.sample_size,
-				limit: params.limit,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
+				"maple.ai.sample_size": params.sample_size,
+				"maple.ai.limit": params.limit,
 			})
 
 			const result = yield* mineLogPatterns({

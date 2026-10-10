@@ -87,8 +87,8 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				status: params.status ?? "all",
-				severity: params.severity ?? "all",
+				"maple.ai.status": params.status ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
 				"result.rowCount": incidents.length,
 			})
 

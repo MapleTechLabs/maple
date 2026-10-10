@@ -92,9 +92,18 @@ export const nextWindow = (watermarkAt: number | null, now: number) => {
 }
 
 class RailwayIngestError extends Schema.TaggedError<RailwayIngestError>()(
-	"@maple/api/integrations/RailwayIngestError",
+	"@maple/backend/integrations/RailwayIngestError",
 	{ message: Schema.String, status: Schema.optionalKey(Schema.Number) },
 ) {}
+
+/** Running counts of one org's poll; `stopped` ends the pass early. */
+interface RailwayPollTally {
+	readonly callsMade: number
+	readonly failures: number
+	readonly rowsIngested: number
+	readonly lastError: string | null
+	readonly stopped: boolean
+}
 
 export interface RailwayPollOrgSummary {
 	readonly orgId: OrgId
@@ -469,7 +478,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				window: { readonly startMs: number; readonly endMs: number },
 			) {
 				yield* Effect.annotateCurrentSpan({
-					"railway.environment.id": row.environmentId,
+					"maple.railway.environment_id": row.environmentId,
 					"maple.railway.window_start": new Date(window.startMs).toISOString(),
 				})
 				const results = yield* fetchEnvironmentMetrics(httpClient, token, {
@@ -514,10 +523,6 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				const holdUntilRef = yield* Ref.make<number | null>(null)
 				const summary = yield* Effect.gen(function* () {
 					const token = yield* decryptToken(claimed)
-					let callsMade = 0
-					let failures = 0
-					let rowsIngested = 0
-					let lastError: string | null = null
 
 					const markAuthFailed = (message: string) =>
 						updateConnection(claimed.id, {
@@ -527,41 +532,42 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							updatedAt: now,
 						})
 
-					if (claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS) {
-						callsMade += 2
-						const discovery = yield* Effect.result(
-							discover(httpClient, token).pipe(
-								Effect.timeoutOrElse({
-									duration: DISCOVERY_TIMEOUT,
-									orElse: () =>
-										Effect.fail(
-											new RailwayApiError({
-												message: "Railway discovery timed out",
-												kind: "upstream",
-											}),
-										),
-								}),
-							),
-						)
-						if (discovery._tag === "Success") {
-							yield* reconcileEnvironments(claimed, discovery.success, now)
-						} else if (discovery.failure.kind === "unauthorized") {
-							yield* markAuthFailed(discovery.failure.message)
-							return { ...skip("token rejected"), callsMade }
-						} else if (discovery.failure.kind === "rate_limited") {
-							yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
-							return { ...skip("rate limited"), callsMade }
-						} else {
-							failures += 1
-							lastError = discovery.failure.message
-						}
+					const needsDiscovery =
+						claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS
+					const discoveryCalls = needsDiscovery ? 2 : 0
+					const discovery = needsDiscovery
+						? yield* Effect.result(
+								discover(httpClient, token).pipe(
+									Effect.timeoutOrElse({
+										duration: DISCOVERY_TIMEOUT,
+										orElse: () =>
+											Effect.fail(
+												new RailwayApiError({
+													message: "Railway discovery timed out",
+													kind: "upstream",
+												}),
+											),
+									}),
+								),
+							)
+						: undefined
+					if (discovery?._tag === "Success") {
+						yield* reconcileEnvironments(claimed, discovery.success, now)
+					} else if (discovery?.failure.kind === "unauthorized") {
+						yield* markAuthFailed(discovery.failure.message)
+						return { ...skip("token rejected"), callsMade: discoveryCalls }
+					} else if (discovery?.failure.kind === "rate_limited") {
+						yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
+						return { ...skip("rate limited"), callsMade: discoveryCalls }
 					}
+					const discoveryError = discovery?._tag === "Failure" ? discovery.failure.message : null
 
 					const ingestKey = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID).pipe(
 						Effect.map((keys) => keys.publicKey),
 						Effect.option,
 					)
-					if (ingestKey._tag === "None") return { ...skip("ingest key unavailable"), callsMade }
+					if (ingestKey._tag === "None")
+						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
 
 					const environments = (yield* loadEnvironments(orgId))
 						.filter((row) => row.enabled)
@@ -571,54 +577,79 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						.sort((a, b) => (a.window?.startMs ?? 0) - (b.window?.startMs ?? 0))
 						.slice(0, MAX_ENVIRONMENT_CALLS_PER_TICK)
 
-					for (const { row, window } of environments) {
-						if (window === null) continue
-						// The rest catch up next tick; their watermarks are untouched.
-						if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) break
-						callsMade += 1
-						const result = yield* Effect.result(
-							pollEnvironment(row, token, ingestKey.value, window),
-						)
-						if (result._tag === "Success") {
-							rowsIngested += result.success
-							yield* updateEnvironment(row.id, {
-								watermarkAt: window.endMs,
-								lastSuccessAt: now,
-								lastError: null,
-								lastErrorAt: null,
-								updatedAt: now,
-							})
-							continue
-						}
-						const error = result.failure
-						failures += 1
-						lastError = error.message
-						yield* Effect.logWarning("railway environment poll failed", {
-							orgId,
-							environmentId: row.environmentId,
-							error: error.message,
-						})
-						if (error._tag === "@maple/api/integrations/RailwayApiError") {
-							if (error.kind === "unauthorized") {
-								yield* markAuthFailed(error.message)
-								break
-							}
-							if (error.kind === "rate_limited") {
-								const retryMs = (error.retryAfterSeconds ?? 0) * 1000
-								yield* Ref.set(holdUntilRef, now + Math.max(retryMs, RATE_LIMIT_HOLD_MS))
-								break
-							}
-						} else if (error.status === 402) {
-							// Over the org's billing limit: back off instead of retrying every tick.
-							yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
-							break
-						}
-						yield* updateEnvironment(row.id, {
-							lastError: error.message.slice(0, 500),
-							lastErrorAt: now,
-							updatedAt: now,
-						})
+					// `stopped` ends the pass: later environments are not polled this tick.
+					const initial: RailwayPollTally = {
+						callsMade: discoveryCalls,
+						failures: discoveryError === null ? 0 : 1,
+						rowsIngested: 0,
+						lastError: discoveryError,
+						stopped: false,
 					}
+					const { callsMade, failures, rowsIngested, lastError } = yield* Effect.reduce(
+						environments,
+						() => initial,
+						(tally, { row, window }) =>
+							tally.stopped || window === null
+								? Effect.succeed(tally)
+								: Effect.gen(function* () {
+										// The rest catch up next tick; their watermarks are untouched.
+										if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) {
+											return { ...tally, stopped: true }
+										}
+										const called = { ...tally, callsMade: tally.callsMade + 1 }
+										const result = yield* Effect.result(
+											pollEnvironment(row, token, ingestKey.value, window),
+										)
+										if (result._tag === "Success") {
+											yield* updateEnvironment(row.id, {
+												watermarkAt: window.endMs,
+												lastSuccessAt: now,
+												lastError: null,
+												lastErrorAt: null,
+												updatedAt: now,
+											})
+											return {
+												...called,
+												rowsIngested: called.rowsIngested + result.success,
+											}
+										}
+										const error = result.failure
+										const failed = {
+											...called,
+											failures: called.failures + 1,
+											lastError: error.message,
+										}
+										yield* Effect.logWarning("railway environment poll failed", {
+											orgId,
+											environmentId: row.environmentId,
+											error: error.message,
+										})
+										if (error._tag === "@maple/backend/integrations/RailwayApiError") {
+											if (error.kind === "unauthorized") {
+												yield* markAuthFailed(error.message)
+												return { ...failed, stopped: true }
+											}
+											if (error.kind === "rate_limited") {
+												const retryMs = (error.retryAfterSeconds ?? 0) * 1000
+												yield* Ref.set(
+													holdUntilRef,
+													now + Math.max(retryMs, RATE_LIMIT_HOLD_MS),
+												)
+												return { ...failed, stopped: true }
+											}
+										} else if (error.status === 402) {
+											// Over the org's billing limit: back off instead of retrying every tick.
+											yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
+											return { ...failed, stopped: true }
+										}
+										yield* updateEnvironment(row.id, {
+											lastError: error.message.slice(0, 500),
+											lastErrorAt: now,
+											updatedAt: now,
+										})
+										return failed
+									}),
+					)
 
 					yield* updateConnection(
 						claimed.id,

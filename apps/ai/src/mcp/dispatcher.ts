@@ -124,9 +124,9 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	// — every usage query had to reconstruct it with `substring(SpanName, 9)`.
 	yield* Effect.annotateCurrentSpan("maple.mcp.tool", name)
 	return yield* executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
-		Effect.catchTag("@maple/mcp/decode-error", (error) =>
+		Effect.catchTag("@maple/mcp/errors/McpDecodeError", (error) =>
 			recordExpectedMcpFailure(error, "Invalid parameters").pipe(
-				Effect.as(failureResult(error.errorMessage, "invalid_parameters")),
+				Effect.as(failureResult(error.message, "invalid_parameters")),
 			),
 		),
 		Effect.catchTags({
@@ -320,6 +320,8 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 	{
 		make: Effect.gen(function* () {
 			const runtimeServices = yield* Effect.context<McpToolRuntimeRequirements>()
+			const sandbox = yield* RepoSandboxService
+			const source = yield* VcsSourceService
 
 			const execute = Effect.fn("McpToolExecutor.execute")(function* (
 				tenant: TenantContext,
@@ -352,13 +354,11 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				target: RepositoryTarget,
 			) {
 				yield* Effect.annotateCurrentSpan({ "vcs.repository.full_name": target.repository })
-				const sandbox = yield* RepoSandboxService
 				yield* sandbox.prepare(tenant.orgId, target)
-			}, Effect.provide(runtimeServices))
+			})
 
 			const prepareConnectedRepositories = Effect.fn("McpToolExecutor.prepareConnectedRepositories")(
 				function* (tenant: TenantContext) {
-					const source = yield* VcsSourceService
 					const repositories = (yield* source.listRepositories(tenant.orgId)).filter(
 						(repository) => !repository.isArchived,
 					)
@@ -385,7 +385,6 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 						Effect.annotateLogs({ error: error.message }),
 					),
 				),
-				Effect.provide(runtimeServices),
 			)
 
 			return { execute, prepareRepository, prepareConnectedRepositories }

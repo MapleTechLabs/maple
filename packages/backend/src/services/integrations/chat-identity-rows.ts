@@ -17,6 +17,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
 /** One person's chat account, and the Maple user it speaks for. */
 export interface ChatIdentityLink {
@@ -30,6 +31,8 @@ export interface ChatIdentityLink {
 
 const persistenceError = (error: DatabaseError) =>
 	new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
+
+const dbExecute = (database: DatabaseApi) => makeDbExecute(database, "chat-identity-rows", persistenceError)
 
 const unreadable = (message: string) => new IntegrationsPersistenceError({ message })
 
@@ -55,20 +58,18 @@ export const resolveChatIdentity = (
 	externalUserId: string,
 ): Effect.Effect<Option.Option<ChatIdentityLink>, IntegrationsPersistenceError> =>
 	Effect.gen(function* () {
-		const rows = yield* database
-			.execute((db) =>
-				db.run(
-					PG.from(ChatIdentities)
-						.select()
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.connector.eq(connectorId),
-							$.externalUserId.eq(externalUserId),
-						])
-						.limit(1),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError))
+		const rows = yield* dbExecute(database)((db) =>
+			db.run(
+				PG.from(ChatIdentities)
+					.select()
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.connector.eq(connectorId),
+						$.externalUserId.eq(externalUserId),
+					])
+					.limit(1),
+			),
+		)
 		const row = rows[0]
 		return row === undefined ? Option.none() : Option.some(readRow(row))
 	})
@@ -83,15 +84,13 @@ export const listChatIdentities = (
 	IntegrationsPersistenceError
 > =>
 	Effect.gen(function* () {
-		const rows = yield* database
-			.execute((db) =>
-				db.run(
-					PG.from(ChatIdentities)
-						.select()
-						.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError))
+		const rows = yield* dbExecute(database)((db) =>
+			db.run(
+				PG.from(ChatIdentities)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
+			),
+		)
 		return rows.map((row) => ({ ...readRow(row), connector: row.connector }))
 	})
 
@@ -122,45 +121,43 @@ export const linkChatIdentity = (
 	},
 ): Effect.Effect<ChatIdentityLink, IntegrationsPersistenceError> =>
 	Effect.gen(function* () {
-		const rows = yield* database
-			.execute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						// Their previous account on this connector, if any. Deleted rather than left
-						// beside the new one (see above).
-						yield* db.run(
-							PG.deleteFrom(ChatIdentities).where(($) => [
-								$.orgId.eq(input.orgId),
-								$.connector.eq(input.connectorId),
-								$.userId.eq(input.userId),
-							]),
-						)
-						return yield* db.run(
-							PG.insertInto(ChatIdentities)
-								.values({
-									id: input.id,
-									orgId: input.orgId,
-									connector: input.connectorId,
-									externalUserId: input.externalUserId,
+		const rows = yield* dbExecute(database)((db) =>
+			db.transaction(
+				Effect.gen(function* () {
+					// Their previous account on this connector, if any. Deleted rather than left
+					// beside the new one (see above).
+					yield* db.run(
+						PG.deleteFrom(ChatIdentities).where(($) => [
+							$.orgId.eq(input.orgId),
+							$.connector.eq(input.connectorId),
+							$.userId.eq(input.userId),
+						]),
+					)
+					return yield* db.run(
+						PG.insertInto(ChatIdentities)
+							.values({
+								id: input.id,
+								orgId: input.orgId,
+								connector: input.connectorId,
+								externalUserId: input.externalUserId,
+								userId: input.userId,
+								displayName: input.displayName ?? null,
+								createdAt: input.nowMs,
+							})
+							// The same account, previously linked to somebody else: take it over.
+							.onConflictDoUpdate({
+								target: ["orgId", "connector", "externalUserId"],
+								set: {
 									userId: input.userId,
 									displayName: input.displayName ?? null,
 									createdAt: input.nowMs,
-								})
-								// The same account, previously linked to somebody else: take it over.
-								.onConflictDoUpdate({
-									target: ["orgId", "connector", "externalUserId"],
-									set: {
-										userId: input.userId,
-										displayName: input.displayName ?? null,
-										createdAt: input.nowMs,
-									},
-								})
-								.returning(),
-						)
-					}),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError))
+								},
+							})
+							.returning(),
+					)
+				}),
+			),
+		)
 		const row = rows[0]
 		if (row === undefined) return yield* Effect.fail(unreadable("The chat identity was not stored"))
 		return readRow(row)
@@ -174,14 +171,12 @@ export const unlinkChatIdentity = (
 	userId: UserId,
 ): Effect.Effect<boolean, IntegrationsPersistenceError> =>
 	Effect.gen(function* () {
-		const deleted = yield* database
-			.execute((db) =>
-				db.run(
-					PG.deleteFrom(ChatIdentities)
-						.where(($) => [$.orgId.eq(orgId), $.connector.eq(connectorId), $.userId.eq(userId)])
-						.returning("id"),
-				),
-			)
-			.pipe(Effect.mapError(persistenceError))
+		const deleted = yield* dbExecute(database)((db) =>
+			db.run(
+				PG.deleteFrom(ChatIdentities)
+					.where(($) => [$.orgId.eq(orgId), $.connector.eq(connectorId), $.userId.eq(userId)])
+					.returning("id"),
+			),
+		)
 		return deleted.length > 0
 	})

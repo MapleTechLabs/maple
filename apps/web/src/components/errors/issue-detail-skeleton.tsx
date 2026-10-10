@@ -67,7 +67,7 @@ export function IssueDetailSkeleton({
 								{/* Present but inert: the action it starts needs the issue it is
 								    still fetching, and removing it would shift the whole row. */}
 								<Button size="sm" disabled>
-									<PulseIcon className="size-3.5" />
+									<PulseIcon />
 									Investigate
 								</Button>
 							</div>
@@ -132,10 +132,8 @@ function OverviewSkeleton({ windowLabel }: { windowLabel: string }) {
 			    chart's own `h-44`, so nothing reflows when the bars arrive. */}
 			<Panel className="shrink-0 gap-3.5 px-5 py-4">
 				<div className="flex items-baseline gap-2.5">
-					<h2 className="font-display text-base font-semibold tracking-[-0.01em] text-foreground">
-						Occurrences
-					</h2>
-					<Skeleton className="h-3.5 w-28" />
+					<h2 className="text-sm font-medium text-foreground">Occurrences</h2>
+					<Skeleton className="h-3 w-28" />
 				</div>
 				<Skeleton className="h-44 w-full rounded-md" />
 			</Panel>

@@ -18,9 +18,9 @@ describe("MCP expected failures", () => {
 		// The suppression only works if the identifier the SDK matches on is the
 		// same string the failure carries.
 		expect([...MCP_ANTICIPATED_ERROR_IDENTIFIERS].sort()).toEqual([
-			"@maple/mcp/decode-error",
 			"@maple/mcp/errors/McpAuthInvalidError",
 			"@maple/mcp/errors/McpAuthMissingError",
+			"@maple/mcp/errors/McpDecodeError",
 			"@maple/mcp/errors/McpInvalidInputError",
 			"@maple/mcp/errors/McpNotReadyError",
 			"@maple/mcp/errors/McpQueryBudgetError",

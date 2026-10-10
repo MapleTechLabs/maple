@@ -1130,6 +1130,33 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("findHttpZone returns the enabled zone's account and skips disabled or orphaned rows", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "z-off",
+				zoneName: "off.example.com",
+				enabled: false,
+			})
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "z-orphan",
+				zoneName: "orphan.example.com",
+				accountId: "",
+			})
+			yield* seedStateRow({ dataset: "http_requests", zoneId: ZONE_ID, zoneName: ZONE_NAME })
+			const service = yield* CloudflareAnalyticsService
+
+			const found = yield* service.findHttpZone(ORG, ZONE_NAME)
+			assert.deepStrictEqual(found, { zoneId: ZONE_ID, accountId: ACCOUNT_ID })
+			assert.isNull(yield* service.findHttpZone(ORG, "off.example.com"))
+			assert.isNull(yield* service.findHttpZone(ORG, "orphan.example.com"))
+			assert.isNull(yield* service.findHttpZone(asOrgId("org_other"), ZONE_NAME))
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("pollOrg records GraphQL errors without advancing watermarks", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
@@ -1633,6 +1660,44 @@ describe("CloudflareAnalyticsService", () => {
 			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 500 })))
+	})
+
+	// Production: an org with no active plan raised a poll error and an upstream error span on
+	// every tick. A 402 is billing state the tenant fixes, so it is health, not an exception.
+	it.effect("a 402 from the gateway is plan-blocked: health recorded, no failure, lease held", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.failures.length, 0)
+			assert.strictEqual(summary.rowsIngested, 0)
+			// The first refusal ends the tick: one gateway call, not one per document.
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const httpRow = rows.find((row) => row.dataset === "http_requests")
+			assert.include(httpRow!.lastError ?? "", "ingest returned 402")
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
+			const anchor = rows.find((row) => row.dataset === "workers_invocations" && row.zoneId === "")
+			assert.isAbove(anchor!.leaseUntil!, T0)
+		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 402 })))
 	})
 
 	it.effect("getStatus reflects zone and workers state rows", () => {

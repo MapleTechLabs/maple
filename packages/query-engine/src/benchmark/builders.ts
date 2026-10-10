@@ -15,7 +15,8 @@
 
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
-import { DateTime, Effect } from "effect"
+import { utcSecondsParam } from "../ch/tables"
+import { DateTime, Effect, Result } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 
@@ -271,11 +272,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
 				window,
 			),
 	},
@@ -285,12 +288,14 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-step-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -300,11 +305,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "visitor-session-step",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "visitor",
-					windowSeconds: 3_600,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "visitor",
+						windowSeconds: 3_600,
+					}),
+				),
 				window,
 			),
 	},
@@ -314,7 +321,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-key",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({ steps: FUNNEL_STEPS, keyBy: "session", windowSeconds: 1_800 }),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "session",
+						windowSeconds: 1_800,
+					}),
+				),
 				window,
 			),
 	},
@@ -324,13 +337,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-dimension",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelBreakdownQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-					breakdownBy: "utmSource",
-					limit: 10,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "utmSource",
+						limit: 10,
+					}),
+				),
 				window,
 			),
 	},
@@ -340,13 +355,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "attribute-session-step",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelBreakdownQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "user",
-					windowSeconds: 7 * 86_400,
-					breakdownBy: "attribute:plan",
-					limit: 5,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "user",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "attribute:plan",
+						limit: 5,
+					}),
+				),
 				window,
 			),
 	},
@@ -358,11 +375,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelTimingQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelTimingQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
 				window,
 			),
 	},
@@ -372,12 +391,14 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "visitor-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelLeaversQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "visitor",
-					windowSeconds: 7 * 86_400,
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelLeaversQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "visitor",
+						windowSeconds: 7 * 86_400,
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -387,15 +408,17 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "after-person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsPathsQuery({
-					anchor: { kind: "event", eventName: "signup_completed" },
-					direction: "after",
-					depth: 3,
-					branches: 4,
-					keyBy: "person",
-					windowSeconds: 86_400,
-					exclude: ["heartbeat", "/"],
-				}),
+				Result.getOrThrow(
+					CH.productEventsPathsQuery({
+						anchor: { kind: "event", eventName: "signup_completed" },
+						direction: "after",
+						depth: 3,
+						branches: 4,
+						keyBy: "person",
+						windowSeconds: 86_400,
+						exclude: ["heartbeat", "/"],
+					}),
+				),
 				window,
 			),
 	},
@@ -405,16 +428,18 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "before-session-pages-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsPathsQuery({
-					anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
-					direction: "before",
-					depth: 2,
-					branches: 3,
-					keyBy: "session",
-					windowSeconds: 3_600,
-					include: "pages",
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsPathsQuery({
+						anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
+						direction: "before",
+						depth: 2,
+						branches: 3,
+						keyBy: "session",
+						windowSeconds: 3_600,
+						include: "pages",
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -1483,8 +1508,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTime("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTime("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 				}).format("JSON"),
 				{ orgId: ORG_ID, hourStart: START_TIME, hourEnd: END_TIME },
 			),
@@ -1498,8 +1523,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTime("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTime("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 					deploymentEnv: "production",
 					parentServiceName: "web",
 				}).format("JSON"),

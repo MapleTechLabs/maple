@@ -154,7 +154,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			endTime: end,
 		})
 
-		const catalogFor = Effect.fn("PrReviewTelemetry.catalog")(function* (
+		const catalogFor = Effect.fn("PrReviewTelemetryService.catalog")(function* (
 			orgId: OrgId,
 			now: DateTime.Utc,
 		) {
@@ -225,7 +225,9 @@ export class PrReviewTelemetryService extends Context.Service<
 			return catalog
 		})
 
-		const referenceSources = Effect.fn("PrReviewTelemetry.referenceSources")(function* (orgId: OrgId) {
+		const referenceSources = Effect.fn("PrReviewTelemetryService.referenceSources")(function* (
+			orgId: OrgId,
+		) {
 			const [rules, boards] = yield* Effect.all(
 				[
 					database.execute((db) =>
@@ -276,7 +278,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			]
 		})
 
-		const openIssues = Effect.fn("PrReviewTelemetry.openIssues")(function* (
+		const openIssues = Effect.fn("PrReviewTelemetryService.openIssues")(function* (
 			orgId: OrgId,
 			now: DateTime.Utc,
 		) {

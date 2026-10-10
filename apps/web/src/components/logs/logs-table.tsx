@@ -10,8 +10,9 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { useHotkeys } from "@tanstack/react-hotkeys"
 
 import { cn } from "@maple/ui/lib/utils"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { type Log } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "./log-detail-sheet"
 import { LogRowExpanded } from "./log-row-expanded"
@@ -44,6 +45,10 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import { useCopy } from "@maple/ui/hooks/use-copy"
 import { logPermalink } from "@/lib/log-key"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 
 const ROW_HEIGHT = 30
 const ROW_HEIGHT_COMFORTABLE = 42
@@ -234,7 +239,6 @@ const LogRow = React.memo(function LogRow({
 			className="border-b border-border/70"
 		>
 			<div
-				data-selected={isSelected || undefined}
 				data-focused={isFocused || undefined}
 				data-expanded={isExpanded || undefined}
 				tabIndex={0}
@@ -251,8 +255,9 @@ const LogRow = React.memo(function LogRow({
 				className={cn(
 					"group/row relative flex w-full gap-3 pl-3 pr-3 text-xs font-mono cursor-pointer",
 					"before:absolute before:inset-y-0 before:left-0 before:w-0.5",
-					"hover:bg-muted/50 data-[selected]:bg-primary/5 data-[expanded]:bg-muted/40 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+					"hover:bg-muted/50 data-[expanded]:bg-muted/40 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 					SEVERITY_ROW.get(severity),
+					isSelected && rowSelectedClass(true),
 					wrap ? "items-start" : "items-center",
 					density === "comfortable" ? "py-3" : "py-[7px]",
 				)}
@@ -293,18 +298,18 @@ const LogRow = React.memo(function LogRow({
 					const numeric =
 						value !== EMPTY_VALUE && value.trim() !== "" && !Number.isNaN(Number(value))
 					return (
-						<span
+						<TruncatedText
 							key={key}
-							title={`${key}=${value}`}
+							text={`${key}=${value}`}
 							style={{ width: PINNED_COL_WIDTH }}
 							className={cn(
-								"shrink-0 truncate text-foreground/80 hidden md:block",
+								"shrink-0 text-foreground/80 hidden md:block",
 								value === EMPTY_VALUE && "text-muted-foreground/40",
 								numeric && "tabular-nums",
 							)}
 						>
 							{value}
-						</span>
+						</TruncatedText>
 					)
 				})}
 				<span className={cn("min-w-0 flex-1 flex gap-2", wrap ? "items-start" : "items-center")}>
@@ -319,9 +324,9 @@ const LogRow = React.memo(function LogRow({
 						<HighlightedText text={wrap ? log.body : first} query={highlight} />
 					</span>
 					{!wrap && hidden > 0 && (
-						<span className="shrink-0 rounded border border-border/70 px-1 text-3xs leading-4 text-muted-foreground">
-							+{hidden} {hidden === 1 ? "line" : "lines"}
-						</span>
+						<Badge variant="meta" size="xs">
+							+{countLabel(hidden, "line")}
+						</Badge>
 					)}
 					{chips.length > 0 && (
 						// A chip that does not fit wraps onto a hidden second line, so chips
@@ -424,9 +429,14 @@ function RowAction({
 	children: React.ReactNode
 }) {
 	return (
-		<button type="button" aria-label={label} title={label} onClick={onClick} className={ROW_ACTION_CLASS}>
+		<IconButton
+			label={label}
+			size="icon-xs"
+			onClick={onClick}
+			className="text-muted-foreground hover:text-foreground"
+		>
 			{children}
-		</button>
+		</IconButton>
 	)
 }
 
@@ -444,14 +454,13 @@ function ColumnHeader({ pinnedColumns, timeZone }: { pinnedColumns: string[]; ti
 			<span className="shrink-0 w-11">Level</span>
 			<span className="shrink-0 w-[128px] hidden md:inline-block">Service</span>
 			{pinnedColumns.map((key) => (
-				<span
+				<TruncatedText
 					key={key}
-					title={key}
 					style={{ width: PINNED_COL_WIDTH }}
-					className="shrink-0 truncate text-foreground/60 hidden md:block"
+					className="shrink-0 text-foreground/60 hidden md:block"
 				>
 					{key}
-				</span>
+				</TruncatedText>
 			))}
 			<span className="min-w-0 flex-1">Message</span>
 		</Eyebrow>
@@ -747,13 +756,9 @@ export function LogsTableView({
 							</span>
 						)}
 						{onClearSearch && (
-							<button
-								type="button"
-								onClick={onClearSearch}
-								className="cursor-pointer text-xs text-primary underline-offset-2 hover:underline"
-							>
+							<Button variant="link" size="xs" onClick={onClearSearch} className="text-primary">
 								Clear search
-							</button>
+							</Button>
 						)}
 						{clearExclusions && (
 							<ExcludedEmptyHint

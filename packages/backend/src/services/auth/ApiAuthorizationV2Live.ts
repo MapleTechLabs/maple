@@ -51,7 +51,7 @@ const getOrgSelectionHeader = (headers: Record<string, string | undefined>): str
  * construction — it is a defect (500), never a silently unscoped request.
  */
 class V2UnclassifiableRoute extends Schema.TaggedError<V2UnclassifiableRoute>()(
-	"@maple/api/auth/V2UnclassifiableRoute",
+	"@maple/backend/auth/V2UnclassifiableRoute",
 	{
 		message: Schema.String,
 		method: Schema.String,
@@ -60,14 +60,14 @@ class V2UnclassifiableRoute extends Schema.TaggedError<V2UnclassifiableRoute>()(
 ) {}
 
 /**
- * v2 flavor of `ApiAuthorizationLayer`: same credential resolution (API key
+ * v2 flavor of `ApiAuthorizationLive`: same credential resolution (API key
  * first, then Clerk/self-hosted session token), but errors use the v2
  * envelope and restricted API keys are scope-checked mechanically from the
  * matched route template (family = first path segment under /v2, GET/HEAD →
  * read else write).
  * Session tokens and legacy null-scope keys bypass scope checks.
  */
-export const ApiAuthorizationV2Layer = Layer.effect(
+export const ApiAuthorizationV2Live = Layer.effect(
 	AuthorizationV2,
 	Effect.gen(function* () {
 		const env = yield* Env

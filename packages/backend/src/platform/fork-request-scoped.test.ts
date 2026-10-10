@@ -105,7 +105,7 @@ describe("forkRequestScoped", () => {
 						yield* forkRequestScoped(
 							dbCall.pipe(
 								Effect.tap(() => Effect.sync(() => (outcome = "ok"))),
-								Effect.catchTag("@maple/api/lib/DatabaseError", () =>
+								Effect.catchTag("@maple/backend/lib/DatabaseError", () =>
 									Effect.sync(() => (outcome = "closed")),
 								),
 							),

@@ -23,7 +23,11 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sessionId: session_id, limit })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.session.id": session_id,
+				"maple.ai.limit": limit,
+			})
 
 			const { session, traces, totalTraceCount } = yield* withTenantExecutor(
 				getSessionTraces({ sessionId: session_id, limit }),
@@ -35,7 +39,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					parameter: "session_id",
 				})
 			}
-			yield* Effect.annotateCurrentSpan("traceCount", traces.length)
+			yield* Effect.annotateCurrentSpan("result.traceCount", traces.length)
 
 			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers
 			// (see the facets handler in session-replay.http.ts); coerce every numeric at the edge.

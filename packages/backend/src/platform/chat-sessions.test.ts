@@ -2,7 +2,7 @@ import type { ChatSessionRpc } from "@maple/domain/chat-session-stub"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { ChatSessions } from "./bindings"
-import { type ChatSessionNamespace, chatSessionsLayer } from "./chat-sessions"
+import { type ChatSessionNamespace, layerChatSessions } from "./chat-sessions"
 
 const rpc: ChatSessionRpc = {
 	cursor: () => Effect.succeed(7),
@@ -31,9 +31,9 @@ const namespace = (label: string, seen: Array<string>): ChatSessionNamespace => 
 const address = (env: Record<string, unknown>, seen: Array<string>) =>
 	Effect.gen(function* () {
 		return yield* (yield* ChatSessions).session("org_a:t").cursor()
-	}).pipe(Effect.provide(chatSessionsLayer(namespace("ns", seen), env)))
+	}).pipe(Effect.provide(layerChatSessions(namespace("ns", seen), env)))
 
-describe("chatSessionsLayer", () => {
+describe("layerChatSessions", () => {
 	it.effect("addresses the object through the eu jurisdiction on the EU instance", () =>
 		Effect.gen(function* () {
 			const seen: Array<string> = []

@@ -109,8 +109,9 @@ Used by `packages/query-engine/src/runtime/query-engine.ts` for the higher-level
 |---|---|---|---|
 | `tenant.userId` | string | `executor.ts` | User ID within the tenant |
 | `tenant.authMode` | string | `executor.ts` | Authentication mode |
+| `tenant.requestedOrgId` | string | `OrgMembershipService.ts`, `packages/auth` | Org id a request asked for, before membership is verified |
 
-**Naming inconsistency to preserve:** `orgId` is camelCase, `tenant.userId` is dotted. `orgId` predates the `tenant.*` namespace, and renaming it would break existing trace search filters and dashboard queries. Do not unify them.
+**Naming inconsistency to preserve:** `orgId` is camelCase, `tenant.userId` is dotted. `orgId` predates the `tenant.*` namespace, and renaming it would break existing trace search filters and dashboard queries. The "Error tick cursor lagging" alert rule groups by `SpanAttributes['orgId']`. Do not unify them.
 
 ---
 
@@ -137,7 +138,7 @@ Source: `packages/query-engine/src/caching/bucket-cache.ts`, `packages/backend/s
 
 ---
 
-## `email.*` group
+## `maple.email.*` group
 
 Emitted by `EmailService` for outbound transactional email.
 
@@ -145,9 +146,9 @@ Source: `packages/backend/src/platform/EmailService.ts`
 
 | Key | Type | Meaning |
 |---|---|---|
-| `email.subject` | string | Subject line |
-| `email.provider` | string | `"cloudflare"` (Cloudflare Email Service Workers binding) |
-| `email.message_id` | string | Provider message id returned after a successful send |
+| `maple.email.subject` | string | Subject line |
+| `maple.email.provider` | string | `"cloudflare"` (Cloudflare Email Service Workers binding) |
+| `maple.email.message_id` | string | Provider message id returned after a successful send |
 
 ---
 
@@ -233,13 +234,12 @@ These appear on individual spans but do not form a reusable namespace. They are 
 | `datasource` | string | `executor.ts` (`ingest`) | Datasource being ingested into |
 | `rowCount` | int | `executor.ts` (`ingest`) | Rows in the ingest payload |
 | `pipe` | string | `executor.ts` (`query`) | Pipe name on the legacy `query()` method |
-| `attributeKey` | string | attribute-explore routes | Attribute key being browsed |
-| `service` | string | many routes | Service name from query params (not `service.name`, which is a resource attribute) |
-| `spanId` | string | trace detail | Span being inspected |
-| `traceId` | string | trace detail | Trace being inspected |
-| `userId` | string | various | User ID context |
-| `limit` | int | listing routes | Result limit |
-| `rootOnly` | bool | trace queries | Filter to root spans only |
-| `incidentCount`, `issueCount`, `errorCount`, `serviceCount`, `orgCount`, `eventCount`, `sentCount`, `totalRequests`, `totalErrors`, `resultCount` | int | various | Result-shape counters on enclosing routes |
+| `windowStartMs`, `windowEndMs` | int | `ErrorsService.processOrg` | Error tick window; the "Error tick cursor lagging" alert rule reads `windowStartMs`, do not rename |
+| `maple.trace.id` / `maple.span.id` | string | trace and span inspection | Trace or span being inspected |
+| `maple.session.id` / `maple.ai.session.id` | string | replay / agent-session reads | Session being read |
+| `maple.issue.id` | string | error issue routes and services | Error issue involved in an operation |
+| `maple.ai.<param>` | various | `apps/ai/src/mcp/tools/*` | MCP tool parameters (`maple.ai.service`, `maple.ai.limit`, `maple.ai.severity`, ...) |
+| `maple.query.<param>` | various | `packages/query-engine/src/observability/*` | Observability read filters (`maple.query.service`, `maple.query.environment`, ...) |
+| `result.<count>` | int | various | Result-shape counters (`result.eventCount`, `result.issueCount`, `result.serviceCount`, `result.traceCount`, ...) |
 
 **Rule:** Extend an existing namespace (`query.*`, `result.*`, `cache.*`, `maple.*`) instead of adding a new bare key. Bare keys make trace search harder.

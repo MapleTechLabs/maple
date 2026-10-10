@@ -48,7 +48,9 @@ export interface ShareWindow {
 	readonly endTime: string
 }
 
-export const resolveShareWindow = Effect.fn("resolveShareWindow")(function* (requested: ShareWindow) {
+export const resolveShareWindow = Effect.fn("ShareWindow.resolveShareWindow")(function* (
+	requested: ShareWindow,
+) {
 	if (!WAREHOUSE_DATETIME.test(requested.startTime) || !WAREHOUSE_DATETIME.test(requested.endTime)) {
 		return yield* invalid("Time range must be absolute timestamps as 'YYYY-MM-DD HH:MM:SS'.")
 	}

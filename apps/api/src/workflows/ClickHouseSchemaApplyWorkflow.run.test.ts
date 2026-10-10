@@ -118,11 +118,11 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			),
 		)
 
-	/** A step that spent its retries is a defect; a typed failure outside the steps stays in the error channel. */
-	const failureMessage = (exit: Exit.Exit<unknown, unknown>, kind: "die" | "fail"): string => {
+	/** A step that spent its retries and a typed failure outside the steps both stay in the error channel. */
+	const failureMessage = (exit: Exit.Exit<unknown, unknown>): string => {
 		assert.isTrue(Exit.isFailure(exit))
 		if (!Exit.isFailure(exit)) return ""
-		assert.isDefined(exit.cause.reasons.find(kind === "die" ? Cause.isDieReason : Cause.isFailReason))
+		assert.isDefined(exit.cause.reasons.find(Cause.isFailReason))
 		const error = Cause.squash(exit.cause)
 		return error instanceof Error ? error.message : String(error)
 	}
@@ -139,7 +139,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 				{ MAPLE_INGEST_KEY_ENCRYPTION_KEY: ENCRYPTION_KEY },
 				"org_wf_cfg",
 			)
-			assert.include(failureMessage(exit, "die"), "No ClickHouse settings configured")
+			assert.include(failureMessage(exit), "No ClickHouse settings configured")
 
 			// Without the failed transition, OrgClickHouseSettingsService reads the
 			// leftover "queued" as already_running forever.
@@ -155,7 +155,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			yield* seedQueuedRun(testDb, "org_wf_nokey")
 
 			const exit = yield* runFor(testDb, {}, "org_wf_nokey")
-			assert.include(failureMessage(exit, "fail"), "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
+			assert.include(failureMessage(exit), "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
 
 			const row = yield* readRun(testDb, "org_wf_nokey")
 			assert.strictEqual(row?.status, "failed")

@@ -123,13 +123,14 @@ export function McpSection() {
 				{!createdSecret && (
 					<p className="text-muted-foreground text-xs mt-3">
 						Client does not support OAuth?{" "}
-						<button
-							type="button"
-							className="text-foreground underline underline-offset-2 hover:no-underline"
+						<Button
+							variant="link"
+							size="xs"
+							className="h-auto p-0 align-baseline underline underline-offset-2 hover:no-underline"
 							onClick={() => setCreateDialogOpen(true)}
 						>
 							Create an MCP key
-						</button>{" "}
+						</Button>{" "}
 						or manage existing keys in{" "}
 						<Link
 							to="/settings"

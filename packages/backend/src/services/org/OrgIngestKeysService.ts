@@ -25,6 +25,7 @@ import {
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 
 const toPersistenceError = (error: unknown) =>
@@ -62,11 +63,7 @@ const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncrypt
 	)
 
 const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncryptionError> =>
-	Effect.try({
-		try: () => parseIngestKeyLookupHmacKey(raw),
-		catch: (error) =>
-			toEncryptionError(error instanceof Error ? error.message : "Invalid ingest key lookup HMAC key"),
-	})
+	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
 
 const encryptPrivateKey = (
 	plaintext: string,
@@ -92,6 +89,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "OrgIngestKeysService", toPersistenceError)
 			/** Holds the ENCRYPTED row exactly as stored — `toResponse` decrypts per request. */
 			const ingestKeysMemo = new Map<string, { row: OrgIngestKeyRow; expiresAt: number }>()
 			const env = yield* Env
@@ -114,16 +112,14 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			// byte-identical duration on a hot path — the exact noise CLAUDE.md warns
 			// against ("be careful adding spans to per-request hot paths").
 			const selectRow = Effect.fnUntraced(function* (orgId: OrgId) {
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(OrgIngestKeys)
-								.select()
-								.where(($) => [$.orgId.eq(orgId)])
-								.limit(1),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgIngestKeys)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
 
 				return Option.fromNullishOr(rows[0])
 			})
@@ -155,10 +151,10 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const now = yield* Clock.currentTimeMillis
 				const memoized = ingestKeysMemo.get(orgId)
 				if (memoized !== undefined && memoized.expiresAt > now) {
-					yield* Effect.annotateCurrentSpan("ingestKeys.memoHit", true)
+					yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", true)
 					return memoized.row
 				}
-				yield* Effect.annotateCurrentSpan("ingestKeys.memoHit", false)
+				yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", false)
 
 				const existing = yield* selectRow(orgId)
 				if (Option.isSome(existing)) {
@@ -175,29 +171,27 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
 
-				yield* database
-					.execute((db) =>
-						db.run(
-							PG.insertInto(OrgIngestKeys)
-								.values({
-									orgId,
-									publicKey,
-									publicKeyHash,
-									privateKeyCiphertext: encryptedPrivate.ciphertext,
-									privateKeyIv: encryptedPrivate.iv,
-									privateKeyTag: encryptedPrivate.tag,
-									privateKeyHash,
-									publicRotatedAt: now,
-									privateRotatedAt: now,
-									createdAt: now,
-									updatedAt: now,
-									createdBy: userId,
-									updatedBy: userId,
-								})
-								.onConflictDoNothing(),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgIngestKeys)
+							.values({
+								orgId,
+								publicKey,
+								publicKeyHash,
+								privateKeyCiphertext: encryptedPrivate.ciphertext,
+								privateKeyIv: encryptedPrivate.iv,
+								privateKeyTag: encryptedPrivate.tag,
+								privateKeyHash,
+								publicRotatedAt: now,
+								privateRotatedAt: now,
+								createdAt: now,
+								updatedAt: now,
+								createdBy: userId,
+								updatedBy: userId,
+							})
+							.onConflictDoNothing(),
+					),
+				)
 
 				const row = yield* selectRow(orgId)
 				if (Option.isNone(row)) {
@@ -237,20 +231,18 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 						: Result.fail(orgId)
 				})
 				yield* Effect.annotateCurrentSpan({
-					"ingestKeys.requested": memoHits.length + misses.length,
-					"ingestKeys.memoMisses": misses.length,
+					"maple.ingest_keys.requested": memoHits.length + misses.length,
+					"maple.ingest_keys.memo_misses": misses.length,
 				})
 
 				const selected = Arr.isArrayNonEmpty(misses)
-					? yield* database
-							.execute((db) =>
-								db.run(
-									PG.from(OrgIngestKeys)
-										.select()
-										.where(($) => [$.orgId.in_(...misses)]),
-								),
-							)
-							.pipe(Effect.mapError(toPersistenceError))
+					? yield* dbExecute((db) =>
+							db.run(
+								PG.from(OrgIngestKeys)
+									.select()
+									.where(($) => [$.orgId.in_(...misses)]),
+							),
+						)
 					: []
 				yield* Effect.forEach(
 					selected,
@@ -289,21 +281,19 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const publicKey = generatePublicKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 
-				yield* database
-					.execute((db) =>
-						db.run(
-							PG.update(OrgIngestKeys)
-								.set({
-									publicKey,
-									publicKeyHash,
-									publicRotatedAt: now,
-									updatedAt: now,
-									updatedBy: userId,
-								})
-								.where(($) => [$.orgId.eq(orgId)]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgIngestKeys)
+							.set({
+								publicKey,
+								publicKeyHash,
+								publicRotatedAt: now,
+								updatedAt: now,
+								updatedBy: userId,
+							})
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
 
 				// The memoized row is now stale in this isolate; others fall off within
 				// the TTL. Must come before the re-read so it repopulates with the new key.
@@ -333,23 +323,21 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
 
-				yield* database
-					.execute((db) =>
-						db.run(
-							PG.update(OrgIngestKeys)
-								.set({
-									privateKeyCiphertext: encryptedPrivate.ciphertext,
-									privateKeyIv: encryptedPrivate.iv,
-									privateKeyTag: encryptedPrivate.tag,
-									privateKeyHash,
-									privateRotatedAt: now,
-									updatedAt: now,
-									updatedBy: userId,
-								})
-								.where(($) => [$.orgId.eq(orgId)]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgIngestKeys)
+							.set({
+								privateKeyCiphertext: encryptedPrivate.ciphertext,
+								privateKeyIv: encryptedPrivate.iv,
+								privateKeyTag: encryptedPrivate.tag,
+								privateKeyHash,
+								privateRotatedAt: now,
+								updatedAt: now,
+								updatedBy: userId,
+							})
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+				)
 
 				ingestKeysMemo.delete(orgId)
 
@@ -373,20 +361,18 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				if (!keyType) return Option.none()
 
 				const keyHash = hashIngestKey(rawKey, lookupHmacKey)
-				const rows = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(OrgIngestKeys)
-								.select("orgId")
-								.where(($) => [
-									keyType === "public"
-										? $.publicKeyHash.eq(keyHash)
-										: $.privateKeyHash.eq(keyHash),
-								])
-								.limit(1),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgIngestKeys)
+							.select("orgId")
+							.where(($) => [
+								keyType === "public"
+									? $.publicKeyHash.eq(keyHash)
+									: $.privateKeyHash.eq(keyHash),
+							])
+							.limit(1),
+					),
+				)
 
 				const row = Option.fromNullishOr(rows[0])
 				if (Option.isNone(row)) return Option.none()
@@ -409,16 +395,4 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly getOrCreate = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.getOrCreate(orgId, userId))
-
-	static readonly rerollPublic = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.rerollPublic(orgId, userId))
-
-	static readonly rerollPrivate = (orgId: OrgId, userId: UserId) =>
-		this.use((service) => service.rerollPrivate(orgId, userId))
-
-	static readonly resolveIngestKey = (rawKey: string) =>
-		this.use((service) => service.resolveIngestKey(rawKey))
 }

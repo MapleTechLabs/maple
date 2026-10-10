@@ -11,6 +11,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { IN_FLIGHT_SOFT } from "./workflow-badge"
 
 import { MagnifierCheckIcon } from "@/components/icons"
+import { SectionHeading } from "@/components/common/section-heading"
 
 /**
  * The post-merge fix check: what it is waiting for, why that long, and what it
@@ -94,7 +95,7 @@ export function IssueVerificationCard({
 			<div className="flex items-center justify-between gap-2">
 				<div className="flex items-center gap-2">
 					<MagnifierCheckIcon className="size-4 text-muted-foreground" />
-					<h2 className="text-sm font-medium text-foreground">Fix verification</h2>
+					<SectionHeading title="Fix verification" />
 				</div>
 				<Badge variant="outline" className={cn("shrink-0", STATUS_TONE[verification.status])}>
 					{STATUS_LABEL[verification.status]}

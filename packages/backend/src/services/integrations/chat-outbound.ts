@@ -62,7 +62,7 @@ export interface OwnedChatWorkspace {
  * The org's workspace by id, or `None` when the org has no such workspace — or links it through a
  * connector this build no longer ships, which is the same answer to a caller that wants to post.
  */
-export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(function* (
+export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorkspace")(function* (
 	database: DatabaseApi,
 	registry: ReadonlyArray<RegisteredChatConnector>,
 	orgId: OrgId,
@@ -81,7 +81,7 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 	if (row === undefined) return Option.none<OwnedChatWorkspace>()
 	const connector = Arr.findFirst(registry, (candidate) => candidate.id === row.connector)
 	if (Option.isNone(connector)) return Option.none<OwnedChatWorkspace>()
-	yield* Effect.annotateCurrentSpan({ "chat.connector": connector.value.id })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.value.id })
 	const sealed = storedCredentials(row)
 	const credentials =
 		sealed === null

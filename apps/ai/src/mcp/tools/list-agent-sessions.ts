@@ -120,7 +120,12 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			}
 
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sortBy, limit, offset })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.sort_by": sortBy,
+				"maple.ai.limit": limit,
+				"maple.ai.offset": offset,
+			})
 
 			const page = yield* listAiSessions(
 				tenant,

@@ -34,7 +34,7 @@ Moving a group to `/internal` swaps `Authorization` for `SessionAuthorization`, 
 
 Three consequences, all deliberate:
 
-- **No scope.** `requiredScopeForRoute` would derive the family `share` from the path, but it is only called by `ApiAuthorizationV2Layer`, which these routes never run. There is no `share:read` scope and nothing issues one.
+- **No scope.** `requiredScopeForRoute` would derive the family `share` from the path, but it is only called by `ApiAuthorizationV2Live`, which these routes never run. There is no `share:read` scope and nothing issues one.
 - **`security: []` and no `401`** in the OpenAPI spec. `openapi.test.ts` exempts these operations by operationId through `PUBLIC_OPERATION_IDS`. It is an allowlist, so a new public operation cannot appear without someone editing it. Every other operation guarantee still applies to them.
 - **The v2 rate limiter never runs.** These routes carry their own per-token and per-IP limiter in the handler; it is the only one on the path, not a supplement.
 

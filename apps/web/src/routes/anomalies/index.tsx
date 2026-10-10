@@ -35,6 +35,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { ConnectionIcon } from "@/components/icons"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import type { AnomalyIncidentDocument, AnomalyIncidentId } from "@maple/domain/http"
@@ -387,31 +388,40 @@ function AnomaliesPageBody({
 		scrollTo: (id) => scrollIntoView(id),
 	})
 
+	// Named separately from "Clear filters": an inclusion is visible in what
+	// came back, an exclusion only in what did not.
+	const excludedHint = (
+		<ExcludedEmptyHint excluded={excludedValues} onClear={onClearExclusions} className="max-w-lg" />
+	)
+
+	if (incidents.length === 0 && hasActiveFilters) {
+		return (
+			<div className="p-4">
+				<FilteredEmpty
+					noun="anomalies"
+					description="Try widening or clearing the filters."
+					onClear={onClearFilters}
+					detail={excludedHint}
+				/>
+			</div>
+		)
+	}
+
 	return incidents.length === 0 ? (
 		<div className="p-4">
 			<Empty>
 				<EmptyHeader>
-					<EmptyTitle>
-						{hasActiveFilters
-							? "No anomalies match the current filters"
-							: status === "open"
-								? "No open anomalies"
-								: "No anomalies"}
-					</EmptyTitle>
+					<EmptyTitle>{status === "open" ? "No open anomalies" : "No anomalies"}</EmptyTitle>
 					<EmptyDescription>
-						{hasActiveFilters
-							? "Try widening or clearing the filters."
-							: "The detector compares every service's error rate, latency, throughput, error fingerprints, and log volume against its own 7-day baseline. Incidents appear here when something deviates."}
-						{!hasActiveFilters && tracePresence.status === "absent"
+						{
+							"The detector compares every service's error rate, latency, throughput, error fingerprints, and log volume against its own 7-day baseline. Incidents appear here when something deviates."
+						}
+						{tracePresence.status === "absent"
 							? " Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."
 							: null}
 					</EmptyDescription>
 				</EmptyHeader>
-				{hasActiveFilters ? (
-					<Button variant="outline" size="sm" onClick={onClearFilters}>
-						Clear filters
-					</Button>
-				) : tracePresence.status === "absent" ? (
+				{tracePresence.status === "absent" ? (
 					<EmptyContent>
 						<EmptyActions>
 							<Button
@@ -419,7 +429,7 @@ function AnomaliesPageBody({
 								className="gap-2"
 								render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 							>
-								<ConnectionIcon size={14} />
+								<ConnectionIcon />
 								Set up tracing
 							</Button>
 							<DocsLink page="instrumentation">Setup guide</DocsLink>
@@ -435,13 +445,7 @@ function AnomaliesPageBody({
 						</EmptyActions>
 					</EmptyContent>
 				) : null}
-				{/* Named separately from "Clear filters": an inclusion is visible in what
-				    came back, an exclusion only in what did not. */}
-				<ExcludedEmptyHint
-					excluded={excludedValues}
-					onClear={onClearExclusions}
-					className="max-w-lg"
-				/>
+				{excludedHint}
 			</Empty>
 		</div>
 	) : (

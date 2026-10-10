@@ -51,7 +51,11 @@ export const optionalSecret = (name: string): Config.Config<Option.Option<Redact
  */
 export const resolveConnectorConfig = (connector: IngressConnector): Effect.Effect<ConnectorConfigResult> =>
 	Effect.forEach(connector.ingress.requiredConfig, (key) =>
-		Effect.map(optionalSetting(key.name), (value) => [key.name, value] as const),
+		optionalSetting(key.name).pipe(
+			// `optionalSetting` already reads an unusable binding as absent; this only tells the type.
+			Effect.orElseSucceed(() => Option.none<string>()),
+			Effect.map((value) => [key.name, value] as const),
+		),
 	).pipe(
 		Effect.map((entries): ConnectorConfigResult => {
 			const config = new Map<string, string>()
@@ -62,8 +66,6 @@ export const resolveConnectorConfig = (connector: IngressConnector): Effect.Effe
 			}
 			return missing.length === 0 ? { _tag: "ready", config } : { _tag: "missing", names: missing }
 		}),
-		// `optionalSetting` recovers every ConfigError, so this cannot fail; the type just cannot see it.
-		Effect.orDie,
 	)
 
 /** The connectors whose events arrive over a long-lived socket rather than an HTTP request. */

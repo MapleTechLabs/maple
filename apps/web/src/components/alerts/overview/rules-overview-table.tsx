@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 import { Fragment } from "react"
 
 import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
@@ -14,6 +14,7 @@ import { CircleWarningIcon } from "@/components/icons"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { worstState } from "@/lib/alerts/rule-status"
 import { RelativeTime } from "@/components/common/relative-time"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
@@ -59,8 +60,6 @@ export function RulesOverviewTable({
 	isToggling?: boolean
 	onToggle: (rule: AlertRuleDocument) => void
 }) {
-	const navigate = useNavigate()
-
 	const renderRow = (rule: AlertRuleDocument, key: string) => {
 		const derived = derivedByRuleId.get(rule.id)
 		const state = worstState(statesByRule.get(rule.id) ?? [])
@@ -73,12 +72,8 @@ export function RulesOverviewTable({
 		const lastEvaluatedAt = state?.last_evaluated_at ?? rule.lastEvaluatedAt
 
 		return (
-			<TableRow
-				key={key}
-				className="cursor-pointer"
-				onClick={() => navigate({ to: "/alerts/$ruleId", params: { ruleId: rule.id } })}
-			>
-				<TableCell onClick={(e) => e.stopPropagation()}>
+			<TableRow key={key}>
+				<TableCell className={ROW_LINK_LIFT}>
 					<Switch
 						checked={rule.enabled}
 						onCheckedChange={() => onToggle(rule)}
@@ -87,11 +82,17 @@ export function RulesOverviewTable({
 				</TableCell>
 				<TableCell className="min-w-0">
 					<div className="flex items-center gap-2">
-						<span
-							className={cn("font-medium truncate", !rule.enabled && "text-muted-foreground")}
+						<Link
+							to="/alerts/$ruleId"
+							params={{ ruleId: rule.id }}
+							className={cn(
+								"font-medium truncate",
+								!rule.enabled && "text-muted-foreground",
+								ROW_STRETCHED_LINK_CLASS,
+							)}
 						>
 							{rule.name}
-						</span>
+						</Link>
 						<SignalBadge signalType={rule.signalType} />
 					</div>
 					{!grouped && <TagChips tags={rule.tags} />}
@@ -105,8 +106,7 @@ export function RulesOverviewTable({
 						{derived?.status === "error" && derived.reason != null && (
 							<Tooltip>
 								<TooltipTrigger
-									render={<span className="inline-flex cursor-default" />}
-									onClick={(e) => e.stopPropagation()}
+									render={<span className={cn("inline-flex cursor-default", ROW_LINK_LIFT)} />}
 								>
 									<CircleWarningIcon size={14} className="text-severity-error" />
 								</TooltipTrigger>
@@ -119,9 +119,13 @@ export function RulesOverviewTable({
 							<Tooltip>
 								<TooltipTrigger
 									render={
-										<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-2xs" />
+										<span
+											className={cn(
+												"inline-flex cursor-default items-center gap-1 text-severity-warn text-2xs",
+												ROW_LINK_LIFT,
+											)}
+										/>
 									}
-									onClick={(e) => e.stopPropagation()}
 								>
 									<CircleWarningIcon size={12} />
 									No destinations
@@ -159,7 +163,7 @@ export function RulesOverviewTable({
 				<TableCell className="text-muted-foreground text-xs tabular-nums">
 					{lastEvaluatedAt ? <RelativeTime value={lastEvaluatedAt} tooltip="title" /> : EMPTY_VALUE}
 				</TableCell>
-				<TableCell onClick={(e) => e.stopPropagation()}>
+				<TableCell className={ROW_LINK_LIFT}>
 					<NotifyChannels destinations={ruleDestinations} enabled={rule.enabled} />
 				</TableCell>
 			</TableRow>

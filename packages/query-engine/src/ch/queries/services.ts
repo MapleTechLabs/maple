@@ -26,12 +26,7 @@ import {
 } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import {
-	apdexExprs,
-	serviceOverviewWhereConditions,
-	utcHourFloor,
-	type FacetOutput,
-} from "./query-helpers"
+import { apdexExprs, serviceOverviewWhereConditions, utcHourFloor, type FacetOutput } from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 
 // Service overview
@@ -83,16 +78,19 @@ export interface ServiceWindowFilters {
  */
 export type OverviewGrain = "hour" | "minute"
 
-export interface ServiceWindowTiers {
-	readonly grain?: OverviewGrain
-	/**
-	 * Include the hourly tier. Must be `false` when the caller buckets the result
-	 * with a `bucketSeconds` that is not a whole multiple of 3600 — an hourly row
-	 * carries no sub-hour position, so `toStartOfInterval` would pile the whole
-	 * hour onto the bucket containing `:00`.
-	 */
-	readonly includeHourly?: boolean
-}
+/** The hour grain always splices the hourly tier; only the minute grain can drop it. */
+export type ServiceWindowTiers =
+	| { readonly grain?: "hour"; readonly includeHourly?: true }
+	| {
+			readonly grain: "minute"
+			/**
+			 * Include the hourly tier. Must be `false` when the caller buckets the result
+			 * with a `bucketSeconds` that is not a whole multiple of 3600: an hourly row
+			 * carries no sub-hour position, so `toStartOfInterval` would pile the whole
+			 * hour onto the bucket containing `:00`.
+			 */
+			readonly includeHourly?: boolean
+	  }
 
 /**
  * Tier selection for a caller that buckets the stream by `bucketSeconds`.
@@ -206,9 +204,6 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
 
 	if (grain === "hour") {
-		if (!includeHourly) {
-			throw new Error("serviceOverviewWindows: hour grain requires the hourly tier")
-		}
 		return fromUnion(unionAll(rawEdges, hourlyInterior), "service_windows")
 	}
 

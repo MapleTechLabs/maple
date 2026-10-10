@@ -96,7 +96,7 @@ export class PrReviewPostMergeService extends Context.Service<
 		const later = (orgId: OrgId, id: PrReviewId, at: DateTime.Utc, now: DateTime.Utc) =>
 			settle(orgId, id, "waiting", toMs(at), now)
 
-		const examine = Effect.fn("PrReviewPostMerge.examine")(function* (
+		const examine = Effect.fn("PrReviewPostMergeService.examine")(function* (
 			row: DueRow,
 			now: DateTime.Utc,
 			/** The lease this examination holds; it reports only while the row still carries it. */

@@ -24,7 +24,6 @@ import {
 	HazelOrganizationsListResponse,
 	HazelStartConnectResponse,
 	IntegrationsForbiddenError,
-	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	MapleInternalApi,
@@ -40,11 +39,8 @@ import {
 	VcsCommitRangesResponse,
 	VcsPullRequestsResponse,
 } from "@maple/domain/http"
-import * as PG from "@maple-dev/effect-orm/postgres"
-import { CloudflareAnalyticsState } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
 import { Effect, Option, Schema } from "effect"
-import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
@@ -52,7 +48,6 @@ import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareO
 import { abrCount } from "@maple/backend/services/integrations/cloudflare-analytics/mapping"
 import {
 	decodeTopTrafficResponse,
-	HTTP_DATASET,
 	toGraphqlTime,
 	topTrafficFilterVariables,
 	topTrafficQuery,
@@ -122,7 +117,6 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
-		const database = yield* Database
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
 
@@ -272,41 +266,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const compute = Effect.gen(function* () {
 							// The zone's state row also names the account that owns it, so the token
 							// is minted for the right connection when several accounts are connected.
-							const zoneRows = yield* database
-								.execute((db) =>
-									db.run(
-										PG.from(CloudflareAnalyticsState)
-											.select("zoneId", "accountId")
-											.where(($) => [
-												$.orgId.eq(tenant.orgId),
-												$.dataset.eq(HTTP_DATASET),
-												$.zoneName.eq(payload.zoneName),
-												// A zone that moved between accounts (or belongs to one
-												// the grant no longer covers) leaves a disabled row
-												// behind; picking it would address the token to an
-												// account outside the grant and hard-fail the request.
-												$.enabled.eq(true),
-												// "" is a pre-multi-account orphan (its org had no
-												// connection when the backfill ran) and names no
-												// account to address the token to.
-												$.accountId.neq(""),
-											])
-											.orderBy(($) => [[$.updatedAt, "desc"]])
-											.limit(1),
-									),
-								)
-								.pipe(
-									Effect.mapError(
-										(cause) =>
-											new IntegrationsPersistenceError({
-												message:
-													cause instanceof Error
-														? cause.message
-														: "Cloudflare zone lookup failed",
-											}),
-									),
-								)
-							const zoneRow = zoneRows[0]
+							const zoneRow = yield* cloudflareAnalytics.findHttpZone(
+								tenant.orgId,
+								payload.zoneName,
+							)
 							if (zoneRow == null) {
 								return yield* Effect.fail(
 									new IntegrationsValidationError({
@@ -670,7 +633,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								// reaching here means a hand-built request or a repo disconnected
 								// mid-session.
 								Effect.catchTag(
-									"@maple/api/vcs/VcsSourceRepositoryNotFoundError",
+									"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
 									(error) => new IntegrationsValidationError({ message: error.message }),
 								),
 							)

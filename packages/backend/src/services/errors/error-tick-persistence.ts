@@ -300,7 +300,7 @@ const mergeVersions = (
  * Failing the transaction's Effect with it is what rolls the window back.
  */
 export class ErrorTickClaimLost extends Schema.TaggedError<ErrorTickClaimLost>()(
-	"@maple/api/services/ErrorTickClaimLostError",
+	"@maple/backend/services/ErrorTickClaimLostError",
 	{
 		message: Schema.String,
 		orgId: Schema.String,
@@ -316,7 +316,7 @@ export const isErrorTickClaimLost = (error: unknown): error is ErrorTickClaimLos
 
 /** The batched issue upsert's RETURNING omitted a fingerprint it was handed. */
 export class ErrorTickUpsertMissingRow extends Schema.TaggedError<ErrorTickUpsertMissingRow>()(
-	"@maple/api/services/ErrorTickUpsertMissingRowError",
+	"@maple/backend/services/ErrorTickUpsertMissingRowError",
 	{ message: Schema.String, fingerprintHash: Schema.String },
 ) {}
 
@@ -592,17 +592,19 @@ export const persistErrorTickWindow = (
 
 				const idByFingerprint = new Map(upserted.map((row) => [row.fingerprintHash, row.id]))
 
-				for (const { row, prior, regression, suppressed } of applicable) {
-					const issueId = idByFingerprint.get(row.fingerprintHash)
-					if (!issueId) {
-						return yield* Effect.fail(
-							new ErrorTickUpsertMissingRow({
-								message: `Error issue upsert returned no row for ${row.fingerprintHash}`,
-								fingerprintHash: row.fingerprintHash,
-							}),
-						)
-					}
+				const resolvedRows = yield* Effect.forEach(applicable, (entry) => {
+					const issueId = idByFingerprint.get(entry.row.fingerprintHash)
+					return issueId
+						? Effect.succeed({ ...entry, issueId })
+						: Effect.fail(
+								new ErrorTickUpsertMissingRow({
+									message: `Error issue upsert returned no row for ${entry.row.fingerprintHash}`,
+									fingerprintHash: entry.row.fingerprintHash,
+								}),
+							)
+				})
 
+				for (const { row, prior, regression, suppressed, issueId } of resolvedRows) {
 					if (!prior) {
 						events.push(
 							buildEvent(input, issueId, "created", {

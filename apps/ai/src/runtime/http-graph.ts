@@ -37,7 +37,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
-import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
@@ -101,7 +101,7 @@ export const AllRoutes = Layer.mergeAll(AiInternalRoutes, RawRoutes).pipe(
  * `McpOAuthRateLimiter` is deliberately absent: the OAuth endpoints stayed on
  * api, which still owns its own limiter for them.
  */
-export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLayer).pipe(
+export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLive).pipe(
 	// `/mcp` falls back to session auth when the bearer is neither an API key nor
 	// an MCP OAuth token, so the transport resolves tenants through this too.
 	Layer.provideMerge(AuthService.layer),

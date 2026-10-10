@@ -138,7 +138,7 @@ jobs:
                         # The connection layer and everything that decides how many
                         # sockets a request opens. The unit suite replaces the dial
                         # with a fake and the rest of the api suite runs on PGlite,
-                        # so this job is the ONLY place `layerPg` meets a real
+                        # so this job is the ONLY place `DatabasePgLive` meets a real
                         # server — narrow these and the per-request socket
                         # guarantee stops being checked.
                         - 'packages/backend/src/platform/**'
@@ -397,7 +397,7 @@ jobs:
                   TZ: Asia/Kathmandu
               run: python3 .github/scripts/run-tests.py
 
-    # The only job where `layerPg` meets a real Postgres. Everything else that
+    # The only job where `DatabasePgLive` meets a real Postgres. Everything else that
     # touches the Database service runs on PGlite (in-process, single-connection,
     # marks connected immediately), and the connection-scope unit tests inject a
     # fake dial — so "one socket per request" is asserted here against

@@ -97,30 +97,32 @@ const decodeQuerySpec = Schema.decodeUnknownEffect(QuerySpec)
  * non-query-builder widgets (raw SQL / unsupported endpoints) and for params
  * that don't decode — those carry their own validation elsewhere.
  */
-export const collectBlockingBuilderWarnings = Effect.fn("collectBlockingBuilderWarnings")(function* (
-	dataSource: DashboardWidget["dataSource"],
-) {
-	const querySet = dataSourceQuerySet(dataSource)
-	if (querySet === null) return [] as string[]
-	const isTimeseries = querySet.resultShape === "timeseries"
-	const isBreakdown = querySet.resultShape === "breakdown"
-	if (!isTimeseries && !isBreakdown) return [] as string[]
+export const collectBlockingBuilderWarnings = Effect.fn("McpInspectWidget.collectBlockingBuilderWarnings")(
+	function* (dataSource: DashboardWidget["dataSource"]) {
+		const querySet = dataSourceQuerySet(dataSource)
+		if (querySet === null) return [] as string[]
+		const isTimeseries = querySet.resultShape === "timeseries"
+		const isBreakdown = querySet.resultShape === "breakdown"
+		if (!isTimeseries && !isBreakdown) return [] as string[]
 
-	const decoded = yield* Effect.result(decodeQueryBuilderParams({ queries: querySet.queries }))
-	if (Result.isFailure(decoded)) return [] as string[]
+		const decoded = yield* Effect.result(decodeQueryBuilderParams({ queries: querySet.queries }))
+		if (Result.isFailure(decoded)) return [] as string[]
 
-	const drafts = decoded.success.queries.filter((q) => q.enabled !== false)
-	const warnings: string[] = []
-	for (const draft of drafts) {
-		const buildResult = isTimeseries ? buildTimeseriesQuerySpec(draft) : buildBreakdownQuerySpec(draft)
-		for (const w of buildResult.warnings ?? []) {
-			// Non-scoping fallback — auto bucket size is a fine default.
-			if (w.toLowerCase().includes("step interval")) continue
-			warnings.push(w)
+		const drafts = decoded.success.queries.filter((q) => q.enabled !== false)
+		const warnings: string[] = []
+		for (const draft of drafts) {
+			const buildResult = isTimeseries
+				? buildTimeseriesQuerySpec(draft)
+				: buildBreakdownQuerySpec(draft)
+			for (const w of buildResult.warnings ?? []) {
+				// Non-scoping fallback — auto bucket size is a fine default.
+				if (w.toLowerCase().includes("step interval")) continue
+				warnings.push(w)
+			}
 		}
-	}
-	return warnings
-})
+		return warnings
+	},
+)
 
 // The first numeric series/value present in a result. Mirrors the client
 // renderer's `resolveField` fallback so the inspector reduces the same field the
@@ -272,7 +274,7 @@ function isSingleAllGroup(result: QueryEngineResult): boolean {
 // has no data in this window" — both otherwise surface as EMPTY/ALL_NULLS. On
 // any lookup error we assume the metric exists, so we never raise a false
 // METRIC_NOT_FOUND.
-const metricExistsInCatalog = Effect.fn("metricExistsInCatalog")(function* (
+const metricExistsInCatalog = Effect.fn("McpInspectWidget.metricExistsInCatalog")(function* (
 	tenant: TenantContext,
 	metricName: string,
 	metricType: string | undefined,
@@ -394,7 +396,7 @@ export interface InspectWidgetInput {
  * returning a rows preview. Never fails the caller — validation/execution
  * errors are encoded as `status: "error"` in the returned data.
  */
-const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
+const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(function* (
 	tenant: TenantContext,
 	widget: DashboardWidget,
 	timeRange: InspectWidgetTimeRange,
@@ -469,7 +471,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
  * problems are encoded in the returned `InspectionOutcome` so post-mutation
  * callers can always finish their response.
  */
-export const inspectWidget = Effect.fn("inspectWidget")(
+export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 	function* (input: InspectWidgetInput) {
 		const { tenant, widget, timeRange } = input
 
@@ -948,7 +950,7 @@ const SKIPPED_SUMMARY: WidgetInspectionSummary = {
  * widget with bounded concurrency. Returns a compact `WidgetInspectionSummary`
  * suitable for inclusion in tool responses.
  */
-export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutation")(
+export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWidgetsAfterMutation")(
 	function* (input: InspectWidgetsAfterMutationInput) {
 		const {
 			tenant,
@@ -1010,25 +1012,12 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 			summarizeOutcome(widget, outcomes[i]),
 		)
 
-		let healthyCount = 0
-		let suspiciousCount = 0
-		let brokenCount = 0
-		let skippedCount = 0
-		for (const entry of inspected) {
-			switch (entry.verdict) {
-				case "looks_healthy":
-					healthyCount++
-					break
-				case "suspicious":
-					suspiciousCount++
-					break
-				case "broken":
-					brokenCount++
-					break
-				default:
-					skippedCount++
-			}
-		}
+		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>
+			inspected.filter((entry) => entry.verdict === verdict).length
+		const healthyCount = countVerdict("looks_healthy")
+		const suspiciousCount = countVerdict("suspicious")
+		const brokenCount = countVerdict("broken")
+		const skippedCount = inspected.length - healthyCount - suspiciousCount - brokenCount
 
 		const summary: WidgetInspectionSummary = {
 			ran: true,
@@ -1042,7 +1031,11 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 		}
 		return summary
 	},
-	Effect.catchCause(() => Effect.succeed(SKIPPED_SUMMARY)),
+	Effect.catchCause((cause) =>
+		Effect.logWarning("Widget inspection failed; reporting it as skipped", cause).pipe(
+			Effect.as(SKIPPED_SUMMARY),
+		),
+	),
 )
 
 /**

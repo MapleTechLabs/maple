@@ -297,7 +297,7 @@ const make: Effect.Effect<
 		knownOrgs: ReadonlyArray<OrgId>,
 		nowMs: number,
 	) {
-		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
+		yield* Effect.annotateCurrentSpan("maple.errors.known_orgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 		).pipe(Effect.option)
@@ -307,7 +307,10 @@ const make: Effect.Effect<
 		const byo = new Set<OrgId>(Option.getOrElse(byoRows, () => []).map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
-			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
+			yield* Effect.annotateCurrentSpan({
+				"maple.errors.active_orgs": byo.size,
+				"maple.errors.failed_closed": false,
+			})
 			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
 		}
 
@@ -333,7 +336,10 @@ const make: Effect.Effect<
 					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
 				}),
 				Effect.tap(({ active }) =>
-					Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
+					Effect.annotateCurrentSpan({
+						"maple.errors.active_orgs": active.size,
+						"maple.errors.failed_closed": false,
+					}),
 				),
 				// Cache the freshly-discovered set so a later discovery failure can
 				// reuse it instead of fanning out to all known orgs. Best-effort.
@@ -371,8 +377,8 @@ const make: Effect.Effect<
 									active.add(orgId)
 								}
 								yield* Effect.annotateCurrentSpan({
-									activeOrgs: active.size,
-									failedClosed: true,
+									"maple.errors.active_orgs": active.size,
+									"maple.errors.failed_closed": true,
 								})
 								return { active: active as ReadonlySet<string>, discovered: false }
 							}),
@@ -389,7 +395,11 @@ const make: Effect.Effect<
 	const recordAnomalyLinkEvent: ErrorsServiceApi["recordAnomalyLinkEvent"] = Effect.fn(
 		"ErrorsService.recordAnomalyLinkEvent",
 	)(function* (orgId, issueId, actorId, payload) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId, action: payload.action })
+		yield* Effect.annotateCurrentSpan({
+			orgId,
+			"maple.issue.id": issueId,
+			"maple.errors.action": payload.action,
+		})
 		yield* recordEvent(orgId, issueId, actorId, "anomaly_linked", { payload: { ...payload } })
 	})
 
@@ -397,7 +407,11 @@ const make: Effect.Effect<
 
 	const transitionIssue: ErrorsServiceApi["transitionIssue"] = Effect.fn("ErrorsService.transitionIssue")(
 		function* (orgId, actorId, issueId, toState, opts) {
-			yield* Effect.annotateCurrentSpan({ orgId, issueId, toState })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.issue.id": issueId,
+				"maple.errors.to_state": toState,
+			})
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
 
@@ -528,7 +542,12 @@ const make: Effect.Effect<
 		function* (orgId, actorId, issueId, leaseDurationMs) {
 			const timestamp = yield* Clock.currentTimeMillis
 			const leaseMs = leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS
-			yield* Effect.annotateCurrentSpan({ orgId, issueId, actorId, leaseMs })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.issue.id": issueId,
+				"maple.actor.id": actorId,
+				"maple.errors.lease_ms": leaseMs,
+			})
 
 			const current = yield* requireIssue(orgId, issueId)
 			if (CLOSED_WORKFLOW_STATES.has(current.workflowState)) {
@@ -595,7 +614,11 @@ const make: Effect.Effect<
 		function* (orgId, actorId, issueId, request) {
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
-			yield* Effect.annotateCurrentSpan({ orgId, issueId, fromState: current.workflowState })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.issue.id": issueId,
+				"maple.errors.from_state": current.workflowState,
+			})
 
 			// Refuse up front, with a reason, rather than mid-write. `cancelled` and
 			// `wontfix` cannot reach review; a closed issue has to be reopened
@@ -687,13 +710,15 @@ const make: Effect.Effect<
 
 			// Usually `triage → in_progress → in_review`; one hop from a state the
 			// matrix lets straight through. Validated above, so no hop can fail here.
-			let next = row
-			for (const hop of fixProposalRoute(row.workflowState)) {
-				next = yield* applyTransition(orgId, actorId, next, hop, {
-					payload: { viaProposeFix: true },
-					timestamp,
-				})
-			}
+			const next = yield* Effect.reduce(
+				fixProposalRoute(row.workflowState),
+				() => row,
+				(current, hop) =>
+					applyTransition(orgId, actorId, current, hop, {
+						payload: { viaProposeFix: true },
+						timestamp,
+					}),
+			)
 			yield* touchActor(orgId, actorId, timestamp)
 			yield* maybeNotifyTransition(orgId, actorId, next, current.workflowState)
 			return yield* hydrateIssue(orgId, next)
@@ -1108,7 +1133,7 @@ const make: Effect.Effect<
 		nowMs: number,
 		runRetention: boolean,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.errors.run_retention": runRetention })
 		const tickWindow = yield* claimTickWindow(orgId, cutoffMs, nowMs)
 		if (!tickWindow) {
 			return {
@@ -1179,16 +1204,32 @@ const make: Effect.Effect<
 		// window and rescanning costs one extra warehouse query and leaves the
 		// remainder for the next cron. Steady state is a single minute and never
 		// enters the loop.
-		let windowEndMs = tickWindow.windowEndMs
-		let issuesRaw = yield* scanWindow(windowEndMs)
-		let splits = 0
-		while (issuesRaw.length > TICK_MAX_WINDOW_ROWS && splits < TICK_MAX_WINDOW_SPLITS) {
-			const widthMinutes = Math.round((windowEndMs - windowStartMs) / TICK_MINUTE_MS)
-			if (widthMinutes <= 1) break
-			windowEndMs = windowStartMs + Math.ceil(widthMinutes / 2) * TICK_MINUTE_MS
-			splits += 1
-			issuesRaw = yield* scanWindow(windowEndMs)
+		type ScanWindow = ReturnType<typeof scanWindow>
+		type ShedWindow = {
+			readonly windowEndMs: number
+			readonly issuesRaw: Effect.Success<ScanWindow>
+			readonly splits: number
 		}
+		const shedWindow = (
+			state: ShedWindow,
+		): Effect.Effect<ShedWindow, Effect.Error<ScanWindow>, Effect.Services<ScanWindow>> => {
+			if (state.issuesRaw.length <= TICK_MAX_WINDOW_ROWS || state.splits >= TICK_MAX_WINDOW_SPLITS) {
+				return Effect.succeed(state)
+			}
+			const widthMinutes = Math.round((state.windowEndMs - windowStartMs) / TICK_MINUTE_MS)
+			if (widthMinutes <= 1) return Effect.succeed(state)
+			const nextEndMs = windowStartMs + Math.ceil(widthMinutes / 2) * TICK_MINUTE_MS
+			return scanWindow(nextEndMs).pipe(
+				Effect.flatMap((issuesRaw) =>
+					shedWindow({ windowEndMs: nextEndMs, issuesRaw, splits: state.splits + 1 }),
+				),
+			)
+		}
+		const { windowEndMs, issuesRaw, splits } = yield* shedWindow({
+			windowEndMs: tickWindow.windowEndMs,
+			issuesRaw: yield* scanWindow(tickWindow.windowEndMs),
+			splits: 0,
+		})
 		if (issuesRaw.length > TICK_MAX_WINDOW_ROWS) {
 			// An indivisible minute over the cap. Applying it is still the right
 			// call — skipping would lose the window — but it is a fingerprinting
@@ -1205,8 +1246,8 @@ const make: Effect.Effect<
 		}
 		yield* Effect.annotateCurrentSpan({
 			windowEndMs,
-			windowSplits: splits,
-			scanFingerprints: issuesRaw.length,
+			"maple.errors.window_splits": splits,
+			"maple.errors.scan_fingerprints": issuesRaw.length,
 		})
 
 		// Every display string crosses from ClickHouse bytes into Postgres text
@@ -1275,9 +1316,9 @@ const make: Effect.Effect<
 			// The window's own failures reach here as themselves; the tick's contract
 			// is the persistence error, which is what they rolled the window back as before.
 			Effect.catchTags({
-				"@maple/api/services/ErrorTickClaimLostError": (error) =>
+				"@maple/backend/services/ErrorTickClaimLostError": (error) =>
 					Effect.fail(makePersistenceError(error)),
-				"@maple/api/services/ErrorTickUpsertMissingRowError": (error) =>
+				"@maple/backend/services/ErrorTickUpsertMissingRowError": (error) =>
 					Effect.fail(makePersistenceError(error)),
 			}),
 		)
@@ -1360,103 +1401,109 @@ const make: Effect.Effect<
 		const incidentsOpened = persistence.incidentsOpened
 		const incidentsResolved = persistence.incidentsResolved
 
-		let issuesArchived = 0
-		let issuesDeleted = 0
+		const { issuesArchived, issuesDeleted } = runRetention
+			? yield* Effect.gen(function* () {
+					// Issues left behind by a fingerprint-algorithm bump. Their hashes can
+					// never be produced again (v1 and v2 hashes cannot collide), so there is
+					// nothing to wait for: archive them on sight instead of holding a dead
+					// issue in `triage` until the resolved window retires it. Scoped to
+					// error-kind — alert and integration issues key off their own
+					// identifiers, not the ClickHouse fingerprint.
+					const staleFingerprintRows = yield* dbExecute((db) =>
+						db.run(
+							PG.update(ErrorIssues)
+								.set({ archivedAt: nowMs, updatedAt: nowMs })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.kind.eq("error"),
+									$.fingerprintVersion.lt(FINGERPRINT_VERSION),
+									$.archivedAt.isNull(),
+								])
+								.returning("id"),
+						),
+					)
 
-		if (runRetention) {
-			// Issues left behind by a fingerprint-algorithm bump. Their hashes can
-			// never be produced again (v1 and v2 hashes cannot collide), so there is
-			// nothing to wait for: archive them on sight instead of holding a dead
-			// issue in `triage` until the resolved window retires it. Scoped to
-			// error-kind — alert and integration issues key off their own
-			// identifiers, not the ClickHouse fingerprint.
-			const staleFingerprintRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(ErrorIssues)
-						.set({ archivedAt: nowMs, updatedAt: nowMs })
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.kind.eq("error"),
-							$.fingerprintVersion.lt(FINGERPRINT_VERSION),
-							$.archivedAt.isNull(),
-						])
-						.returning("id"),
-				),
-			)
+					const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
+					const archivedRows = yield* dbExecute((db) =>
+						db.run(
+							PG.update(ErrorIssues)
+								.set({ archivedAt: nowMs, updatedAt: nowMs })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.workflowState.eq("done"),
+									$.archivedAt.isNull(),
+									$.resolvedAt.isNotNull(),
+									$.resolvedAt.lt(resolvedCutoff),
+								])
+								.returning("id"),
+						),
+					)
 
-			const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
-			const archivedRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(ErrorIssues)
-						.set({ archivedAt: nowMs, updatedAt: nowMs })
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.workflowState.eq("done"),
-							$.archivedAt.isNull(),
-							$.resolvedAt.isNotNull(),
-							$.resolvedAt.lt(resolvedCutoff),
-						])
-						.returning("id"),
-				),
-			)
-			issuesArchived = archivedRows.length + staleFingerprintRows.length
+					// Candidates that never reached the promotion threshold. Without this the
+					// holding table would accumulate every one-off fingerprint forever.
+					yield* dbExecute((db) =>
+						db.run(
+							PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
+								$.orgId.eq(orgId),
+								$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
+							]),
+						),
+					)
 
-			// Candidates that never reached the promotion threshold. Without this the
-			// holding table would accumulate every one-off fingerprint forever.
-			yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
-						$.orgId.eq(orgId),
-						$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
-					]),
-				),
-			)
-
-			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
-			const toDelete = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssues)
-						.select("id")
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.archivedAt.isNotNull(),
-							$.archivedAt.lt(archivedCutoff),
-						])
-						.limit(500),
-				),
-			)
-			if (toDelete.length > 0) {
-				const ids = toDelete.map((r) => r.id)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ErrorIncidents).where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.in_(...ids),
-						]),
-					),
-				)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ErrorIssueStates).where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.in_(...ids),
-						]),
-					),
-				)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ErrorIssueEvents).where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.in_(...ids),
-						]),
-					),
-				)
-				yield* dbExecute((db) =>
-					db.run(PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])),
-				)
-				issuesDeleted = ids.length
-			}
-		}
+					const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
+					const toDelete = yield* dbExecute((db) =>
+						db.run(
+							PG.from(ErrorIssues)
+								.select("id")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.archivedAt.isNotNull(),
+									$.archivedAt.lt(archivedCutoff),
+								])
+								.limit(500),
+						),
+					)
+					if (toDelete.length > 0) {
+						const ids = toDelete.map((r) => r.id)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIncidents).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueStates).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueEvents).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssues).where(($) => [
+									$.orgId.eq(orgId),
+									$.id.in_(...ids),
+								]),
+							),
+						)
+					}
+					return {
+						issuesArchived: archivedRows.length + staleFingerprintRows.length,
+						issuesDeleted: toDelete.length,
+					}
+				})
+			: { issuesArchived: 0, issuesDeleted: 0 }
 
 		return {
 			issuesTouched,
@@ -1553,23 +1600,28 @@ const make: Effect.Effect<
 		// behind it on every one of those ticks. Probed a cap-sized wave at a time,
 		// so the common case is one wave and a wall of quarantined orgs is not
 		// read through one by one.
-		const lookups: Array<(typeof trailing)[number]> = []
-		for (const wave of Arr.chunksOf(
-			trailing
-				.filter((row) => !isObserved(row))
-				// Most recent first: a short outage gap before rows that are weeks old.
-				.toSorted((a, b) => b.processedThrough - a.processedThrough),
-			TICK_IDLE_RECOVERY_LOOKUPS,
-		)) {
-			if (lookups.length >= TICK_IDLE_RECOVERY_LOOKUPS) break
-			const quarantined = yield* Effect.forEach(
-				wave,
-				(row) => isOrgWarehouseQuarantined(edgeCache, row.orgId),
-				{ concurrency: 4 },
-			)
-			lookups.push(...wave.filter((_, index) => !quarantined[index]))
-		}
-		lookups.splice(TICK_IDLE_RECOVERY_LOOKUPS)
+		const probed = yield* Effect.reduce(
+			Arr.chunksOf(
+				trailing
+					.filter((row) => !isObserved(row))
+					// Most recent first: a short outage gap before rows that are weeks old.
+					.toSorted((a, b) => b.processedThrough - a.processedThrough),
+				TICK_IDLE_RECOVERY_LOOKUPS,
+			),
+			(): ReadonlyArray<(typeof trailing)[number]> => [],
+			(found, wave) =>
+				found.length >= TICK_IDLE_RECOVERY_LOOKUPS
+					? Effect.succeed(found)
+					: Effect.forEach(wave, (row) => isOrgWarehouseQuarantined(edgeCache, row.orgId), {
+							concurrency: 4,
+						}).pipe(
+							Effect.map((quarantined) => [
+								...found,
+								...wave.filter((_, index) => !quarantined[index]),
+							]),
+						),
+		)
+		const lookups = probed.slice(0, TICK_IDLE_RECOVERY_LOOKUPS)
 
 		// Where each unobserved org's cursor belongs: its first error minute, or
 		// the parking point when the stretch is empty. A failed lookup leaves the
@@ -1631,8 +1683,8 @@ const make: Effect.Effect<
 		})
 
 		yield* Effect.annotateCurrentSpan({
-			idleCursorsParked: parked.length,
-			idleCursorsRecovering: recovering.length,
+			"maple.errors.idle_cursors_parked": parked.length,
+			"maple.errors.idle_cursors_recovering": recovering.length,
 		})
 		return recovering.map((row) => row.orgId)
 	})
@@ -1782,9 +1834,9 @@ const make: Effect.Effect<
 		}
 
 		yield* Effect.annotateCurrentSpan({
-			orgsKnown: knownOrgs.size,
-			orgsScanned: scanOrgs.length,
-			orgFailures: yield* Ref.get(orgFailures),
+			"maple.errors.known_orgs": knownOrgs.size,
+			"maple.errors.orgs_scanned": scanOrgs.length,
+			"maple.errors.org_failures": yield* Ref.get(orgFailures),
 			"maple.investigation.abandoned": investigationsAbandoned,
 			...totals,
 		})

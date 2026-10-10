@@ -1,3 +1,4 @@
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { cn } from "@maple/ui/lib/utils"
 
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
@@ -33,14 +34,15 @@ export function CompactFilterInput({
 				className="min-w-0 flex-1 bg-transparent font-mono text-2xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
 			/>
 			{value ? (
-				<button
-					type="button"
+				<IconButton
+					size="icon-2xs"
+					label="Clear filter"
+					tooltip={false}
 					onClick={() => onChange("")}
-					aria-label="Clear filter"
-					className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
+					className="text-muted-foreground hover:text-foreground"
 				>
-					<XmarkIcon size={9} />
-				</button>
+					<XmarkIcon />
+				</IconButton>
 			) : null}
 		</label>
 	)

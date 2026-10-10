@@ -2,7 +2,6 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, SessionId, TraceId } from "@maple/domain/http"
 import {
 	MAX_REPLAY_CHUNKS_PER_REQUEST,
-	MAX_REPLAY_EVENTS_RESPONSE_BYTES,
 	MAX_REPLAY_MANIFEST_CHUNKS,
 	MAX_REPLAY_RANGE_PAYLOAD_BYTES,
 	LIST_LIMIT_DEFAULT,
@@ -23,12 +22,11 @@ import type {
 	V2SessionReplayRef,
 	V2SessionTranscriptEvent,
 } from "@maple/domain/http/v2"
-import { CH, formatWarehouseDateTimeMs, parseUtc } from "@maple/query-engine"
+import { formatWarehouseDateTimeMs, parseUtc } from "@maple/query-engine"
 import { sessionTagsOf } from "@maple/domain/query-engine"
-import { DateTime, Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 
 const decodeSessionId = Schema.decodeSync(SessionId)
 const decodeTraceId = Schema.decodeSync(TraceId)
@@ -73,34 +71,15 @@ const isoOrNull = (value: DateTime.Utc | null): Timestamp | null => (value === n
 
 const nullableUserId = (value: string | null): string | null => (value ? value : null)
 
-const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionReplays", (handlers) =>
+const orNotFound = <A>(found: Option.Option<A>) =>
+	Option.match(found, {
+		onNone: () => Effect.fail(V2SessionReplayNotFound.make()),
+		onSome: Effect.succeed,
+	})
+
+export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
-		const blobs = yield* ReplayBlobStore
-
-		const requireSession = Effect.fn("HttpV2SessionReplays.requireSession")(function* (
-			tenant: CurrentTenant.TenantSchema,
-			sessionId: SessionId,
-			windowStart: DateTime.Utc | undefined,
-			windowEnd: DateTime.Utc | undefined,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sessionId })
-			const compiled = CH.compile(
-				CH.getSessionReplayQuery({ startTime: windowStart, endTime: windowEnd }),
-				{
-					orgId: tenant.orgId,
-					sessionId,
-				},
-			)
-			const replay = yield* warehouse.compiledQueryFirst(tenant, compiled, {
-				profile: "discovery",
-				context: "v2RequireReplay",
-			})
-
-			if (Option.isNone(replay)) {
-				return yield* Effect.fail(V2SessionReplayNotFound.make())
-			}
-		})
+		const replays = yield* SessionReplayReadService
 
 		return handlers
 			.handle("search", ({ payload }) =>
@@ -117,8 +96,9 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					// head can disturb.
 					const limit = payload.limit ?? LIST_LIMIT_DEFAULT
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "ses", 2)
-					const compiled = CH.compile(
-						CH.sessionReplaysListQuery({
+					const rows = yield* replays.search(
+						tenant,
+						{
 							...(payload.service_name !== undefined
 								? {
 										serviceName: payload.service_name,
@@ -177,13 +157,9 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 							// One row of lookahead decides `has_more` without a
 							// second count query.
 							limit: limit + 1,
-						}),
-						{ orgId: tenant.orgId, startTime, endTime },
+						},
+						{ startTime, endTime },
 					)
-					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-						profile: "list",
-						context: "v2SearchReplays",
-					})
 
 					const dataRows = rows.slice(0, limit)
 					const last = dataRows.at(-1)
@@ -237,41 +213,9 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const tenant = yield* CurrentTenant.Context
 					const windowStart = yield* optUtc(query.window_start, "window_start")
 					const windowEnd = yield* optUtc(query.window_end, "window_end")
-					const detailCompiled = CH.compile(
-						CH.getSessionReplayQuery({ startTime: windowStart, endTime: windowEnd }),
-						{
-							orgId: tenant.orgId,
-							sessionId: params.id,
-						},
-					)
-					const activityCompiled = CH.compile(
-						CH.sessionActivityQuery({ startTime: windowStart, endTime: windowEnd }),
-						{
-							orgId: tenant.orgId,
-							sessionId: params.id,
-						},
-					)
-					// Resolve the org's route before fanning out, so the config read lands on an
-					// empty pool instead of queueing behind a sibling's fetch. No-op once memoized.
-					yield* warehouse.warmRoute(tenant)
-					const [maybeData, maybeActivity] = yield* Effect.all(
-						[
-							warehouse.compiledQueryFirst(tenant, detailCompiled, {
-								profile: "discovery",
-								context: "v2GetReplay",
-							}),
-							warehouse.compiledQueryFirst(tenant, activityCompiled, {
-								profile: "discovery",
-								context: "v2GetReplayActivity",
-							}),
-						],
-						{ concurrency: 2 },
-					)
-					const data = Option.getOrNull(maybeData)
-					if (!data) {
-						return yield* Effect.fail(V2SessionReplayNotFound.make())
-					}
-					const activity = Option.getOrNull(maybeActivity)
+					const { session: data, activity } = yield* replays
+						.retrieve(tenant, params.id, { startTime: windowStart, endTime: windowEnd })
+						.pipe(Effect.flatMap(orNotFound))
 					const replay = {
 						id: decodeSessionId(data.sessionId),
 						object: "session_replay",
@@ -312,7 +256,6 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						user_agent: data.userAgent,
 						trace_ids: data.traceIds.map((traceId) => decodeTraceId(traceId)),
 						resource_attributes: data.resourceAttributes,
-						// UInt64 → coerce before Schema.Number validates.
 						active_time_ms: activity ? activity.activeTimeMs : null,
 						idle_time_ms: activity ? activity.idleTimeMs : null,
 					} satisfies V2SessionReplay
@@ -324,24 +267,10 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const tenant = yield* CurrentTenant.Context
 					const windowStart = yield* optUtc(query.window_start, "window_start")
 					const windowEnd = yield* optUtc(query.window_end, "window_end")
-					const compiled = CH.compile(
-						CH.sessionReplayChunkIndexQuery({ startTime: windowStart, endTime: windowEnd }),
-						{ orgId: tenant.orgId, sessionId: params.id },
-					)
-					// `discovery` is enough — this never reads the `Events` column, and
-					// with payloads in R2 there is nothing to hydrate here either: the
-					// manifest is a pure index read whatever the storage backend.
-					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-						profile: "discovery",
-						context: "v2GetReplayManifest",
-					})
-
-					if (rows.length === 0) {
-						yield* requireSession(tenant, params.id, windowStart, windowEnd)
-					}
+					const rows = yield* replays
+						.chunkIndex(tenant, params.id, { startTime: windowStart, endTime: windowEnd })
+						.pipe(Effect.flatMap(orNotFound))
 					const truncated = rows.length > MAX_REPLAY_MANIFEST_CHUNKS
-					// ClickHouse JSON-quotes 64-bit ints on backends that refuse the
-					// unquote setting; coerce before Schema.Number validates.
 					const chunks = rows.slice(0, MAX_REPLAY_MANIFEST_CHUNKS).map(
 						(row) =>
 							({
@@ -403,68 +332,45 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 						...query,
 						limit: Math.min(query.limit ?? LIST_LIMIT_DEFAULT, MAX_REPLAY_CHUNKS_PER_REQUEST),
 					}
+					const window = { startTime: windowStart, endTime: windowEnd }
 					const page = yield* paginateOffsetQuery(pageQuery, ({ limit, offset }) =>
-						Effect.gen(function* () {
-							const compiled = CH.compile(
-								CH.sessionReplayEventsQuery({
-									startTime: windowStart,
-									endTime: windowEnd,
-									fromChunkSeq,
-									toChunkSeq:
-										toChunkSeq === Number.POSITIVE_INFINITY ? undefined : toChunkSeq,
-									limit: Math.min(limit, MAX_REPLAY_CHUNKS_PER_REQUEST + 1),
-									offset,
-								}),
-								{ orgId: tenant.orgId, sessionId: params.id },
-							)
-							// Two ceilings, because there are two places the payload can come
-							// from. `responseLimits` bounds what the warehouse hands back —
-							// the only guard for pre-cutover rows, which still carry `events`
-							// inline. Blob-backed rows make that response nearly empty, so it
-							// would pass anything; `assertRangeFitsBudget` below bounds the
-							// hydration instead, using sizes the index already knows.
-							return yield* warehouse
-								.compiledQueryBounded(tenant, compiled, {
-									profile: "list",
-									context: "v2GetReplayEvents",
-									responseLimits: {
-										maxRows: MAX_REPLAY_CHUNKS_PER_REQUEST + 1,
-										maxBytes: MAX_REPLAY_EVENTS_RESPONSE_BYTES,
-									},
-								})
-								.pipe(
-									Effect.catchTag(
-										"@maple/query-engine/execution/WarehouseResponseLimitError",
-										() =>
-											Effect.fail(
-												V2SessionReplayRangeTooLarge.make(undefined, {
-													param: "to_chunk_seq",
-												}),
-											),
-									),
-									Effect.tap((rows) =>
-										rows.length === 0 && offset === 0
-											? requireSession(tenant, params.id, windowStart, windowEnd)
-											: Effect.void,
-									),
-									Effect.tap(assertRangeFitsBudget),
-									// Blob-backed rows (empty `events`) get their payload from
-									// R2; pre-cutover rows already carry it inline.
-									Effect.flatMap((rows) => blobs.hydrate(tenant.orgId, params.id, rows)),
-									Effect.map((rows): ReadonlyArray<V2SessionReplayChunk> =>
-										rows.map((row) => ({
-											object: "session_replay.event_chunk" as const,
-											chunk_seq: row.chunkSeq,
-											timestamp: isoOf(row.timestamp),
-											duration_ms: row.durationMs,
-											event_count: row.eventCount,
-											byte_size: row.byteSize,
-											is_checkpoint: row.isCheckpoint !== 0,
-											events: row.events,
-										})),
-									),
-								)
-						}),
+						replays
+							.eventChunks(tenant, params.id, window, {
+								fromChunkSeq,
+								toChunkSeq: toChunkSeq === Number.POSITIVE_INFINITY ? undefined : toChunkSeq,
+								limit: Math.min(limit, MAX_REPLAY_CHUNKS_PER_REQUEST + 1),
+								offset,
+							})
+							.pipe(
+								// Two ceilings, because there are two places the payload can come
+								// from. The warehouse response limit guards pre-cutover rows, which
+								// carry `events` inline; `assertRangeFitsBudget` bounds hydration of
+								// blob-backed rows using sizes the index already knows.
+								Effect.catchTag(
+									"@maple/query-engine/execution/WarehouseResponseLimitError",
+									() =>
+										Effect.fail(
+											V2SessionReplayRangeTooLarge.make(undefined, {
+												param: "to_chunk_seq",
+											}),
+										),
+								),
+								Effect.flatMap(orNotFound),
+								Effect.tap(assertRangeFitsBudget),
+								Effect.flatMap((rows) => replays.hydrateChunks(tenant, params.id, rows)),
+								Effect.map((rows): ReadonlyArray<V2SessionReplayChunk> =>
+									rows.map((row) => ({
+										object: "session_replay.event_chunk" as const,
+										chunk_seq: row.chunkSeq,
+										timestamp: isoOf(row.timestamp),
+										duration_ms: row.durationMs,
+										event_count: row.eventCount,
+										byte_size: row.byteSize,
+										is_checkpoint: row.isCheckpoint !== 0,
+										events: row.events,
+									})),
+								),
+							),
 					)
 					return { object: "list" as const, ...page }
 				}),
@@ -475,60 +381,44 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const windowStart = yield* optUtc(query.window_start, "window_start")
 					const windowEnd = yield* optUtc(query.window_end, "window_end")
 					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
-						Effect.gen(function* () {
-							const compiled = CH.compile(
-								CH.sessionTranscriptQuery({
-									startTime: windowStart,
-									endTime: windowEnd,
-									limit,
-									offset,
-								}),
-								{ orgId: tenant.orgId, sessionId: params.id },
+						replays
+							.transcript(
+								tenant,
+								params.id,
+								{ startTime: windowStart, endTime: windowEnd },
+								{ limit, offset },
 							)
-							return yield* warehouse
-								.compiledQuery(tenant, compiled, {
-									profile: "list",
-									context: "v2SessionTranscript",
-								})
-								.pipe(
-									Effect.tap((rows) =>
-										rows.length === 0 && offset === 0
-											? requireSession(tenant, params.id, windowStart, windowEnd)
-											: Effect.void,
-									),
-									Effect.map((rows): ReadonlyArray<V2SessionTranscriptEvent> =>
-										rows.map((row) => ({
-											object: "session_replay.transcript_event" as const,
-											timestamp: isoOf(row.timestamp),
-											seq: row.seq,
-											attributes: row.attributes,
-											type: row.type,
-											url: row.url,
-											trace_id: row.traceId ? decodeTraceId(row.traceId) : null,
-											level: row.level === "" ? null : row.level,
-											message: row.message === "" ? null : row.message,
-											target_selector:
-												row.targetSelector === "" ? null : row.targetSelector,
-											target_text: row.targetText === "" ? null : row.targetText,
-											net_method:
-												row.type === "network" && row.netMethod !== ""
-													? row.netMethod
-													: null,
-											net_url:
-												row.type === "network" && row.netUrl !== ""
-													? row.netUrl
-													: null,
-											net_status: row.type === "network" ? row.netStatus : null,
-											net_duration_ms:
-												row.type === "network" ? row.netDurationMs : null,
-											error_stack:
-												row.type === "error" && row.errorStack !== ""
-													? row.errorStack
-													: null,
-										})),
-									),
-								)
-						}),
+							.pipe(
+								Effect.flatMap(orNotFound),
+								Effect.map((rows): ReadonlyArray<V2SessionTranscriptEvent> =>
+									rows.map((row) => ({
+										object: "session_replay.transcript_event" as const,
+										timestamp: isoOf(row.timestamp),
+										seq: row.seq,
+										attributes: row.attributes,
+										type: row.type,
+										url: row.url,
+										trace_id: row.traceId ? decodeTraceId(row.traceId) : null,
+										level: row.level === "" ? null : row.level,
+										message: row.message === "" ? null : row.message,
+										target_selector:
+											row.targetSelector === "" ? null : row.targetSelector,
+										target_text: row.targetText === "" ? null : row.targetText,
+										net_method:
+											row.type === "network" && row.netMethod !== ""
+												? row.netMethod
+												: null,
+										net_url:
+											row.type === "network" && row.netUrl !== "" ? row.netUrl : null,
+										net_status: row.type === "network" ? row.netStatus : null,
+										net_duration_ms: row.type === "network" ? row.netDurationMs : null,
+										error_stack:
+											row.type === "error" && row.errorStack !== ""
+												? row.errorStack
+												: null,
+									})),
+								),
+							),
 					)
 					return { object: "list" as const, ...page }
 				}),
@@ -539,27 +429,18 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 					const startTime = yield* toUtc(payload.start_time, "start_time")
 					const endTime = yield* toUtc(payload.end_time, "end_time")
 					const page = yield* paginateOffsetQuery(payload, ({ limit, offset }) =>
-						Effect.gen(function* () {
-							const compiled = CH.compile(
-								CH.sessionsForTraceQuery({ traceId: payload.trace_id, limit, offset }),
-								{ orgId: tenant.orgId, startTime, endTime },
-							)
-							return yield* warehouse
-								.compiledQuery(tenant, compiled, {
-									profile: "list",
-									context: "v2ReplaysForTrace",
-								})
-								.pipe(
-									Effect.map((rows): ReadonlyArray<V2SessionReplayRef> =>
-										rows.map((row) => ({
-											object: "session_replay.ref" as const,
-											id: decodeSessionId(row.sessionId),
-											start_time: isoOf(row.startTime),
-											duration_ms: row.durationMs,
-										})),
-									),
-								)
-						}),
+						replays
+							.forTrace(tenant, payload.trace_id, { startTime, endTime }, { limit, offset })
+							.pipe(
+								Effect.map((rows): ReadonlyArray<V2SessionReplayRef> =>
+									rows.map((row) => ({
+										object: "session_replay.ref" as const,
+										id: decodeSessionId(row.sessionId),
+										start_time: isoOf(row.startTime),
+										duration_ms: row.durationMs,
+									})),
+								),
+							),
 					)
 					return {
 						object: "list" as const,
@@ -569,10 +450,3 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			)
 	}),
 )
-
-// Self-contained: the blob store resolves from the worker env (and degrades to
-// a no-op hydrator when the R2 binding is absent), so it is provided here
-// rather than pushed onto every caller that builds this group — the v2 route
-// tests construct their own layer stack and would otherwise have to know about
-// a storage detail of one handler.
-export const HttpV2SessionReplaysLive = HttpV2SessionReplaysGroup.pipe(Layer.provide(ReplayBlobStore.layer))

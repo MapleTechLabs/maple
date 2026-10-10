@@ -29,7 +29,8 @@ import {
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, Effect, Layer } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as Integrations from "@maple/query-engine-integrations"
 
@@ -55,25 +56,16 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
 
-		const runDb = <A>(
-			operation: string,
-			effect: Effect.Effect<A, DatabaseError>,
-		): Effect.Effect<A, SetupAuditUnavailableError> =>
-			effect.pipe(
-				Effect.tapCause((cause) =>
-					Effect.logError("Setup audit database read failed").pipe(
-						Effect.annotateLogs({ operation, cause }),
-					),
-				),
-				Effect.mapError(
-					(error) =>
-						new SetupAuditUnavailableError({
-							message: "Setup audit configuration could not be read",
-							operation,
-							cause: error,
-						}),
-				),
-			)
+		const dbExecute = makeDbExecute(
+			database,
+			"SetupAuditService",
+			(error) =>
+				new SetupAuditUnavailableError({
+					message: "Setup audit configuration could not be read",
+					operation: "config",
+					cause: error,
+				}),
+		)
 
 		/**
 		 * One pass over the org's configuration. Every read is a narrow column projection — the audit
@@ -81,153 +73,150 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 		 * running ~15 selects per request cheap.
 		 */
 		const fetchConfigInputs = Effect.fn("SetupAuditService.fetchConfigInputs")(function* (orgId: OrgId) {
-			const rows = yield* runDb(
-				"config",
-				database.execute((db) =>
-					Effect.gen(function* () {
-						const [
-							onboarding,
-							rules,
-							ruleStates,
-							destinations,
-							notificationPolicy,
-							anomalySettings,
-							dashboardRows,
-							sampling,
-							mappings,
-							clickhouse,
-							connections,
-							cloudflare,
-							repositories,
-							targets,
-							openRecommendations,
-						] = yield* Effect.all(
-							[
-								db.run(
-									PG.from(OrgOnboardingState)
-										.select("firstDataReceivedAt")
-										.where(($) => [$.orgId.eq(orgId)])
-										.limit(1),
-								),
-								db.run(
-									PG.from(AlertRules)
-										.select(
-											"id",
-											"name",
-											"enabled",
-											"destinationIdsJson",
-											"windowMinutes",
-											"lastScheduledAt",
-											"createdAt",
-										)
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(AlertRuleStates)
-										.select("ruleId", "lastEvaluatedAt", "lastError")
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(AlertDestinations)
-										.select("id", "name", "enabled", "lastTestError")
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(ErrorNotificationPolicies)
-										.select("enabled", "destinationIdsJson")
-										.where(($) => [$.orgId.eq(orgId)])
-										.limit(1),
-								),
-								db.run(
-									PG.from(AnomalyDetectorSettings)
-										.select("enabled")
-										.where(($) => [$.orgId.eq(orgId)])
-										.limit(1),
-								),
-								db.run(
-									PG.from(Dashboards)
-										.select(() => ({ count: PG.count() }))
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(OrgIngestSamplingPolicies)
-										.select("traceSampleRatio", "alwaysKeepErrorSpans")
-										.where(($) => [$.orgId.eq(orgId)])
-										.limit(1),
-								),
-								db.run(
-									PG.from(OrgIngestAttributeMappings)
-										.select(
-											"id",
-											"name",
-											"enabled",
-											"sourceContext",
-											"sourceKey",
-											"targetKey",
-										)
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(OrgClickHouseSettings)
-										.select("syncStatus", "lastSyncError", "schemaVersion")
-										.where(($) => [$.orgId.eq(orgId)])
-										.limit(1),
-								),
-								db.run(
-									PG.from(OAuthConnections)
-										.select("provider", "revokedAt")
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(CloudflareAnalyticsState)
-										.select(
-											"dataset",
-											"zoneName",
-											"enabled",
-											"lastSuccessAt",
-											"lastErrorAt",
-											"lastError",
-										)
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(VcsRepositories)
-										.select("id", "fullName", "syncStatus", "lastSyncError")
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(ScrapeTargets)
-										.select("id", "name", "enabled", "lastScrapeError")
-										.where(($) => [$.orgId.eq(orgId)]),
-								),
-								db.run(
-									PG.from(OrgRecommendationIssues)
-										.select(() => ({ count: PG.count() }))
-										.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
-								),
-							],
-							{ concurrency: "unbounded" },
-						)
+			const rows = yield* dbExecute((db) =>
+				Effect.gen(function* () {
+					const [
+						onboarding,
+						rules,
+						ruleStates,
+						destinations,
+						notificationPolicy,
+						anomalySettings,
+						dashboardRows,
+						sampling,
+						mappings,
+						clickhouse,
+						connections,
+						cloudflare,
+						repositories,
+						targets,
+						openRecommendations,
+					] = yield* Effect.all(
+						[
+							db.run(
+								PG.from(OrgOnboardingState)
+									.select("firstDataReceivedAt")
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							),
+							db.run(
+								PG.from(AlertRules)
+									.select(
+										"id",
+										"name",
+										"enabled",
+										"destinationIdsJson",
+										"windowMinutes",
+										"lastScheduledAt",
+										"createdAt",
+									)
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(AlertRuleStates)
+									.select("ruleId", "lastEvaluatedAt", "lastError")
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(AlertDestinations)
+									.select("id", "name", "enabled", "lastTestError")
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(ErrorNotificationPolicies)
+									.select("enabled", "destinationIdsJson")
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							),
+							db.run(
+								PG.from(AnomalyDetectorSettings)
+									.select("enabled")
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							),
+							db.run(
+								PG.from(Dashboards)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(OrgIngestSamplingPolicies)
+									.select("traceSampleRatio", "alwaysKeepErrorSpans")
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							),
+							db.run(
+								PG.from(OrgIngestAttributeMappings)
+									.select(
+										"id",
+										"name",
+										"enabled",
+										"sourceContext",
+										"sourceKey",
+										"targetKey",
+									)
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(OrgClickHouseSettings)
+									.select("syncStatus", "lastSyncError", "schemaVersion")
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							),
+							db.run(
+								PG.from(OAuthConnections)
+									.select("provider", "revokedAt")
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(CloudflareAnalyticsState)
+									.select(
+										"dataset",
+										"zoneName",
+										"enabled",
+										"lastSuccessAt",
+										"lastErrorAt",
+										"lastError",
+									)
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(VcsRepositories)
+									.select("id", "fullName", "syncStatus", "lastSyncError")
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(ScrapeTargets)
+									.select("id", "name", "enabled", "lastScrapeError")
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+							db.run(
+								PG.from(OrgRecommendationIssues)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
+							),
+						],
+						{ concurrency: "unbounded" },
+					)
 
-						return {
-							onboarding,
-							rules,
-							ruleStates,
-							destinations,
-							notificationPolicy,
-							anomalySettings,
-							dashboardRows,
-							sampling,
-							mappings,
-							clickhouse,
-							connections,
-							cloudflare,
-							repositories,
-							targets,
-							openRecommendations,
-						}
-					}),
-				),
+					return {
+						onboarding,
+						rules,
+						ruleStates,
+						destinations,
+						notificationPolicy,
+						anomalySettings,
+						dashboardRows,
+						sampling,
+						mappings,
+						clickhouse,
+						connections,
+						cloudflare,
+						repositories,
+						targets,
+						openRecommendations,
+					}
+				}),
 			)
 
 			const clickhouseRow = rows.clickhouse[0]
@@ -506,12 +495,12 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"audit.dataStatus": report.dataStatus,
-				"audit.warehouseAvailable": report.warehouseAvailable,
-				"audit.critical": report.summary.critical,
-				"audit.warn": report.summary.warn,
-				"audit.info": report.summary.info,
-				"audit.skip": report.summary.skip,
+				"maple.audit.data_status": report.dataStatus,
+				"maple.audit.warehouse_available": report.warehouseAvailable,
+				"maple.audit.critical": report.summary.critical,
+				"maple.audit.warn": report.summary.warn,
+				"maple.audit.info": report.summary.info,
+				"maple.audit.skip": report.summary.skip,
 			})
 
 			return report

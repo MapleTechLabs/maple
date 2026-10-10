@@ -145,7 +145,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onCreated, kind }: Crea
 				}),
 			})
 			if (!Exit.isSuccess(result)) {
-				toastExit(result, { error: isMcp ? "Couldn't create MCP key" : "Couldn't create API key" })
+				toastExit(result, { error: isMcp ? "Failed to create MCP key" : "Failed to create API key" })
 				return
 			}
 			setCreatedKey(result.value)

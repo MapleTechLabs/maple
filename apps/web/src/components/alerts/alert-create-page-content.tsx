@@ -11,7 +11,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AlertCreateFormSurface } from "@/components/alerts/alert-create-form-surface"
 import { ErrorState } from "@/components/common/error-state"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import { defaultRuleForm, ruleToFormState, type RuleFormState } from "@/lib/alerts/form-utils"
 import { ALERT_TEMPLATES, applyTemplate } from "@/lib/alerts/templates"
@@ -138,16 +138,14 @@ export function AlertCreatePageContent() {
  */
 function AlertRuleFormShell({ editing, children }: { editing: boolean; children: ReactNode }) {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Alerts", href: "/alerts" }, { label: editing ? "Edit Rule" : "New Rule" }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Alerts", href: "/alerts" },
+				{ label: editing ? "Edit rule" : "New rule" },
+			]}
+		>
+			{children}
+		</DashboardPage>
 	)
 }
 

@@ -19,6 +19,9 @@ export { type RawSqlReason, rawCompiledQuery } from "./raw-sql"
 // resolve a pipe name to identical SQL.
 export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
 
+// One builder over a current and a previous window, rows tagged with `period`.
+export { compilePeriodCompare, type PeriodCompareWindows } from "./period-compare"
+
 export * as tables from "./tables"
 
 // Shared row-schema codecs (ClickHouse `FORMAT JSON` 64-bit-int-as-string coercion).

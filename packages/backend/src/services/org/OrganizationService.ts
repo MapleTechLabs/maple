@@ -69,6 +69,7 @@ import {
 } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -267,6 +268,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "OrganizationService", toPersistenceError)
 			const env = yield* Env
 
 			const autumn = yield* AutumnClient
@@ -289,19 +291,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				yield* Effect.forEach(
 					ORG_SCOPED_TABLES,
 					(table) =>
-						database
-							.execute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)])))
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)]))),
 					{ discard: true },
 				)
 				yield* Effect.forEach(
 					APPROVED_ORG_SCOPED_TABLES,
 					(table) =>
-						database
-							.execute((db) =>
-								db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
-							)
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((db) =>
+							db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
+						),
 					{ discard: true },
 				)
 			})
@@ -360,7 +358,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				name: string,
 				region: MapleRegion,
 			) {
-				yield* Effect.annotateCurrentSpan({ userId, "maple.org_region": region })
+				yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "maple.org_region": region })
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({
@@ -481,9 +479,4 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
-
-	static readonly retrieve = (orgId: OrgId) => this.use((service) => service.retrieve(orgId))
-
-	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.delete(orgId, roles))
 }

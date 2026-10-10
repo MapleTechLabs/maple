@@ -146,7 +146,7 @@ export function FunnelStepBuilder({
 					disabled={steps.length >= maxSteps}
 					className="w-fit"
 				>
-					<PlusIcon size={14} />
+					<PlusIcon />
 					Add step
 					{steps.length >= maxSteps ? (
 						<span className="text-muted-foreground">(max {maxSteps})</span>
@@ -314,7 +314,7 @@ function StepRow({
 							onClick={onMoveUp}
 							disabled={index === 0}
 						>
-							<ArrowUpIcon size={12} />
+							<ArrowUpIcon />
 						</IconButton>
 						<IconButton
 							label="Move step down"
@@ -322,10 +322,10 @@ function StepRow({
 							onClick={onMoveDown}
 							disabled={index === total - 1}
 						>
-							<ArrowDownIcon size={12} />
+							<ArrowDownIcon />
 						</IconButton>
 						<IconButton label="Remove step" size="icon-xs" onClick={onRemove}>
-							<XmarkIcon size={12} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				)}

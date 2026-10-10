@@ -158,6 +158,7 @@ const make: Effect.Effect<
 			endTime: DateTime.makeUnsafe(nowMs),
 		})
 		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
+			profile: "aggregation",
 			context: "errorIssueVersionsSince",
 		})
 		return splitVersionRows(rows, row.baselineVersionsJson, VERSION_SCAN_LIMIT)
@@ -203,169 +204,164 @@ const make: Effect.Effect<
 		// Phase 1: settle runs that have finished since the last tick. Done first so
 		// a verification that already has an answer is not competing for this
 		// minute's budget with one that still needs an agent.
-		let verdictsApplied = 0
-		let failedRows = 0
 		const settled = yield* verification.settledRuns(MAX_VERIFICATIONS_PER_TICK)
-		for (const run of settled) {
+		const settledApplied = yield* Effect.forEach(settled, (run) => {
 			const { verdict, reason } = verdictFromRun(run.investigationStatus)
 			const note = run.summary === null ? reason : `${reason}\n\n${run.summary}`
-			if (yield* applyVerdictGuarded(run.verification, verdict, note)) verdictsApplied += 1
-			else failedRows += 1
-		}
+			return applyVerdictGuarded(run.verification, verdict, note)
+		})
 
 		const due = yield* verification.dueVerifications(nowMs, MAX_VERIFICATIONS_PER_TICK)
 
-		let refuted = 0
-		let investigationsStarted = 0
-		let skipped = 0
+		const outcomes = yield* Effect.forEach(due, (row) =>
+			Effect.gen(function* () {
+				const context = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIssues)
+							.innerJoin(ErrorIssuePullRequests, "pr", (_issue, pr) =>
+								pr.id.eq(row.pullRequestId),
+							)
+							.select(($) => ({
+								fingerprintHash: $.fingerprintHash,
+								workflowState: $.workflowState,
+								url: $.pr.url,
+							}))
+							.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
+							.limit(1),
+					),
+				)
+				const subject = context[0]
+				if (subject === undefined) return "skipped"
 
-		for (const row of due) {
-			const context = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssues)
-						.innerJoin(ErrorIssuePullRequests, "pr", (_issue, pr) => pr.id.eq(row.pullRequestId))
-						.select(($) => ({
-							fingerprintHash: $.fingerprintHash,
-							workflowState: $.workflowState,
-							url: $.pr.url,
-						}))
-						.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
-						.limit(1),
-				),
-			)
-			const subject = context[0]
-			if (subject === undefined) {
-				skipped += 1
-				continue
-			}
-
-			const split = yield* occurrenceSplit(row, subject.fingerprintHash, nowMs).pipe(
-				Effect.map(Option.some),
-				// Interrupts (isolate teardown) are NOT failures — re-raise them so the
-				// tick cancels promptly instead of recording a non-answer for this row.
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.interrupt
-						: Effect.logWarning("[FixVerification] occurrence split unavailable").pipe(
-								Effect.annotateLogs({
-									orgId: row.orgId,
-									verificationId: row.id,
-									error: summarizeCause(cause),
-								}),
-								// Leave the row waiting; the warehouse being down is not a verdict.
-								Effect.as(
-									Option.none<{
-										postMerge: number
-										staleClients: number
-										unattributed: number
-									}>(),
+				const split = yield* occurrenceSplit(row, subject.fingerprintHash, nowMs).pipe(
+					Effect.map(Option.some),
+					// Interrupts (isolate teardown) are NOT failures — re-raise them so the
+					// tick cancels promptly instead of recording a non-answer for this row.
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logWarning("[FixVerification] occurrence split unavailable").pipe(
+									Effect.annotateLogs({
+										orgId: row.orgId,
+										verificationId: row.id,
+										error: summarizeCause(cause),
+									}),
+									// Leave the row waiting; the warehouse being down is not a verdict.
+									Effect.as(
+										Option.none<{
+											postMerge: number
+											staleClients: number
+											unattributed: number
+										}>(),
+									),
 								),
-							),
-				),
-			)
-			if (Option.isNone(split)) {
-				skipped += 1
-				continue
-			}
+					),
+				)
+				if (Option.isNone(split)) return "skipped"
 
-			// The decisive case, and it needs no agent: the error fired from a build
-			// that did not exist when the fix merged.
-			if (split.value.postMerge > 0) {
+				// The decisive case, and it needs no agent: the error fired from a build
+				// that did not exist when the fix merged.
+				if (split.value.postMerge > 0) {
+					const applied = yield* applyVerdictGuarded(
+						row,
+						"not_fixed",
+						`${split.value.postMerge} occurrence(s) since the merge came from builds that were not running when the fix landed.`,
+					)
+					return applied ? "refuted" : "failed"
+				}
+
+				// Occurrences that could not be attributed to a build make the window
+				// unreadable: proceeding as though they did not happen is how an error
+				// still firing from a version-less service gets `verified` and
+				// auto-closed. Inconclusive, not a refutation — those occurrences may
+				// equally be old clients — and `applyVerdict` re-arms one longer window
+				// before handing the issue back to a human.
+				if (split.value.unattributed > 0) {
+					const applied = yield* applyVerdictGuarded(
+						row,
+						"inconclusive",
+						"Occurrences since the merge carried no service.version (or the version scan was truncated), so they cannot be attributed to a pre- or post-merge build.",
+					)
+					return applied ? "verdict" : "failed"
+				}
+
+				// Nothing observed at all, from any build, and the window has run its
+				// course. That is only meaningful if the issue had enough traffic for
+				// silence to mean something — which is exactly what the window length
+				// was computed from, so reaching here with a usable pre-merge rate is
+				// itself the evidence. With no usable rate, say so rather than guess.
+				const hadUsableRate = row.baselineRatePerHour > 0
+				if (!hadUsableRate && split.value.staleClients === 0) {
+					// A verdict, not a skip: the row leaves `waiting` for good here.
+					const applied = yield* applyVerdictGuarded(
+						row,
+						"inconclusive",
+						"This error fired too rarely before the merge for silence afterwards to confirm the fix.",
+					)
+					return applied ? "verdict" : "failed"
+				}
+
+				const enqueued = yield* enqueueFixVerification({
+					verification: row,
+					pullRequestUrl: subject.url,
+					postMergeOccurrences: split.value.postMerge,
+					staleClientOccurrences: split.value.staleClients,
+					chatSessions,
+				}).pipe(
+					Effect.provideService(Database, database),
+					// An interrupt here must never become `{ enqueued: false }`: the fallback
+					// below reads that as "no agent available" and can write a terminal
+					// `verified` verdict, auto-closing the issue on an isolate teardown.
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.logWarning(
+									"[FixVerification] could not enqueue verification agent",
+								).pipe(
+									Effect.annotateLogs({
+										orgId: row.orgId,
+										verificationId: row.id,
+										error: summarizeCause(cause),
+									}),
+									Effect.as({ enqueued: false, reason: "error" } as const),
+								),
+					),
+				)
+
+				if (enqueued.enqueued) {
+					yield* verification.markRunning(row, enqueued.investigationId, nowMs)
+					return "started"
+				}
+
+				// No agent available. Rather than leaving the row waiting forever, fall
+				// back to the deterministic reading: zero post-merge occurrences across a
+				// window sized from this issue's own rate IS the evidence, and the agent
+				// was only ever going to corroborate it. Recorded as a verdict so the
+				// timeline says what happened and why.
+				const fallbackVerdict: VerificationVerdict =
+					row.attempt + 1 >= MAX_VERIFICATION_ATTEMPTS || hadUsableRate
+						? "verified"
+						: "inconclusive"
+				// A verdict, and the riskiest one in the tick — it can auto-close without
+				// any agent pass — so it is counted as a verdict rather than a skip.
 				const applied = yield* applyVerdictGuarded(
 					row,
-					"not_fixed",
-					`${split.value.postMerge} occurrence(s) since the merge came from builds that were not running when the fix landed.`,
+					fallbackVerdict,
+					fallbackVerdict === "verified"
+						? `No occurrences from post-merge builds across the verification window. (Verified from the occurrence data; no agent pass ran: ${enqueued.reason}.)`
+						: `Verification could not reach a confident answer and no agent pass was available: ${enqueued.reason}.`,
 				)
-				if (applied) refuted += 1
-				else failedRows += 1
-				continue
-			}
+				return applied ? "verdict" : "failed"
+			}),
+		)
 
-			// Occurrences that could not be attributed to a build make the window
-			// unreadable: proceeding as though they did not happen is how an error
-			// still firing from a version-less service gets `verified` and
-			// auto-closed. Inconclusive, not a refutation — those occurrences may
-			// equally be old clients — and `applyVerdict` re-arms one longer window
-			// before handing the issue back to a human.
-			if (split.value.unattributed > 0) {
-				const applied = yield* applyVerdictGuarded(
-					row,
-					"inconclusive",
-					"Occurrences since the merge carried no service.version (or the version scan was truncated), so they cannot be attributed to a pre- or post-merge build.",
-				)
-				if (applied) verdictsApplied += 1
-				else failedRows += 1
-				continue
-			}
-
-			// Nothing observed at all, from any build, and the window has run its
-			// course. That is only meaningful if the issue had enough traffic for
-			// silence to mean something — which is exactly what the window length
-			// was computed from, so reaching here with a usable pre-merge rate is
-			// itself the evidence. With no usable rate, say so rather than guess.
-			const hadUsableRate = row.baselineRatePerHour > 0
-			if (!hadUsableRate && split.value.staleClients === 0) {
-				// A verdict, not a skip: the row leaves `waiting` for good here.
-				const applied = yield* applyVerdictGuarded(
-					row,
-					"inconclusive",
-					"This error fired too rarely before the merge for silence afterwards to confirm the fix.",
-				)
-				if (applied) verdictsApplied += 1
-				else failedRows += 1
-				continue
-			}
-
-			const enqueued = yield* enqueueFixVerification({
-				verification: row,
-				pullRequestUrl: subject.url,
-				postMergeOccurrences: split.value.postMerge,
-				staleClientOccurrences: split.value.staleClients,
-				chatSessions,
-			}).pipe(
-				Effect.provideService(Database, database),
-				// An interrupt here must never become `{ enqueued: false }`: the fallback
-				// below reads that as "no agent available" and can write a terminal
-				// `verified` verdict, auto-closing the issue on an isolate teardown.
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.interrupt
-						: Effect.logWarning("[FixVerification] could not enqueue verification agent").pipe(
-								Effect.annotateLogs({
-									orgId: row.orgId,
-									verificationId: row.id,
-									error: summarizeCause(cause),
-								}),
-								Effect.as({ enqueued: false, reason: "error" } as const),
-							),
-				),
-			)
-
-			if (enqueued.enqueued) {
-				yield* verification.markRunning(row, enqueued.investigationId, nowMs)
-				investigationsStarted += 1
-				continue
-			}
-
-			// No agent available. Rather than leaving the row waiting forever, fall
-			// back to the deterministic reading: zero post-merge occurrences across a
-			// window sized from this issue's own rate IS the evidence, and the agent
-			// was only ever going to corroborate it. Recorded as a verdict so the
-			// timeline says what happened and why.
-			const fallbackVerdict: VerificationVerdict =
-				row.attempt + 1 >= MAX_VERIFICATION_ATTEMPTS || hadUsableRate ? "verified" : "inconclusive"
-			// A verdict, and the riskiest one in the tick — it can auto-close without
-			// any agent pass — so it is counted as a verdict rather than a skip.
-			const applied = yield* applyVerdictGuarded(
-				row,
-				fallbackVerdict,
-				fallbackVerdict === "verified"
-					? `No occurrences from post-merge builds across the verification window. (Verified from the occurrence data; no agent pass ran: ${enqueued.reason}.)`
-					: `Verification could not reach a confident answer and no agent pass was available: ${enqueued.reason}.`,
-			)
-			if (applied) verdictsApplied += 1
-			else failedRows += 1
-		}
+		const countOutcome = (outcome: (typeof outcomes)[number]) =>
+			outcomes.filter((candidate) => candidate === outcome).length
+		const refuted = countOutcome("refuted")
+		const investigationsStarted = countOutcome("started")
+		const skipped = countOutcome("skipped")
+		const verdictsApplied = settledApplied.filter(Boolean).length + countOutcome("verdict")
+		const failedRows = settledApplied.filter((applied) => !applied).length + countOutcome("failed")
 
 		yield* Effect.annotateCurrentSpan({
 			"maple.verification.examined": due.length,

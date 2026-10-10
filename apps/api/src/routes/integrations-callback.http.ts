@@ -264,7 +264,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				label: "PlanetScale",
 			})
 
-		const handle = Effect.fn("integrations.hazelOAuthCallback", {
+		const handle = Effect.fn("IntegrationsCallbackRouter.hazelOAuthCallback", {
 			kind: "server",
 			attributes: { "http.route": HAZEL_CALLBACK_PATH, "http.request.method": "GET" },
 		})(function* (req: HttpServerRequest.HttpServerRequest) {
@@ -371,7 +371,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		// authorization `code` and connect `state` in `url.full` / `url.query` —
 		// see ApiObservabilityLive), so this span is the callback's only trace root.
 		// It carries the route and outcome, never the query string.
-		const handleGithub = Effect.fn("integrations.githubOAuthCallback", {
+		const handleGithub = Effect.fn("IntegrationsCallbackRouter.githubOAuthCallback", {
 			kind: "server",
 			attributes: { "http.route": GITHUB_CALLBACK_PATH, "http.request.method": "GET" },
 		})(
@@ -502,7 +502,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const cloudflareErrorPage = (message: string) =>
 			htmlResponse(cloudflareCallbackPage({ status: "error", message, returnTo: null }), 400)
 
-		const handleCloudflare = Effect.fn("integrations.cloudflareOAuthCallback", {
+		const handleCloudflare = Effect.fn("IntegrationsCallbackRouter.cloudflareOAuthCallback", {
 			kind: "server",
 			attributes: { "http.route": CLOUDFLARE_CALLBACK_PATH, "http.request.method": "GET" },
 		})(function* (req: HttpServerRequest.HttpServerRequest) {
@@ -588,7 +588,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const planetscaleErrorPage = (message: string) =>
 			htmlResponse(planetscaleCallbackPage({ status: "error", message, returnTo: null }), 400)
 
-		const handlePlanetScale = Effect.fn("integrations.planetscaleOAuthCallback", {
+		const handlePlanetScale = Effect.fn("IntegrationsCallbackRouter.planetscaleOAuthCallback", {
 			kind: "server",
 			attributes: { "http.route": PLANETSCALE_CALLBACK_PATH, "http.request.method": "GET" },
 		})(function* (req: HttpServerRequest.HttpServerRequest) {

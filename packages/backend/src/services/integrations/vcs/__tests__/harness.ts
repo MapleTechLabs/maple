@@ -5,10 +5,7 @@ import { OrgId, UserId, type VcsSyncJob } from "@maple/domain/http"
 import { Cause, ConfigProvider, type Context, Effect, Exit, Layer, Option, Schema } from "effect"
 import type { TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import {
 	clampQueueDelaySeconds,
@@ -25,7 +22,7 @@ export const asOrgId = Schema.decodeUnknownSync(OrgId)
 export const asUserId = Schema.decodeUnknownSync(UserId)
 
 // A real RSA key so the App-JWT mint (crypto.subtle.importKey) succeeds; the
-// App's REST calls are always stubbed at the GithubHttp seam.
+// App's REST calls are always stubbed at the HttpClient seam.
 const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
 	modulusLength: 2048,
 	publicKeyEncoding: { type: "spki", format: "pem" },
@@ -78,17 +75,43 @@ export const jsonResponse = (body: unknown, init?: { status?: number; headers?: 
 		headers: { "content-type": "application/json", ...init?.headers },
 	})
 
-// A GithubHttp seam replaying canned responses in call order; once the script is
+// What a fake GitHub transport sees of each outgoing request.
+export interface FakeGithubRequest {
+	readonly url: string
+	readonly method: string
+	readonly headers: Readonly<Record<string, string>>
+	readonly body: string | undefined
+}
+
+// An HttpClient seam for the GitHub App client: `respond` answers each request
+// with a web `Response`, so rate-limit and pagination handling run unchanged.
+export const fakeGithubHttp = (respond: (request: FakeGithubRequest) => Response | Promise<Response>) =>
+	Layer.succeed(
+		HttpClient.HttpClient,
+		HttpClient.make((request, url) =>
+			Effect.promise(async () =>
+				respond({
+					url: url.toString(),
+					method: request.method,
+					headers: request.headers,
+					body:
+						request.body._tag === "Raw" && typeof request.body.body === "string"
+							? request.body.body
+							: undefined,
+				}),
+			).pipe(Effect.map((response) => HttpClientResponse.fromWeb(request, response))),
+		),
+	)
+
+// A GitHub HttpClient seam replaying canned responses in call order; once the script is
 // exhausted the last responder repeats (so rate-limit loops can keep replying).
 export const scriptedHttp = (responders: ReadonlyArray<() => Response>) => {
 	let i = 0
-	return Layer.succeed(GithubHttp, {
-		fetch: async () => {
-			const make = responders[Math.min(i, responders.length - 1)]!
-			i += 1
-			return make()
-		},
-	} satisfies GithubHttpApi)
+	return fakeGithubHttp(() => {
+		const make = responders[Math.min(i, responders.length - 1)]!
+		i += 1
+		return make()
+	})
 }
 
 // A recording VcsSyncQueue: captures every enqueued job (and per-send delay).

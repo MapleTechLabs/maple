@@ -505,7 +505,7 @@ function JumpToDiagnosis({ messageId }: { messageId: string }) {
 			className="absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-sm"
 			onClick={() => scrollToMessage(messageId, { align: "start", behavior: "smooth" })}
 		>
-			<PulseIcon className="size-3.5" />
+			<PulseIcon />
 			<span className="truncate">Jump to diagnosis</span>
 		</Button>
 	)

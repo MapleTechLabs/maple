@@ -142,10 +142,10 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				steps: steps.length,
-				keyBy,
-				windowSeconds,
-				breakdownBy: breakdownBy ?? "none",
+				"maple.ai.steps": steps.length,
+				"maple.ai.key_by": keyBy,
+				"maple.ai.window_seconds": windowSeconds,
+				"maple.ai.breakdown_by": breakdownBy ?? "none",
 			})
 
 			const definition = { steps, keyBy, windowSeconds, filters, startTime: st, endTime: et }

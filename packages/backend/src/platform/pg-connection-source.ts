@@ -22,5 +22,5 @@ export const mapleDbConnectionFromEnv = (env: Record<string, unknown>): Option.O
 	}))
 
 /** The port over an env record in hand — a Worker's, a Durable Object's, a Workflow run's, a cron fire's. */
-export const mapleDbConnectionLayer = (env: Record<string, unknown>): Layer.Layer<MapleDbConnection> =>
+export const layerMapleDbConnection = (env: Record<string, unknown>): Layer.Layer<MapleDbConnection> =>
 	Layer.succeed(MapleDbConnection, mapleDbConnectionFromEnv(env))

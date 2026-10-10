@@ -29,6 +29,7 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { EdgeCacheService } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -100,6 +101,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "WebAnalyticsDigestService", toPersistenceError)
 			const email = yield* EmailService
 			const env = yield* Env
 			const warehouse = yield* WarehouseQueryService
@@ -276,13 +278,12 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const cur = summaryOf(curSummary)
 				const prev = summaryOf(prevSummary)
 
-				let curPageViews = 0
-				let prevPageViews = 0
-				for (const row of pageviewSeries) {
-					const views = row.pageViews || 0
-					if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
-					else prevPageViews += views
-				}
+				const inCurrentWeek = (row: (typeof pageviewSeries)[number]) =>
+					DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate
+				const sumViews = (rows: ReadonlyArray<(typeof pageviewSeries)[number]>) =>
+					rows.reduce((sum, row) => sum + (row.pageViews || 0), 0)
+				const curPageViews = sumViews(pageviewSeries.filter(inCurrentWeek))
+				const prevPageViews = sumViews(pageviewSeries.filter((row) => !inCurrentWeek(row)))
 
 				// Pages
 				const prevViewsByPage = new Map(
@@ -458,15 +459,13 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const todayStartMs = now - (now % DAY_MS)
 				const currentDayOfWeek = new Date(now).getUTCDay()
 
-				const subs = yield* database
-					.execute((db) =>
-						db.run(
-							PG.from(DigestSubscriptions)
-								.select()
-								.where(($) => [$.webAnalyticsEnabled.eq(true)]),
-						),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const subs = yield* dbExecute((db) =>
+					db.run(
+						PG.from(DigestSubscriptions)
+							.select()
+							.where(($) => [$.webAnalyticsEnabled.eq(true)]),
+					),
+				)
 
 				const due = subs.filter(
 					(s) =>
@@ -484,25 +483,23 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							const orgId = OrgId.make(rawOrgId)
 							if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) return []
 
-							const claim = yield* database
-								.execute((db) =>
-									db.run(
-										PG.update(DigestSubscriptions)
-											.set({ webAnalyticsLastAttemptedAt: now })
-											.where(($) => [
-												PG.inList(
-													$.id,
-													orgSubs.map((s) => s.id),
-												),
-												PG.or(
-													$.webAnalyticsLastAttemptedAt.isNull(),
-													$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
-												),
-											])
-											.returning("id"),
-									),
-								)
-								.pipe(Effect.mapError(toPersistenceError))
+							const claim = yield* dbExecute((db) =>
+								db.run(
+									PG.update(DigestSubscriptions)
+										.set({ webAnalyticsLastAttemptedAt: now })
+										.where(($) => [
+											PG.inList(
+												$.id,
+												orgSubs.map((s) => s.id),
+											),
+											PG.or(
+												$.webAnalyticsLastAttemptedAt.isNull(),
+												$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
+											),
+										])
+										.returning("id"),
+								),
+							)
 							const claimed = new Set(claim.map((c) => c.id))
 							const claimedSubs = orgSubs.filter((s) => claimed.has(s.id))
 							if (claimedSubs.length === 0) return []
@@ -590,7 +587,10 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const all = results.flat()
 				const sentCount = all.filter((r) => r.sent).length
 				const errorCount = all.length - sentCount
-				yield* Effect.annotateCurrentSpan({ sentCount, errorCount })
+				yield* Effect.annotateCurrentSpan({
+					"maple.web_analytics_digest.sent_count": sentCount,
+					"maple.web_analytics_digest.error_count": errorCount,
+				})
 				return { sentCount, errorCount, skipped: false }
 			})
 

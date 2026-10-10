@@ -207,13 +207,14 @@ const make: Effect.Effect<
 				},
 			)
 			const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
+				profile: "aggregation",
 				context: "errorIssueEnvFingerprints",
 			})
 			return fingerprintRows.map((row) => row.fingerprintHash).filter((hash) => hash.length > 0)
 		})
 
 	/** The filter half of the issue list, shared by the page and its count. `undefined` = matches nothing. */
-	const issueListConditions = Effect.fn("ErrorsService.issueListConditions")(function* (
+	const issueListConditions = Effect.fn("ErrorIssueReadModelsService.issueListConditions")(function* (
 		orgId: OrgId,
 		opts: IssueListFilters,
 	) {
@@ -270,99 +271,99 @@ const make: Effect.Effect<
 		return conditions
 	})
 
-	const listIssues: ErrorIssueReadModelsServiceApi["listIssues"] = Effect.fn("ErrorsService.listIssues")(
-		function* (orgId, opts) {
-			const sort = opts.sort ?? "last_seen"
-			yield* Effect.annotateCurrentSpan({
-				orgId,
-				workflowState: opts.workflowState ?? "all",
-				limit: opts.limit ?? 100,
-				sort,
-				...(opts.deploymentEnv ? { deploymentEnv: opts.deploymentEnv } : undefined),
-			})
-			const base = yield* issueListConditions(orgId, opts)
-			if (base === undefined) {
-				yield* Effect.annotateCurrentSpan({ issueCount: 0, hasMore: false })
-				return new ErrorIssuesListResponse({ issues: [] })
-			}
-			const cursor = opts.cursor
-			const keyset =
-				cursor === undefined
-					? undefined
-					: ($: IssueColumns) => {
-							const seenBefore = PG.or(
-								$.lastSeenAt.lt(cursor.lastSeenAt),
-								PG.and($.lastSeenAt.eq(cursor.lastSeenAt), $.id.lt(cursor.id)),
-							)
-							return sort === "severity" && "severityRank" in cursor
-								? PG.or(
-										issueSeverityOrder($).gt(cursor.severityRank),
-										PG.and(issueSeverityOrder($).eq(cursor.severityRank), seenBefore),
-									)
-								: seenBefore
-						}
+	const listIssues: ErrorIssueReadModelsServiceApi["listIssues"] = Effect.fn(
+		"ErrorIssueReadModelsService.listIssues",
+	)(function* (orgId, opts) {
+		const sort = opts.sort ?? "last_seen"
+		yield* Effect.annotateCurrentSpan({
+			orgId,
+			"maple.errors.workflow_state": opts.workflowState ?? "all",
+			"maple.errors.limit": opts.limit ?? 100,
+			"maple.errors.sort": sort,
+			...(opts.deploymentEnv ? { "maple.errors.deployment_env": opts.deploymentEnv } : undefined),
+		})
+		const base = yield* issueListConditions(orgId, opts)
+		if (base === undefined) {
+			yield* Effect.annotateCurrentSpan({ "result.issueCount": 0, "result.hasMore": false })
+			return new ErrorIssuesListResponse({ issues: [] })
+		}
+		const cursor = opts.cursor
+		const keyset =
+			cursor === undefined
+				? undefined
+				: ($: IssueColumns) => {
+						const seenBefore = PG.or(
+							$.lastSeenAt.lt(cursor.lastSeenAt),
+							PG.and($.lastSeenAt.eq(cursor.lastSeenAt), $.id.lt(cursor.id)),
+						)
+						return sort === "severity" && "severityRank" in cursor
+							? PG.or(
+									issueSeverityOrder($).gt(cursor.severityRank),
+									PG.and(issueSeverityOrder($).eq(cursor.severityRank), seenBefore),
+								)
+							: seenBefore
+					}
 
-			const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
-			const fetched = yield* dbExecute((db) => {
-				const query = PG.from(ErrorIssues)
-					.select()
-					.where(($) => [...base($), keyset?.($)])
-				return db.run(
-					(sort === "severity"
-						? query.orderBy(($) => [
-								[issueSeverityOrder($), "asc"],
-								[$.lastSeenAt, "desc"],
-								[$.id, "desc"],
-							])
-						: query.orderBy(($) => [
-								[$.lastSeenAt, "desc"],
-								[$.id, "desc"],
-							])
-					).limit(limit + 1),
-				)
-			})
-			const hasMore = fetched.length > limit
-			const rows = hasMore ? fetched.slice(0, limit) : fetched
-			const issues = yield* workflow.hydrateIssueRows(orgId, rows)
-
-			yield* Effect.annotateCurrentSpan({ issueCount: issues.length, hasMore })
-			const lastRow = rows.at(-1)
-			const nextCursor =
-				hasMore && lastRow
-					? sort === "severity"
-						? encodeIssueSeverityListCursor({
-								severityRank: severitySortRank(lastRow.severity),
-								lastSeenAt: lastRow.lastSeenAt,
-								id: decodeErrorIssueIdSync(lastRow.id),
-							})
-						: encodeIssueListCursor({
-								lastSeenAt: lastRow.lastSeenAt,
-								id: decodeErrorIssueIdSync(lastRow.id),
-							})
-					: undefined
-			return new ErrorIssuesListResponse(nextCursor === undefined ? { issues } : { issues, nextCursor })
-		},
-	)
-
-	const countIssues: ErrorIssueReadModelsServiceApi["countIssues"] = Effect.fn("ErrorsService.countIssues")(
-		function* (orgId, opts) {
-			const conditions = yield* issueListConditions(orgId, opts)
-			if (conditions === undefined) return 0
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssues)
-						.select(() => ({ total: PG.count() }))
-						.where(conditions),
-				),
+		const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
+		const fetched = yield* dbExecute((db) => {
+			const query = PG.from(ErrorIssues)
+				.select()
+				.where(($) => [...base($), keyset?.($)])
+			return db.run(
+				(sort === "severity"
+					? query.orderBy(($) => [
+							[issueSeverityOrder($), "asc"],
+							[$.lastSeenAt, "desc"],
+							[$.id, "desc"],
+						])
+					: query.orderBy(($) => [
+							[$.lastSeenAt, "desc"],
+							[$.id, "desc"],
+						])
+				).limit(limit + 1),
 			)
-			const total = rows[0]?.total ?? 0
-			yield* Effect.annotateCurrentSpan({ orgId, issueTotal: total })
-			return total
-		},
-	)
+		})
+		const hasMore = fetched.length > limit
+		const rows = hasMore ? fetched.slice(0, limit) : fetched
+		const issues = yield* workflow.hydrateIssueRows(orgId, rows)
+
+		yield* Effect.annotateCurrentSpan({ "result.issueCount": issues.length, "result.hasMore": hasMore })
+		const lastRow = rows.at(-1)
+		const nextCursor =
+			hasMore && lastRow
+				? sort === "severity"
+					? encodeIssueSeverityListCursor({
+							severityRank: severitySortRank(lastRow.severity),
+							lastSeenAt: lastRow.lastSeenAt,
+							id: decodeErrorIssueIdSync(lastRow.id),
+						})
+					: encodeIssueListCursor({
+							lastSeenAt: lastRow.lastSeenAt,
+							id: decodeErrorIssueIdSync(lastRow.id),
+						})
+				: undefined
+		return new ErrorIssuesListResponse(nextCursor === undefined ? { issues } : { issues, nextCursor })
+	})
+
+	const countIssues: ErrorIssueReadModelsServiceApi["countIssues"] = Effect.fn(
+		"ErrorIssueReadModelsService.countIssues",
+	)(function* (orgId, opts) {
+		const conditions = yield* issueListConditions(orgId, opts)
+		if (conditions === undefined) return 0
+		const rows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(ErrorIssues)
+					.select(() => ({ total: PG.count() }))
+					.where(conditions),
+			),
+		)
+		const total = rows[0]?.total ?? 0
+		yield* Effect.annotateCurrentSpan({ orgId, "result.issueTotal": total })
+		return total
+	})
 
 	const countOpenIssuesByService: ErrorIssueReadModelsServiceApi["countOpenIssuesByService"] = Effect.fn(
-		"ErrorsService.countOpenIssuesByService",
+		"ErrorIssueReadModelsService.countOpenIssuesByService",
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
@@ -379,112 +380,115 @@ const make: Effect.Effect<
 			),
 		)
 		const counts = rows.filter((row) => row.serviceName !== "")
-		yield* Effect.annotateCurrentSpan({ serviceCount: counts.length })
+		yield* Effect.annotateCurrentSpan({ "result.serviceCount": counts.length })
 		return counts
 	})
 
-	const getIssue: ErrorIssueReadModelsServiceApi["getIssue"] = Effect.fn("ErrorsService.getIssue")(
-		function* (orgId, issueId, opts) {
-			yield* Effect.annotateCurrentSpan({ orgId, issueId })
-			const issueRow = yield* workflow.requireIssue(orgId, issueId)
-			const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : yield* Clock.currentTimeMillis
-			const startMs = opts.startTime
-				? parseWarehouseDateTime(opts.startTime)
-				: endMs - DEFAULT_DETAIL_WINDOW_MS
-			const bucketSeconds = opts.bucketSeconds ?? 3600
-			const sampleLimit = opts.sampleLimit ?? 25
-			const tenant = systemTenant(orgId)
-			const isErrorKind = issueRow.kind === "error"
+	const getIssue: ErrorIssueReadModelsServiceApi["getIssue"] = Effect.fn(
+		"ErrorIssueReadModelsService.getIssue",
+	)(function* (orgId, issueId, opts) {
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
+		const issueRow = yield* workflow.requireIssue(orgId, issueId)
+		const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : yield* Clock.currentTimeMillis
+		const startMs = opts.startTime
+			? parseWarehouseDateTime(opts.startTime)
+			: endMs - DEFAULT_DETAIL_WINDOW_MS
+		const bucketSeconds = opts.bucketSeconds ?? 3600
+		const sampleLimit = opts.sampleLimit ?? 25
+		const tenant = systemTenant(orgId)
+		const isErrorKind = issueRow.kind === "error"
 
-			const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery(), {
-				orgId,
-				fingerprintHash: issueRow.fingerprintHash,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(endMs),
-				bucketSeconds,
-			})
-			const timeseriesEffect = isErrorKind
-				? warehouse.compiledQuery(tenant, timeseriesCompiled, {
-						context: "errorIssueTimeseries",
-					})
-				: Effect.succeed([])
+		const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery(), {
+			orgId,
+			fingerprintHash: issueRow.fingerprintHash,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+			bucketSeconds,
+		})
+		const timeseriesEffect = isErrorKind
+			? warehouse.compiledQuery(tenant, timeseriesCompiled, {
+					profile: "aggregation",
+					context: "errorIssueTimeseries",
+				})
+			: Effect.succeed([])
 
-			const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
-				orgId,
-				fingerprintHash: issueRow.fingerprintHash,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(endMs),
-			})
-			const samplesEffect = isErrorKind
-				? warehouse.compiledQuery(tenant, samplesCompiled, {
-						context: "errorIssueSampleTraces",
-					})
-				: Effect.succeed([])
+		const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
+			orgId,
+			fingerprintHash: issueRow.fingerprintHash,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		})
+		const samplesEffect = isErrorKind
+			? warehouse.compiledQuery(tenant, samplesCompiled, {
+					profile: "list",
+					context: "errorIssueSampleTraces",
+				})
+			: Effect.succeed([])
 
-			const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery(), {
-				orgId,
-				fingerprintHash: issueRow.fingerprintHash,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(endMs),
-			})
-			const environmentsEffect = isErrorKind
-				? warehouse.compiledQuery(tenant, environmentsCompiled, {
-						context: "errorIssueEnvironments",
-					})
-				: Effect.succeed([])
+		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery(), {
+			orgId,
+			fingerprintHash: issueRow.fingerprintHash,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		})
+		const environmentsEffect = isErrorKind
+			? warehouse.compiledQuery(tenant, environmentsCompiled, {
+					profile: "aggregation",
+					context: "errorIssueEnvironments",
+				})
+			: Effect.succeed([])
 
-			const incidentsEffect = dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIncidents)
-						.select()
-						.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
-						.orderBy(["lastTriggeredAt", "desc"])
-						.limit(50),
-				),
-			)
+		const incidentsEffect = dbExecute((db) =>
+			db.run(
+				PG.from(ErrorIncidents)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)])
+					.orderBy(["lastTriggeredAt", "desc"])
+					.limit(50),
+			),
+		)
 
-			const [timeseriesRows, sampleRows, environmentRows, incidentRows] = yield* Effect.all(
-				[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
-				{ concurrency: 4 },
-			)
-			const issue = (yield* workflow.hydrateIssueRows(orgId, [issueRow]))[0]!
-			const timeseries = timeseriesRows.map(
-				(row) =>
-					new ErrorIssueTimeseriesPoint({
-						bucket: decodeIsoDateTimeStringSync(DateTime.formatIso(row.bucket)),
-						count: row.count,
-					}),
-			)
-			const sampleTraces = sampleRows.map(
-				(row) =>
-					new ErrorIssueSampleTrace({
-						traceId: row.traceId,
-						spanId: row.spanId,
-						serviceName: row.serviceName,
-						timestamp: decodeIsoDateTimeStringSync(DateTime.formatIso(row.timestamp)),
-						exceptionMessage: row.exceptionMessage,
-						durationMicros: row.durationMicros,
-					}),
-			)
+		const [timeseriesRows, sampleRows, environmentRows, incidentRows] = yield* Effect.all(
+			[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
+			{ concurrency: 4 },
+		)
+		const issue = (yield* workflow.hydrateIssueRows(orgId, [issueRow]))[0]!
+		const timeseries = timeseriesRows.map(
+			(row) =>
+				new ErrorIssueTimeseriesPoint({
+					bucket: decodeIsoDateTimeStringSync(DateTime.formatIso(row.bucket)),
+					count: row.count,
+				}),
+		)
+		const sampleTraces = sampleRows.map(
+			(row) =>
+				new ErrorIssueSampleTrace({
+					traceId: row.traceId,
+					spanId: row.spanId,
+					serviceName: row.serviceName,
+					timestamp: decodeIsoDateTimeStringSync(DateTime.formatIso(row.timestamp)),
+					exceptionMessage: row.exceptionMessage,
+					durationMicros: row.durationMicros,
+				}),
+		)
 
-			const environments = environmentRows.map(
-				(row) => new ErrorIssueEnvironment({ name: row.name, count: row.count }),
-			)
+		const environments = environmentRows.map(
+			(row) => new ErrorIssueEnvironment({ name: row.name, count: row.count }),
+		)
 
-			return new ErrorIssueDetailResponse({
-				issue,
-				timeseries,
-				sampleTraces,
-				incidents: incidentRows.map(rowToIncident),
-				environments,
-			})
-		},
-	)
+		return new ErrorIssueDetailResponse({
+			issue,
+			timeseries,
+			sampleTraces,
+			incidents: incidentRows.map(rowToIncident),
+			environments,
+		})
+	})
 
 	const listIssueIncidents: ErrorIssueReadModelsServiceApi["listIssueIncidents"] = Effect.fn(
-		"ErrorsService.listIssueIncidents",
+		"ErrorIssueReadModelsService.listIssueIncidents",
 	)(function* (orgId, issueId) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
 		yield* workflow.requireIssue(orgId, issueId)
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -495,14 +499,14 @@ const make: Effect.Effect<
 					.limit(200),
 			),
 		)
-		yield* Effect.annotateCurrentSpan("incidentCount", rows.length)
+		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
 			incidents: rows.map(rowToIncident),
 		})
 	})
 
 	const listOpenIncidents: ErrorIssueReadModelsServiceApi["listOpenIncidents"] = Effect.fn(
-		"ErrorsService.listOpenIncidents",
+		"ErrorIssueReadModelsService.listOpenIncidents",
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>
@@ -514,7 +518,7 @@ const make: Effect.Effect<
 					.limit(500),
 			),
 		)
-		yield* Effect.annotateCurrentSpan("incidentCount", rows.length)
+		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
 			incidents: rows.map(rowToIncident),
 		})

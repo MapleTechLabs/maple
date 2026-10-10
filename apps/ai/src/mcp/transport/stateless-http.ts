@@ -22,7 +22,7 @@
  * deletes when the request scope closes — instead of under a session id, which
  * nothing ever deletes, and it reads headers off the message rather than the
  * live request. No `mcp-session-id` is issued, so clients never send one back
- * and the 404 branch cannot be reached. See `statelessMcpServerLayer`.
+ * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
 import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
@@ -216,19 +216,23 @@ export const layerStatelessMcpHttp = (options: {
 						const synthetic = parser.decode(
 							JSON.stringify(syntheticInitialize(options.protocol.protocolVersion)),
 						) as ReadonlyArray<FromClientEncoded>
-						for (const message of synthetic) {
-							yield* write(message)
-						}
+						yield* Effect.forEach(synthetic, (message) => write(message), { discard: true })
 					}
 
-					for (const message of messages) {
-						if (message._tag === "Request") {
-							requestIds.push(RequestId(message.id))
-							;(message as RequestEncoded & { headers: typeof requestHeaders }).headers =
-								requestHeaders.concat(message.headers)
-						}
-						yield* write(message)
-					}
+					yield* Effect.forEach(
+						messages,
+						(message) =>
+							Effect.suspend(() => {
+								if (message._tag === "Request") {
+									requestIds.push(RequestId(message.id))
+									;(
+										message as RequestEncoded & { headers: typeof requestHeaders }
+									).headers = requestHeaders.concat(message.headers)
+								}
+								return write(message)
+							}),
+						{ discard: true },
+					)
 
 					yield* write(constEof)
 
@@ -265,9 +269,11 @@ export const layerStatelessMcpHttp = (options: {
 				isAllowedOrigin(request, options.allowedOrigins)
 					? Effect.succeed(HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } }))
 					: Effect.succeed(HttpServerResponse.empty({ status: 403 }))
-			for (const method of ["GET", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
-				yield* router.add(method, options.path, methodNotAllowed)
-			}
+			yield* Effect.forEach(
+				["GET", "PUT", "PATCH", "DELETE", "OPTIONS"] as const,
+				(method) => router.add(method, options.path, methodNotAllowed),
+				{ discard: true },
+			)
 
 			return yield* RpcServer.Protocol.make((writeRequest_) => {
 				writeRequest = writeRequest_
@@ -304,7 +310,7 @@ export const layerStatelessMcpHttp = (options: {
  * register its route — is kept out of the server's own context. The caller provides
  * `McpServer`, so tool registration can share the instance from outside the transport.
  */
-export const statelessMcpServerLayer = (options: {
+export const layerStatelessMcpServer = (options: {
 	readonly name: string
 	readonly version: string
 	readonly instructions?: string | undefined

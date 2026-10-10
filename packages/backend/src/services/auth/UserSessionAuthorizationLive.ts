@@ -17,7 +17,7 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
  * Authorization for the few requests made before the caller has an organization. A Clerk session
  * alone; an API key belongs to an organization and is refused, as on every session-only route.
  */
-export const UserSessionAuthorizationLayer = Layer.effect(
+export const UserSessionAuthorizationLive = Layer.effect(
 	CurrentTenant.UserSessionAuthorization,
 	Effect.gen(function* () {
 		const env = yield* Env
@@ -33,7 +33,10 @@ export const UserSessionAuthorizationLayer = Layer.effect(
 						})
 					}
 					const userId = yield* resolveUser(request.headers)
-					yield* Effect.annotateCurrentSpan({ "maple.auth.method": "session", userId })
+					yield* Effect.annotateCurrentSpan({
+						"maple.auth.method": "session",
+						"tenant.userId": userId,
+					})
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.CurrentUser, { userId }),
 					)
