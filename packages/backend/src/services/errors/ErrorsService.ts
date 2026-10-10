@@ -710,13 +710,15 @@ const make: Effect.Effect<
 
 			// Usually `triage → in_progress → in_review`; one hop from a state the
 			// matrix lets straight through. Validated above, so no hop can fail here.
-			let next = row
-			for (const hop of fixProposalRoute(row.workflowState)) {
-				next = yield* applyTransition(orgId, actorId, next, hop, {
-					payload: { viaProposeFix: true },
-					timestamp,
-				})
-			}
+			const next = yield* Effect.reduce(
+				fixProposalRoute(row.workflowState),
+				() => row,
+				(current, hop) =>
+					applyTransition(orgId, actorId, current, hop, {
+						payload: { viaProposeFix: true },
+						timestamp,
+					}),
+			)
 			yield* touchActor(orgId, actorId, timestamp)
 			yield* maybeNotifyTransition(orgId, actorId, next, current.workflowState)
 			return yield* hydrateIssue(orgId, next)
@@ -1202,16 +1204,32 @@ const make: Effect.Effect<
 		// window and rescanning costs one extra warehouse query and leaves the
 		// remainder for the next cron. Steady state is a single minute and never
 		// enters the loop.
-		let windowEndMs = tickWindow.windowEndMs
-		let issuesRaw = yield* scanWindow(windowEndMs)
-		let splits = 0
-		while (issuesRaw.length > TICK_MAX_WINDOW_ROWS && splits < TICK_MAX_WINDOW_SPLITS) {
-			const widthMinutes = Math.round((windowEndMs - windowStartMs) / TICK_MINUTE_MS)
-			if (widthMinutes <= 1) break
-			windowEndMs = windowStartMs + Math.ceil(widthMinutes / 2) * TICK_MINUTE_MS
-			splits += 1
-			issuesRaw = yield* scanWindow(windowEndMs)
+		type ScanWindow = ReturnType<typeof scanWindow>
+		type ShedWindow = {
+			readonly windowEndMs: number
+			readonly issuesRaw: Effect.Success<ScanWindow>
+			readonly splits: number
 		}
+		const shedWindow = (
+			state: ShedWindow,
+		): Effect.Effect<ShedWindow, Effect.Error<ScanWindow>, Effect.Services<ScanWindow>> => {
+			if (state.issuesRaw.length <= TICK_MAX_WINDOW_ROWS || state.splits >= TICK_MAX_WINDOW_SPLITS) {
+				return Effect.succeed(state)
+			}
+			const widthMinutes = Math.round((state.windowEndMs - windowStartMs) / TICK_MINUTE_MS)
+			if (widthMinutes <= 1) return Effect.succeed(state)
+			const nextEndMs = windowStartMs + Math.ceil(widthMinutes / 2) * TICK_MINUTE_MS
+			return scanWindow(nextEndMs).pipe(
+				Effect.flatMap((issuesRaw) =>
+					shedWindow({ windowEndMs: nextEndMs, issuesRaw, splits: state.splits + 1 }),
+				),
+			)
+		}
+		const { windowEndMs, issuesRaw, splits } = yield* shedWindow({
+			windowEndMs: tickWindow.windowEndMs,
+			issuesRaw: yield* scanWindow(tickWindow.windowEndMs),
+			splits: 0,
+		})
 		if (issuesRaw.length > TICK_MAX_WINDOW_ROWS) {
 			// An indivisible minute over the cap. Applying it is still the right
 			// call — skipping would lose the window — but it is a fingerprinting
@@ -1383,103 +1401,109 @@ const make: Effect.Effect<
 		const incidentsOpened = persistence.incidentsOpened
 		const incidentsResolved = persistence.incidentsResolved
 
-		let issuesArchived = 0
-		let issuesDeleted = 0
+		const { issuesArchived, issuesDeleted } = runRetention
+			? yield* Effect.gen(function* () {
+					// Issues left behind by a fingerprint-algorithm bump. Their hashes can
+					// never be produced again (v1 and v2 hashes cannot collide), so there is
+					// nothing to wait for: archive them on sight instead of holding a dead
+					// issue in `triage` until the resolved window retires it. Scoped to
+					// error-kind — alert and integration issues key off their own
+					// identifiers, not the ClickHouse fingerprint.
+					const staleFingerprintRows = yield* dbExecute((db) =>
+						db.run(
+							PG.update(ErrorIssues)
+								.set({ archivedAt: nowMs, updatedAt: nowMs })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.kind.eq("error"),
+									$.fingerprintVersion.lt(FINGERPRINT_VERSION),
+									$.archivedAt.isNull(),
+								])
+								.returning("id"),
+						),
+					)
 
-		if (runRetention) {
-			// Issues left behind by a fingerprint-algorithm bump. Their hashes can
-			// never be produced again (v1 and v2 hashes cannot collide), so there is
-			// nothing to wait for: archive them on sight instead of holding a dead
-			// issue in `triage` until the resolved window retires it. Scoped to
-			// error-kind — alert and integration issues key off their own
-			// identifiers, not the ClickHouse fingerprint.
-			const staleFingerprintRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(ErrorIssues)
-						.set({ archivedAt: nowMs, updatedAt: nowMs })
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.kind.eq("error"),
-							$.fingerprintVersion.lt(FINGERPRINT_VERSION),
-							$.archivedAt.isNull(),
-						])
-						.returning("id"),
-				),
-			)
+					const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
+					const archivedRows = yield* dbExecute((db) =>
+						db.run(
+							PG.update(ErrorIssues)
+								.set({ archivedAt: nowMs, updatedAt: nowMs })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.workflowState.eq("done"),
+									$.archivedAt.isNull(),
+									$.resolvedAt.isNotNull(),
+									$.resolvedAt.lt(resolvedCutoff),
+								])
+								.returning("id"),
+						),
+					)
 
-			const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
-			const archivedRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(ErrorIssues)
-						.set({ archivedAt: nowMs, updatedAt: nowMs })
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.workflowState.eq("done"),
-							$.archivedAt.isNull(),
-							$.resolvedAt.isNotNull(),
-							$.resolvedAt.lt(resolvedCutoff),
-						])
-						.returning("id"),
-				),
-			)
-			issuesArchived = archivedRows.length + staleFingerprintRows.length
+					// Candidates that never reached the promotion threshold. Without this the
+					// holding table would accumulate every one-off fingerprint forever.
+					yield* dbExecute((db) =>
+						db.run(
+							PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
+								$.orgId.eq(orgId),
+								$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
+							]),
+						),
+					)
 
-			// Candidates that never reached the promotion threshold. Without this the
-			// holding table would accumulate every one-off fingerprint forever.
-			yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
-						$.orgId.eq(orgId),
-						$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
-					]),
-				),
-			)
-
-			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
-			const toDelete = yield* dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIssues)
-						.select("id")
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.archivedAt.isNotNull(),
-							$.archivedAt.lt(archivedCutoff),
-						])
-						.limit(500),
-				),
-			)
-			if (toDelete.length > 0) {
-				const ids = toDelete.map((r) => r.id)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ErrorIncidents).where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.in_(...ids),
-						]),
-					),
-				)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ErrorIssueStates).where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.in_(...ids),
-						]),
-					),
-				)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ErrorIssueEvents).where(($) => [
-							$.orgId.eq(orgId),
-							$.issueId.in_(...ids),
-						]),
-					),
-				)
-				yield* dbExecute((db) =>
-					db.run(PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])),
-				)
-				issuesDeleted = ids.length
-			}
-		}
+					const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
+					const toDelete = yield* dbExecute((db) =>
+						db.run(
+							PG.from(ErrorIssues)
+								.select("id")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.archivedAt.isNotNull(),
+									$.archivedAt.lt(archivedCutoff),
+								])
+								.limit(500),
+						),
+					)
+					if (toDelete.length > 0) {
+						const ids = toDelete.map((r) => r.id)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIncidents).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueStates).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueEvents).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssues).where(($) => [
+									$.orgId.eq(orgId),
+									$.id.in_(...ids),
+								]),
+							),
+						)
+					}
+					return {
+						issuesArchived: archivedRows.length + staleFingerprintRows.length,
+						issuesDeleted: toDelete.length,
+					}
+				})
+			: { issuesArchived: 0, issuesDeleted: 0 }
 
 		return {
 			issuesTouched,
@@ -1576,23 +1600,28 @@ const make: Effect.Effect<
 		// behind it on every one of those ticks. Probed a cap-sized wave at a time,
 		// so the common case is one wave and a wall of quarantined orgs is not
 		// read through one by one.
-		const lookups: Array<(typeof trailing)[number]> = []
-		for (const wave of Arr.chunksOf(
-			trailing
-				.filter((row) => !isObserved(row))
-				// Most recent first: a short outage gap before rows that are weeks old.
-				.toSorted((a, b) => b.processedThrough - a.processedThrough),
-			TICK_IDLE_RECOVERY_LOOKUPS,
-		)) {
-			if (lookups.length >= TICK_IDLE_RECOVERY_LOOKUPS) break
-			const quarantined = yield* Effect.forEach(
-				wave,
-				(row) => isOrgWarehouseQuarantined(edgeCache, row.orgId),
-				{ concurrency: 4 },
-			)
-			lookups.push(...wave.filter((_, index) => !quarantined[index]))
-		}
-		lookups.splice(TICK_IDLE_RECOVERY_LOOKUPS)
+		const probed = yield* Effect.reduce(
+			Arr.chunksOf(
+				trailing
+					.filter((row) => !isObserved(row))
+					// Most recent first: a short outage gap before rows that are weeks old.
+					.toSorted((a, b) => b.processedThrough - a.processedThrough),
+				TICK_IDLE_RECOVERY_LOOKUPS,
+			),
+			(): ReadonlyArray<(typeof trailing)[number]> => [],
+			(found, wave) =>
+				found.length >= TICK_IDLE_RECOVERY_LOOKUPS
+					? Effect.succeed(found)
+					: Effect.forEach(wave, (row) => isOrgWarehouseQuarantined(edgeCache, row.orgId), {
+							concurrency: 4,
+						}).pipe(
+							Effect.map((quarantined) => [
+								...found,
+								...wave.filter((_, index) => !quarantined[index]),
+							]),
+						),
+		)
+		const lookups = probed.slice(0, TICK_IDLE_RECOVERY_LOOKUPS)
 
 		// Where each unobserved org's cursor belongs: its first error minute, or
 		// the parking point when the stretch is empty. A failed lookup leaves the
