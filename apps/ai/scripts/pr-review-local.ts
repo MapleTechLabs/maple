@@ -175,7 +175,7 @@ export const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
  * match and 1 on none; anything else (a missing commit) leaves the name unverified, as a failed
  * search does in the service.
  */
-const nameAtBase = (dir: string, baseSha: string, name: string): NameVerdict => {
+export const nameAtBase = (dir: string, baseSha: string, name: string): NameVerdict => {
 	const result = run(
 		["git", "grep", "-I", "-q", "-E", "-e", `(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`, baseSha, "--"],
 		dir,

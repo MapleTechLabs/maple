@@ -4,6 +4,7 @@ import {
 	type CodeReviewFinding,
 	type PrReviewFinding,
 	type PrReviewId,
+	type PrReviewMergeStep,
 	type PrReviewPostMerge,
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
@@ -26,7 +27,7 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { SectionHeading } from "@/components/common/section-heading"
 import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
-import { ExternalLinkIcon } from "@/components/icons"
+import { CheckIcon, ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
@@ -195,13 +196,7 @@ function ReviewDetailContent({
 						) : null}
 						{report.beforeMerge && report.beforeMerge.length > 0 ? (
 							<Section title="Before merge">
-								<BulletList
-									items={report.beforeMerge.map((step) =>
-										step.path === undefined || step.subject !== step.path
-											? step.title
-											: `${step.title} (${step.path})`,
-									)}
-								/>
+								<MergeStepList steps={report.beforeMerge} />
 							</Section>
 						) : null}
 						<Section title={`Issues (${report.findings.length})`}>
@@ -431,6 +426,40 @@ function BulletList({ items }: { items: ReadonlyArray<string> }) {
 		<ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground marker:text-muted-foreground/50">
 			{items.map((item, index) => (
 				<li key={index}>{item}</li>
+			))}
+		</ul>
+	)
+}
+
+/** The "Before merge" steps, ticked ones struck through with who ticked them on the pull request. */
+function MergeStepList({ steps }: { steps: ReadonlyArray<PrReviewMergeStep> }) {
+	return (
+		<ul className="flex flex-col gap-1.5 text-sm">
+			{steps.map((step, index) => (
+				<li key={step.key ?? index} className="flex items-start gap-2">
+					<span
+						aria-label={step.done === true ? "Done" : "Open"}
+						className={
+							step.done === true
+								? "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground"
+								: "mt-0.5 size-4 shrink-0 rounded-sm border border-border"
+						}
+					>
+						{step.done === true ? <CheckIcon size={12} aria-hidden /> : null}
+					</span>
+					<span
+						className={
+							step.done === true ? "text-muted-foreground line-through" : "text-foreground"
+						}
+					>
+						{step.path === undefined || step.subject !== step.path
+							? step.title
+							: `${step.title} (${step.path})`}
+						{step.done === true && step.doneBy !== undefined ? (
+							<span className="ml-1.5 text-xs no-underline">@{step.doneBy}</span>
+						) : null}
+					</span>
+				</li>
 			))}
 		</ul>
 	)

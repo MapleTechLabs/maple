@@ -61,6 +61,7 @@ import {
 	PrReviewSettings,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	VcsInstallations,
@@ -134,6 +135,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	PrReviewSettings,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	// Credentials that outlive the org unless they are purged here. `api_keys`
