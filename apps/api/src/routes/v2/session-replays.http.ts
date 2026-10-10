@@ -84,7 +84,7 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 			windowStart: DateTime.Utc | undefined,
 			windowEnd: DateTime.Utc | undefined,
 		) {
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sessionId })
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.session.id": sessionId })
 			const compiled = CH.compile(
 				CH.getSessionReplayQuery({ startTime: windowStart, endTime: windowEnd }),
 				{

@@ -126,7 +126,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	options?: InspectTraceOptions,
 ) {
 	const executor = yield* WarehouseExecutor
-	yield* Effect.annotateCurrentSpan("traceId", traceId)
+	yield* Effect.annotateCurrentSpan("maple.trace.id", traceId)
 
 	const nowMs = yield* Clock.currentTimeMillis
 	const rangeHours = options?.rangeHours ?? DEFAULT_RANGE_HOURS
@@ -143,8 +143,8 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 					end_time: formatWarehouseDateTime(nowMs),
 				}
 
-	yield* Effect.annotateCurrentSpan("narrowByTime", !usingDefaultLookback)
-	yield* Effect.annotateCurrentSpan("usingDefaultLookback", usingDefaultLookback)
+	yield* Effect.annotateCurrentSpan("maple.query.narrow_by_time", !usingDefaultLookback)
+	yield* Effect.annotateCurrentSpan("maple.query.using_default_lookback", usingDefaultLookback)
 
 	const firstRead = yield* readTrace(executor, traceId, range)
 
@@ -168,7 +168,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 						{ profile: "discovery", context: "inspectTraceProbe" },
 					)
 					const foundMs = Option.map(probe, (row) => DateTime.toEpochMillis(row.timestamp))
-					yield* Effect.annotateCurrentSpan("widenedLookback", Option.isSome(foundMs))
+					yield* Effect.annotateCurrentSpan("maple.query.widened_lookback", Option.isSome(foundMs))
 					if (Option.isNone(foundMs)) {
 						const probed = {
 							startTime: formatWarehouseDateTime(probeStartMs),
@@ -242,8 +242,8 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 		Arr.dedupe,
 	).length
 
-	yield* Effect.annotateCurrentSpan("spanCount", spans.length)
-	yield* Effect.annotateCurrentSpan("serviceCount", serviceCount)
+	yield* Effect.annotateCurrentSpan("result.spanCount", spans.length)
+	yield* Effect.annotateCurrentSpan("result.serviceCount", serviceCount)
 
 	return {
 		traceId: Schema.decodeSync(TraceId)(traceId),

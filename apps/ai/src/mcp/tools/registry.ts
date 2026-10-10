@@ -585,7 +585,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 
 	const normalized = normalizeFor(definition, input ?? {})
 	yield* Effect.annotateCurrentSpan({
-		tool: definition.name,
+		"maple.mcp.tool": definition.name,
 		"maple.mcp.tool.arguments": Object.keys(typeof input === "object" && input !== null ? input : {})
 			.sort()
 			.join(","),

@@ -56,7 +56,7 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 	 */
 	encryptionKey: Buffer | null,
 ) {
-	yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 	const rows = yield* database
 		.execute((db) =>
 			db.run(

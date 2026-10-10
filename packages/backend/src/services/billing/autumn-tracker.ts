@@ -143,7 +143,7 @@ const postUsage = (
 			// Named like `autumn-http.ts`'s span so every Autumn call reads as one dependency.
 			Effect.withSpan("autumn.request", {
 				kind: "client",
-				attributes: { "autumn.route": request.path, "peer.service": "autumn" },
+				attributes: { "maple.autumn.route": request.path, "peer.service": "autumn" },
 			}),
 		)
 

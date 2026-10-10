@@ -155,10 +155,10 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const now = yield* Clock.currentTimeMillis
 				const memoized = ingestKeysMemo.get(orgId)
 				if (memoized !== undefined && memoized.expiresAt > now) {
-					yield* Effect.annotateCurrentSpan("ingestKeys.memoHit", true)
+					yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", true)
 					return memoized.row
 				}
-				yield* Effect.annotateCurrentSpan("ingestKeys.memoHit", false)
+				yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", false)
 
 				const existing = yield* selectRow(orgId)
 				if (Option.isSome(existing)) {
@@ -237,8 +237,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 						: Result.fail(orgId)
 				})
 				yield* Effect.annotateCurrentSpan({
-					"ingestKeys.requested": memoHits.length + misses.length,
-					"ingestKeys.memoMisses": misses.length,
+					"maple.ingest_keys.requested": memoHits.length + misses.length,
+					"maple.ingest_keys.memo_misses": misses.length,
 				})
 
 				const selected = Arr.isArrayNonEmpty(misses)

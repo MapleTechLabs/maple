@@ -1256,7 +1256,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 					.pipe(Effect.mapError(toPersistenceError))
 				yield* invalidateRuntimeConfigCache(orgId)
 				appliedSchemaVersion = clickHouseSchemaVersion
-				yield* Effect.annotateCurrentSpan("clickhouse.schemaVersion.healed", true)
+				yield* Effect.annotateCurrentSpan("maple.clickhouse.schema_version_healed", true)
 				yield* Effect.logInfo("Self-healed ClickHouse schema_version to current version").pipe(
 					Effect.annotateLogs({
 						orgId,
@@ -1499,8 +1499,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				}),
 			)
 			yield* Effect.annotateCurrentSpan({
-				"clickhouse.config.prime_requested": orgIds.length,
-				"clickhouse.config.primed_orgs": pending.length,
+				"maple.clickhouse.config.prime_requested": orgIds.length,
+				"maple.clickhouse.config.primed_orgs": pending.length,
 			})
 			if (Arr.isReadonlyArrayEmpty(pending)) return
 
@@ -1648,7 +1648,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				.pipe(
 					Effect.tap((result) =>
 						Effect.annotateCurrentSpan(
-							"clickhouse.config.source",
+							"maple.clickhouse.config.source",
 							result.hit ? "edge_cache" : "postgres",
 						),
 					),
@@ -1662,10 +1662,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 
 				if (memoized !== undefined && nowMs < memoized.freshUntil) {
 					yield* Effect.annotateCurrentSpan({
-						"clickhouse.config.source": "memo",
-						// Legacy spelling, dual-emitted until dashboards move to
-						// `clickhouse.config.source`.
-						"clickhouse.config.memoHit": true,
+						"maple.clickhouse.config.source": "memo",
 					})
 					return memoized.value
 				}
@@ -1673,11 +1670,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				if (memoized !== undefined && nowMs < memoized.hardUntil) {
 					const forked = yield* refreshCachedSettings(orgId, nowMs)
 					yield* Effect.annotateCurrentSpan({
-						"clickhouse.config.source": "memo_stale",
-						"clickhouse.config.refresh_forked": forked,
-						"clickhouse.config.stale_age_ms":
+						"maple.clickhouse.config.source": "memo_stale",
+						"maple.clickhouse.config.refresh_forked": forked,
+						"maple.clickhouse.config.stale_age_ms":
 							nowMs - (memoized.freshUntil - ORG_CH_CONFIG_MEMO_TTL_MS),
-						"clickhouse.config.memoHit": true,
 					})
 					return memoized.value
 				}
@@ -1689,9 +1685,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				const failed = runtimeConfigFailures.get(orgId)
 				if (failed !== undefined && nowMs - failed.atMs < ORG_CH_CONFIG_FAILURE_TTL_MS) {
 					yield* Effect.annotateCurrentSpan({
-						"clickhouse.config.source": "postgres_failed",
-						"clickhouse.config.memoHit": false,
-						"clickhouse.config.failure_reused": true,
+						"maple.clickhouse.config.source": "postgres_failed",
+						"maple.clickhouse.config.failure_reused": true,
 					})
 					return yield* Effect.fail(failed.error)
 				}
@@ -1699,8 +1694,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				// Overwritten by `readSharedOrPostgres` on success; setting it first
 				// leaves failures attributed to the Postgres compute path.
 				yield* Effect.annotateCurrentSpan({
-					"clickhouse.config.source": "postgres",
-					"clickhouse.config.memoHit": false,
+					"maple.clickhouse.config.source": "postgres",
 				})
 				const cached = yield* readSharedOrPostgres(orgId).pipe(
 					Effect.tapError((error) =>
@@ -1716,7 +1710,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const resolveRuntimeConfig = Effect.fn("OrgClickHouseSettingsService.resolveRuntimeConfig")(
 			function* (orgId: OrgId) {
 				if (ignoreOrgClickHouse) {
-					yield* Effect.annotateCurrentSpan("clickhouse.config.source", "ignored_dev")
+					yield* Effect.annotateCurrentSpan("maple.clickhouse.config.source", "ignored_dev")
 					return Option.none<RuntimeBackendConfig>()
 				}
 				const cached = yield* resolveCachedSettings(orgId)
@@ -1732,7 +1726,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				// alerting; the schemaDiff path self-heals the value when the live schema is
 				// in sync.
 				yield* Effect.annotateCurrentSpan(
-					"clickhouse.schemaDrift",
+					"maple.clickhouse.schema_drift",
 					cached.schemaVersion !== clickHouseSchemaVersion,
 				)
 				const password = yield* decryptStoredPassword(cached)

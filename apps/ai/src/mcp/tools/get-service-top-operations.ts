@@ -35,9 +35,9 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service,
-				metric,
-				limit: params.limit,
+				"maple.ai.service": params.service,
+				"maple.ai.metric": metric,
+				"maple.ai.limit": params.limit,
 			})
 
 			const operations = yield* topOperations({

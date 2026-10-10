@@ -297,7 +297,7 @@ const make: Effect.Effect<
 		knownOrgs: ReadonlyArray<OrgId>,
 		nowMs: number,
 	) {
-		yield* Effect.annotateCurrentSpan("knownOrgs", knownOrgs.length)
+		yield* Effect.annotateCurrentSpan("maple.errors.known_orgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
 		).pipe(Effect.option)
@@ -307,7 +307,10 @@ const make: Effect.Effect<
 		const byo = new Set<OrgId>(Option.getOrElse(byoRows, () => []).map((r) => r.orgId))
 
 		if (knownOrgs.length === 0) {
-			yield* Effect.annotateCurrentSpan({ activeOrgs: byo.size, failedClosed: false })
+			yield* Effect.annotateCurrentSpan({
+				"maple.errors.active_orgs": byo.size,
+				"maple.errors.failed_closed": false,
+			})
 			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
 		}
 
@@ -333,7 +336,10 @@ const make: Effect.Effect<
 					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
 				}),
 				Effect.tap(({ active }) =>
-					Effect.annotateCurrentSpan({ activeOrgs: active.size, failedClosed: false }),
+					Effect.annotateCurrentSpan({
+						"maple.errors.active_orgs": active.size,
+						"maple.errors.failed_closed": false,
+					}),
 				),
 				// Cache the freshly-discovered set so a later discovery failure can
 				// reuse it instead of fanning out to all known orgs. Best-effort.
@@ -371,8 +377,8 @@ const make: Effect.Effect<
 									active.add(orgId)
 								}
 								yield* Effect.annotateCurrentSpan({
-									activeOrgs: active.size,
-									failedClosed: true,
+									"maple.errors.active_orgs": active.size,
+									"maple.errors.failed_closed": true,
 								})
 								return { active: active as ReadonlySet<string>, discovered: false }
 							}),
@@ -389,7 +395,11 @@ const make: Effect.Effect<
 	const recordAnomalyLinkEvent: ErrorsServiceApi["recordAnomalyLinkEvent"] = Effect.fn(
 		"ErrorsService.recordAnomalyLinkEvent",
 	)(function* (orgId, issueId, actorId, payload) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId, action: payload.action })
+		yield* Effect.annotateCurrentSpan({
+			orgId,
+			"maple.issue.id": issueId,
+			"maple.errors.action": payload.action,
+		})
 		yield* recordEvent(orgId, issueId, actorId, "anomaly_linked", { payload: { ...payload } })
 	})
 
@@ -397,7 +407,11 @@ const make: Effect.Effect<
 
 	const transitionIssue: ErrorsServiceApi["transitionIssue"] = Effect.fn("ErrorsService.transitionIssue")(
 		function* (orgId, actorId, issueId, toState, opts) {
-			yield* Effect.annotateCurrentSpan({ orgId, issueId, toState })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.issue.id": issueId,
+				"maple.errors.to_state": toState,
+			})
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
 
@@ -528,7 +542,12 @@ const make: Effect.Effect<
 		function* (orgId, actorId, issueId, leaseDurationMs) {
 			const timestamp = yield* Clock.currentTimeMillis
 			const leaseMs = leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS
-			yield* Effect.annotateCurrentSpan({ orgId, issueId, actorId, leaseMs })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.issue.id": issueId,
+				"maple.actor.id": actorId,
+				"maple.errors.lease_ms": leaseMs,
+			})
 
 			const current = yield* requireIssue(orgId, issueId)
 			if (CLOSED_WORKFLOW_STATES.has(current.workflowState)) {
@@ -595,7 +614,11 @@ const make: Effect.Effect<
 		function* (orgId, actorId, issueId, request) {
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
-			yield* Effect.annotateCurrentSpan({ orgId, issueId, fromState: current.workflowState })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.issue.id": issueId,
+				"maple.errors.from_state": current.workflowState,
+			})
 
 			// Refuse up front, with a reason, rather than mid-write. `cancelled` and
 			// `wontfix` cannot reach review; a closed issue has to be reopened
@@ -1108,7 +1131,7 @@ const make: Effect.Effect<
 		nowMs: number,
 		runRetention: boolean,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.errors.run_retention": runRetention })
 		const tickWindow = yield* claimTickWindow(orgId, cutoffMs, nowMs)
 		if (!tickWindow) {
 			return {
@@ -1205,8 +1228,8 @@ const make: Effect.Effect<
 		}
 		yield* Effect.annotateCurrentSpan({
 			windowEndMs,
-			windowSplits: splits,
-			scanFingerprints: issuesRaw.length,
+			"maple.errors.window_splits": splits,
+			"maple.errors.scan_fingerprints": issuesRaw.length,
 		})
 
 		// Every display string crosses from ClickHouse bytes into Postgres text
@@ -1631,8 +1654,8 @@ const make: Effect.Effect<
 		})
 
 		yield* Effect.annotateCurrentSpan({
-			idleCursorsParked: parked.length,
-			idleCursorsRecovering: recovering.length,
+			"maple.errors.idle_cursors_parked": parked.length,
+			"maple.errors.idle_cursors_recovering": recovering.length,
 		})
 		return recovering.map((row) => row.orgId)
 	})
@@ -1782,9 +1805,9 @@ const make: Effect.Effect<
 		}
 
 		yield* Effect.annotateCurrentSpan({
-			orgsKnown: knownOrgs.size,
-			orgsScanned: scanOrgs.length,
-			orgFailures: yield* Ref.get(orgFailures),
+			"maple.errors.known_orgs": knownOrgs.size,
+			"maple.errors.orgs_scanned": scanOrgs.length,
+			"maple.errors.org_failures": yield* Ref.get(orgFailures),
 			"maple.investigation.abandoned": investigationsAbandoned,
 			...totals,
 		})

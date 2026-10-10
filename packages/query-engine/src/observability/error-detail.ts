@@ -199,8 +199,8 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 	const limit = input.limit ?? 5
 
 	yield* Effect.annotateCurrentSpan({
-		fingerprintHash: input.fingerprintHash,
-		service: input.service ?? "all",
+		"maple.error_detail.fingerprint_hash": input.fingerprintHash,
+		"maple.query.service": input.service ?? "all",
 	})
 
 	const summaryRange = input.anchorWithin ?? input.timeRange
@@ -238,7 +238,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 	)
 
 	const traces = tracesResult.data
-	yield* Effect.annotateCurrentSpan("traceCount", traces.length)
+	yield* Effect.annotateCurrentSpan("result.traceCount", traces.length)
 
 	const logsResults = yield* pipe(
 		traces,

@@ -136,7 +136,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"billing.days": days.length,
+					"maple.billing.days": days.length,
 				})
 
 				return new DailySpendResponse({

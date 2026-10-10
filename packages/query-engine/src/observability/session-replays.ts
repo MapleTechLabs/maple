@@ -59,7 +59,7 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	input: SessionTracesInput,
 ) {
 	const executor = yield* WarehouseExecutor
-	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, sessionId: input.sessionId })
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.session.id": input.sessionId })
 
 	// 1) Session metadata (+ full TraceIds array) and the active/idle breakdown
 	// from a second pass over session_events. Both are single-session sort-key

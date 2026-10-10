@@ -231,7 +231,7 @@ const make = Effect.gen(function* () {
 	})
 
 	const verify = Effect.fn("OrgMembershipService.verify")(function* (userId: UserId, orgId: OrgId) {
-		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requested_org_id": orgId })
+		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requestedOrgId": orgId })
 		const { memberships, truncated } = yield* load(userId)
 		const found = memberships.find((membership) => membership.orgId === orgId)
 		if (found) return Option.some<VerifiedOrgMembership>(found)

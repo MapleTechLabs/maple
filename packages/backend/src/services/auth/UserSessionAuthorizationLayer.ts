@@ -33,7 +33,10 @@ export const UserSessionAuthorizationLayer = Layer.effect(
 						})
 					}
 					const userId = yield* resolveUser(request.headers)
-					yield* Effect.annotateCurrentSpan({ "maple.auth.method": "session", userId })
+					yield* Effect.annotateCurrentSpan({
+						"maple.auth.method": "session",
+						"tenant.userId": userId,
+					})
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.CurrentUser, { userId }),
 					)

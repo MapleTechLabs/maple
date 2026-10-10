@@ -376,12 +376,12 @@ export class PlanetScaleOAuthService extends Context.Service<
 			// PlanetScale actually granted — an opaque `pscale_oauth_` token vs a JWT,
 			// and the granted-scope string, disambiguate why /v1 says `invalid_token`.
 			yield* Effect.annotateCurrentSpan({
-				"planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
-				"planetscale.token.type": tokenResponse.token_type ?? "(none)",
-				"planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
-				"planetscale.token.length": tokenResponse.access_token.length,
-				"planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
-				"planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
+				"maple.planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
+				"maple.planetscale.token.type": tokenResponse.token_type ?? "(none)",
+				"maple.planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
+				"maple.planetscale.token.length": tokenResponse.access_token.length,
+				"maple.planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
+				"maple.planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
 			})
 
 			// The background poller and scraper must renew indefinitely; a grant with
@@ -416,7 +416,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 						yield* Effect.sleep(TOKEN_REJECTED_RETRY_DELAY)
 						const retried = yield* Effect.result(fetchOrganizations(tokenResponse.access_token))
 						yield* Effect.annotateCurrentSpan({
-							"planetscale.orgs.retry_succeeded": Result.isSuccess(retried),
+							"maple.planetscale.orgs.retry_succeeded": Result.isSuccess(retried),
 						})
 						if (Result.isSuccess(retried)) return retried.success
 						if (retried.failure._tag !== "@maple/http/errors/IntegrationsRevokedError") {
@@ -424,7 +424,9 @@ export class PlanetScaleOAuthService extends Context.Service<
 						}
 
 						const verdict = yield* introspectToken(tokenResponse.access_token)
-						yield* Effect.annotateCurrentSpan({ "planetscale.token.introspection": verdict })
+						yield* Effect.annotateCurrentSpan({
+							"maple.planetscale.token.introspection": verdict,
+						})
 						if (verdict === "valid") {
 							return yield* Effect.fail(
 								toUpstreamError(

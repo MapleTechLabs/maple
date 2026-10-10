@@ -88,7 +88,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 			timestamp,
 			payload_chars,
 		}) {
-			yield* Effect.annotateCurrentSpan({ traceId: trace_id, spanId: span_id })
+			yield* Effect.annotateCurrentSpan({ "maple.trace.id": trace_id, "maple.span.id": span_id })
 			const timestampMs = timestamp === undefined ? undefined : parseWarehouseDateTime(timestamp)
 			const timestampHint = timestampMs === undefined ? undefined : new Date(timestampMs)
 

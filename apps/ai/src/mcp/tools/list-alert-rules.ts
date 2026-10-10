@@ -53,8 +53,8 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				signalType: params.signal_type ?? "all",
-				severity: params.severity ?? "all",
+				"maple.ai.signal_type": params.signal_type ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
 				"result.rowCount": rules.length,
 			})
 

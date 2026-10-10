@@ -1196,10 +1196,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"alert.plan_kind": plan.kind,
-					"alert.window_minutes": normalized.windowMinutes,
-					"alert.preview.buckets": pointBuckets.length,
-					"alert.preview.has_partial_bucket": hasPartialBucket,
+					"maple.alert.plan_kind": plan.kind,
+					"maple.alert.window_minutes": normalized.windowMinutes,
+					"maple.alert.preview.buckets": pointBuckets.length,
+					"maple.alert.preview.has_partial_bucket": hasPartialBucket,
 				})
 
 				// Raw per-(group, bucket) observations; buckets missing here are

@@ -47,7 +47,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 			errors_only,
 			max_spans,
 		}) {
-			yield* Effect.annotateCurrentSpan("traceId", trace_id)
+			yield* Effect.annotateCurrentSpan("maple.trace.id", trace_id)
 			const options = { errorsOnly: errors_only === true }
 			const timestampHint =
 				timestamp === undefined ? undefined : new Date(parseWarehouseDateTime(timestamp))

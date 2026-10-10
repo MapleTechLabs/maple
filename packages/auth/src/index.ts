@@ -595,7 +595,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 	// explicitly" rather than "how many clients send the header unconditionally".
 	yield* Effect.annotateCurrentSpan({
 		"maple.auth.org_source": "header",
-		"tenant.requested_org_id": requestedOrgId,
+		"tenant.requestedOrgId": requestedOrgId,
 	})
 
 	const membership = yield* verify(userId, requestedOrgId)

@@ -2184,7 +2184,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 										}).pipe(
 											Effect.andThen(
 												Effect.annotateCurrentSpan({
-													"cloudflare.poll.outcome": "rate_limited",
+													"maple.cloudflare.poll_outcome": "rate_limited",
 													"maple.cloudflare.rate_limited": true,
 												}),
 											),
@@ -2210,7 +2210,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 											),
 											Effect.andThen(
 												Effect.annotateCurrentSpan(
-													"cloudflare.poll.outcome",
+													"maple.cloudflare.poll_outcome",
 													"plan_blocked",
 												),
 											),

@@ -81,7 +81,7 @@ export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorks
 	if (row === undefined) return Option.none<OwnedChatWorkspace>()
 	const connector = Arr.findFirst(registry, (candidate) => candidate.id === row.connector)
 	if (Option.isNone(connector)) return Option.none<OwnedChatWorkspace>()
-	yield* Effect.annotateCurrentSpan({ "chat.connector": connector.value.id })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.value.id })
 	const sealed = storedCredentials(row)
 	const credentials =
 		sealed === null

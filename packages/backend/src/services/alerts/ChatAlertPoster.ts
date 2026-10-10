@@ -148,7 +148,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 					})
 				}
 				const { connector, externalWorkspaceId } = workspace.value
-				yield* Effect.annotateCurrentSpan({ "chat.connector": connector.id })
+				yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.id })
 				// A deployment gap, not the org's: retryable, so no destination is disabled for it.
 				const missing = missingOutboundConfig(workspace.value, outboundConfig)
 				if (missing.length > 0) {
