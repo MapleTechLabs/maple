@@ -62,7 +62,7 @@ For compression, send `Content-Encoding: gzip`. Omit the header (or send `identi
 
 ## Browsers
 
-The gateway answers CORS preflights from any origin, so a browser can export directly. Allowed request headers are `Authorization`, `Content-Type`, `Content-Encoding`, `x-maple-ingest-key` and the `x-maple-*` headers the browser SDK sends. No response headers are exposed to scripts, so browser code cannot read `Retry-After`; back off on a fixed schedule instead.
+The gateway answers CORS preflights from any origin, so a browser can export directly. Allowed request headers are `Authorization`, `Content-Type`, `Content-Encoding`, `User-Agent`, `x-maple-ingest-key` and the `x-maple-*` headers the browser SDK sends. No response headers are exposed to scripts, so browser code cannot read `Retry-After`; back off on a fixed schedule instead.
 
 ## Status codes
 

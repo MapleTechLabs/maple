@@ -226,7 +226,8 @@ describe("browser origin policy", () => {
 		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
 			"access-control-allow-origin": hostedOrigin,
 			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
+			"access-control-allow-headers":
+				"content-type, content-encoding, authorization, user-agent, x-maple-sdk",
 			"access-control-allow-private-network": "true",
 			vary: "Origin",
 		})
@@ -258,6 +259,16 @@ describe("browser origin policy", () => {
 			corsHeadersForAllowedOrigin("http://localhost:4501")
 				?.["access-control-allow-headers"].split(", ")
 				.includes("x-maple-sdk"),
+			true,
+		)
+	})
+
+	it("allows the user-agent header a page can set on fetch in some browsers", () => {
+		// Those browsers list it in the preflight; refusing it blocks the request.
+		strictEqual(
+			corsHeadersForAllowedOrigin("http://localhost:4501")
+				?.["access-control-allow-headers"].split(", ")
+				.includes("user-agent"),
 			true,
 		)
 	})
