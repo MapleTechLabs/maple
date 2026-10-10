@@ -5,9 +5,17 @@
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import {
+	GCP_INFRA_COLUMNS,
+	formatGcpValue,
+	gcpWorkloadName,
+	gcpWorkloadTone,
+	type GcpFleetService,
+} from "../gcp/tabs"
 import type { ContainerScopeCounts } from "../container-summary-band"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
 import type { HostRow } from "../host-table"
@@ -15,7 +23,14 @@ import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../pl
 import { railwayInScope } from "../railway/railway-service-table"
 import type { Tone } from "../severity-tokens"
 
-export type SourceId = "hosts" | "containers" | "kubernetes" | "cloudflare" | "railway" | "planetscale"
+export type SourceId =
+	| "hosts"
+	| "containers"
+	| "kubernetes"
+	| "cloudflare"
+	| "railway"
+	| "planetscale"
+	| "gcp"
 
 export type FindingTone = Extract<Tone, "crit" | "warn"> | "stale"
 
@@ -28,6 +43,8 @@ export type FindingTarget =
 	| { kind: "zone"; zoneName: string }
 	| { kind: "railway"; serviceId: string; environmentId: string }
 	| { kind: "planetscale"; database: string }
+	| { kind: "gcp"; service: GcpInfraServiceId; keys: ReadonlyArray<string> }
+	| { kind: "gcpService"; service: GcpInfraServiceId }
 
 export interface Finding {
 	readonly key: string
@@ -265,6 +282,78 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 			saturated.length + elevated > 0
 				? `${countLabel(saturated.length + elevated, "service")} above 60% of limit`
 				: "all under 60% of limit",
+		headlineTone: worstTone(findings),
+		findings,
+	}
+}
+
+const gcpTitles = (fleet: ReadonlyArray<GcpFleetService>) =>
+	fleet.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+
+/**
+ * Google Cloud workloads by their busiest share of a limit and by their error rate. A service
+ * whose read failed is a finding of its own, and null when none could be read.
+ */
+export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSummary | null {
+	const unread = fleet.filter(({ failed }) => failed)
+	if (unread.length > 0 && unread.length === fleet.length) return null
+	const flagged = fleet
+		.flatMap(({ service, workloads }) =>
+			workloads.map((workload) => {
+				const tone = gcpWorkloadTone(workload)
+				// The column behind the tone: the error rate when it is as bad, else the busiest limit.
+				const format = workload.errors === tone ? "errorRate" : "percent"
+				const worst = GCP_INFRA_COLUMNS[service]
+					.map((spec, index) => ({
+						label: spec.label,
+						format: spec.format,
+						value: workload.values[index] ?? 0,
+					}))
+					.filter((column) => column.format === format)
+					.reduce((a, b) => (b.value > a.value ? b : a), { label: "", format, value: 0 })
+				return { service, workload, tone, worst }
+			}),
+		)
+		.filter((entry) => entry.tone !== "neutral")
+		// Critical before elevated, then the larger share first.
+		.sort((a, b) => (a.tone === b.tone ? b.worst.value - a.worst.value : a.tone === "crit" ? -1 : 1))
+	const findings = [
+		...flagged.slice(0, MAX_FINDINGS_PER_SOURCE).map(({ service, workload, tone, worst }): Finding => ({
+			key: `gcp:${service}:${workload.keys.join("/")}`,
+			source: "gcp",
+			tone: tone === "crit" ? "crit" : "warn",
+			// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
+			title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
+			detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
+			target: { kind: "gcp", service, keys: workload.keys },
+		})),
+		// Its workloads are unknown, not healthy: the tab says the same and offers the reload.
+		...unread.map(({ service }): Finding => ({
+			key: `gcp:${service}:unread`,
+			source: "gcp",
+			tone: "warn",
+			// The service first: a phone shows only the start of a title.
+			title: `${GCP_INFRA_SERVICES[service].title} metrics could not be read`,
+			detail: "Reload to try again",
+			target: { kind: "gcpService", service },
+		})),
+	]
+	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
+	const crit = flagged.filter((entry) => entry.tone === "crit").length
+	return {
+		resources: countLabel(total, "workload"),
+		segments: [
+			{ key: "ok", count: okCount(total, flagged.length) },
+			{ key: "elevated", count: flagged.length - crit },
+			{ key: "saturated", count: crit },
+		],
+		headline:
+			[
+				...(unread.length > 0 ? [`${gcpTitles(unread)} not read`] : []),
+				...(flagged.length > 0
+					? [`${countLabel(flagged.length, "workload")} elevated or erroring`]
+					: []),
+			].join(", ") || (fleet.length > 0 ? gcpTitles(fleet) : "no metrics in this window"),
 		headlineTone: worstTone(findings),
 		findings,
 	}

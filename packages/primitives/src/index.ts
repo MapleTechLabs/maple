@@ -123,11 +123,12 @@ export const GcpScopeType = Schema.Literals(["project", "folder", "organization"
 export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>
 
 /**
- * The log filter a rendered setup script carries. `keep` leaves an existing sink's filter alone,
- * the others replace it. `default` leaves out GKE container logs.
+ * A runtime whose application output a log sink forwards or leaves out: what its code writes to
+ * stdout and stderr. `cloud_run` covers services, jobs, worker pools and 2nd gen functions,
+ * `cloud_functions` the 1st gen ones. In display order.
  */
-export const GcpLogFilter = Schema.Literals(["keep", "default", "include_gke_container_logs"])
-export type GcpLogFilter = Schema.Schema.Type<typeof GcpLogFilter>
+export const GcpLogRuntime = Schema.Literals(["cloud_run", "cloud_functions", "app_engine", "gke"])
+export type GcpLogRuntime = Schema.Schema.Type<typeof GcpLogRuntime>
 
 export const AlertDestinationId = MapleUuidId("@maple/AlertDestinationId", "Alert Destination ID")
 export type AlertDestinationId = Schema.Schema.Type<typeof AlertDestinationId>

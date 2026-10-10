@@ -4,7 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { Effect, Schema } from "effect"
-import { GcpConnectorId, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
+import { GCP_DEFAULT_APPLICATION_LOGS } from "@maple/domain/gcp"
+import { GcpConnectorId, GcpLogRuntime, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
 import {
 	gcpLogFilter,
 	renderGcpCleanupScript,
@@ -23,6 +24,7 @@ const WRITER = "serviceAccount:service-1@gcp-sa-logging.iam.gserviceaccount.com"
 const MAPLE_ACCOUNT = "collector@maple-prod.iam.gserviceaccount.com"
 const PUSH_ENDPOINT = `https://ingest.test/v1/logpush/gcp/${connectorId}?secret=${SECRET}`
 const MAPLE_URL = "https://app.maple.test/integrations?integration=gcp"
+const DEFAULT_LOG_FILTER = gcpLogFilter(GCP_DEFAULT_APPLICATION_LOGS)
 
 const target = (scopeType: GcpScriptTarget["scopeType"]): GcpScriptTarget => ({
 	connectorId,
@@ -75,7 +77,7 @@ const setupInput = (
 	mapleServiceAccountEmail: MAPLE_ACCOUNT,
 	logsEnabled: capabilities.logs,
 	metricsEnabled: capabilities.metrics,
-	logFilter: "keep",
+	applicationLogs: null,
 })
 
 const setup = (input: GcpSetupScriptInput) => Effect.runSync(renderGcpSetupScript(input))
@@ -284,7 +286,7 @@ const logsSetupCommands = (scope: Scope) => [
 	`pubsub topics create ${NAME} --project=acme-host`,
 	`pubsub subscriptions describe ${NAME} --project=acme-host`,
 	`pubsub subscriptions create ${NAME} --topic=${NAME} --project=acme-host --push-endpoint=${PUSH_ENDPOINT} --push-no-wrapper --ack-deadline=30 --message-retention-duration=1d --expiration-period=never --min-retry-delay=10s --max-retry-delay=600s`,
-	`logging sinks create ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(false)} ${scope.sinkWrite}`,
+	`logging sinks create ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${DEFAULT_LOG_FILTER} ${scope.sinkWrite}`,
 	`logging sinks describe ${NAME} ${scope.sink} --format=value(writerIdentity)`,
 	`projects add-iam-policy-binding acme-host --member=${WRITER} --role=roles/logging.logWriter --condition=None`,
 	`pubsub topics add-iam-policy-binding ${NAME} --project=acme-host --member=${WRITER} --role=roles/pubsub.publisher`,
@@ -348,7 +350,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 			...scope.open,
 			"projects describe acme-host --format=value(name)",
 			"billing projects describe acme-host --format=value(billingEnabled)",
-			`logging read ${gcpLogFilter(false)} --limit=1 --freshness=1h ${scope.sink}`,
+			`logging read ${DEFAULT_LOG_FILTER} --limit=1 --freshness=1h ${scope.sink}`,
 		])
 		expect(stdout).toBe(`Maple setup for ${scopeType} ${scope.id}
   Log forwarding          on
@@ -578,32 +580,56 @@ Done. Everything is in place.
 		expect(stdout).not.toMatch(/Logs: {4}|Metrics: /)
 	})
 
-	it("replaces the sink's filter only when asked to", () => {
-		const filtered = (logFilter: GcpSetupScriptInput["logFilter"]) =>
-			setup({ ...setupInput("project", { logs: true, metrics: false }), logFilter })
-		expect(filtered("keep")).toContain(`LOG_FILTER_MODE='keep'\nLOG_FILTER='${gcpLogFilter(false)}'`)
-		expect(filtered("default")).toContain(`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(false)}'`)
-		expect(filtered("include_gke_container_logs")).toContain(
-			`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(true)}'`,
+	it("replaces the sink's filter only when given the runtimes to forward", () => {
+		const filtered = (applicationLogs: GcpSetupScriptInput["applicationLogs"]) =>
+			setup({ ...setupInput("project", { logs: true, metrics: false }), applicationLogs })
+		const all = GcpLogRuntime.literals
+		expect(filtered(null)).toContain(`LOG_FILTER_MODE='keep'\nLOG_FILTER='${DEFAULT_LOG_FILTER}'`)
+		expect(filtered(GCP_DEFAULT_APPLICATION_LOGS)).toContain(
+			`LOG_FILTER_MODE='set'\nLOG_FILTER='${DEFAULT_LOG_FILTER}'`,
 		)
-		// The comment above the filter says which way GKE container logs went, and where to read why.
-		expect(filtered("default")).toContain(
-			`# Log filter in Maple, or delete AND NOT resource.type="k8s_container" from LOG_FILTER and make\n`,
+		expect(filtered(all)).toContain(`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(all)}'`)
+		expect(filtered([])).toContain(`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter([])}'`)
+		// The comment above the filter names the runtimes whose output is left out, and where to read why.
+		const NOISE_COMMENT = `# LOG_FILTER leaves out what is high volume and says little about a workload: Data Access audit
+# logs, load balancer health checks, Kubernetes lease renewals and VM serial console output.
+`
+		const MODE_COMMENT = `
+# LOG_FILTER_MODE keep: an existing sink keeps its filter, a new sink gets LOG_FILTER.
+`
+		const leftOutComment = (
+			names: string,
+		) => `${NOISE_COMMENT}# It also leaves out what the code of these runtimes writes to stdout and stderr:
+#   ${names}
+# A workload that also sends its logs over OpenTelemetry would have those lines stored twice. The
+# choice is made under Log filter in Maple.
+# Details: https://maple.dev/docs/integrations/gcp-opentelemetry${MODE_COMMENT}`
+		expect(filtered(null)).toContain(leftOutComment("GKE containers"))
+		expect(filtered(["gke", "cloud_run"])).toContain(
+			leftOutComment("Cloud Functions (1st gen), App Engine"),
 		)
-		expect(filtered("include_gke_container_logs")).toContain(
-			"# GKE container logs are included, as chosen in Maple.",
+		expect(filtered([])).toContain(
+			leftOutComment("Cloud Run, Cloud Functions (1st gen), App Engine, GKE containers"),
 		)
-		expect(filtered("include_gke_container_logs")).toContain(
-			"https://maple.dev/docs/integrations/gcp-opentelemetry\n",
-		)
+		const allForwardedComment = `${NOISE_COMMENT}# The output of every runtime is forwarded, as chosen in Maple. Logs from workloads that also
+# send them over OpenTelemetry are then stored twice.
+# Details: https://maple.dev/docs/integrations/gcp-opentelemetry${MODE_COMMENT}`
+		expect(filtered(all)).toContain(allForwardedComment)
+		for (const script of [filtered(null), filtered([]), filtered(all)]) {
+			const comment = script.slice(
+				script.indexOf("# ---- Which logs"),
+				script.indexOf("LOG_FILTER_MODE="),
+			)
+			expect(Math.max(...comment.split("\n").map((line) => line.length))).toBeLessThan(100)
+		}
 
-		const { stdout, commands } = run(filtered("include_gke_container_logs"), { describe: "found" })
+		const { stdout, commands } = run(filtered(all), { describe: "found" })
 		expect(stdout).toContain("  ✓ Log filter accepted\n")
 		expect(stdout).toContain("  ✓ Log sink up to date (filter replaced)")
 		// The closing line says what this run changed.
 		expect(stdout).not.toContain("Done. Everything is in place.")
 		expect(commands).toContain(
-			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(true)} --project=acme-host`,
+			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(all)} --project=acme-host`,
 		)
 	})
 
@@ -1048,7 +1074,7 @@ esac
 		const { args } = run(setup(setupInput("folder", { logs: true, metrics: true })))
 		expect(args).toEqual(
 			expect.arrayContaining([
-				`--log-filter=${gcpLogFilter(false)}`,
+				`--log-filter=${DEFAULT_LOG_FILTER}`,
 				`--push-endpoint=${PUSH_ENDPOINT}`,
 				"--display-name=Maple metrics and resource reader",
 				"--format=value(writerIdentity)",
@@ -1058,11 +1084,30 @@ esac
 		)
 	})
 
-	it("leaves out high-volume noise and GKE container logs by default, and keeps the latter on request", () => {
-		expect(gcpLogFilter(true)).toBe(
-			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update" AND NOT logName:"serialconsole.googleapis.com"',
+	it("leaves out high-volume noise, and the application output of each runtime that was not chosen", () => {
+		const NOISE =
+			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update" AND NOT logName:"serialconsole.googleapis.com"'
+		const all = GcpLogRuntime.literals
+		const without = (runtime: GcpLogRuntime) => gcpLogFilter(all.filter((other) => other !== runtime))
+		expect(gcpLogFilter(all)).toBe(NOISE)
+		expect(without("cloud_run")).toBe(
+			`${NOISE} AND NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr"))`,
 		)
-		expect(gcpLogFilter(false)).toBe(`${gcpLogFilter(true)} AND NOT resource.type="k8s_container"`)
+		expect(without("cloud_functions")).toBe(
+			`${NOISE} AND NOT log_id("cloudfunctions.googleapis.com/cloud-functions")`,
+		)
+		expect(without("app_engine")).toBe(
+			`${NOISE} AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))`,
+		)
+		expect(without("gke")).toBe(`${NOISE} AND NOT resource.type="k8s_container"`)
+		expect(DEFAULT_LOG_FILTER).toBe(without("gke"))
+		// The clauses come in the runtimes' own order, whatever order the list is in.
+		expect(gcpLogFilter([])).toBe(
+			`${NOISE} AND NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr")) AND NOT log_id("cloudfunctions.googleapis.com/cloud-functions") AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr"))) AND NOT resource.type="k8s_container"`,
+		)
+		expect(gcpLogFilter(["gke", "cloud_run"])).toBe(
+			`${NOISE} AND NOT log_id("cloudfunctions.googleapis.com/cloud-functions") AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))`,
+		)
 	})
 
 	it("passes interpolated values to gcloud verbatim, whatever they contain", () => {

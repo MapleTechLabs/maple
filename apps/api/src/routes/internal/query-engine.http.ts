@@ -18,6 +18,9 @@ import {
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
+	GcpInfraMetricsResponse,
+	GcpInfraPresenceResponse,
+	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
 	CloudflareInfraZonesResponse,
@@ -94,6 +97,7 @@ import {
 	TraceId,
 	SpanId,
 } from "@maple/domain/http"
+import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
 import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
@@ -792,6 +796,34 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const rows = yield* runQuery(Queries.railwayInfraServiceTimeseries, tenant, payload)
 						return new RailwayInfraRowsResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpInfraPresence", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraPresence, tenant, payload)
+						const reported = new Set(rows.map((row) => row.metric))
+						return new GcpInfraPresenceResponse({
+							services: GCP_INFRA_SERVICE_IDS.filter((service) =>
+								gcpInfraMetrics(service).some((metric) => reported.has(metric.name)),
+							),
+						})
+					}),
+				)
+				.handle("gcpInfraMetrics", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraMetrics, tenant, payload)
+						return new GcpInfraMetricsResponse({ data: rows })
+					}),
+				)
+				.handle("gcpInfraTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraTimeseries, tenant, payload)
+						return new GcpInfraTimeseriesResponse({
 							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
 						})
 					}),

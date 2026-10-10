@@ -4,7 +4,9 @@ import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
+	GCP_RESOURCES_LIMIT,
 	GcpMetricsUnavailableError,
+	type GcpResource,
 	GcpScopeAlreadyConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
@@ -12,7 +14,7 @@ import {
 } from "@maple/domain/http"
 import {
 	GcpConnectorId,
-	type GcpLogFilter,
+	type GcpLogRuntime,
 	type GcpProjectId,
 	type GcpResourceNumber,
 	type GcpScopeType,
@@ -59,6 +61,24 @@ export type CreateGcpConnectorInput = Pick<
 
 type GcpCapabilityError = GcpMetricsUnavailableError | IntegrationsValidationError
 
+export interface GcpResourceFilter {
+	readonly assetType?: string | undefined
+	readonly projectId?: string | undefined
+	/** The last segment of the full resource name. */
+	readonly name?: string | undefined
+}
+
+export interface GcpResourceInventory {
+	/** The first `GCP_RESOURCES_LIMIT` resources matching the filter, by asset type and name. */
+	readonly resources: ReadonlyArray<GcpResource>
+	/** How many resources match the filter. */
+	readonly total: number
+	/** The whole inventory by asset type. */
+	readonly types: ReadonlyArray<{ readonly assetType: string; readonly count: number }>
+	/** Every project with a resource. */
+	readonly projects: ReadonlyArray<string>
+}
+
 export interface GcpConnectorServiceApi {
 	readonly status: (orgId: OrgId) => Effect.Effect<
 		{
@@ -88,11 +108,16 @@ export interface GcpConnectorServiceApi {
 	readonly scripts: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
-		options: { readonly logFilter: GcpLogFilter },
+		options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 	) => Effect.Effect<
 		{ readonly setupScript: string; readonly cleanupScript: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
+	/** What the latest inventory syncs of the org's connectors found. */
+	readonly resources: (
+		orgId: OrgId,
+		filter: GcpResourceFilter,
+	) => Effect.Effect<GcpResourceInventory, IntegrationsPersistenceError>
 	/** Deleting the row is the disconnect: the ingest gateway stops accepting the connector's pushes. */
 	readonly delete: (
 		orgId: OrgId,
@@ -222,6 +247,80 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				}
 			})
 
+			const resources = Effect.fn("GcpConnectorService.resources")(function* (
+				orgId: OrgId,
+				filter: GcpResourceFilter,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				// Reached through the org's connectors, which is what the primary key covers. One
+				// that stopped collecting keeps its last inventory, which is left out. Overlapping
+				// scopes list a resource once per connector: it counts and shows once.
+				const ofOrg = PG.from(GcpResources)
+					.innerJoin(GcpConnectors, "c", (resource, connector) =>
+						resource.connectorId.eq(connector.id),
+					)
+					.where(($) => [$.c.orgId.eq(orgId), $.c.metricsEnabled.eq(true)])
+				const counts = yield* dbExecute((db) =>
+					db.run(
+						ofOrg
+							.select(($) => ({
+								assetType: $.assetType,
+								projectId: $.projectId,
+								count: PG.countDistinct($.name),
+							}))
+							.groupBy("assetType", "projectId"),
+					),
+				)
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						ofOrg
+							.select(($) => ({
+								name: $.name,
+								assetType: $.assetType,
+								projectId: $.projectId,
+								location: $.location,
+								displayName: $.displayName,
+								state: $.state,
+								labels: $.labels,
+							}))
+							.distinctOn("assetType", "name")
+							.where(($) => [
+								filter.assetType === undefined ? undefined : $.assetType.eq(filter.assetType),
+								filter.projectId === undefined ? undefined : $.projectId.eq(filter.projectId),
+								filter.name === undefined
+									? undefined
+									: PG.sql.cond`split_part(${$.name}, '/', -1) = ${filter.name}`,
+							])
+							.orderBy(($) => [
+								[$.assetType, "asc"],
+								[$.name, "asc"],
+								[$.lastSeenAt, "desc"],
+							])
+							.limit(GCP_RESOURCES_LIMIT),
+					),
+				)
+				const byType = new Map<string, number>()
+				let total = 0
+				for (const { assetType, projectId, count } of counts) {
+					byType.set(assetType, (byType.get(assetType) ?? 0) + count)
+					if (
+						(filter.assetType === undefined || filter.assetType === assetType) &&
+						(filter.projectId === undefined || filter.projectId === projectId)
+					) {
+						total += count
+					}
+				}
+				return {
+					resources: rows,
+					// The counts are by type and project: a name narrows to the rows themselves.
+					total: filter.name === undefined ? total : rows.length,
+					types: [...byType]
+						.map(([assetType, count]) => ({ assetType, count }))
+						.sort((a, b) => a.assetType.localeCompare(b.assetType)),
+					projects: [...new Set(counts.map((row) => row.projectId))].sort(),
+				}
+			})
+
 			const create = Effect.fn("GcpConnectorService.create")(function* (
 				orgId: OrgId,
 				userId: UserId,
@@ -331,7 +430,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const scripts = Effect.fn("GcpConnectorService.scripts")(function* (
 				orgId: OrgId,
 				connectorId: GcpConnectorId,
-				options: { readonly logFilter: GcpLogFilter },
+				options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const row = yield* selectRow(orgId, connectorId)
@@ -358,7 +457,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						mapleServiceAccountEmail,
 						logsEnabled: row.logsEnabled,
 						metricsEnabled: row.metricsEnabled,
-						logFilter: options.logFilter,
+						applicationLogs: options.applicationLogs,
 					}),
 					cleanupScript: yield* renderGcpCleanupScript(target),
 				}
@@ -393,6 +492,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 
 			return {
 				status,
+				resources,
 				create,
 				update,
 				scripts,

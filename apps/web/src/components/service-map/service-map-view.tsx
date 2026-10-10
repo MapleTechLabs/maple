@@ -55,6 +55,7 @@ import {
 	ArrowRightIcon,
 	CloudflareIcon,
 	CubeIcon,
+	GoogleCloudIcon,
 	MagnifierIcon,
 	NetworkNodesIcon,
 	PlanetScaleIcon,
@@ -65,6 +66,7 @@ import { ResultView } from "@/components/common/result-view"
 import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import {
+	gcpInfraFleetResultAtom,
 	getPlanetScaleBranchStatsResultAtom,
 	getServiceDbQuerySummaryResultAtom,
 	getServiceMapBundleResultAtom,
@@ -93,6 +95,15 @@ import {
 	resolveDbNodePresentation,
 	resolvePlanetScaleDbPresentation,
 } from "@maple/ui/components/service-map/service-map-db"
+import { GCP_INFRA_SERVICES } from "@maple/domain/gcp-infra"
+import { gcpWorkloadTelemetry } from "@/components/infra/gcp/inventory"
+import {
+	GCP_INFRA_COLUMNS,
+	NO_GCP_FLEET,
+	formatGcpValue,
+	gcpFleet,
+	gcpWorkloadSearch,
+} from "@/components/infra/gcp/tabs"
 import { PlanetScaleTopQueries } from "@/components/infra/planetscale/planetscale-top-queries"
 import {
 	formatLag,
@@ -263,6 +274,8 @@ interface ServiceDetailPanelProps {
 	colorMode: ServiceMapColorMode
 	/** Cloudflare direct-integration analytics overlaid onto this instrumented Worker, if matched. */
 	cloudflare?: CloudflareNodeMetrics
+	startTime: string
+	endTime: string
 	/** Focus the map on this service's neighborhood. */
 	onFocus: () => void
 	onClose: () => void
@@ -277,6 +290,8 @@ function ServiceDetailPanel({
 	platforms,
 	colorMode,
 	cloudflare,
+	startTime,
+	endTime,
 	onFocus,
 	onClose,
 }: ServiceDetailPanelProps) {
@@ -435,6 +450,8 @@ function ServiceDetailPanel({
 									</div>
 								</div>
 							)}
+
+							<GcpSection serviceName={serviceId} startTime={startTime} endTime={endTime} />
 
 							{/* Dependencies */}
 							{dependencies.length > 0 && (
@@ -826,6 +843,92 @@ function DbQueryActivityChart({
 				</div>
 			</div>
 		</ChartTooltipSuppressionProvider>
+	)
+}
+
+/**
+ * Google Cloud overlay in the service detail panel: the workloads the Google Cloud integration
+ * reads under this service's name (a Cloud Run service, a function, a GKE container, a VM), each
+ * with its tab's headline columns and a link to its page. Nothing is read unless a connection
+ * collects metrics.
+ */
+function GcpSection(props: { serviceName: string; startTime: string; endTime: string }) {
+	const statusResult = useAtomValue(
+		retainedQueryV2("gcpIntegration", "status", { reactivityKeys: ["gcpIntegration"] }),
+	)
+	const collecting = Result.builder(statusResult)
+		.onSuccess((status) => status.connectors.some((connector) => connector.metrics_enabled))
+		.orElse(() => false)
+	return collecting ? <GcpSectionData {...props} /> : null
+}
+
+function GcpSectionData({
+	serviceName,
+	startTime,
+	endTime,
+}: {
+	serviceName: string
+	startTime: string
+	endTime: string
+}) {
+	const fleetResult = useRefreshableAtomValue(gcpInfraFleetResultAtom({ data: { startTime, endTime } }))
+	const matches = Result.builder(fleetResult)
+		.onSuccess((response) => gcpFleet(response.services))
+		.orElse(() => NO_GCP_FLEET)
+		.flatMap(({ service, workloads }) =>
+			workloads
+				.filter((workload) => {
+					const telemetry = gcpWorkloadTelemetry(service, workload.keys)
+					return telemetry.traced && telemetry.serviceName === serviceName
+				})
+				.map((workload) => ({ service, workload })),
+		)
+	if (matches.length === 0) return null
+
+	return (
+		<div className="space-y-3">
+			<Separator />
+			<div className="flex items-center gap-1.5">
+				<GoogleCloudIcon size={12} />
+				<Eyebrow as="h4">Google Cloud</Eyebrow>
+			</div>
+			{matches.map(({ service, workload }) => (
+				<div key={`${service}:${workload.keys.join("/")}`} className="space-y-3">
+					<div className="flex items-baseline justify-between gap-3 text-3xs text-muted-foreground">
+						<span className="truncate">
+							{[GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" · ")}
+						</span>
+						<Link
+							to="/infra/gcp/$service/$name"
+							params={{ service, name: workload.keys[0] }}
+							search={gcpWorkloadSearch(service, workload.keys)}
+							className="shrink-0 text-primary transition-colors hover:text-primary/80"
+						>
+							View infrastructure
+						</Link>
+					</div>
+					<div className="grid grid-cols-2 gap-x-6 gap-y-4">
+						{GCP_INFRA_COLUMNS[service].slice(0, 4).map((spec, index) => (
+							<MetricTile
+								key={spec.label}
+								label={spec.label}
+								caption={spec.total ? "total in range" : undefined}
+							>
+								<MetricValue
+									className={
+										spec.format === "errorRate"
+											? errorRateClass(workload.values[index] ?? 0)
+											: undefined
+									}
+								>
+									{formatGcpValue(spec.format, workload.values[index])}
+								</MetricValue>
+							</MetricTile>
+						))}
+					</div>
+				</div>
+			))}
+		</div>
 	)
 }
 
@@ -1472,6 +1575,8 @@ export function ServiceMapCanvas({
 				colorMode={colorMode}
 				cloudflare={cloudflareOverlayByService.get(selectedId)}
 				durationSeconds={durationSeconds}
+				startTime={startTime}
+				endTime={endTime}
 				onFocus={onFocus}
 				onClose={onClose}
 			/>

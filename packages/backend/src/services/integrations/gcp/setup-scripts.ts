@@ -1,11 +1,11 @@
-import { gcpConnectorResourceNames } from "@maple/domain/gcp"
+import { GCP_DEFAULT_APPLICATION_LOGS, gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
-import type {
-	GcpConnectorId,
-	GcpLogFilter,
-	GcpProjectId,
-	GcpResourceNumber,
-	GcpScopeType,
+import {
+	type GcpConnectorId,
+	GcpLogRuntime,
+	type GcpProjectId,
+	type GcpResourceNumber,
+	type GcpScopeType,
 } from "@maple/domain/primitives"
 import { Effect } from "effect"
 
@@ -33,12 +33,33 @@ const NOISE = [
 	'NOT logName:"serialconsole.googleapis.com"',
 ]
 
-// Left out unless asked for: a workload that sends its logs to Maple over OpenTelemetry would
-// have every container line stored twice, and Google's copy carries no trace link.
-const GKE_CONTAINER_LOGS = 'NOT resource.type="k8s_container"'
+// What each runtime's code writes to stdout and stderr, as Cloud Logging names those logs. The
+// runtime's platform logs (request logs, system events, audit) are other logs and stay. A runtime
+// that was not chosen has its clause in the filter: a workload that also sends its logs to Maple
+// over OpenTelemetry would have each line stored twice, and Google's copy carries no trace link.
+const APPLICATION_LOGS = {
+	cloud_run: {
+		name: "Cloud Run",
+		leftOut: 'NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr"))',
+	},
+	cloud_functions: {
+		name: "Cloud Functions (1st gen)",
+		leftOut: 'NOT log_id("cloudfunctions.googleapis.com/cloud-functions")',
+	},
+	app_engine: {
+		name: "App Engine",
+		leftOut: 'NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))',
+	},
+	gke: { name: "GKE containers", leftOut: 'NOT resource.type="k8s_container"' },
+} satisfies Record<GcpLogRuntime, { readonly name: string; readonly leftOut: string }>
 
-export const gcpLogFilter = (includeGkeContainerLogs: boolean): string =>
-	[...NOISE, ...(includeGkeContainerLogs ? [] : [GKE_CONTAINER_LOGS])].join(" AND ")
+const leftOutRuntimes = (applicationLogs: ReadonlyArray<GcpLogRuntime>) =>
+	GcpLogRuntime.literals.filter((runtime) => !applicationLogs.includes(runtime))
+
+export const gcpLogFilter = (applicationLogs: ReadonlyArray<GcpLogRuntime>): string =>
+	[...NOISE, ...leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].leftOut)].join(
+		" AND ",
+	)
 
 /** What a connector covers and where Maple's own resources live. */
 export interface GcpScriptTarget {
@@ -626,7 +647,8 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
 	readonly metricsEnabled: boolean
-	readonly logFilter: GcpLogFilter
+	/** Null: an existing sink keeps its filter, a new one gets the default list. */
+	readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null
 }
 
 /**
@@ -638,6 +660,8 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
  */
 export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 	const { scopeType, logsEnabled: logs } = input
+	const applicationLogs = input.applicationLogs ?? GCP_DEFAULT_APPLICATION_LOGS
+	const leftOut = leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].name)
 	// On for the connector while this deployment has lost its Google identity: nothing is set up
 	// and, above all, nothing a customer set up earlier is removed.
 	const metrics = !input.metricsEnabled
@@ -665,19 +689,21 @@ ${
 # LOG_FILTER leaves out what is high volume and says little about a workload: Data Access audit
 # logs, load balancer health checks, Kubernetes lease renewals and VM serial console output.
 ${
-	input.logFilter === "include_gke_container_logs"
-		? `# GKE container logs are included, as chosen in Maple. Logs from workloads that also send them
-# over OpenTelemetry are then stored twice: ${OTEL_DOCS_URL}`
-		: `# It also leaves out GKE container logs: logs from workloads that also send them over
-# OpenTelemetry would be stored twice. To include them, choose "Include GKE container logs" under
-# Log filter in Maple, or delete AND ${GKE_CONTAINER_LOGS} from LOG_FILTER and make
-# LOG_FILTER_MODE 'set'. Details: ${OTEL_DOCS_URL}`
+	leftOut.length === 0
+		? `# The output of every runtime is forwarded, as chosen in Maple. Logs from workloads that also
+# send them over OpenTelemetry are then stored twice.
+# Details: ${OTEL_DOCS_URL}`
+		: `# It also leaves out what the code of these runtimes writes to stdout and stderr:
+#   ${leftOut.join(", ")}
+# A workload that also sends its logs over OpenTelemetry would have those lines stored twice. The
+# choice is made under Log filter in Maple.
+# Details: ${OTEL_DOCS_URL}`
 }
 # LOG_FILTER_MODE keep: an existing sink keeps its filter, a new sink gets LOG_FILTER.
 # LOG_FILTER_MODE set:  LOG_FILTER replaces the sink's filter.
 # Filter syntax: https://cloud.google.com/logging/docs/view/logging-query-language
-LOG_FILTER_MODE=${sh(input.logFilter === "keep" ? "keep" : "set")}
-LOG_FILTER=${sh(gcpLogFilter(input.logFilter === "include_gke_container_logs"))}
+LOG_FILTER_MODE=${sh(input.applicationLogs === null ? "keep" : "set")}
+LOG_FILTER=${sh(gcpLogFilter(applicationLogs))}
 `
 		: ""
 }${variables(input, [

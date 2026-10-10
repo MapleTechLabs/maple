@@ -4,10 +4,11 @@
 
 import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
+import { GCP_DEFAULT_APPLICATION_LOGS } from "@maple/domain/gcp"
 import {
 	GcpProjectId,
 	GcpResourceNumber,
-	type GcpLogFilter,
+	type GcpLogRuntime,
 	type GcpScopeType,
 } from "@maple/domain/primitives"
 import type { Tone } from "@maple/ui/lib/tone"
@@ -155,24 +156,24 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	}
 }
 
-/** The card's dot and label for each state a capability that is on can be in. */
+/** A connection row's words, after "Logs" or "Metrics", for each state a capability that is on can be in. */
 export const GCP_LOG_STATUS = {
-	failing: { tone: "crit", label: "Rejecting logs" },
+	failing: { tone: "crit", label: "Rejected" },
 	"setup-pending": { tone: "neutral", label: "Not set up" },
 	"setup-running": { tone: "neutral", label: "Setup running" },
-	waiting: { tone: "neutral", label: "Waiting for first logs" },
-	idle: { tone: "neutral", label: "No logs in 24 hours" },
-	receiving: { tone: "ok", label: "Receiving logs" },
+	waiting: { tone: "neutral", label: "Waiting for the first entry" },
+	idle: { tone: "neutral", label: "Nothing in 24 hours" },
+	receiving: { tone: "ok", label: "Receiving" },
 } as const satisfies Record<Exclude<GcpLogState["kind"], "off">, { tone: Tone; label: string }>
 
 export const GCP_METRICS_STATUS = {
 	"setup-pending": { tone: "neutral", label: "Not set up" },
 	"setup-running": { tone: "neutral", label: "Setup running" },
-	waiting: { tone: "neutral", label: "Waiting for first metrics" },
-	failing: { tone: "crit", label: "Can't read metrics" },
-	incomplete: { tone: "warn", label: "Receiving metrics, incomplete" },
-	stalled: { tone: "warn", label: "Metrics stalled" },
-	receiving: { tone: "ok", label: "Receiving metrics" },
+	waiting: { tone: "neutral", label: "Waiting for the first read" },
+	failing: { tone: "crit", label: "Can't be read" },
+	incomplete: { tone: "warn", label: "Incomplete" },
+	stalled: { tone: "warn", label: "Stalled" },
+	receiving: { tone: "ok", label: "Receiving" },
 } as const satisfies Record<Exclude<GcpMetricsState["kind"], "off">, { tone: Tone; label: string }>
 
 type ConnectorFields = LogFields & MetricsFields
@@ -435,32 +436,39 @@ export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpC
 export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)
 
-const LOG_FILTERS = [
-	{ value: "default", label: "Recommended: no GKE container logs" },
-	{ value: "include_gke_container_logs", label: "Include GKE container logs" },
-	{ value: "keep", label: "Keep the sink's current filter" },
-] as const satisfies ReadonlyArray<{ value: GcpLogFilter; label: string }>
+/** The runtimes whose application output a sink can forward, in display order, with what each covers. */
+export const GCP_LOG_RUNTIMES = [
+	{ value: "cloud_run", label: "Cloud Run", hint: "Services, jobs and 2nd gen functions" },
+	{ value: "cloud_functions", label: "Cloud Functions", hint: "1st gen" },
+	{ value: "app_engine", label: "App Engine", hint: "Standard and flexible" },
+	{ value: "gke", label: "GKE containers", hint: "Usually collected in the cluster" },
+] as const satisfies ReadonlyArray<{ value: GcpLogRuntime; label: string; hint: string }>
 
-/** The configuration's log filters in display order. Keeping a filter needs a sink that has one. */
-export const gcpLogFilters = (sinkExists: boolean) =>
-	LOG_FILTERS.filter((filter) => filter.value !== "keep" || sinkExists)
+/** What the configuration's log filter holds; null is a choice not made. */
+export interface GcpLogFilterDraft {
+	/** Leave an existing sink's filter as it is. */
+	readonly keep: boolean | null
+	/** The runtimes whose application output a new filter forwards. */
+	readonly runtimes: ReadonlyArray<GcpLogRuntime> | null
+}
 
 /**
  * What the configuration's log filter stands on. Nothing chosen: an existing sink keeps its filter,
- * so running the script again for another change never resets it, and a new sink gets the
- * recommended one. Including GKE container logs counts once it is acknowledged: until then the
- * script stays on the filter the configuration started with, which is also where backing out
- * returns to.
+ * so running the script again for another change never resets it, and a new sink forwards the
+ * default runtimes. `applicationLogs` is what the script is asked for: undefined keeps the filter.
  */
-export const gcpLogFilterChoice = (
-	chosen: GcpLogFilter | null,
-	acknowledged: boolean,
-	sinkExists: boolean,
-) => {
-	const initial: GcpLogFilter = sinkExists ? "keep" : "default"
-	const selected = chosen ?? initial
-	const unacknowledged = selected === "include_gke_container_logs" && !acknowledged
-	return { selected, unacknowledged, scriptFilter: unacknowledged ? initial : selected }
+export const gcpLogFilterChoice = (draft: GcpLogFilterDraft, sinkExists: boolean) => {
+	const keep = sinkExists && (draft.keep ?? true)
+	const runtimes = draft.runtimes ?? GCP_DEFAULT_APPLICATION_LOGS
+	return { keep, runtimes, applicationLogs: keep ? undefined : runtimes }
+}
+
+/** One line of the apply step's recap: whose application output the new filter forwards. */
+export const gcpApplicationLogsLine = (runtimes: ReadonlyArray<GcpLogRuntime>): string => {
+	const labels = GCP_LOG_RUNTIMES.filter(({ value }) => runtimes.includes(value)).map(({ label }) => label)
+	return labels.length === 0
+		? "Platform logs only, no application output"
+		: `Platform logs and the output of ${labels.join(", ")}`
 }
 
 const LOG_ROUTER_SCOPE = { project: "project", folder: "folder", organization: "organizationId" } as const

@@ -4,9 +4,11 @@ import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 
+import { gcpFleet } from "../gcp/tabs"
 import type { HostRow } from "../host-table"
 import {
 	summarizeCloudflare,
+	summarizeGcp,
 	summarizeHosts,
 	summarizePlanetScale,
 	summarizePods,
@@ -139,6 +141,118 @@ describe("summarizeRailway", () => {
 			{ key: "saturated", count: 0 },
 			{ key: "unbounded", count: 1 },
 		])
+	})
+})
+
+describe("summarizeGcp", () => {
+	const point = (keys: ReadonlyArray<string>, metric: string, label: string, total: number) => ({
+		keys,
+		metric,
+		label,
+		total,
+		samples: 1,
+	})
+	const api = ["api", "acme-prod", "europe-west1"]
+	const db = ["acme-prod:main", "acme-prod", "europe-west1"]
+	const fleet = (requests5xx: number, disk: number) =>
+		gcpFleet([
+			{
+				service: "cloudRun",
+				failed: false,
+				points: [
+					point(api, "gcp.run.request_count", "2xx", 1000 - requests5xx),
+					point(api, "gcp.run.request_count", "5xx", requests5xx),
+				],
+			},
+			{
+				service: "cloudSql",
+				failed: false,
+				points: [point(db, "gcp.cloudsql.database.disk.utilization", "", disk)],
+			},
+		])
+
+	it("names the services that report while every workload is healthy", () => {
+		expect(summarizeGcp(fleet(0, 0.4))).toMatchObject({
+			resources: "2 workloads",
+			segments: [
+				{ key: "ok", count: 2 },
+				{ key: "elevated", count: 0 },
+				{ key: "saturated", count: 0 },
+			],
+			headline: "Cloud Run, Cloud SQL",
+			headlineTone: "neutral",
+			findings: [],
+		})
+		expect(summarizeGcp([])?.headline).toBe("no metrics in this window")
+	})
+
+	it("raises a failing workload and a filling disk, worst first, each opening its page", () => {
+		const summary = summarizeGcp(fleet(80, 0.72))
+		expect(summary?.segments).toEqual([
+			{ key: "ok", count: 0 },
+			{ key: "elevated", count: 1 },
+			{ key: "saturated", count: 1 },
+		])
+		expect(summary?.headline).toBe("2 workloads elevated or erroring")
+		expect(summary?.headlineTone).toBe("crit")
+		expect(summary?.findings).toEqual([
+			{
+				key: "gcp:cloudRun:api/acme-prod/europe-west1",
+				source: "gcp",
+				tone: "crit",
+				title: "api at 8.0% 5xx rate",
+				detail: "Cloud Run / acme-prod / europe-west1",
+				target: { kind: "gcp", service: "cloudRun", keys: api },
+			},
+			{
+				key: "gcp:cloudSql:acme-prod:main/acme-prod/europe-west1",
+				source: "gcp",
+				tone: "warn",
+				title: "main at 72% disk",
+				detail: "Cloud SQL / acme-prod / europe-west1",
+				target: { kind: "gcp", service: "cloudSql", keys: db },
+			},
+		])
+	})
+
+	const unread = (service: "cloudSql" | "pubsub") => ({ service, failed: true, points: [] })
+	const unreadFinding = (service: "cloudSql" | "pubsub", title: string) => ({
+		key: `gcp:${service}:unread`,
+		source: "gcp",
+		tone: "warn",
+		title: `${title} metrics could not be read`,
+		detail: "Reload to try again",
+		target: { kind: "gcpService", service },
+	})
+
+	it("says which service could not be read instead of counting it as healthy", () => {
+		const [cloudRun] = fleet(0, 0.4)
+		expect(summarizeGcp([cloudRun!, ...gcpFleet([unread("cloudSql"), unread("pubsub")])])).toEqual({
+			resources: "1 workload",
+			segments: [
+				{ key: "ok", count: 1 },
+				{ key: "elevated", count: 0 },
+				{ key: "saturated", count: 0 },
+			],
+			headline: "Cloud SQL, Pub/Sub not read",
+			headlineTone: "warn",
+			findings: [unreadFinding("cloudSql", "Cloud SQL"), unreadFinding("pubsub", "Pub/Sub")],
+		})
+	})
+
+	it("keeps the workloads it did read beside the service it could not", () => {
+		const [cloudRun] = fleet(80, 0.4)
+		const summary = summarizeGcp([cloudRun!, ...gcpFleet([unread("cloudSql")])])
+		expect(summary?.headline).toBe("Cloud SQL not read, 1 workload elevated or erroring")
+		expect(summary?.headlineTone).toBe("crit")
+		expect(summary?.findings.map((finding) => finding.key)).toEqual([
+			"gcp:cloudRun:api/acme-prod/europe-west1",
+			"gcp:cloudSql:unread",
+		])
+	})
+
+	it("has no summary when no service could be read", () => {
+		expect(summarizeGcp(gcpFleet([unread("cloudSql"), unread("pubsub")]))).toBeNull()
 	})
 })
 

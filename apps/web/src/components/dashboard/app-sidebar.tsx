@@ -298,7 +298,8 @@ function NavRow({
 		const seen = new Set<NavSubItem["icon"]>()
 		const unique: NavSubItem[] = []
 		for (const sub of item.subItems) {
-			if (!sub.icon || seen.has(sub.icon)) continue
+			// The section's own front door (Infrastructure's Overview) is not one of its contents.
+			if (!sub.icon || sub.href === item.href || seen.has(sub.icon)) continue
 			seen.add(sub.icon)
 			unique.push(sub)
 		}
@@ -307,7 +308,7 @@ function NavRow({
 		// preview is all or nothing. Six fits both sections we ship (Explore
 		// with Agent Sessions on, Infrastructure) at the tightened gap below.
 		return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
-	}, [isOpen, item.subItems])
+	}, [isOpen, item.subItems, item.href])
 
 	// The sub-list can't render at 48px, so the rail turns the row into a menu.
 	// Without this, every child route is stranded while the sidebar is collapsed

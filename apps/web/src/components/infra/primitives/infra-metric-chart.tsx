@@ -1,4 +1,4 @@
-import { areaY, d3Curve, defineChart, lineY, stack } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, dot, lineY, stack } from "@tanstack/charts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -7,6 +7,7 @@ import { useMemo, type ReactNode } from "react"
 import {
 	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
@@ -19,12 +20,14 @@ import {
 	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty, useChartPlotHeight } from "@maple/ui/components/charts"
+import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
 import { CHART_EMPTY_MESSAGE } from "@/components/common/chart-card"
 import {
 	formatValueWithUnit,
+	isoToLabel,
 	transformRows,
 	UNNAMED_SERIES_KEY,
 	type ChartUnit,
@@ -64,6 +67,12 @@ export interface InfraMetricChartProps {
 	 * apparent.
 	 */
 	xDomain?: ReadonlyArray<string>
+	/**
+	 * With `xDomain`: a bucket of the domain that has no row ends the lines there, instead of
+	 * joining its neighbours. For a source that reports nothing while idle, where a line drawn
+	 * across the silence would read as a value it never had.
+	 */
+	gaps?: boolean
 	/**
 	 * The last-value summary above the plot.
 	 *
@@ -141,6 +150,7 @@ export function InfraMetricChart({
 	showThreshold = false,
 	linkedChartId,
 	xDomain,
+	gaps = false,
 	header,
 	waiting = false,
 	height,
@@ -156,7 +166,22 @@ export function InfraMetricChart({
 
 	const gradientPrefix = useChartId("infra")
 
-	const { data, series } = useMemo(() => transformRows(rows), [rows])
+	const { data, series } = useMemo(() => {
+		const transformed = transformRows(rows)
+		if (!gaps || xDomain === undefined) return transformed
+		const reported = new Set(transformed.data.map((point) => point.bucket))
+		const silent = xDomain
+			.filter((bucket) => !reported.has(bucket))
+			.map((bucket): TransformedPoint => ({
+				bucket,
+				time: isoToLabel(bucket),
+				date: bucketDate(bucket),
+			}))
+		return {
+			series: transformed.series,
+			data: [...transformed.data, ...silent].toSorted((a, b) => a.bucket.localeCompare(b.bucket)),
+		}
+	}, [rows, gaps, xDomain])
 
 	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
 	// label point scale this replaced folded a 24h window onto itself.
@@ -190,8 +215,17 @@ export function InfraMetricChart({
 	const tickFormatter = useMemo(
 		() => (value: number) =>
 			unit === "cores"
-				? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-				: formatValueWithUnit(value, unit),
+				? // Two decimals, or two digits where a tick is smaller than that.
+					value.toLocaleString(
+						undefined,
+						Math.abs(value) < 0.1
+							? { maximumSignificantDigits: 2 }
+							: { maximumFractionDigits: 2 },
+					)
+				: unit === "bytes_per_second"
+					? // "391 KB/s" clips the same way: the tooltip keeps the "/s".
+						formatBytes(value)
+					: formatValueWithUnit(value, unit),
 		[unit],
 	)
 
@@ -276,6 +310,23 @@ export function InfraMetricChart({
 					}),
 				)
 
+		// With gaps, a value between two silent buckets is no line at all: mark it, or a
+		// single burst on a long range draws nothing.
+		const lone = gaps
+			? series.map((name) => {
+					const value = valueOf(name)
+					const silent = (point: TransformedPoint | undefined) =>
+						point === undefined || value(point) === null
+					return dot(
+						data.filter(
+							(point, index) =>
+								value(point) !== null && silent(data[index - 1]) && silent(data[index + 1]),
+						),
+						{ x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) },
+					)
+				})
+			: []
+
 		return defineChart({
 			gradients: stacked
 				? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
@@ -287,6 +338,7 @@ export function InfraMetricChart({
 					labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined,
 				}),
 				...bands,
+				...lone,
 				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), plot.chrome)),
 				focusCrosshair(plot.chrome),
 			],
@@ -308,7 +360,7 @@ export function InfraMetricChart({
 			focusRing: false,
 			tooltip: plot.tooltip,
 		})
-	}, [data, series, axis, stacked, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
+	}, [data, series, axis, stacked, gaps, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
 
 	if (data.length === 0) {
 		return <ChartEmpty height={height}>{CHART_EMPTY_MESSAGE}</ChartEmpty>

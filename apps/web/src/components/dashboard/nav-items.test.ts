@@ -124,11 +124,12 @@ describe("navGroups", () => {
 		}
 	})
 
-	it("keeps Infrastructure at six children with six unique glyphs", () => {
+	it("keeps Infrastructure at six sources with six unique glyphs", () => {
 		// Six is exactly NavRow's all-or-nothing preview cap, so a seventh unique
 		// glyph here would drop the closed row's miniatures entirely rather than
 		// truncate them. A new Kubernetes view goes in `views` (free); a new
-		// child with a new glyph is not free.
+		// child with a new glyph is not free. Overview is the section's own page
+		// and stays out of the preview.
 		const infra = findItem("Infrastructure")
 		expect(infra.subItems?.map((sub) => sub.title)).toEqual([
 			"Overview",
@@ -137,8 +138,10 @@ describe("navGroups", () => {
 			"Cloudflare",
 			"PlanetScale",
 			"Railway",
+			"Google Cloud",
 		])
-		expect(new Set(infra.subItems?.map((sub) => sub.icon)).size).toBe(NAV_PREVIEW_MAX_GLYPHS)
+		const sources = infra.subItems?.filter((sub) => sub.href !== infra.href)
+		expect(new Set(sources?.map((sub) => sub.icon)).size).toBe(NAV_PREVIEW_MAX_GLYPHS)
 	})
 
 	it("folds the Kubernetes views behind one row that points at the section root", () => {
@@ -214,7 +217,7 @@ describe("partitionInfraSubItems", () => {
 
 	it("shows every child while the org's surfaces are unknown", () => {
 		const { shown, hidden } = partitionInfraSubItems(subItems(), null, "/infra")
-		expect(shown).toHaveLength(6)
+		expect(shown).toHaveLength(7)
 		expect(hidden).toEqual([])
 	})
 
@@ -225,7 +228,7 @@ describe("partitionInfraSubItems", () => {
 			"/infra",
 		)
 		expect(titles(shown)).toEqual(["Overview", "Hosts", "PlanetScale"])
-		expect(titles(hidden)).toEqual(["Kubernetes", "Cloudflare", "Railway"])
+		expect(titles(hidden)).toEqual(["Kubernetes", "Cloudflare", "Railway", "Google Cloud"])
 	})
 
 	// Containers is a view of Hosts, so a Docker-only org still gets the row.

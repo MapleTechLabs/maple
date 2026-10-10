@@ -91,6 +91,7 @@ import { Route as InfraCloudflareIndexRouteImport } from './routes/infra/cloudfl
 import { Route as InfraCloudflareZoneNameRouteImport } from './routes/infra/cloudflare/$zoneName'
 import { Route as InfraContainersIndexRouteImport } from './routes/infra/containers/index'
 import { Route as InfraContainersContainerNameRouteImport } from './routes/infra/containers/$containerName'
+import { Route as InfraGcpIndexRouteImport } from './routes/infra/gcp/index'
 import { Route as InfraHostsIndexRouteImport } from './routes/infra/hosts/index'
 import { Route as InfraHostsHostNameRouteImport } from './routes/infra/hosts/$hostName'
 import { Route as InfraKubernetesIndexRouteImport } from './routes/infra/kubernetes/index'
@@ -107,6 +108,7 @@ import { Route as LabBenchServiceDetailRouteImport } from './routes/lab/bench/se
 import { Route as LabBenchServiceMapRouteImport } from './routes/lab/bench/service-map'
 import { Route as LabBenchTanstackRouteImport } from './routes/lab/bench/tanstack'
 import { Route as DashboardsDashboardIdWidgetsWidgetIdRouteImport } from './routes/dashboards/$dashboardId_.widgets.$widgetId'
+import { Route as InfraGcpServiceNameRouteImport } from './routes/infra/gcp/$service/$name'
 import { Route as InfraKubernetesNodesIndexRouteImport } from './routes/infra/kubernetes/nodes/index'
 import { Route as InfraKubernetesNodesNodeNameRouteImport } from './routes/infra/kubernetes/nodes/$nodeName'
 import { Route as InfraKubernetesPodsIndexRouteImport } from './routes/infra/kubernetes/pods/index'
@@ -530,6 +532,11 @@ const InfraContainersContainerNameRoute =
     path: '/infra/containers/$containerName',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InfraGcpIndexRoute = InfraGcpIndexRouteImport.update({
+  id: '/infra/gcp/',
+  path: '/infra/gcp/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InfraHostsIndexRoute = InfraHostsIndexRouteImport.update({
   id: '/infra/hosts/',
   path: '/infra/hosts/',
@@ -611,6 +618,11 @@ const DashboardsDashboardIdWidgetsWidgetIdRoute =
     path: '/dashboards/$dashboardId/widgets/$widgetId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InfraGcpServiceNameRoute = InfraGcpServiceNameRouteImport.update({
+  id: '/infra/gcp/$service/$name',
+  path: '/infra/gcp/$service/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InfraKubernetesNodesIndexRoute =
   InfraKubernetesNodesIndexRouteImport.update({
     id: '/infra/kubernetes/nodes/',
@@ -754,11 +766,13 @@ export interface FileRoutesByFullPath {
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
   '/infra/containers/': typeof InfraContainersIndexRoute
+  '/infra/gcp/': typeof InfraGcpIndexRoute
   '/infra/hosts/': typeof InfraHostsIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
   '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  '/infra/gcp/$service/$name': typeof InfraGcpServiceNameRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
   '/infra/kubernetes/services/$serviceName': typeof InfraKubernetesServicesServiceNameRoute
@@ -861,11 +875,13 @@ export interface FileRoutesByTo {
   '/errors/issues': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare': typeof InfraCloudflareIndexRoute
   '/infra/containers': typeof InfraContainersIndexRoute
+  '/infra/gcp': typeof InfraGcpIndexRoute
   '/infra/hosts': typeof InfraHostsIndexRoute
   '/infra/kubernetes': typeof InfraKubernetesIndexRoute
   '/infra/planetscale': typeof InfraPlanetscaleIndexRoute
   '/infra/railway': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  '/infra/gcp/$service/$name': typeof InfraGcpServiceNameRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
   '/infra/kubernetes/services/$serviceName': typeof InfraKubernetesServicesServiceNameRoute
@@ -970,11 +986,13 @@ export interface FileRoutesById {
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
   '/infra/containers/': typeof InfraContainersIndexRoute
+  '/infra/gcp/': typeof InfraGcpIndexRoute
   '/infra/hosts/': typeof InfraHostsIndexRoute
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
   '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId_/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  '/infra/gcp/$service/$name': typeof InfraGcpServiceNameRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
   '/infra/kubernetes/services/$serviceName': typeof InfraKubernetesServicesServiceNameRoute
@@ -1080,11 +1098,13 @@ export interface FileRouteTypes {
     | '/errors/issues/'
     | '/infra/cloudflare/'
     | '/infra/containers/'
+    | '/infra/gcp/'
     | '/infra/hosts/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
     | '/infra/railway/'
     | '/dashboards/$dashboardId/widgets/$widgetId'
+    | '/infra/gcp/$service/$name'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
     | '/infra/kubernetes/services/$serviceName'
@@ -1187,11 +1207,13 @@ export interface FileRouteTypes {
     | '/errors/issues'
     | '/infra/cloudflare'
     | '/infra/containers'
+    | '/infra/gcp'
     | '/infra/hosts'
     | '/infra/kubernetes'
     | '/infra/planetscale'
     | '/infra/railway'
     | '/dashboards/$dashboardId/widgets/$widgetId'
+    | '/infra/gcp/$service/$name'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
     | '/infra/kubernetes/services/$serviceName'
@@ -1295,11 +1317,13 @@ export interface FileRouteTypes {
     | '/errors/issues/'
     | '/infra/cloudflare/'
     | '/infra/containers/'
+    | '/infra/gcp/'
     | '/infra/hosts/'
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
     | '/infra/railway/'
     | '/dashboards/$dashboardId_/widgets/$widgetId'
+    | '/infra/gcp/$service/$name'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
     | '/infra/kubernetes/services/$serviceName'
@@ -1376,11 +1400,13 @@ export interface RootRouteChildren {
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   InfraCloudflareIndexRoute: typeof InfraCloudflareIndexRoute
   InfraContainersIndexRoute: typeof InfraContainersIndexRoute
+  InfraGcpIndexRoute: typeof InfraGcpIndexRoute
   InfraHostsIndexRoute: typeof InfraHostsIndexRoute
   InfraKubernetesIndexRoute: typeof InfraKubernetesIndexRoute
   InfraPlanetscaleIndexRoute: typeof InfraPlanetscaleIndexRoute
   InfraRailwayIndexRoute: typeof InfraRailwayIndexRoute
   DashboardsDashboardIdWidgetsWidgetIdRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  InfraGcpServiceNameRoute: typeof InfraGcpServiceNameRoute
   InfraKubernetesNodesNodeNameRoute: typeof InfraKubernetesNodesNodeNameRoute
   InfraKubernetesPodsPodNameRoute: typeof InfraKubernetesPodsPodNameRoute
   InfraKubernetesServicesServiceNameRoute: typeof InfraKubernetesServicesServiceNameRoute
@@ -1967,6 +1993,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InfraContainersContainerNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infra/gcp/': {
+      id: '/infra/gcp/'
+      path: '/infra/gcp'
+      fullPath: '/infra/gcp/'
+      preLoaderRoute: typeof InfraGcpIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/infra/hosts/': {
       id: '/infra/hosts/'
       path: '/infra/hosts'
@@ -2077,6 +2110,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboards/$dashboardId/widgets/$widgetId'
       fullPath: '/dashboards/$dashboardId/widgets/$widgetId'
       preLoaderRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/infra/gcp/$service/$name': {
+      id: '/infra/gcp/$service/$name'
+      path: '/infra/gcp/$service/$name'
+      fullPath: '/infra/gcp/$service/$name'
+      preLoaderRoute: typeof InfraGcpServiceNameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/infra/kubernetes/nodes/': {
@@ -2270,12 +2310,14 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   InfraCloudflareIndexRoute: InfraCloudflareIndexRoute,
   InfraContainersIndexRoute: InfraContainersIndexRoute,
+  InfraGcpIndexRoute: InfraGcpIndexRoute,
   InfraHostsIndexRoute: InfraHostsIndexRoute,
   InfraKubernetesIndexRoute: InfraKubernetesIndexRoute,
   InfraPlanetscaleIndexRoute: InfraPlanetscaleIndexRoute,
   InfraRailwayIndexRoute: InfraRailwayIndexRoute,
   DashboardsDashboardIdWidgetsWidgetIdRoute:
     DashboardsDashboardIdWidgetsWidgetIdRoute,
+  InfraGcpServiceNameRoute: InfraGcpServiceNameRoute,
   InfraKubernetesNodesNodeNameRoute: InfraKubernetesNodesNodeNameRoute,
   InfraKubernetesPodsPodNameRoute: InfraKubernetesPodsPodNameRoute,
   InfraKubernetesServicesServiceNameRoute:

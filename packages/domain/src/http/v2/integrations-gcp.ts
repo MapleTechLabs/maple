@@ -1,6 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { GcpConnectorId, GcpLogFilter, GcpProjectId, GcpResourceNumber, GcpScopeType } from "../../primitives"
+import {
+	GcpConnectorId,
+	GcpLogRuntime,
+	GcpProjectId,
+	GcpResourceNumber,
+	GcpScopeType,
+} from "../../primitives"
 import {
 	GcpMetricsUnavailableError,
 	GcpScopeAlreadyConnectedError,
@@ -213,16 +219,16 @@ export const V2GcpUpdateConnectorRequest = Schema.Struct({
 export type V2GcpUpdateConnectorRequest = Schema.Schema.Type<typeof V2GcpUpdateConnectorRequest>
 
 export const V2GcpSetupScriptsRequest = Schema.Struct({
-	log_filter: Schema.optionalKey(GcpLogFilter).annotate({
+	application_logs: Schema.optionalKey(Schema.Array(GcpLogRuntime)).annotate({
 		description:
-			"The log filter the setup script carries. `keep` (the default): a sink that already exists keeps its filter, and a new one gets Maple's default. `default`: the script sets Maple's default, which leaves out Data Access audit logs, load balancer health checks, Kubernetes lease renewals, VM serial console output and GKE container logs. `include_gke_container_logs`: the script sets the default with GKE container logs included. Logs from workloads that also send them to Maple over OpenTelemetry are then stored twice.",
-		examples: ["keep"],
+			"The runtimes whose application output (what their code writes to stdout and stderr) the log sink forwards. Platform, request and audit logs are forwarded either way. Omitted: a sink that already exists keeps its filter, and a new one forwards Cloud Run, Cloud Functions and App Engine output, not GKE containers. Given: the script sets the filter to exactly this list, and an empty list forwards no application output. A workload that also sends its logs to Maple over OpenTelemetry has each line stored twice.",
+		examples: [["cloud_run", "cloud_functions", "app_engine"]],
 	}),
 }).annotate({
 	identifier: "GcpSetupScriptsRequest",
 	title: "Google Cloud setup scripts request",
 	description: "Options for rendering a connector's scripts.",
-	examples: [wireExample({ log_filter: "default" })],
+	examples: [wireExample({ application_logs: ["cloud_run", "cloud_functions", "app_engine"] })],
 })
 export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScriptsRequest>
 

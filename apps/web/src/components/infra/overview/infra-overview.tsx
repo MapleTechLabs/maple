@@ -16,6 +16,7 @@ import {
 	ChevronRightIcon,
 	CloudflareIcon,
 	DockerIcon,
+	GoogleCloudIcon,
 	KubernetesIcon,
 	PlanetScaleIcon,
 	RailwayIcon,
@@ -28,12 +29,14 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	cloudflareZonesResultAtom,
 	containersSummaryResultAtom,
+	gcpInfraFleetResultAtom,
 	getServiceMapPlanetScaleResultAtom,
 	listHostsResultAtom,
 	podsSummaryResultAtom,
 	railwayServicesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
+import { gcpFleet, gcpWorkloadSearch } from "../gcp/tabs"
 import { HOST_LIST_LIMIT } from "../host-summary-band"
 import {
 	type Finding,
@@ -43,6 +46,7 @@ import {
 	type SourceSummary,
 	summarizeCloudflare,
 	summarizeContainers,
+	summarizeGcp,
 	summarizeHosts,
 	summarizePlanetScale,
 	summarizePods,
@@ -61,6 +65,7 @@ export const SOURCE_ORDER: ReadonlyArray<SourceId> = [
 	"cloudflare",
 	"railway",
 	"planetscale",
+	"gcp",
 ]
 
 export const SOURCE_TITLE: Record<SourceId, string> = {
@@ -70,6 +75,7 @@ export const SOURCE_TITLE: Record<SourceId, string> = {
 	cloudflare: "Cloudflare",
 	railway: "Railway",
 	planetscale: "PlanetScale",
+	gcp: "Google Cloud",
 } satisfies Record<SourceId, string>
 
 /**
@@ -84,6 +90,7 @@ const SOURCE_ICON: Record<SourceId, IconComponent> = {
 	cloudflare: CloudflareIcon,
 	railway: RailwayIcon,
 	planetscale: PlanetScaleIcon,
+	gcp: GoogleCloudIcon,
 } satisfies Record<SourceId, IconComponent>
 
 function SourceMark({ id, size }: { id: SourceId; size: number }) {
@@ -98,6 +105,7 @@ const SOURCE_SURFACES: Record<SourceId, ReadonlyArray<NavSurface>> = {
 	cloudflare: ["cloudflare"],
 	railway: ["railway"],
 	planetscale: ["planetscale"],
+	gcp: ["gcp"],
 } satisfies Record<SourceId, ReadonlyArray<NavSurface>>
 
 /** The sources an org has. Unknown presence (`null`) shows every source rather than hiding one. */
@@ -113,9 +121,16 @@ export type SourceState =
 
 type RenderState = (state: SourceState) => ReactNode
 
-function toState<A>(result: Result.Result<A, unknown>, summarize: (value: A) => SourceSummary): SourceState {
+/** `summarize` answers null for a source that responded with nothing it could read. */
+function toState<A>(
+	result: Result.Result<A, unknown>,
+	summarize: (value: A) => SourceSummary | null,
+): SourceState {
 	return Result.builder(result)
-		.onSuccess((value): SourceState => ({ status: "ready", summary: summarize(value) }))
+		.onSuccess((value): SourceState => {
+			const summary = summarize(value)
+			return summary === null ? { status: "error" } : { status: "ready", summary }
+		})
 		.onInitial((): SourceState => ({ status: "loading" }))
 		.orElse((): SourceState => ({ status: "error" }))
 }
@@ -150,6 +165,11 @@ function PlanetScaleData({ window, render }: { window: OverviewWindow; render: R
 	return render(toState(result, (response) => summarizePlanetScale(response.databases)))
 }
 
+function GcpData({ window, render }: { window: OverviewWindow; render: RenderState }) {
+	const result = useAtomValue(gcpInfraFleetResultAtom({ data: window }))
+	return render(toState(result, (response) => summarizeGcp(gcpFleet(response.services))))
+}
+
 /**
  * One source's summary, handed to `render`. The findings list and the sources
  * table each mount this for the same source; both read one cached atom.
@@ -168,6 +188,8 @@ function SourceData({ id, window, render }: { id: SourceId; window: OverviewWind
 			return <RailwayData window={window} render={render} />
 		case "planetscale":
 			return <PlanetScaleData window={window} render={render} />
+		case "gcp":
+			return <GcpData window={window} render={render} />
 	}
 }
 
@@ -276,6 +298,23 @@ function FindingLink({
 					to="/infra/planetscale/$dbName"
 					params={{ dbName: target.database }}
 					search={timeSearch}
+					className={className}
+				>
+					{children}
+				</Link>
+			)
+		case "gcpService":
+			return (
+				<Link to="/infra/gcp" search={{ ...timeSearch, tab: target.service }} className={className}>
+					{children}
+				</Link>
+			)
+		case "gcp":
+			return (
+				<Link
+					to="/infra/gcp/$service/$name"
+					params={{ service: target.service, name: target.keys[0] }}
+					search={{ ...timeSearch, ...gcpWorkloadSearch(target.service, target.keys) }}
 					className={className}
 				>
 					{children}
@@ -471,6 +510,12 @@ export function SourceLink({
 		case "planetscale":
 			return (
 				<Link to="/infra/planetscale" search={timeSearch} className={className}>
+					{children}
+				</Link>
+			)
+		case "gcp":
+			return (
+				<Link to="/infra/gcp" search={timeSearch} className={className}>
 					{children}
 				</Link>
 			)

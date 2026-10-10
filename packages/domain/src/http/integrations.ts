@@ -865,6 +865,35 @@ export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesRespons
 	},
 ) {}
 
+/** Rows one read of the Google Cloud resource inventory returns. */
+export const GCP_RESOURCES_LIMIT = 500
+
+/** One Cloud Asset Inventory entry in the scope of a Google Cloud connector. */
+export const GcpResource = Schema.Struct({
+	/** Full resource name: `//run.googleapis.com/projects/p/locations/l/services/s`. */
+	name: Schema.String,
+	assetType: Schema.String,
+	projectId: Schema.String,
+	location: Schema.NullOr(Schema.String),
+	displayName: Schema.NullOr(Schema.String),
+	state: Schema.NullOr(Schema.String),
+	labels: Schema.Record(Schema.String, Schema.String),
+})
+export type GcpResource = Schema.Schema.Type<typeof GcpResource>
+
+export class GcpResourcesResponse extends Schema.Class<GcpResourcesResponse>("GcpResourcesResponse")({
+	/** The first `GCP_RESOURCES_LIMIT` resources matching the filter, by asset type and name. */
+	resources: Schema.Array(GcpResource),
+	/** How many resources match the filter. */
+	total: Schema.Number,
+	/** The whole inventory by asset type: the type filter's options, and the project count. */
+	types: Schema.Array(Schema.Struct({ assetType: Schema.String, count: Schema.Number })),
+	/** Every project with a resource: the project filter's options. */
+	projects: Schema.Array(Schema.String),
+}) {}
+
+const GcpResourceFilterValue = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
+
 export class RailwayEnvironmentStatus extends Schema.Class<RailwayEnvironmentStatus>(
 	"RailwayEnvironmentStatus",
 )({
@@ -1229,6 +1258,20 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
 			success: RailwayDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// The inventory behind Infrastructure -> Google Cloud. Connectors are public v2
+		// (`/v2/integrations/gcp`); only the dashboard reads what they discovered.
+		HttpApiEndpoint.get("gcpResources", "/gcp/resources", {
+			query: Schema.Struct({
+				assetType: Schema.optional(GcpResourceFilterValue),
+				projectId: Schema.optional(GcpResourceFilterValue),
+				/** The last segment of the resource name: how a workload's page finds its resource. */
+				name: Schema.optional(GcpResourceFilterValue),
+			}),
+			success: GcpResourcesResponse,
+			error: IntegrationsPersistenceError,
 		}),
 	)
 	.add(

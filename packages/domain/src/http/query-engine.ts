@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
@@ -453,6 +454,70 @@ export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsRespo
 	"RailwayInfraRowsResponse",
 )({
 	data: Schema.Array(WireRow),
+}) {}
+
+// Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
+const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
+
+export class GcpInfraPresenceRequest extends Schema.Class<GcpInfraPresenceRequest>("GcpInfraPresenceRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export class GcpInfraPresenceResponse extends Schema.Class<GcpInfraPresenceResponse>(
+	"GcpInfraPresenceResponse",
+)({
+	/** The services with a metric in the window, in tab order. */
+	services: Schema.Array(GcpInfraService),
+}) {}
+
+export class GcpInfraMetricsRequest extends Schema.Class<GcpInfraMetricsRequest>("GcpInfraMetricsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	service: GcpInfraService,
+}) {}
+
+export class GcpInfraMetricsResponse extends Schema.Class<GcpInfraMetricsResponse>("GcpInfraMetricsResponse")(
+	{
+		/** One row per workload, metric and label value: see `gcpInfraMetricsSQL`. */
+		data: Schema.Array(
+			Schema.Struct({
+				keys: Schema.Array(Schema.String),
+				metric: Schema.String,
+				label: Schema.String,
+				total: Schema.Number,
+				samples: Schema.Number,
+			}),
+		),
+	},
+) {}
+
+export class GcpInfraTimeseriesRequest extends Schema.Class<GcpInfraTimeseriesRequest>(
+	"GcpInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	source: Schema.Literals(GCP_INFRA_SOURCE_IDS),
+	/** The workload's identity values, in the order of the source's `identity`. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class GcpInfraTimeseriesResponse extends Schema.Class<GcpInfraTimeseriesResponse>(
+	"GcpInfraTimeseriesResponse",
+)({
+	/** One row per bucket, metric and label value: see `gcpInfraTimeseriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			metric: Schema.String,
+			label: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
 }) {}
 
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
@@ -2623,6 +2688,27 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
 			payload: RailwayInfraServiceTimeseriesRequest,
 			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraPresence", "/gcp-infra-presence", {
+			payload: GcpInfraPresenceRequest,
+			success: GcpInfraPresenceResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraMetrics", "/gcp-infra-metrics", {
+			payload: GcpInfraMetricsRequest,
+			success: GcpInfraMetricsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraTimeseries", "/gcp-infra-timeseries", {
+			payload: GcpInfraTimeseriesRequest,
+			success: GcpInfraTimeseriesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

@@ -213,7 +213,7 @@ describe("v2 gcp integration over HTTP", () => {
 		const path = `${CONNECTORS}/${created.body.id}`
 
 		const both = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {
-			log_filter: "include_gke_container_logs",
+			application_logs: ["cloud_run", "cloud_functions", "app_engine", "gke"],
 		})
 		expect(both.status).toBe(200)
 		expect(Object.keys(both.body).sort()).toEqual(["cleanup_script", "object", "setup_script"])
@@ -236,13 +236,13 @@ describe("v2 gcp integration over HTTP", () => {
 		// The cleanup script tells Maple that it ran, with the connector's secret.
 		expect(both.body.cleanup_script).toContain("?secret=maple_gcp_")
 
-		// Without an option an existing sink keeps its filter and a new one gets the default, which
+		// Without the list an existing sink keeps its filter and a new one gets the default, which
 		// leaves out GKE container logs; with logs off there is none to carry.
 		const kept = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
 		expect(kept.body.setup_script).toContain("LOG_FILTER_MODE='keep'")
 		expect(kept.body.setup_script).toContain(` AND NOT resource.type="k8s_container"'\n`)
 		const unknown = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {
-			log_filter: "everything",
+			application_logs: ["everything"],
 		})
 		expect(unknown.status).toBe(400)
 

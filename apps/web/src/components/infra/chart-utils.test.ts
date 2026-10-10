@@ -10,6 +10,8 @@ describe("formatValueWithUnit", () => {
 	it("renders cores with a unit suffix (never a bare number)", () => {
 		expect(formatValueWithUnit(0.067, "cores")).toBe("0.067 cores")
 		expect(formatValueWithUnit(2, "cores")).toBe("2 cores")
+		expect(formatValueWithUnit(0.00042, "cores")).toBe("0.00042 cores")
+		expect(formatValueWithUnit(0, "cores")).toBe("0 cores")
 	})
 
 	it("renders a duration for seconds", () => {
@@ -23,6 +25,11 @@ describe("formatValueWithUnit", () => {
 
 	it("renders bytes/second with a rate unit", () => {
 		expect(formatValueWithUnit(2048, "bytes_per_second")).toBe("2.0 KB/s")
+	})
+
+	it("renders a count at reading precision, with no unit", () => {
+		expect(formatValueWithUnit(1.5, "count")).toBe("1.5")
+		expect(formatValueWithUnit(12_340, "count")).toBe("12.3K")
 	})
 
 	it("guards against non-finite values", () => {

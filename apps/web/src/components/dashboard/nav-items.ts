@@ -7,6 +7,7 @@ import {
 	CodeIcon,
 	ComputerIcon,
 	FileIcon,
+	GoogleCloudIcon,
 	GridIcon,
 	GridSquareCirclePlusIcon,
 	HouseIcon,
@@ -27,8 +28,9 @@ import type { OrganizationFeatureFlags } from "@/lib/organization-feature-flags"
 
 /**
  * What a nav child needs from the org before it's worth a row. The five OTel
- * surfaces come from the warehouse presence probe; Cloudflare, PlanetScale and
- * Railway are integration pages, so their gate is whether the integration is connected.
+ * surfaces come from the warehouse presence probe; Cloudflare, PlanetScale,
+ * Railway and Google Cloud are integration pages, so their gate is whether the
+ * integration is connected (for Google Cloud: with metrics switched on).
  */
 export type NavSurface =
 	| "hosts"
@@ -39,6 +41,7 @@ export type NavSurface =
 	| "cloudflare"
 	| "planetscale"
 	| "railway"
+	| "gcp"
 
 export interface NavSubItem {
 	title: string
@@ -101,7 +104,8 @@ const overviewItem: NavItem = {
  * connected; the ones it doesn't have are offered on the Overview instead of
  * padded into the nav. Containers folds into Hosts as a view, the way Pods,
  * Nodes and Workloads fold into Kubernetes, and stays typeable in the palette
- * through `views`. Six children with six unique marks fits `NavRow`'s preview cap.
+ * through `views`. The six sources' marks are exactly `NavRow`'s preview cap, which
+ * leaves the Overview row's own glyph out.
  */
 const infrastructureItem: NavItem = {
 	title: "Infrastructure",
@@ -134,6 +138,7 @@ const infrastructureItem: NavItem = {
 			surfaces: ["planetscale"],
 		},
 		{ title: "Railway", href: "/infra/railway", icon: RailwayIcon, surfaces: ["railway"] },
+		{ title: "Google Cloud", href: "/infra/gcp", icon: GoogleCloudIcon, surfaces: ["gcp"] },
 	],
 }
 

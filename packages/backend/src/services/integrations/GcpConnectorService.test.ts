@@ -68,7 +68,7 @@ const organizationScope: CreateGcpConnectorInput = {
 	metricsEnabled: true,
 }
 
-const scriptOptions = { logFilter: "keep" } as const
+const scriptOptions = { applicationLogs: null }
 
 interface StoredConnector {
 	readonly secret_ciphertext: string
@@ -161,7 +161,7 @@ describe("GcpConnectorService", () => {
 			assert.isTrue((yield* gcp.status(orgId)).metricsAvailable)
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
 			const both = yield* gcp.scripts(orgId, connector.id, {
-				logFilter: "include_gke_container_logs",
+				applicationLogs: ["cloud_run", "cloud_functions", "app_engine", "gke"],
 			})
 			assert.include(both.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
 			assert.notInclude(both.setupScript, "k8s_container")
@@ -334,6 +334,126 @@ describe("GcpConnectorService", () => {
 			assert.strictEqual(left?.count, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
+
+	it.effect(
+		"lists the organization's inventory once per resource, filtered, with facets over all of it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const gcp = yield* GcpConnectorService
+				const metrics = { metricsEnabled: true }
+				const wide = yield* gcp.create(orgId, userId, organizationScope)
+				// A project inside the organization: both connectors list its resources.
+				const narrow = yield* gcp.create(orgId, userId, projectScope("acme-shop", metrics))
+				// Metrics were switched off after a sync: what it listed is stale.
+				const stopped = yield* gcp.create(orgId, userId, projectScope("acme-old"))
+				const foreign = yield* gcp.create(otherOrgId, userId, projectScope("elsewhere", metrics))
+
+				const PROJECT = "cloudresourcemanager.googleapis.com/Project"
+				const RUN = "run.googleapis.com/Service"
+				const SQL = "sqladmin.googleapis.com/Instance"
+				const api = "//run.googleapis.com/projects/acme-shop/locations/europe-west1/services/api"
+				const seen: ReadonlyArray<readonly [{ id: string }, string, string, string, string]> = [
+					[wide, orgId, "//cloudresourcemanager.googleapis.com/projects/111", PROJECT, "acme-shop"],
+					[wide, orgId, "//cloudresourcemanager.googleapis.com/projects/222", PROJECT, "acme-blog"],
+					[wide, orgId, api, RUN, "acme-shop"],
+					[
+						wide,
+						orgId,
+						"//sqladmin.googleapis.com/projects/acme-blog/instances/db",
+						SQL,
+						"acme-blog",
+					],
+					[
+						narrow,
+						orgId,
+						"//cloudresourcemanager.googleapis.com/projects/111",
+						PROJECT,
+						"acme-shop",
+					],
+					[narrow, orgId, api, RUN, "acme-shop"],
+					[stopped, orgId, "//run.googleapis.com/projects/acme-old/services/old", RUN, "acme-old"],
+					[
+						foreign,
+						otherOrgId,
+						"//run.googleapis.com/projects/elsewhere/services/x",
+						RUN,
+						"elsewhere",
+					],
+				]
+				for (const [connector, org, name, assetType, projectId] of seen) {
+					yield* Effect.promise(() =>
+						executeSql(
+							testDb,
+							`INSERT INTO gcp_resources
+						   (connector_id, org_id, name, asset_type, project_id, location, display_name, state, labels, last_seen_at)
+						 VALUES ($1, $2, $3, $4, $5, 'europe-west1', 'shown', 'ACTIVE', '{"team":"core"}', now())`,
+							[connector.id, org, name, assetType, projectId],
+						),
+					)
+				}
+
+				const all = yield* gcp.resources(orgId, {})
+				assert.strictEqual(all.total, 4)
+				assert.deepStrictEqual(
+					all.resources.map((resource) => resource.name),
+					[
+						"//cloudresourcemanager.googleapis.com/projects/111",
+						"//cloudresourcemanager.googleapis.com/projects/222",
+						api,
+						"//sqladmin.googleapis.com/projects/acme-blog/instances/db",
+					],
+				)
+				assert.deepStrictEqual(all.types, [
+					{ assetType: PROJECT, count: 2 },
+					{ assetType: RUN, count: 1 },
+					{ assetType: SQL, count: 1 },
+				])
+				assert.deepStrictEqual(all.projects, ["acme-blog", "acme-shop"])
+
+				const services = yield* gcp.resources(orgId, { assetType: RUN })
+				assert.deepStrictEqual(services.resources, [
+					{
+						name: api,
+						assetType: RUN,
+						projectId: "acme-shop",
+						location: "europe-west1",
+						displayName: "shown",
+						state: "ACTIVE",
+						labels: { team: "core" },
+					},
+				])
+				assert.strictEqual(services.total, 1)
+				// The filter's options do not narrow with it.
+				assert.deepStrictEqual(services.types, all.types)
+				assert.deepStrictEqual(services.projects, all.projects)
+
+				assert.strictEqual((yield* gcp.resources(orgId, { projectId: "acme-blog" })).total, 2)
+				const none = yield* gcp.resources(orgId, { assetType: RUN, projectId: "acme-blog" })
+				assert.deepStrictEqual([none.total, none.resources], [0, []])
+
+				// A workload's page asks for its one resource by the last segment of the name.
+				const named = yield* gcp.resources(orgId, {
+					assetType: RUN,
+					projectId: "acme-shop",
+					name: "api",
+				})
+				assert.deepStrictEqual(
+					[named.total, named.resources.map((resource) => resource.name)],
+					[1, [api]],
+				)
+				// A segment in the middle of the name is not the resource's name.
+				assert.strictEqual((yield* gcp.resources(orgId, { name: "services" })).total, 0)
+				assert.strictEqual((yield* gcp.resources(orgId, { name: "ap" })).total, 0)
+
+				const theirs = yield* gcp.resources(otherOrgId, {})
+				assert.deepStrictEqual(
+					theirs.resources.map((resource) => resource.projectId),
+					["elsewhere"],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+		},
+	)
 
 	it.effect("refuses to render a secret that was moved onto another connector's row", () => {
 		const testDb = createTestDb(trackedDbs)
